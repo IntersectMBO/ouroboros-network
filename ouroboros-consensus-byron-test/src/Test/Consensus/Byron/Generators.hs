@@ -278,7 +278,7 @@ instance Arbitrary CC.Del.Map where
 instance Arbitrary ByronTransition where
   arbitrary = ByronTransitionInfo . Map.fromList <$> arbitrary
 
-instance Arbitrary (LedgerState ByronBlock EmptyMK) where
+instance Arbitrary (LedgerState ByronBlock mk) where
   arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary <*> arbitrary
 
 -- | Generator for a Byron ledger state in which the tip of the ledger given by
@@ -299,6 +299,9 @@ genByronLedgerState = do
       case cvsPreviousHash of
         Left _  -> pure Origin
         Right _ -> At <$> arbitrary
+
+instance Arbitrary (LedgerTables (LedgerState ByronBlock) mk) where
+  arbitrary = pure NoByronLedgerTables
 
 genByronLedgerConfig :: Gen Byron.Config
 genByronLedgerConfig = hedgehog $ CC.genConfig protocolMagicId

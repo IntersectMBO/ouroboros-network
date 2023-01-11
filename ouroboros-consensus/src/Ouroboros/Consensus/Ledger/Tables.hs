@@ -89,7 +89,6 @@ module Ouroboros.Consensus.Ledger.Tables (
     -- * Concrete Ledger tables
   , ApplyMapKind
   , ApplyMapKind' (..)
-  , showsApplyMapKind
   , CodecMK (..)
   , DiffMK
   , EmptyMK
@@ -100,6 +99,7 @@ module Ouroboros.Consensus.Ledger.Tables (
   , SeqDiffMK
   , TrackingMK
   , ValuesMK
+  , showsApplyMapKind
     -- * Serialization
   , SufficientSerializationForAnyBackingStore (..)
   , valuesMKDecoder
