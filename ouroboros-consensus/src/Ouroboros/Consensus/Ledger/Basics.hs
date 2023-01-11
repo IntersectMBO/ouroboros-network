@@ -55,6 +55,8 @@ module Ouroboros.Consensus.Ledger.Basics (
   , youngestImmutableSlotDbChangelog
   ) where
 
+import           Prelude hiding (splitAt)
+
 import qualified Control.Exception as Exn
 import           Data.Bifunctor (bimap)
 import           Data.Kind (Type)
@@ -434,17 +436,17 @@ flushDbChangelog DbChangelogFlushAllImmutable dblog =
     immTip = AS.anchor vol
 
     -- TODO #2 by point, not by count, so sequences can be ragged
-    split ::
+    splitSeqDiff ::
          (Ord k, Eq v)
       => SeqDiffMK k v
       -> (SeqDiffMK k v, SeqDiffMK k v)
-    split (ApplySeqDiffMK sq) =
+    splitSeqDiff (ApplySeqDiffMK sq) =
         bimap ApplySeqDiffMK ApplySeqDiffMK
-      $ splitlAt (AS.length imm) sq
+      $ splitAt (AS.length imm) sq
 
     -- TODO #1 one pass
-    l = mapLedgerTables (fst . split) changelogDiffs
-    r = mapLedgerTables (snd . split) changelogDiffs
+    l = mapLedgerTables (fst . splitSeqDiff) changelogDiffs
+    r = mapLedgerTables (snd . splitSeqDiff) changelogDiffs
 
     ldblog = DbChangelog {
         changelogDiffAnchor
@@ -518,7 +520,7 @@ trunc ::
      (Ord k, Eq v)
   => Int -> SeqDiffMK k v -> SeqDiffMK k v
 trunc n (ApplySeqDiffMK sq) =
-  ApplySeqDiffMK $ fst $ splitrAtFromEnd n sq
+  ApplySeqDiffMK $ fst $ splitAtFromEnd n sq
 
 rollbackDbChangelog ::
      (GetTip (l EmptyMK), TableStuff l)

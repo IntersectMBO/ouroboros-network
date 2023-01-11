@@ -94,12 +94,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (
   , maxSlot
   , minSlot
     -- * Splitting
-  , splitl
-  , splitlAt
-  , splitlAtFromEnd
-  , splitr
-  , splitrAt
-  , splitrAtFromEnd
+  , split
+  , splitAt
+  , splitAtFromEnd
     -- * Maps
   , mapDiffSeq
   ) where
@@ -115,9 +112,9 @@ import           Data.Semigroup (Max (..), Min (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Data.FingerTree.RootMeasured.Strict hiding (split, splitl,
-                     splitr)
-import qualified Data.FingerTree.RootMeasured.Strict as RMFT (splitl, splitr)
+import           Data.FingerTree.RootMeasured.Strict hiding (split, splitSized,
+                     splitl, splitr)
+import qualified Data.FingerTree.RootMeasured.Strict as RMFT (splitSized)
 import           Data.Map.Diff.Strict as MapDiff
 
 import qualified Cardano.Slotting.Slot as Slot
@@ -318,51 +315,30 @@ minSlot (UnsafeDiffSeq ft) = unSlotNoLB <$> imSlotNoL (measure ft)
   Splitting
 -------------------------------------------------------------------------------}
 
-splitl ::
+instance Sized (InternalMeasure k v) where
+  size = unLength . imLength
+
+split ::
      SM k v
   => (InternalMeasure k v -> Bool)
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-splitl p (UnsafeDiffSeq ft) = bimap UnsafeDiffSeq UnsafeDiffSeq $ RMFT.splitl p ft
+split p (UnsafeDiffSeq ft) = bimap UnsafeDiffSeq UnsafeDiffSeq $ RMFT.splitSized p ft
 
-splitr ::
-     SM k v
-  => (InternalMeasure k v -> Bool)
-  -> DiffSeq k v
-  -> (DiffSeq k v, DiffSeq k v)
-splitr p (UnsafeDiffSeq ft) = bimap UnsafeDiffSeq UnsafeDiffSeq $ RMFT.splitr p ft
-
-splitlAt ::
+splitAt ::
      SM k v
   => Int
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-splitlAt n = splitl ((Length n<) . imLength)
+splitAt n = split ((Length n<) . imLength)
 
-splitrAt ::
+splitAtFromEnd ::
      SM k v
   => Int
   -> DiffSeq k v
   -> (DiffSeq k v, DiffSeq k v)
-splitrAt n = splitr ((Length n<) . imLength)
-
-splitlAtFromEnd ::
-     SM k v
-  => Int
-  -> DiffSeq k v
-  -> (DiffSeq k v, DiffSeq k v)
-splitlAtFromEnd n dseq =
-    Exn.assert (n <= len) $ splitlAt (len - n) dseq
-  where
-    len = length dseq
-
-splitrAtFromEnd ::
-     SM k v
-  => Int
-  -> DiffSeq k v
-  -> (DiffSeq k v, DiffSeq k v)
-splitrAtFromEnd n dseq =
-    Exn.assert (n <= len) $ splitrAt (len - n) dseq
+splitAtFromEnd n dseq =
+    Exn.assert (n <= len) $ splitAt (len - n) dseq
   where
     len = length dseq
 
