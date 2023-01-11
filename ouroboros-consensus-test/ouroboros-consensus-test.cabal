@@ -82,6 +82,8 @@ library
                        Test.Util.Tracer
                        Test.Util.WithEq
 
+                       Test.LedgerTables
+
   build-depends:       base              >=4.9 && <4.15
                      , base16-bytestring
                      , binary

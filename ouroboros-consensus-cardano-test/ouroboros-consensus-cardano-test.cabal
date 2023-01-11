@@ -86,6 +86,7 @@ test-suite test
   other-modules:
                        Test.Consensus.Cardano.ByronCompatibility
                        Test.Consensus.Cardano.Golden
+                       Test.Consensus.Cardano.LedgerTables
                        Test.Consensus.Cardano.Serialisation
                        Test.Consensus.Cardano.Translation
                        Test.ThreadNet.AllegraMary
@@ -111,6 +112,7 @@ test-suite test
                      , cardano-data
                      , cardano-ledger-alonzo
                      , cardano-ledger-alonzo-test
+                     , cardano-ledger-babbage-test
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
                      , cardano-ledger-core
