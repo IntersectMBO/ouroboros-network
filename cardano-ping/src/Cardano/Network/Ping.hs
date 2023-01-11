@@ -50,12 +50,19 @@ import qualified System.IO as IO
 
 data PingOpts = PingOpts
   { pingOptsCount    :: Word32
-  , pingOptsHost     :: (Maybe String)
-  , pingOptsUnixSock :: (Maybe String)
+    -- ^ Number of messages to send to the server
+  , pingOptsHost     :: Maybe String
+    -- ^ The host to connect to
+  , pingOptsUnixSock :: Maybe String
+    -- ^ The unix socket to connect to
   , pingOptsPort     :: String
+    -- ^ The port to connect to
   , pingOptsMagic    :: Word32
+    -- ^ The network magic to use for the connection
   , pingOptsJson     :: Bool
+    -- ^ Print output in JSON
   , pingOptsQuiet    :: Bool
+    -- ^ Less verbose output
   } deriving (Eq, Show)
 
 mainnetMagic :: Word32
