@@ -21,6 +21,8 @@ module Ouroboros.Network.InboundGovernor
   , newObservableStateVarFromSeed
     -- * Run Inbound Protocol Governor
   , inboundGovernor
+    -- * Auxiliary Types
+  , InboundGovernorInfoChannel
     -- * Trace
   , InboundGovernorTrace (..)
   , RemoteSt (..)
@@ -55,17 +57,15 @@ import qualified Network.Mux as Mux
 import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (InformationChannel)
+import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
 import           Ouroboros.Network.ConnectionManager.Types hiding
                      (TrUnexpectedlyFalseAssertion)
-import           Ouroboros.Network.InboundGovernor.ControlChannel
-                     (ServerControlChannel)
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.InboundGovernor.Event
 import           Ouroboros.Network.InboundGovernor.State
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Server.RateLimiting
-
-
 
 -- | Run the server, which consists of the following components:
 --
@@ -97,7 +97,7 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionData versi
                    )
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)
-                -> ServerControlChannel muxMode peerAddr versionData ByteString m a b
+                -> InboundGovernorInfoChannel muxMode peerAddr versionData ByteString m a b
                 -> Maybe DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket peerAddr versionData
                                         versionNumber ByteString m a b
@@ -165,13 +165,13 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                  )
                  (igsConnections state)
             <> FirstToFinish (
-                 NewConnection <$> ControlChannel.readMessage serverControlChannel)
+                 NewConnection <$> InfoChannel.readMessage serverControlChannel)
       (mbConnId, state') <- case event of
         NewConnection
           -- new connection has been announced by either accept loop or
           -- by connection manager (in which case the connection is in
           -- 'DuplexState').
-          (ControlChannel.NewConnection
+          (NewConnectionInfo
             provenance
             connId
             csDataFlow
@@ -501,6 +501,18 @@ runResponder mux
             startStrategy
             (runMuxPeer responder . fromChannel)
 
+--
+-- Auxiliary Types
+--
+
+-- | A Server control channel which instantiates to 'NewConnection' and 'Handle'.
+--
+-- It allows to pass 'STM' transactions which will resolve to 'NewConnection'.
+-- Server's monitoring thread is the consumer of these messages; there are two
+-- producers: accept loop and connection handler for outbound connections.
+--
+type InboundGovernorInfoChannel (muxMode :: MuxMode) peerAddr versionData bytes m a b =
+    InformationChannel (NewConnectionInfo peerAddr (Handle muxMode peerAddr versionData bytes m a b)) m
 
 --
 -- Trace

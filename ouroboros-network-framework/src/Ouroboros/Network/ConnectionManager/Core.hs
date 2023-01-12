@@ -55,11 +55,13 @@ import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
 import           Network.Mux.Types (MuxMode)
 
 import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (InformationChannel)
+import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
-import           Ouroboros.Network.InboundGovernor.ControlChannel
-                     (ControlChannel (..))
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
+import           Ouroboros.Network.InboundGovernor.Event
+                     (NewConnectionInfo (..))
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
@@ -551,7 +553,7 @@ withConnectionManager
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
-    -> InResponderMode muxMode (ControlChannel peerAddr handle m)
+    -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
@@ -1236,9 +1238,9 @@ withConnectionManager ConnectionManagerArguments {
                   Just {} -> do
                     case inboundGovernorControlChannel of
                       InResponderMode controlChannel ->
-                        atomically $ ControlChannel.writeMessage
+                        atomically $ InfoChannel.writeMessage
                                        controlChannel
-                                       (ControlChannel.NewConnection Inbound connId dataFlow handle)
+                                       (NewConnectionInfo Inbound connId dataFlow handle)
                       NotInResponderMode -> return ()
                     return $ Connected connId dataFlow handle
 
@@ -1807,9 +1809,9 @@ withConnectionManager ConnectionManagerArguments {
                           writeTVar connVar connState'
                           case inboundGovernorControlChannel of
                             InResponderMode controlChannel ->
-                              ControlChannel.writeMessage
+                              InfoChannel.writeMessage
                                 controlChannel
-                                (ControlChannel.NewConnection Outbound connId dataFlow handle)
+                                (NewConnectionInfo Outbound connId dataFlow handle)
                             NotInResponderMode -> return ()
                           return (Just $ mkTransition connState connState')
                     TerminatedState _ ->
