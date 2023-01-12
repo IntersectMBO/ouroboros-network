@@ -84,7 +84,7 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionData versionNu
       -- server to run and manage responders which needs to be started on
       -- inbound connections.
       --
-      serverControlChannel        :: InboundGovernorInfoChannel muxMode peerAddr versionData
+      serverInboundInfoChannel    :: InboundGovernorInfoChannel muxMode peerAddr versionData
                                                                 bytes m a b,
 
       -- | Observable mutable state.
@@ -139,7 +139,7 @@ run ServerArguments {
         serverLimits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       serverInboundIdleTimeout,
       serverConnectionManager,
-      serverControlChannel,
+      serverInboundInfoChannel,
       serverObservableStateVar
     } = do
       let sockets = NonEmpty.toList serverSockets
@@ -154,7 +154,7 @@ run ServerArguments {
                                         )
                         inboundGovernor serverTrTracer
                                         inboundGovernorTracer
-                                        serverControlChannel
+                                        serverInboundInfoChannel
                                         serverInboundIdleTimeout
                                         serverConnectionManager
                                         serverObservableStateVar)
