@@ -66,6 +66,8 @@ withPeerSelectionActions
   -- ^ Extract peer sharing information from peerconn
   -> STM m (Map peeraddr (PeerSharingController peeraddr m))
   -- ^ peer sharing registry
+  -> STM m (peeraddr, PeerSharing)
+  -- ^ Read New Inbound Connections
   -> PeerStateActions peeraddr peerconn m
   -> (NumberOfPeers -> m (Maybe (Set peeraddr, DiffTime)))
   -> (   Async m Void
@@ -85,6 +87,7 @@ withPeerSelectionActions
   peerSharing
   peerConnToPeerSharing
   readPeerSharingController
+  readNewInboundConnections
   peerStateActions
   getLedgerPeers
   k = do
@@ -92,6 +95,7 @@ withPeerSelectionActions
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
             readLocalRootPeers = toList <$> readTVar localRootsVar,
+            readNewInboundConnection = readNewInboundConnections,
             peerSharing,
             peerConnToPeerSharing,
             requestPublicRootPeers = requestPublicRootPeers,

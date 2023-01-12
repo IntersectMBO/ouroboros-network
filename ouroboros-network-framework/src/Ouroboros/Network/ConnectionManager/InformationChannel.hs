@@ -5,7 +5,6 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Data.Functor (($>))
 import           GHC.Natural (Natural)
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 
 -- | Information channel.
 --
@@ -38,12 +37,3 @@ newInformationChannel = do
 --
 cc_QUEUE_BOUND :: Natural
 cc_QUEUE_BOUND = 10
-
--- | Control Channel between Server and Outbound Governor.
---
--- Control channel that is meant to share inbound connections with the Peer
--- Selection Governor. So the consumer is the Governor and Producer is the
--- Server.
---
-type OutboundGovernorInfoChannel peerAddr m =
-    InformationChannel (peerAddr, PeerSharing) m

@@ -204,6 +204,8 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        readLocalRootPeers       :: STM m [(Int, Map peeraddr PeerAdvertise)],
 
+       readNewInboundConnection :: STM m (peeraddr, PeerSharing),
+
        -- | Read the current Peer Sharing willingness value
        --
        -- This value comes from the Node's configuration file.
@@ -654,6 +656,7 @@ data TracePeerSelection peeraddr =
      | TracePeerShareRequests     Int Int (Set peeraddr) (Set peeraddr)
      | TracePeerShareResults         [(peeraddr, Either SomeException (PeerSharingResult peeraddr))] --TODO: classify failures
      | TracePeerShareResultsFiltered [peeraddr]
+     | TraceKnownInboundConnection peeraddr PeerSharing
      -- | target known peers, actual known peers, selected peer
      | TraceForgetColdPeers    Int Int (Set peeraddr)
      -- | target established, actual established, selected peers
