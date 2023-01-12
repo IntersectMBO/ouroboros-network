@@ -88,7 +88,6 @@ import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import qualified Ouroboros.Network.InboundGovernor as IG
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.InboundGovernor.State
                      (InboundGovernorCounters (..))
 import           Ouroboros.Network.IOManager
@@ -127,6 +126,8 @@ import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
 import           Test.Ouroboros.Network.Orphans ()
 import           Test.Simulation.Network.Snocket hiding (tests)
 
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (newInformationChannel)
 import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
                      allValidTransitionsNames, validTransitionMap,
                      verifyAbstractTransition, verifyAbstractTransitionOrder)
@@ -526,7 +527,7 @@ withBidirectionalConnectionManager name timeouts
                                    handshakeTimeLimits
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
-    inbgovControlChannel      <- Server.newControlChannel
+    inbgovControlChannel      <- newInformationChannel
     -- we are not using the randomness
     observableStateVar        <- Server.newObservableStateVarFromSeed 0
     let muxTracer = WithName name `contramap` nullTracer -- mux tracer

@@ -59,12 +59,14 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket (Accept (..), Accepted (..),
                      AddressFamily (TestFamily), Snocket (..), TestAddress (..))
 
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (newInformationChannel)
+import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
 import           TestLib.ConnectionManager (verifyAbstractTransition)
 
 
@@ -746,7 +748,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
                   -             Debug.traceShowM (t, msg))
                   --}
 
-        inbgovControlChannel <- ControlChannel.newControlChannel
+        inbgovControlChannel <- newInformationChannel
         let connectionHandler = mkConnectionHandler snocket
         result <- withConnectionManager
           ConnectionManagerArguments {
@@ -932,7 +934,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
 
             -- run poor man's server which just reads the control channel,
             -- otherwise it would block if there are more than 10 connections.
-            forever (atomically (ControlChannel.readMessage inbgovControlChannel) $> ())
+            forever (atomically (InfoChannel.readMessage inbgovControlChannel) $> ())
               `race_`
               (do a <- accept snocket fd
                   threads <- go [] a (schedule scheduleMap)
