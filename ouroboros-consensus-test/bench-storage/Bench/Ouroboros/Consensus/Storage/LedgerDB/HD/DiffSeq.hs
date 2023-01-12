@@ -358,8 +358,8 @@ instance (Ord k, Eq v) => IsDiffSeq DS.DiffSeq k v where
   type Keys DS.DiffSeq k v   = DS.Keys k v
 
   push                 = DS.extend
-  flush                = DS.splitlAt
-  rollback             = DS.splitrAtFromEnd
+  flush                = DS.splitAt
+  rollback             = DS.splitAtFromEnd
   forwardValuesAndKeys = DS.applyDiffForKeys
   totalDiff            = DS.cumulativeDiff
 
