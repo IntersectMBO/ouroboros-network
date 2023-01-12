@@ -361,11 +361,12 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
           cmSnocket = snocket,
           cmMakeBearer = makeBearer,
           cmConfigureSocket = \_ _ -> return (),
-          connectionDataFlow = \_ (DataFlowProtocolData df) -> df,
+          connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = acceptedConnLimit,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
-          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts
+          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
+          cmGetPeerSharing = \(DataFlowProtocolData _ ps) -> ps
         }
       (makeConnectionHandler
         muxTracer
@@ -384,6 +385,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
                     <> debugIOErrorRethrowPolicy
                     <> assertRethrowPolicy))
       (\_ -> HandshakeFailure)
+      NotInResponderMode
       NotInResponderMode
       (\cm ->
         k cm `catch` \(e :: SomeException) -> throwIO e)
@@ -520,7 +522,8 @@ withBidirectionalConnectionManager name timeouts
                                    handshakeTimeLimits
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
-    inbgovControlChannel      <- newInformationChannel
+    inbgovInfoChannel <- newInformationChannel
+    outgovInfoChannel <- newInformationChannel
     -- we are not using the randomness
     observableStateVar        <- Server.newObservableStateVarFromSeed 0
     let muxTracer = WithName name `contramap` nullTracer -- mux tracer
@@ -542,9 +545,10 @@ withBidirectionalConnectionManager name timeouts
           cmConfigureSocket = \sock _ -> confSock sock,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
           cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          connectionDataFlow = \_ (DataFlowProtocolData df) -> df,
+          connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
-          cmConnectionsLimits = acceptedConnLimit
+          cmConnectionsLimits = acceptedConnLimit,
+          cmGetPeerSharing = \(DataFlowProtocolData _ ps) -> ps
         }
         (makeConnectionHandler
           muxTracer
@@ -563,7 +567,8 @@ withBidirectionalConnectionManager name timeouts
                         <> debugIOErrorRethrowPolicy
                         <> assertRethrowPolicy))
           (\_ -> HandshakeFailure)
-          (InResponderMode inbgovControlChannel)
+          (InResponderMode inbgovInfoChannel)
+          (InResponderMode outgovInfoChannel)
       $ \connectionManager ->
           do
             serverAddr <- Snocket.getLocalAddr snocket socket
@@ -581,7 +586,7 @@ withBidirectionalConnectionManager name timeouts
                     serverConnectionLimits = acceptedConnLimit,
                     serverConnectionManager = connectionManager,
                     serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
-                    serverControlChannel = inbgovControlChannel,
+                    serverInboundInfoChannel = inbgovInfoChannel,
                     serverObservableStateVar = observableStateVar
                   }
               )

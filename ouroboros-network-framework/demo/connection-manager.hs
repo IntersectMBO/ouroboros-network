@@ -65,6 +65,7 @@ import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (timeLimitsHandshake)
@@ -209,7 +210,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                      }
                                    k = do
     mainThreadId <- myThreadId
-    inbgovControlChannel      <- newInformationChannel
+    inbgovInfoChannel <- newInformationChannel
+    outgovInfoChannel <- newInformationChannel
     -- as in the 'withInitiatorOnlyConnectionManager' we use a `StrictTVar` to
     -- pass list of requests, but since we are also interested in the results we
     -- need to have multable cells to pass the accumulators around.
@@ -241,7 +243,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
               acceptedConnectionsHardLimit = maxBound,
               acceptedConnectionsSoftLimit = maxBound,
               acceptedConnectionsDelay     = 0
-            }
+            },
+          cmGetPeerSharing = \_ -> NoPeerSharing
         }
         (makeConnectionHandler
           muxTracer
@@ -261,7 +264,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy))
           (\_ -> HandshakeFailure)
-          (InResponderMode inbgovControlChannel)
+          (InResponderMode inbgovInfoChannel)
+          (InResponderMode outgovInfoChannel)
       $ \connectionManager -> do
             serverAddr <- Snocket.getLocalAddr snocket socket
             withAsync
@@ -275,7 +279,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
                     serverInboundIdleTimeout = Just protocolIdleTimeout,
-                    serverControlChannel = inbgovControlChannel,
+                    serverInboundInfoChannel = inbgovInfoChannel,
                     serverObservableStateVar = observableStateVar
                   }
               )

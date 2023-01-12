@@ -80,14 +80,15 @@ import           Data.List (nub)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (newInformationChannel)
+                     (InformationChannel (..), newInformationChannel)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.Diffusion.Utils
 import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.InboundGovernor (InboundGovernorInfoChannel,
-                     InboundGovernorTrace (..), RemoteTransitionTrace)
+                     InboundGovernorTrace (..), OutboundGovernorInfoChannel,
+                     RemoteTransitionTrace)
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import           Ouroboros.Network.MuxMode
@@ -106,7 +107,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), pchPeerSharing,
@@ -348,6 +349,7 @@ data ConnectionManagerDataInMode peerAddr versionData m a (mode :: MuxMode) wher
 
     CMDInInitiatorResponderMode
       :: InboundGovernorInfoChannel InitiatorResponderMode peerAddr versionData ByteString  m a ()
+      -> OutboundGovernorInfoChannel peerAddr m
       -> StrictTVar m Server.InboundGovernorObservableState
       -> ConnectionManagerDataInMode peerAddr versionData m a InitiatorResponderMode
 
@@ -729,7 +731,8 @@ runM Interfaces
             Just localAddr ->
               Just $ withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
                        $ \localSocket -> do
-                localControlChannel <- newInformationChannel
+                localInbInfoChannel <- newInformationChannel
+                localOutInfoChannel <- newInformationChannel
                 localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
 
                 let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
@@ -768,14 +771,20 @@ runM Interfaces
                           connectionDataFlow    = localDataFlow,
                           cmPrunePolicy         = Diffusion.Policies.prunePolicy
                                                     localServerStateVar,
-                          cmConnectionsLimits   = localConnectionLimits
+                          cmConnectionsLimits   = localConnectionLimits,
+
+                          -- local thread does not start a Outbound Governor
+                          -- so it doesn't matter what we put here.
+                          -- 'NoPeerSharing' is set for all connections.
+                          cmGetPeerSharing = \_ -> NoPeerSharing
                         }
 
                 withConnectionManager
                   localConnectionManagerArguments
                   localConnectionHandler
                   classifyHandleError
-                  (InResponderMode localControlChannel)
+                  (InResponderMode localInbInfoChannel)
+                  (InResponderMode localOutInfoChannel)
                   $ \(localConnectionManager :: NodeToClientConnectionManager
                                                   ntcFd ntcAddr ntcVersion
                                                   ntcVersionData m)
@@ -799,7 +808,7 @@ runM Interfaces
                             serverInboundIdleTimeout    = Nothing,
                             serverConnectionLimits      = localConnectionLimits,
                             serverConnectionManager     = localConnectionManager,
-                            serverControlChannel        = localControlChannel,
+                            serverInboundInfoChannel    = localInbInfoChannel,
                             serverObservableStateVar    = localServerStateVar
                           }) Async.wait
 
@@ -826,6 +835,7 @@ runM Interfaces
                   HasInitiatorResponder <$>
                     (CMDInInitiatorResponderMode
                       <$> newInformationChannel
+                      <*> newInformationChannel
                       <*> Server.newObservableStateVar ntnInbgovRng)
 
           -- RNGs used for picking random peers from the ledger and for
@@ -883,7 +893,8 @@ runM Interfaces
                           -- than limits imposed by 'cmConnectionsLimits'.
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
                           cmTimeWaitTimeout     = daTimeWaitTimeout,
-                          cmOutboundIdleTimeout = daProtocolIdleTimeout
+                          cmOutboundIdleTimeout = daProtocolIdleTimeout,
+                          cmGetPeerSharing      = diNtnPeerSharing
                         }
 
                     connectionHandler
@@ -903,6 +914,7 @@ runM Interfaces
                   connectionManagerArguments
                   connectionHandler
                   classifyHandleError
+                  NotInResponderMode
                   NotInResponderMode
                   $ \(connectionManager
                       :: NodeToNodeConnectionManager
@@ -943,6 +955,7 @@ runM Interfaces
                       daOwnPeerSharing
                       (pchPeerSharing diNtnPeerSharing)
                       (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
+                      retry -- Will never receive inbound connections
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerSelectionActionsThread
@@ -987,7 +1000,7 @@ runM Interfaces
               -- Run peer selection and the server.
               --
               HasInitiatorResponder
-                (CMDInInitiatorResponderMode controlChannel observableStateVar) -> do
+                (CMDInInitiatorResponderMode inboundInfoChannel outboundInfoChannel observableStateVar) -> do
                 let connectionManagerArguments
                       :: NodeToNodeConnectionManagerArguments
                           InitiatorResponderMode
@@ -1010,7 +1023,8 @@ runM Interfaces
                           cmPrunePolicy         = Diffusion.Policies.prunePolicy observableStateVar,
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
                           cmTimeWaitTimeout     = daTimeWaitTimeout,
-                          cmOutboundIdleTimeout = daProtocolIdleTimeout
+                          cmOutboundIdleTimeout = daProtocolIdleTimeout,
+                          cmGetPeerSharing      = diNtnPeerSharing
                         }
 
                     computePeerSharingPeers :: STM m (PublicPeerSelectionState ntnAddr)
@@ -1048,7 +1062,8 @@ runM Interfaces
                   connectionManagerArguments
                   connectionHandler
                   classifyHandleError
-                  (InResponderMode controlChannel)
+                  (InResponderMode inboundInfoChannel)
+                  (InResponderMode outboundInfoChannel)
                   $ \(connectionManager
                         :: NodeToNodeConnectionManager
                              InitiatorResponderMode ntnFd ntnAddr ntnVersionData ntnVersion m a ()
@@ -1090,6 +1105,7 @@ runM Interfaces
                       daOwnPeerSharing
                       (pchPeerSharing diNtnPeerSharing)
                       (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
+                      (readMessage outboundInfoChannel)
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerRootProviderThread
@@ -1133,7 +1149,7 @@ runM Interfaces
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                                   serverConnectionManager     = connectionManager,
                                   serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
-                                  serverControlChannel        = controlChannel,
+                                  serverInboundInfoChannel    = inboundInfoChannel,
                                   serverObservableStateVar    = observableStateVar
                                 })
                                 $ \serverThread ->

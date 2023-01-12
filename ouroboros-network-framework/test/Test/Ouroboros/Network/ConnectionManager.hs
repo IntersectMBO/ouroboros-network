@@ -67,6 +67,7 @@ import           Ouroboros.Network.Snocket (Accept (..), Accepted (..),
 import           Ouroboros.Network.ConnectionManager.InformationChannel
                      (newInformationChannel)
 import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           TestLib.ConnectionManager (verifyAbstractTransition)
 
 
@@ -750,7 +751,8 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
                   -             Debug.traceShowM (t, msg))
                   --}
 
-        inbgovControlChannel <- newInformationChannel
+        inbgovInfoChannel <- newInformationChannel
+        outgovInfoChannel <- newInformationChannel
         let connectionHandler = mkConnectionHandler snocket
         result <- withConnectionManager
           ConnectionManagerArguments {
@@ -771,11 +773,13 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
                   acceptedConnectionsDelay     = 0
                 },
               cmTimeWaitTimeout = testTimeWaitTimeout,
-              cmOutboundIdleTimeout = testOutboundIdleTimeout
+              cmOutboundIdleTimeout = testOutboundIdleTimeout,
+              cmGetPeerSharing = \_ -> NoPeerSharing
             }
             connectionHandler
             (\_ -> HandshakeFailure)
-            (InResponderMode inbgovControlChannel)
+            (InResponderMode inbgovInfoChannel)
+            (InResponderMode outgovInfoChannel)
           $ \(connectionManager
                 :: ConnectionManager InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do
@@ -936,7 +940,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
 
             -- run poor man's server which just reads the control channel,
             -- otherwise it would block if there are more than 10 connections.
-            forever (atomically (InfoChannel.readMessage inbgovControlChannel) $> ())
+            forever (atomically (InfoChannel.readMessage inbgovInfoChannel) $> ())
               `race_`
               (do a <- accept snocket fd
                   threads <- go [] a (schedule scheduleMap)

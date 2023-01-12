@@ -26,6 +26,7 @@ module Ouroboros.Network.InboundGovernor
   , inboundGovernor
     -- * Auxiliary Types
   , InboundGovernorInfoChannel
+  , OutboundGovernorInfoChannel
     -- * Trace
   , InboundGovernorTrace (..)
   , RemoteSt (..)
@@ -67,6 +68,7 @@ import           Ouroboros.Network.ConnectionManager.Types hiding
 import           Ouroboros.Network.InboundGovernor.Event
 import           Ouroboros.Network.InboundGovernor.State
 import           Ouroboros.Network.Mux
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Server.RateLimiting
 
 -- | Run the server, which consists of the following components:
@@ -104,8 +106,9 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionData versi
                                         versionNumber ByteString m a b
                 -> StrictTVar m InboundGovernorObservableState
                 -> m Void
-inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
-                connectionManager observableStateVar = do
+inboundGovernor trTracer tracer inboundInfoChannel
+                inboundIdleTimeout connectionManager
+                observableStateVar = do
     -- State needs to be a TVar, otherwise, when catching the exception inside
     -- the loop we do not have access to the most recent version of the state
     -- and might be truncating transitions.
@@ -166,7 +169,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                  )
                  (igsConnections state)
             <> FirstToFinish (
-                 NewConnection <$> InfoChannel.readMessage serverControlChannel)
+                 NewConnection <$> InfoChannel.readMessage inboundInfoChannel)
       (mbConnId, state') <- case event of
         NewConnection
           -- new connection has been announced by either accept loop or
@@ -513,6 +516,15 @@ runResponder mux
 --
 type InboundGovernorInfoChannel (muxMode :: MuxMode) peerAddr versionData bytes m a b =
     InformationChannel (NewConnectionInfo peerAddr (Handle muxMode peerAddr versionData bytes m a b)) m
+
+-- | Control Channel between Server and Outbound Governor.
+--
+-- Control channel that is meant to share inbound connections with the Peer
+-- Selection Governor. So the consumer is the Governor and Producer is the
+-- Server.
+--
+type OutboundGovernorInfoChannel peerAddr m =
+    InformationChannel (peerAddr, PeerSharing) m
 
 --
 -- Trace
