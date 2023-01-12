@@ -32,6 +32,8 @@ import Cardano.Crypto.MLockedSeed
 import Cardano.Crypto.PinnedSizedBytes
 import Cardano.Crypto.Seed
 import Cardano.Binary (FromCBOR)
+import Test.Crypto.Util
+import Test.Crypto.Instances
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
@@ -66,7 +68,6 @@ import Cardano.KESAgent.Driver (DriverTrace (..))
 import Cardano.KESAgent.Logging
 import Cardano.KESAgent.Evolution
 import Cardano.KESAgent.RefCounting
-import Cardano.KESAgent.Tests.Util
 
 tests :: Lock -> TestTree
 tests lock =
@@ -392,32 +393,6 @@ instance Show (SignKeyKES (SingleKES Ed25519DSIGNM)) where
 
 instance Show (SignKeyKES d) => Show (SignKeyKES (SumKES h d)) where
   show (SignKeySumKES sk r vk0 vk1) = show sk
-
-mlsbFromPSB :: (KnownNat n) => PinnedSizedBytes n -> IO (MLockedSizedBytes n)
-mlsbFromPSB = mlsbFromByteString . psbToByteString
-
-withMLSBFromPSB :: (KnownNat n) => PinnedSizedBytes n -> (MLockedSizedBytes n -> IO a) -> IO a
-withMLSBFromPSB psb action =
-  bracket
-    (mlsbFromPSB psb)
-    mlsbFinalize
-    action
-
-mlockedSeedFromPSB :: (KnownNat n) => PinnedSizedBytes n -> IO (MLockedSeed n)
-mlockedSeedFromPSB = fmap MLockedSeed . mlsbFromPSB
-
-withMLockedSeedFromPSB :: (KnownNat n) => PinnedSizedBytes n -> (MLockedSeed n -> IO a) -> IO a
-withMLockedSeedFromPSB psb action =
-  bracket
-    (mlockedSeedFromPSB psb)
-    mlockedSeedFinalize
-    action
-
-instance KnownNat n => Arbitrary (PinnedSizedBytes n) where
-    arbitrary = psbFromBytes <$> vectorOf size arbitrary
-      where
-        size :: Int
-        size = fromInteger (natVal (Proxy :: Proxy n))
 
 -- | Utility function, should probably go somewhere else
 hexShowBS :: ByteString -> String

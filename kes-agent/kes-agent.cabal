@@ -53,13 +53,13 @@ test-suite kes-agent-tests
     main-is: Main.hs
     other-modules: Cardano.KESAgent.Tests.Simulation
                  , Cardano.KESAgent.Tests.RefCounting
-                 , Cardano.KESAgent.Tests.Util
     build-depends: base ^>=4.14.0.0
                  , kes-agent
                  , async
                  , bytestring
                  , cardano-binary
                  , cardano-crypto-class
+                 , cardano-crypto-tests
                  , QuickCheck
                  , socket-unix >=0.2.0.0
                  , tasty
