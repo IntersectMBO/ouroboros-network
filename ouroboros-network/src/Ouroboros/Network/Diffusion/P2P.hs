@@ -79,13 +79,15 @@ import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Data.List (nub)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (newInformationChannel)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.Diffusion.Utils
 import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
-                     RemoteTransitionTrace)
+import           Ouroboros.Network.InboundGovernor (InboundGovernorInfoChannel,
+                     InboundGovernorTrace (..), RemoteTransitionTrace)
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import           Ouroboros.Network.MuxMode
@@ -118,7 +120,7 @@ import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server2 (ServerArguments (..),
-                     ServerControlChannel, ServerTrace (..))
+                     ServerTrace (..))
 import qualified Ouroboros.Network.Server2 as Server
 
 -- | P2P DiffusionTracers Extras
@@ -345,7 +347,7 @@ data ConnectionManagerDataInMode peerAddr versionData m a (mode :: MuxMode) wher
       :: ConnectionManagerDataInMode peerAddr versionData m a InitiatorMode
 
     CMDInInitiatorResponderMode
-      :: ServerControlChannel InitiatorResponderMode peerAddr versionData ByteString  m a ()
+      :: InboundGovernorInfoChannel InitiatorResponderMode peerAddr versionData ByteString  m a ()
       -> StrictTVar m Server.InboundGovernorObservableState
       -> ConnectionManagerDataInMode peerAddr versionData m a InitiatorResponderMode
 
@@ -727,7 +729,7 @@ runM Interfaces
             Just localAddr ->
               Just $ withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
                        $ \localSocket -> do
-                localControlChannel <- Server.newControlChannel
+                localControlChannel <- newInformationChannel
                 localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
 
                 let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
@@ -823,7 +825,7 @@ runM Interfaces
                 InitiatorAndResponderDiffusionMode ->
                   HasInitiatorResponder <$>
                     (CMDInInitiatorResponderMode
-                      <$> Server.newControlChannel
+                      <$> newInformationChannel
                       <*> Server.newObservableStateVar ntnInbgovRng)
 
           -- RNGs used for picking random peers from the ledger and for
