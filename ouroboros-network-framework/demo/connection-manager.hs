@@ -58,9 +58,10 @@ import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Core
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (newInformationChannel)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
@@ -208,7 +209,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                      }
                                    k = do
     mainThreadId <- myThreadId
-    inbgovControlChannel      <- Server.newControlChannel
+    inbgovControlChannel      <- newInformationChannel
     -- as in the 'withInitiatorOnlyConnectionManager' we use a `StrictTVar` to
     -- pass list of requests, but since we are also interested in the results we
     -- need to have multable cells to pass the accumulators around.

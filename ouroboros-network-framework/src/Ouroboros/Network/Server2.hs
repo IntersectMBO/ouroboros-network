@@ -27,8 +27,6 @@ module Ouroboros.Network.Server2
   , RemoteSt (..)
   , RemoteTransition
   , RemoteTransitionTrace
-    -- * ControlChannel
-  , module ControlChannel
   ) where
 
 import           Control.Concurrent.Class.MonadSTM.Strict
@@ -52,8 +50,6 @@ import           Foreign.C.Error
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.InboundGovernor
-import           Ouroboros.Network.InboundGovernor.ControlChannel
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket
@@ -87,8 +83,8 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionData versionNu
       -- server to run and manage responders which needs to be started on
       -- inbound connections.
       --
-      serverControlChannel        :: ServerControlChannel muxMode peerAddr versionData
-                                                          bytes m a b,
+      serverControlChannel        :: InboundGovernorInfoChannel muxMode peerAddr versionData
+                                                                bytes m a b,
 
       -- | Observable mutable state.
       --
