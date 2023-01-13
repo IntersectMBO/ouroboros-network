@@ -27,6 +27,9 @@ test-show-details: direct
 package kes-agent
   tests: True
 
+package cardano-crypto-class
+  flags: -secp256k1-support
+
 -- ---------------------------------------------------------
 
 -- The two following one-liners will cut off / restore the remainder of this file (for nix-shell users):
