@@ -939,7 +939,7 @@ It then should notify the \connmngr{}.
 First let us note that a connection in \InboundStateDup{}, could have been
 initiated by either side (Outbound or Inbound). This means that even though a node might have not
 accepted any connection, it could end up serving peers and possibly go beyond
-server hard limit, thus exceeding the number of file descriptors. This is
+server hard limit, thus exceeding the number of allowed file descriptors. This is
 possible via the following path:
 
 \begin{itemize}
@@ -964,10 +964,9 @@ all of them are transitions from some outbound / duplex state into an inbound / 
   \item \OutboundStateDup{} to \DuplexState{} (via \PromotedToWarmDupRem{})
 \end{itemize}
 
-To solve this problem, when a connection is transitioned from
-\DuplexState{} to \InboundStateDup{} (via \DemotedToColdDupLoc{}), for example,
-the \connmngr{} will check if the server hard limit was exceeded. If that
-happened, the \connmngr{} will reset an arbitrary connection (with some preference).
+To solve this problem, in any of the above transitions the connection manager will check
+if the server hard limit was exceeded. If that happened, the \connmngr{} will reset an
+arbitrary connection (with some preference).
 
 The reason why going from \OutboundStateDupTau{} (or \OutboundStateDup{}, or
 \OutboundIdleStateDup{}) to \InboundStateDup{} might exceed the server hard limit
@@ -979,7 +978,7 @@ end-points can establish a connection without a node accepting it. If two nodes 
 to request an outbound connection simultaneously, it is possible, for two applications
 to both perform an active open to each other at the same time.  This is called a
 \href{https://flylib.com/books/en/3.223.1.190/1/}{\textit{simultaneous open}}.
-In a simultaneous TCP open, we can have 2 nodes establishing a connection without any of
+In a simultaneous TCP open, we can have $2$ nodes establishing a connection without any of
 them having explicitly accepted a connection, which can make a server violate its file
 descriptor limit.
 
