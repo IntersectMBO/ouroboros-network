@@ -496,9 +496,10 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
                                              peerAddr handle
                                              handleError version m))
                              )
-                             -- ^ Left case is for when pruning tries to prune
-                             -- the connection which triggered pruning, in this
-                             -- case we do not want to trace a new transition.
+
+                             -- ^ Left case is for when the connection which
+                             -- triggered pruning is pruned in this case we do
+                             -- not want to trace a new transition.
                              --
                              -- Right case is for when the connection which
                              -- triggered pruning isn't pruned. In this case
@@ -1995,8 +1996,8 @@ withConnectionManager ConnectionManagerArguments {
                 numberOfConns <- countIncomingConnections state
 
                 -- use 'numberOfConns + 1' because we want to know if we
-                -- actually let this connection evolve if we need to make
-                -- room for them by pruning.  This is because
+                -- actually let this connection evolve or if we need to make
+                -- room for it by pruning.  This is because
                 -- 'countIncomingConnections' does not count 'OutboundDupState'
                 -- as an inbound connection, but does so for 'InboundIdleState'.
                 let numberToPrune =
@@ -2196,7 +2197,7 @@ withConnectionManager ConnectionManagerArguments {
                 -- @
                 --
                 -- For connections that reach DuplexState we are not sure if
-                -- this was due a connection that was established due to TCP
+                -- this was due to a connection that was established due to TCP
                 -- simultaneous open or normal connect/accept. If it was
                 -- established due to TCP simultaneous open a DuplexState can
                 -- make us go above the Server number of connections hard limit,
@@ -2248,7 +2249,7 @@ withConnectionManager ConnectionManagerArguments {
 
                 -- use 'numberOfConns + 1' because we want to know if we
                 -- actually let this connection evolve if we need to make
-                -- room for them by pruning.
+                -- room for it by pruning.
                 let numberToPrune =
                       numberOfConns + 1
                       - fromIntegral
