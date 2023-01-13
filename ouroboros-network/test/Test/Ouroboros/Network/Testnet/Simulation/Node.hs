@@ -137,6 +137,7 @@ data NodeArgs =
   NodeArgs
     { naSeed                  :: Int
       -- ^ 'randomBlockGenerationArgs' seed argument
+    , naDiffusionMode         :: DiffusionMode
     , naMbTime                :: Maybe DiffTime
       -- ^ 'LimitsAndTimeouts' argument
     , naRelays                :: [RelayAccessPoint]
@@ -306,6 +307,12 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
       (RelayAccessAddress rapIP _) = rap
   seed <- arbitrary
 
+  -- Generating an InitiatorResponderMode node is 3 times more likely since we
+  -- want our tests to cover more this case.
+  diffusionMode <- frequency [ (1, pure InitiatorOnlyDiffusionMode)
+                             , (3, pure InitiatorAndResponderDiffusionMode)
+                             ]
+
   dMap <- genDomainMap rapsWithoutSelf rapIP
 
   -- These values approximately correspond to false positive
@@ -335,6 +342,7 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
   return
    $ NodeArgs
       { naSeed                  = seed
+      , naDiffusionMode         = diffusionMode
       , naMbTime                = mustReplyTimeout
       , naRelays                = relays
       , naDomainMap             = dMap
