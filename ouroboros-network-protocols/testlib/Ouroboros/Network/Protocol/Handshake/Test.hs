@@ -69,8 +69,8 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import qualified Codec.CBOR.Write as CBOR
 
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.NodeToClient.Version
-import           Ouroboros.Network.NodeToNode.Version
+import           Ouroboros.Network.NodeToClient.Version as NTC
+import           Ouroboros.Network.NodeToNode.Version as NTN
 
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Test.QuickCheck
@@ -113,6 +113,12 @@ tests =
               prop_channel_simultaneous_open_NodeToNode_IO
           , testProperty "simultaneous open SimNet"
               prop_channel_simultaneous_open_NodeToNode_SimNet
+          , testProperty "query version ST"
+              prop_query_version_NodeToNode_ST
+          , testProperty "query version IO"
+              prop_query_version_NodeToNode_IO
+          , testProperty "query version SimNet"
+              prop_query_version_NodeToNode_SimNet
           ]
 
         , testGroup "NodeToClient"
@@ -126,6 +132,12 @@ tests =
               prop_channel_simultaneous_open_NodeToClient_IO
           , testProperty "simultaneous open SimNet"
               prop_channel_simultaneous_open_NodeToClient_SimNet
+          , testProperty "query version ST"
+              prop_query_version_NodeToClient_ST
+          , testProperty "query version IO"
+              prop_query_version_NodeToClient_IO
+          , testProperty "query version SimNet"
+              prop_query_version_NodeToClient_SimNet
           ]
 
         , testProperty "codec RefuseReason"    prop_codec_RefuseReason
@@ -792,6 +804,146 @@ prop_acceptable_symmetric_NodeToClient (ArbitraryNodeToClientVersionData a)
                                        (ArbitraryNodeToClientVersionData b) =
     prop_acceptable_symmetric a b
 
+
+-- | Run 'prop_query_version' in the simulation monad.
+--
+prop_query_version_NodeToNode_ST :: ArbitraryNodeToNodeVersions
+                                 -> ArbitraryNodeToNodeVersions
+                                 -> Property
+prop_query_version_NodeToNode_ST
+     (ArbitraryNodeToNodeVersions clientVersions)
+     (ArbitraryNodeToNodeVersions serverVersions) =
+   runSimOrThrow $ prop_query_version
+                    createConnectedChannels
+                    (codecHandshake nodeToNodeVersionCodec)
+                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+                    (\vd -> vd {NTN.query = True})
+
+-- | Run 'prop_query_version' in the IO monad.
+--
+prop_query_version_NodeToNode_IO :: ArbitraryNodeToNodeVersions
+                                 -> ArbitraryNodeToNodeVersions
+                                 -> Property
+prop_query_version_NodeToNode_IO
+     (ArbitraryNodeToNodeVersions clientVersions)
+     (ArbitraryNodeToNodeVersions serverVersions) =
+   ioProperty $ prop_query_version
+                    createConnectedChannels
+                    (codecHandshake nodeToNodeVersionCodec)
+                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+                    (\vd -> vd {NTN.query = True})
+
+-- | Run 'prop_query_version' with SimNet.
+--
+prop_query_version_NodeToNode_SimNet :: ArbitraryNodeToNodeVersions
+                                     -> ArbitraryNodeToNodeVersions
+                                     -> Property
+prop_query_version_NodeToNode_SimNet
+     (ArbitraryNodeToNodeVersions clientVersions)
+     (ArbitraryNodeToNodeVersions serverVersions) =
+   runSimOrThrow $ prop_query_version
+                    createConnectedChannels
+                    (codecHandshake nodeToNodeVersionCodec)
+                    (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+                    (\vd -> vd {NTN.query = True})
+
+-- | Run 'prop_query_version' in the simulation monad.
+--
+prop_query_version_NodeToClient_ST :: ArbitraryNodeToClientVersions
+                                   -> ArbitraryNodeToClientVersions
+                                   -> Property
+prop_query_version_NodeToClient_ST
+     (ArbitraryNodeToClientVersions clientVersions)
+     (ArbitraryNodeToClientVersions serverVersions) =
+   runSimOrThrow $ prop_query_version
+                    createConnectedChannels
+                    (codecHandshake nodeToClientVersionCodec)
+                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+                    (\vd -> vd {NTC.query = True})
+
+-- | Run 'prop_query_version' in the IO monad.
+--
+prop_query_version_NodeToClient_IO :: ArbitraryNodeToClientVersions
+                                   -> ArbitraryNodeToClientVersions
+                                   -> Property
+prop_query_version_NodeToClient_IO
+     (ArbitraryNodeToClientVersions clientVersions)
+     (ArbitraryNodeToClientVersions serverVersions) =
+   ioProperty $ prop_query_version
+                    createConnectedChannels
+                    (codecHandshake nodeToClientVersionCodec)
+                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+                    (\vd -> vd {NTC.query = True})
+
+-- | Run 'prop_query_version' with SimNet.
+--
+prop_query_version_NodeToClient_SimNet :: ArbitraryNodeToClientVersions
+                                       -> ArbitraryNodeToClientVersions
+                                       -> Property
+prop_query_version_NodeToClient_SimNet
+     (ArbitraryNodeToClientVersions clientVersions)
+     (ArbitraryNodeToClientVersions serverVersions) =
+   runSimOrThrow $ prop_query_version
+                    createConnectedChannels
+                    (codecHandshake nodeToClientVersionCodec)
+                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    clientVersions
+                    serverVersions
+                    (\vd -> vd {NTC.query = True})
+
+
+-- | Run a query for the server's supported version.
+--
+prop_query_version :: ( MonadAsync m
+                      , MonadCatch m
+                      , MonadST m
+                      , Eq vData
+                      , Acceptable vData
+                      , Queryable vData
+                      , Show vData
+                      , Ord vNumber
+                      , Show vNumber
+                      )
+                   => m (Channel m ByteString, Channel m ByteString)
+                   -> Codec (Handshake vNumber CBOR.Term)
+                             CBOR.DeserialiseFailure m ByteString
+                   -> VersionDataCodec CBOR.Term vNumber vData
+                   -> Versions vNumber vData Bool
+                   -> Versions vNumber vData Bool
+                   -> (vData -> vData)
+                   -> m Property
+prop_query_version createChannels codec versionDataCodec clientVersions serverVersions setQuery = do
+  (clientRes, _serverRes) <-
+    runConnectedPeers
+      createChannels nullTracer codec
+      (handshakeClientPeerTestVersions
+        versionDataCodec
+        clientVersions')
+      (handshakeServerPeer
+        versionDataCodec
+        acceptableVersion
+        queryVersion
+        serverVersions)
+  pure $ case clientRes of
+    -- Ignore handshake errors.
+    Nothing ->
+      property True
+    -- On successful handshakes, the received versions should match the server versions.
+    Just serverVersions' ->
+      serverVersions' === (versionData <$> getVersions serverVersions)
+  where
+    setQueryVersions (Versions vs) = Versions $ (\v -> v { versionData = setQuery (versionData v) }) <$> vs
+    clientVersions' = setQueryVersions clientVersions
 
 
 -- | 'acceptOrRefuse' is symmetric in the following sense:
