@@ -7,6 +7,7 @@
 
 module Ouroboros.Network.Protocol.Handshake.Client
   ( handshakeClientPeer
+  , handshakeClientPeerTestVersions
   , encodeVersions
   , acceptOrRefuse
   ) where
@@ -77,6 +78,29 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
                   Refuse err ->
                     Done TokDone (Left (InvalidServerSelection vNumber err))
 
+-- Alternative version of `handshakeClientPeer` that returns the queried versions from the peer for testing.
+handshakeClientPeerTestVersions
+  :: ( Ord vNumber
+     )
+  => VersionDataCodec CBOR.Term vNumber vData
+  -> Versions vNumber vData r
+  -> Peer (Handshake vNumber CBOR.Term)
+          AsClient StPropose m
+          (Maybe (Map vNumber vData))
+handshakeClientPeerTestVersions VersionDataCodec {encodeData, decodeData}
+                    versions =
+  -- send known versions
+  Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
+
+    Await (ServerAgency TokConfirm) $ \msg -> case msg of
+      MsgReplyVersions vMap ->
+        Done TokDone $ eitherToMaybe $ sequence $ Map.mapWithKey decodeData vMap
+      MsgRefuse _vReason ->
+        Done TokDone Nothing
+      MsgAcceptVersion _vNumber _vParams ->
+        Done TokDone $ Just mempty
+  where
+    eitherToMaybe = either (const Nothing) Just
 
 encodeVersions
   :: forall vNumber r vParams vData.
