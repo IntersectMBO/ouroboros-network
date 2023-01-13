@@ -18,7 +18,6 @@ where
 import Cardano.KESAgent.Driver (driver, DriverTrace (..))
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.Logging
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.RefCounting
 import Cardano.KESAgent.Evolution
@@ -33,12 +32,14 @@ import Control.Concurrent.Chan (Chan, newChan, dupChan, writeChan, readChan)
 import Control.Concurrent.Async (concurrently)
 import Control.Concurrent (threadDelay)
 import Control.Monad (forever, void)
+import Control.Tracer (Tracer, traceWith)
 import Control.Exception (bracket, catch)
 import System.Socket (socket, SocketException, close, bind, listen, accept)
 import System.Socket.Type.Stream
 import System.Socket.Family.Unix
 import System.Socket.Protocol.Default
 import Network.TypedProtocol.Driver (runPeerWithDriver)
+import Data.Functor.Contravariant ((>$<))
 import Data.Proxy (Proxy (..))
 import Data.Typeable
 import Data.Time (NominalDiffTime)

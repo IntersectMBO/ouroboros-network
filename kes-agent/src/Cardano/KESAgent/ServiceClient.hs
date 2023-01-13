@@ -9,7 +9,6 @@ where
 import Cardano.KESAgent.Driver (driver, DriverTrace)
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.Logging
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.RetrySocket
 import Cardano.KESAgent.RefCounting
@@ -23,6 +22,8 @@ import System.Socket.Type.Stream
 import System.Socket.Family.Unix
 import System.Socket.Protocol.Default
 import Network.TypedProtocol.Driver (runPeerWithDriver)
+import Control.Tracer (Tracer, traceWith)
+import Data.Functor.Contravariant ((>$<))
 import Data.Proxy (Proxy (..))
 import Data.Typeable
 

@@ -24,7 +24,6 @@ library
                    , Cardano.KESAgent.Agent
                    , Cardano.KESAgent.ServiceClient
                    , Cardano.KESAgent.ControlClient
-                   , Cardano.KESAgent.Logging
                    , Cardano.KESAgent.RetrySocket
                    , Cardano.KESAgent.RefCounting
 
@@ -37,6 +36,7 @@ library
                  , bytestring >=0.11
                  , cardano-crypto-class
                  , cardano-binary
+                 , contra-tracer
                  , time >=1.11.1.1
                  , typed-protocols
                  , socket >= 0.8.3 && <0.9
@@ -60,6 +60,7 @@ test-suite kes-agent-tests
                  , cardano-binary
                  , cardano-crypto-class
                  , cardano-crypto-tests
+                 , contra-tracer
                  , QuickCheck
                  , socket-unix >=0.2.0.0
                  , tasty

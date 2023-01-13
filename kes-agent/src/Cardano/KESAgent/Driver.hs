@@ -26,13 +26,13 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Binary (encode, decode)
 import Data.Typeable
+import Control.Tracer (Tracer, traceWith)
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Binary
 
 import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.Logging
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.RefCounting
 
