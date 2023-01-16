@@ -104,8 +104,11 @@ done
 # Copy modules map to output directory
 # TODO: dynamically generate
 cp "${SCRIPTS_DIR}/modules-consensus.svg" "${OUTPUT_DIR}"
-cp "${SCRIPTS_DIR}/Consensus.svg" "${OUTPUT_DIR}"
 cp "${SCRIPTS_DIR}/packages-consensus.svg" "${OUTPUT_DIR}"
+
+# The Consensus.svg file is built using plantuml with C4 extensions
+# > plantuml -tsvg c4-component.puml
+cp "${SCRIPTS_DIR}/Consensus.svg" "${OUTPUT_DIR}"
 
 # HACK: Replace <img> tag with <object> tag for embedded svg
 sed -i -e 's/\(.*\)<img src=".\/Consensus.svg" title="Ouroboros Consensus Components" \/>\(.*\)/\1<object data="Consensus.svg" type="image\/svg+xml"><\/object>\2/' "${OUTPUT_DIR}/index.html"
