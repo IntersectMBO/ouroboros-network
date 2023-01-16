@@ -58,6 +58,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
                      allocate, runInnerWithTempRegistry, runWithTempRegistry)
 
@@ -219,6 +220,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             , newFollower           = Follower.newFollower h
             , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
             , closeDB               = closeDB h
+            , integrateFutureBlocks = getEnv h integrateFutureBlocks
             , isOpen                = isOpen  h
             }
           testing = Internal
@@ -259,6 +261,17 @@ innerOpenCont closer m =
       -- @_innerDB@ handle do not support an equality check; all of the
       -- identifying data is only in the handle's closure, not
       -- accessible because of our intentional encapsulation choices.
+
+integrateFutureBlocks
+  :: ( IOLike m
+     , LedgerSupportsProtocol blk
+     , InspectLedger blk
+     , HasHardForkHistory blk
+     , HasCallStack
+     )
+  => ChainDbEnv m blk -> m (Point blk)
+integrateFutureBlocks cdb =
+  ChainSel.chainSelectionForFutureBlocks cdb BlockCache.empty
 
 isOpen :: IOLike m => ChainDbHandle m blk -> STM m Bool
 isOpen (CDBHandle varState) = readTVar varState <&> \case

@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (
     addBlockAsync
   , addBlockSync
   , chainSelectionForBlock
+  , chainSelectionForFutureBlocks
   , initialChainSelection
     -- * Exported for testing purposes
   , olderThanK

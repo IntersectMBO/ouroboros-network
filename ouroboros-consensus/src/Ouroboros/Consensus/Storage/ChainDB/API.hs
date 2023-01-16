@@ -335,6 +335,9 @@ data ChainDB m blk = ChainDB {
       -- invalid block is detected. These blocks are likely to be valid.
     , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 
+      -- | Move blocks that are marked as from the future, but not longer are,
+      -- into the ChainDB.
+    , integrateFutureBlocks :: m (Point blk)
       -- | Close the ChainDB
       --
       -- Idempotent.
