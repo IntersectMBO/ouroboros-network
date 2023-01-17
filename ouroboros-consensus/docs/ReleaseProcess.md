@@ -30,6 +30,8 @@ EG We might release FOO-2.4.1 on Monday, release FOO-2.3.7 on Wednesday, and rel
 A _release branch_ is a branch dedicated to the maintenance of some older release of a package.
 
 RULE: If we have released a package FOO-X.Y.Z, then the release-FOO-X.Y.x branch MUST exist and its first-parent history MUST include the commit released as FOO-X.Y.Z.
+For example, when releasing version 2.3.0 of a package named FOO, we must create the branch named release-FOO-2.3.x.
+And when we later release 2.3.1 of FOO, then we'd need to advance the release-FOO-2.3.x branch to point at the commit being released as FOO-2.3.1.
 
 There are two kinds of work on release branches.
 Most of the time, that work is immitating some work that was done on the main branch.
@@ -103,12 +105,14 @@ We prepare that release as follows.
     - RULE: It flushes the pending changelog entries of each package being released into the `CHANGELOG.md` file for that package.
 - RULE: We tag that resulting merge commit as release-PKG-A.B.C; one tag per package PKG that is being released (ie FOO and/or BAR).
 - RULE: If C is 0, then we also create the release branch release-PKG-A.B.x from this new commit.
+    - For example, when releasing version 2.3.0 of a package named FOO, we'd create the branch named release-FOO-2.3.x.
 - RULE: Finally, we announce this commit hash as the new release of these packages.
   EG We insert these package's new versions into Hackage, [CHaP](https://github.com/input-output-hk/cardano-haskell-packages), etc.
 
 *Remark*.
-To explicitly clarify: after a release of a package, there will be zero pending changelog entries for that package; they were destroyed when incorprated into the `CHANGELOG.md` file making the release.
-But there may be pending changelog entries of other packages, those that we're included in this release.
+To explicitly clarify: after a release of a package, there will be zero pending changelog entries for that package.
+When making the release, those entries were first incorporated into the `CHANGELOG.md` file and then the individual files containing those pending entires (see `scriv`'s mechanism) were removed (a la `git rm`).
+But there may be pending changelog entries of other packages, those that were not included in this release.
 
 *Remark*.
 This scheme allows for multiple commits to declare their package has the same version number as some released version, even if those commits have made alterations to the package.
