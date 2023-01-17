@@ -336,7 +336,7 @@ data ChainDB m blk = ChainDB {
     , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 
       -- | Move blocks that are marked as from the future, but not longer are,
-      -- into the ChainDB.
+      -- into the ChainDB. Returns the new tip.
     , integrateFutureBlocks :: m (Point blk)
       -- | Close the ChainDB
       --
