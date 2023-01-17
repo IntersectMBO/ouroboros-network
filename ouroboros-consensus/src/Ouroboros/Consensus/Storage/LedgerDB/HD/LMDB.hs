@@ -627,7 +627,11 @@ mkLMDBBackingStoreValueHandle ::
      -- created.
   -> m (WithOrigin SlotNo, LMDBValueHandle l m)
 mkLMDBBackingStoreValueHandle Db{..} = do
-  vhId <- IOLike.readTVarIO dbNextId
+  vhId <- IOLike.atomically $ do
+    vhId <- IOLike.readTVar dbNextId
+    IOLike.modifyTVar' dbNextId (+1)
+    pure vhId
+
   let
     dbEnvRo = LMDB.readOnlyEnvironment dbEnv
     tracer = Trace.contramap (TDBValueHandle vhId) dbTracer
@@ -686,7 +690,6 @@ mkLMDBBackingStoreValueHandle Db{..} = do
     bsvh = HD.BackingStoreValueHandle{..}
 
   IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.insert vhId bsvh)
-  IOLike.atomically $ IOLike.modifyTVar' dbNextId (+1)
 
   Trace.traceWith tracer TVHOpened
   pure (initSlot, bsvh)
