@@ -36,13 +36,21 @@ library
                  , bytestring >=0.11
                  , cardano-crypto-class
                  , cardano-binary
-                 , contra-tracer
-                 , time >=1.11.1.1
+                   -- We need to pin this down to this exact version, because
+                   -- there are two independent packages named contra-tracer:
+                   -- one in CHaP (which is the one we will use), and one in
+                   -- Hackage (which we cannot use due to other cardano
+                   -- packages depending on the one in CHaP). Since the two
+                   -- packages have the same name, we can only disambiguate
+                   -- them by demanding a version that only one of them has.
+                 , contra-tracer ==0.1.0.1
+                 , time >=1.10
                  , typed-protocols
                  , socket >= 0.8.3 && <0.9
                  , socket-unix >=0.2.0.0
                  , nothunks
                  , quiet
+                 , ouroboros-network-framework
     hs-source-dirs:   src
     default-language: Haskell2010
 
@@ -67,4 +75,4 @@ test-suite kes-agent-tests
                  , tasty-hunit
                  , tasty-quickcheck
                  , text >=1.2.5
-                 , time >=1.11.1.1
+                 , time >=1.10

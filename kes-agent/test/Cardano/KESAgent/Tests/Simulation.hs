@@ -58,7 +58,6 @@ import Data.Time (NominalDiffTime)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Control.Tracer (Tracer (..), nullTracer)
-import qualified Control.Tracer.Arrow as Tracer
 import qualified Data.Text as Text
 
 import Cardano.KESAgent.Agent
@@ -110,7 +109,7 @@ elaborateTracerLock = unsafePerformIO $ newMVar ()
 {-#NOINLINE elaborateTracerLock #-}
 
 elaborateTracer :: TracePretty a => Tracer IO a
-elaborateTracer = Tracer . Tracer.emit $ \x -> withMVar elaborateTracerLock $ \() -> do
+elaborateTracer = Tracer $ \x -> withMVar elaborateTracerLock $ \() -> do
   t <- getPOSIXTime
   hPutStrLn stdout $ printf "%015.4f %s" (realToFrac t :: Double) (tracePretty x)
   hFlush stdout
