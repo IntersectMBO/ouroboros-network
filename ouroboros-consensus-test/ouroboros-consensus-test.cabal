@@ -20,7 +20,9 @@ source-repository head
 
 library
   hs-source-dirs:      src
+
   exposed-modules:
+                       Test.LedgerTables
                        Test.ThreadNet.General
                        Test.ThreadNet.Network
                        Test.ThreadNet.Ref.PBFT

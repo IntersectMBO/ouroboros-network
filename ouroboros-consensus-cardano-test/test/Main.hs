@@ -9,6 +9,7 @@ import           Test.Tasty
 
 import qualified Test.Consensus.Cardano.ByronCompatibility (tests)
 import qualified Test.Consensus.Cardano.Golden (tests)
+import qualified Test.Consensus.Cardano.LedgerTables (tests)
 import qualified Test.Consensus.Cardano.Serialisation (tests)
 import qualified Test.Consensus.Cardano.Translation (tests)
 import qualified Test.ThreadNet.AllegraMary (tests)
@@ -30,6 +31,7 @@ tests =
   testGroup "cardano"
   [ Test.Consensus.Cardano.ByronCompatibility.tests
   , Test.Consensus.Cardano.Golden.tests
+  , Test.Consensus.Cardano.LedgerTables.tests
   , Test.Consensus.Cardano.Serialisation.tests
   , testGroup "ThreadNet" [
       Test.ThreadNet.AllegraMary.tests
