@@ -22,6 +22,8 @@
 module Test.Ouroboros.Storage.ChainDB.StateMachine (
     At (..)
   , Cmd (..)
+  , IteratorResult (..)
+  , IteratorResultGCed (..)
   , MaxClockSkew (..)
   , Model
   , Resp (..)
@@ -29,6 +31,7 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine (
   , executeCommands
   , initModel
   , mkTestCfg
+  , mock
   , smUnused
   , step
   , tests

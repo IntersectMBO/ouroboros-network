@@ -27,6 +27,7 @@ module Test.Util.TestBlock (
   , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
+  , NestedCtxt
   , StorageConfig (..)
   , TestBlockError (..)
   , TestBlockWith (tbPayload, tbValid)

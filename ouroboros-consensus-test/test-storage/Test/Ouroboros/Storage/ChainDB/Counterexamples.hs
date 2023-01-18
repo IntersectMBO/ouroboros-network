@@ -14,6 +14,7 @@ import           Test.Ouroboros.Storage.ChainDB.StateMachine hiding (BlockNo)
 import           Test.Ouroboros.Storage.TestBlock
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Monadic (monadicIO)
+import qualified Test.StateMachine.Types as QSM
 import           Test.StateMachine.Types (Command (..), Commands (..),
                      Reference (..), Symbolic (..), Var (..))
 import           Test.Tasty
@@ -69,6 +70,9 @@ mkChunkInfo = UniformChunkSize (ChunkSize {chunkCanContainEBB = True, numRegular
 mkMaxClockSkew :: MaxClockSkew
 mkMaxClockSkew = MaxClockSkew 100000
 
+mkCommands' :: model Symbolic -> [cmd Symbolic] -> QSM.GenSym (resp Symbolic)
+mkCommands' = undefined
+
 mkCommands
   :: Model blk m Symbolic
   -> [At Cmd blk m Symbolic]
@@ -76,8 +80,10 @@ mkCommands
 mkCommands model cmds = undefined
   where
     go acc []           = acc
-    go acc (cmd : rest) = undefined
-
+    go acc (cmd : rest) = do
+      resp <- mock cmd
+      tail <- go acc rest
+      pure $ resp : tail
 {--
 let (resp, counter') = runGenSym (mock model next) counter
         put (transition model next resp)

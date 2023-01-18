@@ -1,0 +1,5 @@
+Build profile: -w ghc-8.10.7 -O1
+In order, the following will be built (use -v for more details):
+ - ouroboros-consensus-test-0.1.0.0 (lib) (configuration changed)
+ - ouroboros-consensus-test-0.1.0.0 (test:test-storage) (configuration changed)
+Configuring library for ouroboros-consensus-test-0.1.0.0..

@@ -21,6 +21,7 @@ module Test.Ouroboros.Storage.TestBlock (
   , CodecConfig (..)
   , EBB (..)
   , Header (..)
+  , NestedCtxt_ (..)
   , StorageConfig (..)
   , TestBlock (..)
   , TestBody (..)
