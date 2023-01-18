@@ -6,14 +6,14 @@ cardano-node repository.
 
 # Ouroboros-Network
 
-* `network-mux` - implementation of a general network muliplexer.
+* `network-mux` - implementation of a general network multiplexer.
 * `ouroboros-network-api` - shared API between `network` and `consensus` components.
 * `ouroboros-network-framework` - low level network components, e.g. snockets,
   connection manager, inbound governor, handshake mini-protocol, network
   simulator. 
 * `ouroboros-network-protocols` - implementation of all /node-to-node/
   & /node-to-client/ protocols.  Also contains a testing library which is
-  implements various applications for testing purposes.
+  implementing various applications for testing purposes.
 * `ouroboros-network`- top level integration of all network components also
   defines `node-to-node` and `node-to-client` API.  It contains the implementation
   of outbound governor.
