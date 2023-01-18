@@ -172,7 +172,7 @@ B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.0.x)
 A - ...
 ```
 
-We could have also advanced release-FOO-2.0.x, but the relevent RULES above do not _require_ doing so until we release version 2.0.1.
+We could have also advanced the release-FOO-2.0.x branch, but the relevant RULES above do not _require_ doing so until we release version 2.0.1.
 Once we do that, we'd have the following.
 
 ```
@@ -186,10 +186,10 @@ A - ...
 
 We must advance release-FOO-2.0.x to the F commit, because we released F as a version 2.0.X and so the RULE above requires that the F commit is included in the first-parent history of release-FOO-2.0.x.
 
-Suppose we then find a bad bug in feature that commit C had replace.
+Suppose we then find a bad bug in feature that commit C had replaced.
 We might want to fix it because our users aren't yet ready to integrate the new feature from 2.0 version into their code.
 Thus, we'd merge a bugfix PR directly into the release-1.0.x branch.
-Note that we should merge bugfixes into main branch and then backport them onto a release branch when we can, but in this example the buggy feature no longer exists on the main branch.
+Note that we should merge bugfixes into the main branch and then backport them onto a release branch when that is possible, but in this case the buggy feature no longer exists on the main branch.
 
 ```
 G - fix confusion in the old logic (branch: release-FOO-1.0.x)
@@ -206,7 +206,7 @@ B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
 A - ...
 ```
 
-Now suppose we could have easily backported E onto 1.0.x as well.
+Now suppose we belatedly realized we can easily backport E onto 1.0.x as well.
 If we're making another release of the 1.0 version, our users would likely appreciate us including as many bugfixes as we can.
 
 ```
