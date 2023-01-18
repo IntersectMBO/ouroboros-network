@@ -121,7 +121,7 @@ This scheme allows for multiple commits to declare their package has the same ve
 This means the mapping from commit hash <-> released version number is unfortunately not one-to-one.
 There is obviously some possibility for confusion there.
 However, we think the probability is low: if users only retrieve our code from the package repositories that we insert our release into, then the mapping will be one-to-one (as enforced by those repositories).
-Despite it being relatively easy to preclude this risk (add an extra `.0` dimension to the just-released versions immediately after announcing them, remove it when preparing the next release, but immediately add it back, etc -- thus between-release commits are always versions MAJOR.MINOR.PATCH.0), we're choosing not to.
+Despite it being relatively easy to preclude this risk (add an extra .0 dimension to the just-released versions immediately after announcing them, remove it when preparing the next release, but immediately add it back, etc -- thus between-release commits are always versions MAJOR.MINOR.PATCH.0), we're choosing not to.
 The mitigation is quite simple, but that extra version dimension is unfamiliar to the broader community and so is likely to cause confusion of its own.
 We are, though, ready to try this mitigation if the lack of one-to-one mapping does end up causing enough confusion.
 
@@ -155,34 +155,34 @@ Consider just one package, FOO.
 Suppose we have released the following versions: 1.0.0 and 2.0.0.
 The commit history might look like the following linear chain, with the tags and branch pointers annotated.
 
-`
+```
 D - the release of FOO-2.0.0 (tag: release-FOO-2.0.0, branch: release-FOO-2.0.x, branch: main)
 C - replace that confusing feature with much nicer one
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.0.x)
 A - ...
-`
+```
 
 If we subsequently merge a PR that fixes a minor bug present in 2.0.0, it'd then look like this.
 
-`
+```
 E - fix that off-by-one error (branch: main)
 D - the release of FOO-2.0.0 (tag: release-FOO-2.0.0, branch: release-FOO-2.0.x)
 C - replace that confusing feature with much nicer one
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.0.x)
 A - ...
-`
+```
 
-We could have also advanced `release-FOO-2.0.x`, but the relevent RULES above do not _require_ doing so until we release version 2.0.1.
+We could have also advanced release-FOO-2.0.x, but the relevent RULES above do not _require_ doing so until we release version 2.0.1.
 Once we do that, we'd have the following.
 
-`
+```
 F - the release of FOO-2.0.1 (tag: release-FOO-2.0.1, branch: release-FOO-2.0.x, branch: main)
 E - fix that off-by-one error
 D - the release of FOO-2.0.0 (tag: release-FOO-2.0.0)
 C - replace that confusing feature with much nicer one
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.0.x)
 A - ...
-`
+```
 
 We must advance release-FOO-2.0.x to the F commit, because we released F as a version 2.0.X and so the RULE above requires that the F commit is included in the first-parent history of release-FOO-2.0.x.
 
@@ -191,39 +191,39 @@ We might want to fix it because our users aren't yet ready to integrate the new 
 Thus, we'd merge a bugfix PR directly into the release-1.0.x branch.
 Note that we should merge bugfixes into main branch and then backport them onto a release branch when we can, but in this example the buggy feature no longer exists on the main branch.
 
-`
+```
 G - fix confusion in the old logic (branch: release-FOO-1.0.x)
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
 A - ...
-`
+```
 
 Once that patch passes validation, we could then release 1.0.1.
 
-`
+```
 H - the release of FOO-1.0.1 (tag: release-FOO-1.0.1, branch: release-FOO-1.0.x)
 G - fix confusion in the old logic
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
 A - ...
-`
+```
 
 Now suppose we could have easily backported E onto 1.0.x as well.
 If we're making another release of the 1.0 version, our users would likely appreciate us including as many bugfixes as we can.
 
-`
+```
 I - cherry-pick of E (branch: release-FOO-1.0.x)
 H - the release of FOO-1.0.1 (tag: release-FOO-1.0.1)
 G - fix confusion in the old logic
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
 A - ...
-`
+```
 
 And shortly the following.
 
-`
+```
 J - the release of FOO-1.0.2 (tag: release-FOO-1.0.2, branch: release-FOO-1.0.x)
 I - cherry-pick of E
 H - the release of FOO-1.0.1 (tag: release-FOO-1.0.1)
 G - fix confusion in the old logic
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
 A - ...
-`
+```
