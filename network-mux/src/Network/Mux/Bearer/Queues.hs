@@ -1,8 +1,12 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Network.Mux.Bearer.Queues (queuesAsMuxBearer) where
+module Network.Mux.Bearer.Queues
+  ( QueueChannel (..)
+  , queueChannelAsMuxBearer
+  ) where
 
 import qualified Data.ByteString.Lazy as BL
 
@@ -11,26 +15,30 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Tracer
 
-import qualified Network.Mux as Mx
 import qualified Network.Mux.Codec as Mx
 import           Network.Mux.Time as Mx
 import qualified Network.Mux.Timeout as Mx
-import           Network.Mux.Types (MuxBearer, SDUSize)
+import qualified Network.Mux.Trace as Mx
+import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
 
+data QueueChannel m = QueueChannel {
+    readQueue  :: StrictTBQueue m BL.ByteString,
+    writeQueue :: StrictTBQueue m BL.ByteString
+  }
 
-queuesAsMuxBearer
+
+queueChannelAsMuxBearer
   :: forall m.
      ( MonadSTM   m
      , MonadTime  m
      , MonadThrow m
      )
-  => Tracer m Mx.MuxTrace
-  -> StrictTBQueue m BL.ByteString
-  -> StrictTBQueue m BL.ByteString
-  -> SDUSize
+  => Mx.SDUSize
+  -> Tracer m Mx.MuxTrace
+  -> QueueChannel m
   -> MuxBearer m
-queuesAsMuxBearer tracer writeQueue readQueue sduSize = do
+queueChannelAsMuxBearer sduSize tracer QueueChannel { writeQueue, readQueue } = do
       Mx.MuxBearer {
         Mx.read    = readMux,
         Mx.write   = writeMux,

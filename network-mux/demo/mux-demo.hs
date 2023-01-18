@@ -36,11 +36,7 @@ import           System.Directory
 #endif
 
 import           Network.Mux
-#if defined(mingw32_HOST_OS)
-import           Network.Mux.Bearer.NamedPipe
-#else
-import           Network.Mux.Bearer.Socket
-#endif
+import           Network.Mux.Bearer
 
 import           Test.Mux.ReqResp
 
@@ -104,8 +100,8 @@ server =
                              Nothing
     associateWithIOManager ioManager (Left hpipe)
     Win32.Async.connectNamedPipe hpipe
-    void $ forkIO $
-      let bearer = namedPipeAsBearer nullTracer hpipe in
+    void $ forkIO $ do
+      bearer <- getBearer makeNamedPipeBearer (-1) nullTracer hpipe
       serverWorker bearer
         `finally` closeHandle hpipe
 #else
@@ -116,8 +112,8 @@ server = do
     Socket.listen sock 1
     forever $ do
       (sock', _addr) <- Socket.accept sock
-      void $ forkIO $
-        let bearer = socketAsMuxBearer 1.0 nullTracer sock' in
+      void $ forkIO $ do
+        bearer <- getBearer makeSocketBearer 1.0 nullTracer sock'
         serverWorker bearer
           `finally` Socket.close sock'
 #endif
@@ -172,13 +168,13 @@ client n msg =
                         fILE_FLAG_OVERLAPPED
                         Nothing
     associateWithIOManager ioManager (Left hpipe)
-    let bearer = namedPipeAsBearer nullTracer hpipe
+    bearer <- getBearer makeNamedPipeBearer (-1) nullTracer hpipe
     clientWorker bearer n msg
 #else
 client n msg = do
     sock <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
     Socket.connect sock (SockAddrUnix pipeName)
-    let bearer = socketAsMuxBearer 1.0 nullTracer sock
+    bearer <- getBearer makeSocketBearer 1.0 nullTracer sock
     clientWorker bearer n msg
 #endif
 

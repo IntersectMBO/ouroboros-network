@@ -92,8 +92,8 @@ import           Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
                      muxErrorRethrowPolicy)
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Snocket (FileDescriptor (..), Snocket,
-                     TestAddress (..))
+import           Ouroboros.Network.Snocket (FileDescriptor (..), MakeBearer,
+                     Snocket, TestAddress (..))
 
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
@@ -110,9 +110,11 @@ import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 
 data Interfaces m = Interfaces
     { iNtnSnocket        :: Snocket m (NtNFD m) NtNAddr
+    , iNtnBearer         :: MakeBearer m (NtNFD m)
     , iAcceptVersion     :: NtNVersionData -> NtNVersionData -> Accept NtNVersionData
     , iNtnDomainResolver :: LookupReqs -> [DomainAccessPoint] -> m (Map DomainAccessPoint (Set NtNAddr))
     , iNtcSnocket        :: Snocket m (NtCFD m) NtCAddr
+    , iNtcBearer         :: MakeBearer m (NtCFD m)
     , iRng               :: StdGen
     , iDomainMap         :: StrictTVar m (Map Domain [(IP, TTL)])
     , iLedgerPeersConsensusInterface
@@ -186,6 +188,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
                                               m
             interfaces = Diff.P2P.Interfaces
               { Diff.P2P.diNtnSnocket            = iNtnSnocket ni
+              , Diff.P2P.diNtnBearer             = iNtnBearer ni
               , Diff.P2P.diNtnConfigureSocket    = \_ _ -> return ()
               , Diff.P2P.diNtnConfigureSystemdSocket
                                                  = \_ _ -> return ()
@@ -205,6 +208,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.diNtnToPeerAddr         = \a b -> TestAddress (Node.IPAddr a b)
               , Diff.P2P.diNtnDomainResolver     = iNtnDomainResolver ni
               , Diff.P2P.diNtcSnocket            = iNtcSnocket ni
+              , Diff.P2P.diNtcBearer             = iNtcBearer ni
               , Diff.P2P.diNtcHandshakeArguments =
                   HandshakeArguments
                     { haHandshakeTracer      = nullTracer

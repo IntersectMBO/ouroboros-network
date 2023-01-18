@@ -43,9 +43,9 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 import           Ouroboros.Network.Util.ShowProxy
 
+import qualified Network.Mux.Bearer as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
 import qualified Network.Mux.Compat as Mx (muxStart)
-import qualified Network.Mux.Types as Mx
 import           Ouroboros.Network.Mux as Mx
 
 
@@ -101,7 +101,6 @@ demo :: forall m block.
 demo chain0 updates delay = do
     client_w <- atomically $ newTBQueue 10
     client_r <- atomically $ newTBQueue 10
-    let sduLen = Mx.SDUSize 1280
     let server_w = client_r
         server_r = client_w
     producerVar <- atomically $ newTVar (CPS.initChainProducerState chain0)
@@ -145,8 +144,18 @@ demo chain0 updates delay = do
                         AsServer ChainSync.StIdle m ()
         producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
 
-    let clientBearer = Mx.queuesAsMuxBearer activeTracer client_w client_r sduLen
-        serverBearer = Mx.queuesAsMuxBearer activeTracer server_w server_r sduLen
+    clientBearer <- Mx.getBearer Mx.makeQueueChannelBearer
+                      (-1)
+                      activeTracer
+                      Mx.QueueChannel { Mx.writeQueue = client_w,
+                                        Mx.readQueue = client_r
+                                      }
+    serverBearer <- Mx.getBearer Mx.makeQueueChannelBearer
+                       (-1)
+                       activeTracer
+                       Mx.QueueChannel { Mx.writeQueue = server_w,
+                                         Mx.readQueue = server_r
+                                       }
 
     clientAsync <- async $
       Mx.muxStart

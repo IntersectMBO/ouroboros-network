@@ -108,6 +108,7 @@ clientPingPong pipelined =
     withIOManager $ \iomgr ->
     connectToNode
       (Snocket.localSnocket iomgr)
+      makeLocalBearer
       mempty
       unversionedHandshakeCodec
       noTimeLimitsHandshake
@@ -147,6 +148,7 @@ serverPingPong =
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       (Snocket.localSnocket iomgr)
+      makeLocalBearer
       mempty
       nullNetworkServerTracers
       networkState
@@ -208,6 +210,7 @@ clientPingPong2 =
     withIOManager $ \iomgr -> do
     connectToNode
       (Snocket.localSnocket iomgr)
+      makeLocalBearer
       mempty
       unversionedHandshakeCodec
       noTimeLimitsHandshake
@@ -260,6 +263,7 @@ serverPingPong2 =
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       (Snocket.localSnocket iomgr)
+      makeLocalBearer
       mempty
       nullNetworkServerTracers
       networkState

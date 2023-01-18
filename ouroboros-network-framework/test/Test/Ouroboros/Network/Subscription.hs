@@ -36,6 +36,7 @@ import qualified Network.Socket as Socket
 import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
 #endif
 
+import qualified Network.Mux.Bearer as Mx
 --TODO: time utils should come from elsewhere
 import           Network.Mux.Time (microsecondsToDiffTime)
 
@@ -591,6 +592,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
     withDummyServer faultyAddress $
       withServerNode
         sn
+        Mx.makeSocketBearer
         ((. Just) <$> configureSocket)
         nullNetworkServerTracers
         (NetworkMutableState tbl peerStatesVar)
@@ -738,6 +740,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
     startPassiveServer iocp tbl stVar responderAddr localAddrVar rrcfg = withServerNode
         (socketSnocket iocp)
+        Mx.makeSocketBearer
         ((. Just) <$> configureSocket)
         nullNetworkServerTracers
         (NetworkMutableState tbl stVar)
@@ -760,6 +763,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
       let sn = socketSnocket iocp
       in withServerNode
           sn
+          Mx.makeSocketBearer
           ((. Just) <$> configureSocket)
           nullNetworkServerTracers
           (NetworkMutableState tbl stVar)
@@ -883,6 +887,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
     spawnServer iocp tbl stVar addr delay =
         void $ async $ withServerNode
             (socketSnocket iocp)
+            Mx.makeSocketBearer
             ((. Just) <$> configureSocket)
             nullNetworkServerTracers
             (NetworkMutableState tbl stVar)

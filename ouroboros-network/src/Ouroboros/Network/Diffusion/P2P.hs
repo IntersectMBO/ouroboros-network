@@ -59,9 +59,12 @@ import qualified Network.DNS as DNS
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
+import           Network.Mux as Mx (MakeBearer)
+
 import           Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
                      LocalSnocket, LocalSocket (..), Snocket, SocketSnocket,
-                     localSocketFileDescriptor)
+                     localSocketFileDescriptor, makeLocalBearer,
+                     makeSocketBearer)
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.BlockFetch
@@ -458,6 +461,11 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnSnocket
           :: Snocket m ntnFd ntnAddr,
 
+        -- | node-to-node 'Mx.MakeBearer' callback
+        --
+        diNtnBearer
+          :: Mx.MakeBearer m ntnFd,
+
         -- | node-to-node socket configuration
         --
         diNtnConfigureSocket
@@ -498,6 +506,11 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         --
         diNtcSnocket
           :: Snocket m ntcFd ntcAddr,
+
+        -- | node-to-client 'Mx.MakeBearer' callback
+        --
+        diNtcBearer
+          :: Mx.MakeBearer m ntcFd,
 
         -- | node-to-client handshake configuration
         --
@@ -583,6 +596,7 @@ runM
     -> m Void
 runM Interfaces
        { diNtnSnocket
+       , diNtnBearer
        , diNtnConfigureSocket
        , diNtnConfigureSystemdSocket
        , diNtnHandshakeArguments
@@ -591,6 +605,7 @@ runM Interfaces
        , diNtnToPeerAddr
        , diNtnDomainResolver
        , diNtcSnocket
+       , diNtcBearer
        , diNtcHandshakeArguments
        , diNtcGetFileDescriptor
        , diRng
@@ -716,6 +731,7 @@ runM Interfaces
                           cmIPv6Address         = Nothing,
                           cmAddressType         = const Nothing,
                           cmSnocket             = diNtcSnocket,
+                          cmMakeBearer          = diNtcBearer,
                           cmConfigureSocket     = \_ _ -> return (),
                           cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                           cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
@@ -824,6 +840,7 @@ runM Interfaces
                           cmIPv6Address,
                           cmAddressType         = diNtnAddressType,
                           cmSnocket             = diNtnSnocket,
+                          cmMakeBearer          = diNtnBearer,
                           cmConfigureSocket     = diNtnConfigureSocket,
                           connectionDataFlow    = uncurry diNtnDataFlow,
                           cmPrunePolicy         = simplePrunePolicy,
@@ -950,6 +967,7 @@ runM Interfaces
                           cmIPv6Address,
                           cmAddressType         = diNtnAddressType,
                           cmSnocket             = diNtnSnocket,
+                          cmMakeBearer          = diNtnBearer,
                           cmConfigureSocket     = diNtnConfigureSocket,
                           connectionDataFlow    = uncurry diNtnDataFlow,
                           cmPrunePolicy         = Diffusion.Policies.prunePolicy observableStateVar,
@@ -1202,6 +1220,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
              runM
                Interfaces {
                  diNtnSnocket,
+                 diNtnBearer = makeSocketBearer,
                  diNtnConfigureSocket = configureSocket,
                  diNtnConfigureSystemdSocket =
                    configureSystemdSocket
@@ -1213,6 +1232,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diNtnDomainResolver,
 
                  diNtcSnocket,
+                 diNtcBearer = makeLocalBearer,
                  diNtcHandshakeArguments,
                  diNtcGetFileDescriptor = localSocketFileDescriptor,
 

@@ -56,7 +56,7 @@ import           Ouroboros.Network.Socket
 import           Ouroboros.Network.Mux
 
 import qualified Network.Mux as Mx (MuxError (..), MuxErrorType (..))
-import qualified Network.Mux.Bearer.Socket as Mx (socketAsMuxBearer)
+import qualified Network.Mux.Bearer as Mx
 import qualified Network.Mux.Compat as Mx (muxStart)
 import           Network.Mux.Timeout
 import           Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..),
@@ -250,6 +250,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
     res <-
       withServerNode
         snocket
+        Mx.makeSocketBearer
         ((. Just) <$> configureSock)
         networkTracers
         networkState
@@ -264,6 +265,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
         $ \_ _ -> do
           connectToNode
             snocket
+            Mx.makeSocketBearer
             (flip configureSock Nothing)
             unversionedHandshakeCodec
             noTimeLimitsHandshake
@@ -353,11 +355,11 @@ prop_socket_recv_error f rerr =
                     remoteAddress <- Socket.getPeerName sd'
                     let timeout = if rerr == RecvSDUTimeout then 0.10
                                                             else (-1) -- No timeout
-                        bearer = Mx.socketAsMuxBearer timeout nullTracer sd'
                         connectionId = ConnectionId {
                             localAddress = Socket.addrAddress muxAddress,
                             remoteAddress
                           }
+                    bearer <- Mx.getBearer Mx.makeSocketBearer timeout nullTracer sd'
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
@@ -433,8 +435,8 @@ prop_socket_send_error rerr =
                   Accepted sd' _ -> do
                     let sduTimeout = if rerr == SendSDUTimeout then 0.10
                                                                else (-1) -- No timeout
-                        bearer = Mx.socketAsMuxBearer sduTimeout nullTracer sd'
                         blob = BL.pack $ replicate 0xffff 0xa5
+                    bearer <- Mx.getBearer Mx.makeSocketBearer sduTimeout nullTracer sd'
                     withTimeoutSerial $ \timeout ->
                       -- send maximum mux sdus until we've filled the window.
                       replicateM 100 $ do
@@ -508,6 +510,7 @@ prop_socket_client_connect_error _ xs =
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
         (socketSnocket iomgr)
+        Mx.makeSocketBearer
         (flip configureSocket Nothing)
         unversionedHandshakeCodec
         noTimeLimitsHandshake

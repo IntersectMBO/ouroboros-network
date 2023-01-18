@@ -157,6 +157,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
       threadDelay (50000 * index)
       connectToNode
         (localSnocket iocp)
+        makeLocalBearer
         mempty
         unversionedHandshakeCodec
         noTimeLimitsHandshake
@@ -188,6 +189,7 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       (localSnocket iocp)
+      makeLocalBearer
       mempty
       nullNetworkServerTracers
       networkState
@@ -374,6 +376,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                     [ async $
                         connectToNode
                           (localSnocket iocp)
+                          makeLocalBearer
                           mempty
                           unversionedHandshakeCodec
                           noTimeLimitsHandshake
@@ -427,6 +430,7 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
       (localSnocket iocp)
+      makeLocalBearer
       mempty
       nullNetworkServerTracers
       networkState

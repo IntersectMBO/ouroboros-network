@@ -12,6 +12,7 @@ module Network.Mux.Compat
   ( muxStart
     -- * Mux bearers
   , MuxBearer
+  , MakeBearer (..)
     -- * Defining 'MuxApplication's
   , MuxMode (..)
   , HasInitiator
@@ -47,6 +48,7 @@ import           Control.Tracer
 
 import           Network.Mux (StartOnDemandOrEagerly (..), newMux,
                      runMiniProtocol, runMux, stopMux, traceMuxBearerState)
+import           Network.Mux.Bearer
 import           Network.Mux.Channel
 import           Network.Mux.Trace
 import           Network.Mux.Types hiding (MiniProtocolInfo (..))

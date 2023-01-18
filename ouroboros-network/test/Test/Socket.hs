@@ -153,6 +153,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
 
     withServerNode
       (socketSnocket iocp)
+      makeSocketBearer
       ((. Just) <$> configureSocket)
       nullNetworkServerTracers
       networkState
@@ -173,6 +174,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       withAsync
         (connectToNode
           (socketSnocket iocp)
+          makeSocketBearer
           (flip configureSocket Nothing)
           nodeToNodeHandshakeCodec
           noTimeLimitsHandshake

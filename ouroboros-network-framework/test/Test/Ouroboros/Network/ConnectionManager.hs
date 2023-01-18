@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE UnicodeSyntax              #-}
@@ -48,6 +49,7 @@ import           Data.Void (Void)
 import           Quiet
 import           Text.Pretty.Simple (defaultOutputOptionsNoColor, pShowOpt)
 
+import           Network.Mux.Bearer
 import           Network.Mux.Types
 
 import           Test.QuickCheck hiding (shrinkMap)
@@ -334,6 +336,17 @@ data FDState = FDState {
 
 newtype FD m = FD { fdState :: StrictTVar m FDState }
 
+makeFDBearer :: ( MonadDelay m
+                , MonadMonotonicTime m
+                )
+             => MakeBearer m (FD m)
+makeFDBearer = MakeBearer $ \_ _ _ ->
+      return MuxBearer {
+          write   = \_ _ -> getMonotonicTime,
+          read    = \_ -> forever (threadDelay 3600),
+          sduSize = SDUSize 1500
+        }
+
 -- | We only keep exceptions here which should not be handled by the test
 -- runtime, i.e. for 'connect' and 'accept' we use 'IOException's.
 --
@@ -420,8 +433,7 @@ mkSnocket scheduleMap = do
         listen,
         accept,
         bind,
-        close,
-        toBearer
+        close
       }
   where
     pop :: StrictTVar m (Map Addr [RefinedScheduleEntry])
@@ -537,13 +549,6 @@ mkSnocket scheduleMap = do
                         fdScheduleEntry   = Just se
                       }
           pure (Accepted (FD fd') remoteAddr, Accept $ go as)
-
-    toBearer _ _ _ =
-      return MuxBearer {
-          write   = \_ _ -> getMonotonicTime,
-          read    = \_ -> forever (threadDelay 3600),
-          sduSize = SDUSize 1500
-        }
 
     listen (FD fd) = atomically $ do
       fds@FDState{ fdConnectionState } <- readTVar fd
@@ -754,6 +759,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
               cmIPv6Address = Nothing,
               cmAddressType = \_ -> Just IPv4Address,
               cmSnocket = snocket,
+              cmMakeBearer = makeFDBearer,
               cmConfigureSocket = \_ _ -> return (),
               connectionDataFlow = \(Version df) -> df,
               cmPrunePolicy = simplePrunePolicy,

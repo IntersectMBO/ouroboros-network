@@ -28,7 +28,6 @@ import qualified System.Win32.Types as Win32 (HANDLE)
 import qualified System.Win32.Async as Win32.Async
 #endif
 
-import qualified Network.Mux as Mx
 import           Network.Mux.Types (MuxBearer)
 import qualified Network.Mux.Types as Mx
 import qualified Network.Mux.Trace as Mx
@@ -70,14 +69,15 @@ pipeChannelFromNamedPipe h = PipeChannel {
 #endif
 
 pipeAsMuxBearer
-  :: Tracer IO Mx.MuxTrace
+  :: Mx.SDUSize
+  -> Tracer IO Mx.MuxTrace
   -> PipeChannel
   -> MuxBearer IO
-pipeAsMuxBearer tracer channel =
+pipeAsMuxBearer sduSize tracer channel =
       Mx.MuxBearer {
           Mx.read    = readPipe,
           Mx.write   = writePipe,
-          Mx.sduSize = Mx.SDUSize 32768
+          Mx.sduSize = sduSize
         }
     where
       readPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)

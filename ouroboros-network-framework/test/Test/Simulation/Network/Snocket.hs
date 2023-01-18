@@ -52,7 +52,7 @@ import           Ouroboros.Network.Driver.Simple
 import           Ouroboros.Network.Snocket
 import           Simulation.Network.Snocket
 
-import           Network.Mux
+import           Network.Mux as Mx
 import           Network.TypedProtocol.Codec.CBOR
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.ReqResp.Client
@@ -225,7 +225,7 @@ clientServerSimulation payloads =
           (accepted, accept1) <- runAccept accept0
           case accepted of
             Accepted fd' remoteAddr -> do
-              bearer <- toBearer snocket 10 nullTracer fd'
+              bearer <- getBearer makeFDBearer 10 nullTracer fd'
               thread <- async $ handleConnection bearer remoteAddr
                                 `finally`
                                close snocket fd'
@@ -306,7 +306,7 @@ clientServerSimulation payloads =
                               (\channel -> runPeer tr codecReqResp
                                                    (fromChannel channel)
                                                    clientPeer)
-                  bearer <- toBearer snocket 10 nullTracer fd
+                  bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd
 
                   -- kill mux as soon as the client returns
                   withAsync

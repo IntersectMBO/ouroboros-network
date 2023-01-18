@@ -39,6 +39,7 @@ import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Typeable (Typeable)
 
 import qualified Network.Mux as Mux
+import qualified Network.Mux.Bearer as Mux
 import qualified Network.Socket as Socket
 import           Network.TypedProtocol.Core
 
@@ -181,6 +182,7 @@ withBidirectionalConnectionManager
        , MonadSay m
        )
     => Snocket m socket peerAddr
+    -> Mux.MakeBearer m socket
     -> socket
     -- ^ listening socket
     -> DiffTime -- protocol idle timeout
@@ -195,7 +197,7 @@ withBidirectionalConnectionManager
        -> peerAddr
        -> m a)
     -> m a
-withBidirectionalConnectionManager snocket socket
+withBidirectionalConnectionManager snocket makeBearer socket
                                    protocolIdleTimeout
                                    timeWaitTimeout
                                    localAddress
@@ -228,6 +230,7 @@ withBidirectionalConnectionManager snocket socket
           cmIPv6Address  = Nothing,
           cmAddressType  = \_ -> Just IPv4Address,
           cmSnocket      = snocket,
+          cmMakeBearer   = makeBearer,
           cmConfigureSocket = \_ _ -> return (),
           cmTimeWaitTimeout = timeWaitTimeout,
           cmOutboundIdleTimeout = protocolIdleTimeout,
@@ -429,6 +432,7 @@ bidirectionalExperiment
        , Eq peerAddr
        )
     => Snocket IO socket peerAddr
+    -> Mux.MakeBearer IO socket
     -> socket
     -> DiffTime
     -> DiffTime
@@ -437,13 +441,13 @@ bidirectionalExperiment
     -> ClientAndServerData
     -> IO ()
 bidirectionalExperiment
-    snocket socket0
+    snocket makeBearer socket0
     protocolIdleTimeout
     timeWaitTimeout
     localAddr remoteAddr
     clientAndServerData = do
       withBidirectionalConnectionManager
-        snocket socket0
+        snocket makeBearer socket0
         protocolIdleTimeout timeWaitTimeout
         (Just localAddr) clientAndServerData $
         \connectionManager _serverAddr -> forever' $ do
@@ -626,6 +630,7 @@ run localAddr remoteAddr protocolIdleTimeout timeWaitTimeout data_ =
 
           bidirectionalExperiment
             (socketSnocket iomgr)
+            Mux.makeSocketBearer
             socket
             protocolIdleTimeout
             timeWaitTimeout

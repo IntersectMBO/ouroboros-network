@@ -34,6 +34,7 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 
+import qualified Network.Mux.Bearer as Mx
 import           Network.Mux.Types (MiniProtocolDir (..), MiniProtocolNum (..),
                      muxBearerAsChannel)
 import           Network.TypedProtocol.Codec
@@ -1020,13 +1021,13 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
             concurrently_
               (Snocket.connect sn fdConn  addr')
               (Snocket.connect sn fdConn' addr)
-            bearer  <- Snocket.toBearer
-                        sn 1
+            bearer  <- Mx.getBearer makeFDBearer
+                        1
                         nullTracer
                         -- (("client",) `contramap` Tracer Debug.traceShowM)
                         fdConn
-            bearer' <- Snocket.toBearer
-                        sn 1
+            bearer' <- Mx.getBearer makeFDBearer
+                        1
                         nullTracer
                         -- (("server",) `contramap` Tracer Debug.traceShowM)
                         fdConn'
