@@ -236,7 +236,6 @@ copyToImmutableDB CDB{..} = withCopyLock $ do
 copyAndSnapshotRunner
   :: forall m blk.
      ( IOLike m
-     , GetHeader blk
      , LedgerSupportsProtocol blk
      , LgrDbSerialiseConstraints blk
      )

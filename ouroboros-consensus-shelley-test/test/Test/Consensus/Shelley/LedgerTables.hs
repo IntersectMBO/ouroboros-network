@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -60,7 +61,6 @@ tests = testGroup "LedgerTables"
 
 instance ( CanMock proto era
          , Arbitrary (LedgerState (ShelleyBlock proto era) EmptyMK)
-         , StowableLedgerTables (LedgerState (ShelleyBlock proto era))
          ) => Arbitrary (LedgerTables (LedgerState (ShelleyBlock proto era)) ValuesMK) where
   arbitrary = projectLedgerTables . unstowLedgerTables <$> arbitrary
 

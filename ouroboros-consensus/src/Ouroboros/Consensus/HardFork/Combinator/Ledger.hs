@@ -206,7 +206,7 @@ tickOne ei slot sopIdx partialCfg st =
 instance LedgerTablesCanHardFork '[x] where
   hardForkInjectLedgerTablesKeysMK = InjectLedgerTables LedgerTablesOne :* Nil
 
-instance (SingleEraBlock x, TableStuff (LedgerState x)) => TableStuff (LedgerState (HardForkBlock '[x])) where
+instance SingleEraBlock x => TableStuff (LedgerState (HardForkBlock '[x])) where
   newtype LedgerTables (LedgerState (HardForkBlock '[x])) mk = LedgerTablesOne (LedgerTables (LedgerState x) mk)
     deriving (Generic)
 

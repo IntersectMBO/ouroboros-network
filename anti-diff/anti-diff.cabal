@@ -55,7 +55,7 @@ library
                        UndecidableSuperClasses
                        ViewPatterns
 
-  build-depends:       base              >=4.9 && <4.15
+  build-depends:       base              >=4.9 && <4.17
                      , bimap             >=0.3   && <0.5
                      , containers        >=0.5   && <0.7
                      , groups
@@ -86,7 +86,7 @@ test-suite test
   other-modules:       Test.Data.FingerTree.RootMeasured.Strict
                      , Test.Data.Map.Diff.Strict
 
-  build-depends:       base              >=4.9 && <4.15
+  build-depends:       base              >=4.9 && <4.17
                      , bimap             >=0.3 && <0.5
                      , containers        >=0.5 && <0.7
                      , nonempty-containers
@@ -118,7 +118,7 @@ benchmark bench
 
   other-modules:       Bench.Data.FingerTree.RootMeasured.Strict
 
-  build-depends:       base              >=4.9 && <4.15
+  build-depends:       base              >=4.9 && <4.17
                      , cardano-strict-containers
                      , deepseq
                      , fingertree

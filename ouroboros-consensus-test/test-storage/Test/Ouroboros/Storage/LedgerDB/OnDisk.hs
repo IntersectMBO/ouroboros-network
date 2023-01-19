@@ -1336,7 +1336,7 @@ generator cd secParam (Model mock hs) =
     ]
   where
     withoutRef :: [(Int, Gen (Cmd :@ Symbolic))]
-    withoutRef = fmap (bimap ($cd) (fmap At)) [
+    withoutRef = fmap (bimap ($ cd) (fmap At)) [
           (freqCurrent,   pure Current)
         , (freqPush,      Push <$> genBlockFromLedgerState (mockCurrent mock))
         , (freqSwitch,    genSwitchCmd)

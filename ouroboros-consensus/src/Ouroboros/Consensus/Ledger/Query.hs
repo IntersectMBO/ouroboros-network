@@ -334,7 +334,6 @@ data IncrementalQueryHandler :: Type -> Type -> Type where
 handleQuery ::
      forall blk m fp result.
      ( ConfigSupportsNode blk
-     , HasAnnTip blk
      , QueryLedger blk
      , Monad m
      , LedgerSupportsProtocol blk

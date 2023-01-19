@@ -18,15 +18,7 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute
 import qualified Cardano.Protocol.TPraos.OCert as SL
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config (SecurityParam (SecurityParam),
-                     TopLevelConfig (..), configConsensus)
-import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.HeaderValidation
-                     (HeaderState (HeaderState))
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerConfig)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
-import           Ouroboros.Consensus.Ledger.Tables (ValuesMK)
-import           Ouroboros.Consensus.Ledger.Tables.Utils (polyEmptyLedgerTables)
+import           Ouroboros.Consensus.Config (configConsensus)
 import           Ouroboros.Consensus.Mempool.TxLimits
 import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
@@ -38,13 +30,6 @@ import           Ouroboros.Consensus.Shelley.Eras (BabbageEra, EraCrypto,
                      ShelleyBasedEra (shelleyBasedEraName))
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyCompatible, forgeShelleyBlock)
-import           Ouroboros.Consensus.Shelley.Ledger
-                     (CodecConfig (ShelleyCodecConfig), LedgerState (..),
-                     LedgerTables (ShelleyLedgerTables), ShelleyBlock,
-                     ShelleyCompatible, ShelleyTransition (..),
-                     StorageConfig (..), forgeShelleyBlock,
-                     mkShelleyBlockConfig, mkShelleyLedgerConfig, projectUtxoSL,
-                     shelleyUTxOTable, withUtxoSL)
 import           Ouroboros.Consensus.Shelley.Node
                      (ShelleyLeaderCredentials (..))
 import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto)

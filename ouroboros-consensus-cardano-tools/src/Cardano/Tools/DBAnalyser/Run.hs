@@ -86,15 +86,15 @@ analyse DBAnalyserConfig{analysis, cfgLimit, dbDir, selectDB, validation, verbos
           -- TODO we need to check if the snapshot exists. If not, print an
           -- error and ask the user if she wanted to create a snapshot first and
           -- how to do it.
-          initLedgerErr <- runExceptT $ case initializeFrom of
-            Nothing       -> pure genesisLedger
-            Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
-              -- TODO @readSnapshot@ has type @ExceptT ReadIncrementalErr m
-              -- (ExtLedgerState blk)@ but it also throws exceptions! This makes
-              -- error handling more challenging than it ought to be. Maybe we
-              -- can enrich the error that @readSnapthot@ return, so that it can
-              -- contain the @HasFS@ errors as well.
-          initLedger <- either (error . show) pure initLedgerErr
+          let initLedger = case initializeFrom of
+                Nothing       -> pure genesisLedger
+                Just snapshot -> Left snapshot
+          --     -- TODO @readSnapshot@ has type @ExceptT ReadIncrementalErr m
+          --     -- (ExtLedgerState blk)@ but it also throws exceptions! This makes
+          --     -- error handling more challenging than it ought to be. Maybe we
+          --     -- can enrich the error that @readSnapthot@ return, so that it can
+          --     -- contain the @HasFS@ errors as well.
+          -- initLedger <- either (error . show) pure initLedgerErr
 
           let bs = case bsSelector of
                 MEM          -> InMemoryBackingStore

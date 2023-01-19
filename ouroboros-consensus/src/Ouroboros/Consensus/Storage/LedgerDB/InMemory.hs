@@ -192,7 +192,7 @@ class Monad m => ResolvesBlocks m blk | m -> blk where
 instance Monad m => ResolvesBlocks (ReaderT (ResolveBlock m blk) m) blk where
   resolveBlock r = ReaderT $ \f -> f r
 
-instance (Monad m, ResolvesBlocks m blk) => ResolvesBlocks (ExceptT e m) blk where
+instance ResolvesBlocks m blk => ResolvesBlocks (ExceptT e m) blk where
   resolveBlock = lift . resolveBlock
 
 defaultResolveBlocks :: ResolveBlock m blk

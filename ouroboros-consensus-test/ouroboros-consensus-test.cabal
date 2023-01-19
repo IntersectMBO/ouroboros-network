@@ -89,6 +89,7 @@ library
                      , base16-bytestring
                      , binary
                      , bytestring        >=0.10  && <0.12
+                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-prelude
                      , cardano-slotting

@@ -466,8 +466,7 @@ foldTxs cfg nextTk remainingCap initialState  =
                next
 
 tick ::
-  ( TickedTableStuff (LedgerState blk)
-  , ValidateEnvelope blk
+  ( ValidateEnvelope blk
   , LedgerSupportsMempool blk
   )
   => LedgerConfig blk
@@ -557,8 +556,7 @@ newLedgerInterface initialLedger = do
 
 -- | Make a SUT
 mkSUT ::
-  ( MonadSTM m
-  , NoThunks (MockedLedgerDB blk)
+  ( NoThunks (MockedLedgerDB blk)
   , GetTip (LedgerState blk ValuesMK)
   , IOLike m
   , LedgerSupportsProtocol blk
@@ -899,8 +897,7 @@ instance ( ToExpr (GenTx blk)
                   , ("tx", toExpr $ txForgetValidated $ txTicketTx tkt)
                   , ("size", toExpr $ txTicketTxSizeInBytes tkt)]
 
-instance ( Show (ApplyTxErr blk)
-         , ToExpr (GenTx blk)
+instance ( ToExpr (GenTx blk)
          , LedgerSupportsMempool blk
          , ToExpr (Validated (GenTx blk))) => ToExpr (MempoolAddTxResult blk) where
   toExpr (MempoolTxAdded vtx)     = App "Added" [toExpr vtx]

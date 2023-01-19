@@ -559,10 +559,7 @@ deriving instance ( Eq (LedgerState m mk)
                   , Bridge m a
                   ) => Eq (LedgerState (DualBlock m a) mk)
 
-instance ( ShowLedgerState (LedgerState m)
-         , ShowLedgerState (LedgerState a)
-         , Bridge m a
-         ) => ShowLedgerState (LedgerState (DualBlock m a)) where
+instance Bridge m a => ShowLedgerState (LedgerState (DualBlock m a)) where
   showsLedgerState st =
       showString "DualLedgerState" . showSpace . showString "{" .
                              showsLedgerState dualLedgerStateMain

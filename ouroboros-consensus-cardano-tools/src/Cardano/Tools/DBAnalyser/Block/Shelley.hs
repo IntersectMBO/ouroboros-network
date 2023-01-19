@@ -61,6 +61,7 @@ import           Cardano.Tools.DBAnalyser.HasAnalysis
 -- | Usable for each Shelley-based era
 instance ( ShelleyCompatible proto era
          , PerEraAnalysis era
+         , LedgerSupportsProtocol (ShelleyBlock proto era)
          ) => HasAnalysis (ShelleyBlock proto era) where
 
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of

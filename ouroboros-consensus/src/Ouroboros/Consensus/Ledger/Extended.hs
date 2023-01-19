@@ -103,7 +103,6 @@ instance (Typeable mk, LedgerSupportsProtocol blk, NoThunks (LedgerState blk mk)
   showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk mk))
 
 deriving instance ( LedgerSupportsProtocol blk
-                  , Eq (ChainDepState (BlockProtocol blk))
                   , Eq (LedgerState blk mk)
                   ) => Eq (ExtLedgerState blk mk)
 
@@ -173,7 +172,7 @@ instance ( LedgerSupportsProtocol blk
 
       ledgerResult = applyChainTickLedgerResult lcfg slot ledger
 
-instance (LedgerSupportsProtocol blk, TableStuff (LedgerState blk)) => TableStuff (ExtLedgerState blk) where
+instance LedgerSupportsProtocol blk => TableStuff (ExtLedgerState blk) where
 
   newtype LedgerTables (ExtLedgerState blk) mk =
     ExtLedgerStateTables { unExtLedgerStateTables :: LedgerTables (LedgerState blk) mk }
@@ -214,7 +213,7 @@ instance InMemory (LedgerTables (LedgerState blk)) => InMemory (LedgerTables (Ex
   convertMapKind (ExtLedgerStateTables st) =
       ExtLedgerStateTables $ convertMapKind st
 
-instance (LedgerSupportsProtocol blk, TickedTableStuff (LedgerState blk)) => TickedTableStuff (ExtLedgerState blk) where
+instance LedgerSupportsProtocol blk => TickedTableStuff (ExtLedgerState blk) where
   projectLedgerTablesTicked (TickedExtLedgerState lstate _view _hstate) =
       ExtLedgerStateTables (projectLedgerTablesTicked lstate)
   withLedgerTablesTicked

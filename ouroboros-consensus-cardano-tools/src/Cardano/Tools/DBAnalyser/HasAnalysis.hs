@@ -8,7 +8,6 @@ module Cardano.Tools.DBAnalyser.HasAnalysis (
   , WithLedgerState (..)
   ) where
 
-import           Codec.Serialise.Class
 import           Data.Map.Strict (Map)
 import           Text.Builder (Builder)
 
@@ -18,9 +17,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.ProtocolInfo
-import qualified Ouroboros.Consensus.Node.Run as Node
 import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 import           Ouroboros.Consensus.Util.Condense (Condense)
+import Ouroboros.Consensus.Storage.ChainDB (LgrDbSerialiseConstraints)
+import Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
 
 {-------------------------------------------------------------------------------
   HasAnalysis
@@ -32,7 +32,13 @@ data WithLedgerState blk = WithLedgerState
   , wlsStateAfter  :: LedgerState blk EmptyMK
   }
 
-class (HasAnnTip blk, GetPrevHash blk, Condense (HeaderHash blk)) => HasAnalysis blk where
+class ( HasAnnTip blk
+      , GetPrevHash blk
+      , Condense (HeaderHash blk)
+      , LedgerSupportsProtocol blk
+      , LgrDbSerialiseConstraints blk
+      , InspectLedger blk
+      ) => HasAnalysis blk where
 
   countTxOutputs :: blk -> Int
   blockTxSizes   :: blk -> [SizeInBytes]

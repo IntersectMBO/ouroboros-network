@@ -56,7 +56,7 @@ library
                        UndecidableSuperClasses
                        ViewPatterns
 
-  build-depends:       base              >=4.9 && <4.15
+  build-depends:       base              >=4.9 && <4.17
                      , groups
                      , QuickCheck
                      , tasty
@@ -80,7 +80,7 @@ test-suite test
 
   other-modules:       Test.Data.Semigroupoid
 
-  build-depends:       base              >=4.9 && <4.15
+  build-depends:       base              >=4.9 && <4.17
                      , groups
                      , QuickCheck
                      , semigroupoid

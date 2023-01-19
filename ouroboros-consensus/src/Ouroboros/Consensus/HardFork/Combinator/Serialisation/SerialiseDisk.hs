@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -20,17 +21,14 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
                      (Flip (..))
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Tables (EmptyMK,
-                     SufficientSerializationForAnyBackingStore)
+import           Ouroboros.Consensus.Ledger.Tables (EmptyMK)
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 
 import           Ouroboros.Consensus.Storage.ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
-instance ( SerialiseHFC xs
-         , SufficientSerializationForAnyBackingStore (LedgerState (HardForkBlock xs)))
-      => SerialiseDiskConstraints  (HardForkBlock xs)
+instance SerialiseHFC xs => SerialiseDiskConstraints  (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
   'ReconstructNestedCtxt'
