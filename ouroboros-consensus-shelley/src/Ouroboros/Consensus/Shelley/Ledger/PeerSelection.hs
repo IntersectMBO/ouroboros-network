@@ -54,7 +54,7 @@ instance c ~ EraCrypto era
       futurePoolParams, poolParams ::
            Map (SL.KeyHash 'SL.StakePool c) (SL.PoolParams c)
       (futurePoolParams, poolParams) =
-          (SL._fPParams pstate, SL._pParams pstate)
+          (SL.psFutureStakePoolParams pstate, SL.psStakePoolParams pstate)
         where
           pstate :: SL.PState c
           pstate =
@@ -88,7 +88,7 @@ instance c ~ EraCrypto era
           . force
           . mapMaybe (fmap injStakePoolRelay . relayToRelayAccessPoint)
           . toList
-          . SL._poolRelays
+          . SL.ppRelays
 
       -- | Combine the stake pools registered in the future and the current pool
       -- parameters, and remove duplicates.

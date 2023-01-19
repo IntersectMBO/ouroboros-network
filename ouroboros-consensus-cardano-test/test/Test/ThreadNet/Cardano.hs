@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -15,6 +16,7 @@ import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
+import           Lens.Micro
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -46,9 +48,10 @@ import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 
-import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff)
-import qualified Cardano.Ledger.Conway.Genesis as SL
+import qualified Cardano.Ledger.BaseTypes as SL
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Core as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
 
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node
@@ -268,9 +271,9 @@ prop_simple_cardano_convergence TestSetup
                   setupInitialNonce
                   (coreNodes !! fromIntegral nid)
                   ProtocolTransitionParamsShelleyBased {
-                      transitionTranslationContext = ()
+                      transitionTranslationContext = SL.toFromByronTranslationContext genesisShelley
                     , transitionTrigger            =
-                        TriggerHardForkAtVersion shelleyMajorVersion
+                        TriggerHardForkAtVersion $ SL.getVersion shelleyMajorVersion
                     }
             , mkRekeyM = Nothing
             }
@@ -336,7 +339,7 @@ prop_simple_cardano_convergence TestSetup
     maxLovelaceSupply :: Word64
     maxLovelaceSupply = 45000000000000000
 
-    genesisShelley :: ShelleyGenesis (ShelleyEra Crypto)
+    genesisShelley :: ShelleyGenesis Crypto
     genesisShelley =
         Shelley.mkGenesisConfig
           (SL.ProtVer shelleyMajorVersion 0)
@@ -383,11 +386,11 @@ prop_simple_cardano_convergence TestSetup
       if setupHardFork
       then
         -- this new version must induce the hard fork if accepted
-        CC.Update.ProtocolVersion shelleyMajorVersion 0 0
+        CC.Update.ProtocolVersion (SL.getVersion shelleyMajorVersion) 0 0
       else
         -- this new version must not induce the hard fork if accepted
         CC.Update.ProtocolVersion
-          byronMajorVersion (byronInitialMinorVersion + 1) 0
+          (SL.getVersion byronMajorVersion) (byronInitialMinorVersion + 1) 0
 
     -- Classifying test cases
 
@@ -429,7 +432,7 @@ prop_simple_cardano_convergence TestSetup
         secondEraOverlaySlots
           numSlots
           (NumSlots numByronSlots)
-          (SL._d (sgProtocolParams genesisShelley))
+          (sgProtocolParams genesisShelley ^. SL.ppDL)
           epochSizeShelley
 
     numByronSlots :: Word64
@@ -462,7 +465,7 @@ mkProtocolCardanoAndHardForkTxs
   -> CC.Genesis.GeneratedSecrets
   -> CC.Update.ProtocolVersion
      -- Shelley
-  -> ShelleyGenesis (ShelleyEra c)
+  -> ShelleyGenesis c
   -> SL.Nonce
   -> Shelley.CoreNode c
      -- HardForks
@@ -537,30 +540,30 @@ mkProtocolCardanoAndHardForkTxs
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = ()
           , transitionTrigger            =
-              TriggerHardForkAtVersion allegraMajorVersion
+              TriggerHardForkAtVersion $ SL.getVersion allegraMajorVersion
           }
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = ()
           , transitionTrigger            =
-              TriggerHardForkAtVersion maryMajorVersion
+              TriggerHardForkAtVersion $ SL.getVersion maryMajorVersion
           }
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
           , transitionTrigger            =
-              TriggerHardForkAtVersion alonzoMajorVersion
+              TriggerHardForkAtVersion $ SL.getVersion alonzoMajorVersion
           }
         ProtocolTransitionParamsShelleyBased {
-            transitionTranslationContext = Alonzo.degenerateAlonzoGenesis
+            transitionTranslationContext = ()
           , transitionTrigger            =
-              TriggerHardForkAtVersion babbageMajorVersion
+              TriggerHardForkAtVersion $ SL.getVersion babbageMajorVersion
           }
         ProtocolTransitionParamsShelleyBased {
             transitionTranslationContext =
               -- Note that this is effectively a no-op, which is fine for
               -- testing, at least for now.
-              SL.ConwayGenesis $ SL.GenDelegs $ sgGenDelegs genesisShelley
+              SL.GenDelegs $ sgGenDelegs genesisShelley
           , transitionTrigger            =
-              TriggerHardForkAtVersion conwayMajorVersion
+              TriggerHardForkAtVersion $ SL.getVersion conwayMajorVersion
           }
 
     -- Byron
@@ -591,41 +594,41 @@ mkProtocolCardanoAndHardForkTxs
 -- for OBFT. So Shelley is 2. But in this test, we start with OBFT as major
 -- version 0: the nodes are running OBFT from slot 0 and the Byron ledger
 -- defaults to an initial version of 0. So Shelley is 1 in this test.
-byronMajorVersion :: Num a => a
-byronMajorVersion = 0
+byronMajorVersion :: SL.Version
+byronMajorVersion = SL.natVersion @0
 
 -- | The major protocol version of Shelley in this test
 --
 -- See 'byronMajorVersion'
-shelleyMajorVersion :: Num a => a
-shelleyMajorVersion = byronMajorVersion + 1
+shelleyMajorVersion :: SL.Version
+shelleyMajorVersion = SL.natVersion @1
 
 -- | The major protocol version of Allegra in this test
 --
 -- See 'byronMajorVersion'
-allegraMajorVersion :: Num a => a
-allegraMajorVersion = shelleyMajorVersion + 1
+allegraMajorVersion :: SL.Version
+allegraMajorVersion = SL.natVersion @2
 
 -- | The major protocol version of Mary in this test
 --
 -- See 'byronMajorVersion'
-maryMajorVersion :: Num a => a
-maryMajorVersion = allegraMajorVersion + 1
+maryMajorVersion :: SL.Version
+maryMajorVersion = SL.natVersion @3
 
 -- | The major protocol version of Alonzo in this test
 --
-alonzoMajorVersion :: Num a => a
-alonzoMajorVersion = maryMajorVersion + 1
+alonzoMajorVersion :: SL.Version
+alonzoMajorVersion = SL.natVersion @4
 
 -- | The major protocol version of Babbage in this test
 --
-babbageMajorVersion :: Num a => a
-babbageMajorVersion = alonzoMajorVersion + 1
+babbageMajorVersion :: SL.Version
+babbageMajorVersion = SL.natVersion @5
 
 -- | The major protocol version of Conway in this test
 --
-conwayMajorVersion :: Num a => a
-conwayMajorVersion = babbageMajorVersion + 1
+conwayMajorVersion :: SL.Version
+conwayMajorVersion = SL.natVersion @6
 
 -- | The initial minor protocol version of Byron in this test
 --

@@ -30,7 +30,7 @@ import           Data.Proxy (Proxy (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (InspectHeapNamed (..), NoThunks)
 
-import           Cardano.Binary
+import           Cardano.Ledger.Binary
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature (..),

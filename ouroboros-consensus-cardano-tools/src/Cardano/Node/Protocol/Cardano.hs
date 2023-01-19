@@ -1,8 +1,10 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-orphans  #-}
 
@@ -29,6 +31,11 @@ import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
 
 import           Cardano.Api.Any
 import           Cardano.Api.Protocol.Types
+
+import           Cardano.Ledger.BaseTypes (natVersion)
+import           Cardano.Ledger.Conway.Genesis (cgGenDelegs)
+import           Cardano.Ledger.Shelley.Translation
+                     (toFromByronTranslationContext)
 
 import qualified Cardano.Node.Protocol.Alonzo as Alonzo
 import qualified Cardano.Node.Protocol.Byron as Byron
@@ -126,7 +133,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
         Alonzo.readGenesis npcAlonzoGenesisFile
                            npcAlonzoGenesisFileHash
 
-    (conwayGenesis, _conwayGenesis) <-
+    (conwayGenesis, _conwayGenesisHash) <-
       firstExceptT CardanoProtocolInstantiationConwayGenesisReadError $
         Conway.readGenesis npcConwayGenesisFile
                            npcConwayGenesisFileHash
@@ -178,7 +185,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- is in the Shelley era. That is, it is the version of protocol
           -- /after/ Shelley, i.e. Allegra.
           shelleyProtVer =
-            ProtVer 3 0,
+            ProtVer (natVersion @3) 0,
           shelleyMaxTxCapacityOverrides =
             Mempool.mkOverrides Mempool.noOverridesMeasure
         }
@@ -188,7 +195,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- is in the Allegra era. That is, it is the version of protocol
           -- /after/ Allegra, i.e. Mary.
           allegraProtVer =
-            ProtVer 4 0,
+            ProtVer (natVersion @4) 0,
           allegraMaxTxCapacityOverrides =
             Mempool.mkOverrides Mempool.noOverridesMeasure
         }
@@ -197,7 +204,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- version that this node will declare that it understands, when it
           -- is in the Mary era. That is, it is the version of protocol
           -- /after/ Mary, i.e. Alonzo.
-          maryProtVer = ProtVer 5 0,
+          maryProtVer = ProtVer (natVersion @5) 0,
           maryMaxTxCapacityOverrides =
             Mempool.mkOverrides Mempool.noOverridesMeasure
         }
@@ -206,7 +213,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- version that this node will declare that it understands, when it
           -- is in the Alonzo era. That is, it is the version of protocol
           -- /after/ Alonzo, i.e. Babbage.
-          alonzoProtVer = ProtVer 6 0,
+          alonzoProtVer = ProtVer (natVersion @6) 0,
           alonzoMaxTxCapacityOverrides =
             Mempool.mkOverrides Mempool.noOverridesMeasure
         }
@@ -214,7 +221,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- This is /not/ the Babbage protocol version. It is the protocol
           -- version that this node will declare that it understands, when it
           -- is in the Babbage era.
-          Praos.babbageProtVer = ProtVer 7 0,
+          Praos.babbageProtVer = ProtVer (natVersion @7) 0,
           Praos.babbageMaxTxCapacityOverrides =
             Mempool.mkOverrides Mempool.noOverridesMeasure
         }
@@ -224,8 +231,8 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- is in the Conway era.
           Praos.conwayProtVer =
             if npcTestEnableDevelopmentHardForkEras
-            then ProtVer 9 0  -- Advertise we can support Conway
-            else ProtVer 8 0, -- Otherwise we only advertise we know about Babbage
+            then ProtVer (natVersion @9) 0  -- Advertise we can support Conway
+            else ProtVer (natVersion @8) 0, -- Otherwise we only advertise we know about Babbage
           Praos.conwayMaxTxCapacityOverrides =
             Mempool.mkOverrides Mempool.noOverridesMeasure
         }
@@ -235,7 +242,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
         --
         -- Byron to Shelley hard fork parameters
         Consensus.ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = (),
+          transitionTranslationContext = toFromByronTranslationContext shelleyGenesis,
           transitionTrigger =
             -- What will trigger the Byron -> Shelley hard fork?
             case npcTestShelleyHardForkAtEpoch of
@@ -293,7 +300,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
         }
         -- Alonzo to Babbage hard fork parameters
         Consensus.ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = alonzoGenesis,
+          transitionTranslationContext = (),
           transitionTrigger =
              case npcTestBabbageHardForkAtEpoch of
                 Nothing -> Consensus.TriggerHardForkAtVersion
@@ -303,7 +310,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
         }
         -- Babbage to Conway hard fork parameters
         Consensus.ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = conwayGenesis,
+          transitionTranslationContext = cgGenDelegs conwayGenesis,
           transitionTrigger =
              case npcTestConwayHardForkAtEpoch of
                 Nothing -> Consensus.TriggerHardForkAtVersion

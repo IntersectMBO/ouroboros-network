@@ -130,14 +130,11 @@ type ShelleyBasedHardForkConstraints proto1 era1 proto2 era2 =
   , SL.PreviousEra era2 ~ era1
 
   , SL.TranslateEra       era2 SL.NewEpochState
-  , SL.TranslateEra       era2 SL.ShelleyGenesis
   , SL.TranslateEra       era2 WrapTx
 
-  , SL.TranslationError   era2 SL.NewEpochState  ~ Void
-  , SL.TranslationError   era2 SL.ShelleyGenesis ~ Void
+  , SL.TranslationError   era2 SL.NewEpochState ~ Void
 
   , SL.AdditionalGenesisConfig era1 ~ ()
-  , SL.TranslationContext      era1 ~ ()
   , SL.AdditionalGenesisConfig era2 ~ SL.TranslationContext era2
     -- At the moment, fix the protocols together
   , EraCrypto era1 ~ EraCrypto era2
@@ -234,11 +231,13 @@ protocolInfoShelleyBasedHardFork ::
   => ProtocolParamsShelleyBased era1
   -> SL.ProtVer
   -> SL.ProtVer
+  -> SL.TranslationContext era1
   -> ProtocolTransitionParamsShelleyBased era2
   -> ProtocolInfo m (ShelleyBasedHardForkBlock proto1 era1 proto2 era2)
 protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
                                  protVer1
                                  protVer2
+                                 transCtx1
                                  protocolTransitionParams =
     protocolInfoBinary
       -- Era 1
@@ -260,19 +259,19 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
 
     -- Era 1
 
-    genesis1 :: SL.ShelleyGenesis era1
-    genesis1 = shelleyBasedGenesis
+    genesis :: SL.ShelleyGenesis (EraCrypto era1)
+    genesis = shelleyBasedGenesis
 
     protocolInfo1 :: ProtocolInfo m (ShelleyBlock proto1 era1)
     protocolInfo1 =
         protocolInfoTPraosShelleyBased
           protocolParamsShelleyBased
-          ((), ())  -- trivial additional Genesis config and translation context
+          ((), transCtx1)
           protVer1
           (Mempool.mkOverrides Mempool.noOverridesMeasure)
 
     eraParams1 :: History.EraParams
-    eraParams1 = shelleyEraParams genesis1
+    eraParams1 = shelleyEraParams genesis
 
     ProtocolTransitionParamsShelleyBased {
         transitionTranslationContext = transCtxt2
@@ -289,14 +288,11 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
 
     -- Era 2
 
-    genesis2 :: SL.ShelleyGenesis era2
-    genesis2 = SL.translateEra' transCtxt2 genesis1
-
     protocolInfo2 :: ProtocolInfo m (ShelleyBlock proto2 era2)
     protocolInfo2 =
         protocolInfoTPraosShelleyBased
           ProtocolParamsShelleyBased {
-              shelleyBasedGenesis = genesis2
+              shelleyBasedGenesis = genesis
             , shelleyBasedInitialNonce
             , shelleyBasedLeaderCredentials
             }
@@ -305,7 +301,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
           (Mempool.mkOverrides Mempool.noOverridesMeasure)
 
     eraParams2 :: History.EraParams
-    eraParams2 = shelleyEraParams genesis2
+    eraParams2 = shelleyEraParams genesis
 
     toPartialLedgerConfig2 ::
          LedgerConfig (ShelleyBlock proto2 era2)

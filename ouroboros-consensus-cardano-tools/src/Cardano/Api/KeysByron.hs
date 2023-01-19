@@ -33,13 +33,13 @@ import           Cardano.Prelude (cborError, toCborError)
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
 import           Control.Monad
 import qualified Data.ByteString.Lazy as LB
 import           Data.String (IsString)
 import           Data.Text (Text)
 import qualified Data.Text as Text
 
-import           Cardano.Binary (toStrictByteString)
 import qualified Cardano.Chain.Common as Byron
 import qualified Cardano.Crypto.DSIGN.Class as Crypto
 import qualified Cardano.Crypto.Hashing as Byron
@@ -47,6 +47,8 @@ import qualified Cardano.Crypto.Seed as Crypto
 import qualified Cardano.Crypto.Signing as Byron
 import qualified Cardano.Crypto.Signing as Crypto
 import qualified Cardano.Crypto.Wallet as Crypto.HD
+import           Cardano.Ledger.Binary (byronProtVer, toPlainDecoder,
+                     toPlainEncoding)
 
 import           Cardano.Api.Any
 import           Cardano.Api.Key
@@ -139,11 +141,16 @@ instance SerialiseAsRawBytes (VerificationKey ByronKey) where
 
 instance SerialiseAsRawBytes (SigningKey ByronKey) where
     serialiseToRawBytes (ByronSigningKey (Byron.SigningKey xsk)) =
-      toStrictByteString $ Crypto.toCBORXPrv xsk
+      CBOR.toStrictByteString $ encCBORXPrv xsk
+      where
+        encCBORXPrv = toPlainEncoding byronProtVer . Crypto.encCBORXPrv
 
     deserialiseFromRawBytes (AsSigningKey AsByronKey) bs =
       either (const Nothing) (Just . ByronSigningKey . Byron.SigningKey)
-             (snd <$> CBOR.deserialiseFromBytes Byron.fromCBORXPrv (LB.fromStrict bs))
+             (snd <$> CBOR.deserialiseFromBytes decCBORXPrv (LB.fromStrict bs))
+      where
+        decCBORXPrv = toPlainDecoder byronProtVer Byron.decCBORXPrv
+
 
 newtype instance Hash ByronKey = ByronKeyHash Byron.KeyHash
   deriving (Eq, Ord)

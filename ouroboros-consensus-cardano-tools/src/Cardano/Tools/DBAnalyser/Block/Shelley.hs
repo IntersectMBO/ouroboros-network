@@ -27,7 +27,7 @@ import           Text.Builder (decimal)
 
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto)
-import qualified Cardano.Ledger.Era as CL
+import qualified Cardano.Ledger.BaseTypes as CL (natVersion)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 
@@ -64,7 +64,7 @@ instance ( ShelleyCompatible proto era
          ) => HasAnalysis (ShelleyBlock proto era) where
 
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
-      SL.Block _ body -> sum $ fmap countOutputs (CL.fromTxSeq @era body)
+      SL.Block _ body -> sum $ fmap countOutputs (Core.fromTxSeq @era body)
     where
       countOutputs :: Core.Tx era -> Int
       countOutputs tx = length $ tx ^. Core.bodyTxL . Core.outputsTxBodyL
@@ -72,7 +72,7 @@ instance ( ShelleyCompatible proto era
   blockTxSizes blk = case Shelley.shelleyBlockRaw blk of
       SL.Block _ body ->
           toList
-        $ fmap (fromIntegral . view Core.sizeTxF) (CL.fromTxSeq @era body)
+        $ fmap (fromIntegral . view Core.sizeTxF) (Core.fromTxSeq @era body)
 
   knownEBBs = const Map.empty
 
@@ -104,7 +104,7 @@ instance ( ShelleyCompatible proto era
     where
       txs :: StrictSeq (Core.Tx era)
       txs = case Shelley.shelleyBlockRaw blk of
-        SL.Block _ body -> CL.fromTxSeq @era body
+        SL.Block _ body -> Core.fromTxSeq @era body
 
 class PerEraAnalysis era where
     txExUnitsSteps :: Maybe (Core.Tx era -> Word64)
@@ -147,7 +147,7 @@ instance HasProtocolInfo (ShelleyBlock (TPraos StandardCrypto) StandardShelley) 
 type ShelleyBlockArgs = Args (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
 
 mkShelleyProtocolInfo ::
-     ShelleyGenesis StandardShelley
+     ShelleyGenesis StandardCrypto
   -> Nonce
   -> ProtocolInfo IO (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
 mkShelleyProtocolInfo genesis initialNonce =
@@ -158,6 +158,6 @@ mkShelleyProtocolInfo genesis initialNonce =
         , shelleyBasedLeaderCredentials = []
         }
       ProtocolParamsShelley {
-          shelleyProtVer                = SL.ProtVer 2 0
+          shelleyProtVer                = SL.ProtVer (CL.natVersion @2) 0
         , shelleyMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
         }

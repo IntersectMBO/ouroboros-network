@@ -7,6 +7,7 @@ module Test.ThreadNet.Shelley (tests) where
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
+import           Lens.Micro ((^.))
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -29,8 +30,11 @@ import           Test.ThreadNet.Network (TestNodeInitialization (..),
                      nodeOutputFinalLedger)
 
 import qualified Cardano.Ledger.BaseTypes as SL (UnitInterval,
-                     mkNonceFromNumber, unboundRational)
+                     mkNonceFromNumber, unboundRational, shelleyProtVer)
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Core as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
+                     (toFromByronTranslationContext)
 import qualified Cardano.Protocol.TPraos.OCert as SL
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
@@ -292,7 +296,7 @@ prop_simple_real_tpraos_convergence TestSetup
     maxLovelaceSupply =
       fromIntegral (length coreNodes) * initialLovelacePerCoreNode
 
-    genesisConfig :: ShelleyGenesis Era
+    genesisConfig :: ShelleyGenesis (EraCrypto Era)
     genesisConfig =
         mkGenesisConfig
           genesisProtVer
@@ -308,7 +312,7 @@ prop_simple_real_tpraos_convergence TestSetup
     epochSize = sgEpochLength genesisConfig
 
     genesisProtVer :: SL.ProtVer
-    genesisProtVer = SL.ProtVer 0 0
+    genesisProtVer = SL.ProtVer SL.shelleyProtVer 0
 
     -- Which protocol version to endorse
     nextProtVer :: SL.ProtVer
@@ -332,7 +336,7 @@ prop_simple_real_tpraos_convergence TestSetup
 
               -- The actual final value of @d@
               actual :: SL.UnitInterval
-              actual = SL._d $ SL.esPp $ SL.nesEs ls
+              actual = SL.esPp (SL.nesEs ls) ^. SL.ppDG
 
               -- The expected final value of @d@
               --
@@ -369,6 +373,6 @@ prop_simple_real_tpraos_convergence TestSetup
         ledgerConfig :: LedgerConfig (ShelleyBlock Proto Era)
         ledgerConfig = Shelley.mkShelleyLedgerConfig
             genesisConfig
-            ()  -- trivial translation context
+            (SL.toFromByronTranslationContext genesisConfig)  -- trivial translation context
             (fixedEpochInfo epochSize tpraosSlotLength)
-            (MaxMajorProtVer 1000) -- TODO
+            (MaxMajorProtVer maxBound)

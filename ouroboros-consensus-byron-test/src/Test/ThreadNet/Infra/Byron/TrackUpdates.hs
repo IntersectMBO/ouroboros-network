@@ -23,7 +23,6 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
-import qualified Cardano.Binary
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Byron.API as ByronAPI
 import qualified Cardano.Chain.Genesis as Genesis
@@ -37,6 +36,7 @@ import qualified Cardano.Chain.Update.Validation.Registration as Registration
 import           Cardano.Chain.Update.Vote (AVote)
 import qualified Cardano.Chain.Update.Vote as Vote
 import qualified Cardano.Crypto as Crypto
+import           Cardano.Ledger.Binary (ByteSpan, DecCBOR (..), EncCBOR (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -476,13 +476,11 @@ mkHardForkProposal params genesisConfig genesisSecrets propPV =
 -- instances.
 --
 loopbackAnnotations
-  :: ( Cardano.Binary.FromCBOR (f Cardano.Binary.ByteSpan)
-     , Cardano.Binary.ToCBOR (f ())
+  :: ( DecCBOR (f ByteSpan)
+     , EncCBOR (f ())
      , Functor f
      )
   => f ()
   -> f ByteString
 loopbackAnnotations =
-    ByronAPI.reAnnotateUsing
-      Cardano.Binary.toCBOR
-      Cardano.Binary.fromCBOR
+    ByronAPI.reAnnotateUsing encCBOR decCBOR

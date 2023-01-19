@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE FlexibleContexts     #-}
@@ -24,6 +25,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.SOP.Strict (NP (..))
 import           Data.Word (Word64)
+import           Lens.Micro ((^.))
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -43,7 +45,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
 import qualified Cardano.Ledger.BaseTypes as SL
-import qualified Cardano.Ledger.Shelley.PParams as SL
+import qualified Cardano.Ledger.Shelley.Core as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
+                     (toFromByronTranslationContext)
 import qualified Cardano.Protocol.TPraos.OCert as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
@@ -277,10 +281,11 @@ prop_simple_shelleyAllegra_convergence TestSetup
                       }
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
+                    (SL.toFromByronTranslationContext genesisShelley)
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = ()
                       , transitionTrigger            =
-                          TriggerHardForkAtVersion majorVersion2
+                          TriggerHardForkAtVersion $ SL.getVersion majorVersion2
                       }
               }
           , mkRekeyM = Nothing
@@ -303,7 +308,7 @@ prop_simple_shelleyAllegra_convergence TestSetup
     maxLovelaceSupply =
       fromIntegral (length coreNodes) * Shelley.initialLovelacePerCoreNode
 
-    genesisShelley :: ShelleyGenesis (ShelleyEra Crypto)
+    genesisShelley :: ShelleyGenesis Crypto
     genesisShelley =
         Shelley.mkGenesisConfig
           (SL.ProtVer majorVersion1 0)
@@ -356,7 +361,7 @@ prop_simple_shelleyAllegra_convergence TestSetup
         secondEraOverlaySlots
           numSlots
           (NumSlots numFirstEraSlots)
-          (SL._d (sgProtocolParams genesisShelley))
+          (sgProtocolParams genesisShelley ^. SL.ppDG)
           epochSize
 
     numFirstEraSlots :: Word64
@@ -388,9 +393,9 @@ prop_simple_shelleyAllegra_convergence TestSetup
 -------------------------------------------------------------------------------}
 
 -- | The major protocol version of the first era in this test
-majorVersion1 :: Num a => a
-majorVersion1 = 0
+majorVersion1 :: SL.Version
+majorVersion1 = SL.natVersion @1
 
 -- | The major protocol version of the second era in this test
-majorVersion2 :: Num a => a
-majorVersion2 = majorVersion1 + 1
+majorVersion2 :: SL.Version
+majorVersion2 = SL.natVersion @2

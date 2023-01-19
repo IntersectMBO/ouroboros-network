@@ -66,15 +66,18 @@ import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
 import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Coin as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.LedgerState as SL
                      (incrementalStakeDistr, updateStakeDistribution)
+import qualified Cardano.Ledger.Shelley.Translation as SL
+                     (emptyFromByronTranslationContext)
 import           Cardano.Ledger.Val (coin, inject, (<->))
 import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 
+import qualified Cardano.Ledger.UMapCompact as UM
 import qualified Cardano.Protocol.TPraos.OCert as SL
-import qualified Data.UMap as UM
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Praos.Common
@@ -181,8 +184,8 @@ shelleySharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides
 -- | Check the validity of the genesis config. To be used in conjunction with
 -- 'assertWithMsg'.
 validateGenesis ::
-     ShelleyBasedEra era
-  => SL.ShelleyGenesis era -> Either String ()
+     PraosCrypto c
+  => SL.ShelleyGenesis c -> Either String ()
 validateGenesis = first errsToString . SL.validateGenesis
   where
     errsToString :: [SL.ValidationErr] -> String
@@ -231,7 +234,7 @@ protocolInfoShelley protocolParamsShelleyBased
                       } =
     protocolInfoTPraosShelleyBased
       protocolParamsShelleyBased
-      ((), ())  -- trivial additional genesis config and translation context
+      ((), SL.emptyFromByronTranslationContext)
       protVer
       maxTxCapacityOverrides
 
@@ -291,7 +294,7 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
     epochInfo =
         fixedEpochInfo
           (SL.sgEpochLength genesis)
-          (mkSlotLength $ SL.sgSlotLength genesis)
+          (mkSlotLength $ SL.fromNominalDiffTimeMicro $ SL.sgSlotLength genesis)
 
     tpraosParams :: TPraosParams
     tpraosParams = mkTPraosParams maxMajorProtVer initialNonce genesis
@@ -341,7 +344,7 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
 -- Any existing staking information is overridden, but the UTxO is left
 -- untouched.
 --
--- TODO adapt and reuse @registerGenesisStaking@ from @cardano-ledger-specs@.
+-- TODO adapt and reuse @registerGenesisStaking@ from @cardano-ledger@.
 registerGenesisStaking ::
      forall era. ShelleyBasedEra era
   => SL.ShelleyGenesisStaking (EraCrypto era)
@@ -356,7 +359,7 @@ registerGenesisStaking staking nes = nes {
             }
         }
         , SL.esSnapshots = (SL.esSnapshots epochState) {
-              SL._pstakeMark = initSnapShot
+              SL.ssStakeMark = initSnapShot
             }
         }
 
@@ -377,8 +380,8 @@ registerGenesisStaking staking nes = nes {
     -- See STS DELEG for details
     dState' :: SL.DState (EraCrypto era)
     dState' = (SL.dpsDState dpState) {
-          SL._unified = UM.unify
-            ( Map.map (const $ SL.Coin 0)
+          SL.dsUnified = UM.unify
+            ( Map.map (const $ UM.RDPair (SL.CompactCoin 0) (SL.CompactCoin 0))
                       . Map.mapKeys SL.KeyHashObj
                       $ sgsStakeMap)
             ( Map.mapKeys SL.KeyHashObj sgsStakeMap )
@@ -390,8 +393,10 @@ registerGenesisStaking staking nes = nes {
     -- See STS POOL for details
     pState' :: SL.PState (EraCrypto era)
     pState' = (SL.dpsPState dpState) {
-          SL._pParams = ListMap.toMap sgsPools
+          SL.psStakePoolParams = ListMap.toMap sgsPools
         }
+
+    pp = SL.esPp epochState
 
     -- The new stake distribution is made on the basis of a snapshot taken
     -- during the previous epoch. We create a "fake" snapshot in order to
@@ -404,10 +409,11 @@ registerGenesisStaking staking nes = nes {
       -- 1. Add the initial UTxO, whilst deleting nothing.
       -- 2. Update the stake map given the initial delegation.
       SL.incrementalStakeDistr
+        pp
         -- Note that 'updateStakeDistribution' takes first the set of UTxO to
         -- delete, and then the set to add. In our case, there is nothing to
         -- delete, since this is an initial UTxO set.
-        (SL.updateStakeDistribution mempty mempty (SL._utxo (SL.lsUTxOState ledgerState)))
+        (SL.updateStakeDistribution pp mempty mempty (SL.utxosUtxo (SL.lsUTxOState ledgerState)))
         dState'
         pState'
 
@@ -448,9 +454,9 @@ registerInitialFunds initialFunds nes = nes {
     epochState   = SL.nesEs          nes
     accountState = SL.esAccountState epochState
     ledgerState  = SL.esLState       epochState
-    utxoState    = SL.lsUTxOState     ledgerState
-    utxo         = SL._utxo          utxoState
-    reserves     = SL._reserves      accountState
+    utxoState    = SL.lsUTxOState    ledgerState
+    utxo         = SL.utxosUtxo      utxoState
+    reserves     = SL.asReserves     accountState
 
     initialFundsUtxo :: SL.UTxO era
     initialFundsUtxo = SL.UTxO $ Map.fromList [
@@ -464,7 +470,7 @@ registerInitialFunds initialFunds nes = nes {
 
     -- Update the reserves
     accountState' = accountState {
-          SL._reserves = reserves <-> coin (SL.balance initialFundsUtxo)
+          SL.asReserves = reserves <-> coin (SL.balance initialFundsUtxo)
         }
 
     -- Since we only add entries to our UTxO, rather than spending them, there
@@ -472,11 +478,12 @@ registerInitialFunds initialFunds nes = nes {
     utxoToDel     = SL.UTxO mempty
     ledgerState'  = ledgerState {
           SL.lsUTxOState = utxoState {
-              SL._utxo        = utxo',
+              SL.utxosUtxo        = utxo',
               -- Normally we would incrementally update here. But since we pass
               -- the full UTxO as "toAdd" rather than a delta, we simply
               -- reinitialise the full incremental stake.
-              SL._stakeDistro = SL.updateStakeDistribution mempty utxoToDel utxo'
+              SL.utxosStakeDistr =
+                  SL.updateStakeDistribution (SL.esPp epochState) mempty utxoToDel utxo'
             }
         }
 

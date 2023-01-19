@@ -17,6 +17,9 @@ module Test.Util.Orphans.Arbitrary (
   , genLimitedSlotNo
   , genSmallEpochNo
   , genSmallSlotNo
+  -- * Time
+  , genNominalDiffTime50Years
+  , genUTCTime50Years
   ) where
 
 import           Data.Coerce (coerce)
@@ -53,36 +56,32 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
-import           Test.Util.Time
+import           Test.Util.Time (dawnOfTime)
+import           Test.Cardano.Ledger.Binary.Arbitrary ()
 
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2
-
-instance Arbitrary a => Arbitrary (WithOrigin a) where
-  arbitrary = oneof [
-        pure Origin
-      , NotOrigin <$> arbitrary
-      ]
-
-  shrink Origin        = []
-  shrink (NotOrigin x) = Origin : map NotOrigin (shrink x)
 
 instance Arbitrary NumCoreNodes where
   arbitrary = NumCoreNodes <$> choose (minNumCoreNodes, 5)
   shrink (NumCoreNodes n) = NumCoreNodes <$> (filter (>= minNumCoreNodes) $ shrink n)
 
 -- | Picks time span between 0 seconds and (roughly) 50 years
-instance Arbitrary NominalDiffTime where
-  arbitrary = conv <$> choose (0, 50 * daysPerYear * secondsPerDay)
-    where
-      conv :: Double -> NominalDiffTime
-      conv = realToFrac
+--
+-- /Note/ - Arbitrary instance for `NominalDiffTime` comes from @quickcheck-instances@ and
+-- it uses a much wider timespan.
+genNominalDiffTime50Years :: Gen NominalDiffTime
+genNominalDiffTime50Years = conv <$> choose (0, 50 * daysPerYear * secondsPerDay)
+  where
+    conv :: Double -> NominalDiffTime
+    conv = realToFrac
 
 -- | Picks moment between 'dawnOfTime' and (roughly) 50 years later
 --
--- Uses instance for 'NominalDiffTime'
-instance Arbitrary UTCTime where
-  arbitrary = (`addUTCTime` dawnOfTime) <$> arbitrary
+-- /Note/ - Arbitrary instance for `UTCTime` comes from @quickcheck-instances@ and it uses
+-- a much wider timespan.
+genUTCTime50Years :: Gen UTCTime
+genUTCTime50Years = (`addUTCTime` dawnOfTime) <$> genNominalDiffTime50Years
 
 -- | Length between 0.001 and 20 seconds, millisecond granularity
 instance Arbitrary SlotLength where
@@ -93,9 +92,6 @@ instance Arbitrary SlotLength where
   shrink slotLen = if slotLen /= oneSec then [oneSec] else []
     where
       oneSec = slotLengthFromSec 1
-
-deriving via UTCTime         instance Arbitrary SystemStart
-deriving via Positive Word64 instance Arbitrary BlockNo
 
 instance Arbitrary RelativeSlot where
   arbitrary = RelativeSlot <$> arbitrary <*> arbitrary <*> arbitrary

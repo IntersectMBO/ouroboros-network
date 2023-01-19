@@ -20,7 +20,7 @@ import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           GHC.Stack
 
-import           Cardano.Binary (Annotated (..), reAnnotate)
+import           Cardano.Ledger.Binary (Annotated (..), reAnnotate, byronProtVer)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Common as CC.Common
@@ -141,7 +141,7 @@ forgeRegularBlock cfg maxTxCapacityOverrides bno sno st txs isLeader =
       forgePBftFields
         (mkByronContextDSIGN cfg)
         isLeader
-        (reAnnotate $ Annotated toSign ())
+        (reAnnotate byronProtVer $ Annotated toSign ())
   where
     epochSlots :: CC.Slot.EpochSlots
     epochSlots = byronEpochSlots cfg

@@ -22,8 +22,9 @@ module Cardano.Api.OperationalCertificate (
 
 import           Data.Word
 
+import qualified Cardano.Ledger.Binary as CBOR (CBORGroup (..), shelleyProtVer,
+                     toPlainDecoder, toPlainEncoding)
 import           Cardano.Ledger.Crypto (StandardCrypto)
-import qualified Cardano.Ledger.Serialization as CBOR (CBORGroup (..))
 import qualified Cardano.Protocol.TPraos.OCert as Shelley
 
 import           Cardano.Api.Any
@@ -53,22 +54,35 @@ data OperationalCertificateIssueCounter =
   deriving (Eq, Show)
   deriving anyclass SerialiseAsCBOR
 
+
 instance ToCBOR OperationalCertificate where
-    toCBOR (OperationalCertificate ocert vkey) =
-      toCBOR (CBOR.CBORGroup ocert, vkey)
+    toCBOR = CBOR.toPlainEncoding CBOR.shelleyProtVer . encCBOR
 
 instance FromCBOR OperationalCertificate where
-    fromCBOR = do
-      (CBOR.CBORGroup ocert, vkey) <- fromCBOR
-      return (OperationalCertificate ocert vkey)
+    fromCBOR = CBOR.toPlainDecoder CBOR.shelleyProtVer decCBOR
 
 instance ToCBOR OperationalCertificateIssueCounter where
-    toCBOR (OperationalCertificateIssueCounter counter vkey) =
-      toCBOR (counter, vkey)
+    toCBOR = CBOR.toPlainEncoding CBOR.shelleyProtVer . encCBOR
 
 instance FromCBOR OperationalCertificateIssueCounter where
-    fromCBOR = do
-      (counter, vkey) <- fromCBOR
+    fromCBOR = CBOR.toPlainDecoder CBOR.shelleyProtVer decCBOR
+
+instance EncCBOR OperationalCertificate where
+    encCBOR (OperationalCertificate ocert vkey) =
+      encCBOR (CBOR.CBORGroup ocert, vkey)
+
+instance DecCBOR OperationalCertificate where
+    decCBOR = do
+      (CBOR.CBORGroup ocert, vkey) <- decCBOR
+      return (OperationalCertificate ocert vkey)
+
+instance EncCBOR OperationalCertificateIssueCounter where
+    encCBOR (OperationalCertificateIssueCounter counter vkey) =
+      encCBOR (counter, vkey)
+
+instance DecCBOR OperationalCertificateIssueCounter where
+    decCBOR = do
+      (counter, vkey) <- decCBOR
       return (OperationalCertificateIssueCounter counter vkey)
 
 instance HasTypeProxy OperationalCertificate where

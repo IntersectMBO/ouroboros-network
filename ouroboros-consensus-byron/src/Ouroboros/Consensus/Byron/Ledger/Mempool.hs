@@ -52,10 +52,11 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (InspectHeapNamed (..), NoThunks (..))
 
-import           Cardano.Binary (ByteSpan, DecoderError (..), FromCBOR (..),
-                     ToCBOR (..), enforceSize, fromCBOR, serialize, slice,
-                     toCBOR, unsafeDeserialize)
 import           Cardano.Crypto (hashDecoded)
+import           Cardano.Ledger.Binary (ByteSpan, DecoderError (..),
+                     byronProtVer, fromByronCBOR, toByronCBOR, serialize, slice,
+                     unsafeDeserialize)
+import           Cardano.Ledger.Binary.Plain (enforceSize)
 import           Cardano.Prelude (cborError)
 
 import qualified Cardano.Chain.Block as CC
@@ -266,7 +267,7 @@ applyByronGenTx validationMode cfg slot genTx st =
 -------------------------------------------------------------------------------}
 
 encodeByronGenTx :: GenTx ByronBlock -> Encoding
-encodeByronGenTx genTx = toCBOR (toMempoolPayload genTx)
+encodeByronGenTx genTx = toByronCBOR (toMempoolPayload genTx)
 
 -- | The 'ByteString' annotation will be the canonical encoding.
 --
@@ -282,7 +283,7 @@ encodeByronGenTx genTx = toCBOR (toMempoolPayload genTx)
 -- bytestring. Is therefore __important__ that the annotated bytestring be the
 -- /canonical/ encoding, not the /original, possibly non-canonical/ encoding.
 decodeByronGenTx :: Decoder s (GenTx ByronBlock)
-decodeByronGenTx = fromMempoolPayload . canonicalise <$> fromCBOR
+decodeByronGenTx = fromMempoolPayload . canonicalise <$> fromByronCBOR
   where
     -- Fill in the 'ByteString' annotation with a canonical encoding of the
     -- 'GenTx'. We must reserialise the deserialised 'GenTx' to be sure we
@@ -293,37 +294,37 @@ decodeByronGenTx = fromMempoolPayload . canonicalise <$> fromCBOR
                  -> CC.AMempoolPayload ByteString
     canonicalise mp = Lazy.toStrict . slice canonicalBytes <$> mp'
       where
-        canonicalBytes = serialize (void mp)
+        canonicalBytes = serialize byronProtVer (void mp)
         -- 'unsafeDeserialize' cannot fail, since we just 'serialize'd it.
         -- Note that we cannot reuse @mp@, as its 'ByteSpan' might differ from
         -- the canonical encoding's 'ByteSpan'.
-        mp'            = unsafeDeserialize canonicalBytes
+        mp'            = unsafeDeserialize byronProtVer canonicalBytes
 
 encodeByronGenTxId :: GenTxId ByronBlock -> Encoding
 encodeByronGenTxId genTxId = mconcat [
       CBOR.encodeListLen 2
     , case genTxId of
-        ByronTxId             i -> toCBOR (0 :: Word8) <> toCBOR i
-        ByronDlgId            i -> toCBOR (1 :: Word8) <> toCBOR i
-        ByronUpdateProposalId i -> toCBOR (2 :: Word8) <> toCBOR i
-        ByronUpdateVoteId     i -> toCBOR (3 :: Word8) <> toCBOR i
+        ByronTxId             i -> toByronCBOR (0 :: Word8) <> toByronCBOR i
+        ByronDlgId            i -> toByronCBOR (1 :: Word8) <> toByronCBOR i
+        ByronUpdateProposalId i -> toByronCBOR (2 :: Word8) <> toByronCBOR i
+        ByronUpdateVoteId     i -> toByronCBOR (3 :: Word8) <> toByronCBOR i
     ]
 
 decodeByronGenTxId :: Decoder s (GenTxId ByronBlock)
 decodeByronGenTxId = do
     enforceSize "GenTxId (ByronBlock cfg)" 2
     CBOR.decodeWord8 >>= \case
-      0   -> ByronTxId             <$> fromCBOR
-      1   -> ByronDlgId            <$> fromCBOR
-      2   -> ByronUpdateProposalId <$> fromCBOR
-      3   -> ByronUpdateVoteId     <$> fromCBOR
+      0   -> ByronTxId             <$> fromByronCBOR
+      1   -> ByronDlgId            <$> fromByronCBOR
+      2   -> ByronUpdateProposalId <$> fromByronCBOR
+      3   -> ByronUpdateVoteId     <$> fromByronCBOR
       tag -> cborError $ DecoderErrorUnknownTag "GenTxId (ByronBlock cfg)" tag
 
 encodeByronApplyTxError :: ApplyTxErr ByronBlock -> Encoding
-encodeByronApplyTxError = toCBOR
+encodeByronApplyTxError = toByronCBOR
 
 decodeByronApplyTxError :: Decoder s (ApplyTxErr ByronBlock)
-decodeByronApplyTxError = fromCBOR
+decodeByronApplyTxError = fromByronCBOR
 
 {-------------------------------------------------------------------------------
   Auxiliary functions

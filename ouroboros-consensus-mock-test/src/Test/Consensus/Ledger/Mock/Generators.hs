@@ -13,8 +13,6 @@
 module Test.Consensus.Ledger.Mock.Generators () where
 
 import           Codec.Serialise (Serialise, encode, serialise)
-import           Control.Monad
-import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -29,7 +27,6 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util (hashFromBytesE)
 
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Block.BFT
@@ -38,7 +35,6 @@ import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as L
 import           Ouroboros.Consensus.Mock.Node.Serialisation ()
 
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Orphans.Slotting.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
 
 {-------------------------------------------------------------------------------
@@ -175,8 +171,3 @@ instance Arbitrary (BftFields BftMockCrypto toSign) where
       bftSignature <- SignedDSIGN <$>
                         (SigMockDSIGN <$> arbitrary <*> arbitrary)
       return BftFields{..}
-
-instance HashAlgorithm h => Arbitrary (Hash h a) where
-  arbitrary =
-      hashFromBytesE . Strict.pack <$>
-        replicateM (fromIntegral (sizeHash (Proxy @h))) arbitrary

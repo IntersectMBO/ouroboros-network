@@ -8,7 +8,7 @@ license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
 copyright:              2022-2023 Input Output Global Inc (IOG)
-author:                 IOHK 
+author:                 IOHK
 maintainer:             operations@iohk.io
 category:               Network
 build-type:             Simple
@@ -63,19 +63,20 @@ library
                      , transformers
                      , transformers-except
 
-                     , cardano-binary
                      , cardano-crypto
                      , cardano-crypto-wrapper
                      , cardano-crypto-class
+                     , cardano-ledger-allegra
                      , cardano-ledger-alonzo
                      , cardano-ledger-babbage
+                     , cardano-ledger-binary
                      , cardano-ledger-byron
                      , cardano-ledger-conway
                      , cardano-ledger-core
+                     , cardano-ledger-mary
                      , cardano-ledger-shelley
                      , cardano-protocol-tpraos
                      , cardano-prelude
-                     , cardano-ledger-shelley-ma
                      , cardano-slotting
 
                      , ouroboros-consensus

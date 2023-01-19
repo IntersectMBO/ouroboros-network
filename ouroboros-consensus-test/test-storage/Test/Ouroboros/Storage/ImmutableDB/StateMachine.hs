@@ -102,7 +102,7 @@ import           Test.Util.ChunkInfo
 import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.Orphans.Slotting.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.QuickCheck (collects)
 import qualified Test.Util.RefEnv as RE
@@ -1113,8 +1113,6 @@ instance CommandNames (At CmdErr m) where
   cmdNames (_ :: Proxy (At CmdErr m r)) =
     constrNames (Proxy @(Cmd (IterRef m r)))
 
-instance ToExpr EpochNo
-instance ToExpr EpochSize
 instance ToExpr ChunkSize
 instance ToExpr ChunkNo
 instance ToExpr ChunkSlot

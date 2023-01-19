@@ -67,12 +67,13 @@ forgeShelleyBlock
   txs
   isLeader = do
     hdr <- mkHeader @_ @(ProtoCrypto proto) hotKey cbl isLeader
-      curSlot curNo prevHash (SL.hashTxSeq @era body) actualBodySize (shelleyProtocolVersion $ configBlock cfg)
+      curSlot curNo prevHash (SL.hashTxSeq @era body) actualBodySize protocolVersion
     let blk = mkShelleyBlock $ SL.Block hdr body
     return $
       assert (verifyBlockIntegrity (configSlotsPerKESPeriod $ configConsensus cfg) blk) $
       assertWithMsg bodySizeEstimate blk
   where
+    protocolVersion = shelleyProtocolVersion $ configBlock cfg
 
     body =
         SL.toTxSeq @era
@@ -105,4 +106,4 @@ forgeShelleyBlock
 
     estimatedBodySize, actualBodySize :: Int
     estimatedBodySize = fromIntegral $ foldl' (+) 0 $ map (txInBlockSize . txForgetValidated) txs
-    actualBodySize    = SL.bBodySize body
+    actualBodySize    = SL.bBodySize protocolVersion body

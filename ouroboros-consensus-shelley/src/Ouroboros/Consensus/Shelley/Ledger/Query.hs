@@ -11,6 +11,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -32,20 +33,22 @@ import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
-import           Codec.Serialise (Serialise, decode, encode)
+import           Codec.Serialise (decode, encode)
 import           Control.DeepSeq (NFData)
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Type.Equality (apply)
 import           Data.Typeable (Typeable)
-import           Data.UMap (View (..), domRestrictedView)
 import           GHC.Generics (Generic)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), encodeListLen,
                      enforceSize)
+import           Cardano.Ledger.UMapCompact (View (..), domRestrictedView,
+                     rewView)
 
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      encodePoint, mkSerialised)
@@ -58,11 +61,12 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import           Cardano.Ledger.Compactible (Compactible (fromCompact))
-import qualified Cardano.Ledger.Core as LC
+import qualified Cardano.Ledger.EpochBoundary as SL
 import           Cardano.Ledger.Keys (KeyHash, KeyRole (..))
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.EpochBoundary as SL
+import qualified Cardano.Ledger.Shelley.Core as LC
 import qualified Cardano.Ledger.Shelley.LedgerState as SL (RewardAccounts)
+import qualified Cardano.Ledger.Shelley.PParams as SL (emptyPPPUpdates)
 import qualified Cardano.Ledger.Shelley.RewardProvenance as SL
                      (RewardProvenance)
 import qualified Data.VMap as VMap
@@ -87,15 +91,11 @@ newtype NonMyopicMemberRewards c = NonMyopicMemberRewards {
             (Map (SL.KeyHash 'SL.StakePool c) SL.Coin)
     }
   deriving stock   (Show)
-  deriving newtype (Eq)
+  deriving newtype (Eq, ToCBOR, FromCBOR)
 
 type Delegations c =
   Map (SL.Credential 'SL.Staking c)
       (SL.KeyHash 'SL.StakePool c)
-
-instance Crypto c => Serialise (NonMyopicMemberRewards c) where
-  encode = toCBOR . unNonMyopicMemberRewards
-  decode = NonMyopicMemberRewards <$> fromCBOR
 
 data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
   GetLedgerTip :: BlockQuery (ShelleyBlock proto era) (Point (ShelleyBlock proto era))
@@ -162,7 +162,7 @@ data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
              (Delegations (EraCrypto era), SL.RewardAccounts (EraCrypto era))
 
   GetGenesisConfig
-    :: BlockQuery (ShelleyBlock proto era) (CompactGenesis era)
+    :: BlockQuery (ShelleyBlock proto era) (CompactGenesis (EraCrypto era))
 
   -- | Only for debugging purposes, we make no effort to ensure binary
   -- compatibility (cf the comment on 'GetCBOR'). Moreover, it is huge.
@@ -290,30 +290,33 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
           case mPoolIds of
             Just poolIds ->
               SL.PState
-                { SL._pParams  = Map.restrictKeys (SL._pParams  dpsPState) poolIds
-                , SL._fPParams = Map.restrictKeys (SL._fPParams dpsPState) poolIds
-                , SL._retiring = Map.restrictKeys (SL._retiring dpsPState) poolIds
+                { SL.psStakePoolParams  =
+                  Map.restrictKeys (SL.psStakePoolParams dpsPState) poolIds
+                , SL.psFutureStakePoolParams =
+                  Map.restrictKeys (SL.psFutureStakePoolParams dpsPState) poolIds
+                , SL.psRetiring = Map.restrictKeys (SL.psRetiring dpsPState) poolIds
+                , SL.psDeposits = Map.restrictKeys (SL.psDeposits dpsPState) poolIds
                 }
             Nothing -> dpsPState
         GetStakeSnapshots mPoolIds ->
           let SL.SnapShots
-                { SL._pstakeMark
-                , SL._pstakeSet
-                , SL._pstakeGo
+                { SL.ssStakeMark
+                , SL.ssStakeSet
+                , SL.ssStakeGo
                 } = SL.esSnapshots . SL.nesEs $ st
 
               -- | Sum all the stake that is held by the pool
               getPoolStake :: KeyHash 'StakePool crypto -> SL.SnapShot crypto -> SL.Coin
               getPoolStake hash ss = VMap.foldMap fromCompact s
                 where
-                  SL.Stake s = SL.poolStake hash (SL._delegations ss) (SL._stake ss)
+                  SL.Stake s = SL.poolStake hash (SL.ssDelegations ss) (SL.ssStake ss)
 
               getPoolStakes :: Set (KeyHash 'StakePool crypto) -> Map (KeyHash 'StakePool crypto) (StakeSnapshot crypto)
               getPoolStakes poolIds = Map.fromSet mkStakeSnapshot poolIds
                 where mkStakeSnapshot poolId = StakeSnapshot
-                        { ssMarkPool = getPoolStake poolId _pstakeMark
-                        , ssSetPool  = getPoolStake poolId _pstakeSet
-                        , ssGoPool   = getPoolStake poolId _pstakeGo
+                        { ssMarkPool = getPoolStake poolId ssStakeMark
+                        , ssSetPool  = getPoolStake poolId ssStakeSet
+                        , ssGoPool   = getPoolStake poolId ssStakeGo
                         }
 
               getAllStake :: SL.SnapShot crypto -> SL.Coin
@@ -323,27 +326,27 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
           case mPoolIds of
             Nothing ->
               let poolIds = Set.fromList $ mconcat
-                    [ VMap.elems (SL._delegations _pstakeMark)
-                    , VMap.elems (SL._delegations _pstakeSet)
-                    , VMap.elems (SL._delegations _pstakeGo)
+                    [ VMap.elems (SL.ssDelegations ssStakeMark)
+                    , VMap.elems (SL.ssDelegations ssStakeSet)
+                    , VMap.elems (SL.ssDelegations ssStakeGo)
                     ]
               in
               StakeSnapshots
                 { ssStakeSnapshots = getPoolStakes poolIds
-                , ssMarkTotal      = getAllStake _pstakeMark
-                , ssSetTotal       = getAllStake _pstakeSet
-                , ssGoTotal        = getAllStake _pstakeGo
+                , ssMarkTotal      = getAllStake ssStakeMark
+                , ssSetTotal       = getAllStake ssStakeSet
+                , ssGoTotal        = getAllStake ssStakeGo
                 }
             Just poolIds ->
               StakeSnapshots
                 { ssStakeSnapshots = getPoolStakes poolIds
-                , ssMarkTotal      = getAllStake _pstakeMark
-                , ssSetTotal       = getAllStake _pstakeSet
-                , ssGoTotal        = getAllStake _pstakeGo
+                , ssMarkTotal      = getAllStake ssStakeMark
+                , ssSetTotal       = getAllStake ssStakeSet
+                , ssGoTotal        = getAllStake ssStakeGo
                 }
 
         GetPoolDistr mPoolIds ->
-          let stakeSet = SL._pstakeSet . SL.esSnapshots $ getEpochState st in
+          let stakeSet = SL.ssStakeSet . SL.esSnapshots $ getEpochState st in
           SL.calculatePoolDistr' (maybe (const True) (flip Set.member) mPoolIds) stakeSet
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
@@ -541,10 +544,12 @@ querySupportedVersion = \case
   Auxiliary
 -------------------------------------------------------------------------------}
 
+-- | /Note/ - This query is deprecated starting with Conway era
 getProposedPPUpdates ::
      ShelleyBasedEra era
   => SL.NewEpochState era -> SL.ProposedPPUpdates era
-getProposedPPUpdates = SL.proposals . SL._ppups
+getProposedPPUpdates = fromMaybe SL.emptyPPPUpdates
+                     . LC.getProposedPPUpdates . SL.utxosGovernance
                      . SL.lsUTxOState . SL.esLState . SL.nesEs
 
 -- Get the current 'EpochState.' This is mainly for debugging.
@@ -561,17 +566,17 @@ getFilteredDelegationsAndRewardAccounts ::
 getFilteredDelegationsAndRewardAccounts ss creds =
     (filteredDelegations, filteredRwdAcnts)
   where
-    u = SL._unified $ getDState ss
+    u = SL.dsUnified $ getDState ss
 
     filteredDelegations = domRestrictedView creds $ Delegations u
-    filteredRwdAcnts = domRestrictedView creds $ Rewards u
+    filteredRwdAcnts = rewView u `Map.restrictKeys` creds
 
 {-------------------------------------------------------------------------------
   Serialisation
 -------------------------------------------------------------------------------}
 
 encodeShelleyQuery ::
-     ShelleyBasedEra era
+     forall era proto result. ShelleyBasedEra era
   => BlockQuery (ShelleyBlock proto era) result -> Encoding
 encodeShelleyQuery query = case query of
     GetLedgerTip ->
@@ -587,7 +592,7 @@ encodeShelleyQuery query = case query of
     GetStakeDistribution ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 5
     GetUTxOByAddress addrs ->
-      CBOR.encodeListLen 2 <> CBOR.encodeWord8 6 <> toCBOR addrs
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 6 <> LC.toEraCBOR @era addrs
     GetUTxOWhole ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 7
     DebugEpochState ->
@@ -595,7 +600,7 @@ encodeShelleyQuery query = case query of
     GetCBOR query' ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 9 <> encodeShelleyQuery query'
     GetFilteredDelegationsAndRewardAccounts creds ->
-      CBOR.encodeListLen 2 <> CBOR.encodeWord8 10 <> toCBOR creds
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 10 <> LC.toEraCBOR @era creds
     GetGenesisConfig ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 11
     DebugNewEpochState ->
@@ -605,7 +610,7 @@ encodeShelleyQuery query = case query of
     GetRewardProvenance ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 14
     GetUTxOByTxIn txins ->
-      CBOR.encodeListLen 2 <> CBOR.encodeWord8 15 <> toCBOR txins
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 15 <> LC.toEraCBOR @era txins
     GetStakePools ->
       CBOR.encodeListLen 1 <> CBOR.encodeWord8 16
     GetStakePoolParams poolids ->
@@ -620,8 +625,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 21 <> toCBOR poolids
 
 decodeShelleyQuery ::
-     ShelleyBasedEra era
-  => Decoder s (SomeSecond BlockQuery (ShelleyBlock proto era))
+     forall era proto. ShelleyBasedEra era
+  => forall s. Decoder s (SomeSecond BlockQuery (ShelleyBlock proto era))
 decodeShelleyQuery = do
     len <- CBOR.decodeListLen
     tag <- CBOR.decodeWord8
@@ -632,16 +637,16 @@ decodeShelleyQuery = do
       (1, 3)  -> return $ SomeSecond GetCurrentPParams
       (1, 4)  -> return $ SomeSecond GetProposedPParamsUpdates
       (1, 5)  -> return $ SomeSecond GetStakeDistribution
-      (2, 6)  -> SomeSecond . GetUTxOByAddress <$> fromCBOR
+      (2, 6)  -> SomeSecond . GetUTxOByAddress <$> LC.fromEraCBOR @era
       (1, 7)  -> return $ SomeSecond GetUTxOWhole
       (1, 8)  -> return $ SomeSecond DebugEpochState
       (2, 9)  -> (\(SomeSecond q) -> SomeSecond (GetCBOR q)) <$> decodeShelleyQuery
-      (2, 10) -> SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> fromCBOR
+      (2, 10) -> SomeSecond . GetFilteredDelegationsAndRewardAccounts <$> LC.fromEraCBOR @era
       (1, 11) -> return $ SomeSecond GetGenesisConfig
       (1, 12) -> return $ SomeSecond DebugNewEpochState
       (1, 13) -> return $ SomeSecond DebugChainDepState
       (1, 14) -> return $ SomeSecond GetRewardProvenance
-      (2, 15) -> SomeSecond . GetUTxOByTxIn <$> fromCBOR
+      (2, 15) -> SomeSecond . GetUTxOByTxIn <$> LC.fromEraCBOR @era
       (1, 16) -> return $ SomeSecond GetStakePools
       (2, 17) -> SomeSecond . GetStakePoolParams <$> fromCBOR
       (1, 18) -> return $ SomeSecond GetRewardInfoPools
@@ -653,59 +658,59 @@ decodeShelleyQuery = do
         show len <> ", " <> show tag <> ")"
 
 encodeShelleyResult ::
-     ShelleyCompatible proto era
+     forall proto era result. ShelleyCompatible proto era
   => BlockQuery (ShelleyBlock proto era) result -> result -> Encoding
 encodeShelleyResult query = case query of
     GetLedgerTip                               -> encodePoint encode
-    GetEpochNo                                 -> encode
-    GetNonMyopicMemberRewards {}               -> encode
+    GetEpochNo                                 -> toCBOR
+    GetNonMyopicMemberRewards {}               -> toCBOR
     GetCurrentPParams                          -> toCBOR
     GetProposedPParamsUpdates                  -> toCBOR
-    GetStakeDistribution                       -> toCBOR
+    GetStakeDistribution                       -> LC.toEraCBOR @era
     GetUTxOByAddress {}                        -> toCBOR
     GetUTxOWhole                               -> toCBOR
     DebugEpochState                            -> toCBOR
     GetCBOR {}                                 -> encode
-    GetFilteredDelegationsAndRewardAccounts {} -> toCBOR
+    GetFilteredDelegationsAndRewardAccounts {} -> LC.toEraCBOR @era
     GetGenesisConfig                           -> toCBOR
     DebugNewEpochState                         -> toCBOR
     DebugChainDepState                         -> encode
-    GetRewardProvenance                        -> toCBOR
+    GetRewardProvenance                        -> LC.toEraCBOR @era
     GetUTxOByTxIn {}                           -> toCBOR
     GetStakePools                              -> toCBOR
-    GetStakePoolParams {}                      -> toCBOR
-    GetRewardInfoPools                         -> toCBOR
-    GetPoolState {}                            -> toCBOR
+    GetStakePoolParams {}                      -> LC.toEraCBOR @era
+    GetRewardInfoPools                         -> LC.toEraCBOR @era
+    GetPoolState {}                            -> LC.toEraCBOR @era
     GetStakeSnapshots {}                       -> toCBOR
-    GetPoolDistr {}                            -> toCBOR
+    GetPoolDistr {}                            -> LC.toEraCBOR @era
 
 decodeShelleyResult ::
-     ShelleyCompatible proto era
+     forall proto era result. ShelleyCompatible proto era
   => BlockQuery (ShelleyBlock proto era) result
   -> forall s. Decoder s result
 decodeShelleyResult query = case query of
     GetLedgerTip                               -> decodePoint decode
-    GetEpochNo                                 -> decode
-    GetNonMyopicMemberRewards {}               -> decode
+    GetEpochNo                                 -> fromCBOR
+    GetNonMyopicMemberRewards {}               -> fromCBOR
     GetCurrentPParams                          -> fromCBOR
     GetProposedPParamsUpdates                  -> fromCBOR
-    GetStakeDistribution                       -> fromCBOR
+    GetStakeDistribution                       -> LC.fromEraCBOR @era
     GetUTxOByAddress {}                        -> fromCBOR
     GetUTxOWhole                               -> fromCBOR
     DebugEpochState                            -> fromCBOR
     GetCBOR {}                                 -> decode
-    GetFilteredDelegationsAndRewardAccounts {} -> fromCBOR
+    GetFilteredDelegationsAndRewardAccounts {} -> LC.fromEraCBOR @era
     GetGenesisConfig                           -> fromCBOR
     DebugNewEpochState                         -> fromCBOR
     DebugChainDepState                         -> decode
-    GetRewardProvenance                        -> fromCBOR
+    GetRewardProvenance                        -> LC.fromEraCBOR @era
     GetUTxOByTxIn {}                           -> fromCBOR
     GetStakePools                              -> fromCBOR
-    GetStakePoolParams {}                      -> fromCBOR
-    GetRewardInfoPools                         -> fromCBOR
-    GetPoolState {}                            -> fromCBOR
+    GetStakePoolParams {}                      -> LC.fromEraCBOR @era
+    GetRewardInfoPools                         -> LC.fromEraCBOR @era
+    GetPoolState {}                            -> LC.fromEraCBOR @era
     GetStakeSnapshots {}                       -> fromCBOR
-    GetPoolDistr {}                            -> fromCBOR
+    GetPoolDistr {}                            -> LC.fromEraCBOR @era
 
 -- | The stake snapshot returns information about the mark, set, go ledger snapshots for a pool,
 -- plus the total active stake for each snapshot that can be used in a 'sigma' calculation.

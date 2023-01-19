@@ -42,7 +42,7 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   , Ticked (..)
   ) where
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serializeEncoding')
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize')
 import           Codec.CBOR.Decoding (decodeListLenOf)
 import           Codec.CBOR.Encoding (encodeListLen)
 import           Codec.Serialise (Serialise (..))
@@ -644,4 +644,4 @@ instance PraosCrypto c => Serialise (BlockInfo c) where
     return BlockInfo {..}
 
 instance SignableRepresentation (Natural, SlotNo, VRFType) where
-  getSignableRepresentation = serializeEncoding' . toCBOR
+  getSignableRepresentation = serialize' . toCBOR

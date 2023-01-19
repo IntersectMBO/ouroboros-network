@@ -43,7 +43,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.String (IsString)
 import qualified Data.Text.Encoding as Text
 
-import           Cardano.Binary (DecoderError)
+import           Cardano.Ledger.Binary (DecoderError)
 
 import           Cardano.Api.Any
 
