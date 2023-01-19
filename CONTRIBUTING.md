@@ -234,7 +234,7 @@ We maintain changelogs for all our packages.
 To get access to newer version of packages published on [Hackage] just update
 `Hackages`'s `index-state` in `cabal.project`
 
-Some of our dependcies are only available from [Cardano Haskell Packages
+Some of our dependencies are only available from [Cardano Haskell Packages
 (CHaP)][CHaP].  To update such dependencies one needs to update its
 `index-state` and run:
 
