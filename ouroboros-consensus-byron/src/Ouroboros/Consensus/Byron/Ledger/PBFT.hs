@@ -19,7 +19,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Data.ByteString (ByteString)
 
-import           Cardano.Binary (Annotated)
+import           Cardano.Ledger.Binary (Annotated)
 import           Cardano.Crypto.DSIGN
 
 import qualified Cardano.Chain.Block as CC

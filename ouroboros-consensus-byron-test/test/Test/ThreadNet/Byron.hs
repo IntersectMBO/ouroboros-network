@@ -48,7 +48,6 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
 
-import qualified Cardano.Binary
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Common as Common
 import qualified Cardano.Chain.Delegation as Delegation
@@ -57,6 +56,8 @@ import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochNumber (..), unEpochSlots)
 import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.DSIGN as Crypto
+import           Cardano.Ledger.Binary (reAnnotate, byronProtVer)
+import qualified Cardano.Ledger.Binary.Plain as Plain
 
 import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock,
@@ -1369,10 +1370,10 @@ updSignKey genSK extCfg cid eno newSK =
 --
 dlgTx :: Delegation.Certificate -> Byron.GenTx ByronBlock
 dlgTx cert =
-    let ann = Cardano.Binary.serialize' (cert :: Delegation.Certificate)
+    let ann = Plain.serialize' (cert :: Delegation.Certificate)
         cert' = cert
           { Delegation.aEpoch     =
-              Cardano.Binary.reAnnotate (Delegation.aEpoch cert)
+              reAnnotate byronProtVer (Delegation.aEpoch cert)
           , Delegation.annotation = ann
           }
     in Byron.ByronDlg (Delegation.recoverCertificateId cert') cert'

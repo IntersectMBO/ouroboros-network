@@ -20,11 +20,13 @@
 -- instance for 'ShelleyBlock'.
 module Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol () where
 
+import           Cardano.Ledger.Core (ppMaxBBSizeL, ppMaxBHSizeL,
+                     ppProtocolVersionL)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.API as SL
 import           Control.Monad.Except (MonadError (throwError))
 import           Data.Coerce (coerce)
-import           GHC.Records (getField)
+import           Lens.Micro ((^.))
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.History.Util
@@ -100,9 +102,9 @@ instance
      in Praos.TickedPraosLedgerView $
           Praos.LedgerView
             { Praos.lvPoolDistr = nesPd,
-              Praos.lvMaxBodySize = getField @"_maxBBSize" . SL.esPp $ nesEs,
-              Praos.lvMaxHeaderSize = getField @"_maxBHSize" . SL.esPp $ nesEs,
-              Praos.lvProtocolVersion = getField @"_protocolVersion" . SL.esPp $ nesEs
+              Praos.lvMaxBodySize = SL.esPp nesEs ^. ppMaxBBSizeL,
+              Praos.lvMaxHeaderSize = SL.esPp nesEs ^. ppMaxBHSizeL,
+              Praos.lvProtocolVersion = SL.esPp nesEs ^. ppProtocolVersionL
             }
 
   -- | Currently the Shelley+ ledger is hard-coded to produce a TPraos ledger

@@ -29,7 +29,7 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Test.Ouroboros.Storage.TestBlock
-import           Test.Util.Orphans.Slotting.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary ()
 
 {-------------------------------------------------------------------------------
   Top-level tests

@@ -123,7 +123,7 @@ instance ShelleyCompatible proto era => NodeInitStorage (ShelleyBlock proto era)
 -- The @era@ parameter determines from which era the genesis config will be
 -- used.
 data ProtocolParamsShelleyBased era = ProtocolParamsShelleyBased
-  { shelleyBasedGenesis           :: SL.ShelleyGenesis era,
+  { shelleyBasedGenesis           :: SL.ShelleyGenesis (EraCrypto era),
     -- | The initial nonce, typically derived from the hash of Genesis
     -- config JSON file.
     --

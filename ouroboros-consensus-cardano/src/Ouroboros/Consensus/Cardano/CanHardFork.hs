@@ -72,15 +72,12 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.ShelleyHFC
 
-import           Cardano.Ledger.Allegra.Translation ()
-import qualified Cardano.Ledger.Alonzo.Genesis as Alonzo
-import qualified Cardano.Ledger.Conway.Genesis as Conway
-import           Cardano.Ledger.Crypto (ADDRHASH, DSIGN, HASH)
+import           Cardano.Ledger.Crypto (Crypto, ADDRHASH, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.Keys (DSignable, Hash)
-import           Cardano.Ledger.Mary.Translation ()
 import qualified Cardano.Ledger.Shelley.API as SL
+import           Cardano.Ledger.Shelley.Translation (toFromByronTranslationContext)
 import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.Rules.Prtcl as SL
 import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL
@@ -331,8 +328,8 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
                   (translateTxMaryToAlonzoWrapper          ctxt)
                   (translateValidatedTxMaryToAlonzoWrapper ctxt)
               )
-      $ PCons (RequireBoth $ \_cfgAlonzo cfgBabbage ->
-                let ctxt = getBabbageTranslationContext cfgBabbage
+      $ PCons (RequireBoth $ \_cfgAlonzo _cfgBabbage ->
+                let ctxt = ()
                 in
                 Pair2
                   (translateTxAlonzoToBabbageWrapper          ctxt)
@@ -407,7 +404,7 @@ translateLedgerStateByronToShelleyWrapper =
             (byronLedgerTipBlockNo ledgerByron)
       , shelleyLedgerState =
           SL.translateToShelleyLedgerState
-            (shelleyLedgerGenesis cfgShelley)
+            (toFromByronTranslationContext (shelleyLedgerGenesis cfgShelley))
             epochNo
             (byronLedgerState ledgerByron)
       , shelleyLedgerTransition =
@@ -458,7 +455,7 @@ translateChainDepStateByronToShelley TPraosConfig { tpraosParams } pbftState =
     nonce = tpraosInitialNonce tpraosParams
 
 translateLedgerViewByronToShelleyWrapper ::
-     forall c.
+     forall c. Crypto c =>
      RequiringBoth
        WrapLedgerConfig
        (TranslateForecast LedgerState WrapLedgerView)
@@ -488,7 +485,7 @@ translateLedgerViewByronToShelleyWrapper =
         = return $
             WrapTickedLedgerView $ TickedPraosLedgerView $
               SL.mkInitialShelleyLedgerView
-                (shelleyLedgerGenesis cfgShelley)
+                (toFromByronTranslationContext (shelleyLedgerGenesis cfgShelley))
         | otherwise
         = throwError $ OutsideForecastRange {
               outsideForecastAt     = ledgerTipSlot currentByronState
@@ -597,13 +594,13 @@ translateLedgerStateMaryToAlonzoWrapper =
 
 getAlonzoTranslationContext ::
      WrapLedgerConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
-  -> Alonzo.AlonzoGenesis
+  -> SL.TranslationContext (AlonzoEra c)
 getAlonzoTranslationContext =
     shelleyLedgerTranslationContext . unwrapLedgerConfig
 
 translateTxMaryToAlonzoWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
-  => Alonzo.AlonzoGenesis
+  => SL.TranslationContext (AlonzoEra c)
   -> InjectTx
        (ShelleyBlock (TPraos c) (MaryEra c))
        (ShelleyBlock (TPraos c) (AlonzoEra c))
@@ -613,7 +610,7 @@ translateTxMaryToAlonzoWrapper ctxt = InjectTx $
 translateValidatedTxMaryToAlonzoWrapper ::
      forall c.
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
-  => Alonzo.AlonzoGenesis
+  => SL.TranslationContext (AlonzoEra c)
   -> InjectValidatedTx
        (ShelleyBlock (TPraos c) (MaryEra c))
        (ShelleyBlock (TPraos c) (AlonzoEra c))
@@ -632,9 +629,9 @@ translateLedgerStateAlonzoToBabbageWrapper ::
        (ShelleyBlock (TPraos c) (AlonzoEra c))
        (ShelleyBlock (Praos c) (BabbageEra c))
 translateLedgerStateAlonzoToBabbageWrapper =
-    RequireBoth $ \_cfgAlonzo cfgBabbage ->
+    RequireBoth $ \_cfgAlonzo _cfgBabbage ->
       Translate $ \_epochNo ->
-        unComp . SL.translateEra' (getBabbageTranslationContext cfgBabbage) . Comp . transPraosLS
+        unComp . SL.translateEra' () . Comp . transPraosLS
   where
     transPraosLS ::
       LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) ->
@@ -646,15 +643,9 @@ translateLedgerStateAlonzoToBabbageWrapper =
         , shelleyLedgerTransition = st
         }
 
-getBabbageTranslationContext ::
-     WrapLedgerConfig (ShelleyBlock (Praos c) (BabbageEra c))
-  -> Alonzo.AlonzoGenesis
-getBabbageTranslationContext =
-    shelleyLedgerTranslationContext . unwrapLedgerConfig
-
 translateTxAlonzoToBabbageWrapper ::
      (Praos.PraosCrypto c)
-  => Alonzo.AlonzoGenesis
+  => SL.TranslationContext (BabbageEra c)
   -> InjectTx
        (ShelleyBlock (TPraos c) (AlonzoEra c))
        (ShelleyBlock (Praos c) (BabbageEra c))
@@ -669,7 +660,7 @@ translateTxAlonzoToBabbageWrapper ctxt = InjectTx $
 translateValidatedTxAlonzoToBabbageWrapper ::
      forall c.
      (Praos.PraosCrypto c)
-  => Alonzo.AlonzoGenesis
+  => SL.TranslationContext (BabbageEra c)
   -> InjectValidatedTx
        (ShelleyBlock (TPraos c) (AlonzoEra c))
        (ShelleyBlock (Praos c) (BabbageEra c))
@@ -706,13 +697,13 @@ translateLedgerStateBabbageToConwayWrapper =
 
 getConwayTranslationContext ::
      WrapLedgerConfig (ShelleyBlock (Praos c) (ConwayEra c))
-  -> Conway.ConwayGenesis c
+  -> SL.TranslationContext (ConwayEra c)
 getConwayTranslationContext =
     shelleyLedgerTranslationContext . unwrapLedgerConfig
 
 translateTxBabbageToConwayWrapper ::
      (Praos.PraosCrypto c)
-  => Conway.ConwayGenesis c
+  => SL.TranslationContext (ConwayEra c)
   -> InjectTx
        (ShelleyBlock (Praos c) (BabbageEra c))
        (ShelleyBlock (Praos c) (ConwayEra c))
@@ -722,7 +713,7 @@ translateTxBabbageToConwayWrapper ctxt = InjectTx $
 translateValidatedTxBabbageToConwayWrapper ::
      forall c.
      (Praos.PraosCrypto c)
-  => Conway.ConwayGenesis c
+  => SL.TranslationContext (ConwayEra c)
   -> InjectValidatedTx
        (ShelleyBlock (Praos c) (BabbageEra c))
        (ShelleyBlock (Praos c) (ConwayEra c))

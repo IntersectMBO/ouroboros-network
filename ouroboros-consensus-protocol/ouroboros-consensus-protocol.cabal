@@ -43,6 +43,7 @@ library
     cardano-binary,
     cardano-crypto-class,
     cardano-data,
+    cardano-ledger-binary,
     cardano-ledger-core,
     cardano-ledger-shelley,
     cardano-protocol-tpraos,

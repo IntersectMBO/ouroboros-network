@@ -33,25 +33,27 @@ library
                      , bytestring        >=0.10  && <0.12
                      , cardano-crypto-class
                      , cardano-data
-                     , cardano-ledger-core
+                     , cardano-ledger-core:{cardano-ledger-core, testlib}
                      , cardano-protocol-tpraos
                      , cardano-slotting
                      , containers        >=0.5   && <0.7
                      , generic-random
                      , quiet             >=0.2   && <0.3
                      , mtl               >=2.2   && <2.3
+                     , microlens
                      , QuickCheck
                      , cardano-strict-containers
                      , transformers
 
-                       -- cardano-ledger-specs
+                       -- cardano-ledger
+                     , cardano-ledger-allegra
                      , cardano-ledger-alonzo
                      , cardano-ledger-alonzo-test
                      , cardano-ledger-babbage
                      , cardano-ledger-babbage-test
                      , cardano-ledger-conway-test
+                     , cardano-ledger-mary
                      , cardano-ledger-shelley
-                     , cardano-ledger-shelley-ma
                      , cardano-ledger-shelley-ma-test
                      , cardano-ledger-shelley-test
                      , cardano-protocol-tpraos
@@ -94,6 +96,7 @@ test-suite test
                      , containers
                      , filepath
                      , QuickCheck
+                     , microlens
                      , tasty
                      , tasty-quickcheck
 

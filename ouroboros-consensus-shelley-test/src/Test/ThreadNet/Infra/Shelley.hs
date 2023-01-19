@@ -49,6 +49,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           Lens.Micro
 import           Quiet (Quiet (..))
 
 import           Test.QuickCheck
@@ -73,24 +74,24 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)
 
+import qualified Cardano.Ledger.Allegra.Scripts as SL
+import           Cardano.Ledger.Alonzo (AlonzoEra)
+import           Cardano.Ledger.Babbage (BabbageEra)
 import           Cardano.Ledger.BaseTypes (boundRational)
-import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto, DSIGN, HASH, KES, VRF)
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import qualified Cardano.Ledger.Keys
+import qualified Cardano.Ledger.Mary.Core as SL
 import           Cardano.Ledger.SafeHash (HashAnnotated (..), SafeHash,
                      hashAnnotated)
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.PParams as SL (ShelleyPParamsUpdate,
-                     emptyPParams, emptyPParamsUpdate)
-import qualified Cardano.Ledger.Shelley.Tx as SL (WitnessSetHKD (..))
-import qualified Cardano.Ledger.Shelley.UTxO as SL (makeWitnessesVKey)
-import qualified Cardano.Ledger.ShelleyMA.TxBody as MA
 import qualified Cardano.Ledger.Val as SL
 import           Cardano.Protocol.TPraos.OCert
                      (OCert (ocertKESPeriod, ocertN, ocertSigma, ocertVkHot))
 import qualified Cardano.Protocol.TPraos.OCert as SL (KESPeriod, OCert (OCert),
                      OCertSignable (..))
+import qualified Test.Cardano.Ledger.Core.KeyPair as TL (KeyPair (..),
+                     mkWitnessesVKey)
 
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
@@ -152,11 +153,11 @@ data CoreNode c = CoreNode {
 
 data CoreNodeKeyInfo c = CoreNodeKeyInfo
   { cnkiKeyPair
-      ::  ( SL.KeyPair 'SL.Payment c
-          , SL.KeyPair 'SL.Staking c
+      ::  ( TL.KeyPair 'SL.Payment c
+          , TL.KeyPair 'SL.Staking c
           )
   , cnkiCoreNode ::
-      ( SL.KeyPair 'SL.Genesis c
+      ( TL.KeyPair 'SL.Genesis c
       , Gen.AllIssuerKeys c 'SL.GenesisDelegate
       )
   }
@@ -282,7 +283,7 @@ mkEpochSize (SecurityParam k) f =
 -- but we can configure a potentially lower maximum for the ledger, that's why
 -- we take it as an argument.
 mkGenesisConfig
-  :: forall era. PraosCrypto (EraCrypto era)
+  :: forall c. PraosCrypto c
   => ProtVer   -- ^ Initial protocol version
   -> SecurityParam
   -> Rational  -- ^ Initial active slot coefficient
@@ -291,8 +292,8 @@ mkGenesisConfig
      -- ^ Max Lovelace supply, must be >= #coreNodes * initialLovelacePerCoreNode
   -> SlotLength
   -> KesConfig
-  -> [CoreNode (EraCrypto era)]
-  -> ShelleyGenesis era
+  -> [CoreNode c]
+  -> ShelleyGenesis c
 mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
     assertWithMsg checkMaxLovelaceSupply $
     ShelleyGenesis {
@@ -305,7 +306,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
     , sgEpochLength           = mkEpochSize k f
     , sgSlotsPerKESPeriod     = slotsPerEvolution kesCfg
     , sgMaxKESEvolutions      = maxEvolutions     kesCfg
-    , sgSlotLength            = getSlotLength slotLength
+    , sgSlotLength            = SL.toNominalDiffTimeMicroWithRounding $ getSlotLength slotLength
     , sgUpdateQuorum          = quorum
     , sgMaxLovelaceSupply     = maxLovelaceSupply
     , sgProtocolParams        = pparams
@@ -332,23 +333,22 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       where
         nbCoreNodes = fromIntegral (length coreNodes)
 
-    pparams :: SL.ShelleyPParams era
+    pparams :: SL.PParams (ShelleyEra c)
     pparams = SL.emptyPParams
-      { SL._d               =
+      & SL.ppDL               .~
           unsafeBoundRational (decentralizationParamToRational d)
-      , SL._maxBBSize       = 10000 -- TODO
-      , SL._maxBHSize       = 1000 -- TODO
-      , SL._protocolVersion = pVer
-      }
+      & SL.ppMaxBBSizeL       .~ 10000 -- TODO
+      & SL.ppMaxBHSizeL       .~ 1000 -- TODO
+      & SL.ppProtocolVersionL .~ pVer
 
     coreNodesToGenesisMapping ::
-         Map (SL.KeyHash 'SL.Genesis (EraCrypto era)) (SL.GenDelegPair (EraCrypto era))
+         Map (SL.KeyHash 'SL.Genesis c) (SL.GenDelegPair c)
     coreNodesToGenesisMapping  = Map.fromList
       [ let
-          gkh :: SL.KeyHash 'SL.Genesis (EraCrypto era)
+          gkh :: SL.KeyHash 'SL.Genesis c
           gkh = SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnGenesisKey
 
-          gdpair :: SL.GenDelegPair (EraCrypto era)
+          gdpair :: SL.GenDelegPair c
           gdpair = SL.GenDelegPair
               (SL.hashKey . SL.VKey $ deriveVerKeyDSIGN cnDelegateKey)
               (SL.hashVerKeyVRF $ deriveVerKeyVRF cnVRF)
@@ -357,7 +357,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       | CoreNode { cnGenesisKey, cnDelegateKey, cnVRF } <- coreNodes
       ]
 
-    initialFunds :: Map (SL.Addr (EraCrypto era)) SL.Coin
+    initialFunds :: Map (SL.Addr c) SL.Coin
     initialFunds = Map.fromList
       [ (addr, coin)
       | CoreNode { cnDelegateKey, cnStakingKey } <- coreNodes
@@ -368,11 +368,11 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       ]
 
     -- In this initial stake, each core node delegates its stake to itself.
-    initialStake :: ShelleyGenesisStaking (EraCrypto era)
+    initialStake :: ShelleyGenesisStaking c
     initialStake = ShelleyGenesisStaking
       { sgsPools = ListMap
           [ (pk, pp)
-          | pp@(SL.PoolParams { _poolId = pk }) <- Map.elems coreNodeToPoolMapping
+          | pp@SL.PoolParams { ppId = pk } <- Map.elems coreNodeToPoolMapping
           ]
         -- The staking key maps to the key hash of the pool, which is set to the
         -- "delegate key" in order that nodes may issue blocks both as delegates
@@ -386,22 +386,22 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
       }
       where
         coreNodeToPoolMapping ::
-             Map (SL.KeyHash 'SL.StakePool (EraCrypto era)) (SL.PoolParams (EraCrypto era))
+             Map (SL.KeyHash 'SL.StakePool c) (SL.PoolParams c)
         coreNodeToPoolMapping = Map.fromList [
               ( SL.hashKey . SL.VKey . deriveVerKeyDSIGN $ cnStakingKey
               , SL.PoolParams
-                { SL._poolId = poolHash
-                , SL._poolVrf = vrfHash
+                { SL.ppId = poolHash
+                , SL.ppVrf = vrfHash
                   -- Each core node pledges its full stake to the pool.
-                , SL._poolPledge = SL.Coin $ fromIntegral initialLovelacePerCoreNode
-                , SL._poolCost = SL.Coin 1
-                , SL._poolMargin = minBound
+                , SL.ppPledge = SL.Coin $ fromIntegral initialLovelacePerCoreNode
+                , SL.ppCost = SL.Coin 1
+                , SL.ppMargin = minBound
                   -- Reward accounts live in a separate "namespace" to other
                   -- accounts, so it should be fine to use the same address.
-                , SL._poolRAcnt = SL.RewardAcnt networkId $ mkCredential cnDelegateKey
-                , SL._poolOwners = Set.singleton poolOwnerHash
-                , SL._poolRelays = Seq.empty
-                , SL._poolMD = SL.SNothing
+                , SL.ppRewardAcnt = SL.RewardAcnt networkId $ mkCredential cnDelegateKey
+                , SL.ppOwners = Set.singleton poolOwnerHash
+                , SL.ppRelays = Seq.empty
+                , SL.ppMetadata = SL.SNothing
                 }
               )
             | CoreNode { cnDelegateKey, cnStakingKey, cnVRF } <- coreNodes
@@ -415,7 +415,7 @@ mkGenesisConfig pVer k f d maxLovelaceSupply slotLength kesCfg coreNodes =
 mkProtocolShelley ::
      forall m c.
      (IOLike m, PraosCrypto c, ShelleyCompatible (TPraos c) (ShelleyEra c))
-  => ShelleyGenesis (ShelleyEra c)
+  => ShelleyGenesis c
   -> SL.Nonce
   -> ProtVer
   -> CoreNode c
@@ -448,27 +448,24 @@ mkSetDecentralizationParamTxs ::
 mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
-    SL.ShelleyTx
-      { body            = body
-      , wits            = witnessSet
-      , auxiliaryData   = SL.SNothing
-      }
+    SL.mkBasicTx body & SL.witsTxL .~ witnesses
   where
     -- The funds touched by this transaction assume it's the first transaction
     -- executed.
     scheduledEpoch :: EpochNo
     scheduledEpoch = EpochNo 0
 
-    witnessSet :: SL.WitnessSet (ShelleyEra c)
-    witnessSet = SL.WitnessSet signatures mempty mempty
+
+    witnesses :: SL.TxWits (ShelleyEra c)
+    witnesses = SL.mkBasicTxWits & SL.addrTxWitsL .~ signatures
 
     -- Every node signs the transaction body, since it includes a " vote " from
     -- every node.
     signatures :: Set (SL.WitVKey 'SL.Witness c)
     signatures =
-        SL.makeWitnessesVKey
+        TL.mkWitnessesVKey
           (hashAnnotated body)
-          [ SL.KeyPair (SL.VKey vk) sk
+          [ TL.KeyPair (SL.VKey vk) sk
           | cn <- coreNodes
           , let sk = cnDelegateKey cn
           , let vk = deriveVerKeyDSIGN sk
@@ -476,24 +473,19 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
 
     -- Nothing but the parameter update and the obligatory touching of an
     -- input.
-    body :: Core.TxBody (ShelleyEra c)
-    body = SL.ShelleyTxBody
-      { _certs    = Seq.empty
-      , _inputs   = Set.singleton (fst touchCoins)
-      , _mdHash   = SL.SNothing
-      , _outputs  = Seq.singleton (snd touchCoins)
-      , _ttl      = ttl
-      , _txfee    = SL.Coin 0
-      , _txUpdate = SL.SJust update
-      , _wdrls    = SL.Wdrl Map.empty
-      }
+    body :: SL.TxBody (ShelleyEra c)
+    body = SL.mkBasicTxBody
+         & SL.inputsTxBodyL  .~ Set.singleton (fst touchCoins)
+         & SL.outputsTxBodyL .~ Seq.singleton (snd touchCoins)
+         & SL.ttlTxBodyL     .~ ttl
+         & SL.updateTxBodyL .~ SL.SJust update
 
     -- Every Shelley transaction requires one input.
     --
     -- We use the input of the first node, but we just put it all right back.
     --
     -- ASSUMPTION: This transaction runs in the first slot.
-    touchCoins :: (SL.TxIn c, Core.TxOut (ShelleyEra c))
+    touchCoins :: (SL.TxIn c, SL.TxOut (ShelleyEra c))
     touchCoins = case coreNodes of
         []   -> error "no nodes!"
         cn:_ ->
@@ -513,13 +505,10 @@ mkSetDecentralizationParamTxs coreNodes pVer ttl dNew =
         Map.fromList $
         [ ( SL.hashKey $ SL.VKey $ deriveVerKeyDSIGN $ cnGenesisKey cn
           , SL.emptyPParamsUpdate
-              { SL._d =
-                  maybeToStrictMaybe $
-                  boundRational $
-                  decentralizationParamToRational dNew
-              , SL._protocolVersion =
-                  SL.SJust pVer
-              }
+            & SL.ppuDL .~ (maybeToStrictMaybe $
+                           boundRational $
+                           decentralizationParamToRational dNew)
+            & SL.ppuProtocolVersionL .~ SL.SJust pVer
           )
         | cn <- coreNodes
         ]
@@ -540,8 +529,8 @@ mkKeyHash = SL.hashKey . mkVerKey
 mkVerKey :: Crypto c => SL.SignKeyDSIGN c -> SL.VKey r c
 mkVerKey = SL.VKey . deriveVerKeyDSIGN
 
-mkKeyPair :: Crypto c => SL.SignKeyDSIGN c -> SL.KeyPair r c
-mkKeyPair sk = SL.KeyPair { vKey = mkVerKey sk, sKey = sk }
+mkKeyPair :: Crypto c => SL.SignKeyDSIGN c -> TL.KeyPair r c
+mkKeyPair sk = TL.KeyPair { vKey = mkVerKey sk, sKey = sk }
 
 mkKeyHashVrf :: (HashAlgorithm h, VRFAlgorithm vrf)
              => SignKeyVRF vrf
@@ -562,13 +551,11 @@ networkId = SL.Testnet
 mkMASetDecentralizationParamTxs ::
      forall proto era.
      ( ShelleyBasedEra era
-     , MA.ShelleyMAEraTxBody era
-     , Core.Tx era ~ SL.ShelleyTx era
-     , Core.TxBody era ~ MA.MATxBody era
-     , Core.PParamsUpdate era ~ SL.ShelleyPParamsUpdate era
-     , Core.Witnesses era ~ SL.WitnessSet era
+     , SL.AllegraEraTxBody era
+     , SL.AtMostEra AlonzoEra era
+     , SL.AtMostEra BabbageEra era
      )
-  => [CoreNode (Core.Crypto era)]
+  => [CoreNode (EraCrypto era)]
   -> ProtVer   -- ^ The proposed protocol version
   -> SlotNo   -- ^ The TTL
   -> DecentralizationParam   -- ^ The new value
@@ -576,27 +563,23 @@ mkMASetDecentralizationParamTxs ::
 mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
     (:[]) $
     mkShelleyTx $
-    SL.ShelleyTx
-      { body          = body
-      , wits          = witnessSet
-      , auxiliaryData = SL.SNothing
-      }
+    SL.mkBasicTx body & SL.witsTxL .~ witnesses
   where
     -- The funds touched by this transaction assume it's the first transaction
     -- executed.
     scheduledEpoch :: EpochNo
     scheduledEpoch = EpochNo 0
 
-    witnessSet :: SL.WitnessSet era
-    witnessSet = SL.WitnessSet signatures mempty mempty
+    witnesses :: SL.TxWits era
+    witnesses = SL.mkBasicTxWits & SL.addrTxWitsL .~ signatures
 
     -- Every node signs the transaction body, since it includes a " vote " from
     -- every node.
-    signatures :: Set (SL.WitVKey 'SL.Witness (Core.Crypto era))
+    signatures :: Set (SL.WitVKey 'SL.Witness (EraCrypto era))
     signatures =
-        SL.makeWitnessesVKey
+        TL.mkWitnessesVKey
           (eraIndTxBodyHash' body)
-          [ SL.KeyPair (SL.VKey vk) sk
+          [ TL.KeyPair (SL.VKey vk) sk
           | cn <- coreNodes
           , let sk = cnDelegateKey cn
           , let vk = deriveVerKeyDSIGN sk
@@ -604,42 +587,32 @@ mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
 
     -- Nothing but the parameter update and the obligatory touching of an
     -- input.
-    body :: MA.MATxBody era
-    body = MA.MATxBody
-        inputs
-        outputs
-        certs
-        wdrls
-        txfee
-        vldt
-        update'
-        adHash
-        mint
+    body :: SL.TxBody era
+    body = SL.mkBasicTxBody
+      & SL.inputsTxBodyL .~ inputs
+      & SL.outputsTxBodyL .~ outputs
+      & SL.vldtTxBodyL .~ vldt
+      & SL.updateTxBodyL .~ update'
       where
         inputs   = Set.singleton (fst touchCoins)
         outputs  = Seq.singleton (snd touchCoins)
-        certs    = Seq.empty
-        wdrls    = SL.Wdrl Map.empty
-        txfee    = SL.Coin 0
-        vldt     = MA.ValidityInterval {
-              invalidBefore    = SL.SNothing
-            , invalidHereafter = SL.SJust ttl
-            }
+        vldt     = SL.ValidityInterval {
+                   invalidBefore    = SL.SNothing
+                 , invalidHereafter = SL.SJust ttl
+                 }
         update'  = SL.SJust update
-        adHash   = SL.SNothing
-        mint     = SL.inject $ SL.Coin 0
 
     -- Every Shelley transaction requires one input.
     --
     -- We use the input of the first node, but we just put it all right back.
     --
     -- ASSUMPTION: This transaction runs in the first slot.
-    touchCoins :: (SL.TxIn (Core.Crypto era), SL.ShelleyTxOut era)
+    touchCoins :: (SL.TxIn (EraCrypto era), SL.TxOut era)
     touchCoins = case coreNodes of
         []   -> error "no nodes!"
         cn:_ ->
             ( SL.initialFundsPseudoTxIn addr
-            , SL.ShelleyTxOut addr coin
+            , SL.mkBasicTxOut addr coin
             )
           where
             addr = SL.Addr networkId
@@ -654,13 +627,10 @@ mkMASetDecentralizationParamTxs coreNodes pVer ttl dNew =
         Map.fromList $
         [ ( SL.hashKey $ SL.VKey $ deriveVerKeyDSIGN $ cnGenesisKey cn
           , SL.emptyPParamsUpdate
-              { SL._d =
-                  maybeToStrictMaybe $
-                  boundRational $
-                  decentralizationParamToRational dNew
-              , SL._protocolVersion =
-                  SL.SJust pVer
-              }
+            & SL.ppuDL .~ (maybeToStrictMaybe $
+                           boundRational $
+                           decentralizationParamToRational dNew)
+            & SL.ppuProtocolVersionL .~ SL.SJust pVer
           )
         | cn <- coreNodes
         ]

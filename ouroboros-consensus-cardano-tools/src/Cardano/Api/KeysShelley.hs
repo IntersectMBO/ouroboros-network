@@ -1124,7 +1124,7 @@ instance Key StakePoolKey where
         StakePoolVerificationKey (Shelley.VKey Shelley.StakePool StandardCrypto)
       deriving stock (Eq)
       deriving (Show, IsString) via UsingRawBytesHex (VerificationKey StakePoolKey)
-      deriving newtype (ToCBOR, FromCBOR)
+      deriving newtype (EncCBOR, DecCBOR, ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
 
     newtype SigningKey StakePoolKey =

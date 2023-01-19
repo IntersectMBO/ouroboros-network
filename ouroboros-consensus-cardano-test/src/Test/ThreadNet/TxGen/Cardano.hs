@@ -17,6 +17,7 @@ import           Data.Maybe (maybeToList)
 import qualified Data.Sequence.Strict as StrictSeq
 import qualified Data.Set as Set
 import           Data.SOP.Strict
+import           Lens.Micro
 
 import           Ouroboros.Consensus.Block (SlotNo (..))
 import           Ouroboros.Consensus.Config
@@ -36,13 +37,11 @@ import qualified Cardano.Chain.Common as Byron
 import           Cardano.Chain.Genesis (GeneratedSecrets (..))
 
 import qualified Cardano.Ledger.Address as SL (BootstrapAddress (..))
-import qualified Cardano.Ledger.Core as SL (TxBody, TxOut)
 import qualified Cardano.Ledger.Hashes as SL
 import qualified Cardano.Ledger.Keys.Bootstrap as SL (makeBootstrapWitness)
 import qualified Cardano.Ledger.SafeHash as SL
-import qualified Cardano.Ledger.Shelley.API as SL hiding (TxBody, TxOut)
-import qualified Cardano.Ledger.Shelley.Tx as SL (WitnessSetHKD (..))
-import qualified Cardano.Ledger.Shelley.UTxO as SL (makeWitnessVKey)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Core as SL
 import           Cardano.Ledger.Val ((<->))
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
@@ -56,6 +55,7 @@ import           Ouroboros.Consensus.Cardano.Block (CardanoEras, GenTx (..),
 import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 
+import qualified Test.Cardano.Ledger.Core.KeyPair as TL (mkWitnessVKey)
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.TxGen
 
@@ -164,24 +164,20 @@ migrateUTxO migrationInfo curSlot lcfg lst
             pickedCoin <-> spentCoin
 
         body :: SL.TxBody (ShelleyEra c)
-        body = SL.ShelleyTxBody
-          { SL._certs    = StrictSeq.fromList $
+        body = SL.mkBasicTxBody
+          & SL.certsTxBodyL   .~ StrictSeq.fromList
               [ SL.DCertDeleg $ SL.RegKey $ Shelley.mkCredential stakingSK
               , SL.DCertPool  $ SL.RegPool $ poolParams unspentCoin
               , SL.DCertDeleg $ SL.Delegate $ SL.Delegation
-                  { SL._delegator = Shelley.mkCredential stakingSK
-                  , SL._delegatee = Shelley.mkKeyHash poolSK
+                  { SL.dDelegator = Shelley.mkCredential stakingSK
+                  , SL.dDelegatee = Shelley.mkKeyHash poolSK
                   }
               ]
-          , SL._inputs   = Map.keysSet picked
-          , SL._mdHash   = SL.SNothing
-          , SL._outputs  =
-              StrictSeq.singleton $ SL.ShelleyTxOut shelleyAddr unspentCoin
-          , SL._ttl      = SlotNo maxBound
-          , SL._txUpdate = SL.SNothing
-          , SL._txfee    = fee
-          , SL._wdrls    = SL.Wdrl Map.empty
-          }
+          & SL.inputsTxBodyL  .~ Map.keysSet picked
+          & SL.outputsTxBodyL .~
+              StrictSeq.singleton (SL.ShelleyTxOut shelleyAddr unspentCoin)
+          & SL.ttlTxBodyL     .~ SlotNo maxBound
+          & SL.feeTxBodyL     .~ fee
 
         bodyHash :: SL.SafeHash c SL.EraIndependentTxBody
         bodyHash = SL.hashAnnotated body
@@ -195,14 +191,14 @@ migrateUTxO migrationInfo curSlot lcfg lst
         -- Witness the stake delegation.
         delegWit :: SL.WitVKey 'SL.Witness c
         delegWit =
-            SL.makeWitnessVKey
+            TL.mkWitnessVKey
               bodyHash
               (Shelley.mkKeyPair stakingSK)
 
         -- Witness the pool registration.
         poolWit :: SL.WitVKey 'SL.Witness c
         poolWit =
-            SL.makeWitnessVKey
+            TL.mkWitnessVKey
               bodyHash
               (Shelley.mkKeyPair poolSK)
 
@@ -212,10 +208,9 @@ migrateUTxO migrationInfo curSlot lcfg lst
     SL.ShelleyTx
       { SL.body          = body
       , SL.auxiliaryData = SL.SNothing
-      , SL.wits          = SL.WitnessSet
-                             (Set.fromList [delegWit, poolWit])
-                             mempty
-                             (Set.singleton byronWit)
+      , SL.wits          = SL.mkBasicTxWits
+                           & SL.addrTxWitsL .~ Set.fromList [delegWit, poolWit]
+                           & SL.bootAddrTxWitsL .~ Set.singleton byronWit
       }
 
     | otherwise           = Nothing
@@ -252,16 +247,16 @@ migrateUTxO migrationInfo curSlot lcfg lst
     -- A simplistic individual pool
     poolParams :: SL.Coin -> SL.PoolParams c
     poolParams pledge = SL.PoolParams
-        { SL._poolCost   = SL.Coin 1
-        , SL._poolMD     = SL.SNothing
-        , SL._poolMargin = minBound
-        , SL._poolOwners = Set.singleton $ Shelley.mkKeyHash poolSK
-        , SL._poolPledge = pledge
-        , SL._poolId     = Shelley.mkKeyHash poolSK
-        , SL._poolRAcnt  =
+        { SL.ppCost       = SL.Coin 1
+        , SL.ppMetadata   = SL.SNothing
+        , SL.ppMargin     = minBound
+        , SL.ppOwners     = Set.singleton $ Shelley.mkKeyHash poolSK
+        , SL.ppPledge     = pledge
+        , SL.ppId         = Shelley.mkKeyHash poolSK
+        , SL.ppRewardAcnt =
             SL.RewardAcnt Shelley.networkId $ Shelley.mkCredential poolSK
-        , SL._poolRelays = StrictSeq.empty
-        , SL._poolVrf    = Shelley.mkKeyHashVrf vrfSK
+        , SL.ppRelays     = StrictSeq.empty
+        , SL.ppVrf        = Shelley.mkKeyHashVrf vrfSK
         }
 
 -----
@@ -276,7 +271,7 @@ ejectShelleyNS = \case
 getUTxOShelley :: Ticked (LedgerState (ShelleyBlock proto era))
                -> SL.UTxO era
 getUTxOShelley tls =
-    SL._utxo $
+    SL.utxosUtxo $
     SL.lsUTxOState $
     SL.esLState $
     SL.nesEs $

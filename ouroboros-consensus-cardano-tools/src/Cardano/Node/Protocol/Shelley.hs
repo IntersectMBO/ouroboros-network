@@ -3,6 +3,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- DUPLICATE -- adapted from: cardano-node/src/Cardano/Node/Protocol/Shelley.hs
 
@@ -32,7 +33,7 @@ import qualified Data.Text as T
 import           Cardano.Prelude
 
 import qualified Cardano.Crypto.Hash.Class as Crypto
-import           Cardano.Ledger.BaseTypes (ProtVer (..))
+import           Cardano.Ledger.BaseTypes (ProtVer (..), natVersion)
 import           Cardano.Ledger.Crypto (StandardCrypto)
 import           Cardano.Ledger.Keys (coerceKeyRole)
 import qualified Cardano.Ledger.Shelley.Genesis as Shelley
@@ -41,7 +42,6 @@ import qualified Ouroboros.Consensus.Cardano as Consensus
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (PraosCanBeLeader (..))
-import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
                      ProtocolParamsShelley (..),
                      ProtocolParamsShelleyBased (..), ShelleyGenesis (..),
@@ -95,7 +95,7 @@ mkSomeConsensusProtocolShelley NodeShelleyProtocolConfiguration {
       }
       Consensus.ProtocolParamsShelley {
         shelleyProtVer =
-          ProtVer 2 0,
+          ProtVer (natVersion @2) 0,
         shelleyMaxTxCapacityOverrides =
           Mempool.mkOverrides Mempool.noOverridesMeasure
       }
@@ -106,7 +106,7 @@ genesisHashToPraosNonce (GenesisHash h) = Nonce (Crypto.castHash h)
 readGenesis :: GenesisFile
             -> Maybe GenesisHash
             -> ExceptT GenesisReadError IO
-                       (ShelleyGenesis StandardShelley, GenesisHash)
+                       (ShelleyGenesis StandardCrypto, GenesisHash)
 readGenesis = readGenesisAny
 
 readGenesisAny :: Aeson.FromJSON genesis
@@ -130,7 +130,7 @@ readGenesisAny (GenesisFile file) mbExpectedGenesisHash = do
           -> throwError (GenesisHashMismatch actual expected)
         _ -> return ()
 
-validateGenesis :: ShelleyGenesis StandardShelley
+validateGenesis :: ShelleyGenesis StandardCrypto
                 -> ExceptT GenesisValidationError IO ()
 validateGenesis genesis =
     firstExceptT GenesisValidationErrors . hoistEither $

@@ -91,7 +91,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Binary (Case (..), Size, szCases, szGreedy)
+import           Cardano.Ledger.Binary (Case (..), Size, szCases, szGreedy)
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot (SlotNo (..))
 
@@ -340,7 +340,7 @@ encodedTipSize :: (Proxy (HeaderHash blk) -> Size)
 encodedTipSize encodedHeaderHashSize tipProxy =
     1
   + encodedPointSize encodedHeaderHashSize (fst . toLegacyTip <$> tipProxy)
-  -- TODO: remove 'unBlockNo' when 'BlockNo' 'ToCBOR' instance will implement
+  -- TODO: remove 'unBlockNo' when 'BlockNo' 'EncCBOR' instance will implement
   -- 'encodedSizeExpr', also include a test in `cardano-ledger-byron`.
   + szGreedy (unBlockNo . snd . toLegacyTip <$> tipProxy)
 

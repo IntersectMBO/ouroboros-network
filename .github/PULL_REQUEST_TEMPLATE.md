@@ -5,7 +5,7 @@
 Sadly, some CI checks are currently flaky. Right now, this includes:
 
  - GH Actions Windows job runs out of memory, e.g. in https://github.com/input-output-hk/ouroboros-network/runs/7231748864?check_suite_focus=true
- 
+
  - The tests in WallClock.delay* can fail under load (quite rarely): https://hydra.iohk.io/build/16723452/nixlog/76
 
 If you encounter one of these, try restarting the job to see if the failure vanishes. If it does not or when in doubt, consider posting in the #network or #consensus channels on Slack.

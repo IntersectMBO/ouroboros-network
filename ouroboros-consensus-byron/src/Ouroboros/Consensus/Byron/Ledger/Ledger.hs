@@ -54,7 +54,8 @@ import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Binary (encodeListLen, enforceSize, fromCBOR, toCBOR)
+import           Cardano.Ledger.Binary (fromByronCBOR, toByronCBOR)
+import           Cardano.Ledger.Binary.Plain (encodeListLen, enforceSize)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
@@ -496,9 +497,9 @@ decodeByronQuery = do
 
 encodeByronResult :: BlockQuery ByronBlock result -> result -> Encoding
 encodeByronResult query = case query of
-    GetUpdateInterfaceState -> toCBOR
+    GetUpdateInterfaceState -> toByronCBOR
 
 decodeByronResult :: BlockQuery ByronBlock result
                   -> forall s. Decoder s result
 decodeByronResult query = case query of
-    GetUpdateInterfaceState -> fromCBOR
+    GetUpdateInterfaceState -> fromByronCBOR

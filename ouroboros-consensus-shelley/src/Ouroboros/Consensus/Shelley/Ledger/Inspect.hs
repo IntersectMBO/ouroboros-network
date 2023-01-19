@@ -19,11 +19,14 @@ import           Control.Monad
 import           Data.List (sortBy)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Ord (comparing)
 import           Data.Tuple (swap)
 import           Data.Void
 import           Data.Word (Word64)
-import           GHC.Records
+import           Lens.Micro ((^.))
+
+import           Cardano.Ledger.Core (ppuProtocolVersionL)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -33,8 +36,9 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.BaseTypes (strictMaybeToMaybe)
-import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Shelley.Core as Core
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.PParams as SL
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -105,7 +109,7 @@ data UpdateState c = UpdateState {
 
 protocolUpdates ::
        forall era proto. ShelleyBasedEra era
-    => SL.ShelleyGenesis era
+    => SL.ShelleyGenesis (EraCrypto era)
     -> LedgerState (ShelleyBlock proto era)
     -> [ProtocolUpdate era]
 protocolUpdates genesis st = [
@@ -114,7 +118,7 @@ protocolUpdates genesis st = [
               proposalParams  = proposal
             , proposalEpoch   = succ currentEpoch
             , proposalVersion = strictMaybeToMaybe $
-                                  getField @"_protocolVersion" proposal
+                                  proposal ^. ppuProtocolVersionL
             }
         , protocolUpdateState = UpdateState {
               proposalVotes         = votes
@@ -133,8 +137,9 @@ protocolUpdates genesis st = [
     -- Updated proposed within the proposal window
     proposals :: Map (SL.KeyHash 'SL.Genesis (EraCrypto era)) (Core.PParamsUpdate era)
     SL.ProposedPPUpdates proposals =
-          SL.proposals
-        . SL._ppups
+          fromMaybe SL.emptyPPPUpdates
+        . Core.getProposedPPUpdates
+        . SL.utxosGovernance
         . SL.lsUTxOState
         . SL.esLState
         . SL.nesEs
@@ -173,7 +178,7 @@ instance ShelleyBasedEra era => InspectLedger (ShelleyBlock proto era) where
       guard $ updatesBefore /= updatesAfter
       return $ LedgerUpdate $ ShelleyUpdatedProtocolUpdates updatesAfter
     where
-      genesis :: SL.ShelleyGenesis era
+      genesis :: SL.ShelleyGenesis (EraCrypto era)
       genesis = shelleyLedgerGenesis (configLedger tlc)
 
       updatesBefore, updatesAfter :: [ProtocolUpdate era]

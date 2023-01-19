@@ -89,6 +89,6 @@ convertChunkFile es inFile outDir magicId = do
     outFile = dbDir </> takeFileName inFile -<.> "chunk"
 
     encode =
-        CB.serializeEncoding'
+        CB.serialize'
       . Byron.encodeByronBlock
       . Byron.mkByronBlock es

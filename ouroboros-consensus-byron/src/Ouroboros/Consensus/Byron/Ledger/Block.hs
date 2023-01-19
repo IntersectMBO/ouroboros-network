@@ -42,7 +42,7 @@ import           Data.Typeable
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary
+import           Cardano.Ledger.Binary
 
 import qualified Crypto.Hash as Crypto
 
@@ -67,7 +67,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 
 newtype ByronHash = ByronHash { unByronHash :: CC.HeaderHash }
   deriving stock   (Eq, Ord, Show, Generic)
-  deriving newtype (ToCBOR, FromCBOR, Condense)
+  deriving newtype (EncCBOR, DecCBOR, Condense)
   deriving anyclass (NoThunks)
 
 mkByronHash :: CC.ABlockOrBoundaryHdr ByteString -> ByronHash

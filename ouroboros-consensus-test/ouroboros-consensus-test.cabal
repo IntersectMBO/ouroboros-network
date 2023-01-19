@@ -57,7 +57,6 @@ library
                        Test.Util.Orphans.IOLike
                        Test.Util.Orphans.NoThunks
                        Test.Util.Orphans.SignableRepresentation
-                       Test.Util.Orphans.Slotting.Arbitrary
                        Test.Util.Orphans.ToExpr
                        Test.Util.Paths
                        Test.Util.QSM
@@ -83,6 +82,7 @@ library
                      , binary
                      , bytestring        >=0.10  && <0.12
                      , cardano-crypto-class
+                     , cardano-ledger-binary:{testlib}
                      , cardano-prelude
                      , cardano-slotting
                      , cborg             >=0.2.2 && <0.3

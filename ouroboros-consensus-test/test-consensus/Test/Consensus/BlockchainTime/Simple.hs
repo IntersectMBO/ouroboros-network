@@ -58,7 +58,7 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (withWatcher)
 import           Ouroboros.Consensus.Util.Time
 
-import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary (genNominalDiffTime50Years)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Range
 import           Test.Util.Time
@@ -91,7 +91,7 @@ data TestDelayIO = TestDelayIO {
 
 instance Arbitrary TestDelayIO where
   arbitrary = do
-      tdioStart'  <- arbitrary
+      tdioStart'  <- genNominalDiffTime50Years
       tdioSlotLen <- slotLengthFromMillisec <$> choose (100, 1_000)
       return TestDelayIO{..}
 
@@ -114,7 +114,8 @@ prop_delayNextSlot TestDelayIO{..} =
         atStart    <- fst <$> getWallClockSlot  time tdioSlotLen
         nextSlot   <-         waitUntilNextSlot time tdioSlotLen maxClockRewind atStart
         afterDelay <- fst <$> getWallClockSlot  time tdioSlotLen
-        pure $ conjoin
+        -- Ensure the test can't hang forever, fail after two minutes instead
+        pure $ within 120_000_000 $ conjoin
           [ counterexample "atStart + 1" $ atStart + 1 === afterDelay
           , counterexample "nextSlot"    $ nextSlot    === afterDelay
           ]

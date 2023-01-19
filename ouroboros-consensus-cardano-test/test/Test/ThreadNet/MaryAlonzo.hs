@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE FlexibleContexts     #-}
@@ -22,6 +23,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.SOP.Strict (NP (..))
 import           Data.Word (Word64)
+import           Lens.Micro
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -42,7 +44,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
                      (isHardForkNodeToNodeEnabled)
 
 import           Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis)
+import qualified Cardano.Ledger.BaseTypes as SL (Version, getVersion,
+                     natVersion)
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Core as SL
 
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
@@ -261,7 +266,7 @@ prop_simple_allegraAlonzo_convergence TestSetup
               , tniProtocolInfo =
                   protocolInfoShelleyBasedHardFork
                     ProtocolParamsShelleyBased {
-                        shelleyBasedGenesis           = genesisMary
+                        shelleyBasedGenesis           = shelleyGenesis
                       , shelleyBasedInitialNonce      = setupInitialNonce
                       , shelleyBasedLeaderCredentials =
                           [Shelley.mkLeaderCredentials
@@ -269,10 +274,11 @@ prop_simple_allegraAlonzo_convergence TestSetup
                       }
                     (SL.ProtVer majorVersion1 0)
                     (SL.ProtVer majorVersion2 0)
+                    ()
                     ProtocolTransitionParamsShelleyBased {
                         transitionTranslationContext = alonzoGenesis
                       , transitionTrigger            =
-                          TriggerHardForkAtVersion majorVersion2
+                          TriggerHardForkAtVersion $ SL.getVersion majorVersion2
                       }
               }
           , mkRekeyM = Nothing
@@ -295,8 +301,8 @@ prop_simple_allegraAlonzo_convergence TestSetup
     maxLovelaceSupply =
       fromIntegral (length coreNodes) * Shelley.initialLovelacePerCoreNode
 
-    genesisMary :: ShelleyGenesis (MaryEra Crypto)
-    genesisMary =
+    shelleyGenesis :: ShelleyGenesis Crypto
+    shelleyGenesis =
         Shelley.mkGenesisConfig
           (SL.ProtVer majorVersion1 0)
           setupK
@@ -313,7 +319,7 @@ prop_simple_allegraAlonzo_convergence TestSetup
     -- the Shelley ledger is designed to use a fixed epoch size, so this test
     -- does not randomize it
     epochSize :: EpochSize
-    epochSize = sgEpochLength genesisMary
+    epochSize = sgEpochLength shelleyGenesis
 
     firstEraSize :: EraSize
     firstEraSize = EraSize numFirstEraEpochs
@@ -351,7 +357,7 @@ prop_simple_allegraAlonzo_convergence TestSetup
         secondEraOverlaySlots
           numSlots
           (NumSlots numFirstEraSlots)
-          (SL._d (sgProtocolParams genesisMary))
+          (sgProtocolParams shelleyGenesis ^. SL.ppDG)
           epochSize
 
     numFirstEraSlots :: Word64
@@ -383,9 +389,9 @@ prop_simple_allegraAlonzo_convergence TestSetup
 -------------------------------------------------------------------------------}
 
 -- | The major protocol version of the first era in this test
-majorVersion1 :: Num a => a
-majorVersion1 = 0
+majorVersion1 :: SL.Version
+majorVersion1 = SL.natVersion @1
 
 -- | The major protocol version of the second era in this test
-majorVersion2 :: Num a => a
-majorVersion2 = majorVersion1 + 1
+majorVersion2 :: SL.Version
+majorVersion2 = SL.natVersion @2

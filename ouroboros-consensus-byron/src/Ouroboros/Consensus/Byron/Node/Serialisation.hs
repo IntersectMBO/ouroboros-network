@@ -17,7 +17,8 @@ import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
 
-import           Cardano.Binary
+import           Cardano.Ledger.Binary (toByronCBOR, fromByronCBOR)
+import           Cardano.Ledger.Binary.Plain
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Byron.API as CC
@@ -173,8 +174,8 @@ instance SerialiseNodeToClient ByronBlock (GenTxId ByronBlock) where
   decodeNodeToClient _ _ = decodeByronGenTxId
 
 instance SerialiseNodeToClient ByronBlock SlotNo where
-  encodeNodeToClient _ _ = toCBOR
-  decodeNodeToClient _ _ = fromCBOR
+  encodeNodeToClient _ _ = toByronCBOR
+  decodeNodeToClient _ _ = fromByronCBOR
 
 -- | @'ApplyTxErr' 'ByronBlock'@
 instance SerialiseNodeToClient ByronBlock CC.ApplyMempoolPayloadErr where

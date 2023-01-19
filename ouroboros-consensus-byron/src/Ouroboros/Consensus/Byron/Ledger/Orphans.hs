@@ -15,7 +15,6 @@ import           Data.Text (unpack)
 import           Formatting
 import           NoThunks.Class (InspectHeap (..), NoThunks)
 
-import qualified Cardano.Binary
 import           Cardano.Crypto (shortHashF)
 import qualified Cardano.Crypto
 
@@ -26,6 +25,8 @@ import qualified Cardano.Chain.MempoolPayload as CC
 import qualified Cardano.Chain.Update as CC
 import qualified Cardano.Chain.UTxO as CC
 
+import           Cardano.Ledger.Binary (toByronCBOR, fromByronCBOR, Annotated(unAnnotated))
+
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
@@ -33,12 +34,12 @@ import           Ouroboros.Consensus.Util.Condense
 -------------------------------------------------------------------------------}
 
 instance Serialise CC.ChainValidationState where
-  encode = Cardano.Binary.toCBOR
-  decode = Cardano.Binary.fromCBOR
+  encode = toByronCBOR
+  decode = fromByronCBOR
 
 instance Serialise CC.KeyHash where
-  encode = Cardano.Binary.toCBOR
-  decode = Cardano.Binary.fromCBOR
+  encode = toByronCBOR
+  decode = fromByronCBOR
 
 {-------------------------------------------------------------------------------
   Condense
@@ -71,8 +72,7 @@ instance Condense (CC.AHeader ByteString) where
 
       condensedHash     = sformat CC.headerHashF $ hdrHash
       condensedPrevHash = sformat CC.headerHashF $ CC.headerPrevHash hdr
-      condensedSlot     = sformat build $
-                            Cardano.Binary.unAnnotated (CC.aHeaderSlot hdr)
+      condensedSlot     = sformat build $ unAnnotated (CC.aHeaderSlot hdr)
 
 instance Condense (CC.ABoundaryBlock ByteString) where
   condense = condense . CC.boundaryHeader

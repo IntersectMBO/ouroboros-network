@@ -70,16 +70,12 @@ newtype ShelleyHash crypto = ShelleyHash
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (NoThunks)
 
-deriving newtype instance
-  ( Crypto crypto) =>
-  FromCBOR (ShelleyHash crypto)
+deriving newtype instance Crypto crypto => ToCBOR (ShelleyHash crypto)
 
-deriving newtype instance
-  ( Crypto crypto) =>
-  ToCBOR (ShelleyHash crypto)
+deriving newtype instance Crypto crypto => FromCBOR (ShelleyHash crypto)
 
 instance
-  ( Crypto crypto) =>
+  Crypto crypto =>
   Serialise (ShelleyHash crypto)
   where
   encode = toCBOR

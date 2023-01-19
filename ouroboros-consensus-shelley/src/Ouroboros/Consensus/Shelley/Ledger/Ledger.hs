@@ -59,10 +59,12 @@ import           Data.Functor.Identity
 import qualified Data.Text as Text
 import           Data.Word
 import           GHC.Generics (Generic)
-import           GHC.Records
 import           NoThunks.Class (NoThunks (..))
+import           Lens.Micro.Extras (view)
 
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
+import           Cardano.Ledger.Binary.Plain (FromCBOR (..), ToCBOR (..),
+                     enforceSize)
+import           Cardano.Ledger.Core (Era, ppMaxBHSizeL, ppMaxTxSizeL)
 import           Cardano.Slotting.EpochInfo
 
 import           Ouroboros.Consensus.Block
@@ -113,23 +115,26 @@ instance ShelleyBasedEra era => NoThunks (ShelleyLedgerError era)
 -------------------------------------------------------------------------------}
 
 data ShelleyLedgerConfig era = ShelleyLedgerConfig {
-      shelleyLedgerCompactGenesis     :: !(CompactGenesis era)
+      shelleyLedgerCompactGenesis     :: !(CompactGenesis (EraCrypto era))
       -- | Derived from 'shelleyLedgerGenesis' but we store a cached version
       -- because it used very often.
     , shelleyLedgerGlobals            :: !SL.Globals
     , shelleyLedgerTranslationContext :: !(Core.TranslationContext era)
     }
-  deriving (Generic, NoThunks)
+  deriving (Generic)
 
-shelleyLedgerGenesis :: ShelleyLedgerConfig era -> SL.ShelleyGenesis era
+deriving instance (NoThunks (Core.TranslationContext era), Era era) =>
+    NoThunks (ShelleyLedgerConfig era)
+
+shelleyLedgerGenesis :: ShelleyLedgerConfig era -> SL.ShelleyGenesis (EraCrypto era)
 shelleyLedgerGenesis = getCompactGenesis . shelleyLedgerCompactGenesis
 
 shelleyEraParams ::
-     SL.ShelleyGenesis era
+     SL.ShelleyGenesis c
   -> HardFork.EraParams
 shelleyEraParams genesis = HardFork.EraParams {
       eraEpochSize  = SL.sgEpochLength genesis
-    , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
+    , eraSlotLength = mkSlotLength $ SL.fromNominalDiffTimeMicro $ SL.sgSlotLength genesis
     , eraSafeZone   = HardFork.StandardSafeZone stabilityWindow
     }
   where
@@ -139,15 +144,15 @@ shelleyEraParams genesis = HardFork.EraParams {
           (SL.sgActiveSlotCoeff genesis)
 
 -- | Separate variant of 'shelleyEraParams' to be used for a Shelley-only chain.
-shelleyEraParamsNeverHardForks :: SL.ShelleyGenesis era -> HardFork.EraParams
+shelleyEraParamsNeverHardForks :: SL.ShelleyGenesis c -> HardFork.EraParams
 shelleyEraParamsNeverHardForks genesis = HardFork.EraParams {
       eraEpochSize  = SL.sgEpochLength genesis
-    , eraSlotLength = mkSlotLength $ SL.sgSlotLength genesis
+    , eraSlotLength = mkSlotLength $ SL.fromNominalDiffTimeMicro $ SL.sgSlotLength genesis
     , eraSafeZone   = HardFork.UnsafeIndefiniteSafeZone
     }
 
 mkShelleyLedgerConfig
-  :: SL.ShelleyGenesis era
+  :: SL.ShelleyGenesis (EraCrypto era)
   -> Core.TranslationContext era
   -> EpochInfo (Except HardFork.PastHorizonException)
   -> MaxMajorProtVer
@@ -456,8 +461,8 @@ instance HasHardForkHistory (ShelleyBlock proto era) where
 
 instance ShelleyCompatible proto era
       => CommonProtocolParams (ShelleyBlock proto era) where
-  maxHeaderSize = fromIntegral . getField @"_maxBHSize" . getPParams . shelleyLedgerState
-  maxTxSize     = fromIntegral . getField @"_maxTxSize" . getPParams . shelleyLedgerState
+  maxHeaderSize = fromIntegral . view ppMaxBHSizeL . getPParams . shelleyLedgerState
+  maxTxSize     = fromIntegral . view ppMaxTxSizeL . getPParams . shelleyLedgerState
 
 {-------------------------------------------------------------------------------
   ValidateEnvelope
