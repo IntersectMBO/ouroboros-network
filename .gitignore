@@ -31,6 +31,7 @@ result-[0-9]*
 **/tags
 **/TAGS
 .stack-to-nix.cache
+.nix-shell-cabal.project
 
 .stack-work/
 stack.yaml.lock
