@@ -98,6 +98,7 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       haAcceptVersion :: vData -> vData -> Accept vData,
 
       -- | Whether version data requested a query of support version.
+      --
       haQueryVersion :: vData -> Bool,
 
       -- | 'Driver' timeouts for 'Handshake' protocol.

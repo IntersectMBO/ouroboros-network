@@ -450,7 +450,7 @@ connectTo
 connectTo sn tr =
     connectToNode sn makeSocketBearer configureOutboundSocket nodeToNodeHandshakeCodec timeLimitsHandshake
                   (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-                  tr acceptableVersion queryVersion
+                  tr (HandshakeCallbacks acceptableVersion queryVersion)
 
 
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@.
@@ -486,8 +486,7 @@ withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolic
     nodeToNodeHandshakeCodec
     timeLimitsHandshake
     (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-    acceptableVersion
-    queryVersion
+    (HandshakeCallbacks acceptableVersion queryVersion)
     (SomeResponderApplication <$> versions)
     errPolicies
     (\_ async -> Async.wait async)
@@ -532,8 +531,7 @@ ipSubscriptionWorker
           timeLimitsHandshake
           (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
           (NetworkConnectTracers nsMuxTracer nsHandshakeTracer)
-          acceptableVersion
-          queryVersion
+          (HandshakeCallbacks acceptableVersion queryVersion)
           versions)
 
 
@@ -578,8 +576,7 @@ dnsSubscriptionWorker
         timeLimitsHandshake
         (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
         (NetworkConnectTracers ndstMuxTracer ndstHandshakeTracer)
-        acceptableVersion
-        queryVersion
+        (HandshakeCallbacks acceptableVersion queryVersion)
         versions)
 
 
