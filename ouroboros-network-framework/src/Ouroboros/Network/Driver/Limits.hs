@@ -177,7 +177,7 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
 -- This runs the peer to completion (if the protocol allows for termination).
 --
 -- Unlike normal peers, running pipelined peers rely on concurrency, hence the
--- 'MonadSTM' constraint.
+-- 'MonadAsync' constraint.
 --
 runPipelinedPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a.

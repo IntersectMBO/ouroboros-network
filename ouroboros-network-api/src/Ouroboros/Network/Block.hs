@@ -162,13 +162,13 @@ class HasHeader b => HasFullHeader b where
 --
 -- Without this class we would need to write
 --
--- > deriving instance Eq (HeaderHash block) => Eq (ChainHash block)`
+-- > deriving instance Eq (HeaderHash block) => Eq (ChainHash block)
 --
 -- That requires @UndecidableInstances@; not a problem by itself, but it also
 -- means that we can then not use @deriving Eq@ anywhere else for datatypes
 -- that reference 'Hash', which is very frustrating; see
 --
--- <https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/glasgow_exts.html#inferred-context-for-deriving-clauses>
+-- <https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/exts/deriving_inferred.html>
 --
 -- Introducing the 'StandardHash' class avoids this problem.
 --

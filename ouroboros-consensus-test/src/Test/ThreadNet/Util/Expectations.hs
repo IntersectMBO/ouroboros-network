@@ -42,7 +42,7 @@ data Acc = Acc
 -- be fetched and possibly selected by every other node before the end of the
 -- slot.
 --
--- *How 'LeaderSchedule' affects this function*
+-- == How 'LeaderSchedule' affects this function
 --
 -- A round-robin 'LeaderSchedule' will always reach consensus, so the fork
 -- length will be @0@. For other 'LeaderSchedule's -- whether known /a priori/
@@ -86,7 +86,7 @@ data Acc = Acc
 -- In a slot with no leaders, all nodes will simply retain their current
 -- chains.
 --
--- *How 'NodeJoinPlan' affects this function*
+-- == How 'NodeJoinPlan' affects this function
 --
 -- Because the race condition between forging and ChainSync/BlockFetch is
 -- consistently won by forging, a node that leads in the same slot it joins

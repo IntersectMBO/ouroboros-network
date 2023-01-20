@@ -70,7 +70,7 @@ data VolatileDB m blk = VolatileDB {
       -- given hash.
       --
       -- This function will return a non-empty set for any block of which a
-      -- predecessor has been added to the VolatileDB and will return an empty
+      -- successor has been added to the VolatileDB and will return an empty
       -- set if no successors for the given block have been added to the
       -- VolatileDB (yet).
       --

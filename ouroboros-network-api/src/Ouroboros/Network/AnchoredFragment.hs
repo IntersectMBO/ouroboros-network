@@ -487,6 +487,7 @@ applyChainUpdates (u:us) c = applyChainUpdates us =<< applyChainUpdate u c
 -- are returned.
 --
 -- POSTCONDITION: when @Just (before, after) = splitAfterPoint f pt@, then:
+--
 -- * @anchorPoint before == anchorPoint f@
 -- * @headPoint   before == pt@
 -- * @anchorPoint after  == pt@

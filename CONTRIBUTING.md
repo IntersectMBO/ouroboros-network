@@ -346,7 +346,7 @@ consumers would not be able to build such package.
 
 If we are stuck in a situation where we need a long-running fork of a
 package, we should release it to CHaP instead (see the
-https://github.com/input-output-hk/cardano-haskell-packages[CHaP README]
+[CHaP README](https://github.com/input-output-hk/cardano-haskell-packages)
 for more).
 
 If you do add a temporary `source-repository-package` stanza, you need to

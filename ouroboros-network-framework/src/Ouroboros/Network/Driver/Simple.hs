@@ -173,7 +173,7 @@ runPeer tracer codec channel peer =
 -- This runs the peer to completion (if the protocol allows for termination).
 --
 -- Unlike normal peers, running pipelined peers rely on concurrency, hence the
--- 'MonadSTM' constraint.
+-- 'MonadAsync' constraint.
 --
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
@@ -249,7 +249,7 @@ runConnectedPeers createChannels tracer codec client server =
     tracerServer = contramap ((,) Server) tracer
 
 
--- Run the same protocol with different codes.  This is useful for testing
+-- | Run the same protocol with different codes.  This is useful for testing
 -- 'Handshake' protocol which knows how to decode different versions.
 --
 runConnectedPeersAsymmetric

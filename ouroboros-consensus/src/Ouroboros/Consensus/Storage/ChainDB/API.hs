@@ -308,10 +308,10 @@ data ChainDB m blk = ChainDB {
 
       -- | Function to check whether a block is known to be invalid.
       --
-      -- Blocks unknown to the ChainDB will result in 'False'.
+      -- Blocks unknown to the ChainDB will result in 'Nothing'.
       --
       -- If the hash corresponds to a block that is known to be invalid, but
-      -- is now older than 'k', this function may return 'False'.
+      -- is now older than @k@, this function may return 'Nothing'.
       --
       -- Whenever a new invalid block is added, the 'Fingerprint' will be
       -- changed. This is useful when \"watching\" this function in a
@@ -648,7 +648,7 @@ data ChainType = SelectedChain | TentativeChain
 --
 -- See 'newFollower' for more info.
 --
--- The type parameter @a@ will be instantiated with @blk@ or @Header @blk@.
+-- The type parameter @a@ will be instantiated with @blk@ or @'Header' blk@.
 data Follower m blk a = Follower {
       -- | The next chain update (if one exists)
       --

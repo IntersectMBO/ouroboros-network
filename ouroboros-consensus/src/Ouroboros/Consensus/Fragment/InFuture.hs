@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Util.Time
 
 data CheckInFuture m blk = CheckInFuture {
        -- | POSTCONDITION:
+       --
        -- > checkInFuture vf >>= \(af, fut) ->
        -- >   validatedFragment vf == af <=> null fut
        checkInFuture :: ValidatedFragment (Header blk) (LedgerState blk)

@@ -63,7 +63,7 @@ forksAtMostKBlocks k ours theirs = case ours `AF.intersect` theirs of
     Nothing                   -> False
     Just (_, _, ourSuffix, _) -> fromIntegral (AF.length ourSuffix) <= k
 
--- | Lift 'compareChains' to 'AnchoredFragment'
+-- | Compare two (potentially empty!) 'AnchoredFragment's.
 --
 -- PRECONDITION: Either both fragments are non-empty or they intersect.
 --
@@ -75,8 +75,8 @@ forksAtMostKBlocks k ours theirs = case ours `AF.intersect` theirs of
 --
 -- * When comparing a candidate fragment to our current chain, the fragment is
 --   guaranteed (by the chain sync client) to intersect with our chain (indeed,
---   within at  most @k@ blocks from our tp, although the exact distance does
---   not matter for 'compareAnchoredCandidates').
+--   within at most @k@ blocks from our tip, although the exact distance does
+--   not matter for 'compareAnchoredFragments').
 -- * It will only compare candidate fragments that it has previously verified
 --   are preferable to our current chain. Since these fragments intersect with
 --   our current chain, they must by transitivity also intersect each other.
@@ -126,7 +126,7 @@ compareAnchoredFragments cfg frag1 frag2 =
 
 -- | Lift 'preferCandidate' to 'AnchoredFragment'
 --
--- See discussion for 'compareAnchoredCandidates'.
+-- See discussion for 'compareAnchoredFragments'.
 preferAnchoredCandidate ::
      forall blk. (BlockSupportsProtocol blk, HasCallStack)
   => BlockConfig blk
