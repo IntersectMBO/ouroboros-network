@@ -93,6 +93,8 @@ handshakeClientPeerTestVersions VersionDataCodec {encodeData, decodeData}
   Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
     Await (ServerAgency TokConfirm) $ \msg -> case msg of
+      MsgQueryReply vMap ->
+        Done TokDone $ eitherToMaybe $ sequence $ Map.mapWithKey decodeData vMap
       MsgReplyVersions vMap ->
         Done TokDone $ eitherToMaybe $ sequence $ Map.mapWithKey decodeData vMap
       MsgRefuse _vReason ->

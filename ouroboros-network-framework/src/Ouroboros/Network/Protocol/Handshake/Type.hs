@@ -81,11 +81,20 @@ instance Protocol (Handshake vNumber vParams) where
 
       -- |
       -- `MsgReplyVersions` received as a response to 'MsgProposeVersions'.  It
-      -- is only explicitly sent when a version query was received. Previously, it
-      -- could only be received as a copy of 'MsgProposeVersions' in a simultaneous
-      -- open scenario.
+      -- is not supported to explicitly send this message. It can only be
+      -- received as a copy of 'MsgProposeVersions' in a simultaneous open
+      -- scenario.
       --
       MsgReplyVersions
+        :: Map vNumber vParams
+        -> Message (Handshake vNumber vParams) StConfirm StDone
+
+      -- |
+      -- `MsgQueryReply` received as a response to 'MsgProposeVersions'.  It
+      -- is only sent when a version query was received. This will cause the
+      -- connection to terminate.
+      --
+      MsgQueryReply
         :: Map vNumber vParams
         -> Message (Handshake vNumber vParams) StConfirm StDone
 
