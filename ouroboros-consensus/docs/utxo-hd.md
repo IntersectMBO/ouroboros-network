@@ -12,7 +12,7 @@ results when replaying and syncing from scratch up to slot 75M:
 |                  | Replay max mem | Replay time | Sync max mem | Sync time |
 |------------------|----------------|-------------|--------------|-----------|
 | Baseline         | 13 GB          | 1:51 h      | 15 GB        | 20:46 h   |
-| UTxO HD (in-mem) | 13 GB          | 1:50 h      | 16 GB        | 25:04 h   |
+| UTxO HD (in-mem) | 13 GB          | 2:50 h      | 16 GB        | 25:04 h   |
 | UTxO HD (LMDB)   | 8 GB           | 3:15 h      | 11.4 GB      | 25:50 h   |
 
 It is worth noting that these are single measurements, and they are only
