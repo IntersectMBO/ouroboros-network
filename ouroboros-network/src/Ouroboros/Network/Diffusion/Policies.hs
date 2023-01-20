@@ -9,8 +9,6 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadTime
 
 import           Data.List (sortOn, unfoldr)
-import qualified Data.Map.Merge.Strict as Map
-import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Word (Word32)
@@ -53,19 +51,6 @@ peerMetricsConfiguration :: PeerMetricsConfiguration
 peerMetricsConfiguration = PeerMetricsConfiguration {
     maxEntriesToTrack = 180
   }
-
--- | Merge two dictionaries where values of the first one are obligatory, while
--- the second one are optional.
---
-optionalMerge
-    :: Ord k
-    => Map k a
-    -> Map k b
-    -> Map k (a, Maybe b)
-optionalMerge = Map.merge (Map.mapMissing (\_ a -> (a, Nothing)))
-                           Map.dropMissing
-                          (Map.zipWithMatched (\_ a b -> (a, Just b)))
-
 
 
 simplePeerSelectionPolicy :: forall m peerAddr.
@@ -114,27 +99,18 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
         mode <- getChurnMode
         scores <- case mode of
                        ChurnModeNormal -> do
-                           jpm <- joinedPeerMetricAt metrics
                            hup <- upstreamyness metrics
                            bup <- fetchynessBlocks metrics
-                           return $ Map.unionWith (+) hup bup `optionalMerge` jpm
+                           return $ Map.unionWith (+) hup bup
 
-                       ChurnModeBulkSync -> do
-                           jpm <- joinedPeerMetricAt metrics
-                           bup <- fetchynessBytes metrics
-                           return $ bup `optionalMerge` jpm
-
+                       ChurnModeBulkSync ->
+                           fetchynessBytes metrics
         available' <- addRand available (,)
         return $ Set.fromList
              . map fst
              . take pickNum
-               -- order the results, resolve the ties using slot number when
-               -- a peer joined the leader board.
-               --
-               -- note: this will prefer to preserve newer peers, whose results
-               -- less certain than peers who entered leader board earlier.
              . sortOn (\(peer, rn) ->
-                          (Map.findWithDefault (0, Nothing) peer scores, rn))
+                          (Map.findWithDefault 0 peer scores, rn))
              . Map.assocs
              $ available'
 

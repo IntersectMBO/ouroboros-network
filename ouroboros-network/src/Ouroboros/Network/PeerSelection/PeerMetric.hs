@@ -11,7 +11,6 @@ module Ouroboros.Network.PeerSelection.PeerMetric
   , PeerMetricsConfiguration (..)
   , newPeerMetric
     -- * Metric calculations
-  , joinedPeerMetricAt
   , upstreamyness
   , fetchynessBytes
   , fetchynessBlocks
@@ -376,24 +375,6 @@ metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTra
                 then return ()
                 else writeMetrics (IntPSQ.insert (slotToInt slot) slot (peer, time) metrics)
 
-
-joinedPeerMetricAt
-    :: forall p m.
-       MonadSTM m
-    => Ord p
-    => PeerMetrics m p
-    -> STM m (Map p SlotNo)
-joinedPeerMetricAt PeerMetrics {peerMetricsVar} =
-    joinedPeerMetricAtImpl <$> readTVar peerMetricsVar
-
-
-joinedPeerMetricAtImpl
-    :: forall p.
-       Ord p
-    => PeerMetricsState p
-    -> Map p SlotNo
-joinedPeerMetricAtImpl PeerMetricsState { peerRegistry } =
-    OrdPSQ.fold' (\p slotNo _ m -> Map.insert p slotNo m) Map.empty peerRegistry
 
 --
 -- Metrics
