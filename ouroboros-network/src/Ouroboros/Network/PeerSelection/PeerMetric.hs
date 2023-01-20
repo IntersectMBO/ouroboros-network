@@ -85,31 +85,31 @@ data PeerMetricsState p = PeerMetricsState {
 
     -- | Header metrics.
     --
-    headerMetrics    :: SlotMetric p,
+    headerMetrics    :: !(SlotMetric p),
 
     -- | Fetch metrics.
     --
-    fetchedMetrics   :: SlotMetric (p, SizeInBytes),
+    fetchedMetrics   :: !(SlotMetric (p, SizeInBytes)),
 
     -- | Registry recording when a peer joined the board of 'PeerMetrics'.  The
     -- values are average header and fetched metrics.
     --
-    peerRegistry     :: PeerRegistry p,
+    peerRegistry     :: !(PeerRegistry p),
 
     -- | A registry which indicates when the last time a peer was seen.
     --
     -- If a peer hasn't been seen since the oldest recorded slot number, it will
     -- be removed.
     --
-    lastSeenRegistry :: LastSeenRegistry p,
+    lastSeenRegistry :: !(LastSeenRegistry p),
 
     -- | Latest slot registered in the leader board.
     --
-    lastSlotNo       :: SlotNo,
+    lastSlotNo       :: !SlotNo,
 
     -- | Metrics configuration.  Its kept here just for convenience.
     --
-    metricsConfig    :: PeerMetricsConfiguration
+    metricsConfig    :: !PeerMetricsConfiguration
   }
 
 
@@ -260,27 +260,23 @@ insertPeer :: forall p. Ord p
            -> SlotNo -- ^ current slot
            -> PeerMetricsState p
            -> PeerMetricsState p
-insertPeer p slotNo
+insertPeer p !slotNo
            peerMetricsState@PeerMetricsState { lastSeenRegistry, peerRegistry } =
     if p `OrdPSQ.member` lastSeenRegistry
     then peerMetricsState
     else case OrdPSQ.alter f p peerRegistry of
-           (False,  peerRegistry') -> peerMetricsState { peerRegistry = peerRegistry' }
+           (False, !peerRegistry') -> peerMetricsState { peerRegistry = peerRegistry' }
            (True,  _peerRegistry') -> peerMetricsState
   where
     f :: Maybe (SlotNo, AverageMetrics) -> (Bool, Maybe (SlotNo, AverageMetrics))
     f a@Just {} = (True,  a)
-    f Nothing   = (False, Just ( slotNo
-                               , AverageMetrics {
-                                     averageUpstreamyness    = avg upstreamenessResults,
-                                     averageFetchynessBytes  = avg fetchynessBytesResults,
-                                     averageFetchynessBlocks = avg fetchynessBlocksResults
-                                   }
-                               ))
+    f Nothing   = (False, Just $! (slotNo, metrics))
       where
-        upstreamenessResults    = upstreamynessImpl    peerMetricsState
-        fetchynessBytesResults  = fetchynessBytesImpl  peerMetricsState
-        fetchynessBlocksResults = fetchynessBlocksImpl peerMetricsState
+        !metrics = AverageMetrics {
+                     averageUpstreamyness    = avg (upstreamynessImpl    peerMetricsState),
+                     averageFetchynessBytes  = avg (fetchynessBytesImpl  peerMetricsState),
+                     averageFetchynessBlocks = avg (fetchynessBlocksImpl peerMetricsState)
+                   }
 
     avg :: Map p Int -> Int
     avg m | Map.null m = 0
