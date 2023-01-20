@@ -31,13 +31,13 @@ Libraries:
 We have two documents which describe various levels of the networking layer of
 the Cardano Shelley implementation:
 
-* [Introduction to the design of Data Diffusion and Networking of Cardano Shelley](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.network-docs.x86_64-linux/latest/download/1)
+* [Introduction to the design of Data Diffusion and Networking of Cardano Shelley](https://input-output-hk.github.io/ouroboros-network/pdfs/network-design)
 
   This document explains the technical requirements and key constraints for the networking
   layer of the _Cardano Shelley_ implementation of _Ouroboros Praos_.  This is
   a design document.
 
-* [The Shelley Networking Protocol](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.network-docs.x86_64-linux/latest/download/2)
+* [The Shelley Networking Protocol](https://input-output-hk.github.io/ouroboros-network/pdfs/network-spec)
 
   This document is a technical specification of the networking protocol.  It
   includes serialisation formats, necessary details of multiplexer and
@@ -91,7 +91,7 @@ The `ouroboros-consensus/docs` folder contains documentation about the
 consensus layer. Start with the
 [README.md](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/README.md).
 
-* [The Cardano Consensus and Storage Layer](https://hydra.iohk.io/job/Cardano/ouroboros-network/native.consensus-docs.x86_64-linux/latest/download/1)
+* [The Cardano Consensus and Storage Layer](https://input-output-hk.github.io/ouroboros-network/pdfs/report)
 
   This technical report explains the design of the consensus and storage layer.
 
