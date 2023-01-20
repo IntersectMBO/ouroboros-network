@@ -161,8 +161,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
       nodeToNodeHandshakeCodec
       noTimeLimitsHandshake
       (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-      acceptableVersion
-      queryVersion
+      (HandshakeCallbacks acceptableVersion queryVersion)
       (simpleSingletonVersions
         NodeToNodeV_7
         (NodeToNodeVersionData {
@@ -180,8 +179,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           noTimeLimitsHandshake
           (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
           nullNetworkConnectTracers
-          acceptableVersion
-          queryVersion
+          (HandshakeCallbacks acceptableVersion queryVersion)
           (simpleSingletonVersions
             NodeToNodeV_7
             (NodeToNodeVersionData {

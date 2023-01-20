@@ -599,8 +599,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         unversionedHandshakeCodec
         noTimeLimitsHandshake
         unversionedProtocolDataCodec
-        acceptableVersion
-        queryVersion
+        (HandshakeCallbacks acceptableVersion queryVersion)
         (unversionedProtocol (SomeResponderApplication responderApp))
         nullErrorPolicies
         $ \_ _ -> do
@@ -626,8 +625,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
                 noTimeLimitsHandshake
                 unversionedProtocolDataCodec
                 nullNetworkConnectTracers
-                acceptableVersion
-                queryVersion
+                (HandshakeCallbacks acceptableVersion queryVersion)
                 (unversionedProtocol initiatorApp))
 
     res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
@@ -748,8 +746,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
         unversionedHandshakeCodec
         noTimeLimitsHandshake
         unversionedProtocolDataCodec
-        acceptableVersion
-        queryVersion
+        (HandshakeCallbacks acceptableVersion queryVersion)
         (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
         nullErrorPolicies
         $ \localAddr _ -> do
@@ -771,8 +768,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
           unversionedHandshakeCodec
           noTimeLimitsHandshake
           unversionedProtocolDataCodec
-          acceptableVersion
-          queryVersion
+          (HandshakeCallbacks acceptableVersion queryVersion)
           (unversionedProtocol (SomeResponderApplication (appX rrcfg)))
           nullErrorPolicies
           $ \localAddr _ -> do
@@ -799,8 +795,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
                   noTimeLimitsHandshake
                   unversionedProtocolDataCodec
                   nullNetworkConnectTracers
-                  acceptableVersion
-                  queryVersion
+                  (HandshakeCallbacks acceptableVersion queryVersion)
                   (unversionedProtocol (appX rrcfg)))
 
             atomically $ (,) <$> takeTMVar (rrcServerVar rrcfg)
@@ -873,8 +868,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
                 noTimeLimitsHandshake
                 unversionedProtocolDataCodec
                 nullNetworkConnectTracers
-                acceptableVersion
-                queryVersion
+                (HandshakeCallbacks acceptableVersion queryVersion)
                 (unversionedProtocol appReq))
 
     threadDelay 130
@@ -897,8 +891,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
             unversionedHandshakeCodec
             noTimeLimitsHandshake
             unversionedProtocolDataCodec
-            acceptableVersion
-            queryVersion
+            (HandshakeCallbacks acceptableVersion queryVersion)
             (unversionedProtocol (SomeResponderApplication appRsp))
             nullErrorPolicies
             (\_ _ -> threadDelay delay)
