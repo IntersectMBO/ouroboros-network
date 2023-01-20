@@ -18,3 +18,11 @@ results when replaying and syncing from scratch up to slot 75M:
 It is worth noting that these are single measurements, and they are only
 intended to provide an indication of the expected performance.
 
+These results correspond to obtained around 18 January 2023.
+
+The plots below show how replay and syncing a node from scratch progress over
+time, and how the memory usage evolves.
+
+![replay times](images/utxo-hd-replay-01-19-23.png)
+
+![sync times](images/utxo-hd-sync-01-19-23.png)
