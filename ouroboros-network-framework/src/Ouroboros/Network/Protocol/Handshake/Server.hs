@@ -35,7 +35,7 @@ handshakeServerPeer codec@VersionDataCodec {encodeData} acceptVersion query vers
         case acceptOrRefuse codec acceptVersion versions vMap of
           (Right r@(_, vNumber, agreedData)) ->
             let response = if query agreedData then
-                    MsgReplyVersions $ encodeVersions encodeData versions
+                    MsgQueryReply $ encodeVersions encodeData versions
                   else
                     MsgAcceptVersion vNumber $ encodeData vNumber agreedData
             in

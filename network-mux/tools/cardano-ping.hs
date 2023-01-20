@@ -359,6 +359,8 @@ handshakeDec = do
                       msg <- unpack <$> CBOR.decodeString
                       return $ Left $ Refused vn msg
                   _ -> return $ Left $ UnknownTag tag
+         3 -> do -- MsgQueryReply
+             decodeVersions
 
          k -> return $ Left $ UnknownKey k
   where
