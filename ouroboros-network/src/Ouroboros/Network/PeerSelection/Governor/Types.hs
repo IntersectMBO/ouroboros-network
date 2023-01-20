@@ -69,8 +69,7 @@ import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSelection.Types (PeerSource (..),
                      PeerStatus (PeerHot, PeerWarm))

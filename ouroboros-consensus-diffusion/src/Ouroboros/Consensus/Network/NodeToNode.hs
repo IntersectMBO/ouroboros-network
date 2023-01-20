@@ -38,8 +38,11 @@ module Ouroboros.Consensus.Network.NodeToNode (
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
+import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.CBOR.Read (DeserialiseFailure)
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
@@ -84,6 +87,10 @@ import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
                      (FetchedMetricsTracer, HeaderMetricsTracer,
                      ReportPeerMetrics (..))
+import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
+import           Ouroboros.Network.PeerSharing (PeerSharingController,
+                     bracketPeerSharingClient, peerSharingClient,
+                     peerSharingServer)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
@@ -97,24 +104,6 @@ import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.KeepAlive.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Type
-import           Ouroboros.Network.Protocol.TxSubmission2.Client
-import           Ouroboros.Network.Protocol.TxSubmission2.Codec
-import           Ouroboros.Network.Protocol.TxSubmission2.Server
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
-import           Ouroboros.Network.TxSubmission.Inbound
-import           Ouroboros.Network.TxSubmission.Mempool.Reader
-                     (mapTxSubmissionMempoolReader)
-import           Ouroboros.Network.TxSubmission.Outbound
-
-import           Ouroboros.Consensus.Util.Orphans ()
-
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import           Control.Monad.Class.MonadMVar (MonadMVar)
-import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
-import           Ouroboros.Network.PeerSharing (PeerSharingController,
-                     bracketPeerSharingClient, peerSharingClient,
-                     peerSharingServer)
 import           Ouroboros.Network.Protocol.PeerSharing.Client
                      (PeerSharingClient, peerSharingClientPeer)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
@@ -124,6 +113,14 @@ import           Ouroboros.Network.Protocol.PeerSharing.Server
                      (PeerSharingServer, peerSharingServerPeer)
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing,
                      PeerSharingAmount)
+import           Ouroboros.Network.Protocol.TxSubmission2.Client
+import           Ouroboros.Network.Protocol.TxSubmission2.Codec
+import           Ouroboros.Network.Protocol.TxSubmission2.Server
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
+import           Ouroboros.Network.TxSubmission.Inbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+                     (mapTxSubmissionMempoolReader)
+import           Ouroboros.Network.TxSubmission.Outbound
 
 {-------------------------------------------------------------------------------
   Handlers

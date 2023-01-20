@@ -41,8 +41,8 @@ import           Numeric.Natural
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash, Tip (..))
-import           Text.Printf (printf)
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
+import           Text.Printf (printf)
 
 {-------------------------------------------------------------------------------
   Main class

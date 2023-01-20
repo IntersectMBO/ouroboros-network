@@ -22,8 +22,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import qualified Data.IP as IP
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing
-                     (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
                      prop_shrink_valid)
 import           Test.QuickCheck

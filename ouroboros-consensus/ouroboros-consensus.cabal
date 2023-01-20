@@ -331,21 +331,16 @@ library
     , typed-protocols
     , vector                       >=0.12  && <0.13
 
-
   if os(windows)
-     build-depends:    Win32            >= 2.6.1.0
-  else
-     build-depends:
+    build-depends: Win32 >=2.6.1.0
 
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
+  else
+    build-depends:
+
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts

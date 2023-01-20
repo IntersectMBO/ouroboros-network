@@ -118,13 +118,13 @@ import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelect
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay (..), DNSTimeout (..))
 
-import           Test.QuickCheck
 import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
                      (byteLimitsPeerSharing, timeLimitsPeerSharing)
+import           Test.QuickCheck
 
 -- | Diffusion Simulator Arguments
 --
@@ -158,15 +158,15 @@ data NodeArgs =
     , naDiffusionMode          :: DiffusionMode
     , naMbTime                 :: Maybe DiffTime
       -- ^ 'LimitsAndTimeouts' argument
-    , naRelays                :: Map RelayAccessPoint PeerAdvertise
+    , naRelays                 :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
     , naDomainMap              :: Map Domain [IP]
       -- ^ 'Interfaces' 'iDomainMap' value
     , naAddr                   :: NtNAddr
       -- ^ 'Arguments' 'aIPAddress' value
-    , naPeerSharing           :: PeerSharing
+    , naPeerSharing            :: PeerSharing
       -- ^ 'Arguments' 'aIPAddress' value
-    , naLocalRootPeers        :: [(Int, Map RelayAccessPoint PeerAdvertise)]
+    , naLocalRootPeers         :: [(Int, Map RelayAccessPoint PeerAdvertise)]
       -- ^ 'Arguments' 'LocalRootPeers' values
     , naLocalSelectionTargets  :: PeerSelectionTargets
       -- ^ 'Arguments' 'aLocalSelectionTargets' value

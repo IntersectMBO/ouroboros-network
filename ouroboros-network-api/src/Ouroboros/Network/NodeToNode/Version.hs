@@ -22,8 +22,7 @@ import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.PeerSelection.PeerSharing
-                     (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 -- | Enumeration of node to node protocol versions.

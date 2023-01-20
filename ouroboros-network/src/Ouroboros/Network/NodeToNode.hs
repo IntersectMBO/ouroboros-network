@@ -131,8 +131,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      (PeerSelectionTargets (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing
-                     (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec

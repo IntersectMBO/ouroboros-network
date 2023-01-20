@@ -40,6 +40,7 @@ import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Concurrent.Class.MonadSTM as MonadSTM
 import qualified Control.Exception as Exn
 import           Control.Monad
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
@@ -59,24 +60,6 @@ import           GHC.Stack
 import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
 import qualified Network.TypedProtocol.Codec as Codec
-
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
-                     TraceLabelPeer (..))
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
-import           Ouroboros.Network.Point (WithOrigin (..))
-import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
-
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
-import           Ouroboros.Network.NodeToNode (ConnectionId (..),
-                     MiniProtocolParameters (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
-import           Ouroboros.Network.Protocol.KeepAlive.Type
-import           Ouroboros.Network.Protocol.Limits (waitForever)
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -111,6 +94,22 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.Time
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
+                     TraceLabelPeer (..))
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
+import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
+import           Ouroboros.Network.NodeToNode (ConnectionId (..),
+                     MiniProtocolParameters (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
+import           Ouroboros.Network.Point (WithOrigin (..))
+import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
+import           Ouroboros.Network.Protocol.KeepAlive.Type
+import           Ouroboros.Network.Protocol.Limits (waitForever)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import qualified System.FS.Sim.MockFS as Mock
 import           System.FS.Sim.MockFS (MockFS)
 import           System.Random (mkStdGen)
@@ -119,9 +118,6 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
-
-import           Control.Monad.Class.MonadMVar (MonadMVar)
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
 import           Test.Util.ChainDB
 import qualified Test.Util.HardFork.Future as HFF
 import           Test.Util.HardFork.Future (Future)

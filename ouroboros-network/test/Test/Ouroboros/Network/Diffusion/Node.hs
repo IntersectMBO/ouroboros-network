@@ -104,8 +104,7 @@ import           Simulation.Network.Snocket (AddressType (..), FD)
 import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing
-                     (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSharing
                      (PeerSharingRegistry (PeerSharingRegistry))
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node

@@ -15,8 +15,7 @@ import           Control.Monad.Class.MonadTime
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.PeerSharing
-                     (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 --------------------------

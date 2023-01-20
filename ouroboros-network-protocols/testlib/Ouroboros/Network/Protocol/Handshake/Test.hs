@@ -70,8 +70,7 @@ import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToClient.Version
 import           Ouroboros.Network.NodeToNode.Version
 
-import           Ouroboros.Network.PeerSelection.PeerSharing
-                     (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)

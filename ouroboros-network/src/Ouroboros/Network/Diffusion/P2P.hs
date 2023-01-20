@@ -50,7 +50,7 @@ import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Set (Set, elemAt)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
-import           System.Random (StdGen, newStdGen, split, randomRs)
+import           System.Random (StdGen, newStdGen, randomRs, split)
 #ifdef POSIX
 import qualified System.Posix.Signals as Signals
 #endif
