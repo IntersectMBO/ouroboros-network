@@ -361,7 +361,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           nodeKernel <- initNodeKernel nodeKernelArgs
           rnNodeKernelHook registry nodeKernel
 
-          peerMetrics <- newPeerMetric Diffusion.peerMetricsConfiguration
+          peerMetrics <- newPeerMetric
           let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
               ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
               (apps, appsExtra) = mkDiffusionApplications
