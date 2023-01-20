@@ -14,6 +14,8 @@ module Ouroboros.Consensus.NodeId (
   , fromCoreNodeId
   ) where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise)
 import           Data.Hashable
 import           Data.Word
@@ -25,6 +27,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import           Quiet
 
 {-------------------------------------------------------------------------------
   Node IDs

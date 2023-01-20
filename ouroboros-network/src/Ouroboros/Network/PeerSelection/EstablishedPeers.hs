@@ -200,10 +200,10 @@ deletePeers :: Ord peeraddr
             => Set peeraddr
             -> EstablishedPeers peeraddr peerconn
             -> EstablishedPeers peeraddr peerconn
-deletePeers peeraddrs es@EstablishedPeers { allPeers
-                                          , availableForPeerShare
-                                          , nextPeerShareTimes
-                                          , nextActivateTimes
+deletePeers peeraddrs es@EstablishedPeers { allPeers,
+                                            availableForPeerShare,
+                                            nextPeerShareTimes,
+                                            nextActivateTimes
                                           } =
     es { allPeers              = Map.withoutKeys allPeers peeraddrs,
          availableForPeerShare = Set.difference availableForPeerShare peeraddrs,
@@ -226,10 +226,10 @@ setCurrentTime now ep@EstablishedPeers { nextPeerShareTimes
                                        , nextActivateTimes
                                        }
  -- Efficient check for the common case of there being nothing to do:
-  | Just (Min t) <- (f <$> PSQ.minView nextPeerShareTimes)
-                 <> (f <$> PSQ.minView nextActivateTimes)
-  , t > now
-  = ep
+    | Just (Min t) <- (f <$> PSQ.minView nextPeerShareTimes)
+                   <> (f <$> PSQ.minView nextActivateTimes)
+    , t > now
+    = ep
   where
     f (_,t,_,_) = Min t
 

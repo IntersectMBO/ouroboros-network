@@ -59,8 +59,7 @@ import qualified Data.IP as IP
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSActions (..), DNSorIOError (..), LookupReqs (..),

@@ -48,6 +48,7 @@ import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..),
                      WithOrigin (..))
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash, Tip (..))
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
+import           Text.Printf (printf)
 
 {-------------------------------------------------------------------------------
   Main class

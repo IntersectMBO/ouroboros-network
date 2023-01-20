@@ -145,15 +145,15 @@ data NodeArgs =
     , naDiffusionMode         :: DiffusionMode
     , naMbTime                :: Maybe DiffTime
       -- ^ 'LimitsAndTimeouts' argument
-    , naRelays                :: Map RelayAccessPoint PeerAdvertise
+    , naRelays                 :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
     , naDomainMap             :: Map Domain [IP]
       -- ^ 'Interfaces' 'iDomainMap' value
     , naAddr                  :: NtNAddr
       -- ^ 'Arguments' 'aIPAddress' value
-    , naPeerSharing           :: PeerSharing
+    , naPeerSharing            :: PeerSharing
       -- ^ 'Arguments' 'aIPAddress' value
-    , naLocalRootPeers        :: [(Int, Map RelayAccessPoint PeerAdvertise)]
+    , naLocalRootPeers         :: [(Int, Map RelayAccessPoint PeerAdvertise)]
       -- ^ 'Arguments' 'LocalRootPeers' values
     , naLocalSelectionTargets :: PeerSelectionTargets
       -- ^ 'Arguments' 'aLocalSelectionTargets' value

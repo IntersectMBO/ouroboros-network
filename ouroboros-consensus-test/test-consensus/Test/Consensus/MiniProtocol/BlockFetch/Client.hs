@@ -48,6 +48,7 @@ import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
                      newFetchClientRegistry)
 import           Ouroboros.Network.BlockFetch.Client (blockFetchClient)
 import           Ouroboros.Network.Channel (createConnectedChannels)
+import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ControlMessage (ControlMessage (..))
 import qualified Ouroboros.Network.Driver.Simple as Driver
 import           Ouroboros.Network.Mock.Chain (Chain)

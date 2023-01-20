@@ -72,10 +72,8 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Test.Ouroboros.Network.ShrinkCarefully
 
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer)
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.PeerSharing
-                     (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
                      PeerSharingResult (..))

@@ -51,7 +51,12 @@ module Ouroboros.Consensus.Node (
   , openChainDB
   ) where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (DeserialiseFailure)
+import           Control.Monad.Class.MonadMVar (MonadMVar)
+import           Control.Monad.Class.MonadTime (MonadTime)
+import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Hashable (Hashable)
@@ -105,15 +110,6 @@ import           Ouroboros.Consensus.Node.RethrowPolicy
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
-import           Ouroboros.Consensus.Util.Args
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
-
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
@@ -125,8 +121,35 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing, encodeRemoteAddress, decodeRemoteAddress)
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import           Ouroboros.Consensus.Util.Args
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
+import qualified Ouroboros.Network.Diffusion as Diffusion
+import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
+import qualified Ouroboros.Network.Diffusion.P2P as P2P
+import qualified Ouroboros.Network.Diffusion.Policies as Diffusion
+import           Ouroboros.Network.Magic
+import           Ouroboros.Network.NodeToClient (ConnectionId, LocalAddress,
+                     LocalSocket, NodeToClientVersionData (..), combineVersions,
+                     simpleSingletonVersions)
+import           Ouroboros.Network.NodeToNode (DiffusionMode (..),
+                     ExceptionInHandler (..), MiniProtocolParameters,
+                     NodeToNodeVersionData (..), RemoteAddress, Socket,
+                     blockFetchPipeliningMax, defaultMiniProtocolParameters)
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
+                     newPeerMetric, reportMetric)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing,
+                     decodeRemoteAddress, encodeRemoteAddress)
+import           Ouroboros.Network.Protocol.Limits (shortWait)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import           Ouroboros.Network.RethrowPolicy
+import           System.FilePath ((</>))
+import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
 
 {-------------------------------------------------------------------------------
   The arguments to the Consensus Layer node functionality
