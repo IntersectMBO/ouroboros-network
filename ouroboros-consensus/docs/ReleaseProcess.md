@@ -29,9 +29,9 @@ EG If we were currently maintaining a 2.3 version and a 2.4 version simultaneous
 
 A _release branch_ is a branch dedicated to the maintenance of some older release of a package.
 
-RULE: If we have released a package FOO-X.Y.Z, then the release-FOO-X.Y.x branch MUST exist and its first-parent history MUST include the commit released as FOO-X.Y.Z.
-For example, when releasing version 2.3.0 of a package named FOO, we must create the branch named release-FOO-2.3.x.
-And when we later release 2.3.1 of FOO, then we'd need to advance the release-FOO-2.3.x branch to point at the commit being released as FOO-2.3.1.
+RULE: If we have released a package FOO-X.Y.Z, then the release-FOO-X.x.x branch MUST exist and its first-parent history MUST include the commit released as FOO-X.Y.Z.
+For example, when releasing version 2.0.0 of a package named FOO, we must create the branch named release-FOO-2.x.x.
+And when we later release 2.3.1 of FOO (and we've never released a 2.Y.Z with Y>3), then we'd need to advance the release-FOO-2.x.x branch to point at the commit being released as FOO-2.3.1.
 See the "Release Branch Example" below for a more thorough example.
 
 There are two kinds of work on release branches.
@@ -52,7 +52,7 @@ We will be merging multiple PRs into the release branch in order to prepare the 
 *Remark*.
 The release branch for the greatest MAJOR.MINOR version of a package is somewhat degenerate.
 It's either equal to or a prefix of the main branch.
-The only time it MUST be updated to the tip of the main branch is when we cut a release of the package from the main branch, to satisfy the rule above about all commits that were released as some version X.Y.Z being on the release-X.Y.x branch.
+The only time it MUST be updated to the tip of the main branch is when we cut a release of the package from the main branch, to satisfy the rule above about all commits that were released as some version X.Y.Z being on the release-X.x.x branch.
 
 ## Rules for PRs
 
@@ -105,8 +105,8 @@ We prepare that release as follows.
     - RULE: It updates the versions of the packages being released as described above.
     - RULE: It flushes the pending changelog entries of each package being released into the `CHANGELOG.md` file for that package.
 - RULE: We tag that resulting merge commit as release-PKG-A.B.C; one tag per package PKG that is being released (ie FOO and/or BAR).
-- RULE: If C is 0, then we also create the release branch release-PKG-A.B.x from this new commit.
-    - For example, when releasing version 2.3.0 of a package named FOO, we'd create the branch named release-FOO-2.3.x.
+- RULE: If C is 0, then we also create the release branch release-PKG-A.x.x from this new commit.
+    - For example, when releasing version 2.0.0 of a package named FOO, we'd create the branch named release-FOO-2.x.x.
       See the "Release Branch Example" below.
 - RULE: Finally, we announce this commit hash as the new release of these packages.
   EG We insert these package's new versions into Hackage, [CHaP](https://github.com/input-output-hk/cardano-haskell-packages), etc.
@@ -156,9 +156,9 @@ Suppose we have released the following versions: 1.0.0 and 2.0.0.
 The commit history might look like the following linear chain, with the tags and branch pointers annotated.
 
 ```
-D - the release of FOO-2.0.0 (tag: release-FOO-2.0.0, branch: release-FOO-2.0.x, branch: main)
+D - the release of FOO-2.0.0 (tag: release-FOO-2.0.0, branch: release-FOO-2.x.x, branch: main)
 C - replace that confusing feature with much nicer one
-B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.0.x)
+B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.x.x)
 A - ...
 ```
 
@@ -166,33 +166,33 @@ If we subsequently merge a PR that fixes a minor bug present in 2.0.0, it'd then
 
 ```
 E - fix that off-by-one error (branch: main)
-D - the release of FOO-2.0.0 (tag: release-FOO-2.0.0, branch: release-FOO-2.0.x)
+D - the release of FOO-2.0.0 (tag: release-FOO-2.0.0, branch: release-FOO-2.x.x)
 C - replace that confusing feature with much nicer one
-B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.0.x)
+B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.x.x)
 A - ...
 ```
 
-We could have also advanced the release-FOO-2.0.x branch, but the relevant RULES above do not _require_ doing so until we release version 2.0.1.
+We could have also advanced the release-FOO-2.x.x branch, but the relevant RULES above do not _require_ doing so until we release version 2.0.1.
 Once we do that, we'd have the following.
 
 ```
-F - the release of FOO-2.0.1 (tag: release-FOO-2.0.1, branch: release-FOO-2.0.x, branch: main)
+F - the release of FOO-2.0.1 (tag: release-FOO-2.0.1, branch: release-FOO-2.x.x, branch: main)
 E - fix that off-by-one error
 D - the release of FOO-2.0.0 (tag: release-FOO-2.0.0)
 C - replace that confusing feature with much nicer one
-B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.0.x)
+B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0, branch: release-FOO-1.x.x)
 A - ...
 ```
 
-We must advance release-FOO-2.0.x to the F commit, because we released F as a version 2.0.X and so the RULE above requires that the F commit is included in the first-parent history of release-FOO-2.0.x.
+We must advance release-FOO-2.x.x to the F commit, because we released F as a version 2.0.X and so the RULE above requires that the F commit is included in the first-parent history of release-FOO-2.x.x.
 
 Suppose we then find a bad bug in feature that commit C had replaced.
 We might want to fix it because our users aren't yet ready to integrate the new feature from 2.0 version into their code.
-Thus, we'd merge a bugfix PR directly into the release-1.0.x branch.
+Thus, we'd merge a bugfix PR directly into the release-1.x.x branch.
 Note that we should merge bugfixes into the main branch and then backport them onto a release branch when that is possible, but in this case the buggy feature no longer exists on the main branch.
 
 ```
-G - fix confusion in the old logic (branch: release-FOO-1.0.x)
+G - fix confusion in the old logic (branch: release-FOO-1.x.x)
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
 A - ...
 ```
@@ -200,17 +200,17 @@ A - ...
 Once that patch passes validation, we could then release 1.0.1.
 
 ```
-H - the release of FOO-1.0.1 (tag: release-FOO-1.0.1, branch: release-FOO-1.0.x)
+H - the release of FOO-1.0.1 (tag: release-FOO-1.0.1, branch: release-FOO-1.x.x)
 G - fix confusion in the old logic
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
 A - ...
 ```
 
-Now suppose we belatedly realized we can easily backport E onto 1.0.x as well.
+Now suppose we belatedly realized we can easily backport E onto 1.x.x as well.
 If we're making another release of the 1.0 version, our users would likely appreciate us including as many bugfixes as we can.
 
 ```
-I - cherry-pick of E (branch: release-FOO-1.0.x)
+I - cherry-pick of E (branch: release-FOO-1.x.x)
 H - the release of FOO-1.0.1 (tag: release-FOO-1.0.1)
 G - fix confusion in the old logic
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
@@ -220,7 +220,7 @@ A - ...
 And shortly the following.
 
 ```
-J - the release of FOO-1.0.2 (tag: release-FOO-1.0.2, branch: release-FOO-1.0.x)
+J - the release of FOO-1.0.2 (tag: release-FOO-1.0.2, branch: release-FOO-1.x.x)
 I - cherry-pick of E
 H - the release of FOO-1.0.1 (tag: release-FOO-1.0.1)
 G - fix confusion in the old logic
