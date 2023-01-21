@@ -40,12 +40,12 @@ import           Network.Mux.Bearer.NamedPipe
 newtype MakeBearer m fd = MakeBearer {
     getBearer
       :: DiffTime
-      -- ^ timeout for reading an SDUMux segment, if negative no
+      -- timeout for reading an SDUMux segment, if negative no
       -- timeout is applied.
       -> Tracer m MuxTrace
-      -- ^ tracer
+      -- tracer
       -> fd
-      -- ^ file descriptor
+      -- file descriptor
       -> m (MuxBearer m)
   }
 
