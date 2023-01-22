@@ -261,7 +261,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 -- that to exit the scope of 'withRegistry', thereby terminating all threads in
 -- that registry.
 --
--- # Combining the registry and with-style allocation
+-- = Combining the registry and with-style allocation
 --
 -- It is perfectly possible (indeed, advisable) to use 'bracket' and
 -- bracket-like allocation functions alongside the registry, but note that the

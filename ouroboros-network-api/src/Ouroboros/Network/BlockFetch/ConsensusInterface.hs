@@ -53,7 +53,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- | Read the K-suffixes of the candidate chains.
        --
        -- Assumptions:
-       -- * They must be already validated.
+       -- * Their headers must be already validated.
        -- * They may contain /fewer/ than @K@ blocks.
        -- * Their anchor does not have to intersect with the current chain.
        readCandidateChains    :: STM m (Map peer (AnchoredFragment header)),

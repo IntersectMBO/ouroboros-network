@@ -278,10 +278,11 @@ fromOldestFirst a = AnchoredSeq a . FT.fromList . coerce
 --  position.
 --
 -- POSTCONDITION: @(before, after) = splitAt i s@, then:
--- * @anchor      before == anchor s@
--- * @headAnchor  before == anchor after@
--- * @headAnchor  after  == headAnchor s@
--- * @join before after  == Just s@
+--
+-- > anchor      before == anchor s
+-- > headAnchor  before == anchor after
+-- > headAnchor  after  == headAnchor s
+-- > join before after  == Just s
 splitAt ::
       Anchorable v a b
    => Int
@@ -546,11 +547,12 @@ s1 `isPrefixOfByMeasure` s2 =
 -- the predicate.
 --
 -- POSTCONDITION: when @Just (before, after) = splitAfterMeasure k f s@, then:
--- * @anchor before       == anchor s@
--- * @headMeasure before  == pt@
--- * @anchorMeasure after == pt@
--- * @headAnchor after    == headAnchor s@
--- * @join before after   == Just s@
+--
+-- > anchor before       == anchor s
+-- > headMeasure before  == pt
+-- > anchorMeasure after == pt
+-- > headAnchor after    == headAnchor s
+-- > join before after   == Just s
 splitAfterMeasure ::
      Anchorable v a b
   => v
@@ -660,7 +662,7 @@ selectOffsets offsets = go relativeOffsets
       | otherwise
       = []
 
--- | \( O\(n\) \). Variation on 'filterWithStop' without a stop condition.
+-- | \( O(n) \). Variation on 'filterWithStop' without a stop condition.
 filter ::
      forall v a b. Anchorable v a b
   => (b -> Bool)  -- ^ Filtering predicate
@@ -761,7 +763,7 @@ applyFilterRange c (FilterRange start stop) = inRange
     (_before, fromStart) = splitAt start c
     (inRange, _after)    = splitAt (stop - start + 1) fromStart
 
--- | \( O\(n\) \). Naive reference implementation of 'filterWithStop'.
+-- | \( O(n) \). Naive reference implementation of 'filterWithStop'.
 --
 -- While the asymptotic complexity of this function is better than that of
 -- 'filterWithStop', the allocation cost is high. This function deconstructs and

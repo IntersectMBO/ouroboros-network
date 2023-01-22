@@ -928,7 +928,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     -- which will cause us to switch smoothly from a slower to faster peers.
     -- When switching from slow to faster peers we will be over the configured limit, but
     -- PeerGSV is expected to be updated rather infrequently so the set of prefered peers should
-    -- be stable during 10s of second.
+    -- be stable during 10s of seconds.
     nPreferedPeers :: [peer]
     nPreferedPeers =
         map snd

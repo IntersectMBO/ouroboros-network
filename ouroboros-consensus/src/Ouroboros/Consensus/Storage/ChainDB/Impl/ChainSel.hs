@@ -1201,7 +1201,8 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
       ledgerState . LgrDB.ledgerDbCurrent <$>
       ValidatedDiff.toValidatedFragment validatedChainDiff
 
--- | Validate a candidate chain using 'ledgerValidate' and 'futureCheck'.
+-- | Validate a candidate chain using 'ledgerValidateCandidate' and
+-- 'futureCheck'.
 validateCandidate
   :: ( IOLike m
      , LedgerSupportsProtocol blk

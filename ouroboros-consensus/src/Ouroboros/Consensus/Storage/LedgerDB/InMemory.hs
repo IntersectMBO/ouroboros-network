@@ -99,7 +99,7 @@ import           Ouroboros.Consensus.Util.Versioned
 --
 -- We take a snapshot after each block is applied and keep in memory a window
 -- of the last @k@ snapshots. We have verified empirically (#1936) that the
--- overhead of keeping @k snapshots in memory is small, i.e., about 5%
+-- overhead of keeping @k@ snapshots in memory is small, i.e., about 5%
 -- compared to keeping a snapshot every 100 blocks. This is thanks to sharing
 -- between consecutive snapshots.
 --

@@ -243,10 +243,10 @@ data PeerGSV = PeerGSV {
                deriving Show
 
 -- | The current tracking model is based on an EWMA
---  (https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average).
+--  (<https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average>).
 --  Typically implementations of EWMA assume a regular update, but EWMA is based
 --  on Exponential Smoothing
---  (https://en.wikipedia.org/wiki/Exponential_smoothing). Such smoothing has a
+--  (<https://en.wikipedia.org/wiki/Exponential_smoothing>). Such smoothing has a
 --  time constant, which captures the time for a unit impulse to decay to 1 -
 --  1/e (~ 63.2%), the &#x1D6FC (smoothing factor) is a function of relative
 --  frequency of the sample interval and this time constant.

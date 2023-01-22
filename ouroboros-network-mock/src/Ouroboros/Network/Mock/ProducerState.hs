@@ -35,6 +35,7 @@ type FollowerId = Int
 -- |
 -- Producer keeps track of consumer chain.  The only information for a producer
 -- to know is
+--
 --  * @'followerPoint'@: (some) intersection point of consumer's chain and
 --    producer's chain;
 --  * @'followerNext'@: information what to do on next instruction: either roll

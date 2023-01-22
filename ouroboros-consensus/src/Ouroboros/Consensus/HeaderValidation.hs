@@ -396,19 +396,19 @@ castHeaderError (HeaderEnvelopeError e) = HeaderEnvelopeError $
 --
 -- For this reason, the header validation currently only checks two things:
 --
--- o It verifies the consensus part of the header.
+-- - It verifies the consensus part of the header.
 --
 --   For example, for Praos this means checking the VRF proofs.
 --
--- o It verifies the 'HasHeader' part of the header.
+-- - It verifies the 'HasHeader' part of the header.
 --
 --   By default, we verify that
 --
---   x Block numbers are consecutive
---   x The block number of the first block is 'firstBlockNo'
---   x Slot numbers are strictly increasing
---   x The slot number of the first block is at least 'minimumPossibleSlotNo'
---   x Hashes line up
+--   - Block numbers are consecutive
+--   - The block number of the first block is 'firstBlockNo'
+--   - Slot numbers are strictly increasing
+--   - The slot number of the first block is at least 'minimumPossibleSlotNo'
+--   - Hashes line up
 --
 -- /If/ a particular ledger wants to verify additional fields in the header, it
 -- will get the chance to do so in 'applyBlockLedgerResult', which is passed the
