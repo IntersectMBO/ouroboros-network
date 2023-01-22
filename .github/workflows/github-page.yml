@@ -26,6 +26,11 @@ jobs:
 
       SECP_CACHE_VERSION: "2022-12-29"
 
+      # we need the LD_LIBRARY_PATH env var here because we ended up installing libsecp256k1 into /usr/local,
+      # pkg-config, *does* return the proper location, but the library does not appear to be properly referenced.
+      # FIXME: this is arguably a bug, and pkg-config should return the right values!
+      LD_LIBRARY_PATH: ${{ (matrix.os != 'windows-latest' && '/usr/local/lib') || '' }}
+
     steps:
     - uses: actions/checkout@v3
 
