@@ -10,7 +10,6 @@ license-files:          LICENSE
 author:                 IOHK Engineering Team
 maintainer:             operations@iohk.io
 category:               Network
-extra-source-files:     CHANGELOG.md
 
 executable unsoundswitch
     main-is:          UnsoundSwitch.hs

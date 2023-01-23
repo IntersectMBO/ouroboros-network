@@ -12,7 +12,6 @@ author:                 IOHK Engineering Team
 maintainer:             operations@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     CHANGELOG.md
 
 source-repository head
   type:     git
