@@ -1,4 +1,4 @@
-% Example: Implementing a Simple Protocol Using `ouroborus-consensus`
+% Example: Implementing a Simple Protocol Using `ouroboros-consensus`
 
 Generating Documentation From This File
 =======================================
@@ -23,14 +23,15 @@ high-level concepts in `ouroboros-consensus`
 This example uses several extensions:
 
 > {-# OPTIONS_GHC -Wno-unused-top-binds   #-}
-> {-# LANGUAGE TypeFamilies               #-}
-> {-# LANGUAGE DerivingVia                #-}
 > {-# LANGUAGE DataKinds                  #-}
-> {-# LANGUAGE DeriveGeneric              #-}
-> {-# LANGUAGE FlexibleInstances          #-}
 > {-# LANGUAGE DeriveAnyClass             #-}
+> {-# LANGUAGE DeriveGeneric              #-}
+> {-# LANGUAGE DerivingVia                #-}
+> {-# LANGUAGE FlexibleInstances          #-}
 > {-# LANGUAGE MultiParamTypeClasses      #-}
+> {-# LANGUAGE RecordWildCards            #-}
 > {-# LANGUAGE StandaloneDeriving         #-}
+> {-# LANGUAGE TypeFamilies               #-}
 
 > module Ouroboros.Consensus.Tutorial.Simple () where
 
@@ -50,9 +51,10 @@ First, some imports we'll need:
 >    HeaderHash, Point, StandardHash)
 > import Ouroboros.Consensus.Protocol.Abstract
 >   (SecurityParam(..), ConsensusConfig, ConsensusProtocol(..) )
-> import Ouroboros.Consensus.Ticked ( Ticked(TickedTrivial) )
+> import Ouroboros.Consensus.Ticked ( Ticked1, Ticked(TickedTrivial) )
 > import Ouroboros.Consensus.Block
 >   (BlockSupportsProtocol (selectView, validateView))
+> import Ouroboros.Consensus.Ledger.Tables
 > import Ouroboros.Consensus.Ledger.Abstract
 >   (GetTip(..), IsLedger(..), LedgerCfg,
 >    LedgerResult(LedgerResult, lrEvents, lrResult),
@@ -84,7 +86,7 @@ way.  This same value might also be used to determine if a subsequent block is
 valid.  Computing this value is the responsibility of the **ledger** and the
 **ledger state** is the computed value.
 
-`ouroborus-consensus` combines features of much of this infrastructure taking
+`ouroboros-consensus` combines features of much of this infrastructure taking
 (possibly simplified) views of blocks and the ledger and using them to decide
 between different proposed chains to implement eventual consistency across the
 nodes.
@@ -105,7 +107,7 @@ it being important that at least one tick happens between blocks.
 The `ConsensusProtocol` typeclass
 =================================
 
-The central abstraction of `ouroborus-consensus` is the `ConsensusProtocol`
+The central abstraction of `ouroboros-consensus` is the `ConsensusProtocol`
 typeclass.  This class captures the relationship between consensus and the rest
 of the system (in particular the ledger) as a set of type families.
 
@@ -498,6 +500,10 @@ state.
 Below we'll define a group of typeclasses that together implement a simple
 ledger that uses `BlockC` and that is suitable for our consensus protocol `SP`.
 
+For this tutorial we will be ignoring the definitions related to UTxO-HD. In
+particular one can ignore type variables named `mk`, types of the form `*MK`,
+and anything mentioning to tables or `KeySets`. There is an appendix at the end
+of this document that briefly outlines UTxO-HD.
 
 `LedgerCfg` - Ledger Static Configuration
 -----------------------------------------
@@ -521,8 +527,7 @@ Given that the `BlockC` transactions consist of incrementing and decrementing a
 number, we materialize that number in the `LedgerState`.  We'll also need to
 keep track of some information about the most recent block we have seen.
 
-> data instance LedgerState BlockC =
->
+> data instance LedgerState BlockC mk =
 >   LedgerC
 >     -- the hash and slot number of the most recent block
 >     { lsbc_tip :: Point BlockC
@@ -538,15 +543,14 @@ place in the blockchain - a pair of a slot and a block hash.
 ---------------------------------------
 
 Again, the slot abstraction defines a logical clock - and instances of the
-`Ticked` family describe values that evolve with respect to this logical clock.
-As such, we will also need to define an instance of `Ticked` for our ledger
+`Ticked1` family describe values that evolve with respect to this logical clock.
+As such, we will also need to define an instance of `Ticked1` for our ledger
 state.  In our example, this is essentially an `Identity` functor:
 
-> newtype instance Ticked (LedgerState BlockC) =
+> newtype instance Ticked1 (LedgerState BlockC) mk =
 >   TickedLedgerStateC
->     { unTickedLedgerStateC :: LedgerState BlockC }
+>     { unTickedLedgerStateC :: LedgerState BlockC mk }
 >   deriving (Show, Eq, Generic, Serialise)
-
 
 `IsLedger`
 ----------
@@ -560,7 +564,7 @@ types for a ledger.  Though we are here using
 >
 >   applyChainTickLedgerResult _cfg _slot ldgrSt =
 >     LedgerResult { lrEvents = []
->                  , lrResult = TickedLedgerStateC ldgrSt
+>                  , lrResult = TickedLedgerStateC $ convertMapKind ldgrSt
 >                  }
 
 The `LedgerErr` type is the type of errors associated with this ledger that can
@@ -573,11 +577,10 @@ will also use `Void` here.
 
 The `applyChainTickLedgerResult` function 'ticks' the `LedgerState`, resulting
 in an updated `LedgerState` that has witnessed a change in slot (which, again,
-corresponds to a logical clock.)  Note that this function _does allow failure._
-If it did, that means the `LedgerState` is such that it is in a state that will
-eventually fail due to the passage of time and such errors should have been
-signalled earlier (for example, when applying blocks.)
-
+corresponds to a logical clock.) Note that this function _does not allow
+failure._ If it did, that means the `LedgerState` is such that it is in a state
+that will eventually fail due to the passage of time and such errors should have
+been signalled earlier (for example, when applying blocks.)
 
 `ApplyBlock` - Applying Blocks to `LedgerState`
 -----------------------------------------------
@@ -586,7 +589,7 @@ A block `b` is said to have been `applied` to a `LedgerState` if that
 `LedgerState` is the result of having witnessed `b` at some point.  We can
 express this as a function:
 
-> applyBlockTo :: BlockC -> Ticked (LedgerState BlockC) -> LedgerState BlockC
+> applyBlockTo :: BlockC -> Ticked1 (LedgerState BlockC) ValuesMK -> LedgerState BlockC DiffMK
 > applyBlockTo block tickedLedgerState =
 >   ledgerState { lsbc_tip = blockPoint block
 >               , lsbc_count = lsbc_count'
@@ -599,7 +602,7 @@ express this as a function:
 >         Inc -> i + 1
 >         Dec -> i - 1
 
-We use a `Ticked (LedgerState BlockC)` to enforce the invariant that we should
+We use a `Ticked1 (LedgerState BlockC)` to enforce the invariant that we should
 not apply two blocks in a row - at least one tick (aka slot) must have elapsed
 between block applications.
 
@@ -618,7 +621,7 @@ the `ApplyBlock` typeclass:
 >                  , lrResult = block `applyBlockTo` tickedLdgrSt
 >                  }
 >
->
+>   getBlockKeySets = const NoLedgerTables
 
 `applyBlockLedgerResult` tries to apply a block to the ledger and fails with a
 `LedgerErr` corresponding to the particular `LedgerState blk` if for whatever
@@ -653,10 +656,10 @@ The `GetTip` typeclass describes how to get the `Point` of the tip - which is
 the most recently applied block.  We need to implement this both for
 `LedgerState BlockC` as well as its ticked version:
 
-> instance GetTip (Ticked (LedgerState BlockC)) where
+> instance GetTip (Ticked1 (LedgerState BlockC) mk) where
 >    getTip = castPoint . lsbc_tip . unTickedLedgerStateC
 
-> instance GetTip (LedgerState BlockC) where
+> instance GetTip (LedgerState BlockC mk) where
 >    getTip = castPoint . lsbc_tip
 
 Associating Ledgers to Protocols
@@ -703,6 +706,82 @@ To focus on the salient ideas of this document, we've put all the derivations of
 >   instance NoThunks BlockC
 > deriving via OnlyCheckWhnfNamed "HdrBlockC" (Header BlockC)
 >   instance NoThunks (Header BlockC)
-> deriving via OnlyCheckWhnfNamed "LedgerC" (LedgerState BlockC)
->   instance NoThunks (LedgerState BlockC)
-> deriving instance NoThunks (Ticked (LedgerState BlockC))
+> deriving via OnlyCheckWhnfNamed "LedgerC" (LedgerState BlockC mk)
+>   instance NoThunks (LedgerState BlockC mk)
+> deriving instance NoThunks (Ticked1 (LedgerState BlockC) mk)
+
+Appendix: UTxO-HD features
+==========================
+
+The introduction of UTxO-HD is out of the scope of this tutorial but we will
+describe here a few hints on how it would be defined. In broad terms, with the
+introduction of UTxO-HD a part of the ledger state (the UTxO set) was moved to
+the disk and now consensus:
+
+- provides subsets of that data to the ledger rules (i.e. only the consumed
+  UTxOs on a block)
+
+- stores a sequence of deltas (diffs) produced by the execution of the ledger
+  rules
+
+These subsets are defined in terms of the `LedgerTables` and the `mk` type
+variable that indicates if the collection is made of key-value pairs, only keys
+or to keys-delta pairs.
+
+The `TableStuff` class defines the basic operations that can be done with the
+`LedgerTables`. For a Ledger state definition as simple as the one we are
+defining there the tables are trivially empty so the operations are all trivial.
+
+> instance TableStuff (LedgerState BlockC) where
+>   data instance LedgerTables (LedgerState BlockC) mk =
+>      NoLedgerTables
+>      deriving (Eq, Show, Generic, NoThunks)
+>
+>   projectLedgerTables _st                = NoLedgerTables
+>   withLedgerTables     st NoLedgerTables = convertMapKind st
+>
+>   pureLedgerTables     _f                                              = NoLedgerTables
+>   mapLedgerTables      _f                               NoLedgerTables = NoLedgerTables
+>   traverseLedgerTables _f                               NoLedgerTables = pure NoLedgerTables
+>   zipLedgerTables      _f                NoLedgerTables NoLedgerTables = NoLedgerTables
+>   zipLedgerTables2     _f NoLedgerTables NoLedgerTables NoLedgerTables = NoLedgerTables
+>   zipLedgerTablesA     _f                NoLedgerTables NoLedgerTables = pure NoLedgerTables
+>   zipLedgerTables2A    _f NoLedgerTables NoLedgerTables NoLedgerTables = pure NoLedgerTables
+>   foldLedgerTables     _f                               NoLedgerTables = mempty
+>   foldLedgerTables2    _f                NoLedgerTables NoLedgerTables = mempty
+>
+>   namesLedgerTables = NoLedgerTables
+
+The `TickedTableStuff` class is essentially the same as `TableStuff` but with
+the ticked Ledger State instead. Again, for this ledger state it is trivial.
+
+> instance TickedTableStuff (LedgerState BlockC) where
+>   projectLedgerTablesTicked _st            = NoLedgerTables
+>   withLedgerTablesTicked st NoLedgerTables = convertMapKind st
+
+Like our example ledger state, a Ledger State is said to be `InMemory` if it
+doesn't really depend on the ledger tables and therefore it is completely in
+memory, and the `mk` parameter is just a phantom type.
+
+> instance InMemory (LedgerState BlockC) where
+>   convertMapKind LedgerC{..} = LedgerC{..}
+>
+> instance InMemory (Ticked1 (LedgerState BlockC)) where
+>  convertMapKind = TickedLedgerStateC . convertMapKind . unTickedLedgerStateC
+
+A Ledger State also has to define a `StowableLedgerTables` instance because it
+is used to fill the holes for the UTxO set inside the ledger state so that the
+Ledger rules can be executed. However, for this simple Ledger State, just
+converting the map kind is enough.
+
+> instance StowableLedgerTables (LedgerState BlockC) where
+>   stowLedgerTables     = convertMapKind
+>   unstowLedgerTables   = convertMapKind
+
+And lastly, the printing functionality:
+
+> instance ShowLedgerState (LedgerState BlockC) where
+>   showsLedgerState = shows
+>
+> instance ShowLedgerState (LedgerTables (LedgerState BlockC)) where
+>   showsLedgerState = shows
