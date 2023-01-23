@@ -4,16 +4,18 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Network.Protocol.Handshake.Client
   ( handshakeClientPeer
-  , handshakeClientPeerTestVersions
+  , decodeQueryResult
   , encodeVersions
   , acceptOrRefuse
   ) where
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Text (Text)
 
 import qualified Codec.CBOR.Term as CBOR
 
@@ -37,9 +39,7 @@ handshakeClientPeer
   -> Versions vNumber vData r
   -> Peer (Handshake vNumber CBOR.Term)
           AsClient StPropose m
-          (Either
-            (HandshakeProtocolError vNumber)
-            (r, vNumber, vData))
+          (HandshakeResult r vNumber vData)
 handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
                     acceptVersion versions =
   -- send known versions
@@ -50,59 +50,47 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
         -- simultaneous open; 'accept' will choose version (the greatest common
         -- version), and check if we can accept received version data.
         Done TokDone $ case acceptOrRefuse codec acceptVersion versions vMap of
-          Right r      -> Right r
-          Left vReason -> Left (HandshakeError vReason)
+          Right r      -> HandshakeNegotiationResult r
+          Left vReason -> HandshakeResultError (HandshakeError vReason)
+
+      MsgQueryReply vMap ->
+        Done TokDone $ decodeQueryResult decodeData vMap
 
       -- the server refused common highest version
       MsgRefuse vReason ->
-        Done TokDone (Left $ HandshakeError vReason)
+        Done TokDone (HandshakeResultError $ HandshakeError vReason)
 
       -- the server accepted a version, sent back the version number and its
       -- version data blob
       MsgAcceptVersion vNumber vParams ->
         case vNumber `Map.lookup` getVersions versions of
-          Nothing -> Done TokDone (Left $ NotRecognisedVersion vNumber)
+          Nothing -> Done TokDone (HandshakeResultError $ NotRecognisedVersion vNumber)
           Just (Version app vData) ->
             case decodeData vNumber vParams of
 
               Left err ->
-                Done TokDone (Left (HandshakeError $ HandshakeDecodeError vNumber err))
+                Done TokDone (HandshakeResultError (HandshakeError $ HandshakeDecodeError vNumber err))
 
               Right vData' ->
                 case acceptVersion vData vData' of
                   Accept agreedData ->
-                    Done TokDone $ Right $ ( app agreedData
-                                           , vNumber
-                                           , agreedData
-                                           )
+                    Done TokDone $ HandshakeNegotiationResult $ ( app agreedData
+                                                                , vNumber
+                                                                , agreedData
+                                                                )
                   Refuse err ->
-                    Done TokDone (Left (InvalidServerSelection vNumber err))
+                    Done TokDone (HandshakeResultError (InvalidServerSelection vNumber err))
 
--- Alternative version of `handshakeClientPeer` that returns the queried versions from the peer for testing.
-handshakeClientPeerTestVersions
-  :: ( Ord vNumber
-     )
-  => VersionDataCodec CBOR.Term vNumber vData
-  -> Versions vNumber vData r
-  -> Peer (Handshake vNumber CBOR.Term)
-          AsClient StPropose m
-          (Maybe (Map vNumber vData))
-handshakeClientPeerTestVersions VersionDataCodec {encodeData, decodeData}
-                    versions =
-  -- send known versions
-  Yield (ClientAgency TokPropose) (MsgProposeVersions $ encodeVersions encodeData versions) $
 
-    Await (ServerAgency TokConfirm) $ \msg -> case msg of
-      MsgQueryReply vMap ->
-        Done TokDone $ eitherToMaybe $ sequence $ Map.mapWithKey decodeData vMap
-      MsgReplyVersions vMap ->
-        Done TokDone $ eitherToMaybe $ sequence $ Map.mapWithKey decodeData vMap
-      MsgRefuse _vReason ->
-        Done TokDone Nothing
-      MsgAcceptVersion _vNumber _vParams ->
-        Done TokDone $ Just mempty
+decodeQueryResult :: (vNumber -> bytes -> Either Text vData)
+                  -> Map vNumber bytes
+                  -> HandshakeResult r vNumber vData
+decodeQueryResult decodeData vMap = case Map.traverseWithKey (\k v -> mapLeft (k,) $ decodeData k v) vMap of
+    Right vs            -> HandshakeQueryResult vs
+    Left (vNumber, err) -> HandshakeResultError $ HandshakeError $ HandshakeDecodeError vNumber err
   where
-    eitherToMaybe = either (const Nothing) Just
+    mapLeft f (Left x)  = Left $ f x
+    mapLeft _ (Right r) = Right r
 
 encodeVersions
   :: forall vNumber r vParams vData.

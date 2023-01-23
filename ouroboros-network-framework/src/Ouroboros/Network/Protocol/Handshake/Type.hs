@@ -21,6 +21,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
     -- $simultanous-open
   , RefuseReason (..)
   , HandshakeProtocolError (..)
+  , HandshakeResult (..)
   ) where
 
 
@@ -153,6 +154,13 @@ data HandshakeProtocolError vNumber
   | NotRecognisedVersion vNumber
   | InvalidServerSelection vNumber Text
   deriving (Eq, Show)
+
+-- | The result of a handshake.
+--
+data HandshakeResult r vNumber vData
+  = HandshakeNegotiationResult (r, vNumber, vData)
+  | HandshakeQueryResult (Map vNumber vData) -- vParams)
+  | HandshakeResultError (HandshakeProtocolError vNumber)
 
 instance (Typeable vNumber, Show vNumber)
     => Exception (HandshakeProtocolError vNumber)
