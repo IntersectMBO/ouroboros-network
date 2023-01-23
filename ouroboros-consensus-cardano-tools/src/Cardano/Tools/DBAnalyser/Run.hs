@@ -26,6 +26,7 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
+import Ouroboros.Consensus.Ledger.SupportsMempool (HasTxs)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
@@ -55,6 +56,7 @@ analyse ::
      , Show (Header blk)
      , HasAnalysis blk
      , HasProtocolInfo blk
+     , HasTxs blk
      )
   => DBAnalyserConfig
   -> Args blk

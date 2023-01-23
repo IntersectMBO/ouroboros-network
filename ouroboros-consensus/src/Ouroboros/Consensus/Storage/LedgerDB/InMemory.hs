@@ -75,6 +75,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPush'
   , ledgerDbPushMany'
   , ledgerDbSwitch'
+  -- ** Push blocks
+  , pushLedgerState
   ) where
 
 import           Codec.Serialise.Decoding (Decoder)
