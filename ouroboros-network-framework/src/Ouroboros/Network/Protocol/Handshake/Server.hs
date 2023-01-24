@@ -28,7 +28,9 @@ handshakeServerPeer
   -> Versions vNumber vData r
   -> Peer (Handshake vNumber CBOR.Term)
           AsServer StPropose m
-          (HandshakeResult r vNumber vData)
+          (Either
+            (HandshakeProtocolError vNumber)
+            (HandshakeResult r vNumber vData))
 handshakeServerPeer codec@VersionDataCodec {encodeData, decodeData} acceptVersion query versions =
     Await (ClientAgency TokPropose) $ \msg -> case msg of
       MsgProposeVersions vMap  ->
@@ -41,8 +43,8 @@ handshakeServerPeer codec@VersionDataCodec {encodeData, decodeData} acceptVersio
             in
             Yield (ServerAgency TokConfirm)
                   response
-                  (Done TokDone r')
+                  (Done TokDone (Right r'))
           (Left vReason) ->
             Yield (ServerAgency TokConfirm)
                   (MsgRefuse vReason)
-                  (Done TokDone (HandshakeResultError (HandshakeError vReason)))
+                  (Done TokDone (Left (HandshakeError vReason)))
