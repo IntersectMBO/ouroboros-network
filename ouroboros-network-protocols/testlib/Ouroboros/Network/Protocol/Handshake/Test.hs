@@ -457,9 +457,13 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
                 queryVersion
                 serverVersions)) of
       (clientRes', serverRes', TerminalStates TokDone TokDone) ->
-           fromMaybe False clientRes === either (const False) (\(a,_,_) -> a) clientRes'
+           fromMaybe False clientRes === either (const False) extractRes clientRes'
         .&&.
-           fromMaybe False serverRes === either (const False) (\(a,_,_) -> a) serverRes'
+           fromMaybe False serverRes === either (const False) extractRes serverRes'
+  where
+    extractRes (HandshakeNegotiationResult (r,_,_)) = r
+    extractRes (HandshakeQueryResult _)             = False
+
 --
 -- Properties using a channel
 --
@@ -497,8 +501,13 @@ prop_channel createChannels clientVersions serverVersions =
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
         -- a boolean value) is the one that was put inside 'Version'
-        (Right (c,_,_), Right (s,_,_)) -> Just c === clientRes
-                                     .&&. Just s === serverRes
+        (Right (HandshakeNegotiationResult (c,_,_)), Right (HandshakeNegotiationResult (s,_,_))) ->
+               Just c === clientRes
+          .&&. Just s === serverRes
+
+        -- both queried versions
+        (Right (HandshakeQueryResult _), Right (HandshakeQueryResult _)) ->
+          property True
 
         -- both failed
         (Left{}, Left{})   -> property True
@@ -565,9 +574,12 @@ prop_channel_asymmetric createChannels clientVersions = do
           serverVersions)
     pure $
       case (clientRes', serverRes') of
-        (Right (c,_,_), Right (s,_,_))
+        (Right (HandshakeNegotiationResult (c,_,_)), Right (HandshakeNegotiationResult (s,_,_)))
                            -> Just c === clientRes
                          .&&. Just s === serverRes
+        (Right (HandshakeQueryResult _), Right (HandshakeQueryResult _))
+                           -> property True
+
         (Left{}, Left{})   -> property True
         _                  -> property False
 
@@ -926,8 +938,9 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
   (clientRes, _serverRes) <-
     runConnectedPeers
       createChannels nullTracer codec
-      (handshakeClientPeerTestVersions
+      (handshakeClientPeer
         versionDataCodec
+        acceptableVersion
         clientVersions')
       (handshakeServerPeer
         versionDataCodec
@@ -936,11 +949,14 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
         serverVersions)
   pure $ case clientRes of
     -- Ignore handshake errors.
-    Nothing ->
+    Left _ ->
       property True
+    -- We should receive the queried versions.
+    Right (HandshakeNegotiationResult _) ->
+      property False
     -- On successful handshakes, the received versions should match the server versions.
-    Just serverVersions' ->
-      serverVersions' === (versionData <$> getVersions serverVersions)
+    Right (HandshakeQueryResult serverVersions') ->
+      serverVersions' === (Right . versionData <$> getVersions serverVersions)
   where
     setQueryVersions (Versions vs) = Versions $ (\v -> v { versionData = setQuery (versionData v) }) <$> vs
     clientVersions' = setQueryVersions clientVersions
@@ -1074,10 +1090,14 @@ prop_channel_simultaneous_open createChannels codec versionDataCodec clientVersi
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
         -- a boolean value) is the one that was put inside 'Version'
-        (Right (c,_,_), Right (s,_,_)) ->
+        (Right (HandshakeNegotiationResult (c,_,_)), Right (HandshakeNegotiationResult (s,_,_))) ->
           label "both-succeed" $
                Just c === clientRes
           .&&. Just s === serverRes
+
+        -- both queried versions
+        (Right (HandshakeQueryResult _), Right (HandshakeQueryResult _)) ->
+          label "both-query" True
 
         -- both failed
         (Left{}, Left{})   -> label "both-failed" True

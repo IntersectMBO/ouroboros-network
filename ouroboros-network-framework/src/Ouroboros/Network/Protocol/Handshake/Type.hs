@@ -31,7 +31,6 @@ import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 
 import           Network.TypedProtocol.Core
-import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- |
@@ -160,9 +159,7 @@ data HandshakeProtocolError vNumber
 --
 data HandshakeResult r vNumber vData
   = HandshakeNegotiationResult (r, vNumber, vData)
-  | HandshakeQueryResult (Map vNumber vData)
-  | HandshakeResultError (HandshakeProtocolError vNumber)
-  | HandshakeProtocolLimit ProtocolLimitFailure
+  | HandshakeQueryResult (Map vNumber (Either Text vData))
 
 instance (Typeable vNumber, Show vNumber)
     => Exception (HandshakeProtocolError vNumber)

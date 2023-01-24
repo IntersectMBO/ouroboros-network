@@ -10,6 +10,7 @@ module Ouroboros.Network.Protocol.Handshake
   , runHandshakeServer
   , HandshakeArguments (..)
   , Versions (..)
+  , HandshakeException (..)
   , HandshakeProtocolError (..)
   , HandshakeResult (..)
   , RefuseReason (..)
@@ -45,22 +46,31 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 handshakeProtocolNum :: MiniProtocolNum
 handshakeProtocolNum = MiniProtocolNum 0
 
+-- | Wrapper around initiator and responder errors experienced by tryHandshake.
+--
+data HandshakeException vNumber =
+    HandshakeProtocolLimit ProtocolLimitFailure
+  | HandshakeProtocolError (HandshakeProtocolError vNumber)
+  deriving Show
+
+
 -- | Try to complete either initiator or responder side of the Handshake protocol
 -- within `handshakeTimeout` seconds.
 --
-tryHandshake :: forall m application vNumber vData.
+tryHandshake :: forall m vNumber r.
                 ( MonadAsync m
                 , MonadMask m
                 )
-             => m (HandshakeResult application vNumber vData)
-             -> m (HandshakeResult application vNumber vData)
+             => m (Either (HandshakeProtocolError vNumber) r)
+             -> m (Either (HandshakeException vNumber)     r)
 tryHandshake doHandshake = do
     mapp <- try doHandshake
     case mapp of
       Left err ->
-          return $ HandshakeProtocolLimit err
-      Right r ->
-          return r
+          return $ Left $ HandshakeProtocolLimit err
+      Right (Left err) ->
+          return $ Left $ HandshakeProtocolError err
+      Right (Right r) -> return $ Right r
 
 
 --
@@ -113,7 +123,8 @@ runHandshakeClient
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application
-    -> m (HandshakeResult application vNumber vData)
+    -> m (Either (HandshakeException vNumber)
+                 (HandshakeResult application vNumber vData))
 runHandshakeClient bearer
                    connectionId
                    HandshakeArguments {
@@ -149,7 +160,8 @@ runHandshakeServer
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application
-    -> m (HandshakeResult application vNumber vData)
+    -> m (Either (HandshakeException vNumber)
+                 (HandshakeResult application vNumber vData))
 runHandshakeServer bearer
                    connectionId
                    HandshakeArguments {
