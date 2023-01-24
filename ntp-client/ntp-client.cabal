@@ -1,14 +1,18 @@
-name:                ntp-client
-version:             0.0.1
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019-2023 Input Output Global Inc (IOG)
-category:            Network
-build-type:          Simple
-extra-source-files:  README.md
-cabal-version:       >=1.10
+cabal-version: 3.0
+
+name:                   ntp-client
+version:                0.0.1
+synopsis:               NTP client
+description:            NTP client.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2023 Input Output Global Inc (IOG)
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
+extra-source-files:     README.md
+extra-source-files:     CHANGELOG.md
 
 flag demo
   description: Build a demo application
@@ -20,7 +24,7 @@ library
   other-modules:        Network.NTP.Client.Packet
                         Network.NTP.Client.Query
   build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.9 && <4.17
+                      , base            >=4.14 && <4.17
                       , binary          >=0.8 && <0.11
                       , bytestring      >=0.10 && <0.12
                       , contra-tracer   >=0.1 && <0.2
@@ -46,7 +50,7 @@ test-suite test
   main-is:            Test.hs
   other-modules:        Network.NTP.Client.Packet
   type:               exitcode-stdio-1.0
-  build-depends:        base            >=4.9 && <4.17
+  build-depends:        base            >=4.14 && <4.17
                       , binary          >=0.8 && <0.11
                       , time            >=1.9.1 && <1.14
                       , QuickCheck
@@ -64,7 +68,7 @@ executable demo-ntp-client
   else
      buildable: False
   build-depends:        async           >=2.2 && <2.3
-                      , base            >=4.9 && <4.17
+                      , base            >=4.14 && <4.17
                       , contra-tracer   >=0.1 && <0.2
                       , Win32-network   >=0.1 && <0.2
                       , ntp-client

@@ -1,16 +1,18 @@
 cabal-version:      3.0
-name:               ouroboros-consensus-protocol
-version:            0.1.0.0
-synopsis:           Cardano consensus protocols.
-license:            Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:          2021-2023 Input Output Global Inc (IOG)
-author:             IOHK Formal methods team
-maintainer:         operations@iohk.io
 
-source-repository-head
+name:                   ouroboros-consensus-protocol
+version:                0.1.0.0
+synopsis:               Cardano consensus protocols
+description:            Cardano consensus protocols.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2021-2023 Input Output Global Inc (IOG)
+author:                 IOHK Formal methods team
+maintainer:             operations@iohk.io
+category:               Network
+
+source-repository head
     type: git
     location: https://github.com/input-output-hk/ouroboros-network
     subdir: ouroboros-consensus-protocol
@@ -35,7 +37,7 @@ library
     Ouroboros.Consensus.Protocol.TPraos
     Ouroboros.Consensus.Protocol.Translate
   build-depends:
-    base,
+    base >=4.14 && <4.17,
     bytestring,
     cardano-binary,
     cardano-crypto-class,
@@ -72,7 +74,7 @@ library ouroboros-consensus-protocol-test
   exposed-modules:
     Test.Consensus.Protocol.Serialisation.Generators
   build-depends:
-    base,
+    base >=4.14 && <4.17,
     bytestring,
     cardano-crypto-class,
     cardano-crypto-tests,

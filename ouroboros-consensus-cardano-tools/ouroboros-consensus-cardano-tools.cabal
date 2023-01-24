@@ -1,15 +1,16 @@
-name:                  ouroboros-consensus-cardano-tools
-version:               0.1.0.0
-synopsis:              Programmatically synthesize and analyse a ChainDB
-license:               Apache-2.0
-license-files:
-  NOTICE
-copyright:             2022-2023 Input Output Global Inc (IOG)
-author:                IOHK 
-maintainer:            operations@iohk.io
-category:              Network
-build-type:            Simple
-cabal-version:         >=1.10
+cabal-version: 3.0
+
+name:                   ouroboros-consensus-cardano-tools
+version:                0.1.0.0
+synopsis:               Programmatically synthesize and analyse a ChainDB
+description:            Programmatically synthesize and analyse a ChainDB.
+license:                Apache-2.0
+license-files:          NOTICE
+copyright:              2022-2023 Input Output Global Inc (IOG)
+author:                 IOHK 
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
 
 source-repository head
   type:     git
@@ -40,7 +41,7 @@ library
                      , Cardano.Tools.DBSynthesizer.Run
                      , Cardano.Tools.DBSynthesizer.Types
 
-  build-depends:       base
+  build-depends:       base >=4.14 && <4.17
                      , aeson
                      , base16-bytestring >= 1.0
                      , bytestring
@@ -112,7 +113,7 @@ library
 executable db-analyser
   hs-source-dirs:      app
   main-is:             db-analyser.hs
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , cardano-crypto-wrapper
                      , optparse-applicative
                      , ouroboros-consensus
@@ -141,7 +142,7 @@ executable db-synthesizer
 
   default-language:    Haskell2010
 
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , aeson
                      , bytestring
                      , directory
@@ -174,7 +175,7 @@ test-suite test
 
   default-language:  Haskell2010
 
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
                      , ouroboros-consensus-cardano-tools
                      , tasty
                      , tasty-hunit

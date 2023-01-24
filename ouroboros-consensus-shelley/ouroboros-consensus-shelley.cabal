@@ -1,17 +1,17 @@
-name:                  ouroboros-consensus-shelley
-version:               0.1.0.0
-synopsis:              Shelley ledger integration in the Ouroboros consensus layer
--- description:
-license:               Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:             2019-2023 Input Output Global Inc (IOG)
-author:                IOHK Engineering Team
-maintainer:            operations@iohk.io
-category:              Network
-build-type:            Simple
-cabal-version:         >=1.10
+cabal-version: 3.0
+
+name:                   ouroboros-consensus-shelley
+version:                0.1.0.0
+synopsis:               Shelley ledger integration in the Ouroboros consensus layer
+description:            Shelley ledger integration in the Ouroboros consensus layer.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2023 Input Output Global Inc (IOG)
+author:                 IOHK Engineering Team
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
 
 source-repository head
   type:     git
@@ -52,7 +52,7 @@ library
                        Ouroboros.Consensus.Shelley.Protocol.TPraos
                        Ouroboros.Consensus.Shelley.ShelleyHFC
 
-  build-depends:       base              >=4.9   && <4.17
+  build-depends:       base              >=4.14  && <4.17
                      , base-deriving-via
                      , bytestring        >=0.10  && <0.12
                      , cardano-binary

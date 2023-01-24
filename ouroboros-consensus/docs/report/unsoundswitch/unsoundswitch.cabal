@@ -1,8 +1,15 @@
-cabal-version:      2.4
-name:               unsoundswitch
-version:            0.1.0.0
-author:             IOHK Engineering Team
-maintainer:         operations@iohk.io
+cabal-version: 3.0
+
+name:                   unsoundswitch
+version:                0.1.0.0
+synopsis:               Unsound switch
+description:            Unsound switch.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+author:                 IOHK Engineering Team
+maintainer:             operations@iohk.io
+category:               Network
 
 executable unsoundswitch
     main-is:          UnsoundSwitch.hs

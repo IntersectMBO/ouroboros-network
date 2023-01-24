@@ -1,17 +1,17 @@
-name:                  ouroboros-consensus-byronspec
-version:               0.1.0.0
-synopsis:              ByronSpec ledger integration in the Ouroboros consensus layer
--- description:
-license:               Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:             2019-2023 Input Output Global Inc (IOG)
-author:                IOHK Engineering Team
-maintainer:            operations@iohk.io
-category:              Network
-build-type:            Simple
-cabal-version:         >=1.10
+cabal-version: 3.0
+
+name:                   ouroboros-consensus-byronspec
+version:                0.1.0.0
+synopsis:               ByronSpec ledger integration in the Ouroboros consensus layer
+description:            ByronSpec ledger integration in the Ouroboros consensus layer.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2023 Input Output Global Inc (IOG)
+author:                 IOHK Engineering Team
+maintainer:             operations@iohk.io
+category:               Network
+build-type:             Simple
 
 source-repository head
   type:     git
@@ -33,7 +33,7 @@ library
                        Ouroboros.Consensus.ByronSpec.Ledger.Orphans
                        Ouroboros.Consensus.ByronSpec.Ledger.Rules
 
-  build-depends:       base              >=4.9   && <4.17
+  build-depends:       base              >=4.14   && <4.17
                      , bimap             >=0.4   && <0.5
                      , cardano-binary
                      , cardano-ledger-byron-test

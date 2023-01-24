@@ -1,17 +1,18 @@
 cabal-version:       3.0
-name:                ouroboros-network-testing
-version:             0.2.0.0
-synopsis:            Common modules used for testing in ouroboros-network and ouroboros-consensus
-license:             Apache-2.0
-license-files:
-  LICENSE
-  NOTICE
-copyright:           2019-2023 Input Output Global Inc (IOG)
-author:              Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
-maintainer:          marcin.szamotulski@iohk.io
-category:            Network
-build-type:          Simple
-extra-source-files:  ChangeLog.md
+
+name:                   ouroboros-network-testing
+version:                0.2.0.0
+synopsis:               Common modules used for testing in ouroboros-network and ouroboros-consensus
+description:            Common modules used for testing in ouroboros-network and ouroboros-consensus.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2023 Input Output Global Inc (IOG)
+author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
+maintainer:             marcin.szamotulski@iohk.io
+category:               Network
+build-type:             Simple
+extra-source-files:     CHANGELOG.md
 
 source-repository head
   type:     git
@@ -57,7 +58,7 @@ library
                        TypeApplications,
                        TypeFamilies,
                        TypeInType
-  build-depends:       base              >=4.9 && <4.17,
+  build-depends:       base              >=4.14 && <4.17,
                        containers,
                        contra-tracer,
                        deque,
@@ -91,7 +92,7 @@ test-suite test
   hs-source-dirs:      test
   other-modules:       Test.Ouroboros.Network.Testing.Data.AbsBearerInfo
 
-  build-depends:       base
+  build-depends:       base              >=4.14 && <4.17
 
                      , QuickCheck
                      , tasty

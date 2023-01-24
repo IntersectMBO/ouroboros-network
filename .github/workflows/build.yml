@@ -8,6 +8,21 @@ on:
       - 'trying'
 
 jobs:
+  check-cabal-files:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Install Haskell
+      uses: input-output-hk/setup-haskell@v1
+      id: setup-haskell
+      with:
+        cabal-version: "3.8.1.0"
+
+    - uses: actions/checkout@v3
+
+    - name: Cabal check
+      run: ./scripts/ci/check-cabal-files.sh
+
   build:
     runs-on: ${{ matrix.os }}
 
@@ -26,78 +41,23 @@ jobs:
 
       SECP_CACHE_VERSION: "2022-12-30"
 
-      # OpenSSL is installed in a non-standard location in MacOS. See
-      # https://github.com/actions/virtual-environments/blob/main/images/macos/macos-11-Readme.md
-      PKG_CONFIG_PATH: ${{ (matrix.os == 'macos-latest' && '/usr/lib/pkgconfig:/usr/local/opt/openssl@1.1/lib/pkgconfig') || (matrix.os == 'ubuntu-latest' && '/usr/lib/pkgconfig:/usr/local/lib/pkgconfig') || '' }}
-
-      # we need the LD_LIBRARY_PATH env var here because we ended up installing libsecp256k1 into /usr/local,
-      # pkg-config, *does* return the proper location, but the library does not appear to be properly referenced.
-      # FIXME: this is arguably a bug, and pkg-config should return the right values!
-      LD_LIBRARY_PATH: ${{ (matrix.os != 'windows-latest' && '/usr/local/lib') || '' }}
-
     steps:
-    - name: "WIN: Install System Dependencies via pacman (msys2)"
-      if: runner.os == 'Windows'
-      run: |
-        # ghcup should be installed on current GHA Windows runners. Let's use ghcup to run
-        # pacman, to install the necessary dependencies, ...
-        ghcup run -- pacman --noconfirm -S `
-           mingw-w64-x86_64-pkg-config `
-           mingw-w64-x86_64-libsodium `
-           base-devel `
-           autoconf-wrapper `
-           autoconf `
-           automake `
-           libtool `
-           make
-
-    # this seems to break something. It _must_ come after the pacman setup
-    # above. It appears as if PATHEXT is set _after_ ghcup install ghc/cabal, and
-    # as such we'd need pacman.exe instead.
-    - name: Setup Haskell
-      run: |        
-        # Use GHCUP to manage ghc/cabal
-        ghcup install ghc --set ${{ matrix.ghc }}
-        ghcup install cabal --set 3.6.2.0
-
-        ghc --version
-        cabal --version
-
-    - name: "WIN: fixup cabal config"
-      if: runner.os == 'Windows'
-      run: |
-        # make sure cabal knows about msys64, and mingw64 tools. Not clear why C:/cabal/config is empty
-        # and C:/cabal doesn't even exist.  The ghcup bootstrap file should have create it in the image:
-        # See https://github.com/haskell/ghcup-hs/blob/787edc17af4907dbc51c85e25c490edd8d68b80b/scripts/bootstrap/bootstrap-haskell#L591
-        # So we'll do it by hand here for now.
-        #
-        # We'll _not_ add extra-include-dirs, or extra-lib-dirs, and rely on what's shipped with GHC.
-        # https://github.com/msys2/MINGW-packages/issues/10837#issuecomment-1047105402
-        # https://gitlab.haskell.org/ghc/ghc/-/issues/21111
-        # if we _do_ want them, this would be the lines to add below
-        
-        $ghcMingwDir = Join-Path -Path $(ghc --print-libdir) `
-                                 -ChildPath ../mingw/x86_64-*-mingw32/lib/ `
-                                 -Resolve
-        
-        cabal user-config -a "extra-prog-path: C:/msys64/mingw64/bin, C:/msys64/usr/bin" `
-                          -a "extra-include-dirs: C:/msys64/mingw64/include" `
-                          -a ("extra-lib-dirs: {0}, C:/msys64/mingw64/lib" -f $ghcMingwDir) `
-                          -f init
-
-    - name: "OUTPUT Record cabal-store (Linux)"
-      id: lin-setup-haskell
-      shell: bash
-      if: runner.os != 'Windows'
-      run: |
-        echo "cabal-store=/home/runner/.cabal/store" >> $GITHUB_OUTPUT
-        
-    - name: "OUTPUT Record cabal-store (Windows)"
-      id: win-setup-haskell
-      shell: bash
-      if: runner.os == 'Windows'
-      run: |
-        echo "cabal-store=C:\\cabal\\store" >> $GITHUB_OUTPUT     
+    - name: Install Haskell
+      uses: input-output-hk/setup-haskell@v1
+      id: setup-haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: "3.8.1.0"
+        pacman-packages: >
+          mingw-w64-x86_64-pkg-config
+          mingw-w64-x86_64-libsodium
+          mingw-w64-x86_64-openssl
+          base-devel
+          autoconf-wrapper
+          autoconf
+          automake
+          libtool
+          make
 
     - name: "[OUTPUT] cache keys: version, weeknum"
       id: cache-keys
@@ -143,14 +103,13 @@ jobs:
 
     - name: Record dependencies
       id: record-deps
-      run: |
-        cabal build all --dry-run
+      run: cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
 
     - uses: actions/cache@v3
       name: "Cache `cabal store`"
       with:
-        path: ${{ runner.os == 'Windows' && steps.win-setup-haskell.outputs.cabal-store || steps.lin-setup-haskell.outputs.cabal-store }}
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
         restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
@@ -162,6 +121,12 @@ jobs:
           !dist-newstyle/**/.git
         key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
         restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+
+    - name: Update PATH on windows
+      if: runner.os == 'Windows'
+      run: |
+        $env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)
+        echo "PATH=$env:PATH" >> $env:GITHUB_ENV
 
     - name: Build dependencies
       run: cabal build --only-dependencies all -j
@@ -188,7 +153,11 @@ jobs:
 
     # We don't run cddl in GitHub actions (only on Hydra).
     # - name: ouroboros-network-protocols [cddl]
-    #   run: cabal run ouroboros-network-protocols-test:cddl
+    #   run: |
+    #     # The tests call out to msys2 commands. We generally do not want to mix toolchains, so
+    #     # we are very deliberate about only adding msys64 to the path where absolutely necessary.
+    #     ${{ (runner.os == 'Windows' && '$env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)') || '' }}
+    #     cabal run ouroboros-network-protocols-test:cddl
 
     - name: ouroboros-network [test]
       run: cabal run ouroboros-network:test

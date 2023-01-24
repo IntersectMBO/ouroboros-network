@@ -1,16 +1,18 @@
-cabal-version:        2.2
-name:                 cardano-ping
-version:              0.1.0.0
-synopsis:             Utility for pinging cardano nodes
-license:              Apache-2.0
-license-files:        LICENSE
-                      NOTICE
-copyright:            2019-2022 Input Output (Hong Kong) Ltd.
-author:               Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies, John Ky
-maintainer:           duncan@well-typed.com, marcin.szamotulski@iohk.io, marc.fontaine@iohk.io, karl.knutsson@iohk.io, alex@well-typed.com, neil.davies@pnsol.com, john.ky@iohk.io
-category:             Network
-build-type:           Simple
-extra-source-files:   CHANGELOG.md
+cabal-version: 3.0
+
+name:                   cardano-ping
+version:                0.1.0.0
+synopsis:               Utility for pinging cardano nodes
+description:            Utility for pinging cardano nodes.
+license:                Apache-2.0
+license-files:          LICENSE
+                        NOTICE
+copyright:              2019-2022 Input Output (Hong Kong) Ltd.
+author:                 Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies, John Ky
+maintainer:             duncan@well-typed.com, marcin.szamotulski@iohk.io, marc.fontaine@iohk.io, karl.knutsson@iohk.io, alex@well-typed.com, neil.davies@pnsol.com, john.ky@iohk.io
+category:               Network
+build-type:             Simple
+extra-source-files:     CHANGELOG.md
 
 flag asserts
   description:        Enable assertions
@@ -20,16 +22,16 @@ flag asserts
 library
   hs-source-dirs:       src
   exposed-modules:      Cardano.Network.Ping
-  build-depends:        base                          >= 4.9      && < 4.17,
-                        aeson                         >= 2.1.1.0  && < 3,
-                        cborg                         >= 0.2.8    && < 0.3,
-                        bytestring                    >= 0.10     && < 0.12,
-                        contra-tracer                 >= 0.1      && < 0.2,
-                        io-classes                    >= 0.3      && < 0.4,
-                        network-mux                   >= 0.2      && < 0.3,
-                        strict-stm                    >= 0.2      && < 0.3,
-                        tdigest                       >= 0.2.1.1  && < 0.3,
-                        text                          >= 1.2.4    && < 2.1,
+  build-depends:        base                          >=4.14     && <4.17,
+                        aeson                         >=2.1.1.0  && <3,
+                        cborg                         >=0.2.8    && <0.3,
+                        bytestring                    >=0.10     && <0.12,
+                        contra-tracer                 >=0.1      && <0.2,
+                        io-classes                    >=0.3      && <0.4,
+                        network-mux                   >=0.2      && <0.3,
+                        strict-stm                    >=0.2      && <0.3,
+                        tdigest                       >=0.2.1.1  && <0.3,
+                        text                          >=1.2.4    && <2.1,
 
                         -- The Windows version of network-3.1.2 is missing
                         -- functions, see
