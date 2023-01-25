@@ -565,7 +565,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           -- ('rollBackward'), so we have nothing to do.
           return $ Just kis
 
-        | Just (ourPre, _ourSuf, _theirPre, theirSuf) <- AF.intersect ourFrag' theirFrag ->
+        | Just (ourPre, _theirPre, _ourSuf, theirSuf) <- AF.intersect ourFrag' theirFrag ->
           -- Our current chain changed, but it still intersects with candidate
           -- fragment, so update the 'ourFrag' field and trim to the
           -- candidate fragment to the same anchor point.
