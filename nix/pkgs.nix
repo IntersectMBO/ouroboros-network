@@ -31,5 +31,7 @@ with pkgs; {
     inherit (ouroborosNetworkHaskellPackages) index-state;
   }).stylish-haskell.components.exes.stylish-haskell;
 
+  scriv = pkgs.callPackage ./scriv.nix { };
+
   trace = builtins.trace;
 }
