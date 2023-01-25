@@ -81,3 +81,10 @@ This graph depicts the relationship between the various `xxx-consensus-yyy` pack
     * __[Generators](ouroboros-consensus-mock-test/Test-Consensus-Ledger-Mock-Generators.html)__ provides various orphan `Arbitrary` instances
 
 * __db-analyser__: A command-line tool for offline analysis of the consensus database
+
+=== Consensus Components
+
+The following  [C4 Component Diagram](https://c4model.com/) provides a high-level overview of the main components involved in /Consensus/. Note that clicking on
+a box should link to the corresponding documentation:
+
+![Ouroboros Consensus Components](./Consensus.svg)
