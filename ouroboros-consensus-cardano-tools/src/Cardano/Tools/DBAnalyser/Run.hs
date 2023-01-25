@@ -13,6 +13,7 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
+import           Ouroboros.Consensus.Ledger.SupportsMempool (HasTxs)
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
@@ -26,7 +27,6 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB
-import Ouroboros.Consensus.Ledger.SupportsMempool (HasTxs)
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                      (BackingStoreSelector (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB

@@ -558,7 +558,7 @@ traceLedgerProcessing
 
 -------------------------------------------------------------------------------}
 benchmarkLedgerOps ::
-  forall blk.
+     forall blk.
      HasAnalysis blk
   => Maybe FilePath -> Analysis blk
 benchmarkLedgerOps mOutfile AnalysisEnv {db, initLedger, cfg, limit, backing, ledgerDbFS} = do
@@ -609,7 +609,7 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, initLedger, cfg, limit, backing, le
               tNow <- GC.mutator_elapsed_ns <$> GC.getRTSStats
               pure (r, tNow - tPrev)
 
-        let slot = blockSlot      blk
+        let slot = blockSlot blk
         ((ldb', sinceLast'), tFlush) <- time $
           if sinceLast == 100
           then do
@@ -618,21 +618,26 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, initLedger, cfg, limit, backing, le
             Ouroboros.Consensus.Storage.LedgerDB.OnDisk.flush backingStore toFlush
             pure (toKeep, 0)
           else pure (ldb, sinceLast + 1)
+
         let prevLedgerState = ledgerDbCurrent ldb'
+        let aks             = rewindTableKeySets (ledgerDbChangelog ldb') (getBlockKeySets blk)
+
         -- We do not use strictness annotation on the resulting tuples since
         -- 'time' takes care of forcing the evaluation of its argument's result.
         (tkLdgrView, tForecast) <- time $ forecast            slot prevLedgerState
         (tkHdrSt,    tHdrTick)  <- time $ tickTheHeaderState  slot prevLedgerState tkLdgrView
         (hdrSt',     tHdrApp)   <- time $ applyTheHeader                           tkLdgrView tkHdrSt
-        let ks = getBlockKeySets blk
-        let aks = rewindTableKeySets (ledgerDbChangelog ldb') ks
-        (urs, tReadDb) <- time $ defaultReadKeySets (readKeySets backingStore) $ readDb aks
+        (urs,        tReadDb)   <- time $ defaultReadKeySets (readKeySets backingStore) $ readDb aks
+
         let fwd = case forwardTableKeySets (ledgerDbChangelog ldb') urs of
               Left e -> error $ "Couldn't forward " ++ show e
               Right v -> v
         let l = ledgerState prevLedgerState `withLedgerTables` unExtLedgerStateTables fwd
+
         (tkLdgrSt,   tBlkTick)  <- time $ tickTheLedgerState  slot (forgetLedgerTables l)
+
         let l' = applyLedgerTablesDiffsTicked l tkLdgrSt
+
         (ldgrSt',    tBlkApp)   <- time $ applyTheBlock                                       l'
 
         let ldgrSt'' = prependLedgerTablesDiffsFromTicked tkLdgrSt ldgrSt'
@@ -722,14 +727,14 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, initLedger, cfg, limit, backing, le
 data ReproMempoolForgeHowManyBlks = ReproMempoolForgeOneBlk | ReproMempoolForgeTwoBlks
 
 reproMempoolForge ::
-  forall blk.
-  ( HasAnalysis blk
-  , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
-  , LedgerSupportsMempool.HasTxs blk
-  , LedgerSupportsMempool.LedgerSupportsMempool blk
-  ) =>
-  Int ->
-  Analysis blk
+     forall blk. (
+       HasAnalysis blk
+     , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
+     , LedgerSupportsMempool.HasTxs blk
+     , LedgerSupportsMempool.LedgerSupportsMempool blk
+     )
+  => Int
+  -> Analysis blk
 reproMempoolForge numBlks env =  do
     doCheck <- onlyCheckNumBlocks limit
     howManyBlocks <- case numBlks of
