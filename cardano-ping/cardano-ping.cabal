@@ -28,7 +28,7 @@ library
                         bytestring                    >=0.10     && <0.12,
                         contra-tracer                 >=0.1      && <0.2,
                         io-classes                    >=0.3      && <0.4,
-                        network-mux                   >=0.2      && <0.3,
+                        network-mux                   >=0.3      && <0.4,
                         strict-stm                    >=0.2      && <0.3,
                         tdigest                       >=0.2.1.1  && <0.3,
                         text                          >=1.2.4    && <2.1,
