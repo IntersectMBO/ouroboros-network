@@ -40,15 +40,16 @@ Setup
 As before, we require a few language extensions:
 
 > {-# OPTIONS_GHC -Wno-unused-top-binds   #-}
-> {-# LANGUAGE TypeFamilies               #-}
-> {-# LANGUAGE DerivingVia                #-}
 > {-# LANGUAGE DataKinds                  #-}
+> {-# LANGUAGE DeriveAnyClass             #-}
 > {-# LANGUAGE DeriveGeneric              #-}
+> {-# LANGUAGE DerivingVia                #-}
 > {-# LANGUAGE FlexibleInstances          #-}
-> {-# LANGUAGE MultiParamTypeClasses      #-}
 > {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-> {-# LANGUAGE DeriveAnyClass #-}
+> {-# LANGUAGE MultiParamTypeClasses      #-}
+> {-# LANGUAGE RecordWildCards            #-}
 > {-# LANGUAGE StandaloneDeriving         #-}
+> {-# LANGUAGE TypeFamilies               #-}
 
 > module Ouroboros.Consensus.Tutorial.WithEpoch () where
 
@@ -74,7 +75,7 @@ And imports, of course:
 > import Ouroboros.Consensus.Protocol.Abstract
 >   (ConsensusConfig, SecurityParam, ConsensusProtocol (..))
 >
-> import Ouroboros.Consensus.Ticked (Ticked)
+> import Ouroboros.Consensus.Ticked (Ticked, Ticked1)
 > import Ouroboros.Consensus.Ledger.Abstract
 >   (LedgerState, LedgerCfg, GetTip, LedgerResult (..), ApplyBlock (..),
 >    UpdateLedger, IsLedger (..))
@@ -88,6 +89,7 @@ And imports, of course:
 > import Ouroboros.Consensus.Forecast
 >   (Forecast (..), OutsideForecastRange (..))
 > import Ouroboros.Consensus.Ledger.Basics (GetTip(..))
+> import Ouroboros.Consensus.Ledger.Tables
 
 
 Epochs
@@ -294,7 +296,7 @@ corresponding to `BlockD` needs to hold snapshots of the count at the last two
 epoch boundaries - this is the `lsbd_snapshot1` and `lsbd_snapshot2` fields
 below:
 
-> data instance LedgerState BlockD =
+> data instance LedgerState BlockD mk =
 >   LedgerD
 >     { lsbd_tip :: Point BlockD    -- ^ Point of the last applied block.
 >                                   --   (Point is header hash and slot no.)
@@ -314,21 +316,21 @@ There is no interesting static configuration for this ledger:
 
 Our `GetTip` implementation retrieves the tip from the `lsbd_tip` field:
 
-> instance GetTip (Ticked (LedgerState BlockD)) where
+> instance GetTip (Ticked1 (LedgerState BlockD) mk) where
 >  getTip = castPoint . lsbd_tip . unTickedLedgerStateD
 
-> instance GetTip (LedgerState BlockD) where
+> instance GetTip (LedgerState BlockD mk) where
 >   getTip = castPoint . lsbd_tip
 
 Ticking
 -------
 
-`LedgerState BlockD` also needs a corresponding `Ticked` instance which is still
-very simple:
+`LedgerState BlockD` also needs a corresponding `Ticked1` instance which is
+still very simple:
 
-> newtype instance Ticked (LedgerState BlockD) =
+> newtype instance Ticked1 (LedgerState BlockD) mk =
 >   TickedLedgerStateD {
->     unTickedLedgerStateD :: LedgerState BlockD
+>     unTickedLedgerStateD :: LedgerState BlockD mk
 >   }
 >   deriving stock (Show, Eq, Generic)
 >   deriving newtype (NoThunks, Serialise)
@@ -336,14 +338,14 @@ very simple:
 Because the ledger now needs to track the snapshots in `lsbd_snapshot1` and
 `lsbd_snapshot2` we can express this in terms of ticking a `LedgerState BlockD`.
 We'll write a function (that we'll use later) to express this relationship
-computing the `Ticked (LedgerState BlockD)` resulting from a starting
+computing the `Ticked1 (LedgerState BlockD)` resulting from a starting
 `LedgerState BlockD` being ticked to some slot in the future - assuming no
 intervening blocks are applied:
 
 > tickLedgerStateD ::
->   SlotNo -> LedgerState BlockD -> Ticked (LedgerState BlockD)
+>   SlotNo -> LedgerState BlockD EmptyMK -> Ticked1 (LedgerState BlockD) DiffMK
 > tickLedgerStateD newSlot ldgrSt =
->   TickedLedgerStateD $
+>   TickedLedgerStateD $ convertMapKind $
 >     if isNewEpoch then
 >       ldgrSt{ lsbd_snapshot2 = lsbd_snapshot1 ldgrSt
 >                  -- save previous epoch snapshot (assumes we do not
@@ -389,7 +391,7 @@ Applying Blocks
 Applying a `BlockD` to a `Ticked (LedgerState BlockD)` is (again) the result of
 applying each individual transaction - exactly as it was in for `BlockC`:
 
-> applyBlockTo :: BlockD -> Ticked (LedgerState BlockD) -> LedgerState BlockD
+> applyBlockTo :: BlockD -> Ticked1 (LedgerState BlockD) ValuesMK -> LedgerState BlockD DiffMK
 > applyBlockTo block tickedLedgerState =
 >   ledgerState { lsbd_tip = blockPoint block
 >               , lsbd_count = lsbc_count'
@@ -412,6 +414,8 @@ applying each individual transaction - exactly as it was in for `BlockC`:
 >     LedgerResult { lrResult = b `applyBlockTo` tickedLdgrSt
 >                  , lrEvents = []
 >                  }
+>
+>   getBlockKeySets = const NoLedgerTables
 
 Note that prior to `applyBlockLedgerResult` being invoked, the calling code will
 have already established that the header is valid and that the header matches
@@ -673,3 +677,49 @@ involving `BlockC`:
 While this is a large ecosystem of interrelated typeclasses and families, the
 overall organization of things is such that Haskell's type checking can help
 guide the implementation.
+
+Appendix: UTxO-HD features
+==========================
+
+For reference on these instances and their meaning, please see the appendix in
+[the Simple tutorial](./Simple.lhs).
+
+> instance TableStuff (LedgerState BlockD) where
+>   data instance LedgerTables (LedgerState BlockD) mk =
+>      NoLedgerTables
+>      deriving (Eq, Show, Generic, NoThunks)
+>
+>   projectLedgerTables _st                = NoLedgerTables
+>   withLedgerTables     st NoLedgerTables = convertMapKind st
+>
+>   pureLedgerTables     _f                                              = NoLedgerTables
+>   mapLedgerTables      _f                               NoLedgerTables = NoLedgerTables
+>   traverseLedgerTables _f                               NoLedgerTables = pure NoLedgerTables
+>   zipLedgerTables      _f                NoLedgerTables NoLedgerTables = NoLedgerTables
+>   zipLedgerTables2     _f NoLedgerTables NoLedgerTables NoLedgerTables = NoLedgerTables
+>   zipLedgerTablesA     _f                NoLedgerTables NoLedgerTables = pure NoLedgerTables
+>   zipLedgerTables2A    _f NoLedgerTables NoLedgerTables NoLedgerTables = pure NoLedgerTables
+>   foldLedgerTables     _f                               NoLedgerTables = mempty
+>   foldLedgerTables2    _f                NoLedgerTables NoLedgerTables = mempty
+>
+>   namesLedgerTables = NoLedgerTables
+
+> instance TickedTableStuff (LedgerState BlockD) where
+>   projectLedgerTablesTicked _st            = NoLedgerTables
+>   withLedgerTablesTicked st NoLedgerTables = convertMapKind st
+
+> instance StowableLedgerTables (LedgerState BlockD) where
+>   stowLedgerTables     = convertMapKind
+>   unstowLedgerTables   = convertMapKind
+
+> instance InMemory (LedgerState BlockD) where
+>   convertMapKind LedgerD{..} = LedgerD{..}
+>
+> instance InMemory (Ticked1 (LedgerState BlockD)) where
+>  convertMapKind = TickedLedgerStateD . convertMapKind . unTickedLedgerStateD
+
+> instance ShowLedgerState (LedgerState BlockD) where
+>   showsLedgerState = shows
+>
+> instance ShowLedgerState (LedgerTables (LedgerState BlockD)) where
+>   showsLedgerState = shows
