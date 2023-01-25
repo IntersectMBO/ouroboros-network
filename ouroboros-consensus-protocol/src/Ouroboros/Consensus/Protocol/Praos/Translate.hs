@@ -42,9 +42,9 @@ instance
   ( HASH c1 ~ HASH c2,
     ADDRHASH c1 ~ ADDRHASH c2,
     VerKeyDSIGN c1 ~ VerKeyDSIGN c2,
-    VerKeyVRF c1 ~ VerKeyVRF c2
+    VerKeyVRF hc1 ~ VerKeyVRF hc2
   ) =>
-  TranslateProto (TPraos c1) (Praos c2)
+  TranslateProto (TPraos c1 hc1) (Praos c2 hc2)
   where
   translateConsensusConfig TPraosConfig {tpraosParams, tpraosEpochInfo} =
     PraosConfig

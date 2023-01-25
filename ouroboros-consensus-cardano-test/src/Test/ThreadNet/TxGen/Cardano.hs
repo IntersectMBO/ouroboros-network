@@ -44,6 +44,7 @@ import qualified Cardano.Ledger.Shelley.API as SL hiding (TxBody, TxOut)
 import qualified Cardano.Ledger.Shelley.Tx as SL (WitnessSetHKD (..))
 import qualified Cardano.Ledger.Shelley.UTxO as SL (makeWitnessVKey)
 import           Cardano.Ledger.Val ((<->))
+import           Cardano.Protocol.TPraos.Rules.Overlay (toPoolStakeVRF)
 
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
                      mkShelleyTx)
@@ -261,7 +262,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
         , SL._poolRAcnt  =
             SL.RewardAcnt Shelley.networkId $ Shelley.mkCredential poolSK
         , SL._poolRelays = StrictSeq.empty
-        , SL._poolVrf    = Shelley.mkKeyHashVrf vrfSK
+        , SL._poolVrf    = toPoolStakeVRF $ Shelley.mkKeyHashVrf vrfSK
         }
 
 -----

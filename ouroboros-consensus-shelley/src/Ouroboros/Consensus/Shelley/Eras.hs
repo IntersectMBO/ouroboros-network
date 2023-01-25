@@ -59,6 +59,7 @@ import qualified Cardano.Ledger.Babbage.Translation as Babbage
 import           Cardano.Ledger.BaseTypes
 import           Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (StandardCrypto)
+import qualified Cardano.Ledger.Crypto as CC (Crypto)
 import           Cardano.Ledger.Keys (DSignable, Hash)
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Mary.Translation ()
@@ -73,7 +74,6 @@ import           Control.State.Transition (PredicateFailure, State)
 import           Data.Data (Proxy (Proxy))
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
-import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -208,31 +208,32 @@ defaultApplyShelleyBasedTx globals ledgerEnv mempoolState _wti tx =
       mempoolState
       tx
 
-instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+instance (CC.Crypto c, DSignable c (Hash c EraIndependentTxBody))
   => ShelleyBasedEra (ShelleyEra c) where
   shelleyBasedEraName _ = "Shelley"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+instance (CC.Crypto c, DSignable c (Hash c EraIndependentTxBody))
   => ShelleyBasedEra (AllegraEra c) where
   shelleyBasedEraName _ = "Allegra"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+instance (CC.Crypto c, DSignable c (Hash c EraIndependentTxBody))
   => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+instance (CC.Crypto c, DSignable c (Hash c EraIndependentTxBody))
   => ShelleyBasedEra (AlonzoEra c) where
   shelleyBasedEraName _ = "Alonzo"
 
   applyShelleyBasedTx = applyAlonzoBasedTx
 
-instance (Praos.PraosCrypto c) => ShelleyBasedEra (BabbageEra c) where
+instance (CC.Crypto c, DSignable c (Hash c EraIndependentTxBody))
+  => ShelleyBasedEra (BabbageEra c) where
   shelleyBasedEraName _ = "Babbage"
   applyShelleyBasedTx = applyAlonzoBasedTx
 

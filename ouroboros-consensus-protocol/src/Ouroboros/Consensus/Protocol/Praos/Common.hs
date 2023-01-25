@@ -17,9 +17,11 @@ module Ouroboros.Consensus.Protocol.Praos.Common (
 
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Ledger.BaseTypes (Nonce)
-import           Cardano.Ledger.Crypto (Crypto, VRF)
+import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Protocol.HeaderCrypto (HeaderCrypto, VRF)
 import           Cardano.Ledger.Keys (KeyHash, KeyRole (BlockIssuer))
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Protocol.HeaderKeys as SL
 import qualified Cardano.Protocol.TPraos.OCert as OCert
 import           Cardano.Slotting.Block (BlockNo)
 import           Cardano.Slotting.Slot (SlotNo)
@@ -81,17 +83,17 @@ instance Crypto c => Ord (PraosChainSelectView c) where
         | otherwise =
             EQ
 
-data PraosCanBeLeader c = PraosCanBeLeader
+data PraosCanBeLeader c hc = PraosCanBeLeader
   { -- | Certificate delegating rights from the stake pool cold key (or
     -- genesis stakeholder delegate cold key) to the online KES key.
-    praosCanBeLeaderOpCert     :: !(OCert.OCert c),
+    praosCanBeLeaderOpCert     :: !(OCert.OCert c hc),
     -- | Stake pool cold key or genesis stakeholder delegate cold key.
     praosCanBeLeaderColdVerKey :: !(SL.VKey 'SL.BlockIssuer c),
-    praosCanBeLeaderSignKeyVRF :: !(SL.SignKeyVRF c)
+    praosCanBeLeaderSignKeyVRF :: !(SL.SignKeyVRF hc)
   }
   deriving (Generic)
 
-instance Crypto c => NoThunks (PraosCanBeLeader c)
+instance (Crypto c, HeaderCrypto hc) => NoThunks (PraosCanBeLeader c hc)
 
 -- | See 'PraosProtocolSupportsNode'
 data PraosNonces = PraosNonces {

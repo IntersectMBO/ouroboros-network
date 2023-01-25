@@ -33,8 +33,9 @@ import qualified Cardano.Crypto.KES as Relative (Period)
 import           Ouroboros.Consensus.Block.Forging (UpdateInfo (..))
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Protocol.HeaderCrypto (HeaderCrypto)
 import qualified Cardano.Ledger.Keys as SL
+import qualified Cardano.Protocol.HeaderKeys as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 
 {-------------------------------------------------------------------------------
@@ -124,7 +125,7 @@ data KESEvolutionError =
 type KESEvolutionInfo = UpdateInfo KESInfo KESEvolutionError
 
 -- | API to interact with the key.
-data HotKey c m = HotKey {
+data HotKey hc m = HotKey {
       -- | Evolve the KES signing key to the given absolute KES period.
       --
       -- When the key cannot evolve anymore, we poison it.
@@ -138,14 +139,14 @@ data HotKey c m = HotKey {
       -- PRECONDITION: the key is not poisoned.
       --
       -- POSTCONDITION: the signature is in normal form.
-    , sign_      :: forall toSign. (SL.KESignable c toSign, HasCallStack)
-                 => toSign -> m (SL.SignedKES c toSign)
+    , sign_      :: forall toSign. (SL.KESignable hc toSign, HasCallStack)
+                 => toSign -> m (SL.SignedKES hc toSign)
     }
 
 sign ::
-     (SL.KESignable c toSign, HasCallStack)
-  => HotKey c m
-  -> toSign -> m (SL.SignedKES c toSign)
+     (SL.KESignable hc toSign, HasCallStack)
+  => HotKey hc m
+  -> toSign -> m (SL.SignedKES hc toSign)
 sign = sign_
 
 -- | The actual KES key, unless it expired, in which case it is replaced by
@@ -155,7 +156,7 @@ data KESKey c =
   | KESKeyPoisoned
   deriving (Generic)
 
-instance Crypto c => NoThunks (KESKey c)
+instance HeaderCrypto c => NoThunks (KESKey c)
 
 kesKeyIsPoisoned :: KESKey c -> Bool
 kesKeyIsPoisoned KESKeyPoisoned = True
@@ -167,10 +168,10 @@ data KESState c = KESState {
     }
   deriving (Generic)
 
-instance Crypto c => NoThunks (KESState c)
+instance HeaderCrypto c => NoThunks (KESState c)
 
 mkHotKey ::
-     forall m c. (Crypto c, IOLike m)
+     forall m c. (HeaderCrypto c, IOLike m)
   => SL.SignKeyKES c
   -> Absolute.KESPeriod  -- ^ Start period
   -> Word64              -- ^ Max KES evolutions
@@ -219,7 +220,7 @@ mkHotKey initKey startPeriod@(Absolute.KESPeriod start) maxKESEvolutions = do
 --
 -- When the key is poisoned, we always return 'UpdateFailed'.
 evolveKey ::
-     forall m c. (Crypto c, IOLike m)
+     forall m c. (HeaderCrypto c, IOLike m)
   => StrictMVar m (KESState c) -> Absolute.KESPeriod -> m KESEvolutionInfo
 evolveKey varKESState targetPeriod = modifyMVar varKESState $ \kesState -> do
     let info = kesStateInfo kesState
