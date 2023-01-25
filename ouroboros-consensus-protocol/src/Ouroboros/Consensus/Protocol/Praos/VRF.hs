@@ -30,7 +30,8 @@ import           Cardano.Crypto.Util
 import           Cardano.Crypto.VRF (CertifiedVRF (certifiedOutput),
                      OutputVRF (..), getOutputVRFBytes)
 import           Cardano.Ledger.BaseTypes (Nonce (NeutralNonce, Nonce))
-import           Cardano.Ledger.Crypto (Crypto (HASH, VRF))
+import           Cardano.Ledger.Crypto (Crypto (HASH))
+import           Cardano.Protocol.HeaderCrypto (HeaderCrypto (VRF))
 import           Cardano.Ledger.Serialization (runByteBuilder)
 import           Cardano.Ledger.Slot (SlotNo (SlotNo))
 import           Cardano.Protocol.TPraos.BHeader (BoundedNatural,
@@ -42,6 +43,11 @@ import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Numeric.Natural (Natural)
 
+-- TODO: The hashing function Blake2b_256 is same as Crypto class
+-- Solution 1 - Keep it same as, it is proposed that Crypto will be dissolved and converted to a
+--              concrete data type
+-- Solution 2 - Parametrise it with Crypto, so as to see its effect, and hence it'd be easier
+--              to remove it later as well.
 -- | Input to the verifiable random function. Consists of the hash of the slot
 -- and the epoch nonce.
 newtype InputVRF = InputVRF {unInputVRF :: Hash Blake2b_256 InputVRF}
@@ -86,13 +92,14 @@ data VRFResult (v :: VRFUsage)
 
 -- | Compute a hash of the unified VRF output appropriate to its usage.
 hashVRF ::
-  forall (v :: VRFUsage) c proxy.
+  forall (v :: VRFUsage) c hc proxy.
   (Crypto c) =>
   proxy c ->
+  proxy hc ->
   SVRFUsage v ->
-  CertifiedVRF (VRF c) InputVRF ->
+  CertifiedVRF (VRF hc) InputVRF ->
   Hash (HASH c) (VRFResult v)
-hashVRF _ use certVRF =
+hashVRF _  _ use certVRF =
   let vrfOutputAsBytes = getOutputVRFBytes $ certifiedOutput certVRF
    in case use of
         SVRFLeader -> castHash $ hashWith id $ "L" <> vrfOutputAsBytes
@@ -101,25 +108,27 @@ hashVRF _ use certVRF =
 -- | Range-extend a VRF output to be used for leader checks from the relevant
 -- hash. See section 4.1 of the linked paper for details.
 vrfLeaderValue ::
-  forall c proxy.
+  forall c hc proxy.
   Crypto c =>
   proxy c ->
-  CertifiedVRF (VRF c) InputVRF ->
+  proxy hc ->
+  CertifiedVRF (VRF hc) InputVRF ->
   BoundedNatural
-vrfLeaderValue p cvrf =
+vrfLeaderValue p hp cvrf =
   assertBoundedNatural
     ((2 :: Natural) ^ (8 * sizeHash (Proxy @(HASH c))))
-    (bytesToNatural . hashToBytes $ hashVRF p SVRFLeader cvrf)
+    (bytesToNatural . hashToBytes $ hashVRF p hp SVRFLeader cvrf)
 
 -- | Range-extend a VRF output to be used for the evolving nonce. See section
 -- 4.1 of the linked paper for details.
 vrfNonceValue ::
-  forall c proxy.
-  Crypto c =>
+  forall c hc proxy.
+  (Crypto c) =>
   proxy c ->
-  CertifiedVRF (VRF c) InputVRF ->
+  proxy hc ->
+  CertifiedVRF (VRF hc) InputVRF ->
   Nonce
-vrfNonceValue p =
+vrfNonceValue p hp =
   -- The double hashing below is perhaps a little confusing. The first hash is
   -- how we do range extension as per the VRF paper. The second hash is how we
   -- generate a nonce value from a VRF output. However, that "VRF output" is now
@@ -128,4 +137,4 @@ vrfNonceValue p =
   -- However, while the VRF hash is crypto-dependent, for the nonce we use a
   -- fixed `Blake2b_256` hashing function. So this double hashing is still
   -- needed.
-  Nonce . castHash . hashWith id . hashToBytes . hashVRF p SVRFNonce
+  Nonce . castHash . hashWith id . hashToBytes . hashVRF p hp SVRFNonce

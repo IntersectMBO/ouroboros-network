@@ -38,11 +38,13 @@ import           Cardano.Crypto.VRF (hashVerKeyVRF)
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Ledger.BaseTypes (ActiveSlotCoeff, Nonce, (⭒))
 import qualified Cardano.Ledger.BaseTypes as SL
-import           Cardano.Ledger.Crypto (Crypto, DSIGN, KES, StandardCrypto, VRF)
+import           Cardano.Ledger.Crypto (Crypto, DSIGN, StandardCrypto)
+import           Cardano.Protocol.HeaderCrypto (HeaderCrypto, KES, VRF)
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.Keys (KeyHash, KeyRole (BlockIssuer),
                      VKey (VKey), coerceKeyRole, hashKey)
 import qualified Cardano.Ledger.Keys as SL
+import qualified Cardano.Protocol.HeaderKeys as SL
 import           Cardano.Ledger.PoolDistr
                      (IndividualPoolStake (IndividualPoolStake), PoolStakeVRF)
 import           Cardano.Ledger.Shelley.API (computeStabilityWindow)
@@ -91,66 +93,67 @@ import           Ouroboros.Consensus.Ticked (Ticked)
 import           Ouroboros.Consensus.Util.Versioned (VersionDecoder (Decode),
                      decodeVersion, encodeVersion)
 
-data Praos c
+data Praos c hc
 
 class
   ( Crypto c,
-    DSIGN.Signable (DSIGN c) (OCertSignable c),
+    HeaderCrypto hc,
+    DSIGN.Signable (DSIGN c) (OCertSignable hc),
     DSIGN.Signable (DSIGN c) (SL.Hash c EraIndependentTxBody),
-    KES.Signable (KES c) (HeaderBody c),
-    VRF.Signable (VRF c) InputVRF
+    KES.Signable (KES hc) (HeaderBody c hc),
+    VRF.Signable (VRF hc) InputVRF
   ) =>
-  PraosCrypto c
+  PraosCrypto c hc
 
-instance PraosCrypto StandardCrypto
+instance PraosCrypto StandardCrypto StandardCrypto
 
 {-------------------------------------------------------------------------------
   Fields required by Praos in the header
 -------------------------------------------------------------------------------}
 
-data PraosFields c toSign = PraosFields
-  { praosSignature :: SL.SignedKES c toSign,
+data PraosFields hc toSign = PraosFields
+  { praosSignature :: SL.SignedKES hc toSign,
     praosToSign    :: toSign
   }
   deriving (Generic)
 
 deriving instance
-  (NoThunks toSign, PraosCrypto c) =>
-  NoThunks (PraosFields c toSign)
+  (NoThunks toSign, HeaderCrypto hc) =>
+  NoThunks (PraosFields hc toSign)
 
 deriving instance
-  (Show toSign, PraosCrypto c) =>
-  Show (PraosFields c toSign)
+  (Show toSign, HeaderCrypto hc) =>
+  Show (PraosFields hc toSign)
 
 -- | Fields arising from praos execution which must be included in
 -- the block signature.
-data PraosToSign c = PraosToSign
+data PraosToSign c hc = PraosToSign
   { -- | Verification key for the issuer of this block.
     praosToSignIssuerVK :: SL.VKey 'SL.BlockIssuer c,
-    praosToSignVrfVK    :: SL.VerKeyVRF c,
+    praosToSignVrfVK    :: SL.VerKeyVRF hc,
     -- | Verifiable random value. This is used both to prove the issuer is
     -- eligible to issue a block, and to contribute to the evolving nonce.
-    praosToSignVrfRes   :: SL.CertifiedVRF c InputVRF,
+    praosToSignVrfRes   :: SL.CertifiedVRF hc InputVRF,
     -- | Lightweight delegation certificate mapping the cold (DSIGN) key to
     -- the online KES key.
-    praosToSignOCert    :: OCert.OCert c
+    praosToSignOCert    :: OCert.OCert c hc
   }
   deriving (Generic)
 
-instance PraosCrypto c => NoThunks (PraosToSign c)
+instance PraosCrypto c hc => NoThunks (PraosToSign c hc)
 
-deriving instance PraosCrypto c => Show (PraosToSign c)
+deriving instance PraosCrypto c hc => Show (PraosToSign c hc)
 
 forgePraosFields ::
-  ( PraosCrypto c,
-    SL.KESignable c toSign,
+  ( PraosCrypto c hc,
+    SL.KESignable hc toSign,
     Monad m
   ) =>
-  HotKey c m ->
-  CanBeLeader (Praos c) ->
-  IsLeader (Praos c) ->
-  (PraosToSign c -> toSign) ->
-  m (PraosFields c toSign)
+  HotKey hc m ->
+  CanBeLeader (Praos c hc) ->
+  IsLeader (Praos c hc) ->
+  (PraosToSign c hc -> toSign) ->
+  m (PraosFields hc toSign)
 forgePraosFields
   hotKey
   PraosCanBeLeader
@@ -212,15 +215,15 @@ data PraosParams = PraosParams
 
 -- | Assembled proof that the issuer has the right to issue a block in the
 -- selected slot.
-newtype PraosIsLeader c = PraosIsLeader
-  { praosIsLeaderVrfRes :: SL.CertifiedVRF c InputVRF
+newtype PraosIsLeader hc = PraosIsLeader
+  { praosIsLeaderVrfRes :: SL.CertifiedVRF hc InputVRF
   }
   deriving (Generic)
 
-instance PraosCrypto c => NoThunks (PraosIsLeader c)
+instance HeaderCrypto hc => NoThunks (PraosIsLeader hc)
 
 -- | Static configuration
-data instance ConsensusConfig (Praos c) = PraosConfig
+data instance ConsensusConfig (Praos c hc) = PraosConfig
   { praosParams :: !PraosParams,
     praosEpochInfo :: !(EpochInfo (Except History.PastHorizonException))
     -- it's useful for this record to be EpochInfo and one other thing,
@@ -229,7 +232,7 @@ data instance ConsensusConfig (Praos c) = PraosConfig
   }
   deriving (Generic)
 
-instance PraosCrypto c => NoThunks (ConsensusConfig (Praos c))
+instance PraosCrypto c hc => NoThunks (ConsensusConfig (Praos c hc))
 
 type PraosValidateView c = Views.HeaderView c
 
@@ -264,15 +267,15 @@ data PraosState c = PraosState
   }
   deriving (Generic, Show, Eq)
 
-instance PraosCrypto c => NoThunks (PraosState c)
+instance Crypto c => NoThunks (PraosState c)
 
-instance PraosCrypto c => ToCBOR (PraosState c) where
+instance Crypto c => ToCBOR (PraosState c) where
   toCBOR = encode
 
-instance PraosCrypto c => FromCBOR (PraosState c) where
+instance Crypto c => FromCBOR (PraosState c) where
   fromCBOR = decode
 
-instance PraosCrypto c => Serialise (PraosState c) where
+instance Crypto c => Serialise (PraosState c) where
   encode
     PraosState
       { praosStateLastSlot,
@@ -317,17 +320,17 @@ data instance Ticked (PraosState c) = TickedPraosState
   }
 
 -- | Errors which we might encounter
-data PraosValidationErr c
+data PraosValidationErr c hc
   = VRFKeyUnknown
       !(KeyHash SL.StakePool c) -- unknown VRF keyhash (not registered)
   | VRFKeyWrongVRFKey
       !(KeyHash SL.StakePool c) -- KeyHash of block issuer
       !(SL.Hash c PoolStakeVRF) -- VRF KeyHash registered with stake pool
-      !(SL.Hash c (SL.VerKeyVRF c)) -- VRF KeyHash from Header
+      !(SL.Hash c (SL.VerKeyVRF hc)) -- VRF KeyHash from Header
   | VRFKeyBadProof
       !SlotNo -- Slot used for VRF calculation
       !Nonce -- Epoch nonce used for VRF calculation
-      !(VRF.CertifiedVRF (VRF c) InputVRF) -- VRF calculated nonce value
+      !(VRF.CertifiedVRF (VRF hc) InputVRF) -- VRF calculated nonce value
   | VRFLeaderValueTooBig Natural Rational ActiveSlotCoeff
   | KESBeforeStartOCERT
       !KESPeriod -- OCert Start KES Period
@@ -356,20 +359,20 @@ data PraosValidationErr c
       !(KeyHash 'BlockIssuer c) -- stake pool key hash
   deriving (Generic)
 
-deriving instance PraosCrypto c => Eq (PraosValidationErr c)
+deriving instance PraosCrypto c hc => Eq (PraosValidationErr c hc)
 
-deriving instance PraosCrypto c => NoThunks (PraosValidationErr c)
+deriving instance PraosCrypto c hc => NoThunks (PraosValidationErr c hc)
 
-deriving instance PraosCrypto c => Show (PraosValidationErr c)
+deriving instance PraosCrypto c hc => Show (PraosValidationErr c hc)
 
-instance PraosCrypto c => ConsensusProtocol (Praos c) where
-  type ChainDepState (Praos c) = PraosState c
-  type IsLeader (Praos c) = PraosIsLeader c
-  type CanBeLeader (Praos c) = PraosCanBeLeader c
-  type SelectView (Praos c) = PraosChainSelectView c
-  type LedgerView (Praos c) = Views.LedgerView c
-  type ValidationErr (Praos c) = PraosValidationErr c
-  type ValidateView (Praos c) = PraosValidateView c
+instance PraosCrypto c hc => ConsensusProtocol (Praos c hc) where
+  type ChainDepState (Praos c hc) = PraosState c
+  type IsLeader (Praos c hc) = PraosIsLeader hc
+  type CanBeLeader (Praos c hc) = PraosCanBeLeader c hc
+  type SelectView (Praos c hc) = PraosChainSelectView c
+  type LedgerView (Praos c hc) = Views.LedgerView c
+  type ValidationErr (Praos c hc) = PraosValidationErr c hc
+  type ValidateView (Praos c hc) = PraosValidateView c hc
 
   protocolSecurityParam = praosSecurityParam . praosParams
 
@@ -497,19 +500,19 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
         cs = tickedPraosStateChainDepState tcs
         stabilityWindow =
           computeStabilityWindow (maxRollbacks praosSecurityParam) praosLeaderF
-        eta = vrfNonceValue (Proxy @c) $ Views.hvVrfRes b
+        eta = vrfNonceValue (Proxy @c) (Proxy @hc) $ Views.hvVrfRes b
         newEvolvingNonce = praosStateEvolvingNonce cs ⭒ eta
         OCert _ n _ _ = Views.hvOCert b
         hk = hashKey $ Views.hvVK b
 
 -- | Check whether this node meets the leader threshold to issue a block.
 meetsLeaderThreshold ::
-  forall c.
-  PraosCrypto c =>
-  ConsensusConfig (Praos c) ->
-  LedgerView (Praos c) ->
+  forall c hc.
+  PraosCrypto c hc =>
+  ConsensusConfig (Praos c hc) ->
+  LedgerView (Praos c hc) ->
   SL.KeyHash 'SL.StakePool c ->
-  VRF.CertifiedVRF (VRF c) InputVRF ->
+  VRF.CertifiedVRF (VRF hc) InputVRF ->
   Bool
 meetsLeaderThreshold
   PraosConfig {praosParams}
@@ -517,7 +520,7 @@ meetsLeaderThreshold
   keyHash
   rho =
     checkLeaderNatValue
-      (vrfLeaderValue (Proxy @c) rho)
+      (vrfLeaderValue (Proxy @c) (Proxy @hc) rho)
       r
       (praosLeaderF praosParams)
     where
@@ -527,14 +530,14 @@ meetsLeaderThreshold
           Map.lookup keyHash poolDistr
 
 validateVRFSignature ::
-  forall c.
-  ( PraosCrypto c
+  forall c hc.
+  ( PraosCrypto c hc
   ) =>
   Nonce ->
   Views.LedgerView c ->
   ActiveSlotCoeff ->
-  Views.HeaderView c ->
-  Except (PraosValidationErr c) ()
+  Views.HeaderView c hc ->
+  Except (PraosValidationErr c hc) ()
 validateVRFSignature eta0 (Views.lvPoolDistr -> SL.PoolDistr pd) f b = do
   case Map.lookup hk pd of
     Nothing -> throwError $ VRFKeyUnknown hk
@@ -553,16 +556,16 @@ validateVRFSignature eta0 (Views.lvPoolDistr -> SL.PoolDistr pd) f b = do
     hk = coerceKeyRole . hashKey . Views.hvVK $ b
     vrfK = Views.hvVrfVK b
     vrfCert = Views.hvVrfRes b
-    vrfLeaderVal = vrfLeaderValue (Proxy @c) vrfCert
+    vrfLeaderVal = vrfLeaderValue (Proxy @c) (Proxy @hc) vrfCert
     slot = Views.hvSlotNo b
 
 validateKESSignature ::
-  PraosCrypto c =>
-  ConsensusConfig (Praos c) ->
-  LedgerView (Praos c) ->
+  PraosCrypto c hc =>
+  ConsensusConfig (Praos c hc) ->
+  LedgerView (Praos c hc) ->
   Map (KeyHash 'BlockIssuer c) Word64 ->
-  Views.HeaderView c ->
-  Except (PraosValidationErr c) ()
+  Views.HeaderView c hc ->
+  Except (PraosValidationErr c hc) ()
 validateKESSignature
   _cfg@( PraosConfig
            PraosParams {praosMaxKESEvo, praosSlotsPerKESPeriod}
@@ -628,10 +631,10 @@ data PraosCannotForge c
       -- ^ Start KES period of the KES key.
   deriving (Generic)
 
-deriving instance PraosCrypto c => Show (PraosCannotForge c)
+deriving instance Crypto c => Show (PraosCannotForge c)
 
 praosCheckCanForge ::
-  ConsensusConfig (Praos c) ->
+  ConsensusConfig (Praos c hc) ->
   SlotNo ->
   HotKey.KESInfo ->
   Either (PraosCannotForge c) ()
@@ -657,8 +660,8 @@ praosCheckCanForge
   PraosProtocolSupportsNode
 -------------------------------------------------------------------------------}
 
-instance PraosCrypto c => PraosProtocolSupportsNode (Praos c) where
-  type PraosProtocolSupportsNodeCrypto (Praos c) = c
+instance PraosCrypto c hc => PraosProtocolSupportsNode (Praos c hc) where
+  type PraosProtocolSupportsNodeCrypto (Praos c hc) = c
 
   getPraosNonces _prx cdst =
       PraosNonces {
