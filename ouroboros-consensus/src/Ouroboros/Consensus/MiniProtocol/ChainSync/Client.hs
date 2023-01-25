@@ -565,7 +565,7 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           -- ('rollBackward'), so we have nothing to do.
           return $ Just kis
 
-        | Just intersection <- AF.intersectionPoint ourFrag' theirFrag ->
+        | Just (ourPre, _ourSuf, _theirPre, theirSuf) <- AF.intersect ourFrag' theirFrag ->
           -- Our current chain changed, but it still intersects with candidate
           -- fragment, so update the 'ourFrag' field and trim to the
           -- candidate fragment to the same anchor point.
@@ -575,29 +575,15 @@ chainSyncClient mkPipelineDecision0 tracer cfg
           -- in two ways: 1. we adopted them, i.e., our chain changed (handled
           -- in this function); 2. we will /never/ adopt them, which is
           -- handled in the "no more intersection case".
-          case AF.splitAfterPoint theirFrag (AF.anchorPoint ourFrag') of
-           -- + Before the update to our fragment, both fragments were
-           --   anchored at the same anchor.
-           -- + We still have an intersection.
-           -- + The number of blocks after the intersection cannot have
-           --   shrunk, but could have increased.
-           -- + If it did increase, the anchor point will have shifted up.
-           -- + It can't have moved up past the intersection point (because
-           --   then there would be no intersection anymore).
-           -- + This means the new anchor point must be between the old anchor
-           --   point and the new intersection point.
-           -- + Since we know both the old anchor point and the new
-           --   intersection point exist on their fragment, the new anchor
-           --   point must also.
-           Nothing -> error
-               "anchor point must be on candidate fragment if they intersect"
-           Just (_, trimmedCandidateFrag) -> return $ Just $
+          case ourPre `AF.join` theirSuf of
+           Nothing                   -> error "invariant violation of AF.intersect"
+           Just trimmedCandidateFrag -> return $ Just $
                assertKnownIntersectionInvariants (configConsensus cfg) $
                  KnownIntersectionState {
                      ourFrag                 = ourFrag'
                    , theirFrag               = trimmedCandidateFrag
                    , theirHeaderStateHistory = trimmedHeaderStateHistory'
-                   , mostRecentIntersection  = castPoint intersection
+                   , mostRecentIntersection  = castPoint $ AF.anchorPoint theirSuf
                    }
              where
                -- We trim the 'HeaderStateHistory' to the same size as our
