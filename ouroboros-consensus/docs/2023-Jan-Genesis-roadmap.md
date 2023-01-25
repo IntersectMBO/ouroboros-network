@@ -56,9 +56,9 @@ graph TD
     ProtoDR  --> DocDR["document DR\n(incl. justification)"]
     ProtoLoP --> DocLoP["document CSC\n(incl. justification)"]
 
-    DocDR  --> TestDR{smoke test DR}
-    DocCSJ --> TestCSJ{smoke test fast CSJ}
-    DocLoP --> TestLoP{smoke test CSC}
+    DocDR  --> TestDR{"smoke test\nDR"}
+    DocCSJ --> TestCSJ{"smoke test\nfast CSJ"}
+    DocLoP --> TestLoP{"smoke test\nCSC"}
     style TestDR fill:#c27832
     style TestCSJ fill:#c27832
     style TestLoP fill:#c27832
@@ -79,7 +79,7 @@ graph TD
     ProtoLoP2 --> DocLoP2["document updated CSC\n(incl. justification)"]
 
     DocDR2  --> TestDR2{test DR}
-    DocCSJ2 --> TestCSJ2{"test CSJ (incl. both fast and slow)"}
+    DocCSJ2 --> TestCSJ2{"test CSJ\n(incl. both fast\nand slow)"}
     DocLoP2 --> TestLoP2{test CSC}
     style TestDR2  fill:#c27832
     style TestCSJ2 fill:#c27832
