@@ -18,65 +18,52 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise
 import           Control.Monad.Except
-import           Control.Tracer (Tracer (..), traceWith)
+import           Control.Tracer (Tracer (..), traceWith, nullTracer)
+import           Data.Foldable (foldl')
 import           Data.IORef
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
--- import qualified Data.Text.IO as Text.IO
+import qualified Data.Text.IO as Text.IO
 import           Data.Word (Word16, Word64)
 import qualified Debug.Trace as Debug
--- import qualified GHC.Stats as GC
--- import           NoThunks.Class (noThunks)
--- import qualified System.IO as IO
--- import qualified Text.Builder as Builder
+import qualified GHC.Stats as GC
+import qualified System.IO as IO
+import qualified Text.Builder as Builder
 
--- import qualified Cardano.Slotting.Slot as Slotting
+import qualified Cardano.Slotting.Slot as Slotting
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
--- import           Ouroboros.Consensus.Forecast (forecastFor)
--- import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
---                      HeaderState (..), annTipPoint, tickHeaderState,
---                      validateHeader)
--- import           Ouroboros.Consensus.Ledger.Abstract (LedgerCfg, LedgerConfig,
---                      applyBlockLedgerResult, applyChainTick,
---                      tickThenApplyLedgerResult, tickThenReapply)
--- import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..),
---                      LedgerState, getTipSlot)
--- import           Data.Proxy
--- import           Data.Word (Word16, Word64)
--- import qualified Debug.Trace as Debug
+import           Ouroboros.Consensus.Forecast (forecastFor)
+import           Ouroboros.Consensus.HeaderValidation (HeaderState (..), tickHeaderState,
+                     validateHeader)
 
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Point (WithOrigin (At))
 
 import           Ouroboros.Consensus.Util.IOLike
 
--- import           Ouroboros.Consensus.Block.Abstract
--- import           Ouroboros.Consensus.Block.RealPoint
--- import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
--- import qualified Ouroboros.Consensus.Mempool.API as MP
--- import qualified Ouroboros.Consensus.Mempool.Impl as MP
--- import qualified Ouroboros.Consensus.Mempool.TxSeq as MP
--- import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
--- import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
---                      StreamFrom (..))
--- import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Ledger.Tables.Utils
+import qualified Ouroboros.Consensus.Mempool.API as MP
+import qualified Ouroboros.Consensus.Mempool.Impl as MP
+import           Ouroboros.Consensus.Protocol.Abstract (LedgerView, ConsensusProtocol)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.API (PointNotFound(..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API hiding (withFile)
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB hiding
                      (TraceEvent)
@@ -85,9 +72,9 @@ import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk hiding (TraceEvent)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as OnDisk
 import           Ouroboros.Consensus.Storage.Serialisation
 
--- import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Ticked
 
--- import qualified Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint as DP
+import qualified Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint as DP
 import           Cardano.Tools.DBAnalyser.HasAnalysis (HasAnalysis)
 import qualified Cardano.Tools.DBAnalyser.HasAnalysis as HasAnalysis
 
@@ -119,11 +106,9 @@ data AnalysisResult =
 runAnalysis ::
      forall blk .
      ( HasAnalysis blk
-     -- , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
-     -- , LedgerSupportsMempool.HasTxs blk
-     -- , LedgerSupportsMempool blk
-     -- , LedgerSupportsProtocol blk
-     -- , LgrDbSerialiseConstraints blk
+     , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
+     , LedgerSupportsMempool.HasTxs blk
+     , LedgerSupportsMempool.LedgerSupportsMempool blk
      )
   => AnalysisName -> Analysis blk
 runAnalysis analysisName env@AnalysisEnv{ tracer } = do
@@ -142,7 +127,7 @@ runAnalysis analysisName env@AnalysisEnv{ tracer } = do
     go CountBlocks                   = countBlocks env
     go (CheckNoThunksEvery nBks)     = checkNoThunksEvery nBks env
     go TraceLedgerProcessing         = traceLedgerProcessing env
-    go (ReproMempoolAndForge _nBks)  = error "MempoolForge was disabled for UTxO-HD" -- reproMempoolForge nBks env
+    go (ReproMempoolAndForge nBks)   = reproMempoolForge nBks env
     go (BenchmarkLedgerOps mOutfile) = benchmarkLedgerOps mOutfile env
 
 type Analysis blk = AnalysisEnv IO blk -> IO (Maybe AnalysisResult)
@@ -573,252 +558,333 @@ traceLedgerProcessing
 
 -------------------------------------------------------------------------------}
 benchmarkLedgerOps ::
-  forall blk.
-     -- ( HasAnalysis blk
-     -- , LedgerSupportsProtocol blk
-     -- )
-  -- =>
-  Maybe FilePath -> Analysis blk
-benchmarkLedgerOps _ _ = undefined -- mOutfile AnalysisEnv {db, registry, initLedger, cfg, limit} =
-  --   withFile mOutfile $ \outFileHandle -> do
-  --     let line = Builder.run $ DP.showHeaders separator
-  --                            <> separator
-  --                            <> "...era-specific stats"
-  --     Text.IO.hPutStrLn outFileHandle line
+     forall blk.
+     HasAnalysis blk
+  => Maybe FilePath -> Analysis blk
+benchmarkLedgerOps mOutfile AnalysisEnv {db, initLedger, cfg, limit, backing, ledgerDbFS} = do
+    doCheck <- onlyCheckNumBlocks limit
 
-  --     void $ processAll db registry GetBlock initLedger limit initLedger (process outFileHandle)
-  --     pure Nothing
-  -- where
-  --   withFile :: Maybe FilePath -> (IO.Handle -> IO r) -> IO r
-  --   withFile (Just outfile) = IO.withFile outfile IO.WriteMode
-  --   withFile Nothing        = \f -> f IO.stdout
+    initLedger' <- initialiseLedger ledgerDbFS cfg initLedger
 
-  --   -- Separator for the data that is printed
-  --   separator = "\t"
+    (ldb, bs) <- ledgerDbAndBackingStore backing ledgerDbFS $ case initLedger of
+                                                                Left s -> Left (initLedger', s)
+                                                                Right v -> Right v
 
-  --   ccfg = topLevelConfigProtocol cfg
-  --   lcfg = topLevelConfigLedger   cfg
+    withFile mOutfile $ \outFileHandle -> do
+      let line = Builder.run $ DP.showHeaders separator
+                             <> separator
+                             <> "...era-specific stats"
+      Text.IO.hPutStrLn outFileHandle line
 
-  --   process ::
-  --        IO.Handle
-  --     -> ExtLedgerState blk
-  --     -> blk
-  --     -> IO (ExtLedgerState blk)
-  --   process outFileHandle prevLedgerState blk = do
-  --       prevRtsStats <- GC.getRTSStats
-  --       let
-  --         -- Compute how many nanoseconds the mutator used from the last
-  --         -- recorded 'elapsedTime' till the end of the execution of the given
-  --         -- action. This function forces the evaluation of its argument's
-  --         -- result.
-  --         time act = do
-  --             tPrev <- GC.mutator_elapsed_ns <$> GC.getRTSStats
-  --             !r <- act
-  --             tNow <- GC.mutator_elapsed_ns <$> GC.getRTSStats
-  --             pure (r, tNow - tPrev)
+      void $ runExceptT (consumeStream (mkStream doCheck GetBlock db) (castPoint . getTip $ initLedger') (ldb, 0) (process bs outFileHandle))
+      pure Nothing
+  where
 
-  --       let slot = blockSlot      blk
-  --       -- We do not use strictness annotation on the resulting tuples since
-  --       -- 'time' takes care of forcing the evaluation of its argument's result.
-  --       (tkLdgrView, tForecast) <- time $ forecast            slot prevLedgerState
-  --       (tkHdrSt,    tHdrTick)  <- time $ tickTheHeaderState  slot prevLedgerState tkLdgrView
-  --       (hdrSt',     tHdrApp)   <- time $ applyTheHeader                           tkLdgrView tkHdrSt
-  --       (tkLdgrSt,   tBlkTick)  <- time $ tickTheLedgerState  slot prevLedgerState
-  --       (ldgrSt',    tBlkApp)   <- time $ applyTheBlock                                       tkLdgrSt
+    lcfg = topLevelConfigLedger cfg
+    ccfg = topLevelConfigProtocol cfg
 
-  --       currentRtsStats <- GC.getRTSStats
-  --       let
-  --         currentMinusPrevious f = f currentRtsStats - f prevRtsStats
-  --         slotDataPoint =
-  --           DP.SlotDataPoint
-  --           { slot            = realPointSlot rp
-  --           , slotGap         = slot `slotCount` getTipSlot prevLedgerState
-  --           , totalTime       = currentMinusPrevious GC.elapsed_ns          `div` 1000
-  --           , mut             = currentMinusPrevious GC.mutator_elapsed_ns  `div` 1000
-  --           , gc              = currentMinusPrevious GC.gc_elapsed_ns       `div` 1000
-  --           , majGcCount      = currentMinusPrevious GC.major_gcs
-  --           , mut_forecast    = tForecast `div` 1000
-  --           , mut_headerTick  = tHdrTick  `div` 1000
-  --           , mut_headerApply = tHdrApp   `div` 1000
-  --           , mut_blockTick   = tBlkTick  `div` 1000
-  --           , mut_blockApply  = tBlkApp   `div` 1000
-  --           }
+    withFile :: Maybe FilePath -> (IO.Handle -> IO r) -> IO r
+    withFile (Just outfile) = IO.withFile outfile IO.WriteMode
+    withFile Nothing        = \f -> f IO.stdout
 
-  --         slotCount (SlotNo i) = \case
-  --           Slotting.Origin        -> i
-  --           Slotting.At (SlotNo j) -> i - j
+    -- Separator for the data that is printed
+    separator = "\t"
 
-  --         line = Builder.run $  DP.showData slotDataPoint separator
-  --                            <> separator
-  --                            <> Builder.intercalate separator (HasAnalysis.blockStats blk)
+    process ::
+         LedgerBackingStore IO (ExtLedgerState blk)
+      -> IO.Handle
+      -> blk
+      -> (LedgerDB' blk, Word64)
+      -> IO (LedgerDB' blk, Word64)
+    process backingStore outFileHandle blk (ldb, sinceLast) = do
+        prevRtsStats <- GC.getRTSStats
+        let
+          -- Compute how many nanoseconds the mutator used from the last
+          -- recorded 'elapsedTime' till the end of the execution of the given
+          -- action. This function forces the evaluation of its argument's
+          -- result.
+          time act = do
+              tPrev <- GC.mutator_elapsed_ns <$> GC.getRTSStats
+              !r <- act
+              tNow <- GC.mutator_elapsed_ns <$> GC.getRTSStats
+              pure (r, tNow - tPrev)
 
-  --       Text.IO.hPutStrLn outFileHandle line
+        let slot = blockSlot blk
+        ((ldb', sinceLast'), tFlush) <- time $
+          if sinceLast == 100
+          then do
+            let (toFlush, toKeep) =
+                  ledgerDbFlush DbChangelogFlushAllImmutable ldb
+            Ouroboros.Consensus.Storage.LedgerDB.OnDisk.flush backingStore toFlush
+            pure (toKeep, 0)
+          else pure (ldb, sinceLast + 1)
 
-  --       pure $ ExtLedgerState ldgrSt' hdrSt'
-  --     where
-  --       rp = blockRealPoint blk
+        let prevLedgerState = ledgerDbCurrent ldb'
+        let aks             = rewindTableKeySets (ledgerDbChangelog ldb') (getBlockKeySets blk)
 
-  --       forecast ::
-  --            SlotNo
-  --         -> ExtLedgerState blk
-  --         -> IO (Ticked (LedgerView (BlockProtocol blk)))
-  --       forecast slot st = do
-  --           let forecaster = ledgerViewForecastAt lcfg (ledgerState st)
-  --           case runExcept $ forecastFor forecaster slot of
-  --             Left err -> fail $ "benchmark doesn't support headers beyond the forecast limit: " <> show rp <> " " <> show err
-  --             Right x  -> pure x
+        -- We do not use strictness annotation on the resulting tuples since
+        -- 'time' takes care of forcing the evaluation of its argument's result.
+        (tkLdgrView, tForecast) <- time $ forecast            slot prevLedgerState
+        (tkHdrSt,    tHdrTick)  <- time $ tickTheHeaderState  slot prevLedgerState tkLdgrView
+        (hdrSt',     tHdrApp)   <- time $ applyTheHeader                           tkLdgrView tkHdrSt
+        (urs,        tReadDb)   <- time $ defaultReadKeySets (readKeySets backingStore) $ readDb aks
 
-  --       tickTheHeaderState ::
-  --            SlotNo
-  --         -> ExtLedgerState blk
-  --         -> Ticked (LedgerView (BlockProtocol blk))
-  --         -> IO (Ticked (HeaderState blk))
-  --       tickTheHeaderState slot st tickedLedgerView =
-  --           pure $! tickHeaderState ccfg
-  --                                   tickedLedgerView
-  --                                   slot
-  --                                   (headerState st)
+        let fwd = case forwardTableKeySets (ledgerDbChangelog ldb') urs of
+              Left e -> error $ "Couldn't forward " ++ show e
+              Right v -> v
+        let l = ledgerState prevLedgerState `withLedgerTables` unExtLedgerStateTables fwd
 
-  --       applyTheHeader ::
-  --            Ticked (LedgerView (BlockProtocol blk))
-  --         -> Ticked (HeaderState blk)
-  --         -> IO (HeaderState blk)
-  --       applyTheHeader tickedLedgerView tickedHeaderState = do
-  --           case runExcept $ validateHeader cfg tickedLedgerView (getHeader blk) tickedHeaderState of
-  --             Left err -> fail $ "benchmark doesn't support invalid headers: " <> show rp <> " " <> show err
-  --             Right x -> pure x
+        (tkLdgrSt,   tBlkTick)  <- time $ tickTheLedgerState  slot (forgetLedgerTables l)
 
-  --       tickTheLedgerState ::
-  --            SlotNo
-  --         -> ExtLedgerState blk
-  --         -> IO (Ticked (LedgerState blk))
-  --       tickTheLedgerState slot st =
-  --           pure $ applyChainTick lcfg slot (ledgerState st)
+        let l' = applyLedgerTablesDiffsTicked l tkLdgrSt
 
-  --       applyTheBlock ::
-  --            Ticked (LedgerState blk)
-  --         -> IO (LedgerState blk)
-  --       applyTheBlock tickedLedgerSt = do
-  --           case runExcept (lrResult <$> applyBlockLedgerResult lcfg blk tickedLedgerSt) of
-  --             Left err -> fail $ "benchmark doesn't support invalid blocks: " <> show rp <> " " <> show err
-  --             Right x  -> pure x
+        (ldgrSt',    tBlkApp)   <- time $ applyTheBlock                                       l'
+
+        let ldgrSt'' = prependLedgerTablesDiffsFromTicked tkLdgrSt ldgrSt'
+        currentRtsStats <- GC.getRTSStats
+        let
+          currentMinusPrevious f = f currentRtsStats - f prevRtsStats
+          slotDataPoint =
+            DP.SlotDataPoint
+            { slot            = realPointSlot rp
+            , slotGap         = slot `slotCount` getTipSlot prevLedgerState
+            , totalTime       = currentMinusPrevious GC.elapsed_ns          `div` 1000
+            , mut             = currentMinusPrevious GC.mutator_elapsed_ns  `div` 1000
+            , gc              = currentMinusPrevious GC.gc_elapsed_ns       `div` 1000
+            , majGcCount      = currentMinusPrevious GC.major_gcs
+            , mut_forecast    = tForecast `div` 1000
+            , mut_headerTick  = tHdrTick  `div` 1000
+            , mut_headerApply = tHdrApp   `div` 1000
+            , mut_blockTick   = tBlkTick  `div` 1000
+            , mut_blockApply  = tBlkApp   `div` 1000
+            , mut_readUtxO    = tReadDb   `div` 1000
+            , mut_dbchFlush   = tFlush    `div` 1000
+            }
+
+          slotCount (SlotNo i) = \case
+            Slotting.Origin        -> i
+            Slotting.At (SlotNo j) -> i - j
+
+          line = Builder.run $  DP.showData slotDataPoint separator
+                             <> separator
+                             <> Builder.intercalate separator (HasAnalysis.blockStats blk)
+
+        Text.IO.hPutStrLn outFileHandle line
+
+        pure (pushLedgerState (configSecurityParam cfg) (ExtLedgerState ldgrSt'' hdrSt') ldb', sinceLast')
+      where
+        rp = blockRealPoint blk
+
+        forecast ::
+             SlotNo
+          -> ExtLedgerState blk mk
+          -> IO (Ticked (LedgerView (BlockProtocol blk)))
+        forecast slot st = do
+            let forecaster = ledgerViewForecastAt lcfg (ledgerState st)
+            case runExcept $ forecastFor forecaster slot of
+              Left err -> fail $ "benchmark doesn't support headers beyond the forecast limit: " <> show rp <> " " <> show err
+              Right x  -> pure x
+
+        tickTheHeaderState ::
+             SlotNo
+          -> ExtLedgerState blk mk
+          -> Ticked (LedgerView (BlockProtocol blk))
+          -> IO (Ticked (HeaderState blk))
+        tickTheHeaderState slot st tickedLedgerView =
+            pure $! tickHeaderState ccfg
+                                    tickedLedgerView
+                                    slot
+                                    (headerState st)
+
+        applyTheHeader ::
+             Ticked (LedgerView (BlockProtocol blk))
+          -> Ticked (HeaderState blk)
+          -> IO (HeaderState blk)
+        applyTheHeader tickedLedgerView tickedHeaderState = do
+            case runExcept $ validateHeader cfg tickedLedgerView (getHeader blk) tickedHeaderState of
+              Left err -> fail $ "benchmark doesn't support invalid headers: " <> show rp <> " " <> show err
+              Right x -> pure x
+
+        tickTheLedgerState ::
+             SlotNo
+          -> LedgerState blk EmptyMK
+          -> IO (Ticked1 (LedgerState blk) DiffMK)
+        tickTheLedgerState slot st =
+            pure $ applyChainTick lcfg slot st
+
+        applyTheBlock ::
+             Ticked1 (LedgerState blk) ValuesMK
+          -> IO (LedgerState blk DiffMK)
+        applyTheBlock tickedLedgerSt = do
+            case runExcept (lrResult <$> applyBlockLedgerResult lcfg blk tickedLedgerSt) of
+              Left err -> fail $ "benchmark doesn't support invalid blocks: " <> show rp <> " " <> show err
+              Right x  -> pure x
 
 {-------------------------------------------------------------------------------
   Analysis: reforge the blocks, via the mempool
 -------------------------------------------------------------------------------}
 
--- data ReproMempoolForgeHowManyBlks = ReproMempoolForgeOneBlk | ReproMempoolForgeTwoBlks
+data ReproMempoolForgeHowManyBlks = ReproMempoolForgeOneBlk | ReproMempoolForgeTwoBlks
 
--- reproMempoolForge ::
---   forall blk.
---   ( HasAnalysis blk
---   , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
---   , LedgerSupportsMempool.HasTxs blk
---   , LedgerSupportsMempool blk
---   , LedgerSupportsProtocol blk
---   ) =>
---   Int ->
---   Analysis blk
--- reproMempoolForge numBlks env = undefined -- do
-  --   howManyBlocks <- case numBlks of
-  --     1 -> pure ReproMempoolForgeOneBlk
-  --     2 -> pure ReproMempoolForgeTwoBlks
-  --     _ -> fail $ "--repro-mempool-and-forge only supports"
-  --              <> "1 or 2 blocks at a time, not " <> show numBlks
+reproMempoolForge ::
+     forall blk. (
+       HasAnalysis blk
+     , LedgerSupportsMempool.HasTxId (LedgerSupportsMempool.GenTx blk)
+     , LedgerSupportsMempool.HasTxs blk
+     , LedgerSupportsMempool.LedgerSupportsMempool blk
+     )
+  => Int
+  -> Analysis blk
+reproMempoolForge numBlks env =  do
+    doCheck <- onlyCheckNumBlocks limit
+    howManyBlocks <- case numBlks of
+      1 -> pure ReproMempoolForgeOneBlk
+      2 -> pure ReproMempoolForgeTwoBlks
+      _ -> fail $ "--repro-mempool-and-forge only supports"
+               <> "1 or 2 blocks at a time, not " <> show numBlks
 
-  --   ref <- IOLike.newTVarIO initLedger
-  --   mempool <- MP.openMempoolWithoutSyncThread
-  --     MP.LedgerInterface {
-  --       MP.getCurrentLedgerState = ledgerState <$> IOLike.readTVar ref
-  --     }
-  --     lCfg
-  --     -- one megabyte should generously accomodate two blocks' worth of txs
-  --     (MP.MempoolCapacityBytesOverride $ MP.MempoolCapacityBytes $ 2^(20 :: Int))
-  --     nullTracer
-  --     LedgerSupportsMempool.txInBlockSize
+    initLedger' <- initialiseLedger ledgerDbFS cfg initLedger
 
-  --   void $ processAll db registry GetBlock initLedger limit Nothing (process howManyBlocks ref mempool)
-  -- where
-  --   AnalysisEnv {
-  --     cfg
-  --   , initLedger
-  --   , db
-  --   , registry
-  --   , limit
-  --   , tracer
-  --   } = env
+    (ldb, bs) <- ledgerDbAndBackingStore backing ledgerDbFS $ case initLedger of
+                                                                Left s -> Left (initLedger', s)
+                                                                Right v -> Right v
 
-  --   lCfg :: LedgerConfig blk
-  --   lCfg = configLedger cfg
+    ref <- newTVarIO ldb
+    mempool <- MP.openMempoolWithoutSyncThread
+      MP.LedgerInterface {
+          MP.getCurrentLedgerState = ledgerState . ledgerDbCurrent <$> readTVar ref
+        , MP.getLedgerTablesAtFor = \pt txs -> do
+            let keys = ExtLedgerStateTables
+                  $ foldl' (zipLedgerTables (<>)) polyEmptyLedgerTables
+                  $ map LedgerSupportsMempool.getTransactionKeySets txs
+            let getTbs = do
+                  ldb' <- atomically $ readTVar ref
+                  case ledgerDbPrefix pt ldb' of
+                    Nothing -> pure $ Left $ PointNotFound pt
+                    Just l  -> do
+                      eValues <- LedgerDB.defaultReadKeySets
+                        (OnDisk.readKeySets bs)
+                        (getLedgerTablesFor l keys)
+                      case eValues of
+                        Right v -> pure $ Right $ unExtLedgerStateTables v
+                        Left _  -> getTbs
+            getTbs
+      }
+      lCfg
+      -- one megabyte should generously accomodate two blocks' worth of txs
+      (MP.MempoolCapacityBytesOverride $ MP.MempoolCapacityBytes $ 2^(20 :: Int))
+      nullTracer
+      LedgerSupportsMempool.txInBlockSize
 
-  --   elCfg :: LedgerCfg (ExtLedgerState blk)
-  --   elCfg = ExtLedgerCfg cfg
+    void $ runExceptT (consumeStream (mkStream doCheck GetBlock db) (castPoint . getTip $ initLedger') (ldb, 0) (process bs howManyBlocks mempool Nothing))
+    pure Nothing
 
-  --   timed :: IO a -> IO (a, IOLike.DiffTime)
-  --   timed m = do
-  --     before <- IOLike.getMonotonicTime
-  --     !x <- m
-  --     after <- IOLike.getMonotonicTime
-  --     pure (x, after `IOLike.diffTime` before)
+  where
+    AnalysisEnv {
+        cfg
+      , initLedger
+      , db
+      , limit
+      , tracer
+      , backing
+      , ledgerDbFS
+    } = env
 
-  --   process
-  --     :: ReproMempoolForgeHowManyBlks
-  --     -> IOLike.StrictTVar IO (ExtLedgerState blk)
-  --     -> MP.Mempool IO blk MP.TicketNo
-  --     -> Maybe blk
-  --     -> blk
-  --     -> IO (Maybe blk)
-  --   process howManyBlocks ref mempool mbBlk blk' = (\() -> Just blk') <$> do
-  --     -- add this block's transactions to the mempool
-  --     do
-  --       results <- MP.addTxs mempool $ LedgerSupportsMempool.extractTxs blk'
-  --       let rejs = [ rej | rej@MP.MempoolTxRejected{} <- results ]
-  --       unless (null rejs) $ do
-  --         fail $ "Mempool rejected some of the on-chain txs: " <> show rejs
+    lCfg :: LedgerConfig blk
+    lCfg = configLedger cfg
 
-  --     let scrutinee = case howManyBlocks of
-  --           ReproMempoolForgeOneBlk  -> Just blk'
-  --           ReproMempoolForgeTwoBlks -> mbBlk
-  --     case scrutinee of
-  --       Nothing  -> pure ()
-  --       Just blk -> do
-  --         st <- IOLike.readTVarIO ref
+    elCfg :: LedgerCfg (ExtLedgerState blk)
+    elCfg = ExtLedgerCfg cfg
 
-  --         -- time the suspected slow parts of the forge thread that created
-  --         -- this block
-  --         --
-  --         -- Primary caveat: that thread's mempool may have had more transactions in it.
-  --         do
-  --           let slot = blockSlot blk
-  --           (ticked, durTick) <- timed $ IOLike.evaluate $
-  --             applyChainTick lCfg slot (ledgerState st)
-  --           ((), durSnap) <- timed $ IOLike.atomically $ do
-  --             snap <- MP.getLedgerAndSnapshotFor mempool $ MP.ForgeInKnownSlot slot ticked
+    timed :: IO a -> IO (a, IOLike.DiffTime)
+    timed m = do
+      before <- IOLike.getMonotonicTime
+      !x <- m
+      after <- IOLike.getMonotonicTime
+      pure (x, after `IOLike.diffTime` before)
 
-  --             pure $ length (MP.snapshotTxs snap) ()
+    process
+      :: LedgerBackingStore IO (ExtLedgerState blk)
+      -> ReproMempoolForgeHowManyBlks
+      -> MP.Mempool IO blk
+      -> Maybe blk
+      -> blk
+      -> (LedgerDB' blk, Word64)
+      -> IO (LedgerDB' blk, Word64)
+    process bs howManyBlocks mempool mbBlk blk' (ldb, sinceLast) = do
+      (ldb', sinceLast') <-
+          if sinceLast == 100
+          then do
+            let (toFlush, toKeep) =
+                  ledgerDbFlush DbChangelogFlushAllImmutable ldb
+            Ouroboros.Consensus.Storage.LedgerDB.OnDisk.flush bs toFlush
+            pure (toKeep, 0)
+          else pure (ldb, sinceLast + 1)
+      -- add this block's transactions to the mempool
+      do
+        results <- MP.addTxs mempool $ LedgerSupportsMempool.extractTxs blk'
+        let rejs = [ rej | rej@MP.MempoolTxRejected{} <- results ]
+        unless (null rejs) $ do
+          fail $ "Mempool rejected some of the on-chain txs: " <> show rejs
 
-  --           let sizes = HasAnalysis.blockTxSizes blk
-  --           traceWith tracer $
-  --             BlockMempoolAndForgeRepro
-  --               (blockNo blk)
-  --               slot
-  --               (length sizes)
-  --               (sum sizes)
-  --               durTick
-  --               durSnap
+      let scrutinee = case howManyBlocks of
+            ReproMempoolForgeOneBlk  -> Just blk'
+            ReproMempoolForgeTwoBlks -> mbBlk
+      case scrutinee of
+        Nothing  -> pure (ldb', sinceLast')
+        Just blk -> do
+          let st = ledgerDbCurrent ldb
 
-  --         -- advance the ledger state to include this block
-  --         --
-  --         -- TODO We could inline/reuse parts of the IsLedger ExtLedgerState
-  --         -- instance here as an optimization that avoids repeating the
-  --         -- 'applyChainTick' call above. We want to leave that call alone, though,
-  --         -- since it currently matches the call in the forging thread, which is
-  --         -- the primary intention of this Analysis. Maybe GHC's CSE is already
-  --         -- doing this sharing optimization?
-  --         IOLike.atomically $ IOLike.writeTVar ref $! tickThenReapply elCfg blk st
+          -- time the suspected slow parts of the forge thread that created
+          -- this block
+          --
+          -- Primary caveat: that thread's mempool may have had more transactions in it.
+          do
+            let slot = blockSlot blk
+            (ticked, durTick) <- timed $ IOLike.evaluate $
+              applyChainTick lCfg slot (ledgerState st)
+            ((), durSnap) <- timed $ do
+              snap <- MP.getSnapshotFor mempool (blockPoint blk) slot ticked
 
-  --         -- this flushes blk from the mempool, since every tx in it is now on the chain
-  --         void $ MP.syncWithLedger mempool
+              pure $ fmap (length . MP.snapshotTxs) snap `seq` ()
+
+            let sizes = HasAnalysis.blockTxSizes blk
+            traceWith tracer $
+              BlockMempoolAndForgeRepro
+                (blockNo blk)
+                slot
+                (length sizes)
+                (sum sizes)
+                durTick
+                durSnap
+
+          -- advance the ledger state to include this block
+          --
+          -- TODO We could inline/reuse parts of the IsLedger ExtLedgerState
+          -- instance here as an optimization that avoids repeating the
+          -- 'applyChainTick' call above. We want to leave that call alone, though,
+          -- since it currently matches the call in the forging thread, which is
+          -- the primary intention of this Analysis. Maybe GHC's CSE is already
+          -- doing this sharing optimization?
+          let ks :: LedgerTables (ExtLedgerState blk) KeysMK
+              ks = getBlockKeySets blk
+
+              aks :: RewoundTableKeySets (ExtLedgerState blk)
+              aks = rewindTableKeySets (ledgerDbChangelog ldb') ks
+          urs <- defaultReadKeySets (readKeySets bs) $ readDb aks
+          let fwd = case forwardTableKeySets (ledgerDbChangelog ldb') urs of
+                Left e -> error $ "Couldn't forward " ++ show e
+                Right v -> v
+              l :: ExtLedgerState blk ValuesMK
+              l = st `withLedgerTables` fwd
+
+              st' :: ExtLedgerState blk DiffMK
+              st' = tickThenReapply elCfg blk l
+
+          -- this flushes blk from the mempool, since every tx in it is now on the chain
+          void $ MP.syncWithLedger mempool
+
+          pure (pushLedgerState (configSecurityParam @blk cfg) st' ldb', sinceLast')
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB
@@ -957,9 +1023,9 @@ onlyCheckNumBlocks = \case
           else return NoMoreBlocks
 
 consumeStream ::
-     StreamAPI IO blk a
-  -> Point blk -- ^ the starting point
-  -> st -- ^ initial state
+     StreamAPI IO blk a -- ^ The streaming API
+  -> Point blk          -- ^ the starting point
+  -> st                 -- ^ initial state
   -> (a -> st -> IO st) -- ^ transition function
   -> ExceptT (InitFailure blk) IO st
 consumeStream s point = streamAll s point InitFailureTooRecent

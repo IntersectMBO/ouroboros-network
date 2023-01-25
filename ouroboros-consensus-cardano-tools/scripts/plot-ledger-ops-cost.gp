@@ -51,7 +51,9 @@ plot bench_data using (column("slot")):(column("mut"))  with impulses title "mut
      bench_data using (column("slot")):(column("mut_headerTick"))         title "hdrTik",\
      bench_data using (column("slot")):(column("mut_headerApply"))        title "hdrApp",\
      bench_data using (column("slot")):(column("mut_blockTick"))          title "blkTik",\
-     bench_data using (column("slot")):(column("mut_blockApply"))         title "blkApp"
+     bench_data using (column("slot")):(column("mut_blockApply"))         title "blkApp",\
+     bench_data using (column("slot")):(column("mut_dbchFlush"))          title "dbFlush",\
+     bench_data using (column("slot")):(column("mut_readUTxO"))           title "dbRead"
 
 unset multiplot
 

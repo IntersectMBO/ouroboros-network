@@ -13,6 +13,7 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
+import           Ouroboros.Consensus.Ledger.SupportsMempool (HasTxs)
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
@@ -55,6 +56,7 @@ analyse ::
      , Show (Header blk)
      , HasAnalysis blk
      , HasProtocolInfo blk
+     , HasTxs blk
      )
   => DBAnalyserConfig
   -> Args blk

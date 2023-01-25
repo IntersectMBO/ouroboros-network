@@ -48,6 +48,8 @@ data SlotDataPoint =
       , mut_headerApply :: !Int64
       , mut_blockTick   :: !Int64
       , mut_blockApply  :: !Int64
+      , mut_readUtxO    :: !Int64
+      , mut_dbchFlush   :: !Int64
       }
 
 -- | Return the headers that correspond to the fields of 'SlotDataPoint'.
@@ -77,4 +79,6 @@ showHeadersAndData =
     , ("mut_headerApply", decimal . mut_headerApply)
     , ("mut_blockTick"  , decimal . mut_blockTick)
     , ("mut_blockApply" , decimal . mut_blockApply)
+    , ("mut_readUTxO"   , decimal . mut_readUtxO)
+    , ("mut_dbchFlush"  , decimal . mut_dbchFlush)
     ]
