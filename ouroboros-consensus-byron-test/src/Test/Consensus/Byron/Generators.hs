@@ -41,6 +41,7 @@ import           Ouroboros.Network.SizeInBytes
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HeaderValidation (AnnTip (..))
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
@@ -268,7 +269,7 @@ instance Arbitrary CC.Del.Map where
 instance Arbitrary ByronTransition where
   arbitrary = ByronTransitionInfo . Map.fromList <$> arbitrary
 
-instance Arbitrary (LedgerState ByronBlock) where
+instance Arbitrary (LedgerState ByronBlock Canonical) where
   arbitrary = ByronLedgerState <$> arbitrary <*> arbitrary <*> arbitrary
 
 instance Arbitrary (TipInfoIsEBB ByronBlock) where

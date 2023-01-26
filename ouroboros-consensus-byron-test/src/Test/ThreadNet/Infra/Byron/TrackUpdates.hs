@@ -40,6 +40,7 @@ import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -94,7 +95,7 @@ mkUpdateLabels
   -> NodeJoinPlan
   -> NodeTopology
   -> Ref.Result
-  -> Byron.LedgerState ByronBlock
+  -> Byron.LedgerState ByronBlock Canonical
      -- ^ from 'nodeOutputFinalLedger'
   -> (ProtocolVersionUpdateLabel, SoftwareVersionUpdateLabel)
 mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result

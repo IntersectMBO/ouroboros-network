@@ -14,6 +14,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
     -- * Type family instances
   , LedgerState (..)
   , Ticked (..)
+  , Ticked1 (..)
   ) where
 
 import           Codec.Serialise
@@ -42,7 +43,7 @@ import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
   State
 -------------------------------------------------------------------------------}
 
-data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
+data instance LedgerState ByronSpecBlock mk = ByronSpecLedgerState {
       -- | Tip of the ledger (most recently applied block, if any)
       --
       -- The spec state stores the last applied /hash/, but not the /slot/.
@@ -53,7 +54,7 @@ data instance LedgerState ByronSpecBlock = ByronSpecLedgerState {
     }
   deriving stock (Show, Eq, Generic)
   deriving anyclass (Serialise)
-  deriving NoThunks via AllowThunk (LedgerState ByronSpecBlock)
+  deriving NoThunks via AllowThunk (LedgerState ByronSpecBlock mk)
 
 newtype ByronSpecLedgerError = ByronSpecLedgerError {
       unByronSpecLedgerError :: [Spec.PredicateFailure Spec.CHAIN]
@@ -65,7 +66,7 @@ type instance LedgerCfg (LedgerState ByronSpecBlock) = ByronSpecGenesis
 
 instance UpdateLedger ByronSpecBlock
 
-initByronSpecLedgerState :: ByronSpecGenesis -> LedgerState ByronSpecBlock
+initByronSpecLedgerState :: ByronSpecGenesis -> LedgerState ByronSpecBlock mk
 initByronSpecLedgerState cfg = ByronSpecLedgerState {
       byronSpecLedgerTip   = Nothing
     , byronSpecLedgerState = Rules.initStateCHAIN cfg
@@ -75,11 +76,11 @@ initByronSpecLedgerState cfg = ByronSpecLedgerState {
   GetTip
 -------------------------------------------------------------------------------}
 
-instance GetTip (LedgerState ByronSpecBlock) where
+instance GetTip (LedgerState ByronSpecBlock mk) where
   getTip (ByronSpecLedgerState tip state) = castPoint $
       getByronSpecTip tip state
 
-instance GetTip (Ticked (LedgerState ByronSpecBlock)) where
+instance GetTip (Ticked1 (LedgerState ByronSpecBlock) mk) where
   getTip (TickedByronSpecLedgerState tip state) = castPoint $
       getByronSpecTip tip state
 
@@ -93,12 +94,12 @@ getByronSpecTip (Just slot) state = BlockPoint
   Ticking
 -------------------------------------------------------------------------------}
 
-data instance Ticked (LedgerState ByronSpecBlock) = TickedByronSpecLedgerState {
+data instance Ticked1 (LedgerState ByronSpecBlock) mk = TickedByronSpecLedgerState {
       untickedByronSpecLedgerTip :: Maybe SlotNo
     , tickedByronSpecLedgerState :: Spec.State Spec.CHAIN
     }
   deriving stock (Show, Eq)
-  deriving NoThunks via AllowThunk (Ticked (LedgerState ByronSpecBlock))
+  deriving NoThunks via AllowThunk (Ticked1 (LedgerState ByronSpecBlock) mk)
 
 instance IsLedger (LedgerState ByronSpecBlock) where
   type LedgerErr (LedgerState ByronSpecBlock) = ByronSpecLedgerError
@@ -151,7 +152,7 @@ instance CommonProtocolParams ByronSpecBlock where
   maxHeaderSize = fromIntegral . Spec._maxHdrSz . getPParams
   maxTxSize     = fromIntegral . Spec._maxTxSz  . getPParams
 
-getPParams :: LedgerState ByronSpecBlock -> Spec.PParams
+getPParams :: LedgerState ByronSpecBlock mk -> Spec.PParams
 getPParams =
       Spec.protocolParameters
     . getChainStateUPIState

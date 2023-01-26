@@ -148,8 +148,8 @@ protocolInfoDualByron abstractGenesis@ByronSpecGenesis{..} params credss =
         configGenesisData  = Impl.configGenesisData translated
         protocolParameters = Impl.gdProtocolParameters configGenesisData
 
-    initAbstractState :: LedgerState ByronSpecBlock
-    initConcreteState :: LedgerState ByronBlock
+    initAbstractState :: LedgerState ByronSpecBlock Canonical
+    initConcreteState :: LedgerState ByronBlock Canonical
 
     initAbstractState = initByronSpecLedgerState abstractGenesis
     initConcreteState = initByronLedgerState     concreteGenesis (Just initUtxo)

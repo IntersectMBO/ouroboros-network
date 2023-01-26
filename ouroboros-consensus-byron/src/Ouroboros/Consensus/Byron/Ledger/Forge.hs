@@ -51,13 +51,13 @@ import           Ouroboros.Consensus.Byron.Protocol
 forgeByronBlock
   :: HasCallStack
   => TopLevelConfig ByronBlock
-  -> TxLimits.Overrides ByronBlock    -- ^ How to override max tx capacity
-                                      --   defined by ledger
-  -> BlockNo                          -- ^ Current block number
-  -> SlotNo                           -- ^ Current slot number
-  -> TickedLedgerState ByronBlock     -- ^ Current ledger
-  -> [Validated (GenTx ByronBlock)]   -- ^ Txs to consider adding in the block
-  -> PBftIsLeader PBftByronCrypto     -- ^ Leader proof ('IsLeader')
+  -> TxLimits.Overrides ByronBlock          -- ^ How to override max tx capacity
+                                            --   defined by ledger
+  -> BlockNo                                -- ^ Current block number
+  -> SlotNo                                 -- ^ Current slot number
+  -> TickedLedgerState ByronBlock Canonical -- ^ Current ledger
+  -> [Validated (GenTx ByronBlock)]         -- ^ Txs to consider adding in the block
+  -> PBftIsLeader PBftByronCrypto           -- ^ Leader proof ('IsLeader')
   -> ByronBlock
 forgeByronBlock cfg = forgeRegularBlock (configBlock cfg)
 
@@ -128,13 +128,13 @@ initBlockPayloads = BlockPayloads
 forgeRegularBlock
   :: HasCallStack
   => BlockConfig ByronBlock
-  -> TxLimits.Overrides ByronBlock     -- ^ How to override max tx capacity
-                                       --   defined by ledger
-  -> BlockNo                           -- ^ Current block number
-  -> SlotNo                            -- ^ Current slot number
-  -> TickedLedgerState ByronBlock      -- ^ Current ledger
-  -> [Validated (GenTx ByronBlock)]    -- ^ Txs to consider adding in the block
-  -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
+  -> TxLimits.Overrides ByronBlock          -- ^ How to override max tx capacity
+                                            --   defined by ledger
+  -> BlockNo                                -- ^ Current block number
+  -> SlotNo                                 -- ^ Current slot number
+  -> TickedLedgerState ByronBlock Canonical -- ^ Current ledger
+  -> [Validated (GenTx ByronBlock)]         -- ^ Txs to consider adding in the block
+  -> PBftIsLeader PBftByronCrypto           -- ^ Leader proof ('IsLeader')
   -> ByronBlock
 forgeRegularBlock cfg maxTxCapacityOverrides bno sno st txs isLeader =
     forge $

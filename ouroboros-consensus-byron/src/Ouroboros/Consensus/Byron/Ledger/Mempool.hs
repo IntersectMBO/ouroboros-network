@@ -249,8 +249,8 @@ applyByronGenTx :: CC.ValidationMode
                 -> LedgerConfig ByronBlock
                 -> SlotNo
                 -> GenTx ByronBlock
-                -> TickedLedgerState ByronBlock
-                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock)
+                -> TickedLedgerState ByronBlock Canonical
+                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock Canonical)
 applyByronGenTx validationMode cfg slot genTx st =
     (\state -> st {tickedByronLedgerState = state}) <$>
       CC.applyMempoolPayload

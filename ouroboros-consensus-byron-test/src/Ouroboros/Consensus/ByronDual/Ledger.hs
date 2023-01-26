@@ -208,11 +208,11 @@ bridgeTransactionIds = Spec.Test.transactionIds
 forgeDualByronBlock
   :: HasCallStack
   => TopLevelConfig DualByronBlock
-  -> BlockNo                              -- ^ Current block number
-  -> SlotNo                               -- ^ Current slot number
-  -> TickedLedgerState DualByronBlock     -- ^ Ledger
-  -> [Validated (GenTx DualByronBlock)]   -- ^ Txs to add in the block
-  -> PBftIsLeader PBftByronCrypto         -- ^ Leader proof ('IsLeader')
+  -> BlockNo                                    -- ^ Current block number
+  -> SlotNo                                     -- ^ Current slot number
+  -> TickedLedgerState DualByronBlock Canonical -- ^ Ledger
+  -> [Validated (GenTx DualByronBlock)]         -- ^ Txs to add in the block
+  -> PBftIsLeader PBftByronCrypto               -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
 forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     -- NOTE: We do not /elaborate/ the real Byron block from the spec one, but

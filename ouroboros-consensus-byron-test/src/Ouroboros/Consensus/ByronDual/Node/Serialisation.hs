@@ -68,9 +68,9 @@ instance DecodeDiskDep (NestedCtxt Header) DualByronBlock where
                 (NestedCtxt (CtxtDual ctxt)) =
       decodeDiskDep ccfg (NestedCtxt ctxt)
 
-instance EncodeDisk DualByronBlock (LedgerState DualByronBlock) where
+instance EncodeDisk DualByronBlock (LedgerState DualByronBlock Canonical) where
   encodeDisk _ = encodeDualLedgerState encodeByronLedgerState
-instance DecodeDisk DualByronBlock (LedgerState DualByronBlock) where
+instance DecodeDisk DualByronBlock (LedgerState DualByronBlock Canonical) where
   decodeDisk _ = decodeDualLedgerState decodeByronLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' 'DualByronBlock')@

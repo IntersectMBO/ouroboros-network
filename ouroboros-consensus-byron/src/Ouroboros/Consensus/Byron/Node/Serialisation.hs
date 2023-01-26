@@ -28,6 +28,7 @@ import           Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
@@ -52,9 +53,9 @@ instance EncodeDisk ByronBlock ByronBlock where
 instance DecodeDisk ByronBlock (Lazy.ByteString -> ByronBlock) where
   decodeDisk ccfg = decodeByronBlock (getByronEpochSlots ccfg)
 
-instance EncodeDisk ByronBlock (LedgerState ByronBlock) where
+instance EncodeDisk ByronBlock (LedgerState ByronBlock Canonical) where
   encodeDisk _ = encodeByronLedgerState
-instance DecodeDisk ByronBlock (LedgerState ByronBlock) where
+instance DecodeDisk ByronBlock (LedgerState ByronBlock Canonical) where
   decodeDisk _ = decodeByronLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' 'ByronBlock')@

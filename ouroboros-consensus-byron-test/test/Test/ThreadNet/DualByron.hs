@@ -268,7 +268,7 @@ instance TxGen DualByronBlock where
       -- Stops when the transaction generator cannot produce more txs
       go :: [GenTx DualByronBlock]     -- Accumulator
          -> Integer                    -- Number of txs to still produce
-         -> TickedLedgerState DualByronBlock
+         -> TickedLedgerState DualByronBlock Canonical
          -> Gen [GenTx DualByronBlock]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
@@ -289,7 +289,7 @@ instance TxGen DualByronBlock where
 -- for now. Extending the scope will require integration with the restart/rekey
 -- infrastructure of the Byron tests.
 genTx :: TopLevelConfig DualByronBlock
-      -> Ticked (LedgerState DualByronBlock)
+      -> Ticked1 (LedgerState DualByronBlock) Canonical
       -> Gen (GenTx DualByronBlock)
 genTx cfg st = do
     aux <- sigGen (Rules.ctxtUTXOW cfg') st'
