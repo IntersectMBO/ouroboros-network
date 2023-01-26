@@ -142,6 +142,8 @@ tests =
   , testProperty "cm & ig timeouts enforced"
                  prop_diffusion_timeouts_enforced
   , testProperty "unit #4177" unit_4177
+  , testProperty "never connect to self"
+                 prop_never_connects_to_self
 #endif
 #if !defined(mingw32_HOST_OS)
   , testGroup "coverage"
@@ -2691,6 +2693,61 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
 
        in getAllProperty
         $ verifyAllTimeouts True transitionSignal
+
+-- | This property checks that a node never connects to itself.
+--
+-- Connecting to itself means connecting to exactly the same address and port
+-- of a node's listening socket. This is something that in the real world
+-- wouldn't happen since the kernel would disallow it.
+--
+-- This check is important because our network simulation mock can not disallow
+-- such cases, so we try very hard that our diffusion generator will not make
+-- create a cenario where a node is connecting to itself.
+--
+prop_never_connects_to_self :: AbsBearerInfo
+                            -> DiffusionScript
+                            -> Property
+prop_never_connects_to_self absBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo absBearerInfo)
+                                  diffScript
+                                  iosimTracer
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Trace () DiffusionTestTrace]
+        events = fmap ( Trace.fromList ()
+                      . fmap (\(WithName _ (WithTime _ b)) -> b))
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin (never_connects_to_self <$> events)
+
+  where
+    never_connects_to_self :: Trace () DiffusionTestTrace -> Property
+    never_connects_to_self events =
+      let connectionManagerEvents = Trace.toList
+                                  . selectDiffusionConnectionManagerEvents
+                                  $ events
+
+       in counterexample (intercalate "\n" . map show $ connectionManagerEvents)
+        $ all (\ cmt -> case cmt of
+                          TrConnect mbLocalAddr remoteAddr -> mbLocalAddr /= Just remoteAddr
+                          _                                -> True
+              )
+              connectionManagerEvents
 
 -- Utils
 --
