@@ -17,6 +17,7 @@ import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
@@ -53,9 +54,9 @@ instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (Hea
 instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (Lazy.ByteString -> Header (ShelleyBlock proto era)) where
   decodeDisk _ = decodeShelleyHeader
 
-instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era)) where
+instance ShelleyCompatible proto era => EncodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era) Canonical) where
   encodeDisk _ = encodeShelleyLedgerState
-instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era)) where
+instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (LedgerState (ShelleyBlock proto era) Canonical) where
   decodeDisk _ = decodeShelleyLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@

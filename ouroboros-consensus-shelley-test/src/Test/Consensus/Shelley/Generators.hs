@@ -182,7 +182,7 @@ instance CanMock proto era=> Arbitrary (ShelleyTip proto era) where
 instance Arbitrary ShelleyTransition where
   arbitrary = ShelleyTransitionInfo <$> arbitrary
 
-instance CanMock proto era => Arbitrary (LedgerState (ShelleyBlock proto era)) where
+instance CanMock proto era => Arbitrary (LedgerState (ShelleyBlock proto era) Canonical) where
   arbitrary = ShelleyLedgerState
     <$> arbitrary
     <*> arbitrary

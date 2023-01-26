@@ -80,7 +80,7 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShe
 
       go :: [GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))]  -- ^ Accumulator
          -> Integer  -- ^ Number of txs to still produce
-         -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
+         -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) Canonical
          -> Gen [GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))]
       go acc 0 _  = return (reverse acc)
       go acc n st = do
@@ -96,7 +96,7 @@ genTx
   :: forall h. HashAlgorithm h
   => TopLevelConfig (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
   -> SlotNo
-  -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))
+  -> TickedLedgerState (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h)) Canonical
   -> Gen.GenEnv (MockShelley h)
   -> Gen (Maybe (GenTx (ShelleyBlock (TPraos (MockCrypto h)) (MockShelley h))))
 genTx _cfg slotNo TickedShelleyLedgerState { tickedShelleyLedgerState } genEnv =

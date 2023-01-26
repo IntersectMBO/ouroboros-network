@@ -106,7 +106,7 @@ data UpdateState c = UpdateState {
 protocolUpdates ::
        forall era proto. ShelleyBasedEra era
     => SL.ShelleyGenesis era
-    -> LedgerState (ShelleyBlock proto era)
+    -> LedgerState (ShelleyBlock proto era) Canonical
     -> [ProtocolUpdate era]
 protocolUpdates genesis st = [
       ProtocolUpdate {

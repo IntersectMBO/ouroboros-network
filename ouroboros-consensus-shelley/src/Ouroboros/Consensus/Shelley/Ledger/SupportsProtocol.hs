@@ -113,7 +113,7 @@ instance
     mapForecast (translateTickedLedgerView @(TPraos crypto) @(Praos crypto)) $
       ledgerViewForecastAt @(ShelleyBlock (TPraos crypto) era) cfg st'
     where
-      st' :: LedgerState (ShelleyBlock (TPraos crypto) era)
+      st' :: LedgerState (ShelleyBlock (TPraos crypto) era) Canonical
       st' =
         ShelleyLedgerState
           { shelleyLedgerTip = coerceTip <$> shelleyLedgerTip st,

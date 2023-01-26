@@ -73,7 +73,7 @@ import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
                      (ShelleyLedgerConfig (shelleyLedgerGlobals),
-                     Ticked (TickedShelleyLedgerState, tickedShelleyLedgerState),
+                     Ticked1 (TickedShelleyLedgerState, tickedShelleyLedgerState),
                      getPParams)
 
 data instance GenTx (ShelleyBlock proto era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(Tx era)
@@ -224,9 +224,9 @@ applyShelleyTx :: forall era proto.
   -> WhetherToIntervene
   -> SlotNo
   -> GenTx (ShelleyBlock proto era)
-  -> TickedLedgerState (ShelleyBlock proto era)
+  -> TickedLedgerState (ShelleyBlock proto era) Canonical
   -> Except (ApplyTxErr (ShelleyBlock proto era))
-       ( TickedLedgerState (ShelleyBlock proto era)
+       ( TickedLedgerState (ShelleyBlock proto era) Canonical
        , Validated (GenTx (ShelleyBlock proto era))
        )
 applyShelleyTx cfg wti slot (ShelleyTx _ tx) st = do
@@ -249,8 +249,8 @@ reapplyShelleyTx ::
   => LedgerConfig (ShelleyBlock proto era)
   -> SlotNo
   -> Validated (GenTx (ShelleyBlock proto era))
-  -> TickedLedgerState (ShelleyBlock proto era)
-  -> Except (ApplyTxErr (ShelleyBlock proto era)) (TickedLedgerState (ShelleyBlock proto era))
+  -> TickedLedgerState (ShelleyBlock proto era) Canonical
+  -> Except (ApplyTxErr (ShelleyBlock proto era)) (TickedLedgerState (ShelleyBlock proto era) Canonical)
 reapplyShelleyTx cfg slot vgtx st = do
     mempoolState' <-
         SL.reapplyTx
@@ -275,8 +275,8 @@ set lens inner outer =
 theLedgerLens ::
      Functor f
   => (SL.LedgerState era -> f (SL.LedgerState era))
-  -> TickedLedgerState (ShelleyBlock proto era)
-  -> f (TickedLedgerState (ShelleyBlock proto era))
+  -> TickedLedgerState (ShelleyBlock proto era) Canonical
+  -> f (TickedLedgerState (ShelleyBlock proto era) Canonical)
 theLedgerLens f x =
         (\y -> x{tickedShelleyLedgerState = y})
     <$> SL.overNewEpochState f (tickedShelleyLedgerState x)

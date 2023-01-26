@@ -41,6 +41,7 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
@@ -134,7 +135,7 @@ shelleyTransition ::
      forall era proto. ShelleyCompatible proto era
   => PartialLedgerConfig (ShelleyBlock proto era)
   -> Word16   -- ^ Next era's major protocol version
-  -> LedgerState (ShelleyBlock proto era)
+  -> LedgerState (ShelleyBlock proto era) Canonical
   -> Maybe EpochNo
 shelleyTransition ShelleyPartialLedgerConfig{..}
                   transitionMajorVersion
@@ -248,7 +249,7 @@ forecastAcrossShelley ::
   -> ShelleyLedgerConfig eraTo
   -> Bound  -- ^ Transition between the two eras
   -> SlotNo -- ^ Forecast for this slot
-  -> LedgerState (ShelleyBlock protoFrom eraFrom)
+  -> LedgerState (ShelleyBlock protoFrom eraFrom) Canonical
   -> Except OutsideForecastRange (Ticked (WrapLedgerView (ShelleyBlock protoTo eraTo)))
 forecastAcrossShelley cfgFrom cfgTo transition forecastFor ledgerStateFrom
     | forecastFor < maxFor
@@ -327,11 +328,11 @@ instance ( ShelleyBasedEra era
          , SL.TranslateEra era (ShelleyTip proto)
          , SL.TranslateEra era SL.NewEpochState
          , SL.TranslationError era SL.NewEpochState ~ Void
-         ) => SL.TranslateEra era (LedgerState :.: ShelleyBlock proto) where
-  translateEra ctxt (Comp (ShelleyLedgerState tip state _transition)) = do
+         ) => SL.TranslateEra era (Flip LedgerState Canonical :.: ShelleyBlock proto) where
+  translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
       state' <- SL.translateEra ctxt state
-      return $ Comp $ ShelleyLedgerState {
+      return $ Comp $ Flip $ ShelleyLedgerState {
           shelleyLedgerTip        = tip'
         , shelleyLedgerState      = state'
         , shelleyLedgerTransition = ShelleyTransitionInfo 0

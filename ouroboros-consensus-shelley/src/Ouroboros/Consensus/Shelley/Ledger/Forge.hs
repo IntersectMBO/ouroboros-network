@@ -48,12 +48,12 @@ forgeShelleyBlock ::
   => HotKey (EraCrypto era) m
   -> CanBeLeader proto
   -> TopLevelConfig (ShelleyBlock proto era)
-  -> TxLimits.Overrides (ShelleyBlock proto era)  -- ^ How to override max tx
-                                                  --   capacity defined by ledger
-  -> BlockNo                                      -- ^ Current block number
-  -> SlotNo                                       -- ^ Current slot number
-  -> TickedLedgerState (ShelleyBlock proto era)   -- ^ Current ledger
-  -> [Validated (GenTx (ShelleyBlock proto era))] -- ^ Txs to add in the block
+  -> TxLimits.Overrides (ShelleyBlock proto era)          -- ^ How to override max tx
+                                                          --   capacity defined by ledger
+  -> BlockNo                                              -- ^ Current block number
+  -> SlotNo                                               -- ^ Current slot number
+  -> TickedLedgerState (ShelleyBlock proto era) Canonical -- ^ Current ledger
+  -> [Validated (GenTx (ShelleyBlock proto era))]         -- ^ Txs to add in the block
   -> IsLeader proto
   -> m (ShelleyBlock proto era)
 forgeShelleyBlock

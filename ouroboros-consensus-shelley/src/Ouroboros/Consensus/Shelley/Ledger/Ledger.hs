@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , ShelleyTip (..)
   , ShelleyTransition (..)
   , Ticked (..)
+  , Ticked1 (..)
   , castShelleyTip
   , shelleyLedgerTipPoint
   , shelleyTipToPoint
@@ -74,7 +75,7 @@ import           Ouroboros.Consensus.HardFork.History.Util
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
-import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
                      encodeWithOrigin)
@@ -192,16 +193,16 @@ castShelleyTip (ShelleyTip sn bn hh) = ShelleyTip {
     , shelleyTipHash    = coerce hh
     }
 
-data instance LedgerState (ShelleyBlock proto era) = ShelleyLedgerState {
+data instance LedgerState (ShelleyBlock proto era) mk = ShelleyLedgerState {
       shelleyLedgerTip        :: !(WithOrigin (ShelleyTip proto era))
     , shelleyLedgerState      :: !(SL.NewEpochState era)
     , shelleyLedgerTransition :: !ShelleyTransition
     }
   deriving (Generic)
 
-deriving instance ShelleyBasedEra era => Show     (LedgerState (ShelleyBlock proto era))
-deriving instance ShelleyBasedEra era => Eq       (LedgerState (ShelleyBlock proto era))
-deriving instance ShelleyBasedEra era => NoThunks (LedgerState (ShelleyBlock proto era))
+deriving instance ShelleyBasedEra era => Show     (LedgerState (ShelleyBlock proto era) mk)
+deriving instance ShelleyBasedEra era => Eq       (LedgerState (ShelleyBlock proto era) mk)
+deriving instance ShelleyBasedEra era => NoThunks (LedgerState (ShelleyBlock proto era) mk)
 
 -- | Information required to determine the hard fork point from Shelley to the
 -- next ledger
@@ -227,7 +228,7 @@ newtype ShelleyTransition = ShelleyTransitionInfo {
   deriving stock   (Eq, Show, Generic)
   deriving newtype (NoThunks)
 
-shelleyLedgerTipPoint :: LedgerState (ShelleyBlock proto era) -> Point (ShelleyBlock proto era)
+shelleyLedgerTipPoint :: LedgerState (ShelleyBlock proto era) mk -> Point (ShelleyBlock proto era)
 shelleyLedgerTipPoint = shelleyTipToPoint . shelleyLedgerTip
 
 instance ShelleyCompatible proto era => UpdateLedger (ShelleyBlock proto era)
@@ -236,18 +237,18 @@ instance ShelleyCompatible proto era => UpdateLedger (ShelleyBlock proto era)
   GetTip
 -------------------------------------------------------------------------------}
 
-instance GetTip (LedgerState (ShelleyBlock proto era)) where
+instance GetTip (LedgerState (ShelleyBlock proto era) mk) where
   getTip = castPoint . shelleyLedgerTipPoint
 
-instance GetTip (Ticked (LedgerState (ShelleyBlock proto era))) where
-  getTip = castPoint . untickedShelleyLedgerTipPoint
+instance GetTip (Ticked1 (LedgerState (ShelleyBlock proto era)) mk) where
+  getTip = castPoint . shelleyTipToPoint . untickedShelleyLedgerTip
 
 {-------------------------------------------------------------------------------
   Ticking
 -------------------------------------------------------------------------------}
 
 -- | Ticking only affects the state itself
-data instance Ticked (LedgerState (ShelleyBlock proto era)) = TickedShelleyLedgerState {
+data instance Ticked1 (LedgerState (ShelleyBlock proto era)) mk = TickedShelleyLedgerState {
       untickedShelleyLedgerTip      :: !(WithOrigin (ShelleyTip proto era))
       -- | We are counting blocks within an epoch, this means:
       --
@@ -260,12 +261,7 @@ data instance Ticked (LedgerState (ShelleyBlock proto era)) = TickedShelleyLedge
   deriving (Generic)
 
 deriving instance ShelleyBasedEra era
-               => NoThunks (Ticked (LedgerState (ShelleyBlock proto era)))
-
-untickedShelleyLedgerTipPoint ::
-     Ticked (LedgerState (ShelleyBlock proto era))
-  -> Point (ShelleyBlock proto era)
-untickedShelleyLedgerTipPoint = shelleyTipToPoint . untickedShelleyLedgerTip
+               => NoThunks (Ticked1 (LedgerState (ShelleyBlock proto era)) mk)
 
 instance ShelleyBasedEra era => IsLedger (LedgerState (ShelleyBlock proto era)) where
   type LedgerErr (LedgerState (ShelleyBlock proto era)) = ShelleyLedgerError era
@@ -392,10 +388,10 @@ applyHelper ::
      )
   -> LedgerConfig (ShelleyBlock proto era)
   -> ShelleyBlock proto era
-  -> Ticked (LedgerState (ShelleyBlock proto era))
+  -> Ticked1 (LedgerState (ShelleyBlock proto era)) mk
   -> m (LedgerResult
           (LedgerState (ShelleyBlock proto era))
-          (LedgerState (ShelleyBlock proto era)))
+          (LedgerState (ShelleyBlock proto era) mk))
 applyHelper f cfg blk TickedShelleyLedgerState{
                           tickedShelleyLedgerTransition
                         , tickedShelleyLedgerState
@@ -549,7 +545,7 @@ decodeShelleyTransition = do
 
 encodeShelleyLedgerState ::
      ShelleyCompatible proto era
-  => LedgerState (ShelleyBlock proto era)
+  => LedgerState (ShelleyBlock proto era) mk
   -> Encoding
 encodeShelleyLedgerState
     ShelleyLedgerState { shelleyLedgerTip
@@ -564,13 +560,13 @@ encodeShelleyLedgerState
       ]
 
 decodeShelleyLedgerState ::
-     forall era proto s. ShelleyCompatible proto era
-  => Decoder s (LedgerState (ShelleyBlock proto era))
+     forall era proto s mk. ShelleyCompatible proto era
+  => Decoder s (LedgerState (ShelleyBlock proto era) mk)
 decodeShelleyLedgerState = decodeVersion [
       (serialisationFormatVersion2, Decode decodeShelleyLedgerState2)
     ]
   where
-    decodeShelleyLedgerState2 :: Decoder s' (LedgerState (ShelleyBlock proto era))
+    decodeShelleyLedgerState2 :: Decoder s' (LedgerState (ShelleyBlock proto era) mk)
     decodeShelleyLedgerState2 = do
       enforceSize "LedgerState ShelleyBlock" 3
       shelleyLedgerTip        <- decodeWithOrigin decodeShelleyTip
