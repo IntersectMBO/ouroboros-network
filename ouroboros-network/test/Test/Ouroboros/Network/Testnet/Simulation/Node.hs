@@ -222,7 +222,7 @@ genDomainMap raps selfIP = do
   m <- mapM (\d -> do
     size <- chooseInt (1, 5)
     ips' <- nub <$> vectorOf size (genIP ips)
-    return (d, delete selfIP ips')) domains
+    return (d, filter (/= selfIP) ips')) domains
 
   return (Map.fromList m)
 
@@ -307,12 +307,8 @@ genNodeArgs :: [RelayAccessPoint]
            -> (NtNAddr, RelayAccessPoint)
            -> Gen NodeArgs
 genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
-  -- Slot length needs to be greater than 0 else we get a livelock on
-  -- the IOSim.
-  --
-  -- Quota values matches mainnet, so a slot length of 1s and 1 / 20
-  -- chance that someone gets to make a block
-  let rapsWithoutSelf = delete rap raps
+
+  let rapsWithoutSelf = filter (/= rap) raps
       (RelayAccessAddress rapIP _) = rap
   seed <- arbitrary
 
@@ -423,7 +419,7 @@ genNonHotDiffusionScript = do
     genLocalRootPeers l r = do
       nrGroups <- chooseInt (1, 3)
       -- Remove self from local root peers
-      let newL = l \\ [r]
+      let newL = filter (/= r) l
           size = length newL
           sizePerGroup = (size `div` nrGroups) + 1
 
@@ -489,7 +485,7 @@ genHotDiffusionScript = do
                         -> Gen [(Int, Map RelayAccessPoint PeerAdvertise)]
       genLocalRootPeers l r = do
         -- Remove self from local root peers
-        let newL = delete r l
+        let newL = filter (/= r) l
             size = length newL
 
         peerAdvertise <- vectorOf size arbitrary
