@@ -267,7 +267,7 @@ type TestConstraints blk =
   , LedgerSupportsProtocol            blk
   , InspectLedger                     blk
   , Eq (ChainDepState  (BlockProtocol blk))
-  , Eq (LedgerState                   blk)
+  , Eq (LedgerState                   blk Canonical)
   , Eq                                blk
   , Show                              blk
   , HasHeader                         blk
@@ -704,7 +704,7 @@ deriving instance (TestConstraints blk, Show1 r) => Show (Model blk m r)
 
 -- | Initial model
 initModel :: TopLevelConfig blk
-          -> ExtLedgerState blk
+          -> ExtLedgerState blk Canonical
           -> MaxClockSkew
           -> Model blk m r
 initModel cfg initLedger (MaxClockSkew maxClockSkew) = Model
@@ -1133,7 +1133,7 @@ sm :: TestConstraints blk
    => ChainDBEnv IO blk
    -> BlockGen                  blk IO
    -> TopLevelConfig            blk
-   -> ExtLedgerState            blk
+   -> ExtLedgerState            blk Canonical
    -> MaxClockSkew
    -> StateMachine (Model       blk IO)
                    (At Cmd      blk IO)
@@ -1188,7 +1188,7 @@ deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash blk)
                   , ToExpr (ChainDepState (BlockProtocol blk))
                   , ToExpr (TipInfo blk)
-                  , ToExpr (LedgerState blk)
+                  , ToExpr (LedgerState blk Canonical)
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (DBModel blk)
@@ -1196,7 +1196,7 @@ deriving instance ( ToExpr blk
                   , ToExpr (HeaderHash  blk)
                   , ToExpr (ChainDepState (BlockProtocol blk))
                   , ToExpr (TipInfo blk)
-                  , ToExpr (LedgerState blk)
+                  , ToExpr (LedgerState blk Canonical)
                   , ToExpr (ExtValidationError blk)
                   )
                  => ToExpr (Model blk IO Concrete)
@@ -1214,7 +1214,7 @@ deriving instance ToExpr TestBodyHash
 deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
 deriving instance ToExpr (TipInfoIsEBB Blk)
-deriving instance ToExpr (LedgerState Blk)
+deriving instance ToExpr (LedgerState Blk Canonical)
 deriving instance ToExpr (HeaderError Blk)
 deriving instance ToExpr TestBlockOtherHeaderEnvelopeError
 deriving instance ToExpr (HeaderEnvelopeError Blk)
@@ -1624,7 +1624,7 @@ traceEventName = \case
 mkArgs :: IOLike m
        => TopLevelConfig Blk
        -> ImmutableDB.ChunkInfo
-       -> ExtLedgerState Blk
+       -> ExtLedgerState Blk Canonical
        -> ResourceRegistry m
        -> NodeDBs (StrictTVar m MockFS)
        -> Tracer m (TraceEvent Blk)

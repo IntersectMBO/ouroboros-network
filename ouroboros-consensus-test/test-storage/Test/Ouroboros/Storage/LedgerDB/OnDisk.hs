@@ -242,7 +242,7 @@ genBlock pt =
         dummyBlk :: TestBlockWith ()
         dummyBlk = mkBlockFrom (castPoint pt) ()
 
-genBlockFromLedgerState :: ExtLedgerState TestBlock -> Gen TestBlock
+genBlockFromLedgerState :: ExtLedgerState TestBlock Canonical -> Gen TestBlock
 genBlockFromLedgerState = pure . genBlock . lastAppliedPoint . ledgerState
 
 extLedgerDbConfig :: SecurityParam -> LedgerDbCfg (ExtLedgerState TestBlock)
@@ -314,9 +314,9 @@ data Cmd ss =
 data Success ss =
     Unit ()
   | MaybeErr (Either (ExtValidationError TestBlock) ())
-  | Ledger (ExtLedgerState TestBlock)
+  | Ledger (ExtLedgerState TestBlock Canonical)
   | Snapped (Maybe (ss, RealPoint TestBlock))
-  | Restored (MockInitLog ss, ExtLedgerState TestBlock)
+  | Restored (MockInitLog ss, ExtLedgerState TestBlock Canonical)
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 -- | Currently we don't have any error responses
@@ -328,7 +328,7 @@ newtype Resp ss = Resp (Success ss)
 -------------------------------------------------------------------------------}
 
 -- | The mock ledger records the blocks and ledger values (new to old)
-type MockLedger = [(TestBlock, ExtLedgerState TestBlock)]
+type MockLedger = [(TestBlock, ExtLedgerState TestBlock Canonical)]
 
 -- | We use the slot number of the ledger state as the snapshot number
 --
@@ -377,7 +377,7 @@ data SnapState = SnapOk | SnapCorrupted
 mockInit :: SecurityParam -> Mock
 mockInit = Mock [] Map.empty GenesisPoint
 
-mockCurrent :: Mock -> ExtLedgerState TestBlock
+mockCurrent :: Mock -> ExtLedgerState TestBlock Canonical
 mockCurrent Mock{..} =
     case mockLedger of
       []       -> testInitExtLedgerWithState initialTestLedgerState
@@ -543,7 +543,7 @@ runMock cmd initMock =
             k = fromIntegral $ maxRollbacks $ mockSecParam mock
 
             -- The snapshots from new to old until 'mockRestore' (inclusive)
-            untilRestore :: [(TestBlock, ExtLedgerState TestBlock)]
+            untilRestore :: [(TestBlock, ExtLedgerState TestBlock Canonical)]
             untilRestore =
               takeWhile
                 ((/= (mockRestore mock)) . blockPoint . fst)
@@ -578,7 +578,7 @@ runMock cmd initMock =
         State.modify $ drop (fromIntegral n)
         mapM_ push bs
 
-    cur :: MockLedger -> ExtLedgerState TestBlock
+    cur :: MockLedger -> ExtLedgerState TestBlock Canonical
     cur []         = testInitExtLedgerWithState initialTestLedgerState
     cur ((_, l):_) = l
 
