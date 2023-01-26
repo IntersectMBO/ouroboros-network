@@ -162,24 +162,24 @@ instance BasicEnvelopeValidation BlockB where
 
 instance ValidateEnvelope BlockB where
 
-data instance LedgerState BlockB = LgrB {
+data instance LedgerState BlockB mk = LgrB {
       lgrB_tip :: Point BlockB
     }
   deriving (Show, Eq, Generic, Serialise)
-  deriving NoThunks via OnlyCheckWhnfNamed "LgrB" (LedgerState BlockB)
+  deriving NoThunks via OnlyCheckWhnfNamed "LgrB" (LedgerState BlockB mk)
 
 type instance LedgerCfg (LedgerState BlockB) = ()
 
 -- | Ticking has no state on the B ledger state
-newtype instance Ticked (LedgerState BlockB) = TickedLedgerStateB {
-      getTickedLedgerStateB :: LedgerState BlockB
+newtype instance Ticked1 (LedgerState BlockB) mk = TickedLedgerStateB {
+      getTickedLedgerStateB :: LedgerState BlockB mk
     }
-  deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrB" (Ticked (LedgerState BlockB))
+  deriving NoThunks via OnlyCheckWhnfNamed "TickedLgrB" (Ticked1 (LedgerState BlockB) mk)
 
-instance GetTip (LedgerState BlockB) where
+instance GetTip (LedgerState BlockB Canonical) where
   getTip = castPoint . lgrB_tip
 
-instance GetTip (Ticked (LedgerState BlockB)) where
+instance GetTip (Ticked1 (LedgerState BlockB) Canonical) where
   getTip = castPoint . getTip . getTickedLedgerStateB
 
 instance IsLedger (LedgerState BlockB) where
@@ -219,7 +219,7 @@ forgeBlockB ::
      TopLevelConfig BlockB
   -> BlockNo
   -> SlotNo
-  -> TickedLedgerState BlockB
+  -> TickedLedgerState BlockB Canonical
   -> [GenTx BlockB]
   -> IsLeader (BlockProtocol BlockB)
   -> BlockB
@@ -382,8 +382,8 @@ instance SerialiseNodeToNodeConstraints   BlockB where
 
 deriving instance Serialise (AnnTip BlockB)
 
-instance EncodeDisk BlockB (LedgerState BlockB)
-instance DecodeDisk BlockB (LedgerState BlockB)
+instance EncodeDisk BlockB (LedgerState BlockB Canonical)
+instance DecodeDisk BlockB (LedgerState BlockB Canonical)
 
 instance EncodeDisk BlockB BlockB
 instance DecodeDisk BlockB (Lazy.ByteString -> BlockB) where

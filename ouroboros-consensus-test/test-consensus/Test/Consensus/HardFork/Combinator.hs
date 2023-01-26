@@ -76,6 +76,8 @@ import           Test.ThreadNet.Util.Seed
 import           Test.Util.HardFork.Future
 import           Test.Util.Slots (NumSlots (..))
 
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Test.Consensus.HardFork.Combinator.A
 import           Test.Consensus.HardFork.Combinator.B
 
@@ -230,8 +232,8 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
             topLevelConfig nid
         , pInfoInitLedger = ExtLedgerState {
               ledgerState = HardForkLedgerState $
-                              initHardForkState
-                                initLedgerState
+                              initHardForkState $
+                              Flip initLedgerState
             , headerState = genesisHeaderState $
                               initHardForkState
                                 (WrapChainDepState initChainDepState)
@@ -244,7 +246,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
             ]
         }
 
-    initLedgerState :: LedgerState BlockA
+    initLedgerState :: LedgerState BlockA Canonical
     initLedgerState = LgrA {
           lgrA_tip        = GenesisPoint
         , lgrA_transition = Nothing
@@ -411,10 +413,10 @@ instance SerialiseHFC '[BlockA, BlockB]
 ledgerState_AtoB ::
      RequiringBoth
        WrapLedgerConfig
-       (Translate LedgerState)
+       (TranslateLedgerState)
        BlockA
        BlockB
-ledgerState_AtoB = InPairs.ignoringBoth $ Translate $ \_ LgrA{..} -> LgrB {
+ledgerState_AtoB = InPairs.ignoringBoth $ TranslateLedgerState $ \_ LgrA{..} -> LgrB {
       lgrB_tip = castPoint lgrA_tip
     }
 
