@@ -337,7 +337,7 @@ forkBlockForging IS{..} blockForging =
         trace $ TraceNodeIsLeader currentSlot
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let tickedLedgerState :: Ticked (LedgerState blk)
+        let tickedLedgerState :: Ticked1 (LedgerState blk) Canonical
             tickedLedgerState =
               applyChainTick
                 (configLedger cfg)
@@ -586,7 +586,7 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m remotePeer localPeer blk
-  -> (LedgerState blk -> Bool)
+  -> (LedgerState blk Canonical -> Bool)
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
 getPeersFromCurrentLedger kernel p = do
     immutableLedger <-
@@ -612,7 +612,7 @@ getPeersFromCurrentLedgerAfterSlot ::
 getPeersFromCurrentLedgerAfterSlot kernel slotNo =
     getPeersFromCurrentLedger kernel afterSlotNo
   where
-    afterSlotNo :: LedgerState blk -> Bool
+    afterSlotNo :: LedgerState blk Canonical -> Bool
     afterSlotNo st =
       case ledgerTipSlot st of
         Origin        -> False
