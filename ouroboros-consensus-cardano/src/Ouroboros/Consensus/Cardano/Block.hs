@@ -71,7 +71,7 @@ import           Data.SOP.Strict
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.HeaderValidation (OtherHeaderEnvelopeError,
                      TipInfo)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerError)
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical, LedgerError)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
@@ -80,6 +80,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
 
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 
@@ -938,55 +939,55 @@ pattern CardanoLedgerConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfg
 -- 'LedgerState'. We don't give access to those internal details through the
 -- pattern synonyms. This is also the reason the pattern synonyms are not
 -- bidirectional.
-type CardanoLedgerState c = LedgerState (CardanoBlock c)
+type CardanoLedgerState c = LedgerState (CardanoBlock c) Canonical
 
 pattern LedgerStateByron
-  :: LedgerState ByronBlock
+  :: LedgerState ByronBlock Canonical
   -> CardanoLedgerState c
 pattern LedgerStateByron st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleByron (State.Current { currentState = st })))
+        (TeleByron (State.Current { currentState = Flip st })))
 
 pattern LedgerStateShelley
-  :: LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))
+  :: LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c)) Canonical
   -> CardanoLedgerState c
 pattern LedgerStateShelley st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleShelley _ (State.Current { currentState = st })))
+        (TeleShelley _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateAllegra
-  :: LedgerState (ShelleyBlock (TPraos c) (AllegraEra c))
+  :: LedgerState (ShelleyBlock (TPraos c) (AllegraEra c)) Canonical
   -> CardanoLedgerState c
 pattern LedgerStateAllegra st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleAllegra _ _  (State.Current { currentState = st })))
+        (TeleAllegra _ _  (State.Current { currentState = Flip st })))
 
 pattern LedgerStateMary
-  :: LedgerState (ShelleyBlock (TPraos c) (MaryEra c))
+  :: LedgerState (ShelleyBlock (TPraos c) (MaryEra c)) Canonical
   -> CardanoLedgerState c
 pattern LedgerStateMary st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleMary _ _ _ (State.Current { currentState = st })))
+        (TeleMary _ _ _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateAlonzo
-  :: LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c))
+  :: LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) Canonical
   -> CardanoLedgerState c
 pattern LedgerStateAlonzo st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleAlonzo _ _ _ _ (State.Current { currentState = st })))
+        (TeleAlonzo _ _ _ _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateBabbage
-  :: LedgerState (ShelleyBlock (Praos c) (BabbageEra c))
+  :: LedgerState (ShelleyBlock (Praos c) (BabbageEra c)) Canonical
   -> CardanoLedgerState c
 pattern LedgerStateBabbage st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleBabbage _ _ _ _ _ (State.Current { currentState = st })))
+        (TeleBabbage _ _ _ _ _ (State.Current { currentState = Flip st })))
 
 {-# COMPLETE LedgerStateByron
            , LedgerStateShelley

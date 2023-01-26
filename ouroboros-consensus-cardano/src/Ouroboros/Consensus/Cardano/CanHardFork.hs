@@ -54,6 +54,7 @@ import           Ouroboros.Consensus.Util.RedundantConstraints
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
@@ -141,7 +142,7 @@ import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 
 byronTransition :: PartialLedgerConfig ByronBlock
                 -> Word16   -- ^ Shelley major protocol version
-                -> LedgerState ByronBlock
+                -> LedgerState ByronBlock Canonical
                 -> Maybe EpochNo
 byronTransition ByronPartialLedgerConfig{..} shelleyMajorVersion state =
       takeAny
@@ -381,12 +382,12 @@ translateLedgerStateByronToShelleyWrapper ::
      )
   => RequiringBoth
        WrapLedgerConfig
-       (Translate LedgerState)
+       TranslateLedgerState
        ByronBlock
        (ShelleyBlock (TPraos c) (ShelleyEra c))
 translateLedgerStateByronToShelleyWrapper =
     RequireBoth $ \_ (WrapLedgerConfig cfgShelley) ->
-    Translate   $ \epochNo ledgerByron ->
+    TranslateLedgerState $ \epochNo ledgerByron ->
       ShelleyLedgerState {
         shelleyLedgerTip =
           translatePointByronToShelley
@@ -466,7 +467,7 @@ translateLedgerViewByronToShelleyWrapper =
          ShelleyLedgerConfig (ShelleyEra c)
       -> Bound
       -> SlotNo
-      -> LedgerState ByronBlock
+      -> LedgerState ByronBlock Canonical
       -> Except
            OutsideForecastRange
            (Ticked (WrapLedgerView (ShelleyBlock (TPraos c) (ShelleyEra c))))
@@ -506,13 +507,13 @@ translateLedgerStateShelleyToAllegraWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => RequiringBoth
        WrapLedgerConfig
-       (Translate LedgerState)
+       TranslateLedgerState
        (ShelleyBlock (TPraos c) (ShelleyEra c))
        (ShelleyBlock (TPraos c) (AllegraEra c))
 translateLedgerStateShelleyToAllegraWrapper =
     ignoringBoth $
-      Translate $ \_epochNo ->
-        unComp . SL.translateEra' () . Comp
+      TranslateLedgerState $ \_epochNo ->
+        unFlip . unComp . SL.translateEra' () . Comp . Flip
 
 translateTxShelleyToAllegraWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
@@ -538,13 +539,13 @@ translateLedgerStateAllegraToMaryWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => RequiringBoth
        WrapLedgerConfig
-       (Translate LedgerState)
+       TranslateLedgerState
        (ShelleyBlock (TPraos c) (AllegraEra c))
        (ShelleyBlock (TPraos c) (MaryEra c))
 translateLedgerStateAllegraToMaryWrapper =
     ignoringBoth $
-      Translate $ \_epochNo ->
-        unComp . SL.translateEra' () . Comp
+      TranslateLedgerState $ \_epochNo ->
+        unFlip . unComp . SL.translateEra' () . Comp . Flip
 
 {-------------------------------------------------------------------------------
   Translation from Allegra to Mary
@@ -574,13 +575,13 @@ translateLedgerStateMaryToAlonzoWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => RequiringBoth
        WrapLedgerConfig
-       (Translate LedgerState)
+       TranslateLedgerState
        (ShelleyBlock (TPraos c) (MaryEra c))
        (ShelleyBlock (TPraos c) (AlonzoEra c))
 translateLedgerStateMaryToAlonzoWrapper =
     RequireBoth $ \_cfgMary cfgAlonzo ->
-      Translate $ \_epochNo ->
-        unComp . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo) . Comp
+      TranslateLedgerState $ \_epochNo ->
+        unFlip . unComp . SL.translateEra' (getAlonzoTranslationContext cfgAlonzo) . Comp . Flip
 
 getAlonzoTranslationContext ::
      WrapLedgerConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
@@ -615,17 +616,17 @@ translateLedgerStateAlonzoToBabbageWrapper ::
      (Praos.PraosCrypto c, TPraos.PraosCrypto c)
   => RequiringBoth
        WrapLedgerConfig
-       (Translate LedgerState)
+       TranslateLedgerState
        (ShelleyBlock (TPraos c) (AlonzoEra c))
        (ShelleyBlock (Praos c) (BabbageEra c))
 translateLedgerStateAlonzoToBabbageWrapper =
     RequireBoth $ \_cfgAlonzo cfgBabbage ->
-      Translate $ \_epochNo ->
-        unComp . SL.translateEra' (getBabbageTranslationContext cfgBabbage) . Comp . transPraosLS
+      TranslateLedgerState $ \_epochNo ->
+        unFlip . unComp . SL.translateEra' (getBabbageTranslationContext cfgBabbage) . Comp . Flip . transPraosLS
   where
     transPraosLS ::
-      LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) ->
-      LedgerState (ShelleyBlock (Praos c)  (AlonzoEra c))
+      LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) mk ->
+      LedgerState (ShelleyBlock (Praos c)  (AlonzoEra c)) mk
     transPraosLS (ShelleyLedgerState wo nes st) =
       ShelleyLedgerState
         { shelleyLedgerTip        = fmap castShelleyTip wo

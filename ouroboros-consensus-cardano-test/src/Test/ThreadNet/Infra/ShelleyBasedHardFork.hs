@@ -40,6 +40,7 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import qualified Ouroboros.Consensus.HardFork.Combinator.State.Types as HFC
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import qualified Ouroboros.Consensus.HardFork.History as History
@@ -159,17 +160,19 @@ instance ShelleyBasedHardForkConstraints proto1 era1 proto2 era2
       translateLedgerState ::
            InPairs.RequiringBoth
              WrapLedgerConfig
-             (HFC.Translate LedgerState)
+             HFC.TranslateLedgerState
              (ShelleyBlock proto1 era1)
              (ShelleyBlock proto2 era2)
       translateLedgerState =
           InPairs.RequireBoth
-        $ \_cfg1 cfg2 -> HFC.Translate
+        $ \_cfg1 cfg2 -> HFC.TranslateLedgerState
         $ \_epochNo ->
-              unComp
+              unFlip
+            . unComp
             . SL.translateEra'
                 (shelleyLedgerTranslationContext (unwrapLedgerConfig cfg2))
             . Comp
+            . Flip
 
       translateLedgerView ::
            InPairs.RequiringBoth
