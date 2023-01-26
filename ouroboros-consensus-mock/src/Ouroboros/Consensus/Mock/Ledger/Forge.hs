@@ -43,10 +43,10 @@ forgeSimple :: forall c ext.
                )
             => ForgeExt c ext
             -> TopLevelConfig (SimpleBlock c ext)
-            -> BlockNo                                   -- ^ Current block number
-            -> SlotNo                                    -- ^ Current slot number
-            -> TickedLedgerState (SimpleBlock c ext)     -- ^ Current ledger
-            -> [GenTx (SimpleBlock c ext)]               -- ^ Txs to include
+            -> BlockNo                                         -- ^ Current block number
+            -> SlotNo                                          -- ^ Current slot number
+            -> TickedLedgerState (SimpleBlock c ext) Canonical -- ^ Current ledger
+            -> [GenTx (SimpleBlock c ext)]                     -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
             -> SimpleBlock c ext
 forgeSimple ForgeExt { forgeExt } cfg curBlock curSlot tickedLedger txs proof =

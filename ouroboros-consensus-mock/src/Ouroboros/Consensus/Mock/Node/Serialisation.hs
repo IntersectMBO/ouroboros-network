@@ -55,8 +55,8 @@ instance Serialise ext => EncodeDisk (MockBlock ext) (Header (MockBlock ext))
 instance Serialise ext => DecodeDisk (MockBlock ext) (Lazy.ByteString -> Header (MockBlock ext)) where
   decodeDisk _ = const <$> decode
 
-instance EncodeDisk (MockBlock ext) (LedgerState (MockBlock ext))
-instance DecodeDisk (MockBlock ext) (LedgerState (MockBlock ext))
+instance EncodeDisk (MockBlock ext) (LedgerState (MockBlock ext) Canonical)
+instance DecodeDisk (MockBlock ext) (LedgerState (MockBlock ext) Canonical)
 
 instance EncodeDisk (MockBlock ext) (AnnTip (MockBlock ext)) where
   encodeDisk _ = defaultEncodeAnnTip encode

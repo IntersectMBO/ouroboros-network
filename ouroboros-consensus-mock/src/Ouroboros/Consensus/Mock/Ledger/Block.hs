@@ -46,6 +46,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
     -- * 'UpdateLedger'
   , LedgerState (..)
   , Ticked (..)
+  , Ticked1 (..)
   , genesisSimpleLedgerState
   , updateSimpleLedgerState
     -- * 'ApplyTx' (mempool support)
@@ -95,6 +96,7 @@ import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
+import           Ouroboros.Consensus.Ticked (Ticked1)
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
                      (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
@@ -341,10 +343,10 @@ deriving instance NoThunks (MockLedgerConfig c ext)
 
 type instance LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
 
-instance GetTip (LedgerState (SimpleBlock c ext)) where
+instance GetTip (LedgerState (SimpleBlock c ext) Canonical) where
   getTip (SimpleLedgerState st) = castPoint $ mockTip st
 
-instance GetTip (Ticked (LedgerState (SimpleBlock c ext))) where
+instance GetTip (Ticked1 (LedgerState (SimpleBlock c ext)) Canonical) where
   getTip = castPoint . getTip . getTickedSimpleLedgerState
 
 instance MockProtocolSpecific c ext
@@ -365,15 +367,15 @@ instance MockProtocolSpecific c ext
       mustSucceed (Left  err) = error ("reapplyBlockLedgerResult: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
 
-newtype instance LedgerState (SimpleBlock c ext) = SimpleLedgerState {
+newtype instance LedgerState (SimpleBlock c ext) mk = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)
     }
   deriving stock   (Generic, Show, Eq)
   deriving newtype (Serialise, NoThunks)
 
 -- Ticking has no effect on the simple ledger state
-newtype instance Ticked (LedgerState (SimpleBlock c ext)) = TickedSimpleLedgerState {
-      getTickedSimpleLedgerState :: LedgerState (SimpleBlock c ext)
+newtype instance Ticked1 (LedgerState (SimpleBlock c ext)) mk = TickedSimpleLedgerState {
+      getTickedSimpleLedgerState :: LedgerState (SimpleBlock c ext) mk
     }
   deriving stock   (Generic, Show, Eq)
   deriving newtype (NoThunks)
@@ -382,22 +384,22 @@ instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
 updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         => SimpleBlock c ext
-                        -> TickedLedgerState (SimpleBlock c ext)
+                        -> TickedLedgerState (SimpleBlock c ext) Canonical
                         -> Except (MockError (SimpleBlock c ext))
-                                  (LedgerState (SimpleBlock c ext))
+                                  (LedgerState (SimpleBlock c ext) Canonical)
 updateSimpleLedgerState b (TickedSimpleLedgerState (SimpleLedgerState st)) =
     SimpleLedgerState <$> updateMockState b st
 
 updateSimpleUTxO :: Mock.HasMockTxs a
                  => SlotNo
                  -> a
-                 -> TickedLedgerState (SimpleBlock c ext)
+                 -> TickedLedgerState (SimpleBlock c ext) Canonical
                  -> Except (MockError (SimpleBlock c ext))
-                           (TickedLedgerState (SimpleBlock c ext))
+                           (TickedLedgerState (SimpleBlock c ext) Canonical)
 updateSimpleUTxO x slot (TickedSimpleLedgerState (SimpleLedgerState st)) =
     TickedSimpleLedgerState . SimpleLedgerState <$> updateMockUTxO x slot st
 
-genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext)
+genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext) Canonical
 genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
 
 -- | Dummy values
