@@ -35,8 +35,6 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
-import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as HF
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -47,10 +45,9 @@ import           Ouroboros.Consensus.Util.Time
 
 data CheckInFuture m blk = CheckInFuture {
        -- | POSTCONDITION:
-       --
-       -- > checkInFuture vf >>= \(af, fut) ->
-       -- >   validatedFragment vf == af <=> null fut
-       checkInFuture :: ValidatedFragment (Header blk) (LedgerState blk)
+       -- > checkInFuture _ af >>= \(af', fut) ->
+       -- >   af == af' <=> null fut
+       checkInFuture :: LedgerState blk -> AnchoredFragment (Header blk)
                      -> m (AnchoredFragment (Header blk), [InFuture m blk])
     }
   deriving NoThunks
@@ -115,15 +112,9 @@ reference :: forall m blk. (Monad m, UpdateLedger blk, HasHardForkHistory blk)
           -> SystemTime m
           -> CheckInFuture m blk
 reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
-      checkInFuture = \validated -> do
-        now <- systemTimeCurrent
-        -- Since we have the ledger state /after/ the fragment, the derived
-        -- summary can be used to check all of the blocks in the fragment
-        return $
-          checkFragment
-            (hardForkSummary cfg (VF.validatedLedger validated))
-            now
-            (VF.validatedFragment validated)
+      checkInFuture = \ledgerState af -> do
+          now <- systemTimeCurrent
+          return $ checkFragment (hardForkSummary cfg ledgerState) now af
     }
   where
     checkFragment :: HF.Summary (HardForkIndices blk)
@@ -166,7 +157,7 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
 -- This is useful for testing and tools such as the DB converter.
 dontCheck :: Monad m => CheckInFuture m blk
 dontCheck = CheckInFuture {
-      checkInFuture = \validated -> return (VF.validatedFragment validated, [])
+      checkInFuture = \_ af -> return (af, [])
     }
 
 -- | If by some miracle we have a function that can always tell us what the
@@ -179,9 +170,9 @@ miracle :: forall m blk. (MonadSTM m, HasHeader (Header blk))
         -> Word64                -- ^ Maximum clock skew (in terms of slots)
         -> CheckInFuture m blk
 miracle oracle clockSkew = CheckInFuture {
-      checkInFuture = \validated -> do
+      checkInFuture = \_ af -> do
         now <- atomically $ oracle
-        return $ checkFragment now (VF.validatedFragment validated)
+        return $ checkFragment now af
     }
   where
     checkFragment :: SlotNo
