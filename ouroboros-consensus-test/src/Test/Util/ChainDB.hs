@@ -20,7 +20,6 @@ import           Ouroboros.Consensus.Config
                      (TopLevelConfig (topLevelConfigLedger),
                      configSecurityParam)
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
-import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.History.EraParams (EraParams,
                      eraEpochSize)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
@@ -103,7 +102,9 @@ fromMinimalChainDbArgs MinimalChainDbArgs {..} = ChainDbArgs {
   -- ImmutableDB, as the VolatileDB. This is done in @extractBlockComponent@ in the iterator for the
   -- ImmutableDB, and in @getBlockComponent@ for the VolatileDB.
   , cdbGenesis                = return mcdbInitLedger
-  , cdbCheckInFuture          = CheckInFuture $ \vf -> pure (VF.validatedFragment vf, [])
+  , cdbCheckInFuture          = CheckInFuture {
+                                    checkInFuture = \_ af -> pure (af, [])
+                                  }
   -- Blocks are never in the future.
   , cdbImmutableDbCacheConfig = ImmutableDB.CacheConfig 2 60
   -- Cache at most 2 chunks and expire each chunk after 60 seconds of being unused.
