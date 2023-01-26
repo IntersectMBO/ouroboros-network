@@ -37,8 +37,8 @@ import           Ouroboros.Consensus.Forecast (forecastFor)
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      HeaderState (..), annTipPoint, tickHeaderState,
                      validateHeader)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerCfg, LedgerConfig,
-                     applyBlockLedgerResult, applyChainTick,
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical, LedgerCfg,
+                     LedgerConfig, applyBlockLedgerResult, applyChainTick,
                      tickThenApplyLedgerResult, tickThenReapply)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerResult (..),
                      LedgerState, getTipSlot)
@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      StreamFrom (..))
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
+import           Ouroboros.Consensus.Ticked
 import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
@@ -131,7 +132,7 @@ type Analysis blk = AnalysisEnv IO blk -> IO (Maybe AnalysisResult)
 
 data AnalysisEnv m blk = AnalysisEnv {
       cfg        :: TopLevelConfig blk
-    , initLedger :: ExtLedgerState blk
+    , initLedger :: ExtLedgerState blk Canonical
     , db         :: Either (ImmutableDB IO blk) (ChainDB IO blk)
     , registry   :: ResourceRegistry IO
     , ledgerDbFS :: SomeHasFS IO
@@ -348,7 +349,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
     void $ processAllUntil db registry GetBlock initLedger limit initLedger process
     pure Nothing
   where
-    process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
+    process :: ExtLedgerState blk Canonical -> blk -> IO (NextStep, ExtLedgerState blk Canonical)
     process oldLedger blk = do
       let ledgerCfg = ExtLedgerCfg cfg
           newLedger = tickThenReapply ledgerCfg blk oldLedger
@@ -369,7 +370,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
 
     storeLedgerState ::
          blk
-      -> ExtLedgerState blk
+      -> ExtLedgerState blk Canonical
       -> IO ()
     storeLedgerState blk ledgerState = do
       let snapshot = DiskSnapshot
@@ -378,7 +379,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
       writeSnapshot ledgerDbFS encLedger snapshot ledgerState
       traceWith tracer $ SnapshotStoredEvent (blockSlot blk)
 
-    encLedger :: ExtLedgerState blk -> Encoding
+    encLedger :: ExtLedgerState blk Canonical -> Encoding
     encLedger =
       let ccfg = configCodec cfg
       in encodeExtLedgerState
@@ -417,7 +418,7 @@ checkNoThunksEvery
     void $ processAll db registry GetBlock initLedger limit initLedger process
     pure Nothing
   where
-    process :: ExtLedgerState blk -> blk -> IO (ExtLedgerState blk)
+    process :: ExtLedgerState blk Canonical -> blk -> IO (ExtLedgerState blk Canonical)
     process oldLedger blk = do
       let ledgerCfg     = ExtLedgerCfg cfg
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
@@ -426,7 +427,7 @@ checkNoThunksEvery
       when (unBlockNo bn `mod` nBlocks == 0 ) $ IOLike.evaluate (ledgerState newLedger) >>= checkNoThunks bn
       return newLedger
 
-    checkNoThunks :: BlockNo -> LedgerState blk -> IO ()
+    checkNoThunks :: BlockNo -> LedgerState blk Canonical -> IO ()
     checkNoThunks bn ls =
       noThunks ["--checkThunks"] ls >>= \case
         Nothing -> putStrLn $ show bn <> ": no thunks found."
@@ -451,9 +452,9 @@ traceLedgerProcessing
     pure Nothing
   where
     process
-      :: ExtLedgerState blk
+      :: ExtLedgerState blk Canonical
       -> blk
-      -> IO (ExtLedgerState blk)
+      -> IO (ExtLedgerState blk Canonical)
     process oldLedger blk = do
       let ledgerCfg     = ExtLedgerCfg cfg
           appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
@@ -509,9 +510,9 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, registry, initLedger, cfg, limit} =
 
     process ::
          IO.Handle
-      -> ExtLedgerState blk
+      -> ExtLedgerState blk Canonical
       -> blk
-      -> IO (ExtLedgerState blk)
+      -> IO (ExtLedgerState blk Canonical)
     process outFileHandle prevLedgerState blk = do
         prevRtsStats <- GC.getRTSStats
         let
@@ -568,7 +569,7 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, registry, initLedger, cfg, limit} =
 
         forecast ::
              SlotNo
-          -> ExtLedgerState blk
+          -> ExtLedgerState blk Canonical
           -> IO (Ticked (LedgerView (BlockProtocol blk)))
         forecast slot st = do
             let forecaster = ledgerViewForecastAt lcfg (ledgerState st)
@@ -578,7 +579,7 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, registry, initLedger, cfg, limit} =
 
         tickTheHeaderState ::
              SlotNo
-          -> ExtLedgerState blk
+          -> ExtLedgerState blk Canonical
           -> Ticked (LedgerView (BlockProtocol blk))
           -> IO (Ticked (HeaderState blk))
         tickTheHeaderState slot st tickedLedgerView =
@@ -598,14 +599,14 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, registry, initLedger, cfg, limit} =
 
         tickTheLedgerState ::
              SlotNo
-          -> ExtLedgerState blk
-          -> IO (Ticked (LedgerState blk))
+          -> ExtLedgerState blk Canonical
+          -> IO (Ticked1 (LedgerState blk) Canonical)
         tickTheLedgerState slot st =
             pure $ applyChainTick lcfg slot (ledgerState st)
 
         applyTheBlock ::
-             Ticked (LedgerState blk)
-          -> IO (LedgerState blk)
+             Ticked1 (LedgerState blk) Canonical
+          -> IO (LedgerState blk Canonical)
         applyTheBlock tickedLedgerSt = do
             case runExcept (lrResult <$> applyBlockLedgerResult lcfg blk tickedLedgerSt) of
               Left err -> fail $ "benchmark doesn't support invalid blocks: " <> show rp <> " " <> show err
@@ -672,7 +673,7 @@ reproMempoolForge numBlks env = do
 
     process
       :: ReproMempoolForgeHowManyBlks
-      -> IOLike.StrictTVar IO (ExtLedgerState blk)
+      -> IOLike.StrictTVar IO (ExtLedgerState blk Canonical)
       -> MP.Mempool IO blk MP.TicketNo
       -> Maybe blk
       -> blk
@@ -748,7 +749,7 @@ processAllUntil ::
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk Canonical
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))
@@ -760,7 +761,7 @@ processAll ::
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk Canonical
   -> Limit
   -> st
   -> (st -> b -> IO st)
@@ -775,7 +776,7 @@ processAll_ ::
   => Either (ImmutableDB IO blk) (ChainDB IO blk)
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk Canonical
   -> Limit
   -> (b -> IO ())
   -> IO ()
@@ -787,7 +788,7 @@ processAllChainDB ::
   => ChainDB IO blk
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk Canonical
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))
@@ -822,7 +823,7 @@ processAllImmutableDB ::
   => ImmutableDB IO blk
   -> ResourceRegistry IO
   -> BlockComponent blk b
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk Canonical
   -> Limit
   -> st
   -> (st -> b -> IO (NextStep, st))

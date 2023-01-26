@@ -24,8 +24,8 @@ import           Ouroboros.Consensus.Util.Condense (Condense)
 
 data WithLedgerState blk = WithLedgerState
   { wlsBlk         :: blk
-  , wlsStateBefore :: LedgerState blk
-  , wlsStateAfter  :: LedgerState blk
+  , wlsStateBefore :: LedgerState blk Canonical
+  , wlsStateAfter  :: LedgerState blk Canonical
   }
 
 class (HasAnnTip blk, GetPrevHash blk, Condense (HeaderHash blk)) => HasAnalysis blk where

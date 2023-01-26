@@ -16,6 +16,7 @@ import           Control.Tracer (Tracer (..), nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
                      (HasTxs)
@@ -145,7 +146,7 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
 
-    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk)
+    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk Canonical)
     decodeExtLedgerState' cfg =
       let ccfg = configCodec cfg
       in decodeExtLedgerState
