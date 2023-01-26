@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.History.EraParams (EraParams,
                      eraEpochSize)
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical)
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Protocol.Abstract
@@ -65,7 +66,7 @@ data MinimalChainDbArgs m blk = MinimalChainDbArgs {
     mcdbTopLevelConfig :: TopLevelConfig blk
   , mcdbChunkInfo      :: ImmutableDB.ChunkInfo
   -- ^ Specifies the layout of the ImmutableDB on disk.
-  , mcdbInitLedger     :: ExtLedgerState blk
+  , mcdbInitLedger     :: ExtLedgerState blk Canonical
   -- ^ The initial ledger state.
   , mcdbRegistry       :: ResourceRegistry m
   -- ^ Keeps track of non-lexically scoped resources.

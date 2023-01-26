@@ -236,7 +236,7 @@ data ThreadNetworkArgs m blk = ThreadNetworkArgs
 -- context.
 --
 data VertexStatus m blk
-  = VDown (Chain blk) (LedgerState blk)
+  = VDown (Chain blk) (LedgerState blk Canonical)
     -- ^ The vertex does not currently have a node instance; its previous
     -- instance stopped with this chain and ledger state (empty/initial before
     -- first instance)
@@ -588,7 +588,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> ResourceRegistry m
       -> (SlotNo -> STM m ())
       -> LedgerConfig blk
-      -> STM m (LedgerState blk)
+      -> STM m (LedgerState blk Canonical)
       -> Mempool m blk TicketNo
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
@@ -667,7 +667,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> OracularClock m
                    -> TopLevelConfig blk
                    -> Seed
-                   -> STM m (ExtLedgerState blk)
+                   -> STM m (ExtLedgerState blk Canonical)
                       -- ^ How to get the current ledger state
                    -> Mempool m blk TicketNo
                    -> m ()
@@ -685,7 +685,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
     mkArgs :: OracularClock m
            -> ResourceRegistry m
            -> TopLevelConfig blk
-           -> ExtLedgerState blk
+           -> ExtLedgerState blk Canonical
            -> Tracer m (RealPoint blk, ExtValidationError blk)
               -- ^ invalid block tracer
            -> Tracer m (RealPoint blk, BlockNo)
@@ -813,7 +813,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
             -> TopLevelConfig blk
             -> BlockNo
             -> SlotNo
-            -> TickedLedgerState blk
+            -> TickedLedgerState blk Canonical
             -> [Validated (GenTx blk)]
             -> IsLeader (BlockProtocol blk)
             -> m blk
@@ -1451,7 +1451,7 @@ data NodeOutput blk = NodeOutput
   { nodeOutputAdds         :: Map SlotNo (Set (RealPoint blk, BlockNo))
   , nodeOutputCannotForges :: Map SlotNo [CannotForge blk]
   , nodeOutputFinalChain   :: Chain blk
-  , nodeOutputFinalLedger  :: LedgerState blk
+  , nodeOutputFinalLedger  :: LedgerState blk Canonical
   , nodeOutputForges       :: Map SlotNo blk
   , nodeOutputHeaderAdds   :: Map SlotNo [(RealPoint blk, BlockNo)]
   , nodeOutputInvalids     :: Map (RealPoint blk) [ExtValidationError blk]
@@ -1472,7 +1472,7 @@ mkTestOutput ::
     => [( CoreNodeId
         , m (NodeInfo blk MockFS [])
         , Chain blk
-        , LedgerState blk
+        , LedgerState blk Canonical
         )]
     -> m (TestOutput blk)
 mkTestOutput vertexInfos = do

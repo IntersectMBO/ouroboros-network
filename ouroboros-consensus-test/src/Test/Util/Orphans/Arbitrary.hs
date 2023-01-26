@@ -53,6 +53,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Test.Util.Time
 
 minNumCoreNodes :: Word64
@@ -277,6 +279,9 @@ instance Arbitrary (K Past blk) where
 instance Arbitrary (f blk) => Arbitrary (Current f blk) where
   arbitrary = Current <$> arbitrary <*> arbitrary
 
+instance Arbitrary (f y x) => Arbitrary (Flip f x y) where
+  arbitrary = Flip <$> arbitrary
+
 instance ( IsNonEmpty xs
          , All (Arbitrary `Compose` f) xs
          , All (Arbitrary `Compose` g) xs
@@ -290,25 +295,25 @@ instance ( IsNonEmpty xs
           ]
   shrink = hctraverse' (Proxy @(Arbitrary `Compose` f)) shrink
 
-instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` LedgerState) xs)
-      => Arbitrary (LedgerState (HardForkBlock xs)) where
+instance (IsNonEmpty xs, SListI xs, All (Arbitrary `Compose` Flip LedgerState Canonical) xs)
+      => Arbitrary (LedgerState (HardForkBlock xs) Canonical) where
   arbitrary = case (dictKPast, dictCurrentLedgerState) of
       (Dict, Dict) -> inj <$> arbitrary
     where
       inj ::
-           Telescope (K Past) (Current LedgerState) xs
-        -> LedgerState (HardForkBlock xs)
+           Telescope (K Past) (Current (Flip LedgerState Canonical)) xs
+        -> LedgerState (HardForkBlock xs) Canonical
       inj = coerce
 
       dictKPast :: Dict (All (Arbitrary `Compose` (K Past))) xs
       dictKPast = all_NP $ hpure Dict
 
       dictCurrentLedgerState ::
-           Dict (All (Arbitrary `Compose` (Current LedgerState))) xs
+           Dict (All (Arbitrary `Compose` (Current (Flip LedgerState Canonical)))) xs
       dictCurrentLedgerState =
           mapAll
-            @(Arbitrary `Compose` LedgerState)
-            @(Arbitrary `Compose` Current LedgerState)
+            @(Arbitrary `Compose` (Flip LedgerState Canonical))
+            @(Arbitrary `Compose` Current (Flip LedgerState Canonical))
             (\Dict -> Dict)
             Dict
 

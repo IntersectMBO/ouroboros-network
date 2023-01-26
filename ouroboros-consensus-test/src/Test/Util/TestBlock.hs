@@ -127,6 +127,7 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
+import           Ouroboros.Consensus.Ticked (Ticked1)
 import           Test.Util.Orphans.SignableRepresentation ()
 import           Test.Util.Orphans.ToExpr ()
 
@@ -448,7 +449,7 @@ instance PayloadSemantics ptype
                                   }
 
 
-data instance LedgerState (TestBlockWith ptype) =
+data instance LedgerState (TestBlockWith ptype) mk =
     TestLedger {
         -- | The ledger state simply consists of the last applied block
         lastAppliedPoint      :: Point (TestBlockWith ptype)
@@ -456,24 +457,24 @@ data instance LedgerState (TestBlockWith ptype) =
         -- state.
       , payloadDependentState :: PayloadDependentState ptype
       }
+  deriving (Generic)
 
-deriving stock instance PayloadSemantics ptype => Show    (LedgerState (TestBlockWith ptype))
-deriving stock instance PayloadSemantics ptype => Eq      (LedgerState (TestBlockWith ptype))
-deriving stock instance Generic (LedgerState (TestBlockWith ptype))
+deriving stock instance PayloadSemantics ptype => Show    (LedgerState (TestBlockWith ptype) mk)
+deriving stock instance PayloadSemantics ptype => Eq      (LedgerState (TestBlockWith ptype) mk)
 
-deriving anyclass instance PayloadSemantics ptype => Serialise (LedgerState (TestBlockWith ptype))
-deriving anyclass instance PayloadSemantics ptype => NoThunks  (LedgerState (TestBlockWith ptype))
-deriving anyclass instance PayloadSemantics ptype => ToExpr    (LedgerState (TestBlockWith ptype))
+deriving anyclass instance PayloadSemantics ptype => Serialise (LedgerState (TestBlockWith ptype) mk)
+deriving anyclass instance PayloadSemantics ptype => NoThunks  (LedgerState (TestBlockWith ptype) mk)
+deriving anyclass instance PayloadSemantics ptype => ToExpr    (LedgerState (TestBlockWith ptype) mk)
 
-testInitLedgerWithState :: PayloadDependentState ptype -> LedgerState (TestBlockWith ptype)
+testInitLedgerWithState :: PayloadDependentState ptype -> LedgerState (TestBlockWith ptype) mk
 testInitLedgerWithState = TestLedger GenesisPoint
 
 -- Ticking has no effect
-newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
-      getTickedTestLedger :: LedgerState (TestBlockWith ptype)
+newtype instance Ticked1 (LedgerState (TestBlockWith ptype)) mk = TickedTestLedger {
+      getTickedTestLedger :: LedgerState (TestBlockWith ptype) mk
     }
 
-testInitExtLedgerWithState :: PayloadDependentState ptype -> ExtLedgerState (TestBlockWith ptype)
+testInitExtLedgerWithState :: PayloadDependentState ptype -> ExtLedgerState (TestBlockWith ptype) mk
 testInitExtLedgerWithState st = ExtLedgerState {
       ledgerState = testInitLedgerWithState st
     , headerState = genesisHeaderState ()
@@ -481,10 +482,10 @@ testInitExtLedgerWithState st = ExtLedgerState {
 
 type instance LedgerCfg (LedgerState (TestBlockWith ptype)) = HardFork.EraParams
 
-instance GetTip (LedgerState (TestBlockWith ptype)) where
+instance GetTip (LedgerState (TestBlockWith ptype) Canonical) where
   getTip = castPoint . lastAppliedPoint
 
-instance GetTip (Ticked (LedgerState (TestBlockWith ptype))) where
+instance GetTip (Ticked1 (LedgerState (TestBlockWith ptype)) mk) where
   getTip = castPoint . lastAppliedPoint . getTickedTestLedger
 
 instance PayloadSemantics ptype => IsLedger (LedgerState (TestBlockWith ptype)) where
@@ -577,10 +578,10 @@ deriving instance Show (BlockQuery TestBlock result)
 instance ShowQuery (BlockQuery TestBlock) where
   showResult QueryLedgerTip = show
 
-testInitLedger :: LedgerState TestBlock
+testInitLedger :: LedgerState TestBlock mk
 testInitLedger = testInitLedgerWithState ()
 
-testInitExtLedger :: ExtLedgerState TestBlock
+testInitExtLedger :: ExtLedgerState TestBlock mk
 testInitExtLedger = testInitExtLedgerWithState ()
 
 -- | Trivial test configuration with a single core node
@@ -750,7 +751,7 @@ instance Serialise (AnnTip (TestBlockWith ptype)) where
   encode = defaultEncodeAnnTip encode
   decode = defaultDecodeAnnTip decode
 
-instance PayloadSemantics ptype => Serialise (ExtLedgerState (TestBlockWith ptype)) where
+instance PayloadSemantics ptype => Serialise (ExtLedgerState (TestBlockWith ptype) mk) where
   encode = encodeExtLedgerState encode encode encode
   decode = decodeExtLedgerState decode decode decode
 
@@ -791,8 +792,8 @@ instance DecodeDisk (TestBlockWith ptype) (AnnTip (TestBlockWith ptype))
 
 instance ReconstructNestedCtxt Header (TestBlockWith ptype)
 
-instance PayloadSemantics ptype => EncodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype))
-instance PayloadSemantics ptype => DecodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype))
+instance PayloadSemantics ptype => EncodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype) mk)
+instance PayloadSemantics ptype => DecodeDisk (TestBlockWith ptype) (LedgerState (TestBlockWith ptype) mk)
 
 instance Serialise ptype => EncodeDiskDep (NestedCtxt Header) (TestBlockWith ptype)
 instance Serialise ptype => DecodeDiskDep (NestedCtxt Header) (TestBlockWith ptype)

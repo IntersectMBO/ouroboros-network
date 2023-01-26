@@ -56,7 +56,7 @@ import           Ouroboros.Network.Block (Serialised)
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
                      HeaderHash, SlotNo, SomeSecond)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical, LedgerState)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState,
                      encodeExtLedgerState)
 import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
@@ -221,9 +221,9 @@ data Examples blk = Examples {
     , exampleQuery            :: Labelled (SomeSecond BlockQuery blk)
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
-    , exampleLedgerState      :: Labelled (LedgerState blk)
+    , exampleLedgerState      :: Labelled (LedgerState blk Canonical)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
-    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk)
+    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk Canonical)
     , exampleSlotNo           :: Labelled SlotNo
     }
 
