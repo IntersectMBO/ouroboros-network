@@ -189,7 +189,7 @@ pureRemoveTxs
   -> MempoolCapacityBytesOverride
   -> [GenTxId blk]
   -> InternalState blk
-  -> LedgerState blk
+  -> LedgerState blk Canonical
   -> RemoveTxs blk
 pureRemoveTxs cfg capacityOverride txIds IS { isTxs, isLastTicketNo } lstate =
     -- Filtering is O(n), but this function will rarely be used, as it is an
@@ -256,7 +256,7 @@ runSyncWithLedger stateVar (NewSyncedState is msp mTrace) = do
 pureSyncWithLedger
   :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
   => InternalState blk
-  -> LedgerState blk
+  -> LedgerState blk Canonical
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> SyncWithLedger blk

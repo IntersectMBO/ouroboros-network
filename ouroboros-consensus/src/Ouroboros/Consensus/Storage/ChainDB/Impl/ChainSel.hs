@@ -686,7 +686,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
         cfg :: TopLevelConfig blk
         cfg = cdbTopLevelConfig
 
-        ledger :: LedgerState blk
+        ledger :: LedgerState blk Canonical
         ledger = ledgerState (LgrDB.ledgerDbCurrent newLedgerDB)
 
         summary :: History.Summary (HardForkIndices blk)
@@ -1196,7 +1196,7 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
 
     ValidatedChainDiff chainDiff@(ChainDiff _ suffix) _ = validatedChainDiff
 
-    validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk)
+    validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk Canonical)
     validatedSuffix =
       ledgerState . LgrDB.ledgerDbCurrent <$>
       ValidatedDiff.toValidatedFragment validatedChainDiff

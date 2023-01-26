@@ -15,6 +15,7 @@ import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Basics (Canonical)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.NodeId
 
@@ -37,7 +38,7 @@ enumCoreNodes (NumCoreNodes numNodes) =
 -- | Data required to run the specified protocol.
 data ProtocolInfo m b = ProtocolInfo {
         pInfoConfig       :: TopLevelConfig b
-      , pInfoInitLedger   :: ExtLedgerState b -- ^ At genesis
+      , pInfoInitLedger   :: ExtLedgerState b Canonical -- ^ At genesis
       , pInfoBlockForging :: m [BlockForging m b]
       }
 

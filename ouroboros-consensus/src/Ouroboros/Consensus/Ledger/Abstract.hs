@@ -87,8 +87,8 @@ class ( IsLedger l
        HasCallStack
     => LedgerCfg l
     -> blk
-    -> Ticked l
-    -> Except (LedgerErr l) (LedgerResult l l)
+    -> Ticked1 l Canonical
+    -> Except (LedgerErr l) (LedgerResult l (l Canonical))
 
   -- | Re-apply a block to the very same ledger state it was applied in before.
   --
@@ -103,8 +103,8 @@ class ( IsLedger l
        HasCallStack
     => LedgerCfg l
     -> blk
-    -> Ticked l
-    -> LedgerResult l l
+    -> Ticked1 l Canonical
+    -> LedgerResult l (l Canonical)
 
 -- | Interaction with the ledger layer
 class ApplyBlock (LedgerState blk) blk => UpdateLedger blk
@@ -118,8 +118,8 @@ applyLedgerBlock ::
      (ApplyBlock l blk, HasCallStack)
   => LedgerCfg l
   -> blk
-  -> Ticked l
-  -> Except (LedgerErr l) l
+  -> Ticked1 l Canonical
+  -> Except (LedgerErr l) (l Canonical)
 applyLedgerBlock = fmap lrResult ..: applyBlockLedgerResult
 
 -- | 'lrResult' after 'reapplyBlockLedgerResult'
@@ -127,16 +127,16 @@ reapplyLedgerBlock ::
      (ApplyBlock l blk, HasCallStack)
   => LedgerCfg l
   -> blk
-  -> Ticked l
-  -> l
+  -> Ticked1 l Canonical
+  -> l Canonical
 reapplyLedgerBlock = lrResult ..: reapplyBlockLedgerResult
 
 tickThenApplyLedgerResult ::
      ApplyBlock l blk
   => LedgerCfg l
   -> blk
-  -> l
-  -> Except (LedgerErr l) (LedgerResult l l)
+  -> l Canonical
+  -> Except (LedgerErr l) (LedgerResult l (l Canonical))
 tickThenApplyLedgerResult cfg blk l = do
   let lrTick = applyChainTickLedgerResult cfg (blockSlot blk) l
   lrBlock <-   applyBlockLedgerResult     cfg            blk  (lrResult lrTick)
@@ -149,8 +149,8 @@ tickThenReapplyLedgerResult ::
      ApplyBlock l blk
   => LedgerCfg l
   -> blk
-  -> l
-  -> LedgerResult l l
+  -> l Canonical
+  -> LedgerResult l (l Canonical)
 tickThenReapplyLedgerResult cfg blk l =
   let lrTick  = applyChainTickLedgerResult cfg (blockSlot blk) l
       lrBlock = reapplyBlockLedgerResult   cfg            blk (lrResult lrTick)
@@ -163,26 +163,26 @@ tickThenApply ::
      ApplyBlock l blk
   => LedgerCfg l
   -> blk
-  -> l
-  -> Except (LedgerErr l) l
+  -> l Canonical
+  -> Except (LedgerErr l) (l Canonical)
 tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
 
 tickThenReapply ::
      ApplyBlock l blk
   => LedgerCfg l
   -> blk
-  -> l
-  -> l
+  -> l Canonical
+  -> l Canonical
 tickThenReapply = lrResult ..: tickThenReapplyLedgerResult
 
 foldLedger ::
      ApplyBlock l blk
-  => LedgerCfg l -> [blk] -> l -> Except (LedgerErr l) l
+  => LedgerCfg l -> [blk] -> l Canonical -> Except (LedgerErr l) (l Canonical)
 foldLedger = repeatedlyM . tickThenApply
 
 refoldLedger ::
      ApplyBlock l blk
-  => LedgerCfg l -> [blk] -> l -> l
+  => LedgerCfg l -> [blk] -> l Canonical -> l Canonical
 refoldLedger = repeatedly . tickThenReapply
 
 {-------------------------------------------------------------------------------
@@ -194,15 +194,15 @@ refoldLedger = repeatedly . tickThenReapply
 -- This is occassionally useful to guide type inference
 ledgerTipPoint ::
      UpdateLedger blk
-  => Proxy blk -> LedgerState blk -> Point blk
+  => Proxy blk -> LedgerState blk Canonical -> Point blk
 ledgerTipPoint _ = castPoint . getTip
 
 ledgerTipHash ::
      forall blk. UpdateLedger blk
-  => LedgerState blk -> ChainHash blk
+  => LedgerState blk Canonical -> ChainHash blk
 ledgerTipHash = pointHash . (ledgerTipPoint (Proxy @blk))
 
 ledgerTipSlot ::
      forall blk. UpdateLedger blk
-  => LedgerState blk -> WithOrigin SlotNo
+  => LedgerState blk Canonical -> WithOrigin SlotNo
 ledgerTipSlot = pointSlot . (ledgerTipPoint (Proxy @blk))

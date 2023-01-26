@@ -11,6 +11,7 @@ import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked (Ticked1)
 
 -- | Link protocol to ledger
 class ( BlockSupportsProtocol blk
@@ -22,7 +23,7 @@ class ( BlockSupportsProtocol blk
   -- See 'ledgerViewForecastAt' for a discussion and precise definition of the
   -- relation between this and forecasting.
   protocolLedgerView :: LedgerConfig blk
-                     -> Ticked (LedgerState blk)
+                     -> Ticked1 (LedgerState blk) Canonical
                      -> Ticked (LedgerView (BlockProtocol blk))
 
   -- | Get a forecast at the given ledger state.
@@ -63,7 +64,7 @@ class ( BlockSupportsProtocol blk
   ledgerViewForecastAt ::
        HasCallStack
     => LedgerConfig blk
-    -> LedgerState blk
+    -> LedgerState blk Canonical
     -> Forecast (LedgerView (BlockProtocol blk))
 
 -- | Relation between 'ledgerViewForecastAt' and 'applyChainTick'
@@ -73,7 +74,7 @@ _lemma_ledgerViewForecastAt_applyChainTick
      , Show (Ticked (LedgerView (BlockProtocol blk)))
      )
   => LedgerConfig blk
-  -> LedgerState blk
+  -> LedgerState blk Canonical
   -> Forecast (LedgerView (BlockProtocol blk))
   -> SlotNo
   -> Either String ()

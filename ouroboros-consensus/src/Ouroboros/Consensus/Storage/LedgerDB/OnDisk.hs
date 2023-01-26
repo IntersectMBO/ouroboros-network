@@ -195,10 +195,10 @@ initLedgerDB ::
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk))
+  -> (forall s. Decoder s (ExtLedgerState blk Canonical))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbCfg (ExtLedgerState blk)
-  -> m (ExtLedgerState blk) -- ^ Genesis ledger state
+  -> m (ExtLedgerState blk Canonical) -- ^ Genesis ledger state
   -> StreamAPI m blk
   -> m (InitLog blk, LedgerDB' blk, Word64)
 initLedgerDB replayTracer
@@ -277,7 +277,7 @@ initFromSnapshot ::
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk))
+  -> (forall s. Decoder s (ExtLedgerState blk Canonical))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbCfg (ExtLedgerState blk)
   -> StreamAPI m blk
@@ -362,7 +362,7 @@ takeSnapshot ::
      forall m blk. (MonadThrow m, IsLedger (LedgerState blk))
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (ExtLedgerState blk -> Encoding)
+  -> (ExtLedgerState blk Canonical -> Encoding)
   -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
 takeSnapshot tracer hasFS encLedger db =
     case pointToWithOriginRealPoint (castPoint (getTip oldest)) of
@@ -379,7 +379,7 @@ takeSnapshot tracer hasFS encLedger db =
           traceWith tracer $ TookSnapshot snapshot tip
           return $ Just (snapshot, tip)
   where
-    oldest :: ExtLedgerState blk
+    oldest :: ExtLedgerState blk Canonical
     oldest = ledgerDbAnchor db
 
 -- | Trim the number of on disk snapshots so that at most 'onDiskNumSnapshots'
@@ -441,30 +441,30 @@ diskSnapshotIsTemporary = not . diskSnapshotIsPermanent
 readSnapshot ::
      forall m blk. IOLike m
   => SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk))
+  -> (forall s. Decoder s (ExtLedgerState blk Canonical))
   -> (forall s. Decoder s (HeaderHash blk))
   -> DiskSnapshot
-  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk)
+  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk Canonical)
 readSnapshot hasFS decLedger decHash =
       ExceptT
     . readIncremental hasFS decoder
     . snapshotToPath
   where
-    decoder :: Decoder s (ExtLedgerState blk)
+    decoder :: Decoder s (ExtLedgerState blk Canonical)
     decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
 
 -- | Write snapshot to disk
 writeSnapshot ::
      forall m blk. MonadThrow m
   => SomeHasFS m
-  -> (ExtLedgerState blk -> Encoding)
+  -> (ExtLedgerState blk Canonical -> Encoding)
   -> DiskSnapshot
-  -> ExtLedgerState blk -> m ()
+  -> ExtLedgerState blk Canonical -> m ()
 writeSnapshot (SomeHasFS hasFS) encLedger ss cs = do
     withFile hasFS (snapshotToPath ss) (WriteMode MustBeNew) $ \h ->
       void $ hPut hasFS h $ CBOR.toBuilder (encode cs)
   where
-    encode :: ExtLedgerState blk -> Encoding
+    encode :: ExtLedgerState blk Canonical -> Encoding
     encode = encodeSnapshot encLedger
 
 -- | Delete snapshot from disk

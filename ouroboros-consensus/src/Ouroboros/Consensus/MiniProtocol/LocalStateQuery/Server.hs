@@ -9,6 +9,7 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Util.IOLike
@@ -18,7 +19,7 @@ localStateQueryServer ::
   => ExtLedgerCfg blk
   -> STM m (Point blk)
      -- ^ Get tip point
-  -> (Point blk -> STM m (Maybe (ExtLedgerState blk)))
+  -> (Point blk -> STM m (Maybe (ExtLedgerState blk Canonical)))
      -- ^ Get a past ledger
   -> STM m (Point blk)
      -- ^ Get the immutable point
@@ -48,7 +49,7 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
             | otherwise
             -> SendMsgFailure AcquireFailurePointNotOnChain idle
 
-    acquired :: ExtLedgerState blk
+    acquired :: ExtLedgerState blk Canonical
              -> ServerStAcquired blk (Point blk) (Query blk) m ()
     acquired ledgerState = ServerStAcquired {
           recvMsgQuery     = handleQuery ledgerState
@@ -57,7 +58,7 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
         }
 
     handleQuery ::
-         ExtLedgerState blk
+         ExtLedgerState blk Canonical
       -> Query blk result
       -> m (ServerStQuerying blk (Point blk) (Query blk) m () result)
     handleQuery ledgerState query = return $

@@ -29,6 +29,7 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -38,6 +39,8 @@ import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 {-------------------------------------------------------------------------------
@@ -149,9 +152,9 @@ instance Inject (SomeSecond BlockQuery) where
 instance Inject AnnTip where
   inject _ = undistribAnnTip .: injectNS' (Proxy @AnnTip)
 
-instance Inject LedgerState where
+instance Inject (Flip LedgerState Canonical) where
   inject startBounds idx =
-      HardForkLedgerState . injectHardForkState startBounds idx
+      Flip . HardForkLedgerState . injectHardForkState startBounds idx
 
 instance Inject WrapChainDepState where
   inject startBounds idx =
@@ -165,9 +168,9 @@ instance Inject HeaderState where
                             $ WrapChainDepState headerStateChainDep
       }
 
-instance Inject ExtLedgerState where
-  inject startBounds idx ExtLedgerState {..} = ExtLedgerState {
-        ledgerState = inject startBounds idx ledgerState
+instance Inject (Flip ExtLedgerState Canonical) where
+  inject startBounds idx (Flip ExtLedgerState {..}) = Flip $ ExtLedgerState {
+        ledgerState = unFlip $ inject startBounds idx (Flip ledgerState)
       , headerState = inject startBounds idx headerState
       }
 
@@ -188,8 +191,8 @@ instance Inject ExtLedgerState where
 injectInitialExtLedgerState ::
      forall x xs. CanHardFork (x ': xs)
   => TopLevelConfig (HardForkBlock (x ': xs))
-  -> ExtLedgerState x
-  -> ExtLedgerState (HardForkBlock (x ': xs))
+  -> ExtLedgerState x Canonical
+  -> ExtLedgerState (HardForkBlock (x ': xs)) Canonical
 injectInitialExtLedgerState cfg extLedgerState0 =
     ExtLedgerState {
         ledgerState = targetEraLedgerState
@@ -204,7 +207,7 @@ injectInitialExtLedgerState cfg extLedgerState0 =
              (hardForkLedgerStatePerEra targetEraLedgerState))
           cfg
 
-    targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs))
+    targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs)) Canonical
     targetEraLedgerState =
         HardForkLedgerState $
           -- We can immediately extend it to the right slot, executing any
@@ -212,7 +215,7 @@ injectInitialExtLedgerState cfg extLedgerState0 =
           State.extendToSlot
             (configLedger cfg)
             (SlotNo 0)
-            (initHardForkState (ledgerState extLedgerState0))
+            (initHardForkState (Flip $ ledgerState extLedgerState0))
 
     firstEraChainDepState :: HardForkChainDepState (x ': xs)
     firstEraChainDepState =

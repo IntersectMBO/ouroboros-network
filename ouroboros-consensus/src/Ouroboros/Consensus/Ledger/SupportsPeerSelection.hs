@@ -19,7 +19,7 @@ import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint (..), IP (..), PortNumber,
                      RelayAccessPoint (..))
 
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical, LedgerState)
 
 -- | A relay registered for a stake pool
 data StakePoolRelay =
@@ -48,4 +48,4 @@ class LedgerSupportsPeerSelection blk where
   --
   -- Note: if the ledger state is old, the registered relays can also be old and
   -- may no longer be online.
-  getPeers :: LedgerState blk -> [(PoolStake, NonEmpty StakePoolRelay)]
+  getPeers :: LedgerState blk Canonical -> [(PoolStake, NonEmpty StakePoolRelay)]

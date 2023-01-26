@@ -1,16 +1,17 @@
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
@@ -31,6 +32,7 @@ import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Data.Coerce
 import           Data.Functor ((<&>))
+import           Data.Kind (Type)
 import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -42,6 +44,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Ticked (Ticked1)
 
 {-------------------------------------------------------------------------------
   Extended ledger state
@@ -50,11 +53,22 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- | Extended ledger state
 --
 -- This is the combination of the header state and the ledger state proper.
-data ExtLedgerState blk = ExtLedgerState {
-      ledgerState :: !(LedgerState blk)
+type ExtLedgerState :: Type -> Type -> Type
+data ExtLedgerState blk mk = ExtLedgerState {
+      ledgerState :: !(LedgerState blk mk)
     , headerState :: !(HeaderState blk)
     }
   deriving (Generic)
+
+deriving instance (Show (LedgerState blk mk), LedgerSupportsProtocol blk) => Show (ExtLedgerState     blk mk)
+deriving instance (Eq   (LedgerState blk mk), LedgerSupportsProtocol blk) => Eq   (ExtLedgerState     blk mk)
+
+-- | We override 'showTypeOf' to show the type of the block
+--
+-- This makes debugging a bit easier, as the block gets used to resolve all
+-- kinds of type families.
+instance (NoThunks (LedgerState blk mk), LedgerSupportsProtocol blk) => NoThunks (ExtLedgerState blk mk) where
+  showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk))
 
 data ExtValidationError blk =
     ExtValidationErrorLedger !(LedgerError blk)
@@ -62,29 +76,17 @@ data ExtValidationError blk =
   deriving (Generic)
 
 instance LedgerSupportsProtocol blk => NoThunks (ExtValidationError blk)
-
-deriving instance LedgerSupportsProtocol blk => Show (ExtLedgerState     blk)
 deriving instance LedgerSupportsProtocol blk => Show (ExtValidationError blk)
 deriving instance LedgerSupportsProtocol blk => Eq   (ExtValidationError blk)
-
--- | We override 'showTypeOf' to show the type of the block
---
--- This makes debugging a bit easier, as the block gets used to resolve all
--- kinds of type families.
-instance LedgerSupportsProtocol blk => NoThunks (ExtLedgerState blk) where
-  showTypeOf _ = show $ typeRep (Proxy @(ExtLedgerState blk))
-
-deriving instance ( LedgerSupportsProtocol blk
-                  ) => Eq (ExtLedgerState blk)
 
 {-------------------------------------------------------------------------------
   The extended ledger can behave like a ledger
 -------------------------------------------------------------------------------}
 
-data instance Ticked (ExtLedgerState blk) = TickedExtLedgerState {
-      tickedLedgerState :: Ticked (LedgerState blk)
-    , tickedLedgerView  :: Ticked (LedgerView (BlockProtocol blk))
-    , tickedHeaderState :: Ticked (HeaderState blk)
+data instance Ticked1 (ExtLedgerState blk) mk = TickedExtLedgerState {
+      tickedLedgerState :: Ticked1 (LedgerState blk) mk
+    , tickedLedgerView  :: Ticked  (LedgerView (BlockProtocol blk))
+    , tickedHeaderState :: Ticked  (HeaderState blk)
     }
 
 -- | " Ledger " configuration for the extended ledger
@@ -105,12 +107,13 @@ instance ( ConsensusProtocol (BlockProtocol blk)
 
 type instance LedgerCfg (ExtLedgerState blk) = ExtLedgerCfg blk
 
-type instance HeaderHash (ExtLedgerState blk) = HeaderHash (LedgerState blk)
+type instance HeaderHash (ExtLedgerState blk) = HeaderHash blk
+type instance HeaderHash (ExtLedgerState blk mk) = HeaderHash blk
 
-instance IsLedger (LedgerState blk) => GetTip (ExtLedgerState blk) where
+instance IsLedger (LedgerState blk) => GetTip (ExtLedgerState blk Canonical) where
   getTip = castPoint . getTip . ledgerState
 
-instance IsLedger (LedgerState blk) => GetTip (Ticked (ExtLedgerState blk)) where
+instance IsLedger (LedgerState blk) => GetTip (Ticked1 (ExtLedgerState blk) Canonical) where
   getTip = castPoint . getTip . tickedLedgerState
 
 instance ( LedgerSupportsProtocol blk
@@ -175,10 +178,10 @@ instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
   Serialisation
 -------------------------------------------------------------------------------}
 
-encodeExtLedgerState :: (LedgerState   blk -> Encoding)
+encodeExtLedgerState :: (LedgerState   blk mk -> Encoding)
                      -> (ChainDepState (BlockProtocol blk) -> Encoding)
                      -> (AnnTip        blk -> Encoding)
-                     -> ExtLedgerState blk -> Encoding
+                     -> ExtLedgerState blk mk -> Encoding
 encodeExtLedgerState encodeLedgerState
                      encodeChainDepState
                      encodeAnnTip
@@ -191,10 +194,10 @@ encodeExtLedgerState encodeLedgerState
                            encodeChainDepState
                            encodeAnnTip
 
-decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk))
+decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk mk))
                      -> (forall s. Decoder s (ChainDepState  (BlockProtocol blk)))
                      -> (forall s. Decoder s (AnnTip         blk))
-                     -> (forall s. Decoder s (ExtLedgerState blk))
+                     -> (forall s. Decoder s (ExtLedgerState blk mk))
 decodeExtLedgerState decodeLedgerState
                      decodeChainDepState
                      decodeAnnTip = do
@@ -211,13 +214,13 @@ decodeExtLedgerState decodeLedgerState
 -------------------------------------------------------------------------------}
 
 castExtLedgerState
-  :: ( Coercible (LedgerState blk)
-                 (LedgerState blk')
+  :: ( Coercible (LedgerState blk  mk)
+                 (LedgerState blk' mk)
      , Coercible (ChainDepState (BlockProtocol blk))
                  (ChainDepState (BlockProtocol blk'))
      , TipInfo blk ~ TipInfo blk'
      )
-  => ExtLedgerState blk -> ExtLedgerState blk'
+  => ExtLedgerState blk mk -> ExtLedgerState blk' mk
 castExtLedgerState ExtLedgerState{..} = ExtLedgerState {
       ledgerState = coerce ledgerState
     , headerState = castHeaderState headerState

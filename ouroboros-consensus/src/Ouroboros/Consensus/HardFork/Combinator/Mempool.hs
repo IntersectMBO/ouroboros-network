@@ -46,7 +46,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
                      (Product2 (..))
@@ -109,7 +109,7 @@ instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
 
   txsMaxBytes =
         hcollapse
-      . hcmap proxySingle (K . txsMaxBytes . unComp)
+      . hcmap proxySingle (K . txsMaxBytes . getFlipTickedLedgerState)
       . State.tip
       . tickedHardForkLedgerStatePerEra
 
@@ -133,7 +133,7 @@ data ApplyHelperMode :: (Type -> Type) -> Type where
 
 -- | A private type used only to clarify the definition of 'applyHelper'
 data ApplyResult xs blk = ApplyResult {
-    arState       :: Ticked (LedgerState blk)
+    arState       :: Ticked1 (LedgerState blk) Canonical
   , arValidatedTx :: Validated (GenTx (HardForkBlock xs))
   }
 
@@ -147,10 +147,10 @@ applyHelper :: forall xs txIn. CanHardFork xs
   -> WhetherToIntervene
   -> SlotNo
   -> txIn (HardForkBlock xs)
-  -> TickedLedgerState (HardForkBlock xs)
+  -> TickedLedgerState (HardForkBlock xs) Canonical
   -> Except
       (HardForkApplyTxErr xs)
-      ( TickedLedgerState (HardForkBlock xs)
+      ( TickedLedgerState (HardForkBlock xs) Canonical
       , Validated (GenTx (HardForkBlock xs))
       )
 applyHelper mode
@@ -186,8 +186,8 @@ applyHelper mode
             $ hcizipWith proxySingle modeApplyCurrent cfgs matched
           let _ = result :: State.HardForkState (ApplyResult xs) xs
 
-              st' :: State.HardForkState (Ticked :.: LedgerState) xs
-              st' = (Comp . arState) `hmap` result
+              st' :: State.HardForkState (FlipTickedLedgerState Canonical) xs
+              st' = (FlipTickedLedgerState . arState) `hmap` result
 
               vtx :: Validated (GenTx (HardForkBlock xs))
               vtx = hcollapse $ (K . arValidatedTx) `hmap` result
@@ -225,14 +225,14 @@ applyHelper mode
         ModeReapply -> injValidatedTx
 
     modeApplyCurrent :: forall blk.
-         SingleEraBlock                        blk
-      => Index xs                              blk
-      -> WrapLedgerConfig                      blk
-      -> Product txIn (Ticked :.: LedgerState) blk
+         SingleEraBlock                                 blk
+      => Index xs                                       blk
+      -> WrapLedgerConfig                               blk
+      -> Product txIn (FlipTickedLedgerState Canonical) blk
       -> (     Except (HardForkApplyTxErr xs)
            :.: ApplyResult xs
          ) blk
-    modeApplyCurrent index cfg (Pair tx' (Comp st)) =
+    modeApplyCurrent index cfg (Pair tx' (FlipTickedLedgerState st)) =
           Comp
         $ withExcept (injectApplyTxErr index)
         $ do
@@ -287,7 +287,7 @@ instance All HasTxs xs => HasTxs (HardForkBlock xs) where
 -------------------------------------------------------------------------------}
 
 ledgerInfo :: forall blk. SingleEraBlock blk
-           => State.Current (Ticked :.: LedgerState) blk -> LedgerEraInfo blk
+           => State.Current (FlipTickedLedgerState Canonical) blk -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 injectApplyTxErr :: Index xs blk -> ApplyTxErr blk -> HardForkApplyTxErr xs

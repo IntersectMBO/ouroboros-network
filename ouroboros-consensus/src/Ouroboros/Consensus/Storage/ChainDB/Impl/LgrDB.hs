@@ -128,8 +128,8 @@ deriving instance (IOLike m, LedgerSupportsProtocol blk)
 -- | 'EncodeDisk' and 'DecodeDisk' constraints needed for the LgrDB.
 type LgrDbSerialiseConstraints blk =
   ( Serialise      (HeaderHash  blk)
-  , EncodeDisk blk (LedgerState blk)
-  , DecodeDisk blk (LedgerState blk)
+  , EncodeDisk blk (LedgerState blk Canonical)
+  , DecodeDisk blk (LedgerState blk Canonical)
   , EncodeDisk blk (AnnTip      blk)
   , DecodeDisk blk (AnnTip      blk)
   , EncodeDisk blk (ChainDepState (BlockProtocol blk))
@@ -142,7 +142,7 @@ type LgrDbSerialiseConstraints blk =
 
 data LgrDbArgs f m blk = LgrDbArgs {
       lgrDiskPolicy     :: DiskPolicy
-    , lgrGenesis        :: HKD f (m (ExtLedgerState blk))
+    , lgrGenesis        :: HKD f (m (ExtLedgerState blk Canonical))
     , lgrHasFS          :: SomeHasFS m
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
@@ -258,7 +258,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
   where
     ccfg = configCodec lgrTopLevelConfig
 
-    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk)
+    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState blk Canonical)
     decodeExtLedgerState' = decodeExtLedgerState
                               (decodeDisk ccfg)
                               (decodeDisk ccfg)
@@ -316,7 +316,7 @@ takeSnapshot lgrDB@LgrDB{ cfg, tracer, hasFS } = wrapFailure (Proxy @blk) $ do
   where
     ccfg = configCodec cfg
 
-    encodeExtLedgerState' :: ExtLedgerState blk -> Encoding
+    encodeExtLedgerState' :: ExtLedgerState blk Canonical -> Encoding
     encodeExtLedgerState' = encodeExtLedgerState
                               (encodeDisk ccfg)
                               (encodeDisk ccfg)

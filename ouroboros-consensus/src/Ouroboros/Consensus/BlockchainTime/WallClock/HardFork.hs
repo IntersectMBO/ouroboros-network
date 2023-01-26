@@ -49,7 +49,7 @@ newtype BackoffDelay = BackoffDelay NominalDiffTime
 data HardForkBlockchainTimeArgs m blk = HardForkBlockchainTimeArgs
   { hfbtBackoffDelay   :: m BackoffDelay
     -- ^ See 'BackoffDelay'
-  , hfbtGetLedgerState :: STM m (LedgerState blk)
+  , hfbtGetLedgerState :: STM m (LedgerState blk Canonical)
   , hfbtLedgerConfig   :: LedgerConfig blk
   , hfbtRegistry       :: ResourceRegistry m
   , hfbtSystemTime     :: SystemTime m
@@ -98,7 +98,7 @@ hardForkBlockchainTime args = do
       , hfbtMaxClockRewind = maxClockRewind
       } = args
 
-    summarize :: LedgerState blk -> HF.Summary (HardForkIndices blk)
+    summarize :: LedgerState blk Canonical -> HF.Summary (HardForkIndices blk)
     summarize st = hardForkSummary cfg st
 
     loop :: HF.RunWithCachedSummary xs m

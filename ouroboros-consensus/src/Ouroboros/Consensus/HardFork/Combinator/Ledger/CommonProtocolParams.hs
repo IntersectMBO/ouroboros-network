@@ -4,12 +4,15 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams () wh
 
 import           Data.SOP.Strict
 
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical)
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 instance CanHardFork xs => CommonProtocolParams (HardForkBlock xs) where
   maxHeaderSize = askCurrentLedger maxHeaderSize
@@ -17,10 +20,10 @@ instance CanHardFork xs => CommonProtocolParams (HardForkBlock xs) where
 
 askCurrentLedger
   :: CanHardFork xs
-  => (forall blk. CommonProtocolParams blk => LedgerState blk -> a)
-  -> LedgerState (HardForkBlock xs) -> a
+  => (forall blk. CommonProtocolParams blk => LedgerState blk Canonical -> a)
+  -> LedgerState (HardForkBlock xs) Canonical -> a
 askCurrentLedger f =
       hcollapse
-    . hcmap proxySingle (K . f)
+    . hcmap proxySingle (K . f . unFlip)
     . State.tip
     . hardForkLedgerStatePerEra

@@ -24,7 +24,7 @@ data InitChainDB m blk = InitChainDB {
       addBlock         :: blk -> m ()
 
       -- | Return the current ledger state
-    , getCurrentLedger :: m (LedgerState blk)
+    , getCurrentLedger :: m (LedgerState blk Canonical)
     }
 
 fromFull ::
@@ -40,7 +40,7 @@ fromFull db = InitChainDB {
 map ::
      Functor m
   => (blk' -> blk)
-  -> (LedgerState blk -> LedgerState blk')
+  -> (LedgerState blk Canonical -> LedgerState blk' Canonical)
   -> InitChainDB m blk -> InitChainDB m blk'
 map f g db = InitChainDB {
       addBlock         = addBlock db . f

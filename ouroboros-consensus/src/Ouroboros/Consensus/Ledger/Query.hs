@@ -47,6 +47,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      headerStateBlockNo, headerStatePoint)
+import           Ouroboros.Consensus.Ledger.Abstract (Canonical)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -268,7 +269,7 @@ answerQuery ::
      (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
   => ExtLedgerCfg blk
   -> Query blk result
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk Canonical
   -> result
 answerQuery cfg query st = case query of
   BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
@@ -286,7 +287,7 @@ data family BlockQuery blk :: Type -> Type
 class (ShowQuery (BlockQuery blk), SameDepIndex (BlockQuery blk)) => QueryLedger blk where
 
   -- | Answer the given query about the extended ledger state.
-  answerBlockQuery :: ExtLedgerCfg blk -> BlockQuery blk result -> ExtLedgerState blk -> result
+  answerBlockQuery :: ExtLedgerCfg blk -> BlockQuery blk result -> ExtLedgerState blk Canonical -> result
 
 instance SameDepIndex (BlockQuery blk) => Eq (SomeSecond BlockQuery blk) where
   SomeSecond qry == SomeSecond qry' = isJust (sameDepIndex qry qry')

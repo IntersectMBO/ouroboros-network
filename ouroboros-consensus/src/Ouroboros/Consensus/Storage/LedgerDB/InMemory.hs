@@ -1,20 +1,21 @@
-{-# LANGUAGE ConstraintKinds        #-}
-{-# LANGUAGE DeriveAnyClass         #-}
-{-# LANGUAGE DeriveGeneric          #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE GADTs                  #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE NamedFieldPuns         #-}
-{-# LANGUAGE QuantifiedConstraints  #-}
-{-# LANGUAGE RankNTypes             #-}
-{-# LANGUAGE RecordWildCards        #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE StandaloneDeriving     #-}
-{-# LANGUAGE TypeApplications       #-}
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DeriveAnyClass           #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE FunctionalDependencies   #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE QuantifiedConstraints    #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
     -- * LedgerDB proper
@@ -62,7 +63,6 @@ import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
 import           Data.Foldable (find)
-import           Data.Functor ((<&>))
 import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
@@ -79,7 +79,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Storage.LedgerDB.Types (PushGoal (..),
                      PushStart (..), Pushing (..),
                      UpdateLedgerDbTraceEvent (..))
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin)
 import           Ouroboros.Consensus.Util.Versioned
@@ -136,37 +135,33 @@ newtype LedgerDB l = LedgerDB {
                                (Checkpoint l)
                                (Checkpoint l)
     }
-  deriving (Show, Eq, Generic, NoThunks)
+  deriving (Generic)
+
+deriving instance Show     (l Canonical) => Show     (LedgerDB l)
+deriving instance Eq       (l Canonical) => Eq       (LedgerDB l)
+deriving instance NoThunks (l Canonical) => NoThunks (LedgerDB l)
 
 -- | Internal newtype wrapper around a ledger state @l@ so that we can define a
 -- non-blanket 'Anchorable' instance.
 newtype Checkpoint l = Checkpoint {
-      unCheckpoint :: l
+      unCheckpoint :: l Canonical
     }
-  deriving (Show, Eq, Generic, NoThunks)
+  deriving (Generic)
 
-instance GetTip l => Anchorable (WithOrigin SlotNo) (Checkpoint l) (Checkpoint l) where
+deriving instance Show     (l Canonical) => Show     (Checkpoint l)
+deriving instance Eq       (l Canonical) => Eq       (Checkpoint l)
+deriving instance NoThunks (l Canonical) => NoThunks (Checkpoint l)
+
+instance GetTip (l Canonical) => Anchorable (WithOrigin SlotNo) (Checkpoint l) (Checkpoint l) where
   asAnchor = id
   getAnchorMeasure _ = getTipSlot . unCheckpoint
-
-{-------------------------------------------------------------------------------
-  Ticking
--------------------------------------------------------------------------------}
-
--- | Ticking the ledger DB just ticks the current state
---
--- We don't push the new state into the DB until we apply a block.
-data instance Ticked (LedgerDB l) = TickedLedgerDB {
-      tickedLedgerDbTicked :: Ticked l
-    , tickedLedgerDbOrig   :: LedgerDB l
-    }
 
 {-------------------------------------------------------------------------------
   LedgerDB proper
 -------------------------------------------------------------------------------}
 
 -- | Ledger DB starting at the specified ledger state
-ledgerDbWithAnchor :: GetTip l => l -> LedgerDB l
+ledgerDbWithAnchor :: GetTip (l Canonical) => l Canonical -> LedgerDB l
 ledgerDbWithAnchor anchor = LedgerDB {
       ledgerDbCheckpoints = Empty (Checkpoint anchor)
     }
@@ -252,7 +247,8 @@ instance Monad m => ThrowsLedgerError (ExceptT (AnnLedgerError l blk) m) l blk w
 -- * Compute the constraint @c@ on the monad @m@ in order to run the query:
 --   a. If we are passing a block by reference, we must be able to resolve it.
 --   b. If we are applying rather than reapplying, we might have ledger errors.
-data Ap :: (Type -> Type) -> Type -> Type -> Constraint -> Type where
+type Ap :: (Type -> Type) -> (Type -> Type) -> Type -> Constraint -> Type
+data Ap m l blk c where
   ReapplyVal ::           blk -> Ap m l blk ()
   ApplyVal   ::           blk -> Ap m l blk (                      ThrowsLedgerError m l blk)
   ReapplyRef :: RealPoint blk -> Ap m l blk (ResolvesBlocks m blk)
@@ -281,7 +277,7 @@ toRealPoint (Weaken ap)      = toRealPoint ap
 applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
            => LedgerCfg l
            -> Ap m l blk c
-           -> LedgerDB l -> m l
+           -> LedgerDB l -> m (l Canonical)
 applyBlock cfg ap db = case ap of
     ReapplyVal b ->
       return $
@@ -300,7 +296,7 @@ applyBlock cfg ap db = case ap of
     Weaken ap' ->
       applyBlock cfg ap' db
   where
-    l :: l
+    l :: l Canonical
     l = ledgerDbCurrent db
 
 {-------------------------------------------------------------------------------
@@ -308,18 +304,18 @@ applyBlock cfg ap db = case ap of
 -------------------------------------------------------------------------------}
 
 -- | The ledger state at the tip of the chain
-ledgerDbCurrent :: GetTip l => LedgerDB l -> l
+ledgerDbCurrent :: GetTip (l Canonical) => LedgerDB l -> l Canonical
 ledgerDbCurrent = either unCheckpoint unCheckpoint . AS.head . ledgerDbCheckpoints
 
 -- | Information about the state of the ledger at the anchor
-ledgerDbAnchor :: LedgerDB l -> l
+ledgerDbAnchor :: LedgerDB l -> l Canonical
 ledgerDbAnchor = unCheckpoint . AS.anchor . ledgerDbCheckpoints
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --
 -- This also includes the snapshot at the anchor. For each snapshot we also
 -- return the distance from the tip.
-ledgerDbSnapshots :: LedgerDB l -> [(Word64, l)]
+ledgerDbSnapshots :: LedgerDB l -> [(Word64, l Canonical)]
 ledgerDbSnapshots LedgerDB{..} =
     zip
       [0..]
@@ -327,15 +323,15 @@ ledgerDbSnapshots LedgerDB{..} =
         <> [unCheckpoint (AS.anchor ledgerDbCheckpoints)])
 
 -- | How many blocks can we currently roll back?
-ledgerDbMaxRollback :: GetTip l => LedgerDB l -> Word64
+ledgerDbMaxRollback :: GetTip (l Canonical) => LedgerDB l -> Word64
 ledgerDbMaxRollback LedgerDB{..} = fromIntegral (AS.length ledgerDbCheckpoints)
 
 -- | Reference to the block at the tip of the chain
-ledgerDbTip :: GetTip l => LedgerDB l -> Point l
-ledgerDbTip = getTip . ledgerDbCurrent
+ledgerDbTip :: (HeaderHash (l Canonical) ~ HeaderHash l, GetTip (l Canonical)) => LedgerDB l -> Point l
+ledgerDbTip = castPoint . getTip . ledgerDbCurrent
 
 -- | Have we seen at least @k@ blocks?
-ledgerDbIsSaturated :: GetTip l => SecurityParam -> LedgerDB l -> Bool
+ledgerDbIsSaturated :: GetTip (l Canonical) => SecurityParam -> LedgerDB l -> Bool
 ledgerDbIsSaturated (SecurityParam k) db =
     ledgerDbMaxRollback db >= k
 
@@ -346,10 +342,10 @@ ledgerDbIsSaturated (SecurityParam k) db =
 -- When no ledger state (or anchor) has the given 'Point', 'Nothing' is
 -- returned.
 ledgerDbPast ::
-     (HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk)
+     (HeaderHash (l Canonical) ~ HeaderHash l, HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk)
   => Point blk
   -> LedgerDB l
-  -> Maybe l
+  -> Maybe (l Canonical)
 ledgerDbPast pt db
     | pt == castPoint (getTip (ledgerDbAnchor db))
     = Just $ ledgerDbAnchor db
@@ -361,8 +357,8 @@ ledgerDbPast pt db
 -- | Transform the underlying 'AnchoredSeq' using the given functions.
 ledgerDbBimap ::
      Anchorable (WithOrigin SlotNo) a b
-  => (l -> a)
-  -> (l -> b)
+  => (l Canonical -> a)
+  -> (l Canonical -> b)
   -> LedgerDB l
   -> AnchoredSeq (WithOrigin SlotNo) a b
 ledgerDbBimap f g =
@@ -373,7 +369,7 @@ ledgerDbBimap f g =
 
 -- | Prune snapshots until at we have at most @k@ snapshots in the LedgerDB,
 -- excluding the snapshots stored at the anchor.
-ledgerDbPrune :: GetTip l => SecurityParam -> LedgerDB l -> LedgerDB l
+ledgerDbPrune :: GetTip (l Canonical) => SecurityParam -> LedgerDB l -> LedgerDB l
 ledgerDbPrune (SecurityParam k) db = db {
       ledgerDbCheckpoints = AS.anchorNewest k (ledgerDbCheckpoints db)
     }
@@ -389,9 +385,9 @@ ledgerDbPrune (SecurityParam k) db = db {
 
 -- | Push an updated ledger state
 pushLedgerState ::
-     GetTip l
+     GetTip (l Canonical)
   => SecurityParam
-  -> l -- ^ Updated ledger state
+  -> l Canonical -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
 pushLedgerState secParam current' db@LedgerDB{..}  =
     ledgerDbPrune secParam $ db {
@@ -405,7 +401,7 @@ pushLedgerState secParam current' db@LedgerDB{..}  =
 -- | Rollback
 --
 -- Returns 'Nothing' if maximum rollback is exceeded.
-rollback :: GetTip l => Word64 -> LedgerDB l -> Maybe (LedgerDB l)
+rollback :: GetTip (l Canonical) => Word64 -> LedgerDB l -> Maybe (LedgerDB l)
 rollback n db@LedgerDB{..}
     | n <= ledgerDbMaxRollback db
     = Just db {
@@ -477,7 +473,7 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks db =
                                      db'
 
 {-------------------------------------------------------------------------------
-  The LedgerDB itself behaves like a ledger
+  LedgerDB Config
 -------------------------------------------------------------------------------}
 
 data LedgerDbCfg l = LedgerDbCfg {
@@ -488,54 +484,10 @@ data LedgerDbCfg l = LedgerDbCfg {
 
 deriving instance NoThunks (LedgerCfg l) => NoThunks (LedgerDbCfg l)
 
-type instance LedgerCfg (LedgerDB l) = LedgerDbCfg l
-
 type instance HeaderHash (LedgerDB l) = HeaderHash l
 
-instance IsLedger l => GetTip (LedgerDB l) where
+instance (HeaderHash (l Canonical) ~ HeaderHash l, IsLedger l) => GetTip (LedgerDB l) where
   getTip = castPoint . getTip . ledgerDbCurrent
-
-instance IsLedger l => GetTip (Ticked (LedgerDB l)) where
-  getTip = castPoint . getTip . tickedLedgerDbOrig
-
-instance IsLedger l => IsLedger (LedgerDB l) where
-  type LedgerErr (LedgerDB l) = LedgerErr l
-
-  type AuxLedgerEvent (LedgerDB l) = AuxLedgerEvent l
-
-  applyChainTickLedgerResult cfg slot db =
-      castLedgerResult ledgerResult <&> \l -> TickedLedgerDB {
-          tickedLedgerDbTicked = l
-        , tickedLedgerDbOrig   = db
-        }
-    where
-      ledgerResult = applyChainTickLedgerResult
-                       (ledgerDbCfg cfg)
-                       slot
-                       (ledgerDbCurrent db)
-
-instance ApplyBlock l blk => ApplyBlock (LedgerDB l) blk where
-  applyBlockLedgerResult cfg blk TickedLedgerDB{..} = do
-      ledgerResult <- applyBlockLedgerResult
-                        (ledgerDbCfg cfg)
-                        blk
-                        tickedLedgerDbTicked
-
-      return $ push <$> castLedgerResult ledgerResult
-    where
-      push :: l -> LedgerDB l
-      push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
-
-  reapplyBlockLedgerResult cfg blk TickedLedgerDB{..} =
-      push <$> castLedgerResult ledgerResult
-    where
-      push :: l -> LedgerDB l
-      push l = pushLedgerState (ledgerDbCfgSecParam cfg) l tickedLedgerDbOrig
-
-      ledgerResult = reapplyBlockLedgerResult
-                       (ledgerDbCfg cfg)
-                       blk
-                       tickedLedgerDbTicked
 
 {-------------------------------------------------------------------------------
   Support for testing

@@ -144,11 +144,11 @@ data BlockForging m blk = BlockForging {
       -- PRECONDITION: 'checkCanForge' returned @Right ()@.
     , forgeBlock ::
            TopLevelConfig blk
-        -> BlockNo                      -- Current block number
-        -> SlotNo                       -- Current slot number
-        -> TickedLedgerState blk        -- Current ledger state
-        -> [Validated (GenTx blk)]      -- Contents of the mempool
-        -> IsLeader (BlockProtocol blk) -- Proof we are leader
+        -> BlockNo                         -- Current block number
+        -> SlotNo                          -- Current slot number
+        -> TickedLedgerState blk Canonical -- Current ledger state
+        -> [Validated (GenTx blk)]         -- Contents of the mempool
+        -> IsLeader (BlockProtocol blk)    -- Proof we are leader
         -> m blk
     }
 
@@ -163,7 +163,7 @@ data BlockForging m blk = BlockForging {
 takeLargestPrefixThatFits ::
      TxLimits blk
   => TxLimits.Overrides blk
-  -> TickedLedgerState blk
+  -> TickedLedgerState blk Canonical
   -> [Validated (GenTx blk)]
   -> [Validated (GenTx blk)]
 takeLargestPrefixThatFits overrides ledger txs =

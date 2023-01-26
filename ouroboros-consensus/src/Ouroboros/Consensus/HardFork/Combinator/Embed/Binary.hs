@@ -22,6 +22,8 @@ import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
 import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
 
 {-------------------------------------------------------------------------------
@@ -79,7 +81,7 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
       , pInfoInitLedger = ExtLedgerState {
             ledgerState =
               HardForkLedgerState $
-                initHardForkState initLedgerState1
+                initHardForkState $ Flip initLedgerState1
           , headerState =
               genesisHeaderState $
                 initHardForkState $

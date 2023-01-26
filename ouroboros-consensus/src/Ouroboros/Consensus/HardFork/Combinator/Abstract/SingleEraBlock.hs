@@ -88,7 +88,7 @@ class ( LedgerSupportsProtocol blk
   singleEraTransition :: PartialLedgerConfig blk
                       -> EraParams -- ^ Current era parameters
                       -> Bound     -- ^ Start of this era
-                      -> LedgerState blk
+                      -> LedgerState blk Canonical
                       -> Maybe EpochNo
 
   -- | Era information (for use in error messages)
@@ -101,7 +101,7 @@ singleEraTransition' :: SingleEraBlock blk
                      => WrapPartialLedgerConfig blk
                      -> EraParams
                      -> Bound
-                     -> LedgerState blk -> Maybe EpochNo
+                     -> LedgerState blk Canonical -> Maybe EpochNo
 singleEraTransition' = singleEraTransition . unwrapPartialLedgerConfig
 
 {-------------------------------------------------------------------------------

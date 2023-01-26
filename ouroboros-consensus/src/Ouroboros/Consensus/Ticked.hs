@@ -34,7 +34,7 @@ import           NoThunks.Class (NoThunks)
 -- * Transition from Byron to Shelley activated in the hard fork combinator.
 -- * Nonces switched out at the start of a new epoch.
 type Ticked :: Type -> Type
-data family Ticked st :: Type
+data family Ticked st
 
 -- Standard instance for use with trivial state
 

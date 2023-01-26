@@ -1,8 +1,11 @@
-{-# LANGUAGE DeriveFoldable    #-}
-{-# LANGUAGE DeriveFunctor     #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DeriveFoldable           #-}
+{-# LANGUAGE DeriveFunctor            #-}
+{-# LANGUAGE DeriveTraversable        #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 -- | Definition is 'IsLedger'
 --
@@ -24,6 +27,7 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerCfg
   , applyChainTick
     -- * Link block to its ledger
+  , Canonical
   , LedgerConfig
   , LedgerError
   , LedgerState
@@ -48,6 +52,7 @@ class GetTip l where
   getTip :: l -> Point l
 
 type instance HeaderHash (Ticked l) = HeaderHash l
+type instance HeaderHash (Ticked1 l mk) = HeaderHash l
 
 getTipHash :: GetTip l => l -> ChainHash l
 getTipHash = pointHash . getTip
@@ -97,12 +102,13 @@ pureLedgerResult a = LedgerResult {
 -------------------------------------------------------------------------------}
 
 -- | Static environment required for the ledger
+type LedgerCfg :: (Type -> Type) -> Type
 type family LedgerCfg l :: Type
 
 class ( -- Requirements on the ledger state itself
-        Show     l
-      , Eq       l
-      , NoThunks l
+        Show     (l Canonical)
+      , Eq       (l Canonical)
+      , NoThunks (l Canonical)
         -- Requirements on 'LedgerCfg'
       , NoThunks (LedgerCfg l)
         -- Requirements on 'LedgerErr'
@@ -113,9 +119,9 @@ class ( -- Requirements on the ledger state itself
         --
         -- See comment for 'applyChainTickLedgerResult' about the tip of the
         -- ticked ledger.
-      , GetTip l
-      , GetTip (Ticked l)
-      ) => IsLedger l where
+      , GetTip (l Canonical)
+      , GetTip (Ticked1 l Canonical)
+      ) => IsLedger (l :: Type -> Type) where
   -- | Errors that can arise when updating the ledger
   --
   -- This is defined here rather than in 'ApplyBlock', since the /type/ of
@@ -159,11 +165,11 @@ class ( -- Requirements on the ledger state itself
   applyChainTickLedgerResult ::
        LedgerCfg l
     -> SlotNo
-    -> l
-    -> LedgerResult l (Ticked l)
+    -> l Canonical
+    -> LedgerResult l (Ticked1 l Canonical)
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
-applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l -> Ticked l
+applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l Canonical -> Ticked1 l Canonical
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------
@@ -171,10 +177,16 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 -------------------------------------------------------------------------------}
 
 -- | Ledger state associated with a block
-data family LedgerState blk :: Type
+type LedgerState :: Type -> Type -> Type
+data family LedgerState blk mk :: Type
 
-type instance HeaderHash (LedgerState blk) = HeaderHash blk
+-- | A canonical ledger state, with all the contents in memory. This is just a
+-- phantom type used to sketch later development and shall not land on the
+-- release version.
+data Canonical
 
-type LedgerConfig      blk = LedgerCfg (LedgerState blk)
-type LedgerError       blk = LedgerErr (LedgerState blk)
-type TickedLedgerState blk = Ticked    (LedgerState blk)
+type instance HeaderHash (LedgerState blk mk) = HeaderHash blk
+type instance HeaderHash (LedgerState blk)    = HeaderHash blk
+type LedgerConfig      blk    = LedgerCfg (LedgerState blk)
+type LedgerError       blk    = LedgerErr (LedgerState blk)
+type TickedLedgerState blk mk = Ticked1   (LedgerState blk) mk
