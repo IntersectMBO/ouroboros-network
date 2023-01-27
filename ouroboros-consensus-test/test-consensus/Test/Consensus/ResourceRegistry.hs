@@ -13,7 +13,24 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
 {-# LANGUAGE TypeApplications           #-}
-
+-- | Tests for the resource registry
+--
+-- The resource registry is a component throughout the consensus layer that
+-- helps us keep track of resources and makes sure that all resources that we
+-- allocate are eventually also deallocated in the right order.
+--
+-- The tests for the registry are model based. The model records which resources
+-- we expect to be alive and which we expect to have been deallocated. The only
+-- resources we are modelling here are threads; the commands we then execute are
+--
+-- * Fork a thread from some other thread
+-- * Terminate a thread
+-- * Have a thread crash
+-- * Collect all live threads
+--
+-- We then verify that the resource registry behaves like the model, cleaning
+-- up resources as threads terminate or crash.
+--
 module Test.Consensus.ResourceRegistry (tests) where
 
 import           Prelude hiding (elem)

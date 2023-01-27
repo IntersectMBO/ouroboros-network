@@ -19,6 +19,29 @@
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+-- | Main tests for the chain DB.
+--
+-- These are the main tests for the chain DB. Commands include
+--
+-- * Add a block
+-- * Add a block with a @SlotNo@ that is ahead of the wall-clock.
+-- * Get the current chain and/or ledger state
+-- * Create a new iterator and use it to stream blocks
+-- * Create a new follower and use it to follow the chain
+-- * (Limited) disk corruption (the chain DB relies on the immutable DB and
+--   volatile DB for the storage proper and /they/ have extensive disk corruption
+--   tests, so we don't need to repeat that here).
+--
+-- Note that it is important to tests blocks with a @SlotNo@ ahead of the
+-- wallclock separately, because the Ouroboros protocol says such blocks should
+-- not be adopted, but we do want to allow for some clock skew in upstream nodes;
+-- this means that such "blocks from the future" are stored without being added to
+-- the chain just yet, to be considered later. Moreover, we have to be very careful
+-- in how we do this "from the future" check; for example, if the ledger state is
+-- far behind the wallclock, we might not have sufficient knowledge to translate
+-- the wallclock to a @SlotNo@, although we /can/ always translate the @SlotNo@
+-- at the tip of the chain to a @UTCTime@.
+--
 module Test.Ouroboros.Storage.ChainDB.StateMachine (tests) where
 
 import           Codec.Serialise (Serialise)

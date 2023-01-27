@@ -10,7 +10,23 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-
+-- | Tests for the volatile DB
+--
+-- The set of commands for the volatile DB is similar to the immutable DB,
+-- commands such as:
+--
+-- * Get a block or information about a block
+-- * Add a block
+-- * Simulate disk corruption
+--
+-- in addition to a few commands that are supported only by the volatile DB,
+-- such as "find all blocks with the given predecessor" (used by chain selection).
+-- The model (defined in @Test.Ouroboros.Storage.VolatileDB.Model@) is a list
+-- of "files", where every file is modelled simply as a list of blocks and some
+-- block metadata. The reason that this is slightly more detailed than one might
+-- hope (just a set of blocks) is that we need the additional detail to be able
+-- to predict the effects of disk corruption.
+--
 module Test.Ouroboros.Storage.VolatileDB.StateMachine (
     showLabelledExamples
   , tests

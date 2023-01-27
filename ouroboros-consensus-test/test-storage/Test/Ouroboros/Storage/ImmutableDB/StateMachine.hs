@@ -16,6 +16,31 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans      #-}
+-- | Model-based tests for the immutable DB.
+--
+-- This is the main test for the immutable DB. As in any model based, we have a
+-- set of commands, which in this case corresponds to things like:
+--
+-- * Read a block, or information about a block, from the DB
+-- * Append a block to the database
+-- * Stream blocks from the DB
+--
+-- See 'Cmd' for the full list of commands.
+--
+-- In addition, there are commands that model disk corruption, so that we can
+-- test that the DB does the right thing in the presence of disk failure. The
+-- consensus storage layer has a simple policy for disk corruption: /it is
+-- always sound to truncate the chain/; after all, we can always get the
+-- remaining blocks from other peers again. This means that in the models, disk
+-- corruption is simply modelled as truncation of the chain; the real thing of
+-- course needs to be able /detect/ the corruption, minimize quite how far we
+-- truncate, etc.
+--
+-- The model (defined in 'Test.Ouroboros.Storage.ImmutableDB.Model') is
+-- essentially just a mapping from slots to blocks. It needs to maintain a /bit/
+-- more state than that, in order to deal with stateful API components such as
+-- database cursors, but that's basically it.
+--
 module Test.Ouroboros.Storage.ImmutableDB.StateMachine (
     showLabelledExamples
   , tests

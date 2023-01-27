@@ -2,6 +2,12 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+-- | Tests for the chain DB iterator.
+--
+-- This is a set of unit tests that check for specific bugs discovered during
+-- other testing. The more important tests for the iterators is the main model
+-- based test of the chain DB (@Test.Ouroboros.Storage.ChainDB.Model.Test@).
+--
 module Test.Ouroboros.Storage.ChainDB.Iterator (tests) where
 
 import           Test.Tasty

@@ -4,6 +4,24 @@
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+-- | Tests for the RAW lock mechanism.
+--
+-- The volatile DB uses an abstraction we call a @RAWLock@, a lock that allows
+-- the following combinations of readers, appender and writer:
+--
+--
+-- >          │ Reader │ Appender │ Writer │
+-- > ─────────┼────────┼──────────┼────────┤
+-- > Reader   │   V    │     V    │    X   │
+-- > Appender │░░░░░░░░│     X    │    X   │
+-- > Writer   │░░░░░░░░│░░░░░░░░░░│    X   │
+--
+-- It improves concurrent access. In the test we generate lots of threads, some
+-- readers, some appenders, some writers, each concurrently accessing some data
+-- protected by the lock. We then record the access pattern; the test would fail
+-- if at any point it would see a forbidden combination (for example, a writer
+-- and a reader both having access at the same time).
+--
 module Test.Consensus.Util.MonadSTM.RAWLock (tests) where
 
 import           Control.Exception (throw)

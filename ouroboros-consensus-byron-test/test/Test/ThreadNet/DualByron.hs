@@ -5,6 +5,9 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
+-- | This runs the Byron ledger and the Byron specification in lockstep,
+--   verifying that they agree at every point.
+--
 module Test.ThreadNet.DualByron (tests) where
 
 import           Control.Monad.Except

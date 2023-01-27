@@ -1,7 +1,23 @@
 {-# LANGUAGE LambdaCase       #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-uni-patterns #-}
-
+-- | Primary index tests.
+--
+-- This is a sequence of relatively simple property tests:
+--
+-- * Writing a primary index to disk and then reading it again is an identity
+--   operation (@prop_write_load@)
+-- * We can create new primary indices by appending new entries to them
+--   (@prop_open_appendOffsets_load@)
+-- * We can truncate primary indices to particular slot.
+-- * Finding and reporting "filled slots" (not all slots in a chunk file, and
+--   hence in a primary index, need to contain a block) works as expected.
+-- * Reconstructing a primary index from the same data results in the same
+--   primary index.
+--
+-- These property tests are QuickCheck based, which means they generate random
+-- indices, random slot numbers, etc., and come with a proper shrinker.
+--
 module Test.Ouroboros.Storage.ImmutableDB.Primary (tests) where
 
 import           Data.Functor ((<&>))
