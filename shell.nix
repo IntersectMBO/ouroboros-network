@@ -30,7 +30,7 @@ let
       # IDE tools
       ghcid = "0.8.7";
       hasktags = "0.71.2";
-      haskell-language-server = "latest";
+      haskell-language-server = "1.8.0.0";
       # Draw graph of module dependencies
       graphmod = "1.4.4";
       # Profiling tools
