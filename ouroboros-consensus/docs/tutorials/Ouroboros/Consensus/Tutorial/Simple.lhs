@@ -50,11 +50,11 @@ First, some imports we'll need:
 >    HeaderHash, Point, StandardHash)
 > import Ouroboros.Consensus.Protocol.Abstract
 >   (SecurityParam(..), ConsensusConfig, ConsensusProtocol(..) )
-> import Ouroboros.Consensus.Ticked ( Ticked(TickedTrivial) )
+> import Ouroboros.Consensus.Ticked ( Ticked(TickedTrivial), Ticked1 )
 > import Ouroboros.Consensus.Block
 >   (BlockSupportsProtocol (selectView, validateView))
 > import Ouroboros.Consensus.Ledger.Abstract
->   (GetTip(..), IsLedger(..), LedgerCfg,
+>   (Canonical, GetTip(..), IsLedger(..), LedgerCfg,
 >    LedgerResult(LedgerResult, lrEvents, lrResult),
 >    LedgerState, ApplyBlock(..), UpdateLedger)
 > import Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -521,7 +521,7 @@ Given that the `BlockC` transactions consist of incrementing and decrementing a
 number, we materialize that number in the `LedgerState`.  We'll also need to
 keep track of some information about the most recent block we have seen.
 
-> data instance LedgerState BlockC =
+> data instance LedgerState BlockC mk =
 >
 >   LedgerC
 >     -- the hash and slot number of the most recent block
@@ -542,9 +542,9 @@ Again, the slot abstraction defines a logical clock - and instances of the
 As such, we will also need to define an instance of `Ticked` for our ledger
 state.  In our example, this is essentially an `Identity` functor:
 
-> newtype instance Ticked (LedgerState BlockC) =
+> newtype instance Ticked1 (LedgerState BlockC) mk =
 >   TickedLedgerStateC
->     { unTickedLedgerStateC :: LedgerState BlockC }
+>     { unTickedLedgerStateC :: LedgerState BlockC mk }
 >   deriving (Show, Eq, Generic, Serialise)
 
 
@@ -586,7 +586,9 @@ A block `b` is said to have been `applied` to a `LedgerState` if that
 `LedgerState` is the result of having witnessed `b` at some point.  We can
 express this as a function:
 
-> applyBlockTo :: BlockC -> Ticked (LedgerState BlockC) -> LedgerState BlockC
+> applyBlockTo :: BlockC
+>              -> Ticked1 (LedgerState BlockC) Canonical
+>              -> LedgerState BlockC Canonical
 > applyBlockTo block tickedLedgerState =
 >   ledgerState { lsbc_tip = blockPoint block
 >               , lsbc_count = lsbc_count'
@@ -653,10 +655,10 @@ The `GetTip` typeclass describes how to get the `Point` of the tip - which is
 the most recently applied block.  We need to implement this both for
 `LedgerState BlockC` as well as its ticked version:
 
-> instance GetTip (Ticked (LedgerState BlockC)) where
+> instance GetTip (Ticked1 (LedgerState BlockC) Canonical) where
 >    getTip = castPoint . lsbc_tip . unTickedLedgerStateC
 
-> instance GetTip (LedgerState BlockC) where
+> instance GetTip (LedgerState BlockC Canonical) where
 >    getTip = castPoint . lsbc_tip
 
 Associating Ledgers to Protocols
@@ -703,6 +705,6 @@ To focus on the salient ideas of this document, we've put all the derivations of
 >   instance NoThunks BlockC
 > deriving via OnlyCheckWhnfNamed "HdrBlockC" (Header BlockC)
 >   instance NoThunks (Header BlockC)
-> deriving via OnlyCheckWhnfNamed "LedgerC" (LedgerState BlockC)
->   instance NoThunks (LedgerState BlockC)
-> deriving instance NoThunks (Ticked (LedgerState BlockC))
+> deriving via OnlyCheckWhnfNamed "LedgerC" (LedgerState BlockC mk)
+>   instance NoThunks (LedgerState BlockC mk)
+> deriving instance NoThunks (Ticked1 (LedgerState BlockC) mk)

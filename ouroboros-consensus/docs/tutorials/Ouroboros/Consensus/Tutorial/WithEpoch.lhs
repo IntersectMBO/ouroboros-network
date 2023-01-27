@@ -74,9 +74,9 @@ And imports, of course:
 > import Ouroboros.Consensus.Protocol.Abstract
 >   (ConsensusConfig, SecurityParam, ConsensusProtocol (..))
 >
-> import Ouroboros.Consensus.Ticked (Ticked)
+> import Ouroboros.Consensus.Ticked (Ticked, Ticked1)
 > import Ouroboros.Consensus.Ledger.Abstract
->   (LedgerState, LedgerCfg, GetTip, LedgerResult (..), ApplyBlock (..),
+>   (Canonical, LedgerState, LedgerCfg, GetTip, LedgerResult (..), ApplyBlock (..),
 >    UpdateLedger, IsLedger (..))
 >
 > import Ouroboros.Consensus.Ledger.SupportsMempool ()
@@ -294,7 +294,7 @@ corresponding to `BlockD` needs to hold snapshots of the count at the last two
 epoch boundaries - this is the `lsbd_snapshot1` and `lsbd_snapshot2` fields
 below:
 
-> data instance LedgerState BlockD =
+> data instance LedgerState BlockD mk =
 >   LedgerD
 >     { lsbd_tip :: Point BlockD    -- ^ Point of the last applied block.
 >                                   --   (Point is header hash and slot no.)
@@ -314,10 +314,10 @@ There is no interesting static configuration for this ledger:
 
 Our `GetTip` implementation retrieves the tip from the `lsbd_tip` field:
 
-> instance GetTip (Ticked (LedgerState BlockD)) where
+> instance GetTip (Ticked1 (LedgerState BlockD) Canonical) where
 >  getTip = castPoint . lsbd_tip . unTickedLedgerStateD
 
-> instance GetTip (LedgerState BlockD) where
+> instance GetTip (LedgerState BlockD Canonical) where
 >   getTip = castPoint . lsbd_tip
 
 Ticking
@@ -326,9 +326,9 @@ Ticking
 `LedgerState BlockD` also needs a corresponding `Ticked` instance which is still
 very simple:
 
-> newtype instance Ticked (LedgerState BlockD) =
+> newtype instance Ticked1 (LedgerState BlockD) mk =
 >   TickedLedgerStateD {
->     unTickedLedgerStateD :: LedgerState BlockD
+>     unTickedLedgerStateD :: LedgerState BlockD mk
 >   }
 >   deriving stock (Show, Eq, Generic)
 >   deriving newtype (NoThunks, Serialise)
@@ -340,8 +340,9 @@ computing the `Ticked (LedgerState BlockD)` resulting from a starting
 `LedgerState BlockD` being ticked to some slot in the future - assuming no
 intervening blocks are applied:
 
-> tickLedgerStateD ::
->   SlotNo -> LedgerState BlockD -> Ticked (LedgerState BlockD)
+> tickLedgerStateD :: SlotNo
+>                  -> LedgerState BlockD Canonical
+>                  -> Ticked1 (LedgerState BlockD) Canonical
 > tickLedgerStateD newSlot ldgrSt =
 >   TickedLedgerStateD $
 >     if isNewEpoch then
@@ -389,7 +390,9 @@ Applying Blocks
 Applying a `BlockD` to a `Ticked (LedgerState BlockD)` is (again) the result of
 applying each individual transaction - exactly as it was in for `BlockC`:
 
-> applyBlockTo :: BlockD -> Ticked (LedgerState BlockD) -> LedgerState BlockD
+> applyBlockTo :: BlockD
+>              -> Ticked1 (LedgerState BlockD) Canonical
+>              -> LedgerState BlockD Canonical
 > applyBlockTo block tickedLedgerState =
 >   ledgerState { lsbd_tip = blockPoint block
 >               , lsbd_count = lsbc_count'
