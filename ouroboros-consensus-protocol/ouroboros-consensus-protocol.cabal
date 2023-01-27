@@ -1,7 +1,7 @@
 cabal-version:      3.0
 
 name:                   ouroboros-consensus-protocol
-version:                0.1.0.0
+version:                0.1.0.2
 synopsis:               Cardano consensus protocols
 description:            Cardano consensus protocols.
 license:                Apache-2.0
@@ -11,6 +11,7 @@ copyright:              2021-2023 Input Output Global Inc (IOG)
 author:                 IOHK Formal methods team
 maintainer:             operations@iohk.io
 category:               Network
+extra-source-files:     CHANGELOG.md
 
 source-repository head
     type: git
