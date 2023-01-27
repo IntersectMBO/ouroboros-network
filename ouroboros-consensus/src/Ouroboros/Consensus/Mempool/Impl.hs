@@ -23,7 +23,6 @@ module Ouroboros.Consensus.Mempool.Impl (
   ) where
 
 import           Control.Monad.Except
-import           Data.Typeable
 
 import           Control.Tracer
 
@@ -201,7 +200,7 @@ forkSyncStateOnTipPointChange registry menv =
     -- Using the tip ('Point') allows for quicker equality checks
     getCurrentTip :: STM m (Point blk)
     getCurrentTip =
-          ledgerTipPoint (Proxy @blk)
+          ledgerTipPoint
       <$> getCurrentLedgerState (mpEnvLedger menv)
 
 implSyncWithLedger ::

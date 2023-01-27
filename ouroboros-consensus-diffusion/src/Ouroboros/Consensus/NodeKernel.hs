@@ -385,7 +385,7 @@ forkBlockForging IS{..} blockForging =
 
         trace $ TraceForgedBlock
                   currentSlot
-                  (ledgerTipPoint (Proxy @blk) (ledgerState unticked))
+                  (ledgerTipPoint (ledgerState unticked))
                   newBlock
                   (snapshotMempoolSize mempoolSnapshot)
 
