@@ -81,8 +81,7 @@ import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+import           Ouroboros.Consensus.Storage.LedgerDB
 
 import qualified Test.Util.Classify as C
 import qualified Test.Util.FS.Sim.MockFS as MockFS
@@ -757,13 +756,13 @@ runDB standalone@DB{..} cmd =
                 (map ApplyVal bs)
                 db
     go hasFS Snap = do
-        (_, db) <- atomically $ readTVar dbState
+        (_, db) <- atomically (readTVar dbState)
         Snapped <$>
           takeSnapshot
             nullTracer
             hasFS
             S.encode
-            db
+            (ledgerDbAnchor db)
     go hasFS Restore = do
         (initLog, db, _replayed) <-
           initLedgerDB

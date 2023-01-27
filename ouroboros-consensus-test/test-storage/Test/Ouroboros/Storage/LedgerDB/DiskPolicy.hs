@@ -14,9 +14,9 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (DiskPolicy (..), SnapshotInterval (..),
-                     TimeSinceLast (..), defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskPolicy (..),
+                     SnapshotInterval (..), TimeSinceLast (..),
+                     defaultDiskPolicy)
 
 tests :: TestTree
 tests =

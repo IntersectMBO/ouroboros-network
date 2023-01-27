@@ -91,8 +91,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
-import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
+import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.Serialisation
 
 -- Support for tests
@@ -170,7 +170,7 @@ data ChainDB m blk = ChainDB {
     , getCurrentChain    :: STM m (AnchoredFragment (Header blk))
 
       -- | Return the LedgerDB containing the last @k@ ledger states.
-    , getLedgerDB        :: STM m (LedgerDB (ExtLedgerState blk))
+    , getLedgerDB        :: STM m (LedgerDB' blk)
 
       -- | Get block at the tip of the chain, if one exists
       --
@@ -386,7 +386,7 @@ getHeaderStateHistory ::
 getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
   where
     toHeaderStateHistory ::
-         LedgerDB (ExtLedgerState blk)
+         LedgerDB' blk
       -> HeaderStateHistory blk
     toHeaderStateHistory =
           HeaderStateHistory
