@@ -336,6 +336,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
 
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
