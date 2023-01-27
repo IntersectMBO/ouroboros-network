@@ -231,7 +231,7 @@ A - ...
 # Installing `scriv` 
 
 To manage the workflow described above, we will use the `scriv` tool. If you use
-`nix` then you already will found `scriv` in the `nix develop` shell. Otherwise,
+`nix` then you will find `scriv` in the Nix shell. Otherwise,
 the way to install it from source is:
 
 1. Clone [the repository](https://github.com/input-output-hk/scriv/) and `cd`
