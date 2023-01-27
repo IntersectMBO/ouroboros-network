@@ -227,3 +227,18 @@ G - fix confusion in the old logic
 B - the release of FOO-1.0.0 (tag: release-FOO-1.0.0)
 A - ...
 ```
+
+# Installing `scriv` 
+
+To manage the workflow described above, we will use the `scriv` tool. If you use
+`nix` then you already will found `scriv` in the `nix develop` shell. Otherwise,
+the way to install it from source is:
+
+1. Clone [the repository](https://github.com/input-output-hk/scriv/) and `cd`
+   into it.
+2. Run `pip install -e $(pwd)`
+
+If you encounter an error mentioning:
+`pkg_resources.extern.packaging.version.InvalidVersion: Invalid version: ...` we
+found that downgrading `setuptools` to a version `< 66` seems to solve this
+problem.
