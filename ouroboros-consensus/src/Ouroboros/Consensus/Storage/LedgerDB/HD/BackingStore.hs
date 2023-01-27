@@ -1,0 +1,318 @@
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE Rank2Types                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+
+-- | A store for key-value maps that can be extended with deltas.
+--
+-- Its intended use is for storing data structures from the 'LedgerState' and
+-- update them with differences produced by executing the Ledger rules.
+module Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore (
+    -- * Backing store interface
+    BackingStore (..)
+  , BackingStoreInitialiser (..)
+  , BackingStorePath (..)
+  , BackingStoreValueHandle (..)
+  , InitFrom (..)
+  , RangeQuery (..)
+  , bsRead
+  , initFromCopy
+  , initFromValues
+  , withBsValueHandle
+    -- * An in-memory backing store
+  , StoreDirIsIncompatible (..)
+  , TVarBackingStoreExn (..)
+  , newTVarBackingStoreInitialiser
+    -- * A trivial backing store
+  , trivialBackingStore
+  ) where
+
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR
+import           Control.Exception (Exception)
+import           Control.Monad (join, unless, void, when)
+import qualified Data.ByteString.Lazy as BSL
+import           Data.String (fromString)
+import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
+
+import           Cardano.Binary as CBOR
+import           Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
+
+import qualified Ouroboros.Consensus.Storage.FS.API as FS
+import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
+import           Ouroboros.Consensus.Util.IOLike (IOLike)
+import qualified Ouroboros.Consensus.Util.IOLike as IOLike
+
+{-------------------------------------------------------------------------------
+  Backing store interface
+-------------------------------------------------------------------------------}
+
+data InitFrom values =
+    InitFromValues !(WithOrigin SlotNo) !values
+  | InitFromCopy !BackingStorePath
+
+-- | Initialisation for a backing store
+newtype BackingStoreInitialiser m keys values diff = BackingStoreInitialiser {
+    bsiInit :: FS.SomeHasFS m -> InitFrom values -> m (BackingStore m keys values diff)
+  }
+  deriving newtype NoThunks
+
+initFromValues ::
+     BackingStoreInitialiser m keys values diff
+  -> FS.SomeHasFS m
+  -> WithOrigin SlotNo
+  -> values
+  -> m (BackingStore m keys values diff)
+initFromValues bsi shfs sl vs = bsiInit bsi shfs (InitFromValues sl vs)
+
+initFromCopy ::
+     BackingStoreInitialiser m keys values diff
+  -> FS.SomeHasFS m
+  -> BackingStorePath
+  -> m (BackingStore m keys values diff)
+initFromCopy bsi shfs bsp = bsiInit bsi shfs (InitFromCopy bsp)
+
+-- | A backing store for a map
+data BackingStore m keys values diff = BackingStore {
+    -- | Close the backing store
+    --
+    -- Other methods throw exceptions if called on a closed store.
+    bsClose       :: !(m ())
+    -- | Create a persistent copy
+    --
+    -- Each backing store implementation will offer a way to initialize itself
+    -- from such a path.
+    --
+    -- The destination path must not already exist. After this operation, it
+    -- will be a directory.
+  , bsCopy        :: !(FS.SomeHasFS m -> BackingStorePath -> m ())
+    -- | Open a 'BackingStoreValueHandle' capturing the current value of the
+    -- entire database
+  , bsValueHandle :: !(m (WithOrigin SlotNo, BackingStoreValueHandle m keys values))
+    -- | Apply a valid diff to the contents of the backing store
+  , bsWrite       :: !(SlotNo -> diff -> m ())
+  }
+
+deriving via OnlyCheckWhnfNamed "BackingStore" (BackingStore m keys values diff)
+  instance NoThunks (BackingStore m keys values diff)
+
+newtype BackingStorePath = BackingStorePath FS.FsPath
+  deriving stock (Show, Eq, Ord)
+  deriving newtype NoThunks
+
+-- | An ephemeral handle to an immutable value of the entire database
+--
+-- The performance cost is usually minimal unless this handle is held open too
+-- long. We expect clients of the BackingStore to not retain handles for a long
+-- time.
+data BackingStoreValueHandle m keys values = BackingStoreValueHandle {
+    -- | Close the handle
+    --
+    -- Other methods throw exceptions if called on a closed handle.
+    bsvhClose     :: !(m ())
+    -- | See 'RangeQuery'
+  , bsvhRangeRead :: !(RangeQuery keys -> m values)
+    -- | Read the given keys from the handle
+    --
+    -- Absent keys will merely not be present in the result instead of causing a
+    -- failure or an exception.
+  , bsvhRead      :: !(keys -> m values)
+  }
+
+data RangeQuery keys = RangeQuery {
+      -- | The result of this range query begin at first key that is strictly
+      -- greater than the greatest key in 'rqPrev'.
+      --
+      -- If the given set of keys is 'Just' but contains no keys, then the query
+      -- will return no results. (This is the steady-state once a looping range
+      -- query reaches the end of the table.)
+      rqPrev  :: Maybe keys
+      -- | Roughly how many values to read.
+      --
+      -- The query may return a different number of values than this even if it
+      -- has not reached the last key. The only crucial invariant is that the
+      -- query only returns an empty map if there are no more keys to read on
+      -- disk.
+      --
+      -- FIXME: can we satisfy this invariant if we read keys from disk but all
+      -- of them were deleted in the changelog?
+    , rqCount :: !Int
+    }
+    deriving stock (Show, Eq)
+
+deriving via OnlyCheckWhnfNamed "BackingStoreValueHandle" (BackingStoreValueHandle m keys values)
+  instance NoThunks (BackingStoreValueHandle m keys values)
+
+-- | A combination of 'bsValueHandle' and 'bsvhRead'
+bsRead ::
+     IOLike m
+  => BackingStore m keys values diff
+  -> keys
+  -> m (WithOrigin SlotNo, values)
+bsRead store keys = withBsValueHandle store $ \slot vh -> do
+    values <- bsvhRead vh keys
+    pure (slot, values)
+
+-- | A 'IOLike.bracket'ed 'bsValueHandle'
+withBsValueHandle ::
+     IOLike m
+  => BackingStore m keys values diff
+  -> (WithOrigin SlotNo -> BackingStoreValueHandle m keys values -> m a)
+  -> m a
+withBsValueHandle store kont =
+    IOLike.bracket
+      (bsValueHandle store)
+      (bsvhClose . snd)
+      (uncurry kont)
+
+{-------------------------------------------------------------------------------
+  An in-memory backing store
+-------------------------------------------------------------------------------}
+
+data TVarBackingStoreContents m values =
+    TVarBackingStoreContentsClosed
+  | TVarBackingStoreContents
+      !(WithOrigin SlotNo)
+      !values
+  deriving (Generic, NoThunks)
+
+data TVarBackingStoreExn =
+    TVarBackingStoreClosedExn
+  | TVarBackingStoreValueHandleClosedExn
+  | TVarBackingStoreDirectoryExists
+  | TVarBackingStoreNonMonotonicSeq !(WithOrigin SlotNo) !(WithOrigin SlotNo)
+  | TVarBackingStoreDeserialiseExn CBOR.DeserialiseFailure
+  | TVarIncompleteDeserialiseExn
+  deriving anyclass (Exception)
+  deriving stock    (Show)
+
+newtype StoreDirIsIncompatible = StoreDirIsIncompatible FS.FsErrorPath
+  deriving anyclass (Exception)
+
+instance Show StoreDirIsIncompatible where
+  show (StoreDirIsIncompatible p) =
+       "In-Memory database not found in the database directory: "
+    <> show p
+    <> ".\nPre-UTxO-HD and LMDB implementations are incompatible with the In-Memory \
+       \ implementation. Please delete your ledger database directory."
+
+-- | Use a 'TVar' as a trivial backing store
+newTVarBackingStoreInitialiser ::
+     (IOLike m, NoThunks values)
+  => (keys -> values -> values)
+  -> (RangeQuery keys -> values -> values)
+  -> (values -> diff -> values)
+  -> (values -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s values)
+  -> BackingStoreInitialiser m keys values diff
+newTVarBackingStoreInitialiser lookup_ rangeRead_ forwardValues_ enc dec =
+  BackingStoreInitialiser $ \(FS.SomeHasFS fs0) initialization -> do
+    ref <- do
+      (slot, values) <- case initialization of
+        InitFromCopy (BackingStorePath path) -> do
+          tvarFileExists <- FS.doesFileExist fs0 (extendPath path)
+          unless tvarFileExists $
+            IOLike.throwIO . StoreDirIsIncompatible $ FS.mkFsErrorPath fs0 path
+          FS.withFile fs0 (extendPath path) FS.ReadMode $ \h -> do
+            bs <- FS.hGetAll fs0 h
+            case CBOR.deserialiseFromBytes ((,) <$> CBOR.fromCBOR <*> dec) bs of
+              Left  err        -> IOLike.throwIO $ TVarBackingStoreDeserialiseExn err
+              Right (extra, x) -> do
+                unless (BSL.null extra) $ IOLike.throwIO TVarIncompleteDeserialiseExn
+                pure x
+        InitFromValues slot values -> pure (slot, values)
+      IOLike.newTVarIO $ TVarBackingStoreContents slot values
+    pure BackingStore {
+        bsClose    = IOLike.atomically $ do
+          guardClosed ref
+          IOLike.writeTVar ref TVarBackingStoreContentsClosed
+      , bsCopy = \(FS.SomeHasFS fs) (BackingStorePath path) ->
+          join $ IOLike.atomically $ do
+            IOLike.readTVar ref >>= \case
+              TVarBackingStoreContentsClosed                ->
+                IOLike.throwSTM TVarBackingStoreClosedExn
+              TVarBackingStoreContents slot values -> pure $ do
+                exists <- FS.doesDirectoryExist fs path
+                when exists $ IOLike.throwIO TVarBackingStoreDirectoryExists
+                FS.createDirectory fs path
+                FS.withFile fs (extendPath path) (FS.WriteMode FS.MustBeNew) $ \h -> do
+                  void $ FS.hPutAll fs h $ CBOR.toLazyByteString $ CBOR.toCBOR slot <> enc values
+      , bsValueHandle = join $ IOLike.atomically $ do
+          IOLike.readTVar ref >>= \case
+            TVarBackingStoreContentsClosed                ->
+              IOLike.throwSTM TVarBackingStoreClosedExn
+            TVarBackingStoreContents slot values -> pure $ do
+              refHandleClosed <- IOLike.newTVarIO False
+              pure $ (,) slot $ BackingStoreValueHandle {
+                  bsvhClose     = IOLike.atomically $ do
+                    guardClosed ref
+                    guardHandleClosed refHandleClosed
+                    IOLike.writeTVar refHandleClosed True
+                , bsvhRangeRead = \rq -> IOLike.atomically $ do
+                    guardClosed ref
+                    guardHandleClosed refHandleClosed
+                    pure $ rangeRead_ rq values
+                , bsvhRead      = \keys -> IOLike.atomically $ do
+                    guardClosed ref
+                    guardHandleClosed refHandleClosed
+                    pure $ lookup_ keys values
+                }
+      , bsWrite    = \slot2 diff -> IOLike.atomically $ do
+          IOLike.readTVar ref >>= \case
+            TVarBackingStoreContentsClosed        ->
+              IOLike.throwSTM TVarBackingStoreClosedExn
+            TVarBackingStoreContents slot1 values -> do
+              unless (slot1 <= At slot2) $
+                IOLike.throwSTM $ TVarBackingStoreNonMonotonicSeq (At slot2) slot1
+              IOLike.writeTVar ref $
+                TVarBackingStoreContents
+                  (At slot2)
+                  (forwardValues_ values diff)
+      }
+  where
+    extendPath path =
+      FS.fsPathFromList $ FS.fsPathToList path <> [fromString "tvar"]
+
+guardClosed ::
+     IOLike m
+  => IOLike.StrictTVar m (TVarBackingStoreContents ks vs)
+  -> IOLike.STM m ()
+guardClosed ref = IOLike.readTVar ref >>= \case
+  TVarBackingStoreContentsClosed -> IOLike.throwSTM TVarBackingStoreClosedExn
+  TVarBackingStoreContents _ _   -> pure ()
+
+guardHandleClosed ::
+     IOLike m
+  => IOLike.StrictTVar m Bool
+  -> IOLike.STM m ()
+guardHandleClosed refHandleClosed = do
+  isClosed <- IOLike.readTVar refHandleClosed
+  when isClosed $ IOLike.throwSTM TVarBackingStoreValueHandleClosedExn
+
+{-------------------------------------------------------------------------------
+  A trivial backing store that holds only the slot number
+-------------------------------------------------------------------------------}
+
+trivialBackingStore :: IOLike m => values -> m (BackingStore m keys values diff)
+trivialBackingStore emptyValues = do
+  seqNo <- IOLike.newTVarIO Origin
+  pure $ BackingStore
+              (pure ())
+              (\_ _ -> pure ())
+              (IOLike.atomically $ do
+                  s <- IOLike.readTVar seqNo
+                  pure $ ( s
+                         , BackingStoreValueHandle
+                             (pure ())
+                             (\_ -> pure emptyValues)
+                             (\_ -> pure emptyValues)
+                         )
+              )
+              (\s _ -> void
+                     $ IOLike.atomically
+                     $ IOLike.modifyTVar seqNo (\_ -> At s))

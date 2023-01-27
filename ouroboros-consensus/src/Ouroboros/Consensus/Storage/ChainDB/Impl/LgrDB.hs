@@ -80,12 +80,14 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Types
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (Ap (..),
                      ExceededRollback (..), LedgerDbCfg (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (AnnLedgerError',
-                     DiskSnapshot, LedgerDB', NextBlock (..), ReplayGoal,
-                     StreamAPI (..), TraceEvent (..), TraceReplayEvent (..))
+                     DiskSnapshot, LedgerBackingStore', LedgerDB',
+                     NextBlock (..), ReplayGoal, StreamAPI (..),
+                     TraceEvent (..), TraceReplayEvent (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
@@ -98,10 +100,10 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
-      varDB          :: !(StrictTVar m (LedgerDB' blk))
+      varDB             :: !(StrictTVar m (LedgerDB' blk))
       -- ^ INVARIANT: the tip of the 'LedgerDB' is always in sync with the tip
       -- of the current chain of the ChainDB.
-    , varPrevApplied :: !(StrictTVar m (Set (RealPoint blk)))
+    , varPrevApplied    :: !(StrictTVar m (Set (RealPoint blk)))
       -- ^ INVARIANT: this set contains only points that are in the
       -- VolatileDB.
       --
@@ -113,12 +115,13 @@ data LgrDB m blk = LgrDB {
       -- When a garbage-collection is performed on the VolatileDB, the points
       -- of the blocks eligible for garbage-collection should be removed from
       -- this set.
-    , resolveBlock   :: !(RealPoint blk -> m blk)
+    , lgrDbBackingStore :: !(LedgerBackingStore' m blk)
+    , resolveBlock      :: !(RealPoint blk -> m blk)
       -- ^ Read a block from disk
-    , cfg            :: !(TopLevelConfig blk)
-    , diskPolicy     :: !DiskPolicy
-    , hasFS          :: !(SomeHasFS m)
-    , tracer         :: !(Tracer m (TraceEvent blk))
+    , cfg               :: !(TopLevelConfig blk)
+    , diskPolicy        :: !DiskPolicy
+    , hasFS             :: !(SomeHasFS m)
+    , tracer            :: !(Tracer m (TraceEvent blk))
     } deriving (Generic)
 
 deriving instance (IOLike m, LedgerSupportsProtocol blk)
@@ -216,15 +219,17 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
     let dbPrunedToImmDBTip = LedgerDB.ledgerDbPrune (SecurityParam 0) db
     (varDB, varPrevApplied) <-
       (,) <$> newTVarIO dbPrunedToImmDBTip <*> newTVarIO Set.empty
+    lgrDbBackingStore <- LedgerDB.LedgerBackingStore <$> trivialBackingStore ()
     return (
         LgrDB {
-            varDB          = varDB
-          , varPrevApplied = varPrevApplied
-          , resolveBlock   = getBlock
-          , cfg            = lgrTopLevelConfig
-          , diskPolicy     = lgrDiskPolicy
-          , hasFS          = lgrHasFS
-          , tracer         = lgrTracer
+            varDB             = varDB
+          , varPrevApplied    = varPrevApplied
+          , lgrDbBackingStore = lgrDbBackingStore
+          , resolveBlock      = getBlock
+          , cfg               = lgrTopLevelConfig
+          , diskPolicy        = lgrDiskPolicy
+          , hasFS             = lgrHasFS
+          , tracer            = lgrTracer
           }
       , replayed
       )
@@ -267,10 +272,11 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
 -- | For testing purposes
 mkLgrDB :: StrictTVar m (LedgerDB' blk)
         -> StrictTVar m (Set (RealPoint blk))
+        -> LedgerBackingStore' m blk
         -> (RealPoint blk -> m blk)
         -> LgrDbArgs Identity m blk
         -> LgrDB m blk
-mkLgrDB varDB varPrevApplied resolveBlock args = LgrDB {..}
+mkLgrDB varDB varPrevApplied lgrDbBackingStore resolveBlock args = LgrDB {..}
   where
     LgrDbArgs {
         lgrTopLevelConfig = cfg

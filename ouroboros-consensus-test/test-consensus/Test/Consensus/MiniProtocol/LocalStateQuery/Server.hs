@@ -42,8 +42,10 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
                      (ledgerDbPast, ledgerDbTip, ledgerDbWithAnchor)
+import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
@@ -184,9 +186,10 @@ initLgrDB
   -> Chain TestBlock
   -> m (LgrDB m TestBlock)
 initLgrDB k chain = do
-    varDB          <- newTVarIO genesisLedgerDB
-    varPrevApplied <- newTVarIO mempty
-    let lgrDB = mkLgrDB varDB varPrevApplied resolve args
+    varDB             <- newTVarIO genesisLedgerDB
+    varPrevApplied    <- newTVarIO mempty
+    lgrDbBackingStore <- LedgerBackingStore <$> trivialBackingStore ()
+    let lgrDB = mkLgrDB varDB varPrevApplied lgrDbBackingStore resolve args
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0 noopTrace
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
         LgrDB.ValidateExceededRollBack _ ->

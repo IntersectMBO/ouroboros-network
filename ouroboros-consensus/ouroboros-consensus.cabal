@@ -222,6 +222,7 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
                        Ouroboros.Consensus.Storage.LedgerDB.Types

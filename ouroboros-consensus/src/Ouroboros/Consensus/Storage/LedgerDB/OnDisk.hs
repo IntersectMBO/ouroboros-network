@@ -1,15 +1,19 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiWayIf                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
     -- * Opening the database
@@ -40,6 +44,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk (
   , TraceEvent (..)
   , TraceReplayEvent (..)
   , decorateReplayTracerWithGoal
+    -- * Backing store
+  , LedgerBackingStore (..)
+  , LedgerBackingStore'
+  , LedgerBackingStoreInitialiser (..)
+  , LedgerBackingStoreValueHandle (..)
   ) where
 
 import qualified Codec.CBOR.Write as CBOR
@@ -73,7 +82,9 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
+import           Data.Kind (Type)
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
 
 {-------------------------------------------------------------------------------
@@ -564,3 +575,28 @@ data TraceReplayEvent blk
         (ReplayStart blk) -- ^ the block at which this replay started
         (ReplayGoal blk)  -- ^ the block at the tip of the ImmutableDB
   deriving (Generic, Eq, Show)
+
+{-------------------------------------------------------------------------------
+  Backing store specializations
+-------------------------------------------------------------------------------}
+
+type LedgerBackingStoreInitialiser :: (Type -> Type) -> (Type -> Type) -> Type
+newtype LedgerBackingStoreInitialiser m l = LedgerBackingStoreInitialiser
+  (BackingStoreInitialiser m () () ())
+  deriving newtype (NoThunks)
+
+-- | A handle to the backing store for the ledger tables
+type LedgerBackingStore :: (Type -> Type) -> (Type -> Type) -> Type
+newtype LedgerBackingStore m l = LedgerBackingStore
+    (BackingStore m  () () ())
+  deriving newtype (NoThunks)
+
+-- | A handle to the backing store for the ledger tables
+type LedgerBackingStoreValueHandle :: (Type -> Type) -> (Type -> Type) -> Type
+data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
+    !(WithOrigin SlotNo)
+    !(BackingStoreValueHandle m () ())
+  deriving stock    (Generic)
+  deriving anyclass (NoThunks)
+
+type LedgerBackingStore' m blk = LedgerBackingStore m (ExtLedgerState blk)
