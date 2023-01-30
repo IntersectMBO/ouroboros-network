@@ -942,8 +942,17 @@ chainSelection chainSelEnv chainDiffs =
         -- the tentative followers.
         setTentativeHeader :: m (StrictMaybe (Header blk))
         setTentativeHeader = do
+            gate <- do
+                let ledger :: LedgerState blk
+                    ledger =
+                        ledgerState
+                      $ LgrDB.ledgerDbCurrent
+                      $ VF.validatedLedger
+                      $ curChainAndLedger
+                f <- checkDefinitelyNotInFuture futureCheck
+                pure $ f $ ledger
             mTentativeHeader <-
-                  (\ts -> isPipelineable bcfg ts candidate)
+                  (\ts -> isPipelineable bcfg ts gate candidate)
               <$> readTVarIO varTentativeState
             whenJust (strictMaybeToMaybe mTentativeHeader) $ \tentativeHeader -> do
               let setTentative = SetTentativeHeader tentativeHeader
@@ -1258,14 +1267,16 @@ isPipelineable ::
      LedgerSupportsProtocol blk
   => BlockConfig blk
   -> TentativeState blk
+  -> (SlotNo -> Bool)
   -> ChainDiff (Header blk)
   -> StrictMaybe (Header blk)
-isPipelineable bcfg tentativeState ChainDiff {..}
+isPipelineable bcfg tentativeState isDefinitelyNotInFuture ChainDiff {..}
   | -- we apply exactly one header
     AF.Empty _ :> hdr <- getSuffix
   , preferToLastInvalidTentative bcfg tentativeState hdr
     -- ensure that the diff is applied to the chain tip
   , getRollback == 0
+  , isDefinitelyNotInFuture (blockSlot hdr)
   = SJust hdr
   | otherwise = SNothing
 
