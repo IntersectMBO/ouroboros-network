@@ -24,9 +24,12 @@ with pkgs; {
     src = pkgs.fetchFromGitHub {
       owner = "haskell";
       repo = "stylish-haskell";
-      rev = "v0.14.3.0";
-      sha256 = "sha256-TF8VxrkE142D6dhWMbuAWTfVTafm8I2kpSnyW4eA8d0=";
+      rev = "v0.14.4.0";
+      sha256 = "sha256-e5p2P54JabZsb4G1oTRI71hKzVdqd9TgYBwEXa63egg=";
     };
+    cabalProjectLocal = ''
+      allow-older: ghc-lib-parser:base
+    '';
     compiler-nix-name = localConfig.ghcVersion;
     inherit (ouroborosNetworkHaskellPackages) index-state;
   }).stylish-haskell.components.exes.stylish-haskell;
