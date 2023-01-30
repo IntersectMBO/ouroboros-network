@@ -204,26 +204,6 @@ The following artifacts influence and/or describe the Consensus implementation.
 
       * "The Cardano Consensus (and Storage Layer)" (aka "The Consensus Report")
 
-  * Large comments, for example in these modules. This list is a continual work
-    in progress -- if you find some comment to be particularly illuminating,
-    please open a PR adding it here.
-
-      * `Ouroboros.Consensus.Util.ResourceRegistry`
-      * `Ouroboros.Consensus.HeaderValidation`
-      * `Ouroboros.Consensus.Mempool.API`
-      * `Ouroboros.Consensus.Forecast`
-      * `Ouroboros.Consensus.HardFork.History.EraParams`
-      * `Ouroboros.Consensus.HardFork.History.Qry`
-      * `Ouroboros.Consensus.HardFork.History.Summary`
-      * `Ouroboros.Consensus.Protocol.Abstract`
-      * `Ouroboros.Consensus.Storage.ChainDB.API`
-      * `Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel`
-      * `Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator`
-      * `Ouroboros.Network.AnchoredFragment`
-      * `Ouroboros.Consensus.MiniProtocol.ChainSync.Client`
-      * `Ouroboros.Network.BlockFetch.Decision`
-      * `Network.TypedProtocol.Core`
-
   * CI-built Haddock, at https://input-output-hk.github.io/ouroboros-network/
 
   * IOHK media:

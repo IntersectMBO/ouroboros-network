@@ -82,6 +82,26 @@ This graph depicts the relationship between the various `xxx-consensus-yyy` pack
 
 * __db-analyser__: A command-line tool for offline analysis of the consensus database
 
+=== Consensus implementation
+
+The comments in modules listed below provide important information on the
+implementation of consensus.
+
+* "Ouroboros.Consensus.Util.ResourceRegistry"
+* "Ouroboros.Consensus.HeaderValidation"
+* "Ouroboros.Consensus.Mempool.API"
+* "Ouroboros.Consensus.Forecast"
+* "Ouroboros.Consensus.HardFork.History.EraParams"
+* "Ouroboros.Consensus.HardFork.History.Qry"
+* "Ouroboros.Consensus.HardFork.History.Summary"
+* "Ouroboros.Consensus.Protocol.Abstract"
+* "Ouroboros.Consensus.Storage.ChainDB.API"
+* "Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel"
+* "Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator"
+* "Ouroboros.Network.AnchoredFragment"
+* "Ouroboros.Consensus.MiniProtocol.ChainSync.Client"
+* "Ouroboros.Network.BlockFetch.Decision"
+
 === Consensus Components
 
 The following  [C4 Component Diagram](https://c4model.com/) provides a high-level overview of the main components involved in /Consensus/. Note that clicking on
