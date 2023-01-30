@@ -52,6 +52,9 @@ data CheckInFuture m blk = CheckInFuture {
        -- >   validatedFragment vf == af <=> null fut
        checkInFuture :: ValidatedFragment (Header blk) (LedgerState blk)
                      -> m (AnchoredFragment (Header blk), [InFuture m blk])
+
+    ,  checkDefinitelyNotInFuture :: m (LedgerState blk -> SlotNo -> Bool)
+
     }
   deriving NoThunks
        via OnlyCheckWhnfNamed "CheckInFuture" (CheckInFuture m blk)
@@ -124,6 +127,14 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
             (hardForkSummary cfg (VF.validatedLedger validated))
             now
             (VF.validatedFragment validated)
+    , checkDefinitelyNotInFuture = do
+        now <- systemTimeCurrent
+
+        pure $ \ledgerState slot -> case HF.runQuery
+               (HF.slotToWallclock slot)
+               (hardForkSummary cfg ledgerState) of
+          Left _err          -> False
+          Right (hdrTime, _) -> hdrTime < now
     }
   where
     checkFragment :: HF.Summary (HardForkIndices blk)
@@ -166,7 +177,8 @@ reference cfg (ClockSkew clockSkew) SystemTime{..} = CheckInFuture {
 -- This is useful for testing and tools such as the DB converter.
 dontCheck :: Monad m => CheckInFuture m blk
 dontCheck = CheckInFuture {
-      checkInFuture = \validated -> return (VF.validatedFragment validated, [])
+      checkInFuture              = \validated -> return (VF.validatedFragment validated, [])
+    , checkDefinitelyNotInFuture = return $ \_ledgerState _slot -> True
     }
 
 -- | If by some miracle we have a function that can always tell us what the
@@ -182,6 +194,10 @@ miracle oracle clockSkew = CheckInFuture {
       checkInFuture = \validated -> do
         now <- atomically $ oracle
         return $ checkFragment now (VF.validatedFragment validated)
+    , checkDefinitelyNotInFuture = do
+        now <- atomically $ oracle
+
+        pure $ \_ledgerState slot -> slot <= now
     }
   where
     checkFragment :: SlotNo
