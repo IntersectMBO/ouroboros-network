@@ -5,3 +5,7 @@
 nix/.stack.nix/*.nix linguist-generated=true
 .stack-to-nix.cache linguist-generated=true
 nix/.stack-pkgs.nix linguist-generated=true
+
+ouroboros-consensus-byron-test/test/golden/**/* linguist-generated=true
+ouroboros-consensus-shelley-test/test/golden/**/* linguist-generated=true
+ouroboros-consensus-cardano-test/test/golden/**/* linguist-generated=true
