@@ -52,8 +52,7 @@ data CheckInFuture m blk = CheckInFuture {
        -- >   validatedFragment vf == af <=> null fut
        checkInFuture :: ValidatedFragment (Header blk) (LedgerState blk)
                      -> m (AnchoredFragment (Header blk), [InFuture m blk])
-     , headerInFuture :: Header blk -> m (Maybe (InFuture m blk))
-     }
+    }
   deriving NoThunks
        via OnlyCheckWhnfNamed "CheckInFuture" (CheckInFuture m blk)
 
@@ -206,24 +205,3 @@ miracle oracle clockSkew = CheckInFuture {
                                        > clockSkew
             , inFuturePunish           = InvalidBlockPunishment.noPunishment
             }
-
-inFuture :: (Applicative m, HasHeader (Header blk))
-         => HF.Summary (HardForkIndices blk)
-         -> ClockSkew
-         -> RelativeTime
-         -> Header blk
-         -> Maybe (InFuture m blk)
-inFuture summary (ClockSkew clockSkew) now hdr =
-  case HF.runQuery (HF.slotToWallclock (blockSlot hdr)) summary of
-    Left _err ->
-      error "CheckInFuture.reference: impossible"
-    Right (hdrTime, _) ->
-      if hdrTime > now then
-        Just $ InFuture {
-          inFutureHeader           = hdr
-        , inFutureExceedsClockSkew = (hdrTime `diffRelTime` now) > clockSkew
-        , inFuturePunish           = InvalidBlockPunishment.noPunishment
-        }
-      else
-        Nothing
-
