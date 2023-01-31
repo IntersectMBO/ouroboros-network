@@ -21,6 +21,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (
   , olderThanK
   ) where
 
+
 import           Control.Exception (assert)
 import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
@@ -31,12 +32,13 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (isJust)
+import           Data.Maybe (isJust, isNothing)
 import           Data.Maybe.Strict (StrictMaybe (..), isSNothing,
                      strictMaybeToMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
+import           Ouroboros.Consensus.Fragment.InFuture
 
 import           Ouroboros.Network.AnchoredFragment (Anchor, AnchoredFragment,
                      AnchoredSeq (..))
@@ -943,7 +945,7 @@ chainSelection chainSelEnv chainDiffs =
         setTentativeHeader :: m (StrictMaybe (Header blk))
         setTentativeHeader = do
             mTentativeHeader <-
-                  (\ts -> isPipelineable bcfg ts candidate)
+                  (\ts -> isPipelineable bcfg ts candidate futureCheck)
               <$> readTVarIO varTentativeState
             whenJust (strictMaybeToMaybe mTentativeHeader) $ \tentativeHeader -> do
               let setTentative = SetTentativeHeader tentativeHeader
@@ -1259,15 +1261,21 @@ isPipelineable ::
   => BlockConfig blk
   -> TentativeState blk
   -> ChainDiff (Header blk)
-  -> StrictMaybe (Header blk)
-isPipelineable bcfg tentativeState ChainDiff {..}
+  -> CheckInFuture m blk
+  -> m (StrictMaybe (Header blk))
+isPipelineable bcfg tentativeState ChainDiff {..} inFuture
   | -- we apply exactly one header
     AF.Empty _ :> hdr <- getSuffix
   , preferToLastInvalidTentative bcfg tentativeState hdr
     -- ensure that the diff is applied to the chain tip
   , getRollback == 0
-  = SJust hdr
-  | otherwise = SNothing
+  = do
+      headerInFuture inFuture hdr >>= \case
+        Nothing -> pure $ SJust hdr
+        -- Candidate header is from the future. Avoid pipelining it.
+        -- TOOD: Take into account failures.
+        _       -> pure $ SNothing
+  | otherwise = pure $ SNothing
 
 {-------------------------------------------------------------------------------
   Helpers
