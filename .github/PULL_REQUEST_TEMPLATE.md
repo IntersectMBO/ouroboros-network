@@ -22,11 +22,7 @@ the PR to a particular issue, see
     - [ ] Commits have useful messages
     - [ ] The documentation has been properly updated
     - [ ] New tests are added if needed and existing tests are updated
-    - [ ] Any changes affecting Consensus packages must have an entry in the
-          appropriate `changelog.d` directory created using
-          [`scriv`](https://github.com/input-output-hk/scriv). If in doubt, see
-          the [Consensus release
-          process](../ouroboros-consensus/docs/ReleaseProcess.md).
+    - [ ] Any changes affecting Consensus packages must have an entry in the appropriate `changelog.d` directory created using [`scriv`](https://github.com/input-output-hk/scriv). If in doubt, see the [Consensus release process](../ouroboros-consensus/docs/ReleaseProcess.md).
     - [ ] If this branch changes Network and has any consequences for downstream repositories or end users, said changes must be documented in [`interface-CHANGELOG.md`](../docs/interface-CHANGELOG.md)
     - [ ] If serialization changes, user-facing consequences (e.g. replay from genesis) are confirmed to be intentional.
 - Pull Request
