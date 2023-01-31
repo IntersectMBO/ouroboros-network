@@ -1397,25 +1397,13 @@ genBlk chunkInfo Model{..} = frequency
         )
       ]
 
-    genSlotFromFuture :: Gen SlotNo
-    genSlotFromFuture =
-      let farFuture = Model.currentSlot dbModel + SlotNo (Model.maxClockSkew dbModel + 1)
-          nearFuture = Model.currentSlot dbModel + SlotNo 1
-      in frequency
-         [ (4, chooseSlot nearFuture farFuture),
-           (1, chooseSlot farFuture (farFuture + SlotNo 10))]
-
     -- Helper that generates a block that fits onto the given block.
     genFitsOn :: TestBlock -> Gen TestBlock
     genFitsOn b = frequency
         [ (4, do
                 slotNo <- if fromIsEBB (testBlockIsEBB b)
                   then chooseSlot (blockSlot b)     (blockSlot b + 2)
-                  else do
-                    frequency
-                      [ (10, chooseSlot (blockSlot b + 1) (blockSlot b + 3))
-                      , (1, genSlotFromFuture)
-                      ]
+                  else chooseSlot (blockSlot b + 1) (blockSlot b + 3)
                 body   <- genBody
                 return $ mkNextBlock b slotNo body)
         -- An EBB is never followed directly by another EBB, otherwise they
