@@ -903,12 +903,8 @@ chainSelection chainSelEnv chainDiffs =
       -> m (Maybe (ValidatedChainDiff (Header blk) (LedgerDB' blk)))
     go []            = return Nothing
     go (candidate:candidates0) = do
-        -- Remove future blocks from the chain, and update the ChainDB state
-        -- that keeps track of those blocks, so we can take them into account
-        -- in the decision to make blocks available for pipelining.
-        candidate' <- futureCheckCandidate chainSelEnv candidate
-        mTentativeHeader <- setTentativeHeader candidate'
-        validateCandidate chainSelEnv candidate' >>= \case
+        mTentativeHeader <- setTentativeHeader
+        validateCandidate chainSelEnv candidate >>= \case
           InsufficientSuffix ->
             -- When the body of the tentative block turns out to be invalid, we
             -- have a valid *empty* prefix, as the tentative header fits on top
@@ -916,11 +912,11 @@ chainSelection chainSelEnv chainDiffs =
             assert (isSNothing mTentativeHeader) $ do
               candidates1 <- truncateRejectedBlocks candidates0
               go (sortCandidates candidates1)
-          FullyValid validatedCandidate@(ValidatedChainDiff candidate'' _) ->
+          FullyValid validatedCandidate@(ValidatedChainDiff candidate' _) ->
             -- The entire candidate is valid
-            assert (Diff.getTip candidate' == Diff.getTip candidate'') $
+            assert (Diff.getTip candidate == Diff.getTip candidate') $
             return $ Just validatedCandidate
-          ValidPrefix candidate'' -> do
+          ValidPrefix candidate' -> do
             whenJust (strictMaybeToMaybe mTentativeHeader) clearTentativeHeader
             -- Prefix of the candidate because it contained rejected blocks
             -- (invalid blocks and/or blocks from the future). Note that the
@@ -936,18 +932,18 @@ chainSelection chainSelEnv chainDiffs =
             -- it will be dropped here, as it will not be preferred over the
             -- current chain.
             let candidates2
-                  | preferAnchoredCandidate bcfg curChain (Diff.getSuffix candidate'')
-                  = candidate'':candidates1
+                  | preferAnchoredCandidate bcfg curChain (Diff.getSuffix candidate')
+                  = candidate':candidates1
                   | otherwise
                   = candidates1
             go (sortCandidates candidates2)
       where
         -- | Set and return the tentative header, if applicable. Also, notify
         -- the tentative followers.
-        setTentativeHeader :: ChainDiff (Header blk) -> m (StrictMaybe (Header blk))
-        setTentativeHeader candidate' = do
+        setTentativeHeader :: m (StrictMaybe (Header blk))
+        setTentativeHeader = do
             mTentativeHeader <-
-                  (\ts -> isPipelineable bcfg ts candidate')
+                  (\ts -> isPipelineable bcfg ts candidate)
               <$> readTVarIO varTentativeState
             whenJust (strictMaybeToMaybe mTentativeHeader) $ \tentativeHeader -> do
               let setTentative = SetTentativeHeader tentativeHeader
@@ -1018,12 +1014,12 @@ chainSelection chainSelEnv chainDiffs =
 
 -- | Result of 'validateCandidate'.
 data ValidationResult blk =
-      -- | The candidate fragment, after truncating blocks from the future, was
-      -- valid.
+      -- | The entire candidate fragment was valid. No blocks were from the
+      -- future.
       FullyValid (ValidatedChainDiff (Header blk) (LedgerDB' blk))
 
-      -- | The candidate fragment contained invalid blocks that had to be
-      -- truncated from the fragment.
+      -- | The candidate fragment contained invalid blocks and/or blocks from
+      -- the future that had to be truncated from the fragment.
     | ValidPrefix (ChainDiff (Header blk))
 
       -- | After truncating the invalid blocks or blocks from the future from
@@ -1136,16 +1132,16 @@ ledgerValidateCandidate chainSelEnv chainDiff@(ChainDiff rollback suffix) =
 futureCheckCandidate
   :: forall m blk. (IOLike m, LedgerSupportsProtocol blk)
   => ChainSelEnv m blk
-  -> ChainDiff (Header blk)
-  -> m (ChainDiff (Header blk))
-futureCheckCandidate chainSelEnv chainDiff = do
-    let ledgerState = getCurrentLedgerState chainSelEnv
-    checkInFuture futureCheck ledgerState suffix >>= \case
+  -> ValidatedChainDiff (Header blk) (LedgerDB' blk)
+  -> m (Either (ChainDiff (Header blk))
+               (ValidatedChainDiff (Header blk) (LedgerDB' blk)))
+futureCheckCandidate chainSelEnv validatedChainDiff =
+    checkInFuture futureCheck validatedSuffix >>= \case
 
       (suffix', []) ->
         -- If no headers are in the future, then the fragment must be untouched
         assert (AF.headPoint suffix == AF.headPoint suffix') $
-        return $ chainDiff
+        return $ Right validatedChainDiff
 
       (suffix', inFuture) -> do
         let (exceedClockSkew, inNearFuture) =
@@ -1193,22 +1189,17 @@ futureCheckCandidate chainSelEnv chainDiff = do
 
         -- Truncate the original 'ChainDiff' to match the truncated
         -- 'AnchoredFragment'.
-        return $ Diff.truncate (castPoint (AF.headPoint suffix')) chainDiff
+        return $ Left $ Diff.truncate (castPoint (AF.headPoint suffix')) chainDiff
   where
-    getCurrentLedgerState :: ChainSelEnv m blk -> LedgerState blk
-    -- TODO[private-16]: Get the ledger state from the ChainSelEnv
-    getCurrentLedgerState ChainSelEnv { curChainAndLedger } =
-      ledgerState $ LgrDB.ledgerDbCurrent $ VF.validatedLedger curChainAndLedger
-
     ChainSelEnv { validationTracer, varInvalid, varFutureBlocks, futureCheck } =
       chainSelEnv
 
-    (ChainDiff _ suffix) = chainDiff
+    ValidatedChainDiff chainDiff@(ChainDiff _ suffix) _ = validatedChainDiff
 
-    -- validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk)
-    -- validatedSuffix =
-    --   ledgerState . LgrDB.ledgerDbCurrent <$>
-    --   ValidatedDiff.toValidatedFragment validatedChainDiff
+    validatedSuffix :: ValidatedFragment (Header blk) (LedgerState blk)
+    validatedSuffix =
+      ledgerState . LgrDB.ledgerDbCurrent <$>
+      ValidatedDiff.toValidatedFragment validatedChainDiff
 
 -- | Validate a candidate chain using 'ledgerValidateCandidate' and
 -- 'futureCheck'.
@@ -1222,13 +1213,31 @@ validateCandidate
   -> m (ValidationResult blk)
 validateCandidate chainSelEnv chainDiff =
     ledgerValidateCandidate chainSelEnv chainDiff >>= \case
-      validatedChainDiff@(ValidatedChainDiff chainDiff' _)
+      validatedChainDiff
         | ValidatedDiff.rollbackExceedsSuffix validatedChainDiff
         -> return InsufficientSuffix
-        | AF.length (Diff.getSuffix chainDiff) == AF.length (Diff.getSuffix chainDiff')
-        -> return $ FullyValid validatedChainDiff
         | otherwise
-        -> return $ ValidPrefix chainDiff'
+        -> futureCheckCandidate chainSelEnv validatedChainDiff >>= \case
+          Left chainDiff'
+              | Diff.rollbackExceedsSuffix chainDiff'
+              -> return InsufficientSuffix
+              | otherwise
+              -> return $ ValidPrefix chainDiff'
+          Right validatedChainDiff'
+              | ValidatedDiff.rollbackExceedsSuffix validatedChainDiff'
+              -> return InsufficientSuffix
+              | AF.length (Diff.getSuffix chainDiff) ==
+                AF.length (Diff.getSuffix chainDiff')
+                -- No truncation
+              -> return $ FullyValid validatedChainDiff'
+              | otherwise
+                -- In case of invalid blocks but no blocks from the future, we
+                -- throw away the ledger corresponding to the truncated
+                -- fragment and will have to validate it again, even when it's
+                -- the sole candidate.
+              -> return $ ValidPrefix chainDiff'
+            where
+              chainDiff' = ValidatedDiff.getChainDiff validatedChainDiff'
 
 {-------------------------------------------------------------------------------
   'ChainAndLedger'
