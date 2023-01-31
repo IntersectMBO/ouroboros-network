@@ -89,6 +89,8 @@ import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Enclose (encloseWith)
 
+import           Debug.Trace as Debug
+
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
 -- and the contents of the VolatileDB.
 --
@@ -949,6 +951,7 @@ chainSelection chainSelEnv chainDiffs =
             mTentativeHeader <-
                   (\ts -> isPipelineable bcfg ts candidate')
               <$> readTVarIO varTentativeState
+            Debug.traceM ("Tentative header " <> show (getHeaderFields <$> mTentativeHeader))
             whenJust (strictMaybeToMaybe mTentativeHeader) $ \tentativeHeader -> do
               let setTentative = SetTentativeHeader tentativeHeader
               encloseWith (setTentative >$< pipeliningTracer) $
