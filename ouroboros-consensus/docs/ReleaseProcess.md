@@ -93,7 +93,7 @@ Infinitely often, the Consensus team will decide that FOO and/or BAR are ready f
 IE We will eventually decide that the code of that package on the tip commit of a branch should be the code of our next release of that package from that branch.
 We prepare that release as follows.
 
-- For each package we are including in the release, we review its pending changelog entries.
+- For each package we are including in the release, we review its pending changelog entries (eg by issuing `scriv collect --version DUMMY` to automatically collate the pending changelog entries).
 - RULE: We update the declared version (ie in its `.cabal` file) of each package we are including in the release based on the content of those pending changelog entries.
     - (Note that there's at least one package, since otherwise we wouldn't be mkaing a release.)
     - (Note that there must be some alterations to each package we are including in the release, since otherwise we wouldn't be including it in the release---but mind the _bundles_ mentioned below.)
