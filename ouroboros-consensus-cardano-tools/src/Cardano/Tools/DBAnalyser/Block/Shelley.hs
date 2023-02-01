@@ -36,6 +36,7 @@ import           Cardano.Ledger.Alonzo (AlonzoEra)
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import           Cardano.Ledger.Babbage (BabbageEra)
+import           Cardano.Ledger.Conway (ConwayEra)
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
 
@@ -120,6 +121,12 @@ instance (Crypto c)
 
 instance (Crypto c)
       => PerEraAnalysis (BabbageEra c) where
+    txExUnitsSteps = Just $ \tx ->
+        let (Alonzo.ExUnits _mem steps) = Alonzo.totExUnits tx
+        in toEnum $ fromEnum steps
+
+instance (Crypto c)
+      => PerEraAnalysis (ConwayEra c) where
     txExUnitsSteps = Just $ \tx ->
         let (Alonzo.ExUnits _mem steps) = Alonzo.totExUnits tx
         in toEnum $ fromEnum steps

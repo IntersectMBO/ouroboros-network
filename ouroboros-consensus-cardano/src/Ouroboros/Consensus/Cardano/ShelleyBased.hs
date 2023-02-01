@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE TypeOperators           #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+
 module Ouroboros.Consensus.Cardano.ShelleyBased (overShelleyBasedLedgerState) where
 
 import           Data.SOP.Strict hiding (All2)
@@ -42,11 +43,10 @@ overShelleyBasedLedgerState f (HardForkLedgerState st) =
         :* injectSingleEra
         :* injectSingleEra
         :* injectSingleEra
+        :* injectSingleEra
         :* Nil
 
     injectSingleEra ::
-      ( ShelleyCompatible proto era, EraCrypto era ~ c
-      , shelleyEra ~ ShelleyBlock proto era
-      )
-      => (LedgerState -.-> LedgerState) shelleyEra
+         (EraCrypto era ~ c, ShelleyCompatible proto era)
+      => (LedgerState -.-> LedgerState) (ShelleyBlock proto era)
     injectSingleEra = fn f

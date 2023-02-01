@@ -36,6 +36,8 @@ data NodeToClientVersion
     -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
     | NodeToClientV_14
     -- ^ added @GetPoolDistr, @GetPoolState, @GetSnapshots
+    | NodeToClientV_15
+    -- ^ enabled @CardanoNodeToClientVersion11@, i.e., Conway
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -54,6 +56,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
       encodeTerm NodeToClientV_12 = CBOR.TInt (12 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_13 = CBOR.TInt (13 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_14 = CBOR.TInt (14 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_15 = CBOR.TInt (15 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -65,6 +68,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
         (12, True) -> Right NodeToClientV_12
         (13, True) -> Right NodeToClientV_13
         (14, True) -> Right NodeToClientV_14
+        (15, True) -> Right NodeToClientV_15
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"

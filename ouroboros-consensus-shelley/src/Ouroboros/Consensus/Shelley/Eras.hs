@@ -16,12 +16,14 @@ module Ouroboros.Consensus.Shelley.Eras (
     AllegraEra
   , AlonzoEra
   , BabbageEra
+  , ConwayEra
   , MaryEra
   , ShelleyEra
     -- * Eras instantiated with standard crypto
   , StandardAllegra
   , StandardAlonzo
   , StandardBabbage
+  , StandardConway
   , StandardMary
   , StandardShelley
     -- * Shelley-based era
@@ -57,6 +59,8 @@ import           Cardano.Ledger.Babbage.PParams (BabbagePParamsHKD (..))
 import qualified Cardano.Ledger.Babbage.Rules as Babbage
 import qualified Cardano.Ledger.Babbage.Translation as Babbage
 import           Cardano.Ledger.BaseTypes
+import           Cardano.Ledger.Conway (ConwayEra)
+import qualified Cardano.Ledger.Conway.Translation as Conway
 import           Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (StandardCrypto)
 import           Cardano.Ledger.Keys (DSignable, Hash)
@@ -93,6 +97,9 @@ type StandardAlonzo = AlonzoEra StandardCrypto
 
 -- | The Babbage era with standard crypto
 type StandardBabbage = BabbageEra StandardCrypto
+
+-- | The Conway era with standard crypto
+type StandardConway = ConwayEra StandardCrypto
 
 {-------------------------------------------------------------------------------
   Type synonyms for convenience
@@ -145,13 +152,6 @@ class ( Core.EraSegWits era
       , HasField "_tau" (Core.PParams era) UnitInterval
 
       , HasField "_protocolVersion" (Core.PParamsUpdate era) (SL.StrictMaybe SL.ProtVer)
-
-        -- TODO This constraint is a little weird. The translation context
-        -- reflects things needed in comparison to the previous era, whereas the
-        -- 'AdditionalGenesisConfig' is from Shelley. Ultimately we should drop
-        -- this and potentially add a new API for dealing with the relationship
-        -- between `GenesisConfig` and `TranslationContext`.
-      , SL.AdditionalGenesisConfig era ~ Core.TranslationContext era
 
       , NoThunks (SL.StashedAVVMAddresses era)
       , FromCBOR (SL.StashedAVVMAddresses era)
@@ -234,6 +234,10 @@ instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
 
 instance (Praos.PraosCrypto c) => ShelleyBasedEra (BabbageEra c) where
   shelleyBasedEraName _ = "Babbage"
+  applyShelleyBasedTx = applyAlonzoBasedTx
+
+instance (Praos.PraosCrypto c) => ShelleyBasedEra (ConwayEra c) where
+  shelleyBasedEraName _ = "Conway"
   applyShelleyBasedTx = applyAlonzoBasedTx
 
 applyAlonzoBasedTx :: forall era.
@@ -331,6 +335,24 @@ instance SupportsTwoPhaseValidation (BabbageEra c) where
         ) -> Just claimedFlag
     _ -> Nothing
 
+instance SupportsTwoPhaseValidation (ConwayEra c) where
+  incorrectClaimedFlag _ pf = case pf of
+    SL.UtxowFailure
+      ( Babbage.AlonzoInBabbageUtxowPredFailure
+          ( Alonzo.ShelleyInAlonzoUtxowPredFailure
+              ( SL.UtxoFailure
+                  ( Babbage.AlonzoInBabbageUtxoPredFailure
+                      ( Alonzo.UtxosFailure
+                          ( Alonzo.ValidationTagMismatch
+                              (Alonzo.IsValid claimedFlag)
+                              _validationErrs
+                            )
+                        )
+                    )
+                )
+            )
+        ) -> Just claimedFlag
+    _ -> Nothing
 
 -- | The ledger responded with Alonzo errors we were not expecting
 data UnexpectedAlonzoLedgerErrors =
@@ -377,3 +399,10 @@ instance ShelleyBasedEra (BabbageEra c) => Core.TranslateEra (BabbageEra c) Wrap
         fmap (WrapTx . Babbage.unTx)
       . Core.translateEra @(BabbageEra c) ctxt
       . Babbage.Tx . unwrapTx
+
+instance ShelleyBasedEra (ConwayEra c) => Core.TranslateEra (ConwayEra c) WrapTx where
+  type TranslationError (ConwayEra c) WrapTx = Core.TranslationError (ConwayEra c) Conway.Tx
+  translateEra ctxt =
+        fmap (WrapTx . Conway.unTx)
+      . Core.translateEra @(ConwayEra c) ctxt
+      . Conway.Tx . unwrapTx

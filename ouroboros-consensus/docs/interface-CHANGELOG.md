@@ -56,6 +56,22 @@ may appear out of chronological order.
 The internals of each entry are organized similar to
 https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 
+## Circa 2022-12-19
+
+### Added
+
+- Conway to `CardanoEras`.
+- `NodeToNodeV_11` and `NodeToClientV_15`, both of which enable Conway.
+- Conway-related type and pattern synonyms. Eg `StandardConway`, `HeaderConway`,
+  `GentTxConway`, etc.
+
+### Changed
+
+- The `protocolInfoTPraosShelleyBased` and `protocolInfoPraosShelleyBased`
+  functions now expect a tuple of the `AdditionalGenesisConfig` and the
+  `TranslationContext` instead of just the `TranslationContext`. For all
+  Shelley-based eras before Conway, those had been equal types.
+
 ## Circa 2022-11-23
 
 - Removed dead `protocolInfoPraosBabbage` and `protocolInfoPraosShelleyBased`.
@@ -85,6 +101,7 @@ https://keepachangelog.com/en/1.1.0/, adapted to our plan explained above.
 - `GetPoolDistr`: Get the pool distribution for the given stake pool ids
 
 ## Circa 2022-08-03
+
 ### Added
 
 - new project `ouroboros-consensus-cardano-tools` containing two tools:

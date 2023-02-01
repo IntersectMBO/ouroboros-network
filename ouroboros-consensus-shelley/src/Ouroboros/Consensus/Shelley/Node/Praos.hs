@@ -10,6 +10,7 @@
 
 module Ouroboros.Consensus.Shelley.Node.Praos (
     ProtocolParamsBabbage (..)
+  , ProtocolParamsConway (..)
   , praosBlockForging
   , praosSharedBlockForging
   ) where
@@ -26,8 +27,8 @@ import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..),
                      praosCheckCanForge)
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (PraosCanBeLeader (praosCanBeLeaderOpCert))
-import           Ouroboros.Consensus.Shelley.Eras (BabbageEra, EraCrypto,
-                     ShelleyBasedEra (shelleyBasedEraName))
+import           Ouroboros.Consensus.Shelley.Eras (BabbageEra, ConwayEra,
+                     EraCrypto, ShelleyBasedEra (shelleyBasedEraName))
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyCompatible, forgeShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Node
@@ -42,16 +43,16 @@ import           Ouroboros.Consensus.Util.IOLike (IOLike)
 
 -- | Create a 'BlockForging' record for a single era.
 praosBlockForging ::
-  forall m era c.
-  ( ShelleyCompatible (Praos c) era,
-    c ~ EraCrypto era,
-    TxLimits (ShelleyBlock (Praos c) era),
-    IOLike m
-  ) =>
-  PraosParams ->
-  TxLimits.Overrides (ShelleyBlock (Praos c) era) ->
-  ShelleyLeaderCredentials (EraCrypto era) ->
-  m (BlockForging m (ShelleyBlock (Praos c) era))
+     forall m era c.
+     ( ShelleyCompatible (Praos c) era
+     , c ~ EraCrypto era
+     , TxLimits (ShelleyBlock (Praos c) era)
+     , IOLike m
+     )
+  => PraosParams
+  -> TxLimits.Overrides (ShelleyBlock (Praos c) era)
+  -> ShelleyLeaderCredentials (EraCrypto era)
+  -> m (BlockForging m (ShelleyBlock (Praos c) era))
 praosBlockForging praosParams maxTxCapacityOverrides credentials = do
     hotKey <- HotKey.mkHotKey @m @c initSignKey startPeriod praosMaxKESEvo
     pure $ praosSharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides
@@ -75,10 +76,10 @@ praosBlockForging praosParams maxTxCapacityOverrides credentials = do
 -- The name of the era (separated by a @_@) will be appended to each
 -- 'forgeLabel'.
 praosSharedBlockForging ::
-  forall m c era.
-  ( ShelleyEraWithCrypto c (Praos c) era,
-    IOLike m
-  )
+     forall m c era.
+     ( ShelleyEraWithCrypto c (Praos c) era
+     , IOLike m
+     )
   => HotKey.HotKey c m
   -> (SlotNo -> Absolute.KESPeriod)
   -> ShelleyLeaderCredentials c
@@ -87,36 +88,41 @@ praosSharedBlockForging ::
 praosSharedBlockForging
   hotKey
   slotToPeriod
-  ShelleyLeaderCredentials
-    { shelleyLeaderCredentialsCanBeLeader = canBeLeader,
-      shelleyLeaderCredentialsLabel = label
+  ShelleyLeaderCredentials {
+      shelleyLeaderCredentialsCanBeLeader = canBeLeader
+    , shelleyLeaderCredentialsLabel = label
     }
   maxTxCapacityOverrides = do
-      BlockForging
-        { forgeLabel = label <> "_" <> shelleyBasedEraName (Proxy @era),
-          canBeLeader = canBeLeader,
-          updateForgeState = \_ curSlot _ ->
-            forgeStateUpdateInfoFromUpdateInfo
-              <$> HotKey.evolve hotKey (slotToPeriod curSlot),
-          checkCanForge = \cfg curSlot _tickedChainDepState _isLeader ->
-            praosCheckCanForge
-              (configConsensus cfg)
-              curSlot,
-          forgeBlock = \cfg ->
-            forgeShelleyBlock
-              hotKey
-              canBeLeader
-              cfg
-              maxTxCapacityOverrides
-        }
+    BlockForging
+      { forgeLabel = label <> "_" <> shelleyBasedEraName (Proxy @era),
+        canBeLeader = canBeLeader,
+        updateForgeState = \_ curSlot _ ->
+          forgeStateUpdateInfoFromUpdateInfo
+            <$> HotKey.evolve hotKey (slotToPeriod curSlot),
+        checkCanForge = \cfg curSlot _tickedChainDepState _isLeader ->
+          praosCheckCanForge
+            (configConsensus cfg)
+            curSlot,
+        forgeBlock = \cfg ->
+          forgeShelleyBlock
+            hotKey
+            canBeLeader
+            cfg
+            maxTxCapacityOverrides
+      }
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
 -------------------------------------------------------------------------------}
 
 -- | Parameters needed to run Babbage
-data ProtocolParamsBabbage c = ProtocolParamsBabbage
-  { babbageProtVer :: SL.ProtVer,
-    babbageMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (BabbageEra c))
+data ProtocolParamsBabbage c = ProtocolParamsBabbage {
+    babbageProtVer                :: SL.ProtVer
+  , babbageMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (BabbageEra c))
   }
 
+-- | Parameters needed to run Conway
+data ProtocolParamsConway c = ProtocolParamsConway {
+    conwayProtVer                :: SL.ProtVer
+  , conwayMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (ConwayEra c))
+  }
