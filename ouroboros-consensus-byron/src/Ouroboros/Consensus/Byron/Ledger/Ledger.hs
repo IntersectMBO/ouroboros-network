@@ -36,7 +36,7 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
     -- * Type family instances
   , BlockQuery (..)
   , LedgerState (..)
-  , Ticked (..)
+  , LedgerTables (..)
   , Ticked1 (..)
     -- * Auxiliary
   , validationErrorImpossible
@@ -78,8 +78,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Util (ShowProxy (..), (..:))
 
 import           Ouroboros.Consensus.Byron.Ledger.Block
@@ -504,3 +503,21 @@ decodeByronResult :: BlockQuery ByronBlock result
                   -> forall s. Decoder s result
 decodeByronResult query = case query of
     GetUpdateInterfaceState -> fromCBOR
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState ByronBlock) where
+  data instance LedgerTables (LedgerState ByronBlock) mk = NoTables
+    deriving (Generic, Eq, Show, NoThunks)
+
+instance CanSerializeLedgerTables (LedgerState ByronBlock) where
+
+instance LedgerTablesAreTrivial (LedgerState ByronBlock) where
+  trivialLedgerTables = NoTables
+
+instance HasTickedLedgerTables (LedgerState ByronBlock) where
+  withLedgerTablesTicked TickedByronLedgerState{..} NoTables = TickedByronLedgerState{..}
+
+instance CanStowLedgerTables (LedgerState ByronBlock) where

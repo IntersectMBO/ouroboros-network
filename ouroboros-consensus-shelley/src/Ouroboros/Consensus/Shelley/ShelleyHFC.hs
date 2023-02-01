@@ -1,15 +1,18 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | This module is the Shelley Hard Fork Combinator
@@ -24,6 +27,7 @@ module Ouroboros.Consensus.Shelley.ShelleyHFC (
 
 import           Control.Monad (guard)
 import           Control.Monad.Except (runExcept, throwError, withExceptT)
+import           Data.Coerce
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
 import           Data.SOP.Strict
@@ -55,8 +59,10 @@ import qualified Cardano.Ledger.Shelley.API as SL
 
 import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Ouroboros.Consensus.Forecast as Forecast
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol, ledgerViewForecastAt)
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.TPraos hiding (PraosCrypto)
 import           Ouroboros.Consensus.Protocol.Translate (TranslateProto)
@@ -329,13 +335,14 @@ instance ( ShelleyBasedEra era
          , SL.TranslateEra era SL.NewEpochState
          , SL.TranslationError era SL.NewEpochState ~ Void
          ) => SL.TranslateEra era (Flip LedgerState Canonical :.: ShelleyBlock proto) where
-  translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition))) = do
+  translateEra ctxt (Comp (Flip (ShelleyLedgerState tip state _transition (ShelleyLedgerTables Canonical)))) = do
       tip'   <- mapM (SL.translateEra ctxt) tip
       state' <- SL.translateEra ctxt state
       return $ Comp $ Flip $ ShelleyLedgerState {
           shelleyLedgerTip        = tip'
         , shelleyLedgerState      = state'
         , shelleyLedgerTransition = ShelleyTransitionInfo 0
+        , shelleyLedgerTables     = ShelleyLedgerTables Canonical
         }
 
 instance ( ShelleyBasedEra era
@@ -354,3 +361,84 @@ instance ( ShelleyBasedEra era
         Comp . WrapValidatedGenTx
       . mkShelleyValidatedTx . SL.coerceValidated
     <$> SL.translateValidated @era @WrapTx ctxt (SL.coerceValidated vtx)
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState (ShelleyBlock proto era))
+      => HasLedgerTables (LedgerState (ShelleyBlockHFC proto era)) where
+  newtype LedgerTables (LedgerState (ShelleyBlockHFC proto era)) mk = ShelleyHFCLedgerTables {
+      unShelleyHFCLedgerTables :: LedgerTables (LedgerState (ShelleyBlock proto era)) mk
+      }
+    deriving (Generic)
+
+  projectLedgerTables = ShelleyHFCLedgerTables
+                      . (\(Z (Current _ (Flip st))) -> projectLedgerTables st)
+                      . Telescope.tip
+                      . getHardForkState
+                      . hardForkLedgerStatePerEra
+
+  withLedgerTables st (ShelleyHFCLedgerTables tbs) =
+      HardForkLedgerState
+    . HardForkState
+    . (\(TZ (Current s (Flip state))) ->
+         TZ (Current s (Flip $ withLedgerTables state tbs)))
+    . getHardForkState
+    $ hardForkLedgerStatePerEra st
+
+  pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState (ShelleyBlockHFC proto era)) f
+  mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState (ShelleyBlockHFC proto era)) f
+  zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState (ShelleyBlockHFC proto era)) f
+  zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState (ShelleyBlockHFC proto era)) f
+  foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState (ShelleyBlockHFC proto era)) f
+  foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState (ShelleyBlockHFC proto era)) f
+  namesLedgerTables   = coerce $ namesLedgerTables @(LedgerState (ShelleyBlockHFC proto era))
+  zipLedgerTablesA  f (ShelleyHFCLedgerTables l) (ShelleyHFCLedgerTables r) =
+    ShelleyHFCLedgerTables <$> zipLedgerTablesA f l r
+  zipLedgerTables2A  f (ShelleyHFCLedgerTables l) (ShelleyHFCLedgerTables c) (ShelleyHFCLedgerTables r) =
+    ShelleyHFCLedgerTables <$> zipLedgerTables2A f l c r
+  traverseLedgerTables f (ShelleyHFCLedgerTables l) =
+    ShelleyHFCLedgerTables <$> traverseLedgerTables f l
+
+deriving newtype instance Eq (LedgerTables (LedgerState (ShelleyBlock proto era)) mk)
+                       => Eq (LedgerTables (LedgerState (ShelleyBlockHFC proto era)) mk)
+deriving newtype instance Show (LedgerTables (LedgerState (ShelleyBlock proto era)) mk)
+                       => Show (LedgerTables (LedgerState (ShelleyBlockHFC proto era)) mk)
+deriving newtype instance NoThunks (LedgerTables (LedgerState (ShelleyBlock proto era)) mk)
+                       => NoThunks (LedgerTables (LedgerState (ShelleyBlockHFC proto era)) mk)
+
+instance CanSerializeLedgerTables (LedgerState (ShelleyBlock proto era))
+      => CanSerializeLedgerTables (LedgerState (ShelleyBlockHFC proto era)) where
+    codecLedgerTables = ShelleyHFCLedgerTables codecLedgerTables
+
+instance HasTickedLedgerTables (LedgerState (ShelleyBlock proto era))
+      => HasTickedLedgerTables (LedgerState (ShelleyBlockHFC proto era)) where
+  projectLedgerTablesTicked (TickedHardForkLedgerState _ st) =
+      ShelleyHFCLedgerTables
+    . (\(Z (Current _ (FlipTickedLedgerState state))) ->
+          projectLedgerTablesTicked state)
+    . Telescope.tip
+    $ getHardForkState st
+
+  withLedgerTablesTicked (TickedHardForkLedgerState t st) (ShelleyHFCLedgerTables tbs) =
+      TickedHardForkLedgerState t
+    . HardForkState
+    . (\(TZ (Current s (FlipTickedLedgerState state))) ->
+         TZ (Current s (FlipTickedLedgerState $ withLedgerTablesTicked state tbs)))
+    $ getHardForkState st
+
+instance CanStowLedgerTables (LedgerState (ShelleyBlock proto era))
+      => CanStowLedgerTables (LedgerState (ShelleyBlockHFC proto era)) where
+  stowLedgerTables = HardForkLedgerState
+                   . HardForkState
+                   . (\(TZ (Current s (Flip st))) ->
+                        TZ (Current s (Flip $ stowLedgerTables st)))
+                   . getHardForkState
+                   . hardForkLedgerStatePerEra
+  unstowLedgerTables = HardForkLedgerState
+                     . HardForkState
+                     . (\(TZ (Current s (Flip st))) ->
+                          TZ (Current s (Flip $ unstowLedgerTables st)))
+                     . getHardForkState
+                     . hardForkLedgerStatePerEra

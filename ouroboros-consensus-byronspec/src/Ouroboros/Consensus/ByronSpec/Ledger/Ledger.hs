@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DerivingVia           #-}
@@ -13,7 +14,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
   , initByronSpecLedgerState
     -- * Type family instances
   , LedgerState (..)
-  , Ticked (..)
+  , LedgerTables (..)
   , Ticked1 (..)
   ) where
 
@@ -29,6 +30,7 @@ import qualified Control.State.Transition as Spec
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 
@@ -157,3 +159,22 @@ getPParams =
       Spec.protocolParameters
     . getChainStateUPIState
     . byronSpecLedgerState
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState ByronSpecBlock) where
+  data LedgerTables (LedgerState ByronSpecBlock) mk = NoTables
+    deriving (Generic, Eq, Show, NoThunks)
+
+instance CanSerializeLedgerTables (LedgerState ByronSpecBlock) where
+
+instance HasTickedLedgerTables (LedgerState ByronSpecBlock) where
+  withLedgerTablesTicked TickedByronSpecLedgerState{..} NoTables =
+    TickedByronSpecLedgerState{..}
+
+instance LedgerTablesAreTrivial (LedgerState ByronSpecBlock) where
+  trivialLedgerTables = NoTables
+
+instance CanStowLedgerTables (LedgerState ByronSpecBlock) where

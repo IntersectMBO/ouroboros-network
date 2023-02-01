@@ -45,6 +45,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract ()
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
+import           Ouroboros.Consensus.Ticked (Ticked)
 
 instance
   (ShelleyCompatible (TPraos crypto) era, crypto ~ EraCrypto era) =>
@@ -118,6 +119,7 @@ instance
         ShelleyLedgerState
           { shelleyLedgerTip = coerceTip <$> shelleyLedgerTip st,
             shelleyLedgerState = shelleyLedgerState st,
-            shelleyLedgerTransition = shelleyLedgerTransition st
+            shelleyLedgerTransition = shelleyLedgerTransition st,
+            shelleyLedgerTables = ShelleyLedgerTables Canonical
           }
       coerceTip (ShelleyTip slot block hash) = ShelleyTip slot block (coerce hash)

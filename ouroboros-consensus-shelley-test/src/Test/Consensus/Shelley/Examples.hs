@@ -30,6 +30,7 @@ import qualified Cardano.Protocol.TPraos.BHeader as SL
 import           Data.Coerce (coerce)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
@@ -135,6 +136,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
                                   }
     , shelleyLedgerState      = sleNewEpochState
     , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+    , shelleyLedgerTables     = ShelleyLedgerTables Canonical
     }
     chainDepState = TPraosState (NotOrigin 1) sleChainDepState
     extLedgerState = ExtLedgerState
@@ -228,6 +230,7 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
                                   }
     , shelleyLedgerState      = sleNewEpochState
     , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+    , shelleyLedgerTables     = ShelleyLedgerTables Canonical
     }
     chainDepState = translateChainDepState @(TPraos (EraCrypto era)) @(Praos (EraCrypto era))
       $ TPraosState (NotOrigin 1) sleChainDepState

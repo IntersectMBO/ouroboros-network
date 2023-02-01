@@ -329,6 +329,7 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
           registerGenesisStaking (SL.sgStaking genesis) $
             SL.initialState genesis additionalGenesisConfig
       , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+      , shelleyLedgerTables     = ShelleyLedgerTables Canonical
       }
 
     initChainDepState :: TPraosState c
