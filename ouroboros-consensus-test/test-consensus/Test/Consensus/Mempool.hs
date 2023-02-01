@@ -517,7 +517,7 @@ genValidTxs = go []
           go (tx:txs) (n - 1) ledger'
 
 genValidTx :: LedgerState TestBlock Canonical -> Gen (TestTx, LedgerState TestBlock Canonical)
-genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
+genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo } _) = do
     -- Never let someone go broke, otherwise we risk concentrating all the
     -- wealth in one person. That would be problematic (for the society) but
     -- also because we wouldn't be able to generate any valid transactions
@@ -553,7 +553,7 @@ genValidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
       ]
 
 genInvalidTx :: LedgerState TestBlock Canonical -> Gen TestTx
-genInvalidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
+genInvalidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo } _) = do
     let peopleWithFunds = nub $ map fst $ Map.elems utxo
     sender    <- elements peopleWithFunds
     recipient <- elements $ filter (/= sender) peopleWithFunds
@@ -575,7 +575,7 @@ genInvalidTx ledgerState@(SimpleLedgerState MockState { mockUtxo = utxo }) = do
 applyTxToLedger :: LedgerState TestBlock Canonical
                 -> TestTx
                 -> Except TestTxError (LedgerState TestBlock Canonical)
-applyTxToLedger (SimpleLedgerState mockState) tx =
+applyTxToLedger (SimpleLedgerState mockState _) tx =
     mkNewLedgerState <$> updateMockUTxO dummy tx mockState
   where
     -- All expiries in this test are 'DoNotExpire', so the current time is
@@ -584,7 +584,7 @@ applyTxToLedger (SimpleLedgerState mockState) tx =
     dummy = 0
 
     mkNewLedgerState mockState' =
-      SimpleLedgerState mockState' { mockTip = BlockPoint slot' hash' }
+      SimpleLedgerState mockState' { mockTip = BlockPoint slot' hash' } (SimpleLedgerTables Canonical)
 
     slot' = case pointSlot $ mockTip mockState of
       Origin      -> 0

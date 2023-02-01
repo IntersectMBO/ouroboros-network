@@ -45,7 +45,7 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , MockProtocolSpecific (..)
     -- * 'UpdateLedger'
   , LedgerState (..)
-  , Ticked (..)
+  , LedgerTables (..)
   , Ticked1 (..)
   , genesisSimpleLedgerState
   , updateSimpleLedgerState
@@ -77,7 +77,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (ToCBOR (..))
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
 import qualified Cardano.Crypto.Hash as Hash
 
@@ -96,13 +96,14 @@ import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
-import           Ouroboros.Consensus.Ticked (Ticked1)
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
                      (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 {-------------------------------------------------------------------------------
   Definition of a block
@@ -344,7 +345,7 @@ deriving instance NoThunks (MockLedgerConfig c ext)
 type instance LedgerCfg (LedgerState (SimpleBlock c ext)) = SimpleLedgerConfig c ext
 
 instance GetTip (LedgerState (SimpleBlock c ext) Canonical) where
-  getTip (SimpleLedgerState st) = castPoint $ mockTip st
+  getTip (SimpleLedgerState st _) = castPoint $ mockTip st
 
 instance GetTip (Ticked1 (LedgerState (SimpleBlock c ext)) Canonical) where
   getTip = castPoint . getTip . getTickedSimpleLedgerState
@@ -367,18 +368,31 @@ instance MockProtocolSpecific c ext
       mustSucceed (Left  err) = error ("reapplyBlockLedgerResult: unexpected error: " <> show err)
       mustSucceed (Right st)  = st
 
-newtype instance LedgerState (SimpleBlock c ext) mk = SimpleLedgerState {
+data instance LedgerState (SimpleBlock c ext) mk = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)
+    , simpleLedgerTables :: LedgerTables (LedgerState (SimpleBlock c ext)) mk
     }
-  deriving stock   (Generic, Show, Eq)
-  deriving newtype (Serialise, NoThunks)
+  deriving stock   (Generic)
+
+deriving instance (SimpleCrypto c, Typeable ext, Eq (LedgerTables (LedgerState (SimpleBlock c ext)) mk))
+               => Eq (LedgerState (SimpleBlock c ext) mk)
+deriving instance (SimpleCrypto c, Typeable ext, NoThunks (LedgerTables (LedgerState (SimpleBlock c ext)) mk))
+               => NoThunks (LedgerState (SimpleBlock c ext) mk)
+deriving instance (SimpleCrypto c, Typeable ext, Show (LedgerTables (LedgerState (SimpleBlock c ext)) mk))
+               => Show (LedgerState (SimpleBlock c ext) mk)
 
 -- Ticking has no effect on the simple ledger state
 newtype instance Ticked1 (LedgerState (SimpleBlock c ext)) mk = TickedSimpleLedgerState {
       getTickedSimpleLedgerState :: LedgerState (SimpleBlock c ext) mk
     }
-  deriving stock   (Generic, Show, Eq)
-  deriving newtype (NoThunks)
+  deriving stock   (Generic)
+
+deriving newtype instance Eq (LedgerState (SimpleBlock c ext) mk)
+                       => Eq (Ticked1 (LedgerState (SimpleBlock c ext)) mk)
+deriving newtype instance NoThunks (LedgerState (SimpleBlock c ext) mk)
+                       => NoThunks (Ticked1 (LedgerState (SimpleBlock c ext)) mk)
+deriving newtype instance Show (LedgerState (SimpleBlock c ext) mk)
+                       => Show (Ticked1 (LedgerState (SimpleBlock c ext)) mk)
 
 instance MockProtocolSpecific c ext => UpdateLedger (SimpleBlock c ext)
 
@@ -387,8 +401,8 @@ updateSimpleLedgerState :: (SimpleCrypto c, Typeable ext)
                         -> TickedLedgerState (SimpleBlock c ext) Canonical
                         -> Except (MockError (SimpleBlock c ext))
                                   (LedgerState (SimpleBlock c ext) Canonical)
-updateSimpleLedgerState b (TickedSimpleLedgerState (SimpleLedgerState st)) =
-    SimpleLedgerState <$> updateMockState b st
+updateSimpleLedgerState b (TickedSimpleLedgerState (SimpleLedgerState st tbs)) =
+    flip SimpleLedgerState tbs <$> updateMockState b st
 
 updateSimpleUTxO :: Mock.HasMockTxs a
                  => SlotNo
@@ -396,11 +410,11 @@ updateSimpleUTxO :: Mock.HasMockTxs a
                  -> TickedLedgerState (SimpleBlock c ext) Canonical
                  -> Except (MockError (SimpleBlock c ext))
                            (TickedLedgerState (SimpleBlock c ext) Canonical)
-updateSimpleUTxO x slot (TickedSimpleLedgerState (SimpleLedgerState st)) =
-    TickedSimpleLedgerState . SimpleLedgerState <$> updateMockUTxO x slot st
+updateSimpleUTxO x slot (TickedSimpleLedgerState (SimpleLedgerState st tbs)) =
+    TickedSimpleLedgerState . flip SimpleLedgerState tbs <$> updateMockUTxO x slot st
 
 genesisSimpleLedgerState :: AddrDist -> LedgerState (SimpleBlock c ext) Canonical
-genesisSimpleLedgerState = SimpleLedgerState . genesisMockState
+genesisSimpleLedgerState = flip SimpleLedgerState (SimpleLedgerTables Canonical) . genesisMockState
 
 -- | Dummy values
 instance MockProtocolSpecific c ext => CommonProtocolParams (SimpleBlock c ext) where
@@ -614,3 +628,87 @@ simpleBlockBinaryBlockInfo b = BinaryBlockInfo
     { headerOffset = 1 -- For the 'encodeListLen'
     , headerSize   = fromIntegral $ Lazy.length $ serialise (getHeader b)
     }
+
+{-------------------------------------------------------------------------------
+ Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState (SimpleBlock c ext)) where
+  newtype LedgerTables (LedgerState (SimpleBlock c ext)) mk = SimpleLedgerTables {
+      unSimpleLedgerTables :: mk Mock.TxIn Mock.TxOut
+    }
+    deriving (Generic)
+
+  projectLedgerTables = simpleLedgerTables
+
+  withLedgerTables (SimpleLedgerState s _) tbs' = SimpleLedgerState s tbs'
+
+  pureLedgerTables f = SimpleLedgerTables f
+
+  mapLedgerTables f (SimpleLedgerTables tbs) = SimpleLedgerTables (f tbs)
+
+  traverseLedgerTables f (SimpleLedgerTables tbs) = SimpleLedgerTables <$> f tbs
+
+  zipLedgerTables f (SimpleLedgerTables tbsL) (SimpleLedgerTables tbsR) =
+    SimpleLedgerTables (f tbsL tbsR)
+
+  zipLedgerTables2
+    f
+    (SimpleLedgerTables utxoL)
+    (SimpleLedgerTables utxoC)
+    (SimpleLedgerTables utxoR) =
+      SimpleLedgerTables (f utxoL utxoC utxoR)
+
+  zipLedgerTablesA f (SimpleLedgerTables utxoL) (SimpleLedgerTables utxoR) =
+      SimpleLedgerTables <$> f utxoL utxoR
+
+  zipLedgerTables2A
+    f
+    (SimpleLedgerTables utxoL)
+    (SimpleLedgerTables utxoC)
+    (SimpleLedgerTables utxoR) =
+      SimpleLedgerTables <$> f utxoL utxoC utxoR
+
+  foldLedgerTables f (SimpleLedgerTables utxo) = f utxo
+
+  foldLedgerTables2 f (SimpleLedgerTables utxoL) (SimpleLedgerTables utxoR) = f utxoL utxoR
+
+  namesLedgerTables = SimpleLedgerTables (NameMK "mock-utxo")
+
+deriving newtype instance IsMapKind mk
+                       => Eq (LedgerTables (LedgerState (SimpleBlock c ext)) mk)
+deriving newtype instance IsMapKind mk
+                       => NoThunks (LedgerTables (LedgerState (SimpleBlock c ext)) mk)
+deriving newtype instance IsMapKind mk
+                       => Show (LedgerTables (LedgerState (SimpleBlock c ext)) mk)
+
+instance HasTickedLedgerTables (LedgerState (SimpleBlock c ext)) where
+  projectLedgerTablesTicked = simpleLedgerTables . getTickedSimpleLedgerState
+  withLedgerTablesTicked    (TickedSimpleLedgerState st) tables =
+      TickedSimpleLedgerState $ withLedgerTables st tables
+
+instance CanSerializeLedgerTables (LedgerState (SimpleBlock c ext)) where
+    codecLedgerTables = SimpleLedgerTables (CodecMK toCBOR toCBOR fromCBOR fromCBOR)
+
+instance CanStowLedgerTables (LedgerState (SimpleBlock c ext)) where
+  stowLedgerTables st =
+      SimpleLedgerState {
+        simpleLedgerState  = simpleLedgerState { mockUtxo = m }
+      , simpleLedgerTables = pureLedgerTables emptyMK
+      }
+    where
+      SimpleLedgerState {
+          simpleLedgerState
+        , simpleLedgerTables = SimpleLedgerTables (ValuesMK (DS.Values m))
+        } = st
+
+  unstowLedgerTables st =
+    SimpleLedgerState {
+        simpleLedgerState = simpleLedgerState { mockUtxo = mempty }
+      , simpleLedgerTables =
+          SimpleLedgerTables (ValuesMK (DS.Values (mockUtxo simpleLedgerState)))
+      }
+    where
+      SimpleLedgerState {
+          simpleLedgerState
+        } = st

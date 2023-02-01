@@ -27,10 +27,12 @@ module Test.Util.TestBlock (
   , BlockQuery (..)
   , CodecConfig (..)
   , Header (..)
+  , LedgerState (..)
   , StorageConfig (..)
   , TestBlockError (..)
   , TestBlockWith (tbPayload, tbValid)
   , TestHash (TestHash)
+  , Ticked1 (..)
   , Validity (..)
   , firstBlockWithPayload
   , forkBlock
@@ -44,8 +46,6 @@ module Test.Util.TestBlock (
   , successorBlock
     -- ** Payload semantics
   , PayloadSemantics (..)
-    -- * LedgerState
-  , lastAppliedPoint
     -- * Chain
   , BlockChain (..)
   , blockChain
@@ -114,7 +114,9 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.Query
+import           Ouroboros.Consensus.Ledger.SupportsHD
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
@@ -127,7 +129,6 @@ import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Ouroboros.Consensus.Ticked (Ticked1)
 import           Test.Util.Orphans.SignableRepresentation ()
 import           Test.Util.Orphans.ToExpr ()
 
@@ -423,7 +424,7 @@ instance ( Typeable ptype
       signKey :: SlotNo -> SignKeyDSIGN MockDSIGN
       signKey (SlotNo n) = SignKeyMockDSIGN $ n `mod` numCore
 
-instance PayloadSemantics ptype
+instance (PayloadSemantics ptype, LedgerSupportsHD (TestBlockWith ptype))
          => ApplyBlock (LedgerState (TestBlockWith ptype)) (TestBlockWith ptype) where
   applyBlockLedgerResult _ tb@TestBlockWith{..} (TickedTestLedger TestLedger{..})
     | blockPrevHash tb /= pointHash lastAppliedPoint
@@ -496,7 +497,8 @@ instance PayloadSemantics ptype => IsLedger (LedgerState (TestBlockWith ptype)) 
 
   applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
 
-instance PayloadSemantics ptype => UpdateLedger (TestBlockWith ptype)
+instance ApplyBlock (LedgerState (TestBlockWith ptype)) (TestBlockWith ptype)
+      => UpdateLedger (TestBlockWith ptype)
 
 instance InspectLedger (TestBlockWith ptype) where
   -- Defaults are fine
@@ -511,7 +513,8 @@ instance (PayloadSemantics ptype) => BasicEnvelopeValidation (TestBlockWith ptyp
 instance (PayloadSemantics ptype) => ValidateEnvelope (TestBlockWith ptype) where
   -- Use defaults
 
-instance (PayloadSemantics ptype) => LedgerSupportsProtocol (TestBlockWith ptype) where
+instance (PayloadSemantics ptype, LedgerSupportsHD (TestBlockWith ptype))
+      => LedgerSupportsProtocol (TestBlockWith ptype) where
   protocolLedgerView   _ _  = TickedTrivial
   ledgerViewForecastAt _    = trivialForecast
 
@@ -810,3 +813,23 @@ instance Serialise ptype => HasBinaryBlockInfo (TestBlockWith ptype) where
       }
 
 instance (Serialise ptype, PayloadSemantics ptype) => SerialiseDiskConstraints (TestBlockWith ptype)
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState TestBlock) where
+  data LedgerTables (LedgerState TestBlock) mk = NoTables
+    deriving stock    (Generic, Eq, Show)
+    deriving anyclass (NoThunks)
+
+instance CanSerializeLedgerTables (LedgerState TestBlock) where
+
+instance HasTickedLedgerTables (LedgerState TestBlock) where
+  withLedgerTablesTicked (TickedTestLedger st) tables =
+      TickedTestLedger $ withLedgerTables st tables
+
+instance LedgerTablesAreTrivial (LedgerState TestBlock) where
+  trivialLedgerTables = NoTables
+
+instance CanStowLedgerTables (LedgerState TestBlock) where

@@ -11,7 +11,10 @@ import           Control.DeepSeq (NFData)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.String
+import           Data.Text (pack, unpack)
 import           NoThunks.Class (NoThunks)
+
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (NodeId (..))
@@ -28,6 +31,12 @@ newtype Addr = Addr String
     , NFData
     , NoThunks
     )
+
+instance ToCBOR Addr where
+  toCBOR (Addr a) = toCBOR $ pack a
+
+instance FromCBOR Addr where
+  fromCBOR = Addr . unpack <$> fromCBOR
 
 instance Condense Addr where
   condense (Addr addr) = addr

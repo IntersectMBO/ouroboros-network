@@ -9,6 +9,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -25,6 +26,7 @@ import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict hiding (shape)
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class
 import           Quiet (Quiet (..))
 
 import           Test.QuickCheck
@@ -41,6 +43,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
@@ -78,8 +81,10 @@ import           Test.Util.Slots (NumSlots (..))
 
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
                      (Flip (..))
-import           Test.Consensus.HardFork.Combinator.A
-import           Test.Consensus.HardFork.Combinator.B
+import qualified Test.Consensus.HardFork.Combinator.A as A
+import           Test.Consensus.HardFork.Combinator.A hiding (LedgerTables (..))
+import qualified Test.Consensus.HardFork.Combinator.B as B
+import           Test.Consensus.HardFork.Combinator.B hiding (LedgerTables (..))
 
 tests :: TestTree
 tests = testGroup "Consensus" [
@@ -446,3 +451,33 @@ injectTx_AtoB ::
        BlockB
 injectTx_AtoB =
     InPairs.ignoringBoth $ Pair2 cannotInjectTx cannotInjectValidatedTx
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+
+  NOTE: Only because both BlockA and BlockB have trivial tables, this instance
+  is defined trivially too. If any of them had non-trivial tables, we should
+  make a combination of tables such as in Cardano.
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState TestBlock) where
+  data LedgerTables (LedgerState TestBlock) mk = NoTables
+    deriving (Generic, Eq, Show, NoThunks)
+
+instance CanSerializeLedgerTables (LedgerState TestBlock) where
+
+instance LedgerTablesAreTrivial (LedgerState TestBlock) where
+  trivialLedgerTables = NoTables
+
+instance HasTickedLedgerTables (LedgerState TestBlock) where
+  withLedgerTablesTicked (TickedHardForkLedgerState t st) NoTables =
+      TickedHardForkLedgerState t
+    . HardForkState
+    . (\case
+          TZ        (Current s (FlipTickedLedgerState state))  -> TZ        (Current s (FlipTickedLedgerState $ withLedgerTablesTicked state A.NoTables))
+          TS ss (TZ (Current s (FlipTickedLedgerState state))) -> TS ss (TZ (Current s (FlipTickedLedgerState $ withLedgerTablesTicked state B.NoTables)))
+      )
+    . getHardForkState
+    $ st
+
+instance CanStowLedgerTables (LedgerState TestBlock) where

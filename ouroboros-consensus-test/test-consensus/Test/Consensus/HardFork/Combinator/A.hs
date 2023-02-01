@@ -33,6 +33,7 @@ module Test.Consensus.HardFork.Combinator.A (
   , GenTx (..)
   , Header (..)
   , LedgerState (..)
+  , LedgerTables (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
   , TxId (..)
@@ -80,6 +81,7 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
@@ -581,3 +583,24 @@ instance SerialiseNodeToClient BlockA (SomeSecond BlockQuery BlockA) where
 instance SerialiseResult BlockA (BlockQuery BlockA) where
   encodeResult _ _ = \case {}
   decodeResult _ _ = \case {}
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState BlockA) where
+  data LedgerTables (LedgerState BlockA) mk = NoTables
+    deriving (Eq, Generic, NoThunks, Show)
+
+instance HasTickedLedgerTables (LedgerState BlockA) where
+  withLedgerTablesTicked st tbs =
+      TickedLedgerStateA
+    $ flip withLedgerTables tbs
+    $ getTickedLedgerStateA st
+
+instance LedgerTablesAreTrivial (LedgerState BlockA) where
+  trivialLedgerTables = NoTables
+
+instance CanSerializeLedgerTables (LedgerState BlockA) where
+
+instance CanStowLedgerTables (LedgerState BlockA) where

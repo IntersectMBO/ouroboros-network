@@ -111,8 +111,8 @@ import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Ticked (Ticked1)
 
+import           Ouroboros.Consensus.Ledger.Tables
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.SignableRepresentation ()
 
@@ -827,3 +827,23 @@ instance Hashable IsEBB
 
 instance (StandardHash b, Hashable (HeaderHash b)) => Hashable (ChainHash b)
   -- use generic instance
+
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState TestBlock) where
+  data LedgerTables (LedgerState TestBlock) mk = NoTables
+    deriving (Generic, Eq, Show, NoThunks)
+
+instance CanSerializeLedgerTables (LedgerState TestBlock) where
+
+instance HasTickedLedgerTables (LedgerState TestBlock) where
+  withLedgerTablesTicked st tbs =
+    TickedTestLedger $ flip withLedgerTables tbs $ getTickedTestLedger st
+
+instance LedgerTablesAreTrivial (LedgerState TestBlock) where
+  trivialLedgerTables = NoTables
+
+instance CanStowLedgerTables (LedgerState TestBlock) where

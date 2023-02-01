@@ -116,7 +116,7 @@ instance (SimpleCrypto c, Typeable ext) => Arbitrary (SomeResult (SimpleBlock c 
   arbitrary = SomeResult QueryLedgerTip <$> arbitrary
 
 instance Arbitrary (LedgerState (SimpleBlock c ext) Canonical) where
-  arbitrary = SimpleLedgerState <$> arbitrary
+  arbitrary = flip SimpleLedgerState (SimpleLedgerTables Canonical) <$> arbitrary
 
 instance HashAlgorithm (SimpleHash c) => Arbitrary (AnnTip (SimpleBlock c ext)) where
   arbitrary = do

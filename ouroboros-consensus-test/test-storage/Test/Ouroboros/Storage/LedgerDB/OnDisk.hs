@@ -63,6 +63,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -1190,3 +1191,22 @@ showLabelledExamples secParam mReplay relevant = do
   where
     run :: QSM.Commands (At Cmd) (At Resp) -> [Tag]
     run = filter relevant . tagEvents secParam . execCmds secParam
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState TestBlock) where
+  data LedgerTables (LedgerState TestBlock) mk = NoTables
+    deriving (Generic, Eq, Show, NoThunks)
+
+instance CanSerializeLedgerTables (LedgerState TestBlock) where
+
+instance HasTickedLedgerTables (LedgerState TestBlock) where
+  withLedgerTablesTicked (TickedTestLedger st) tables =
+      TickedTestLedger $ withLedgerTables st tables
+
+instance LedgerTablesAreTrivial (LedgerState TestBlock) where
+  trivialLedgerTables = NoTables
+
+instance CanStowLedgerTables (LedgerState TestBlock) where
