@@ -99,6 +99,7 @@ module Ouroboros.Network.ConnectionManager.Types
   , Inactive (..)
   , ExceptionInHandler (..)
   , HandleErrorType (..)
+  , HandshakeConnectionResult (..)
     -- ** Prune Policy
   , PrunePolicy
   , simplePrunePolicy
@@ -341,12 +342,20 @@ newtype MaskedAction m a = MaskedAction {
 --
 type ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version m
      = socket
-    -> PromiseWriter m (Either handleError (handle, version))
+    -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle version))
     -> Tracer m handlerTrace
     -> ConnectionId peerAddr
     -> (DiffTime -> socket -> m (MuxBearer m))
     -> MaskedAction m ()
 
+data HandshakeConnectionResult handle version
+  -- | Handshake saw a query.
+  --
+  = HandshakeConnectionQuery
+
+  -- | Handshake resulted in a connection and version.
+  --
+  | HandshakeConnectionResult handle version
 
 -- | Connection handler action.  It is index by @muxMode :: 'MuxMode'@.
 -- There's one 'ConnectionHandlerFn' per provenance, possibly limited by

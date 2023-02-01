@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE NumericUnderscores        #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 
@@ -295,14 +296,14 @@ makeConnectionHandler muxTracer singMuxMode
                           hMuxBundle      = muxBundle,
                           hControlMessage = controlMessageBundle
                         }
-                  atomically $ writePromise (Right (handle, (versionNumber, agreedOptions)))
+                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
                   runMux (WithMuxBearer connectionId `contramap` muxTracer)
                          mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
+                atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap
-                error "TODO"
 
 
     inboundConnectionHandler
@@ -366,13 +367,15 @@ makeConnectionHandler muxTracer singMuxMode
                           hMuxBundle      = muxBundle,
                           hControlMessage = controlMessageBundle
                         }
-                  atomically $ writePromise (Right (handle, (versionNumber, agreedOptions)))
+                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
                   runMux (WithMuxBearer connectionId `contramap` muxTracer)
                              mux bearer
               Right (HandshakeQueryResult vMap) -> do
+                atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap
-                error "TODO"
+                -- Wait 20s for client to receive response, who should close the connection.
+                threadDelay 20_000_000
 
 
 

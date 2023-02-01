@@ -609,10 +609,11 @@ mkConnectionHandler snocket =
            labelThisThread ("handler-" ++ show addr ++ "-" ++ show (seIdx se))
            unmask (threadDelay (seHandshakeDelay se))
            atomically (writePromise promise
-                        (Right ( Handle { hScheduleEntry = se
+                        (Right (HandshakeConnectionResult
+                                 Handle { hScheduleEntry = se
                                         , hThreadId = threadId
                                         }
-                               , Version (seDataFlow se)
+                                 (Version (seDataFlow se))
                                )))
 
            -- The connection manager throws async exception to kill the
