@@ -5,10 +5,12 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- it is useful to have 'HasInitiator' constraint on 'connectToNode' & friends.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -71,6 +73,7 @@ module Ouroboros.Network.Socket
   , sockAddrFamily
   ) where
 
+import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeException (..))
@@ -368,9 +371,9 @@ connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec
                (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
                bearer
 
-         Right (HandshakeQueryResult vMap) -> do
+         Right (HandshakeQueryResult _vMap) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             error "TODO"
+             throwIO (QueryNotSupportedInThisVersion @vNumber)
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -499,9 +502,10 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
                    (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app)
                    bearer
 
-             Right (HandshakeQueryResult vMap) -> do
-                 traceWith muxTracer' $ Mx.MuxTraceHandshakeServerEnd
-                 error "TODO"
+             Right (HandshakeQueryResult _vMap) -> do
+                 traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd
+                 -- Wait 20s for client to receive response, who should close the connection.
+                 threadDelay 20_000_000
 
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 

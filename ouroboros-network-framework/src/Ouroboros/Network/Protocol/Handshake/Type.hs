@@ -153,6 +153,7 @@ data HandshakeProtocolError vNumber
   = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
   | InvalidServerSelection vNumber Text
+  | QueryNotSupportedInThisVersion
   deriving (Eq, Show)
 
 -- | The result of a handshake.
