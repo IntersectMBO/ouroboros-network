@@ -12,6 +12,7 @@ import           Data.SOP.Strict
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Config.SupportsNode
+import           Ouroboros.Consensus.Ledger.SupportsHD
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 
@@ -59,4 +60,5 @@ instance ( CanHardFork xs
            -- Instances that must be defined for specific values of @b@:
          , SupportedNetworkProtocolVersion (HardForkBlock xs)
          , SerialiseHFC xs
+         , LedgerSupportsHD (HardForkBlock xs)
          ) => RunNode (HardForkBlock xs)

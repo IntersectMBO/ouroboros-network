@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveFoldable           #-}
 {-# LANGUAGE DeriveFunctor            #-}
 {-# LANGUAGE DeriveTraversable        #-}
@@ -27,17 +28,20 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerCfg
   , applyChainTick
     -- * Link block to its ledger
-  , Canonical
+  , Canonical (..)
   , LedgerConfig
   , LedgerError
   , LedgerState
+  , LedgerStateKind
   , TickedLedgerState
   ) where
 
-import           Data.Kind (Type)
+import           Data.Kind (Constraint, Type)
 import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Ledger.Tables (Canonical (..),
+                     LedgerStateKind)
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 
@@ -52,7 +56,8 @@ class GetTip l where
   getTip :: l -> Point l
 
 type instance HeaderHash (Ticked l) = HeaderHash l
-type instance HeaderHash (Ticked1 l mk) = HeaderHash l
+type instance HeaderHash (Ticked1 (l :: k -> Type)) = HeaderHash l
+type instance HeaderHash (Ticked1 (l :: k -> Type) mk) = HeaderHash l
 
 getTipHash :: GetTip l => l -> ChainHash l
 getTipHash = pointHash . getTip
@@ -102,9 +107,10 @@ pureLedgerResult a = LedgerResult {
 -------------------------------------------------------------------------------}
 
 -- | Static environment required for the ledger
-type LedgerCfg :: (Type -> Type) -> Type
+type LedgerCfg :: LedgerStateKind -> Type
 type family LedgerCfg l :: Type
 
+type IsLedger :: LedgerStateKind -> Constraint
 class ( -- Requirements on the ledger state itself
         Show     (l Canonical)
       , Eq       (l Canonical)
@@ -121,7 +127,8 @@ class ( -- Requirements on the ledger state itself
         -- ticked ledger.
       , GetTip (l Canonical)
       , GetTip (Ticked1 l Canonical)
-      ) => IsLedger (l :: Type -> Type) where
+      , HeaderHash (l Canonical) ~ HeaderHash l
+      ) => IsLedger l where
   -- | Errors that can arise when updating the ledger
   --
   -- This is defined here rather than in 'ApplyBlock', since the /type/ of
@@ -177,16 +184,20 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 -------------------------------------------------------------------------------}
 
 -- | Ledger state associated with a block
-type LedgerState :: Type -> Type -> Type
-data family LedgerState blk mk :: Type
+--
+-- The @blk@ parameter will be instantiated with the block used in the
+-- blockchain, and @mk@ will be instantiated to some MapKind. See
+-- "Ouroboros.Consensus.Ledger.Tables" for a more thorough discussion on this
+-- one.
+type LedgerState :: Type -> LedgerStateKind
+data family LedgerState blk mk
 
--- | A canonical ledger state, with all the contents in memory. This is just a
--- phantom type used to sketch later development and shall not land on the
--- release version.
-data Canonical
-
-type instance HeaderHash (LedgerState blk mk) = HeaderHash blk
 type instance HeaderHash (LedgerState blk)    = HeaderHash blk
+type instance HeaderHash (LedgerState blk mk) = HeaderHash blk
+
+instance StandardHash blk => StandardHash (LedgerState blk)
+instance StandardHash blk => StandardHash (LedgerState blk mk)
+
 type LedgerConfig      blk    = LedgerCfg (LedgerState blk)
 type LedgerError       blk    = LedgerErr (LedgerState blk)
 type TickedLedgerState blk mk = Ticked1   (LedgerState blk) mk

@@ -141,3 +141,12 @@ constraints:
 
 allow-newer:
     Unique:hashable
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/anti-diffs
+  tag: 20fdb9839e208236f0f32c86555b16aa110e4f91
+  -- sha256: 0v7ifqgww1da0nsnq76dygcv88cwy9731l3q6cav51qwbbr7vm8a
+  subdir:
+    anti-diff
+    simple-semigroupoids

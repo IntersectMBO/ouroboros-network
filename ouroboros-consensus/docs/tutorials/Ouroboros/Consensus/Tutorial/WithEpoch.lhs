@@ -43,11 +43,12 @@ As before, we require a few language extensions:
 > {-# LANGUAGE TypeFamilies               #-}
 > {-# LANGUAGE DerivingVia                #-}
 > {-# LANGUAGE DataKinds                  #-}
+> {-# LANGUAGE DeriveAnyClass             #-}
 > {-# LANGUAGE DeriveGeneric              #-}
 > {-# LANGUAGE FlexibleInstances          #-}
 > {-# LANGUAGE MultiParamTypeClasses      #-}
 > {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-> {-# LANGUAGE DeriveAnyClass #-}
+> {-# LANGUAGE RecordWildCards            #-}
 > {-# LANGUAGE StandaloneDeriving         #-}
 
 > module Ouroboros.Consensus.Tutorial.WithEpoch () where
@@ -78,6 +79,10 @@ And imports, of course:
 > import Ouroboros.Consensus.Ledger.Abstract
 >   (Canonical, LedgerState, LedgerCfg, GetTip, LedgerResult (..), ApplyBlock (..),
 >    UpdateLedger, IsLedger (..))
+> import Ouroboros.Consensus.Ledger.Tables
+>   (CanSerializeLedgerTables (..), HasLedgerTables(..),
+>    HasTickedLedgerTables(..), CanStowLedgerTables (..),
+>    LedgerTablesAreTrivial (..))
 >
 > import Ouroboros.Consensus.Ledger.SupportsMempool ()
 > import Ouroboros.Consensus.Ledger.SupportsProtocol
@@ -676,3 +681,26 @@ involving `BlockC`:
 While this is a large ecosystem of interrelated typeclasses and families, the
 overall organization of things is such that Haskell's type checking can help
 guide the implementation.
+
+Appendix: UTxO-HD features
+==========================
+
+For reference on these instances and their meaning, please see the appendix in
+[the Simple tutorial](./Simple.lhs).
+
+> instance HasLedgerTables (LedgerState BlockD) where
+>   data instance LedgerTables (LedgerState BlockD) mk = NoTables
+>      deriving (Eq, Show, Generic, NoThunks)
+
+> instance HasTickedLedgerTables (LedgerState BlockD) where
+>   withLedgerTablesTicked st tbs =
+>       TickedLedgerStateD
+>     $ flip withLedgerTables tbs
+>     $ unTickedLedgerStateD st
+
+> instance CanStowLedgerTables (LedgerState BlockD) where
+
+> instance LedgerTablesAreTrivial (LedgerState BlockD) where
+>   trivialLedgerTables = NoTables
+
+> instance CanSerializeLedgerTables (LedgerState BlockD) where

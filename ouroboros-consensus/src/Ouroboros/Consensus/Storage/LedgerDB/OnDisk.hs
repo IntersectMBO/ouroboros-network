@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -580,19 +581,19 @@ data TraceReplayEvent blk
   Backing store specializations
 -------------------------------------------------------------------------------}
 
-type LedgerBackingStoreInitialiser :: (Type -> Type) -> (Type -> Type) -> Type
+type LedgerBackingStoreInitialiser :: (Type -> Type) -> LedgerStateKind -> Type
 newtype LedgerBackingStoreInitialiser m l = LedgerBackingStoreInitialiser
   (BackingStoreInitialiser m () () ())
   deriving newtype (NoThunks)
 
 -- | A handle to the backing store for the ledger tables
-type LedgerBackingStore :: (Type -> Type) -> (Type -> Type) -> Type
+type LedgerBackingStore :: (Type -> Type) -> LedgerStateKind -> Type
 newtype LedgerBackingStore m l = LedgerBackingStore
     (BackingStore m  () () ())
   deriving newtype (NoThunks)
 
 -- | A handle to the backing store for the ledger tables
-type LedgerBackingStoreValueHandle :: (Type -> Type) -> (Type -> Type) -> Type
+type LedgerBackingStoreValueHandle :: (Type -> Type) -> LedgerStateKind -> Type
 data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
     !(WithOrigin SlotNo)
     !(BackingStoreValueHandle m () ())

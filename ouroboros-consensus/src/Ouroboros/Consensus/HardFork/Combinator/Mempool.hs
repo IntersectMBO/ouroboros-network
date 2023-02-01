@@ -36,6 +36,7 @@ import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsHD
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
@@ -94,7 +95,8 @@ instance Typeable xs => ShowProxy (GenTx (HardForkBlock xs)) where
 
 type instance ApplyTxErr (HardForkBlock xs) = HardForkApplyTxErr xs
 
-instance CanHardFork xs => LedgerSupportsMempool (HardForkBlock xs) where
+instance (CanHardFork xs, LedgerSupportsHD (HardForkBlock xs))
+      => LedgerSupportsMempool (HardForkBlock xs) where
   applyTx   = applyHelper ModeApply
 
   reapplyTx = \cfg slot vtx tls ->

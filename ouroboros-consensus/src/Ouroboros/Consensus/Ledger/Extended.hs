@@ -1,17 +1,21 @@
-{-# LANGUAGE CPP                      #-}
-{-# LANGUAGE DeriveGeneric            #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE RankNTypes               #-}
-{-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE StandaloneDeriving       #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeApplications         #-}
-{-# LANGUAGE TypeFamilies             #-}
-{-# LANGUAGE UndecidableInstances     #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Ouroboros.Consensus.Ledger.Extended (
     -- * Extended ledger state
@@ -24,7 +28,9 @@ module Ouroboros.Consensus.Ledger.Extended (
     -- * Casts
   , castExtLedgerState
     -- * Type family instances
+  , LedgerTables (..)
   , Ticked (..)
+  , Ticked1 (..)
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
@@ -43,6 +49,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked (Ticked1)
 
@@ -53,7 +60,7 @@ import           Ouroboros.Consensus.Ticked (Ticked1)
 -- | Extended ledger state
 --
 -- This is the combination of the header state and the ledger state proper.
-type ExtLedgerState :: Type -> Type -> Type
+type ExtLedgerState :: Type -> LedgerStateKind
 data ExtLedgerState blk mk = ExtLedgerState {
       ledgerState :: !(LedgerState blk mk)
     , headerState :: !(HeaderState blk)
@@ -107,8 +114,11 @@ instance ( ConsensusProtocol (BlockProtocol blk)
 
 type instance LedgerCfg (ExtLedgerState blk) = ExtLedgerCfg blk
 
-type instance HeaderHash (ExtLedgerState blk) = HeaderHash blk
+type instance HeaderHash (ExtLedgerState blk)    = HeaderHash blk
 type instance HeaderHash (ExtLedgerState blk mk) = HeaderHash blk
+
+instance StandardHash (LedgerState blk) => StandardHash (ExtLedgerState blk)
+instance StandardHash (LedgerState blk) => StandardHash (ExtLedgerState blk mk)
 
 instance IsLedger (LedgerState blk) => GetTip (ExtLedgerState blk Canonical) where
   getTip = castPoint . getTip . ledgerState
@@ -173,6 +183,77 @@ instance LedgerSupportsProtocol blk => ApplyBlock (ExtLedgerState blk) blk where
           tickedLedgerView
           (getHeader blk)
           tickedHeaderState
+
+
+{-------------------------------------------------------------------------------
+ Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState blk)
+      => HasLedgerTables (ExtLedgerState blk) where
+
+  newtype LedgerTables (ExtLedgerState blk) mk = ExtLedgerStateTables {
+      unExtLedgerStateTables :: LedgerTables (LedgerState blk) mk
+      }
+    deriving (Generic)
+
+  projectLedgerTables (ExtLedgerState lstate _) =
+      ExtLedgerStateTables (projectLedgerTables lstate)
+  withLedgerTables (ExtLedgerState lstate hstate) (ExtLedgerStateTables tables) =
+      ExtLedgerState (lstate `withLedgerTables` tables) hstate
+
+  traverseLedgerTables f (ExtLedgerStateTables l) =
+    ExtLedgerStateTables <$> traverseLedgerTables f l
+
+  pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState blk) f
+  mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState blk) f
+  zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState blk) f
+  zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState blk) f
+  foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState blk) f
+  foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState blk) f
+  namesLedgerTables   = coerce $ namesLedgerTables @(LedgerState blk)
+  zipLedgerTablesA  f (ExtLedgerStateTables l) (ExtLedgerStateTables r) =
+    ExtLedgerStateTables <$> zipLedgerTablesA f l r
+  zipLedgerTables2A  f (ExtLedgerStateTables l) (ExtLedgerStateTables c) (ExtLedgerStateTables r) =
+     ExtLedgerStateTables <$> zipLedgerTables2A f l c r
+
+deriving newtype instance Eq (LedgerTables (LedgerState blk) mk)
+                       => Eq (LedgerTables (ExtLedgerState blk) mk)
+deriving newtype instance NoThunks (LedgerTables (LedgerState blk) mk)
+                       => NoThunks (LedgerTables (ExtLedgerState blk) mk)
+deriving newtype instance Show (LedgerTables (LedgerState blk) mk)
+                       => Show (LedgerTables (ExtLedgerState blk) mk)
+
+instance ( LedgerSupportsProtocol blk
+         , CanSerializeLedgerTables (LedgerState blk)
+         )
+      => CanSerializeLedgerTables (ExtLedgerState blk) where
+  codecLedgerTables = ExtLedgerStateTables codecLedgerTables
+
+instance LedgerTablesAreTrivial (LedgerState blk)
+      => LedgerTablesAreTrivial (ExtLedgerState blk) where
+  convertMapKind (ExtLedgerState st hst) =
+      flip ExtLedgerState hst $ convertMapKind st
+
+  trivialLedgerTables = ExtLedgerStateTables trivialLedgerTables
+
+instance HasTickedLedgerTables (LedgerState blk)
+      => HasTickedLedgerTables (ExtLedgerState blk) where
+  projectLedgerTablesTicked (TickedExtLedgerState lstate _view _hstate) =
+      ExtLedgerStateTables (projectLedgerTablesTicked lstate)
+  withLedgerTablesTicked
+    (TickedExtLedgerState lstate view hstate)
+    (ExtLedgerStateTables tables) =
+      TickedExtLedgerState (lstate `withLedgerTablesTicked` tables) view hstate
+
+instance CanStowLedgerTables (LedgerState blk)
+      => CanStowLedgerTables (ExtLedgerState blk) where
+
+   stowLedgerTables (ExtLedgerState lstate hstate) =
+     ExtLedgerState (stowLedgerTables lstate) hstate
+
+   unstowLedgerTables (ExtLedgerState lstate hstate) =
+     ExtLedgerState (unstowLedgerTables lstate) hstate
 
 {-------------------------------------------------------------------------------
   Serialisation

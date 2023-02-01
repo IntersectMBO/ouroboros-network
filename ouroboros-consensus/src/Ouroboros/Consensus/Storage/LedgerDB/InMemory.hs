@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ConstraintKinds          #-}
 {-# LANGUAGE DeriveAnyClass           #-}
 {-# LANGUAGE DeriveGeneric            #-}
@@ -247,7 +248,7 @@ instance Monad m => ThrowsLedgerError (ExceptT (AnnLedgerError l blk) m) l blk w
 -- * Compute the constraint @c@ on the monad @m@ in order to run the query:
 --   a. If we are passing a block by reference, we must be able to resolve it.
 --   b. If we are applying rather than reapplying, we might have ledger errors.
-type Ap :: (Type -> Type) -> (Type -> Type) -> Type -> Constraint -> Type
+type Ap :: (Type -> Type) -> LedgerStateKind -> Type -> Constraint -> Type
 data Ap m l blk c where
   ReapplyVal ::           blk -> Ap m l blk ()
   ApplyVal   ::           blk -> Ap m l blk (                      ThrowsLedgerError m l blk)
@@ -342,7 +343,7 @@ ledgerDbIsSaturated (SecurityParam k) db =
 -- When no ledger state (or anchor) has the given 'Point', 'Nothing' is
 -- returned.
 ledgerDbPast ::
-     (HeaderHash (l Canonical) ~ HeaderHash l, HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk)
+     (HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk)
   => Point blk
   -> LedgerDB l
   -> Maybe (l Canonical)

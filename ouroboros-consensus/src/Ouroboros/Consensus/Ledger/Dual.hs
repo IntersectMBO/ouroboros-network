@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -38,9 +39,9 @@ module Ouroboros.Consensus.Ledger.Dual (
   , GenTx (..)
   , Header (..)
   , LedgerState (..)
+  , LedgerTables (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
-  , Ticked (..)
   , Ticked1 (..)
   , TxId (..)
   , Validated (..)
@@ -87,11 +88,11 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Ticked (Ticked1)
 
 {-------------------------------------------------------------------------------
   Block
@@ -236,6 +237,7 @@ class (
       , Show (ApplyTxErr       m)
       , Show (LedgerState      m Canonical)
       , Eq   (LedgerState      m Canonical)
+      , HasTickedLedgerTables (LedgerState m)
 
         -- Requirements on the auxiliary block
         -- No 'LedgerSupportsProtocol' for @a@!
@@ -342,7 +344,7 @@ instance Bridge m a => GetTip (Ticked1 (LedgerState (DualBlock m a)) Canonical) 
 
 data instance Ticked1 (LedgerState (DualBlock m a)) mk = TickedDualLedgerState {
       tickedDualLedgerStateMain    :: Ticked1 (LedgerState m) mk
-    , tickedDualLedgerStateAux     :: Ticked1 (LedgerState a) mk
+    , tickedDualLedgerStateAux     :: Ticked1 (LedgerState a) Canonical
     , tickedDualLedgerStateBridge  :: BridgeLedger m a
 
       -- | The original, unticked ledger for the auxiliary block
@@ -350,7 +352,7 @@ data instance Ticked1 (LedgerState (DualBlock m a)) mk = TickedDualLedgerState {
       -- The reason we keep this in addition to the ticked ledger state is that
       -- not every main block is paired with an auxiliary block. When there is
       -- no auxiliary block, the auxiliary ledger state remains unchanged.
-    , tickedDualLedgerStateAuxOrig :: LedgerState a mk
+    , tickedDualLedgerStateAuxOrig :: LedgerState a Canonical
     }
   deriving NoThunks via AllowThunk (Ticked1 (LedgerState (DualBlock m a)) mk)
 
@@ -431,7 +433,7 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
 
 data instance LedgerState (DualBlock m a) mk = DualLedgerState {
       dualLedgerStateMain   :: LedgerState m mk
-    , dualLedgerStateAux    :: LedgerState a mk
+    , dualLedgerStateAux    :: LedgerState a Canonical
     , dualLedgerStateBridge :: BridgeLedger m a
     }
   deriving NoThunks via AllowThunk (LedgerState (DualBlock m a) mk)
@@ -913,3 +915,118 @@ decodeDualLedgerState decodeMain = do
       <$> decodeMain
       <*> decode
       <*> decode
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance Bridge m a => HasLedgerTables (LedgerState (DualBlock m a)) where
+
+  newtype LedgerTables (LedgerState (DualBlock m a)) mk =
+      DualBlockLedgerTables
+        (LedgerTables (LedgerState m) mk)
+    deriving (Generic)
+    deriving NoThunks via AllowThunk (LedgerTables (LedgerState (DualBlock m a)) mk)
+
+  projectLedgerTables DualLedgerState{..} =
+      DualBlockLedgerTables
+        (projectLedgerTables dualLedgerStateMain)
+
+  withLedgerTables DualLedgerState{..} (DualBlockLedgerTables main) =
+      DualLedgerState {
+          dualLedgerStateMain   = withLedgerTables dualLedgerStateMain main
+        , dualLedgerStateAux    = dualLedgerStateAux
+        , dualLedgerStateBridge = dualLedgerStateBridge
+        }
+
+  pureLedgerTables f =
+      DualBlockLedgerTables
+        (pureLedgerTables f)
+
+  mapLedgerTables f (DualBlockLedgerTables main) =
+      DualBlockLedgerTables
+        (mapLedgerTables f main)
+
+  traverseLedgerTables f (DualBlockLedgerTables main) =
+          DualBlockLedgerTables
+      <$> traverseLedgerTables f main
+
+  zipLedgerTables
+    f
+    (DualBlockLedgerTables mainL)
+    (DualBlockLedgerTables mainR) =
+      DualBlockLedgerTables
+        (zipLedgerTables f mainL mainR)
+
+  zipLedgerTablesA
+    f
+    (DualBlockLedgerTables mainL)
+    (DualBlockLedgerTables mainR) =
+          DualBlockLedgerTables
+      <$> (zipLedgerTablesA f mainL mainR)
+
+  zipLedgerTables2A
+    f
+    (DualBlockLedgerTables main0)
+    (DualBlockLedgerTables main1)
+    (DualBlockLedgerTables main2) =
+          DualBlockLedgerTables
+      <$> (zipLedgerTables2A f main0 main1 main2)
+
+  zipLedgerTables2
+    f
+    (DualBlockLedgerTables mainL)
+    (DualBlockLedgerTables mainM)
+    (DualBlockLedgerTables mainR) =
+      DualBlockLedgerTables
+        (zipLedgerTables2 f mainL mainM mainR)
+
+  foldLedgerTables f (DualBlockLedgerTables main) =
+       foldLedgerTables f main
+
+  foldLedgerTables2
+    f
+    (DualBlockLedgerTables main1)
+    (DualBlockLedgerTables main2) =
+           foldLedgerTables2 f main1 main2
+
+  namesLedgerTables = DualBlockLedgerTables namesLedgerTables
+
+deriving newtype instance Eq (LedgerTables (LedgerState blk) mk)
+                       => Eq (LedgerTables (LedgerState (DualBlock blk aux)) mk)
+deriving newtype instance Show (LedgerTables (LedgerState blk) mk)
+                       => Show (LedgerTables (LedgerState (DualBlock blk aux)) mk)
+
+instance Bridge m a => HasTickedLedgerTables (LedgerState (DualBlock m a)) where
+
+  projectLedgerTablesTicked TickedDualLedgerState{..} =
+      DualBlockLedgerTables
+        (projectLedgerTablesTicked tickedDualLedgerStateMain)
+
+  withLedgerTablesTicked
+    TickedDualLedgerState{..}
+    (DualBlockLedgerTables main) =
+      TickedDualLedgerState {
+          tickedDualLedgerStateMain   =
+            withLedgerTablesTicked tickedDualLedgerStateMain main
+        , tickedDualLedgerStateAux
+        , tickedDualLedgerStateBridge
+        , tickedDualLedgerStateAuxOrig
+        }
+
+instance CanSerializeLedgerTables (LedgerState m)
+      => CanSerializeLedgerTables (LedgerState (DualBlock m a)) where
+  codecLedgerTables = DualBlockLedgerTables codecLedgerTables
+
+instance CanStowLedgerTables (LedgerState m)
+      => CanStowLedgerTables (LedgerState (DualBlock m a)) where
+  stowLedgerTables DualLedgerState{..} =
+    DualLedgerState{
+      dualLedgerStateMain = stowLedgerTables dualLedgerStateMain
+    , ..
+    }
+  unstowLedgerTables DualLedgerState{..} =
+    DualLedgerState{
+      dualLedgerStateMain = unstowLedgerTables dualLedgerStateMain
+    , ..
+    }

@@ -30,6 +30,7 @@ This example uses several extensions:
 > {-# LANGUAGE FlexibleInstances          #-}
 > {-# LANGUAGE DeriveAnyClass             #-}
 > {-# LANGUAGE MultiParamTypeClasses      #-}
+> {-# LANGUAGE RecordWildCards            #-}
 > {-# LANGUAGE StandaloneDeriving         #-}
 
 > module Ouroboros.Consensus.Tutorial.Simple () where
@@ -57,6 +58,10 @@ First, some imports we'll need:
 >   (Canonical, GetTip(..), IsLedger(..), LedgerCfg,
 >    LedgerResult(LedgerResult, lrEvents, lrResult),
 >    LedgerState, ApplyBlock(..), UpdateLedger)
+> import Ouroboros.Consensus.Ledger.Tables
+>   (CanSerializeLedgerTables (..), HasLedgerTables(..),
+>    HasTickedLedgerTables(..), CanStowLedgerTables (..),
+>    LedgerTablesAreTrivial (..))
 > import Ouroboros.Consensus.Ledger.SupportsProtocol
 >   (LedgerSupportsProtocol(..))
 > import Ouroboros.Consensus.Forecast (trivialForecast)
@@ -708,3 +713,56 @@ To focus on the salient ideas of this document, we've put all the derivations of
 > deriving via OnlyCheckWhnfNamed "LedgerC" (LedgerState BlockC mk)
 >   instance NoThunks (LedgerState BlockC mk)
 > deriving instance NoThunks (Ticked1 (LedgerState BlockC) mk)
+
+Appendix: UTxO-HD
+=================
+
+The introduction of UTxO-HD is out of the scope of this tutorial but we will
+describe here a few hints on how it would be defined. In broad terms, with the
+introduction of UTxO-HD a part of the ledger state (the UTxO set) was moved to
+the disk and now consensus:
+
+- provides subsets of that data to the ledger rules (i.e. only the consumed
+  UTxOs on a block)
+
+- stores a sequence of deltas (diffs) produced by the execution of the ledger
+  rules
+
+These subsets are defined in terms of the `LedgerTables` and the `mk` type
+variable that indicates if the collection is made of key-value pairs, only keys
+or to keys-delta pairs.
+
+The `HasLedgerTables` class defines the basic operations that can be done with
+the `LedgerTables`. For a Ledger state definition as simple as the one we are
+defining there the tables are trivially empty so the operations are all trivial.
+
+> instance HasLedgerTables (LedgerState BlockC) where
+>   data instance LedgerTables (LedgerState BlockC) mk = NoTables
+>      deriving (Eq, Show, Generic, NoThunks)
+
+The `TickedTableStuff` class is essentially the same as `TableStuff` but with
+the ticked Ledger State instead. Again, for this ledger state it is trivial.
+
+> instance HasTickedLedgerTables (LedgerState BlockC) where
+>   withLedgerTablesTicked st tbs =
+>       TickedLedgerStateC
+>     $ flip withLedgerTables tbs
+>     $ unTickedLedgerStateC st
+
+Like our example ledger state, a Ledger State is said to be `InMemory` if it
+doesn't really depend on the ledger tables and therefore it is completely in
+memory, and the `mk` parameter is just a phantom type.
+
+> instance LedgerTablesAreTrivial (LedgerState BlockC) where
+>   trivialLedgerTables = NoTables
+
+A Ledger State also has to define a `StowableLedgerTables` instance because it
+is used to fill the holes for the UTxO set inside the ledger state so that the
+Ledger rules can be executed. However, for this simple Ledger State, just
+converting the map kind is enough.
+
+> instance CanStowLedgerTables (LedgerState BlockC) where
+
+A Ledger State also has to define how it serializes its Ledger Tables.
+
+> instance CanSerializeLedgerTables (LedgerState BlockC) where

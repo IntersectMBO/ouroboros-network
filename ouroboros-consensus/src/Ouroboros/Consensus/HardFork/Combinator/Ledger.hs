@@ -49,6 +49,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.SupportsHD
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense
@@ -183,7 +184,7 @@ tickOne ei slot index pcfg (Flip st) = Comp $ fmap FlipTickedLedgerState $
   ApplyBlock
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs
+instance (CanHardFork xs, LedgerSupportsHD (HardForkBlock xs))
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
 
   applyBlockLedgerResult cfg
@@ -257,7 +258,8 @@ reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st))
   UpdateLedger
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs => UpdateLedger (HardForkBlock xs)
+instance (CanHardFork xs, LedgerSupportsHD (HardForkBlock xs))
+      => UpdateLedger (HardForkBlock xs)
 
 {-------------------------------------------------------------------------------
   HasHardForkHistory
@@ -326,7 +328,8 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
   LedgerSupportsProtocol
 -------------------------------------------------------------------------------}
 
-instance CanHardFork xs => LedgerSupportsProtocol (HardForkBlock xs) where
+instance (CanHardFork xs, LedgerSupportsHD (HardForkBlock xs))
+      => LedgerSupportsProtocol (HardForkBlock xs) where
   protocolLedgerView HardForkLedgerConfig{..}
                      (TickedHardForkLedgerState transition ticked) =
       TickedHardForkLedgerView {

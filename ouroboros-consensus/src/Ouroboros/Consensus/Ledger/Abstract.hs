@@ -40,6 +40,7 @@ import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.SupportsHD
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM, (..:))
 
@@ -77,6 +78,7 @@ class ( IsLedger l
       , HeaderHash l ~ HeaderHash blk
       , HasHeader blk
       , HasHeader (Header blk)
+      , LedgerSupportsHD blk
       ) => ApplyBlock l blk where
 
   -- | Apply a block to the ledger state.
