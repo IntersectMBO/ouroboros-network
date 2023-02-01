@@ -45,6 +45,10 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable full duplex connections.
+    | NodeToNodeV_11
+    -- ^ Changes:
+    --
+    -- * Added `query` to NodeToClientVersionData.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -54,11 +58,13 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     encodeTerm NodeToNodeV_8  = CBOR.TInt 8
     encodeTerm NodeToNodeV_9  = CBOR.TInt 9
     encodeTerm NodeToNodeV_10 = CBOR.TInt 10
+    encodeTerm NodeToNodeV_11 = CBOR.TInt 11
 
     decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7
     decodeTerm (CBOR.TInt 8) = Right NodeToNodeV_8
     decodeTerm (CBOR.TInt 9) = Right NodeToNodeV_9
     decodeTerm (CBOR.TInt 10) = Right NodeToNodeV_10
+    decodeTerm (CBOR.TInt 11) = Right NodeToNodeV_11
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -119,7 +125,7 @@ instance Queryable NodeToNodeVersionData where
     queryVersion = query
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
-nodeToNodeCodecCBORTerm _version
+nodeToNodeCodecCBORTerm v
   = let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
         encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, query }
           = CBOR.TList $
@@ -127,13 +133,15 @@ nodeToNodeCodecCBORTerm _version
               , CBOR.TBool (case diffusionMode of
                              InitiatorOnlyDiffusionMode         -> True
                              InitiatorAndResponderDiffusionMode -> False)
-              ] <> if query then [ CBOR.TBool True ] else []
+              ] <> if v >= NodeToNodeV_11 then [ CBOR.TBool query ] else []
 
         decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode])
-          = decoder x diffusionMode False
         decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TBool query])
+          | v >= NodeToNodeV_11
           = decoder x diffusionMode query
+        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode])
+          | v < NodeToNodeV_11
+          = decoder x diffusionMode False
         decodeTerm t
           = Left $ T.pack $ "unknown encoding: " ++ show t
 

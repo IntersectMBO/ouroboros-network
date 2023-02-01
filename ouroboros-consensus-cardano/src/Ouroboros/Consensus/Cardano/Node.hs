@@ -469,6 +469,7 @@ instance CardanoHardForkConstraints c
       , (NodeToNodeV_8, CardanoNodeToNodeVersion5)
       , (NodeToNodeV_9, CardanoNodeToNodeVersion6)
       , (NodeToNodeV_10, CardanoNodeToNodeVersion6)
+      , (NodeToNodeV_11, CardanoNodeToNodeVersion6)
       ]
 
   supportedNodeToClientVersions _ = Map.fromList $
@@ -478,9 +479,10 @@ instance CardanoHardForkConstraints c
       , (NodeToClientV_12, CardanoNodeToClientVersion8)
       , (NodeToClientV_13, CardanoNodeToClientVersion9)
       , (NodeToClientV_14, CardanoNodeToClientVersion10)
+      , (NodeToClientV_15, CardanoNodeToClientVersion10)
       ]
 
-  latestReleasedNodeVersion _prx = (Just NodeToNodeV_10, Just NodeToClientV_14)
+  latestReleasedNodeVersion _prx = (Just NodeToNodeV_11, Just NodeToClientV_15)
 
 {-------------------------------------------------------------------------------
   ProtocolInfo
