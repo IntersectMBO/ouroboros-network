@@ -133,6 +133,7 @@ supportedNodeToNodeVersions magic =
   , NodeToNodeVersionV8  magic False
   , NodeToNodeVersionV9  magic False
   , NodeToNodeVersionV10 magic False
+  , NodeToNodeVersionV11 magic False
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -143,6 +144,7 @@ supportedNodeToClientVersions magic =
   , NodeToClientVersionV12 magic
   , NodeToClientVersionV13 magic
   , NodeToClientVersionV14 magic
+  , NodeToClientVersionV15 magic
   ]
 
 main :: IO ()
@@ -208,6 +210,7 @@ data NodeVersion =       NodeToClientVersionV9  Word32
                        | NodeToClientVersionV12 Word32
                        | NodeToClientVersionV13 Word32
                        | NodeToClientVersionV14 Word32
+                       | NodeToClientVersionV15 Word32
                        | NodeToNodeVersionV1   Word32
                        | NodeToNodeVersionV2   Word32
                        | NodeToNodeVersionV3   Word32
@@ -218,6 +221,7 @@ data NodeVersion =       NodeToClientVersionV9  Word32
                        | NodeToNodeVersionV8   Word32 Bool
                        | NodeToNodeVersionV9   Word32 Bool
                        | NodeToNodeVersionV10  Word32 Bool
+                       | NodeToNodeVersionV11  Word32 Bool
                        deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
@@ -272,6 +276,9 @@ handshakeReqEnc versions query =
     encodeVersion (NodeToClientVersionV14 magic) =
           CBOR.encodeWord (14 `setBit` nodeToClientVersionBit)
        <> nodeToClientData magic
+    encodeVersion (NodeToClientVersionV15 magic) =
+          CBOR.encodeWord (15 `setBit` nodeToClientVersionBit)
+       <> nodeToClientDataWithQuery magic
     encodeVersion (NodeToNodeVersionV1 magic) =
           CBOR.encodeWord 1
        <> CBOR.encodeInt (fromIntegral magic)
@@ -288,22 +295,29 @@ handshakeReqEnc versions query =
     encodeVersion (NodeToNodeVersionV8 magic mode) = encodeWithMode 8 magic mode
     encodeVersion (NodeToNodeVersionV9 magic mode) = encodeWithMode 9 magic mode
     encodeVersion (NodeToNodeVersionV10 magic mode) = encodeWithMode 10 magic mode
+    encodeVersion (NodeToNodeVersionV11 magic mode) = encodeWithModeAndQuery 11 magic mode
 
-    nodeToClientData magic
-      | query
+    nodeToClientDataWithQuery magic
       =  CBOR.encodeListLen 2
       <> CBOR.encodeInt (fromIntegral magic)
       <> CBOR.encodeBool query
-      | otherwise
+    nodeToClientData magic
       = CBOR.encodeInt (fromIntegral magic)
 
     encodeWithMode :: Word -> Word32 -> Bool -> CBOR.Encoding
     encodeWithMode vn magic mode =
           CBOR.encodeWord vn
-       <> CBOR.encodeListLen (if query then 3 else 2)
+       <> CBOR.encodeListLen 2
        <> CBOR.encodeInt (fromIntegral magic)
        <> CBOR.encodeBool mode
-       <> if query then CBOR.encodeBool query else mempty
+
+    encodeWithModeAndQuery :: Word -> Word32 -> Bool -> CBOR.Encoding
+    encodeWithModeAndQuery vn magic mode =
+          CBOR.encodeWord vn
+       <> CBOR.encodeListLen 2
+       <> CBOR.encodeInt (fromIntegral magic)
+       <> CBOR.encodeBool mode
+       <> CBOR.encodeBool query
 
 handshakeReq :: [NodeVersion] -> Bool -> ByteString
 handshakeReq []       _     = BL.empty
@@ -385,23 +399,30 @@ handshakeDec = do
              (8,  False) -> decodeWithMode NodeToNodeVersionV8
              (9,  False) -> decodeWithMode NodeToNodeVersionV9
              (10, False) -> decodeWithMode NodeToNodeVersionV10
+             (11, False) -> decodeWithModeAndQuery NodeToNodeVersionV11
              (9,  True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
              (10, True)  -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
              (11, True)  -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
              (12, True)  -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
              (13, True)  -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
              (14, True)  -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
+             (15, True)  -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* CBOR.decodeBool)
              _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> Bool -> NodeVersion)
                    -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
     decodeWithMode vnFun = do
-        len <- CBOR.decodeListLen
+        _ <- CBOR.decodeListLen
+        magic <- CBOR.decodeWord32
+        Right . vnFun magic <$> CBOR.decodeBool
+
+    decodeWithModeAndQuery :: (Word32 -> Bool -> NodeVersion)
+                           -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
+    decodeWithModeAndQuery vnFun = do
+        _len <- CBOR.decodeListLen
         magic <- CBOR.decodeWord32
         mode <- CBOR.decodeBool
-        when (len == 3) $ do
-          _query <- CBOR.decodeBool
-          return ()
+        _query <- CBOR.decodeBool
         return $ Right $ vnFun magic mode
 
 wrap :: MiniProtocolNum -> MiniProtocolDir -> BL.ByteString -> MuxSDU
