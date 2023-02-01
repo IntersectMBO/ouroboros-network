@@ -23,6 +23,7 @@ import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.ByronHFC (ByronBlockHFC)
 import           Ouroboros.Consensus.Cardano.Node
+import           Ouroboros.Consensus.Cardano.Tables ()
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
 import qualified Ouroboros.Consensus.Ledger.SupportsProtocol as Consensus
                      (LedgerSupportsProtocol)

@@ -35,7 +35,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.API as ChainDB (ChainDB,
                      getPastLedger)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
                      (noPunishment)
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Network.AnchoredFragment as AF (Anchor (..),
                      AnchoredFragment, AnchoredSeq (..), headPoint)

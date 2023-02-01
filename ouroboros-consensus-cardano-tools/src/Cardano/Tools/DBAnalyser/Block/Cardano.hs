@@ -52,6 +52,7 @@ import           Ouroboros.Consensus.Cardano.Block (CardanoEras,
                      CardanoShelleyEras)
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
                      protocolInfoCardano)
+import           Ouroboros.Consensus.Cardano.Tables ()
 import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
                      OneEraBlock (..), OneEraHash (..), getHardForkState,
                      hardForkLedgerStatePerEra)

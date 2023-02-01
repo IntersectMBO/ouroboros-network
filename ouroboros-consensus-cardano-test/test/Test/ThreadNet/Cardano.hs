@@ -55,6 +55,7 @@ import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.Cardano.Node
+import           Ouroboros.Consensus.Cardano.Tables ()
 
 import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 import           Test.ThreadNet.General

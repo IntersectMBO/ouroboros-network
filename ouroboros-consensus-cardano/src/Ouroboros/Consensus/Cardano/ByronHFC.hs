@@ -1,22 +1,32 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE TypeOperators     #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.ByronHFC (ByronBlockHFC) where
 
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
+import           GHC.Generics (Generic)
+import           NoThunks.Class
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Degenerate
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 
-import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Ledger hiding (LedgerTables (..))
+import qualified Ouroboros.Consensus.Byron.Ledger as Byron (LedgerTables (..))
 import           Ouroboros.Consensus.Byron.Node ()
 
 import           Ouroboros.Consensus.Cardano.CanHardFork
@@ -78,3 +88,27 @@ instance SerialiseHFC '[ByronBlock] where
         reconstructNestedCtxt (Proxy @(Header ByronBlock)) prefix blockSize
   getHfcBinaryBlockInfo (DegenBlock b) =
       getBinaryBlockInfo b
+
+{-------------------------------------------------------------------------------
+  Ledger Tables
+-------------------------------------------------------------------------------}
+
+instance HasLedgerTables (LedgerState ByronBlockHFC) where
+  data LedgerTables (LedgerState ByronBlockHFC) mk = NoTables
+    deriving (Generic, Eq, Show, NoThunks)
+
+instance CanSerializeLedgerTables (LedgerState ByronBlockHFC) where
+
+instance LedgerTablesAreTrivial (LedgerState ByronBlockHFC) where
+  trivialLedgerTables = NoTables
+
+instance HasTickedLedgerTables (LedgerState ByronBlockHFC) where
+  withLedgerTablesTicked (TickedHardForkLedgerState t st) NoTables =
+      TickedHardForkLedgerState t
+    . HardForkState
+    . (\(TZ (Current s (FlipTickedLedgerState state))) ->
+         TZ (Current s (FlipTickedLedgerState $ withLedgerTablesTicked state Byron.NoTables)))
+    . getHardForkState
+    $ st
+
+instance CanStowLedgerTables (LedgerState ByronBlockHFC) where

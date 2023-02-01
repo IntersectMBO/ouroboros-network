@@ -30,7 +30,7 @@ import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
-import           Data.SOP.Strict (hpure, unComp, (:.:) (..))
+import           Data.SOP.Strict
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -400,6 +400,8 @@ translateLedgerStateByronToShelleyWrapper =
             (byronLedgerState ledgerByron)
       , shelleyLedgerTransition =
           ShelleyTransitionInfo{shelleyAfterVoting = 0}
+      , shelleyLedgerTables =
+          ShelleyLedgerTables Canonical
       }
 
 translateChainDepStateByronToShelleyWrapper ::
@@ -625,13 +627,14 @@ translateLedgerStateAlonzoToBabbageWrapper =
         unFlip . unComp . SL.translateEra' (getBabbageTranslationContext cfgBabbage) . Comp . Flip . transPraosLS
   where
     transPraosLS ::
-      LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) mk ->
-      LedgerState (ShelleyBlock (Praos c)  (AlonzoEra c)) mk
-    transPraosLS (ShelleyLedgerState wo nes st) =
+      LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) Canonical ->
+      LedgerState (ShelleyBlock (Praos c)  (AlonzoEra c)) Canonical
+    transPraosLS (ShelleyLedgerState wo nes st (ShelleyLedgerTables Canonical)) =
       ShelleyLedgerState
         { shelleyLedgerTip        = fmap castShelleyTip wo
         , shelleyLedgerState      = nes
         , shelleyLedgerTransition = st
+        , shelleyLedgerTables     = ShelleyLedgerTables Canonical
         }
 
 getBabbageTranslationContext ::
