@@ -54,6 +54,7 @@ data NodeToNodeVersion
     --   This version is needed to support the new  Peer Sharing miniprotocol
     --   older versions that are negotiated will appear as not participating
     --   in Peer Sharing to newer versions.
+    -- * Adds `query` to NodeToClientVersionData.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
