@@ -58,37 +58,37 @@ parseOptions = execParser opts
 parseBlockOptions :: Parser BlockOptions
 parseBlockOptions =
     viewBlockOptions <|> extractBlockOptions
+  where
+    viewBlockOptions =
+        ViewBlock
+            <$> optional
+                ( mkFsPath . (: [])
+                    <$> strOption
+                        ( long "file-in"
+                            <> metavar "FILE"
+                            <> help "Path to file containing hex-encoded CBOR-encoded block"
+                        )
+                )
 
-viewBlockOptions =
-    ViewBlock
-        <$> optional
-            ( mkFsPath . (: [])
-                <$> strOption
-                    ( long "file-in"
+    extractBlockOptions =
+        ExtractBlock
+            <$> strOption
+                ( long "db-directory"
+                    <> metavar "DIR"
+                    <> help "Path to the directory where cardano DB lives "
+                )
+                <*> strOption
+                    ( long "config"
                         <> metavar "FILE"
-                        <> help "Path to file containing hex-encoded CBOR-encoded block"
+                        <> help "Path to cardano node configuration file"
                     )
-            )
-
-extractBlockOptions =
-    ExtractBlock
-        <$> strOption
-            ( long "db-directory"
-                <> metavar "DIR"
-                <> help "Path to the directory where cardano DB lives "
-            )
-            <*> strOption
-                ( long "config"
-                    <> metavar "FILE"
-                    <> help "Path to cardano node configuration file"
-                )
-            <*> option
-                (maybeReader readChainPoint)
-                ( long "point"
-                    <> metavar "SLOT.HEADER_HASH"
-                    <> help
-                        "The id of the block we want to start observing the chain from. \
-                        \If not given, uses the chain tip at startup. Composed by the slot \
-                        \number, a separator ('.') and the hash of the block header. \
-                        \For example: 52970883.d36a9936ae7a07f5f4bdc9ad0b23761cb7b14f35007e54947e27a1510f897f04."
-                )
+                <*> option
+                    (maybeReader readChainPoint)
+                    ( long "point"
+                        <> metavar "SLOT.HEADER_HASH"
+                        <> help
+                            "The id of the block we want to start observing the chain from. \
+                            \If not given, uses the chain tip at startup. Composed by the slot \
+                            \number, a separator ('.') and the hash of the block header. \
+                            \For example: 52970883.d36a9936ae7a07f5f4bdc9ad0b23761cb7b14f35007e54947e27a1510f897f04."
+                    )
