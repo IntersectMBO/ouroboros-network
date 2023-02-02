@@ -21,10 +21,11 @@ import Cardano.Binary (
  )
 import qualified Cardano.Crypto.Hash.Class as Crypto
 import qualified Cardano.Ledger.Address as Ledger
-import Cardano.Ledger.Alonzo (AlonzoAuxiliaryData, AlonzoScript, MaryValue)
+import Cardano.Ledger.Alonzo (AlonzoAuxiliaryData, AlonzoEra, AlonzoScript, MaryValue)
 import Cardano.Ledger.Alonzo.Data (binaryDataToData)
 import qualified Cardano.Ledger.Alonzo.Data as Ledger.Alonzo
-import Cardano.Ledger.Alonzo.Tx (AlonzoTx (..))
+import Cardano.Ledger.Alonzo.Tx (AlonzoTx (..), AlonzoTxBody)
+import qualified Cardano.Ledger.Alonzo.Tx as Ledger.Alonzo
 import Cardano.Ledger.Alonzo.TxSeq (txSeqTxns)
 import qualified Cardano.Ledger.Alonzo.TxWitness as Ledger.Alonzo
 import qualified Cardano.Ledger.AuxiliaryData as Ledger
@@ -84,6 +85,12 @@ type LedgerEra = Ledger.BabbageEra StandardCrypto
 instance ToJSON CBlock where
     toJSON = \case
         block@(BlockBabbage (ShelleyBlock (txSeqTxns . bbody -> txs) _)) ->
+            object
+                [ "transactions" .= toList txs
+                , "blockHash" .= getHeader block
+                , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
+                ]
+        block@(BlockAlonzo (ShelleyBlock (txSeqTxns . bbody -> txs) _)) ->
             object
                 [ "transactions" .= toList txs
                 , "blockHash" .= getHeader block
@@ -184,7 +191,7 @@ safeHashToText =
 -- Script
 --
 
-instance ToJSON (AlonzoScript (Ledger.BabbageEra StandardCrypto)) where
+instance ToJSON (AlonzoScript era) where
     toJSON (TimelockScript time) =
         object ["timelock" .= show time]
     toJSON (PlutusScript lan sbs) =
@@ -231,6 +238,25 @@ instance ToJSON (BabbageTxBody LedgerEra) where
                 , onlyIf isSJust "scriptIntegrityHash" (Ledger.Babbage.scriptIntegrityHash b)
                 , onlyIf isSJust "auxiliaryDataHash" (Ledger.Babbage.adHash b)
                 , onlyIf isSJust "networkId" (Ledger.Babbage.txnetworkid b)
+                ]
+
+instance ToJSON (AlonzoTxBody (AlonzoEra StandardCrypto)) where
+    toJSON b =
+        object $
+            mconcat
+                [ onlyIf (const True) "inputs" (Ledger.Alonzo.inputs b)
+                , onlyIf (not . null) "collateral" (Ledger.Alonzo.collateral b)
+                , onlyIf (const True) "outputs" (Ledger.Alonzo.outputs b)
+                , onlyIf (not . null) "collateral" (Ledger.Alonzo.collateral b)
+                , onlyIf (not . null) "certificates" (Ledger.Alonzo.txcerts b)
+                , onlyIf (not . null . Ledger.unWdrl) "withdrawals" (Ledger.Alonzo.txwdrls b)
+                , onlyIf (const True) "fees" (Ledger.Alonzo.txfee b)
+                , onlyIf (not . isOpenInterval) "validity" (Ledger.Alonzo.txvldt b)
+                , onlyIf (not . null) "requiredSignatures" (Ledger.Alonzo.reqSignerHashes b)
+                , onlyIf (/= mempty) "mint" (Ledger.Alonzo.mint b)
+                , onlyIf isSJust "scriptIntegrityHash" (Ledger.Alonzo.scriptIntegrityHash b)
+                , onlyIf isSJust "auxiliaryDataHash" (Ledger.Alonzo.adHash b)
+                , onlyIf isSJust "networkId" (Ledger.Alonzo.txnetworkid b)
                 ]
 
 --
