@@ -32,6 +32,7 @@ library
                      , Cardano.Node.Types
                      , Cardano.Node.Protocol
                      , Cardano.Tools.Block
+                     , Cardano.Tools.Block.JSON
                      , Cardano.Tools.DBAnalyser.Analysis
                      , Cardano.Tools.DBAnalyser.Block.Byron
                      , Cardano.Tools.DBAnalyser.Block.Cardano
