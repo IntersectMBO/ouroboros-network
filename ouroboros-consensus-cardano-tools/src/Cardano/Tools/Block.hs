@@ -1,21 +1,20 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | A tool to inspect the content of a block from various sources.
-module Cardano.Tools.Block where
+module Cardano.Tools.Block (BlockOptions (..), run) where
 
 import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Ledger.Crypto (StandardCrypto)
+import Cardano.Tools.Block.JSON ()
 import qualified Codec.CBOR.Read as CBOR
-import Control.Concurrent.MVar (newMVar)
 import Control.Monad (void)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Base16.Lazy as Hex
 import qualified Data.ByteString.Lazy as LBS
-import Data.Text.Lazy as Text
-import Data.Text.Lazy.Encoding (encodeUtf8)
 import Ouroboros.Consensus.Block (CodecConfig)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import Ouroboros.Consensus.Cardano (CardanoBlock)
@@ -23,12 +22,10 @@ import Ouroboros.Consensus.Cardano.Block (CodecConfig (..))
 import Ouroboros.Consensus.Protocol.Praos.Translate ()
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-import Ouroboros.Consensus.Storage.FS.API (Handle, HasFS, hGetAll, hPutAll, hPutAllStrict, withFile)
+import Ouroboros.Consensus.Storage.FS.API (Handle, HasFS, hGetAll, hPutAll, withFile)
 import Ouroboros.Consensus.Storage.FS.API.Types (FsPath, OpenMode (ReadMode))
-import Ouroboros.Consensus.Storage.FS.Handle (HandleOS (..))
-import Ouroboros.Consensus.Storage.Serialisation (DecodeDisk, decodeDisk)
+import Ouroboros.Consensus.Storage.Serialisation (decodeDisk)
 import Ouroboros.Consensus.Util.IOLike (Exception, MonadThrow (throwIO))
-import System.IO (stdin, stdout)
 
 data BlockOptions = ViewBlock
     { blockFile :: Maybe FsPath
@@ -66,7 +63,7 @@ viewBlock ::
 viewBlock hasFS _configFile hdl = do
     bytes <- hGetAll hasFS hdl
     cbor <- either (throwIO . BadHexEncoding) pure $ Hex.decode bytes
-    encodeUtf8 . Text.pack . show <$> parseBlock cbor
+    Aeson.encode <$> parseBlock cbor
 
 parseBlock ::
     MonadThrow m =>
