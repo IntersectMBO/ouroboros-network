@@ -1,3 +1,5 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 import Cardano.Tools.Block (BlockOptions (..), run)
 import Control.Concurrent.MVar (newMVar)
 import Options.Applicative (
@@ -16,32 +18,27 @@ import Options.Applicative (
  )
 import Ouroboros.Consensus.Storage.FS.API.Types (Handle (..), MountPoint (..), mkFsPath)
 import Ouroboros.Consensus.Storage.FS.Handle (HandleOS (..))
-import Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
-import System.Posix (stdInput, stdOutput)
+import Ouroboros.Consensus.Storage.FS.IO (HandleIO, ioHasFS)
+import System.Posix (Fd, stdInput, stdOutput)
 
 main :: IO ()
 main = do
-    mvarIn <- newMVar (Just stdInput)
-    mvarOut <- newMVar (Just stdOutput)
-    let stdinIO =
-            Handle
-                { handlePath = mkFsPath ["<stdin>"]
-                , handleRaw =
-                    HandleOS
-                        { filePath = "<stdin>"
-                        , handle = mvarIn
-                        }
-                }
-    let stdoutIO =
-            Handle
-                { handlePath = mkFsPath ["<stdout>"]
-                , handleRaw =
-                    HandleOS
-                        { filePath = "<stdout>"
-                        , handle = mvarOut
-                        }
-                }
+    stdinIO <- mkHandle "<stdin>" stdInput
+    stdoutIO <- mkHandle "<stdout>" stdOutput
     parseOptions >>= run (ioHasFS $ MountPoint ".") stdinIO stdoutIO
+
+mkHandle :: [Char] -> Fd -> IO (Handle HandleIO)
+mkHandle filePath fd = do
+    handle <- newMVar (Just fd)
+    pure $
+        Handle
+            { handlePath = mkFsPath [filePath]
+            , handleRaw =
+                HandleOS
+                    { filePath
+                    , handle
+                    }
+            }
 
 parseOptions :: IO BlockOptions
 parseOptions = execParser opts
