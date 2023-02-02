@@ -342,7 +342,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
   deriving (Show, Functor)
 
 -- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
--- mechaninsms without any problem.
+-- mechanisms without any problem.
 --
 -- This data type should not expose too much information and keep only
 -- essential data needed for computing the peer sharing request result
@@ -439,7 +439,7 @@ assertPeerSelectionState PeerSelectionState{..} =
 
     -- The localRootPeers are a subset of the knownPeers,
     -- and with correct source info in the knownPeers (either
-    -- 'PeerSroucePublicRoot' or 'PeerSourceLocalRoot', as local and public
+    -- 'PeerSourcePublicRoot' or 'PeerSourceLocalRoot', as local and public
     -- root peers might overlap).
   . assert (Set.isSubsetOf localRootPeersSet knownPeersSet)
 
@@ -516,7 +516,7 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 --
 
 -- | Check pre-conditions and post-conditions on the pick policies,
--- and supply additional peer atributes from the current state.
+-- and supply additional peer attributes from the current state.
 --
 pickPeers :: (Ord peeraddr, Functor m)
           => PeerSelectionState peeraddr peerconn
@@ -571,8 +571,8 @@ data Guarded m a =
     --
     -- Let us note that the combined value which is computed by
     -- @guardedDecisions@ term in
-    -- 'Ouroboros.Newtork.PeerSelection.Governor.peerSelectionGovernorLoop' will
-    -- never return it: this is bacause there are monitoring decisions which
+    -- 'Ouroboros.Network.PeerSelection.Governor.peerSelectionGovernorLoop' will
+    -- never return it: this is because there are monitoring decisions which
     -- never return this constructor, e.g.  'Monitor.targetPeers',
     -- 'Monitor.jobs', 'Monitor.connections', and thus the governor has always
     -- something to do.
@@ -604,7 +604,7 @@ pattern Guarded a b <- Guarded' a (FirstToFinish b)
 --
 -- In the algebraic sense, @'Guarded' (Just minBound) (return x)@ is a left
 -- absorbing element when "m ~ STM m'@ for some monad @m'@.  There is no right
--- absorbing element since there is no right absorbing elemnt in @STM m'@.
+-- absorbing element since there is no right absorbing element in @STM m'@.
 --
 -- Ref. [absorbing element](https://en.wikipedia.org/wiki/Absorbing_element)
 --
@@ -635,7 +635,7 @@ data Decision m peeraddr peerconn = Decision {
 type TimedDecision m peeraddr peerconn = Time -> Decision m peeraddr peerconn
 
 -- | Type alias for function types which are used to create governor decisions.
--- Allmost all decisions are following this pattern.
+-- Almost all decisions are following this pattern.
 --
 type MkGuardedDecision peeraddr peerconn m
      = PeerSelectionPolicy peeraddr m

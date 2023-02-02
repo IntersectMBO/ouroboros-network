@@ -528,7 +528,7 @@ envEventCredits (TraceEnvPeersDemote ToCold _)  = 30
 
 envEventCredits  TraceEnvPeersStatus{}          = 0
 -- These events are visible in the environment but are the result of actions
--- initiated by the governor, hence the get no credit.
+-- initiated by the governor, hence they get no credit.
 envEventCredits  TraceEnvRootsResult{}          = 0
 envEventCredits  TraceEnvPeerShareRequest{}     = 0
 envEventCredits  TraceEnvPeerShareResult{}      = 0

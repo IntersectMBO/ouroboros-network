@@ -98,7 +98,7 @@ instance Arbitrary LedgerPools where
             map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
                        , spRelay p)) sps
 
--- | A pool with 100% stake should allways be picked.
+-- | A pool with 100% stake should always be picked.
 prop_pick100 :: Word16
              -> Property
 prop_pick100 seed =
@@ -137,7 +137,7 @@ prop_pick100 seed =
                  -- printf "Log: %s\n" (intercalate "\n" _trace)
                  return $ peers === [ RelayAccessAddress (read "1.1.1.1") 1 ]
 
--- | Veify that given at least one peer we manage to pick `count` peers.
+-- | Verify that given at least one peer we manage to pick `count` peers.
 prop_pick :: LedgerPools
           -> Word16
           -> Word16

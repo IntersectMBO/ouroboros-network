@@ -623,7 +623,7 @@ instance Arbitrary GovernorMockEnvironment where
             rootPeers = nub (map pick ixs)
         -- divide into local and public, but with a bit of overlap:
         local <- vectorOf (length rootPeers) (choose (0, 10 :: Int))
-        -- Deliberatly asking for a small intersection in order to test if
+        -- Deliberately asking for a small intersection in order to test if
         -- the Governor actually takes care of this invariant
         let localRootsSet  = Set.fromList [ x | (x, v) <- zip rootPeers local
                                               , v <= 5 ]

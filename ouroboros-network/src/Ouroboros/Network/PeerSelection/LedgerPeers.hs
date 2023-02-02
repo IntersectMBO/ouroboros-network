@@ -155,8 +155,9 @@ reRelativeStake pl =
             total' < (PoolStake $ 1000001 % 1000000))) pl'
 
   where
-    -- We do loose some precisioun in the conversion. However we care about precision
-    -- in the order of 1 block per year and for that a Double is good enough.
+    -- We do loose some precision in the conversion. However we care about
+    -- precision in the order of 1 block per year and for that a Double is good
+    -- enough.
     adjustment :: PoolStake -> PoolStake
     adjustment (PoolStake s) =
       let d = fromRational s ::Double in

@@ -38,7 +38,7 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 
 -- | If we are below the target of /known peers/ we peer share (if we are above
--- the peer share request threashold).
+-- the peer share request threshold).
 --
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
