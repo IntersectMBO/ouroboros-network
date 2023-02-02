@@ -58,8 +58,8 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import           Ouroboros.Consensus.Mempool (TxLimits)
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Assert
@@ -106,7 +106,7 @@ shelleyBlockForging ::
       , IOLike m
       )
   => TPraosParams
-  -> TxLimits.Overrides (ShelleyBlock (TPraos c) era)
+  -> Mempool.TxOverrides (ShelleyBlock (TPraos c) era)
   -> ShelleyLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock (TPraos c) era))
 shelleyBlockForging tpraosParams maxTxCapacityOverrides credentials = do
@@ -140,7 +140,7 @@ shelleySharedBlockForging ::
   => HotKey c m
   -> (SlotNo -> Absolute.KESPeriod)
   -> ShelleyLeaderCredentials c
-  -> TxLimits.Overrides (ShelleyBlock (TPraos c) era)
+  -> Mempool.TxOverrides (ShelleyBlock (TPraos c) era)
   -> BlockForging m     (ShelleyBlock (TPraos c) era)
 shelleySharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides =
     BlockForging {
@@ -193,25 +193,25 @@ validateGenesis = first errsToString . SL.validateGenesis
 -- | Parameters needed to run Shelley
 data ProtocolParamsShelley c = ProtocolParamsShelley {
       shelleyProtVer                :: SL.ProtVer
-    , shelleyMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock(TPraos c) (ShelleyEra c) )
+    , shelleyMaxTxCapacityOverrides :: Mempool.TxOverrides (ShelleyBlock(TPraos c) (ShelleyEra c) )
     }
 
 -- | Parameters needed to run Allegra
 data ProtocolParamsAllegra c = ProtocolParamsAllegra {
       allegraProtVer                :: SL.ProtVer
-    , allegraMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (TPraos c) (AllegraEra c) )
+    , allegraMaxTxCapacityOverrides :: Mempool.TxOverrides (ShelleyBlock (TPraos c) (AllegraEra c) )
     }
 
 -- | Parameters needed to run Mary
 data ProtocolParamsMary c = ProtocolParamsMary {
       maryProtVer                :: SL.ProtVer
-    , maryMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (TPraos c) (MaryEra c) )
+    , maryMaxTxCapacityOverrides :: Mempool.TxOverrides (ShelleyBlock (TPraos c) (MaryEra c) )
     }
 
 -- | Parameters needed to run Alonzo
 data ProtocolParamsAlonzo c = ProtocolParamsAlonzo {
       alonzoProtVer                :: SL.ProtVer
-    , alonzoMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (TPraos c) (AlonzoEra c) )
+    , alonzoMaxTxCapacityOverrides :: Mempool.TxOverrides (ShelleyBlock (TPraos c) (AlonzoEra c) )
     }
 
 protocolInfoShelley ::
@@ -246,7 +246,7 @@ protocolInfoTPraosShelleyBased ::
   => ProtocolParamsShelleyBased era
   -> (SL.AdditionalGenesisConfig era, Core.TranslationContext era)
   -> SL.ProtVer
-  -> TxLimits.Overrides (ShelleyBlock (TPraos c) era)
+  -> Mempool.TxOverrides (ShelleyBlock (TPraos c) era)
   -> ProtocolInfo m     (ShelleyBlock (TPraos c) era)
 protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
                              shelleyBasedGenesis           = genesis

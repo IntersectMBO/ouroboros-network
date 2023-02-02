@@ -24,8 +24,8 @@ import qualified Cardano.Ledger.Shelley.API as SL (Block (..), extractTx)
 import qualified Cardano.Ledger.Shelley.BlockChain as SL (bBodySize)
 import qualified Cardano.Protocol.TPraos.BHeader as SL
 
-import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import           Ouroboros.Consensus.Mempool (TxLimits)
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.Abstract (CanBeLeader, IsLeader)
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
@@ -48,7 +48,7 @@ forgeShelleyBlock ::
   => HotKey (EraCrypto era) m
   -> CanBeLeader proto
   -> TopLevelConfig (ShelleyBlock proto era)
-  -> TxLimits.Overrides (ShelleyBlock proto era)  -- ^ How to override max tx
+  -> Mempool.TxOverrides (ShelleyBlock proto era) -- ^ How to override max tx
                                                   --   capacity defined by ledger
   -> BlockNo                                      -- ^ Current block number
   -> SlotNo                                       -- ^ Current slot number

@@ -101,9 +101,9 @@ tests = testGroup "Mempool"
 prop_Mempool_snapshotTxs_snapshotTxsAfter :: TestSetup -> Property
 prop_Mempool_snapshotTxs_snapshotTxsAfter setup =
     withTestMempool setup $ \TestMempool { mempool } -> do
-      let Mempool { zeroIdx, getSnapshot } = mempool
+      let Mempool { getSnapshot } = mempool
       MempoolSnapshot { snapshotTxs, snapshotTxsAfter} <- atomically getSnapshot
-      return $ snapshotTxs === snapshotTxsAfter zeroIdx
+      return $ snapshotTxs === snapshotTxsAfter zeroTicketNo
 
 -- | Test that all valid transactions added to a 'Mempool' can be retrieved
 -- afterward.
@@ -720,7 +720,7 @@ data TestMempool m = TestMempool
   { -- | A mempool with random contents.
     --
     -- Starts out synced with the ledger.
-    mempool          :: Mempool m TestBlock TicketNo
+    mempool          :: Mempool m TestBlock
 
     -- | When called, obtains all events traced after opening the mempool at
     -- the given state from oldest-to-newest.
@@ -833,7 +833,7 @@ withTestMempool setup@TestSetup {..} prop =
     -- | Check whether the transactions in the 'MempoolSnapshot' are valid
     -- w.r.t. the current ledger state.
     checkMempoolValidity :: LedgerState TestBlock
-                         -> MempoolSnapshot TestBlock TicketNo
+                         -> MempoolSnapshot TestBlock
                          -> Property
     checkMempoolValidity ledgerState
                          MempoolSnapshot {
@@ -1153,7 +1153,7 @@ executeAction testMempool action = case action of
       return $ mapMaybe extractor evs
 
 currentTicketAssignment :: IOLike m
-                        => Mempool m TestBlock TicketNo -> m TicketAssignment
+                        => Mempool m TestBlock -> m TicketAssignment
 currentTicketAssignment Mempool { syncWithLedger } = do
     MempoolSnapshot { snapshotTxs } <- syncWithLedger
     return $ Map.fromList

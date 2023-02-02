@@ -38,7 +38,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (LedgerSupportsMempool (..), txForgetValidated)
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -51,7 +51,7 @@ import           Ouroboros.Consensus.Byron.Protocol
 forgeByronBlock
   :: HasCallStack
   => TopLevelConfig ByronBlock
-  -> TxLimits.Overrides ByronBlock    -- ^ How to override max tx capacity
+  -> Mempool.TxOverrides ByronBlock   -- ^ How to override max tx capacity
                                       --   defined by ledger
   -> BlockNo                          -- ^ Current block number
   -> SlotNo                           -- ^ Current slot number
@@ -128,7 +128,7 @@ initBlockPayloads = BlockPayloads
 forgeRegularBlock
   :: HasCallStack
   => BlockConfig ByronBlock
-  -> TxLimits.Overrides ByronBlock     -- ^ How to override max tx capacity
+  -> Mempool.TxOverrides ByronBlock    -- ^ How to override max tx capacity
                                        --   defined by ledger
   -> BlockNo                           -- ^ Current block number
   -> SlotNo                            -- ^ Current slot number

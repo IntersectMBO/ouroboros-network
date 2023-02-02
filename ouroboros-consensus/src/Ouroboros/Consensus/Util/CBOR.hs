@@ -49,11 +49,14 @@ import qualified Data.Sequence.Strict as Seq
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 
+import           Cardano.Slotting.Slot (WithOrigin (..), withOriginFromMaybe,
+                     withOriginToMaybe)
+
 import qualified Streaming as S
 import qualified Streaming.Prelude as S
 import           Streaming.Prelude (Of (..), Stream)
 
-import           Ouroboros.Consensus.Block
+--import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.FS.API

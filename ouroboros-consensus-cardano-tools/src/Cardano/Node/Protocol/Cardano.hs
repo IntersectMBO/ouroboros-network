@@ -24,7 +24,7 @@ import qualified Ouroboros.Consensus.Cardano as Consensus
 import qualified Ouroboros.Consensus.Cardano.CanHardFork as Consensus
 import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
 
 import           Cardano.Api.Any
@@ -164,7 +164,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           byronLeaderCredentials =
             byronLeaderCredentials,
           byronMaxTxCapacityOverrides =
-            TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            Mempool.mkOverrides Mempool.noOverridesMeasure
         }
         Consensus.ProtocolParamsShelleyBased {
           shelleyBasedGenesis           = shelleyGenesis,
@@ -180,7 +180,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           shelleyProtVer =
             ProtVer 3 0,
           shelleyMaxTxCapacityOverrides =
-            TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            Mempool.mkOverrides Mempool.noOverridesMeasure
         }
         Consensus.ProtocolParamsAllegra {
           -- This is /not/ the Allegra protocol version. It is the protocol
@@ -190,7 +190,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           allegraProtVer =
             ProtVer 4 0,
           allegraMaxTxCapacityOverrides =
-            TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            Mempool.mkOverrides Mempool.noOverridesMeasure
         }
         Consensus.ProtocolParamsMary {
           -- This is /not/ the Mary protocol version. It is the protocol
@@ -199,7 +199,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- /after/ Mary, i.e. Alonzo.
           maryProtVer = ProtVer 5 0,
           maryMaxTxCapacityOverrides =
-            TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            Mempool.mkOverrides Mempool.noOverridesMeasure
         }
         Consensus.ProtocolParamsAlonzo {
           -- This is /not/ the Alonzo protocol version. It is the protocol
@@ -208,7 +208,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- /after/ Alonzo, i.e. Babbage.
           alonzoProtVer = ProtVer 6 0,
           alonzoMaxTxCapacityOverrides =
-            TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            Mempool.mkOverrides Mempool.noOverridesMeasure
         }
         Praos.ProtocolParamsBabbage {
           -- This is /not/ the Babbage protocol version. It is the protocol
@@ -216,7 +216,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
           -- is in the Babbage era.
           Praos.babbageProtVer = ProtVer 7 0,
           Praos.babbageMaxTxCapacityOverrides =
-            TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            Mempool.mkOverrides Mempool.noOverridesMeasure
         }
         Praos.ProtocolParamsConway {
           -- This is /not/ the Conway protocol version. It is the protocol
@@ -227,7 +227,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
             then ProtVer 9 0  -- Advertise we can support Conway
             else ProtVer 8 0, -- Otherwise we only advertise we know about Babbage
           Praos.conwayMaxTxCapacityOverrides =
-            TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            Mempool.mkOverrides Mempool.noOverridesMeasure
         }
         -- 'ProtocolTransitionParamsShelleyBased' specifies the parameters
         -- needed to transition between two eras. The comments below also apply

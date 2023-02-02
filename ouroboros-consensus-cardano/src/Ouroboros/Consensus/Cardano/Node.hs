@@ -66,7 +66,7 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -1020,15 +1020,15 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
         let tpraos :: forall era.
                  ShelleyEraWithCrypto c (TPraos c) era
-              => TxLimits.Overrides (ShelleyBlock (TPraos c) era)
-              -> BlockForging m     (ShelleyBlock (TPraos c) era)
+              => Mempool.TxOverrides (ShelleyBlock (TPraos c) era)
+              -> BlockForging m      (ShelleyBlock (TPraos c) era)
             tpraos maxTxCapacityOverrides =
               TPraos.shelleySharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides
 
         let praos :: forall era.
                  ShelleyEraWithCrypto c (Praos c) era
-              => TxLimits.Overrides (ShelleyBlock (Praos c) era)
-              -> BlockForging m     (ShelleyBlock (Praos c) era)
+              => Mempool.TxOverrides (ShelleyBlock (Praos c) era)
+              -> BlockForging m      (ShelleyBlock (Praos c) era)
             praos maxTxCapacityOverrides =
               Praos.praosSharedBlockForging hotKey slotToPeriod credentials maxTxCapacityOverrides
 

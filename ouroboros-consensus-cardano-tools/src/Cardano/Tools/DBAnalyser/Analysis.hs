@@ -48,9 +48,7 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
-import qualified Ouroboros.Consensus.Mempool.API as MP
-import qualified Ouroboros.Consensus.Mempool.Impl as MP
-import qualified Ouroboros.Consensus.Mempool.TxSeq as MP
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      StreamFrom (..))
@@ -190,7 +188,7 @@ data TraceEvent blk =
     --   * number of transactions in the block
     --   * total size of transactions in the block
     --   * time to tick ledger state
-    --   * time to call 'MP.getSnapshotFor'
+    --   * time to call 'Mempool.getSnapshotFor'
 
 instance HasAnalysis blk => Show (TraceEvent blk) where
   show (StartedEvent analysisName)        = "Started " <> (show analysisName)
@@ -635,13 +633,13 @@ reproMempoolForge numBlks env = do
                <> "1 or 2 blocks at a time, not " <> show numBlks
 
     ref <- IOLike.newTVarIO initLedger
-    mempool <- MP.openMempoolWithoutSyncThread
-      MP.LedgerInterface {
+    mempool <- Mempool.openMempoolWithoutSyncThread
+      Mempool.LedgerInterface {
         getCurrentLedgerState = ledgerState <$> IOLike.readTVar ref
       }
       lCfg
       -- one megabyte should generously accomodate two blocks' worth of txs
-      (MP.MempoolCapacityBytesOverride $ MP.MempoolCapacityBytes $ 2^(20 :: Int))
+      (Mempool.MempoolCapacityBytesOverride $ Mempool.MempoolCapacityBytes $ 2^(20 :: Int))
       nullTracer
       LedgerSupportsMempool.txInBlockSize
 
@@ -673,15 +671,15 @@ reproMempoolForge numBlks env = do
     process
       :: ReproMempoolForgeHowManyBlks
       -> IOLike.StrictTVar IO (ExtLedgerState blk)
-      -> MP.Mempool IO blk MP.TicketNo
+      -> Mempool.Mempool IO blk
       -> Maybe blk
       -> blk
       -> IO (Maybe blk)
     process howManyBlocks ref mempool mbBlk blk' = (\() -> Just blk') <$> do
       -- add this block's transactions to the mempool
       do
-        results <- MP.addTxs mempool $ LedgerSupportsMempool.extractTxs blk'
-        let rejs = [ rej | rej@MP.MempoolTxRejected{} <- results ]
+        results <- Mempool.addTxs mempool $ LedgerSupportsMempool.extractTxs blk'
+        let rejs = [ rej | rej@Mempool.MempoolTxRejected{} <- results ]
         unless (null rejs) $ do
           fail $ "Mempool rejected some of the on-chain txs: " <> show rejs
 
@@ -702,9 +700,9 @@ reproMempoolForge numBlks env = do
             (ticked, durTick) <- timed $ IOLike.evaluate $
               applyChainTick lCfg slot (ledgerState st)
             ((), durSnap) <- timed $ IOLike.atomically $ do
-              snap <- MP.getSnapshotFor mempool $ MP.ForgeInKnownSlot slot ticked
+              snap <- Mempool.getSnapshotFor mempool $ Mempool.ForgeInKnownSlot slot ticked
 
-              pure $ length (MP.snapshotTxs snap) `seq` MP.snapshotLedgerState snap `seq` ()
+              pure $ length (Mempool.snapshotTxs snap) `seq` Mempool.snapshotLedgerState snap `seq` ()
 
             let sizes = HasAnalysis.blockTxSizes blk
             traceWith tracer $
@@ -727,7 +725,7 @@ reproMempoolForge numBlks env = do
           IOLike.atomically $ IOLike.writeTVar ref $! tickThenReapply elCfg blk st
 
           -- this flushes blk from the mempool, since every tx in it is now on the chain
-          void $ MP.syncWithLedger mempool
+          void $ Mempool.syncWithLedger mempool
 
 {-------------------------------------------------------------------------------
   Auxiliary: processing all blocks in the DB

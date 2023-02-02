@@ -21,7 +21,7 @@ import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
 
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
@@ -63,7 +63,7 @@ mkProtocolByron params coreNodeId genesisConfig genesisSecrets =
           , byronProtocolVersion        = theProposedProtocolVersion
           , byronSoftwareVersion        = theProposedSoftwareVersion
           , byronLeaderCredentials      = Just leaderCredentials
-          , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          , byronMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
           }
 
 mkLeaderCredentials

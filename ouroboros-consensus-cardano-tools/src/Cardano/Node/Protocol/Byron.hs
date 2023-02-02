@@ -33,7 +33,7 @@ import           Cardano.Crypto.ProtocolMagic (RequiresNetworkMagic)
 
 import           Ouroboros.Consensus.Cardano
 import qualified Ouroboros.Consensus.Cardano as Consensus
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 
 import           Cardano.Api.Any
 import           Cardano.Api.KeysByron
@@ -92,7 +92,7 @@ mkSomeConsensusProtocolByron NodeByronProtocolConfiguration {
         byronLeaderCredentials =
           optionalLeaderCredentials,
         byronMaxTxCapacityOverrides =
-          TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          Mempool.mkOverrides Mempool.noOverridesMeasure
         }
 
 readGenesis :: GenesisFile

@@ -5,30 +5,31 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+-- | Exposes the @'Mempool'@ datatype which captures the public API of the
+-- Mempool. Also exposes all the types used to interact with said API.
+--
+-- The interface is then initialized in "Ouroboros.Consensus.Mempool.Init" with
+-- the functions from "Ouroboros.Consensus.Mempool.Update" and
+-- "Ouroboros.Consensus.Mempool.Query".
 module Ouroboros.Consensus.Mempool.API (
     -- * Mempool
     Mempool (..)
+    -- * Transaction adding
   , MempoolAddTxResult (..)
+  , addLocalTxs
+  , addTxs
   , isMempoolTxAdded
   , isMempoolTxRejected
   , mempoolTxAddedToMaybe
-    -- * Mempool Snapshot
+    -- * Ledger state to forge on top of
   , ForgeLedgerState (..)
+    -- * Mempool Snapshot
   , MempoolSnapshot (..)
-    -- * Mempool size and capacity
-  , MempoolCapacityBytes (..)
-  , MempoolCapacityBytesOverride (..)
-  , MempoolSize (..)
-  , computeMempoolCapacity
-    -- * Tracing support
-  , TraceEventMempool (..)
-  , addLocalTxs
-  , addTxs
     -- * Re-exports
+  , TicketNo
   , TxSizeInBytes
+  , zeroTicketNo
   ) where
-
-import           Data.Word (Word32)
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
@@ -36,6 +37,9 @@ import           Ouroboros.Consensus.Block (SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.IOLike
+
+import           Ouroboros.Consensus.Mempool.Capacity hiding ((<=))
+import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
 
 {-------------------------------------------------------------------------------
   Mempool API
@@ -70,7 +74,7 @@ import           Ouroboros.Consensus.Util.IOLike
 --
 -- This shows that @'tryAddTxs' wti@ is an homomorphism from '++' and '>>',
 -- which informally makes these operations "distributive".
-data Mempool m blk idx = Mempool {
+data Mempool m blk = Mempool {
       -- | Add a bunch of transactions (oldest to newest)
       --
       -- As long as we keep the mempool entirely in-memory this could live in
@@ -162,19 +166,19 @@ data Mempool m blk idx = Mempool {
       -- n.b. in our current implementation, when one opens a mempool, we
       -- spawn a thread which performs this action whenever the 'ChainDB' tip
       -- point changes.
-    , syncWithLedger :: m (MempoolSnapshot blk idx)
+    , syncWithLedger :: m (MempoolSnapshot blk)
 
       -- | Get a snapshot of the current mempool state. This allows for
       -- further pure queries on the snapshot.
       --
       -- This doesn't look at the ledger state at all.
-    , getSnapshot    :: STM m (MempoolSnapshot blk idx)
+    , getSnapshot    :: STM m (MempoolSnapshot blk)
 
       -- | Get a snapshot of the mempool state that is valid with respect to
       -- the given ledger state
       --
       -- This does not update the state of the mempool.
-    , getSnapshotFor :: ForgeLedgerState blk -> STM m (MempoolSnapshot blk idx)
+    , getSnapshotFor :: ForgeLedgerState blk -> STM m (MempoolSnapshot blk)
 
       -- | Get the mempool's capacity in bytes.
       --
@@ -192,10 +196,6 @@ data Mempool m blk idx = Mempool {
 
       -- | Return the post-serialisation size in bytes of a 'GenTx'.
     , getTxSize      :: GenTx blk -> TxSizeInBytes
-
-      -- | Represents the initial value at which the transaction ticket number
-      -- counter will start (i.e. the zeroth ticket number).
-    , zeroIdx        :: idx
     }
 
 {-------------------------------------------------------------------------------
@@ -233,8 +233,8 @@ isMempoolTxRejected _                   = False
 --
 -- See the necessary invariants on the Haddock for 'tryAddTxs'.
 addTxs
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: forall m blk. MonadSTM m
+  => Mempool m blk
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
 addTxs mempool = addTxsHelper mempool DoNotIntervene
@@ -243,16 +243,16 @@ addTxs mempool = addTxsHelper mempool DoNotIntervene
 --
 -- See 'Intervene'.
 addLocalTxs
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: forall m blk. MonadSTM m
+  => Mempool m blk
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
 addLocalTxs mempool = addTxsHelper mempool Intervene
 
 -- | See 'addTxs'
 addTxsHelper
-  :: forall m blk idx. MonadSTM m
-  => Mempool m blk idx
+  :: forall m blk. MonadSTM m
+  => Mempool m blk
   -> WhetherToIntervene
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
@@ -312,40 +312,6 @@ data ForgeLedgerState blk =
     -- they will end up in the slot after the slot at the tip of the ledger.
   | ForgeInUnknownSlot (LedgerState blk)
 
-{-------------------------------------------------------------------------------
-  Mempool capacity in bytes
--------------------------------------------------------------------------------}
-
--- | Represents the maximum number of bytes worth of transactions that a
--- 'Mempool' can contain.
-newtype MempoolCapacityBytes = MempoolCapacityBytes {
-      getMempoolCapacityBytes :: Word32
-    }
-  deriving (Eq, Show, NoThunks)
-
--- | An override for the default 'MempoolCapacityBytes' which is 2x the
--- maximum transaction capacity
-data MempoolCapacityBytesOverride
-  = NoMempoolCapacityBytesOverride
-    -- ^ Use 2x the maximum transaction capacity of a block. This will change
-    -- dynamically with the protocol parameters adopted in the current ledger.
-  | MempoolCapacityBytesOverride !MempoolCapacityBytes
-    -- ^ Use the following 'MempoolCapacityBytes'.
-  deriving (Eq, Show)
-
-
--- | If no override is provided, calculate the default mempool capacity as 2x
--- the current ledger's maximum transaction capacity of a block.
-computeMempoolCapacity
-  :: LedgerSupportsMempool blk
-  => TickedLedgerState blk
-  -> MempoolCapacityBytesOverride
-  -> MempoolCapacityBytes
-computeMempoolCapacity st = \case
-    NoMempoolCapacityBytesOverride        -> noOverride
-    MempoolCapacityBytesOverride override -> override
-  where
-    noOverride = MempoolCapacityBytes (txsMaxBytes st * 2)
 
 {-------------------------------------------------------------------------------
   Snapshot of the mempool
@@ -365,19 +331,19 @@ computeMempoolCapacity st = \case
 -- even for tx sequence numbers returned in previous snapshots. This happens
 -- when the transaction has been removed from the mempool between snapshots.
 --
-data MempoolSnapshot blk idx = MempoolSnapshot {
+data MempoolSnapshot blk = MempoolSnapshot {
     -- | Get all transactions (oldest to newest) in the mempool snapshot along
     -- with their ticket number.
-    snapshotTxs         :: [(Validated (GenTx blk), idx)]
+    snapshotTxs         :: [(Validated (GenTx blk), TicketNo)]
 
     -- | Get all transactions (oldest to newest) in the mempool snapshot,
     -- along with their ticket number, which are associated with a ticket
     -- number greater than the one provided.
-  , snapshotTxsAfter    :: idx -> [(Validated (GenTx blk), idx)]
+  , snapshotTxsAfter    :: TicketNo -> [(Validated (GenTx blk), TicketNo)]
 
     -- | Get a specific transaction from the mempool snapshot by its ticket
     -- number, if it exists.
-  , snapshotLookupTx    :: idx -> Maybe (Validated (GenTx blk))
+  , snapshotLookupTx    :: TicketNo -> Maybe (Validated (GenTx blk))
 
     -- | Determine whether a specific transaction exists within the mempool
     -- snapshot.
@@ -392,75 +358,3 @@ data MempoolSnapshot blk idx = MempoolSnapshot {
     -- | The ledger state after all transactions in the snapshot
   , snapshotLedgerState :: TickedLedgerState blk
   }
-
-{-------------------------------------------------------------------------------
-  Size of the mempool
--------------------------------------------------------------------------------}
-
--- | The size of a mempool.
-data MempoolSize = MempoolSize
-  { msNumTxs   :: !Word32
-    -- ^ The number of transactions in the mempool.
-  , msNumBytes :: !Word32
-    -- ^ The summed byte size of all the transactions in the mempool.
-  } deriving (Eq, Show)
-
-instance Semigroup MempoolSize where
-  MempoolSize xt xb <> MempoolSize yt yb = MempoolSize (xt + yt) (xb + yb)
-
-instance Monoid MempoolSize where
-  mempty = MempoolSize { msNumTxs = 0, msNumBytes = 0 }
-  mappend = (<>)
-
-{-------------------------------------------------------------------------------
-  Tracing support for the mempool operations
--------------------------------------------------------------------------------}
-
--- | Events traced by the Mempool.
-data TraceEventMempool blk
-  = TraceMempoolAddedTx
-      (Validated (GenTx blk))
-      -- ^ New, valid transaction that was added to the Mempool.
-      MempoolSize
-      -- ^ The size of the Mempool before adding the transaction.
-      MempoolSize
-      -- ^ The size of the Mempool after adding the transaction.
-  | TraceMempoolRejectedTx
-      (GenTx blk)
-      -- ^ New, invalid transaction thas was rejected and thus not added to
-      -- the Mempool.
-      (ApplyTxErr blk)
-      -- ^ The reason for rejecting the transaction.
-      MempoolSize
-      -- ^ The current size of the Mempool.
-  | TraceMempoolRemoveTxs
-      [Validated (GenTx blk)]
-      -- ^ Previously valid transactions that are no longer valid because of
-      -- changes in the ledger state. These transactions have been removed
-      -- from the Mempool.
-      MempoolSize
-      -- ^ The current size of the Mempool.
-  | TraceMempoolManuallyRemovedTxs
-      [GenTxId blk]
-      -- ^ Transactions that have been manually removed from the Mempool.
-      [Validated (GenTx blk)]
-      -- ^ Previously valid transactions that are no longer valid because they
-      -- dependend on transactions that were manually removed from the
-      -- Mempool. These transactions have also been removed from the Mempool.
-      --
-      -- This list shares not transactions with the list of manually removed
-      -- transactions.
-      MempoolSize
-      -- ^ The current size of the Mempool.
-
-deriving instance ( Eq (GenTx blk)
-                  , Eq (Validated (GenTx blk))
-                  , Eq (GenTxId blk)
-                  , Eq (ApplyTxErr blk)
-                  ) => Eq (TraceEventMempool blk)
-
-deriving instance ( Show (GenTx blk)
-                  , Show (Validated (GenTx blk))
-                  , Show (GenTxId blk)
-                  , Show (ApplyTxErr blk)
-                  ) => Show (TraceEventMempool blk)

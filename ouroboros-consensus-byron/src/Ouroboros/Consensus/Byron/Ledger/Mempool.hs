@@ -78,7 +78,8 @@ import           Ouroboros.Consensus.Byron.Ledger.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
                      (byronBlockEncodingOverhead)
-import           Ouroboros.Consensus.Mempool.TxLimits
+
+import           Ouroboros.Consensus.Mempool
 
 {-------------------------------------------------------------------------------
   TxLimits

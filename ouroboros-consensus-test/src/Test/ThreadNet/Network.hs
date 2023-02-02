@@ -589,7 +589,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
       -> (SlotNo -> STM m ())
       -> LedgerConfig blk
       -> STM m (LedgerState blk)
-      -> Mempool m blk TicketNo
+      -> Mempool m blk
       -> [GenTx blk]
          -- ^ valid transactions the node should immediately propagate
       -> m ()
@@ -668,7 +668,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
                    -> Seed
                    -> STM m (ExtLedgerState blk)
                       -- ^ How to get the current ledger state
-                   -> Mempool m blk TicketNo
+                   -> Mempool m blk
                    -> m ()
     forkTxProducer coreNodeId registry clock cfg nodeSeed getExtLedger mempool =
       void $ OracularClock.forkEachSlot registry clock "txProducer" $ \curSlotNo -> do

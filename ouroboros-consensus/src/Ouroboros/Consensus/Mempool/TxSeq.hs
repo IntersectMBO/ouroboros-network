@@ -36,7 +36,7 @@ import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
-import           Ouroboros.Consensus.Mempool.API (MempoolSize (..))
+import           Ouroboros.Consensus.Mempool.Capacity (MempoolSize (..))
 
 {-------------------------------------------------------------------------------
   Mempool transaction sequence as a finger tree
