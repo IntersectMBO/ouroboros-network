@@ -294,7 +294,7 @@ setCurrent LgrDB{..} = writeTVar $! varDB
 
 currentPoint :: forall blk. UpdateLedger blk => LedgerDB' blk -> Point blk
 currentPoint = castPoint
-             . ledgerTipPoint (Proxy @blk)
+             . ledgerTipPoint
              . ledgerState
              . LedgerDB.ledgerDbCurrent
 

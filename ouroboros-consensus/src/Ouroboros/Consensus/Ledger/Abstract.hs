@@ -35,7 +35,6 @@ module Ouroboros.Consensus.Ledger.Abstract (
 
 import           Control.Monad.Except
 import           Data.Kind (Type)
-import           Data.Proxy
 import           GHC.Stack (HasCallStack)
 
 import           Ouroboros.Consensus.Block.Abstract
@@ -189,20 +188,17 @@ refoldLedger = repeatedly . tickThenReapply
   Short-hand
 -------------------------------------------------------------------------------}
 
--- | Wrapper around 'ledgerTipPoint' that uses a proxy to fix @blk@
---
--- This is occassionally useful to guide type inference
 ledgerTipPoint ::
      UpdateLedger blk
-  => Proxy blk -> LedgerState blk -> Point blk
-ledgerTipPoint _ = castPoint . getTip
+  => LedgerState blk -> Point blk
+ledgerTipPoint = castPoint . getTip
 
 ledgerTipHash ::
-     forall blk. UpdateLedger blk
+     UpdateLedger blk
   => LedgerState blk -> ChainHash blk
-ledgerTipHash = pointHash . (ledgerTipPoint (Proxy @blk))
+ledgerTipHash = pointHash . ledgerTipPoint
 
 ledgerTipSlot ::
-     forall blk. UpdateLedger blk
+     UpdateLedger blk
   => LedgerState blk -> WithOrigin SlotNo
-ledgerTipSlot = pointSlot . (ledgerTipPoint (Proxy @blk))
+ledgerTipSlot = pointSlot . ledgerTipPoint

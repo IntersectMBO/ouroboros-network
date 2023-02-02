@@ -403,7 +403,7 @@ translateLedgerStateByronToShelleyWrapper =
       ShelleyLedgerState {
         shelleyLedgerTip =
           translatePointByronToShelley
-            (ledgerTipPoint (Proxy @ByronBlock) ledgerByron)
+            (ledgerTipPoint ledgerByron)
             (byronLedgerTipBlockNo ledgerByron)
       , shelleyLedgerState =
           SL.translateToShelleyLedgerState

@@ -640,8 +640,7 @@ runThreadNetwork systemTime ThreadNetworkArgs
 
                 -- a new ledger state might render a crucial transaction valid
                 ldgrChanged = do
-                  let prj = ledgerTipPoint (Proxy @blk)
-                  (ledger', _) <- atomically $ blockUntilChanged prj (prj ledger) getLdgr
+                  (ledger', _) <- atomically $ blockUntilChanged ledgerTipPoint (ledgerTipPoint ledger) getLdgr
                   pure (slot, ledger', mempFp)
 
               -- wake up when any of those change
