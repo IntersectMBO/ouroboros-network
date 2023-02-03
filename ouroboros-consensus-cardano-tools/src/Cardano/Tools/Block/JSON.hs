@@ -45,9 +45,10 @@ import qualified Cardano.Ledger.Hashes as Ledger
 import qualified Cardano.Ledger.Keys as Ledger
 import Cardano.Ledger.Mary.Value (AssetName (AssetName), MaryValue (..), PolicyID (PolicyID))
 import qualified Cardano.Ledger.SafeHash as Ledger
-import Cardano.Ledger.Shelley.API (ShelleyTxOut (..))
+import Cardano.Ledger.Shelley.API (Metadata (Metadata), MultiSig (..), ShelleyTxBody (..), ShelleyTxOut (..))
 import qualified Cardano.Ledger.Shelley.API as Ledger
 import Cardano.Ledger.Shelley.BlockChain (txSeqTxns')
+import qualified Cardano.Ledger.Shelley.Metadata as Metadata
 import Cardano.Ledger.Shelley.Tx (WitnessSetHKD (WitnessSet))
 import Cardano.Ledger.ShelleyMA (MAAuxiliaryData, MATxBody, MaryOrAllegra (..), ShelleyMAEra)
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as Ledger.Mary
@@ -76,7 +77,7 @@ import qualified Data.Text.Encoding as SE
 import Data.Typeable (Typeable)
 import Ouroboros.Consensus.Block (HeaderFields (..), getHeader, getHeaderFields, unBlockNo)
 import Ouroboros.Consensus.Cardano (CardanoBlock)
-import Ouroboros.Consensus.Cardano.Block (HardForkBlock (..), Header)
+import Ouroboros.Consensus.Cardano.Block (HardForkBlock (..), Header, ShelleyEra)
 import Ouroboros.Consensus.HardFork.Combinator (OneEraBlock (getOneEraBlock), OneEraHash, getHardForkBlock, getOneEraHash)
 import Ouroboros.Consensus.Protocol.Praos.Translate ()
 import Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock (..))
@@ -108,6 +109,12 @@ instance ToJSON CBlock where
                 , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
                 ]
         block@(BlockMary (ShelleyBlock (txSeqTxns' . bbody -> txs) _)) ->
+            object
+                [ "transactions" .= toList txs
+                , "blockHash" .= getHeader block
+                , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
+                ]
+        block@(BlockShelley (ShelleyBlock (txSeqTxns' . bbody -> txs) _)) ->
             object
                 [ "transactions" .= toList txs
                 , "blockHash" .= getHeader block
@@ -395,6 +402,89 @@ instance ToJSON AssetName where
 --
 -- ValidatedTx
 --
+
+-- Shelley Tx
+
+instance ToJSON (Ledger.ShelleyTx (ShelleyEra StandardCrypto)) where
+    toJSON (Ledger.ShelleyTx txbody witnesses auxData) =
+        object $
+            mconcat
+                [ ["id" .= Block.txid txbody]
+                , ["body" .= txbody]
+                , ["witnesses" .= witnesses]
+                , onlyIf isSJust "auxiliaryData" auxData
+                ]
+
+instance ToJSON (Ledger.ShelleyTxBody (ShelleyEra StandardCrypto)) where
+    toJSON (ShelleyTxBody inputs outputs certs wdrls txfee ttl _ adHash) =
+        object $
+            mconcat
+                [ onlyIf (const True) "inputs" inputs
+                , onlyIf (const True) "outputs" outputs
+                , onlyIf (not . null) "certificates" certs
+                , onlyIf (not . null . Ledger.unWdrl) "withdrawals" wdrls
+                , onlyIf (const True) "fees" txfee
+                , ["ttl" .= ttl]
+                , -- TODO , onlyIf (not . null) "update" update
+                  onlyIf isSJust "auxiliaryDataHash" adHash
+                ]
+
+instance ToJSON (ShelleyTxOut (ShelleyEra StandardCrypto)) where
+    toJSON (ShelleyTxOut ca val) =
+        object
+            [ "address" .= ca
+            , "value" .= val
+            ]
+
+instance ToJSON (Ledger.Metadata (ShelleyEra StandardCrypto)) where
+    toJSON (Metadata md) = toJSON md
+
+instance ToJSON Ledger.Metadatum where
+    toJSON (Metadata.Map md) = toJSON md
+    toJSON (Metadata.List metas) = toJSON metas
+    toJSON (Metadata.I n) = toJSON n
+    toJSON (Metadata.B bs) =
+        String
+            . SE.decodeUtf8
+            . Base16.encode
+            $ bs
+    toJSON (Metadata.S txt) = toJSON txt
+
+instance ToJSON (Ledger.ShelleyWitnesses (ShelleyEra StandardCrypto)) where
+    toJSON (WitnessSet vkeys scripts boots) =
+        object $
+            mconcat
+                [ onlyIf (not . null) "keys" vkeys
+                , onlyIf (not . null) "bootstrap" boots
+                , onlyIf (not . null) "scripts" scripts
+                ]
+
+instance ToJSON (Ledger.MultiSig StandardCrypto) where
+    toJSON = \case
+        RequireAllOf ms ->
+            object
+                [ "script" .= ("AllOf" :: Text)
+                , "require" .= toJSON ms
+                ]
+        RequireAnyOf ms ->
+            object
+                [ "script" .= ("AnyOf" :: Text)
+                , "require" .= toJSON ms
+                ]
+        RequireSignature kh ->
+            object
+                [ "script" .= ("Signature" :: Text)
+                , "require" .= toJSON kh
+                ]
+        RequireMOf n ms ->
+            object
+                [ "script" .= ("AnyOf" :: Text)
+                , "require"
+                    .= object
+                        [ "n" .= n
+                        , "sigs" .= toJSON ms
+                        ]
+                ]
 
 -- Allegra TX
 
