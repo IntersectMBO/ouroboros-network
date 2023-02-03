@@ -1,18 +1,19 @@
-{-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE EmptyCase            #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 module Ouroboros.Consensus.Util.SOP (
     -- * Minor variations on standard SOP operators
@@ -47,6 +48,16 @@ module Ouroboros.Consensus.Util.SOP (
   , hizipWith
   , hizipWith3
   , hizipWith4
+    -- * Tuples
+  , ApOnlySnd (..)
+  , ApOnlySnd2 (..)
+  , Fst
+  , MapSnd
+  , NsMapSnd (..)
+  , Snd
+  , Uncurry
+  , UncurryComp (..)
+  , castSndIdx
   ) where
 
 import           Data.Coerce
@@ -312,3 +323,54 @@ hizipWith4 ::
   -> h  f4 xs
   -> h  f5 xs
 hizipWith4 = hcizipWith4 (Proxy @Top)
+
+
+{-------------------------------------------------------------------------------
+  Tuples
+-------------------------------------------------------------------------------}
+
+type Fst :: (a, b) -> a
+type family Fst t where
+  Fst '(a,b) = a
+
+type Snd :: (a, b) -> b
+type family Snd t where
+    Snd '(a,b) = b
+
+type MapSnd :: [(Type, Type)] -> [Type]
+type family MapSnd xs where
+  MapSnd '[]       = '[]
+  MapSnd (x ': xs) = Snd x ': MapSnd xs
+
+type UncurryComp ::
+     (Type -> Type)
+  -> (Type -> Type -> Type)
+  -> (Type, Type)
+  -> Type
+newtype UncurryComp f g ab = UncurryComp (f (Uncurry g ab))
+
+type Uncurry :: (a -> b -> k) -> (a, b) -> k
+type family Uncurry f ab where
+  Uncurry f ab = (f (Fst ab) (Snd ab))
+
+type ApOnlySnd :: (a -> Type) -> (b, a) -> Type
+newtype ApOnlySnd f ba = ApOnlySnd { unApOnlySnd :: f (Snd ba) }
+
+type ApOnlySnd2 :: (a -> a -> Type) -> (b, a) -> (b, a) -> Type
+newtype ApOnlySnd2 f ab ab' = ApOnlySnd2 (f (Snd ab) (Snd ab'))
+
+class NsMapSnd xs where
+  nsMapSnd :: NS f (MapSnd xs) -> NS (ApOnlySnd f) xs
+
+instance NsMapSnd '[] where
+  nsMapSnd = \case {}
+
+instance NsMapSnd xs => NsMapSnd (x ': xs) where
+  nsMapSnd = \case
+    Z fx -> Z (ApOnlySnd fx)
+    S ns -> S (nsMapSnd ns)
+
+castSndIdx :: Index xs x -> Index (MapSnd xs) (Snd x)
+castSndIdx = \case
+  IZ   -> IZ
+  IS n -> IS (castSndIdx n)
