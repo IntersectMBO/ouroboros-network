@@ -1,19 +1,20 @@
-{-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE EmptyCase             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 -- | Strict variant of SOP
 --
@@ -49,7 +50,8 @@ import           Data.SOP.Constraint
   NP
 -------------------------------------------------------------------------------}
 
-data NP :: (k -> Type) -> [k] -> Type where
+type NP :: (k -> Type) -> [k] -> Type
+data NP f xs where
   Nil  :: NP f '[]
   (:*) :: !(f x) -> !(NP f xs) -> NP f (x ': xs)
 
@@ -158,7 +160,8 @@ instance HTrans NP NP where
   NS
 -------------------------------------------------------------------------------}
 
-data NS :: (k -> Type) -> [k] -> Type where
+type NS :: (k -> Type) -> [k] -> Type
+data NS f xs where
   Z :: !(f x) -> NS f (x ': xs)
   S :: !(NS f xs) -> NS f (x ': xs)
 
