@@ -109,6 +109,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import           Ouroboros.Network.PeerSelection.PeerSelectionActions
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
@@ -120,7 +121,6 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
                      TracePublicRootPeers (..), ioDNSActions,
                      newLocalAndPublicRootDNSSemaphore,
                      resolveDomainAccessPoint)
-import           Ouroboros.Network.PeerSelection.Simple
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency, WarmValency)
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))

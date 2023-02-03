@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.PeerSelection.Simple
+module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
     -- * Re-exports
   , PeerSelectionTargets (..)
