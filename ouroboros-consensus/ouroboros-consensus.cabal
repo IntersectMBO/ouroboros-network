@@ -209,6 +209,7 @@ library
     Ouroboros.Consensus.Storage.LedgerDB.BackingStore
     Ouroboros.Consensus.Storage.LedgerDB.BackingStore.InMemory
     Ouroboros.Consensus.Storage.LedgerDB.BackingStore.Trivial
+    Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
     Ouroboros.Consensus.Storage.LedgerDB.DiffSeq
     Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
     Ouroboros.Consensus.Storage.LedgerDB.Init
@@ -216,6 +217,7 @@ library
     Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
     Ouroboros.Consensus.Storage.LedgerDB.OnDisk
     Ouroboros.Consensus.Storage.LedgerDB.Query
+    Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
     Ouroboros.Consensus.Storage.LedgerDB.Snapshots
     Ouroboros.Consensus.Storage.LedgerDB.Stream
     Ouroboros.Consensus.Storage.LedgerDB.Types
