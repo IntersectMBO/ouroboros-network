@@ -109,7 +109,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
       writeTVar rngVar rng'
       return available'
 
-    hotDemotionPolicy :: PickPolicy peerAddr m
+    hotDemotionPolicy :: PickPolicy peerAddr (STM m)
     hotDemotionPolicy _ _ _ available pickNum = do
         mode <- getChurnMode
         scores <- case mode of
@@ -140,7 +140,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
 
     -- Randomly pick peers to demote, peers with knownPeerTepid set are twice
     -- as likely to be demoted.
-    warmDemotionPolicy :: PickPolicy peerAddr m
+    warmDemotionPolicy :: PickPolicy peerAddr (STM m)
     warmDemotionPolicy _ _ isTepid available pickNum = do
       available' <- addRand available (tepidWeight isTepid)
       return $ Set.fromList
@@ -153,7 +153,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
 
     -- Randomly pick peers to forget, peers with failures are more likely to
     -- be forgotten.
-    coldForgetPolicy :: PickPolicy peerAddr m
+    coldForgetPolicy :: PickPolicy peerAddr (STM m)
     coldForgetPolicy _ failCnt _ available pickNum = do
       available' <- addRand available (failWeight failCnt)
       return $ Set.fromList
@@ -163,7 +163,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
              . Map.assocs
              $ available'
 
-    simplePromotionPolicy :: PickPolicy peerAddr m
+    simplePromotionPolicy :: PickPolicy peerAddr (STM m)
     simplePromotionPolicy _ _ _ available pickNum = do
       available' <- addRand available (,)
       return $ Set.fromList

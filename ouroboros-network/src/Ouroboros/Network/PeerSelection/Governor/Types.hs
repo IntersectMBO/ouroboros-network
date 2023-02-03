@@ -87,6 +87,8 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
 -- The post-condition is that the picked set is non-empty but must not be
 -- bigger than the requested number.
 --
+-- Peer selection API is using `STM m` monad, internally it is using `m`.
+--
 type PickPolicy peeraddr m =
          -- Extra peer attributes available to use in the picking policy.
          -- As more attributes are needed, extend this with more such functions.
@@ -95,17 +97,17 @@ type PickPolicy peeraddr m =
       -> (peeraddr -> Bool)       -- Found to be tepid flag
       -> Set peeraddr             -- The set to pick from
       -> Int                      -- Max number to choose, fewer is ok.
-      -> STM m (Set peeraddr)     -- The set picked.
+      -> m (Set peeraddr)         -- The set picked.
 
 
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 
-       policyPickKnownPeersForPeerShare :: PickPolicy peeraddr m,
-       policyPickColdPeersToPromote     :: PickPolicy peeraddr m,
-       policyPickWarmPeersToPromote     :: PickPolicy peeraddr m,
-       policyPickHotPeersToDemote       :: PickPolicy peeraddr m,
-       policyPickWarmPeersToDemote      :: PickPolicy peeraddr m,
-       policyPickColdPeersToForget      :: PickPolicy peeraddr m,
+       policyPickKnownPeersForPeerShare :: PickPolicy peeraddr (STM m),
+       policyPickColdPeersToPromote     :: PickPolicy peeraddr (STM m),
+       policyPickWarmPeersToPromote     :: PickPolicy peeraddr (STM m),
+       policyPickHotPeersToDemote       :: PickPolicy peeraddr (STM m),
+       policyPickWarmPeersToDemote      :: PickPolicy peeraddr (STM m),
+       policyPickColdPeersToForget      :: PickPolicy peeraddr (STM m),
 
        policyFindPublicRootTimeout      :: !DiffTime,
        policyMaxInProgressPeerShareReqs :: !Int,
@@ -520,10 +522,7 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 --
 pickPeers :: (Ord peeraddr, Functor m)
           => PeerSelectionState peeraddr peerconn
-          -> (   (peeraddr -> PeerSource)
-              -> (peeraddr -> Int)
-              -> (peeraddr -> Bool)
-              -> Set peeraddr -> Int -> m (Set peeraddr))
+          -> PickPolicy peeraddr m
           -> Set peeraddr -> Int -> m (Set peeraddr)
 pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
           pick available num =
