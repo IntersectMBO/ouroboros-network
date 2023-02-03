@@ -2,11 +2,16 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
 
-module Ouroboros.Consensus.Ticked (Ticked (..)) where
+module Ouroboros.Consensus.Ticked (
+    Ticked (..)
+  , Ticked1
+  ) where
 
 import           Data.Kind (Type)
 import           Data.SOP.BasicFunctors
@@ -28,6 +33,7 @@ import           NoThunks.Class (NoThunks)
 -- * New leader schedule computed for Shelley
 -- * Transition from Byron to Shelley activated in the hard fork combinator.
 -- * Nonces switched out at the start of a new epoch.
+type Ticked :: Type -> Type
 data family Ticked st :: Type
 
 -- Standard instance for use with trivial state
@@ -47,8 +53,15 @@ deriving instance
 
 deriving newtype instance {-# OVERLAPPING #-}
      Show (Ticked (f a))
-  => Show ((Ticked :.: f) a)
+  => Show ((Ticked :.: f) (a :: Type))
 
 deriving newtype instance
      NoThunks (Ticked (f a))
   => NoThunks ((Ticked :.: f) a)
+
+{-------------------------------------------------------------------------------
+  @'Ticked'@ for state with a poly-kinded type parameter
+-------------------------------------------------------------------------------}
+
+type Ticked1 :: (k -> Type) -> (k -> Type)
+data family Ticked1 st
