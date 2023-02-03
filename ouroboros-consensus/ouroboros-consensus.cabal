@@ -123,6 +123,8 @@ library
                        Ouroboros.Consensus.Ledger.SupportsMempool
                        Ouroboros.Consensus.Ledger.SupportsPeerSelection
                        Ouroboros.Consensus.Ledger.SupportsProtocol
+                       Ouroboros.Consensus.Ledger.Tables
+                       Ouroboros.Consensus.Ledger.Tables.Utils
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
                        Ouroboros.Consensus.Mempool.Capacity
@@ -228,6 +230,7 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                        Ouroboros.Consensus.Storage.LedgerDB
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                       Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
                        Ouroboros.Consensus.Storage.LedgerDB.Init
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
@@ -308,6 +311,7 @@ library
                      , directory         >=1.3   && <1.4
                      , filelock
                      , filepath          >=1.4   && <1.5
+                     , groups
                      , hashable
                      , measures
                      , mtl               >=2.2   && <2.3
@@ -325,6 +329,8 @@ library
                      , transformers
                      , vector            >=0.12  && <0.13
 
+                     , diff-containers
+                     , fingertree-rm
                      , io-classes       ^>=0.3
                      , typed-protocols
                      , ouroboros-network-api
