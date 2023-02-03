@@ -11,6 +11,3 @@ fd -p ouroboros-consensus -e hs \
   -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs \
   -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/LedgerDB/HD.hs \
   -X stylish-haskell -c .stylish-haskell.yaml -i
-
-fd -p anti-diff -e hs -X stylish-haskell -c .stylish-haskell.yaml -i
-fd -p semigroupoid -e hs -X stylish-haskell -c .stylish-haskell.yaml -i
