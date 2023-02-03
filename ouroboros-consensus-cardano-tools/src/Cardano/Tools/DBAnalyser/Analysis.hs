@@ -64,7 +64,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LgrDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..),
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot (..),
                      writeSnapshot)
 import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes,
                      encodeDisk)

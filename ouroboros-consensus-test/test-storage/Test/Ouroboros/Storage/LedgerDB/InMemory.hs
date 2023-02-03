@@ -44,7 +44,7 @@ import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util
 
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import           Ouroboros.Consensus.Storage.LedgerDB
 
 import           Test.Util.QuickCheck
 import           Test.Util.TestBlock

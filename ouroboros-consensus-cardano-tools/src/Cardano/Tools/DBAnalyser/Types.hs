@@ -4,7 +4,7 @@ module Cardano.Tools.DBAnalyser.Types (
   , module Cardano.Tools.DBAnalyser.Types
   ) where
 
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot)
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot)
 
 import           Cardano.Tools.DBAnalyser.Analysis as AnalysisTypes
                      (AnalysisName (..), AnalysisResult (..), Limit (..))

@@ -78,8 +78,7 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Storage.LedgerDB.Types
-                     (UpdateLedgerDbTraceEvent)
+import           Ouroboros.Consensus.Storage.LedgerDB (UpdateLedgerDbTraceEvent)
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -505,7 +504,7 @@ data TraceEvent blk
   | TraceInitChainSelEvent      (TraceInitChainSelEvent       blk)
   | TraceOpenEvent              (TraceOpenEvent               blk)
   | TraceIteratorEvent          (TraceIteratorEvent           blk)
-  | TraceLedgerEvent            (LgrDB.TraceEvent             blk)
+  | TraceSnapshotEvent          (LgrDB.TraceSnapshotEvent     blk)
   | TraceLedgerReplayEvent      (LgrDB.TraceReplayEvent       blk)
   | TraceImmutableDBEvent       (ImmutableDB.TraceEvent       blk)
   | TraceVolatileDBEvent        (VolatileDB.TraceEvent        blk)

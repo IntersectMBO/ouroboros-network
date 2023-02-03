@@ -117,8 +117,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (unsafeChunkNoToEpochNo)
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory (LedgerDB)
-import qualified Ouroboros.Consensus.Storage.LedgerDB.OnDisk as LedgerDB
+import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB)
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
@@ -1269,8 +1269,8 @@ deriving instance SOP.Generic         (TraceGCEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceGCEvent blk)
 deriving instance SOP.Generic         (TraceIteratorEvent blk)
 deriving instance SOP.HasDatatypeInfo (TraceIteratorEvent blk)
-deriving instance SOP.Generic         (LedgerDB.TraceEvent blk)
-deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceEvent blk)
+deriving instance SOP.Generic         (LedgerDB.TraceSnapshotEvent blk)
+deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceSnapshotEvent blk)
 deriving instance SOP.Generic         (LedgerDB.TraceReplayEvent blk)
 deriving instance SOP.HasDatatypeInfo (LedgerDB.TraceReplayEvent blk)
 deriving instance SOP.Generic         (ImmutableDB.TraceEvent blk)
@@ -1639,7 +1639,7 @@ traceEventName = \case
     TraceOpenEvent              ev    -> "Open."              <> constrName ev
     TraceGCEvent                ev    -> "GC."                <> constrName ev
     TraceIteratorEvent          ev    -> "Iterator."          <> constrName ev
-    TraceLedgerEvent            ev    -> "Ledger."            <> constrName ev
+    TraceSnapshotEvent          ev    -> "Ledger."            <> constrName ev
     TraceLedgerReplayEvent      ev    -> "LedgerReplay."      <> constrName ev
     TraceImmutableDBEvent       ev    -> "ImmutableDB."       <> constrName ev
     TraceVolatileDBEvent        ev    -> "VolatileDB."        <> constrName ev

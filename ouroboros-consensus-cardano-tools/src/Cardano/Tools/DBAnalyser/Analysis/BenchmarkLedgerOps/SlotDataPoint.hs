@@ -62,7 +62,7 @@ showHeaders :: Builder -> Builder
 showHeaders sep = intercalate sep $ fmap fst           showHeadersAndData
 
 showData :: SlotDataPoint -> Builder -> Builder
-showData dp sep = intercalate sep $ fmap (($dp) . snd) showHeadersAndData
+showData dp sep = intercalate sep $ fmap (($ dp) . snd) showHeadersAndData
 
 showHeadersAndData :: [(Builder, SlotDataPoint -> Builder)]
 showHeadersAndData =

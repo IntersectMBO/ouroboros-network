@@ -53,10 +53,10 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
                      LgrDbArgs (..), mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (SnapshotInterval (..), defaultDiskPolicy)
-import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LgrDB
-                     (ledgerDbPast, ledgerDbTip, ledgerDbWithAnchor)
+import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
+                     defaultDiskPolicy)
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LgrDB (ledgerDbPast,
+                     ledgerDbTip, ledgerDbWithAnchor)
 
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty

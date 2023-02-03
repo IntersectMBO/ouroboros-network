@@ -48,3 +48,45 @@ package cardano-client
 
 package cardano-crypto-praos
   flags: -external-libsodium-vrf
+
+package ouroboros-consensus
+  ghc-options: -Werror
+
+package ouroboros-consensus-byron
+  ghc-options: -Werror
+
+package ouroboros-consensus-byron-test
+  ghc-options: -Werror
+
+package ouroboros-consensus-byronspec
+  ghc-options: -Werror
+
+package ouroboros-consensus-cardano
+  ghc-options: -Werror
+
+package ouroboros-consensus-cardano-test
+  ghc-options: -Werror
+
+package ouroboros-consensus-mock
+  ghc-options: -Werror
+
+package ouroboros-consensus-mock-test
+  ghc-options: -Werror
+
+package ouroboros-consensus-protocol
+  ghc-options: -Werror
+
+package ouroboros-consensus-shelley
+  ghc-options: -Werror
+
+package ouroboros-consensus-shelley-test
+  ghc-options: -Werror
+
+package ouroboros-consensus-test
+  ghc-options: -Werror
+
+package ouroboros-consensus-cardano-tools
+  ghc-options: -Werror
+
+package ouroboros-consensus-diffusion
+  ghc-options: -Werror

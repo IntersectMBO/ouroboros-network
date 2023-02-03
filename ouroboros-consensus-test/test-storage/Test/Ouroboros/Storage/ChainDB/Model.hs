@@ -118,7 +118,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
-import           Ouroboros.Consensus.Storage.LedgerDB.InMemory
+import           Ouroboros.Consensus.Storage.LedgerDB
 
 type IteratorId = Int
 

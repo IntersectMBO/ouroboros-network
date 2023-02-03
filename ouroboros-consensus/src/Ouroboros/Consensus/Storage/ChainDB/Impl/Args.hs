@@ -32,8 +32,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (TraceEvent (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (DiskPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskPolicy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
@@ -189,7 +188,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrHasFS            = cdbHasFSLgrDB
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
-        , lgrTracer           = contramap TraceLedgerEvent cdbTracer
+        , lgrTracer           = contramap TraceSnapshotEvent cdbTracer
         , lgrTraceLedger      = cdbTraceLedger
         }
     , ChainDbSpecificArgs {

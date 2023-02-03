@@ -31,8 +31,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB (defaultArgs,
                      getTipPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB (cdbTracer,
                      withDB)
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (SnapshotInterval (..), defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
+                     defaultDiskPolicy)
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Network.Block

@@ -74,8 +74,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                     (TimeSinceLast (..))
+import           Ouroboros.Consensus.Storage.LedgerDB (TimeSinceLast (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.Enclose (Enclosing' (..))
 

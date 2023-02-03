@@ -13,7 +13,7 @@ import           Cardano.Crypto (RequiresNetworkMagic (..))
 import           Ouroboros.Consensus.Block (SlotNo (..))
 import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..))
 import           Ouroboros.Consensus.Shelley.Node (Nonce (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..))
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot (..))
 
 import           Cardano.Tools.DBAnalyser.Block.Byron
 import           Cardano.Tools.DBAnalyser.Block.Cardano
