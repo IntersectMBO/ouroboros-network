@@ -231,7 +231,10 @@ library
                        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                        Ouroboros.Consensus.Storage.LedgerDB
                        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                       Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
+                       Ouroboros.Consensus.Storage.LedgerDB.BackingStore
+                       Ouroboros.Consensus.Storage.LedgerDB.BackingStore.InMemory
+                       Ouroboros.Consensus.Storage.LedgerDB.BackingStore.Trivial
+                       Ouroboros.Consensus.Storage.LedgerDB.DiffSeq
                        Ouroboros.Consensus.Storage.LedgerDB.Init
                        Ouroboros.Consensus.Storage.LedgerDB.InMemory
                        Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
