@@ -67,6 +67,7 @@ library
                        Ouroboros.Network.PeerSelection.Governor.Monitor
                        Ouroboros.Network.PeerSelection.Governor.RootPeers
                        Ouroboros.Network.PeerSelection.Governor.Types
+                       Ouroboros.Network.PeerSelection.Churn
                        Ouroboros.Network.Diffusion.Utils
   reexported-modules:  Ouroboros.Network.AnchoredFragment,
                        Ouroboros.Network.AnchoredSeq,
