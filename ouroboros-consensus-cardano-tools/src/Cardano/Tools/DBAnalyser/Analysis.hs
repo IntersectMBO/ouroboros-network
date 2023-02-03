@@ -18,7 +18,7 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise
 import           Control.Monad.Except
-import           Control.Tracer (Tracer (..), traceWith, nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Foldable (foldl')
 import           Data.IORef
 import           Data.List (intercalate)
@@ -34,8 +34,8 @@ import qualified Cardano.Slotting.Slot as Slotting
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast (forecastFor)
-import           Ouroboros.Consensus.HeaderValidation (HeaderState (..), tickHeaderState,
-                     validateHeader)
+import           Ouroboros.Consensus.HeaderValidation (HeaderState (..),
+                     tickHeaderState, validateHeader)
 
 import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Point (WithOrigin (At))
@@ -51,14 +51,14 @@ import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Ledger.Tables.Utils
 import qualified Ouroboros.Consensus.Mempool.API as MP
 import qualified Ouroboros.Consensus.Mempool.Impl as MP
-import           Ouroboros.Consensus.Protocol.Abstract (LedgerView, ConsensusProtocol)
+import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.InMemory as LedgerDB
 import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.API (PointNotFound(..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (PointNotFound (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 
@@ -630,7 +630,7 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, initLedger, cfg, limit, backing, le
         (urs,        tReadDb)   <- time $ defaultReadKeySets (readKeySets backingStore) $ readDb aks
 
         let fwd = case forwardTableKeySets (ledgerDbChangelog ldb') urs of
-              Left e -> error $ "Couldn't forward " ++ show e
+              Left e  -> error $ "Couldn't forward " ++ show e
               Right v -> v
         let l = ledgerState prevLedgerState `withLedgerTables` unExtLedgerStateTables fwd
 
@@ -873,7 +873,7 @@ reproMempoolForge numBlks env =  do
               aks = rewindTableKeySets (ledgerDbChangelog ldb') ks
           urs <- defaultReadKeySets (readKeySets bs) $ readDb aks
           let fwd = case forwardTableKeySets (ledgerDbChangelog ldb') urs of
-                Left e -> error $ "Couldn't forward " ++ show e
+                Left e  -> error $ "Couldn't forward " ++ show e
                 Right v -> v
               l :: ExtLedgerState blk ValuesMK
               l = st `withLedgerTables` fwd

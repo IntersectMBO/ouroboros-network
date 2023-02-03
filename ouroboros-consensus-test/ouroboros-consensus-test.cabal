@@ -110,7 +110,7 @@ library
                      , quickcheck-state-machine
                      , quiet             >=0.2   && <0.3
                      , random
-                     , semigroupoid
+                     , simple-semigroupoids
                      , serialise         >=0.2   && <0.3
                      , sop-core
                      , cardano-strict-containers
@@ -126,7 +126,8 @@ library
                      , utf8-string
                      , tagged
 
-                     , anti-diff
+                     , diff-containers
+                     , fingertree-rm
                      , io-classes
                      , io-sim
 
@@ -198,10 +199,11 @@ test-suite test-consensus
                      , tasty-quickcheck
                      , temporary
                      , time
-                     , anti-diff
                      , transformers
                      , tree-diff
 
+                     , diff-containers
+                     , fingertree-rm
                      , io-classes
                      , io-sim
                      , typed-protocols
@@ -274,7 +276,8 @@ test-suite test-storage
 
   build-depends:       base              >=4.14 && <4.17
                      , async
-                     , anti-diff
+                     , diff-containers
+                     , fingertree-rm
                      , bifunctors
                      , binary
                      , bytestring
@@ -310,7 +313,7 @@ test-suite test-storage
                      , tree-diff
                      , vector
 
-                     , semigroupoid
+                     , simple-semigroupoids
                      , io-classes
                      , io-sim
                      , ouroboros-network-api
@@ -371,10 +374,11 @@ benchmark bench-storage
                        Bench.Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
 
   build-depends:       base
-                     , anti-diff
                      , bytestring
                      , containers
                      , deepseq
+                     , diff-containers
+                     , fingertree-rm
                      , mtl
                      , nonempty-containers
                      , QuickCheck

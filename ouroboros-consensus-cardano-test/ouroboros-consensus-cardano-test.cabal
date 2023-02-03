@@ -109,7 +109,8 @@ test-suite test
                      , tasty
                      , tasty-quickcheck
                      , hedgehog-quickcheck
-                     , anti-diff
+                     , diff-containers
+                     , fingertree-rm
 
                      , cardano-crypto-wrapper
                      , cardano-data

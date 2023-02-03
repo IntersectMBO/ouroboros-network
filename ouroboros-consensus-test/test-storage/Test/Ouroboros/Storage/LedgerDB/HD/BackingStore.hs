@@ -13,6 +13,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
+{-# LANGUAGE InstanceSigs               #-}
 
 module Test.Ouroboros.Storage.LedgerDB.HD.BackingStore (
     labelledExamples
@@ -24,6 +25,7 @@ import           Control.Monad.Except hiding (lift)
 import           Control.Monad.IOSim
 import           Control.Monad.Reader
 import qualified Data.Map.Diff.Strict as Diff
+import qualified Data.Map.Diff.Strict.Internal as Diff.Internal
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 import           Data.Sequence.NonEmpty (NESeq (..))
@@ -244,8 +246,8 @@ instance Mock.LookupKeysRange K V where
           zipLedgerTables (rangeRead' n) ks vs
     where
       rangeRead :: Int -> ValuesMK k v -> ValuesMK k v
-      rangeRead n (ApplyValuesMK (DS.Values vs)) =
-        ApplyValuesMK $ DS.Values $ Map.take n vs
+      rangeRead n (ApplyValuesMK vs) =
+        ApplyValuesMK $ Map.take n vs
 
       rangeRead' ::
           Ord k
@@ -255,12 +257,12 @@ instance Mock.LookupKeysRange K V where
         -> ValuesMK k v
       rangeRead' n ksmk vsmk =
           case Set.lookupMax ks of
-            Nothing -> ApplyValuesMK $ DS.Values Map.empty
-            Just  k -> ApplyValuesMK $ DS.Values $
+            Nothing -> ApplyValuesMK Map.empty
+            Just  k -> ApplyValuesMK $
               Map.take n $ snd $ Map.split k vs
         where
-          ApplyKeysMK (DS.Keys ks)     = ksmk
-          ApplyValuesMK (DS.Values vs) = vsmk
+          ApplyKeysMK ks   = ksmk
+          ApplyValuesMK vs = vsmk
 
 instance Mock.LookupKeys K V where
   lookupKeys = zipLedgerTables readKeys
@@ -271,20 +273,20 @@ instance Mock.LookupKeys K V where
         -> ValuesMK k v
         -> ValuesMK k v
       readKeys (ApplyKeysMK ks) (ApplyValuesMK vs) =
-        ApplyValuesMK $ DS.restrictValues vs ks
+        ApplyValuesMK $ Map.restrictKeys vs ks
 
 instance Mock.ValuesLength V where
-  valuesLength (OTLedgerTables (ApplyValuesMK (DS.Values m))) =
+  valuesLength (OTLedgerTables (ApplyValuesMK m)) =
     Map.size m
 
 instance Mock.MakeDiff V D where
   diff t1 t2 = zipLedgerTables (rawForgetValues .: rawCalculateDifference) t1 t2
 
 instance Mock.DiffSize D where
-  diffSize (OTLedgerTables (ApplyDiffMK (Diff.Diff m))) = Map.size m
+  diffSize (OTLedgerTables (ApplyDiffMK d)) = Diff.size d
 
 instance Mock.KeysSize K where
-  keysSize (OTLedgerTables (ApplyKeysMK (Diff.Keys s))) = Set.size s
+  keysSize (OTLedgerTables (ApplyKeysMK s)) = Set.size s
 
 instance Mock.HasOps K V D
 
@@ -343,6 +345,7 @@ instance (Ord k, QC.Arbitrary k)
 
 instance (Ord k, QC.Arbitrary k, QC.Arbitrary v)
       => QC.Arbitrary (DiffMK k v) where
+  arbitrary :: QC.Gen (DiffMK k v)
   arbitrary = ApplyDiffMK <$> QC.arbitrary
   shrink (ApplyDiffMK d) = ApplyDiffMK <$> QC.shrink d
 
@@ -352,26 +355,18 @@ instance (Ord k, QC.Arbitrary k, QC.Arbitrary v)
   shrink (ApplyValuesMK vs) = ApplyValuesMK <$> QC.shrink vs
 
 deriving newtype instance (Ord k, QC.Arbitrary k, QC.Arbitrary v)
-                       => QC.Arbitrary (DS.Values k v)
-
-deriving newtype instance (Ord k, QC.Arbitrary k)
-                       => QC.Arbitrary (DS.Keys k v)
-
-deriving newtype instance (Ord k, QC.Arbitrary k, QC.Arbitrary v)
                        => QC.Arbitrary (DS.Diff k v)
 
-instance QC.Arbitrary v => QC.Arbitrary (DS.NEDiffHistory v) where
-  arbitrary = DS.NEDiffHistory <$> ((:<||) <$> QC.arbitrary <*> QC.arbitrary)
-  shrink (DS.NEDiffHistory h) =
-    fmap DS.NEDiffHistory $ mapMaybe NESeq.nonEmptySeq $ QC.shrink (NESeq.toSeq h)
+instance QC.Arbitrary v => QC.Arbitrary (Diff.Internal.NEDiffHistory v) where
+  arbitrary = Diff.Internal.NEDiffHistory <$> ((:<||) <$> QC.arbitrary <*> QC.arbitrary)
+  shrink (Diff.Internal.NEDiffHistory h) =
+    fmap Diff.Internal.NEDiffHistory $ mapMaybe NESeq.nonEmptySeq $ QC.shrink (NESeq.toSeq h)
 
 instance QC.Arbitrary v => QC.Arbitrary (DS.DiffEntry v) where
   arbitrary = do
     constr <- QC.elements [
         DS.Insert
       , DS.Delete
-      , DS.UnsafeAntiInsert
-      , DS.UnsafeAntiDelete
       ]
     constr <$> QC.arbitrary
 

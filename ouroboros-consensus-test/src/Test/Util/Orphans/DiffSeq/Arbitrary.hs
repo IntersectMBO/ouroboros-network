@@ -9,8 +9,9 @@ module Test.Util.Orphans.DiffSeq.Arbitrary () where
 import           Test.QuickCheck
 
 import qualified Data.FingerTree.RootMeasured.Strict as RMFT
-import           Data.Map.Diff.Strict (Diff, DiffEntry (..), NEDiffHistory (..))
-import qualified Data.Map.Diff.Strict as MapDiff
+import           Data.Map.Diff.Strict.Internal (Diff, DiffEntry (..),
+                     NEDiffHistory (..))
+import qualified Data.Map.Diff.Strict.Internal as MapDiff
 import           Data.Sequence.NonEmpty (NESeq (..))
 
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq

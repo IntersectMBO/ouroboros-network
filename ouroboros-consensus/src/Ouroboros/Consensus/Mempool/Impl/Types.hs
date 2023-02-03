@@ -46,6 +46,7 @@ module Ouroboros.Consensus.Mempool.Impl.Types (
 import           Control.Exception (assert)
 import           Control.Monad.Except
 import qualified Data.List.NonEmpty as NE
+import qualified Data.Map.Diff.Strict.Internal as Diff.Internal
 import           Data.Maybe (isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -62,7 +63,6 @@ import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mempool.TxSeq (MempoolSize, TicketNo,
                      TxSeq (..), TxTicket (..), zeroTicketNo)
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (applyDiff)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
@@ -390,7 +390,7 @@ validationResultFromIS values is = ValidationResult {
   where
 
     f :: Ord k => DiffMK k v -> ValuesMK k v -> TrackingMK k v
-    f (ApplyDiffMK d) (ApplyValuesMK v) = ApplyTrackingMK (applyDiff v d) d
+    f (ApplyDiffMK d) (ApplyValuesMK v) = ApplyTrackingMK (Diff.Internal.unsafeApplyDiff v d) d
 
     IS {
         isTxs

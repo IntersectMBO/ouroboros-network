@@ -14,13 +14,13 @@ import           Text.Builder (Builder)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Storage.ChainDB (LgrDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 import           Ouroboros.Consensus.Util.Condense (Condense)
-import Ouroboros.Consensus.Storage.ChainDB (LgrDbSerialiseConstraints)
-import Ouroboros.Consensus.Ledger.Inspect (InspectLedger)
 
 {-------------------------------------------------------------------------------
   HasAnalysis

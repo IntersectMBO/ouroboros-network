@@ -113,10 +113,13 @@ import qualified Data.FingerTree.Strict as FT
 import           Data.Foldable (Foldable (foldl', toList))
 import           Data.Kind (Type)
 import qualified Data.Map.Diff.Strict as MapDiff
+import qualified Data.Map.Diff.Strict.Internal as MapDiff.Internal
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Sequence (Seq (..))
 import           Data.Sequence.NonEmpty (NESeq (..))
-
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 
 import           QuickCheck.GenT (Arbitrary (arbitrary), Gen, MonadGen (..),
@@ -311,7 +314,7 @@ type DiffSeqKind = Type -> Type -> Type
 class IsDiffSeq (ds :: DiffSeqKind) k v where
   type Diff ds k v   = r | r -> ds k v
   type Values ds k v = r | r -> ds k v
-  type Keys ds k v   = r | r -> ds k v
+  type Keys ds k v   = r | r -> ds k
 
   -- | Mimicks @'Ouroboros.Consensus.Ledger.Basics.extendDbChangelog.ext'@
   push :: ds k v -> SlotNo -> Diff ds k v -> ds k v
@@ -351,13 +354,13 @@ pushMany = foldl (uncurry . push)
 
 instance (Ord k, Eq v) => IsDiffSeq DS.DiffSeq k v where
   type Diff DS.DiffSeq k v   = DS.Diff k v
-  type Values DS.DiffSeq k v = DS.Values k v
-  type Keys DS.DiffSeq k v   = DS.Keys k v
+  type Values DS.DiffSeq k v = Map k v
+  type Keys DS.DiffSeq k v   = Set k
 
   push                 = DS.extend
   flush                = DS.splitAt
   rollback             = DS.splitAtFromEnd
-  forwardValuesAndKeys = DS.applyDiffForKeys
+  forwardValuesAndKeys = MapDiff.Internal.unsafeApplyDiffForKeys
   totalDiff            = DS.cumulativeDiff
 
 instance Ord k => IsDiffSeq HD.SeqUtxoDiff k v where
@@ -539,7 +542,7 @@ genInitialModel ::
   -> Gen (Model k v)
 genInitialModel GenConfig{nrInitialValues} = do
     kvs <- replicateM nrInitialValues arbitrary
-    pure $ Model DS.empty 0 (DS.valuesFromList kvs) 0
+    pure $ Model DS.empty 0 (Map.fromList kvs) 0
 
 newtype Key = Key ShortByteString
   deriving stock (Show, Eq, Ord, Generic)
@@ -772,7 +775,7 @@ genPush = do
     vs <- gets flushedValues
 
     let
-      vs' = DS.applyDiff vs (totalDiff ds)
+      vs' = MapDiff.Internal.unsafeApplyDiff vs (totalDiff ds)
 
     d1 <- valuesToDelete vs'
     d2 <- valuesToInsert
@@ -788,7 +791,7 @@ genPush = do
     pure $ Push (fromIntegral t) d
   where
     valuesToDelete :: Values DS.DiffSeq k v -> CmdGen k v (Diff DS.DiffSeq k v)
-    valuesToDelete (DS.Values m) = do
+    valuesToDelete m = do
       PushConfig{nrToDelete} <- reader pushConfig
       DS.fromListDeletes . take nrToDelete <$> shuffle (Map.toList m)
 
@@ -833,7 +836,7 @@ genFlush = do
 
     modify (\st -> st {
         diffs         = r
-      , flushedValues = DS.applyDiff vs (totalDiff l)
+      , flushedValues = MapDiff.Internal.unsafeApplyDiff vs (totalDiff l)
       , nrGenerated   = nrGenerated st + 1
       })
 
@@ -920,10 +923,10 @@ genForward = do
     ds  <- gets diffs
     bvs <- gets flushedValues
 
-    ks <- keysToForward (DS.diffKeys $ totalDiff ds)
+    ks <- keysToForward (DS.keysSet (totalDiff ds))
 
     let
-      vs = DS.restrictValues bvs ks
+      vs = Map.restrictKeys bvs ks
 
     modify (\st -> st{
         nrGenerated = nrGenerated st + 1
@@ -932,9 +935,9 @@ genForward = do
     pure $ Forward vs ks
   where
     keysToForward :: Keys DS.DiffSeq k v -> CmdGen k v (Keys DS.DiffSeq k v)
-    keysToForward (DS.Keys s) = do
+    keysToForward s = do
       ForwardConfig{nrToForward} <- reader forwardConfig
-      DS.keysFromList . take nrToForward <$> shuffle (toList s)
+      Set.fromList . take nrToForward <$> shuffle (toList s)
 
 {-------------------------------------------------------------------------------
   Sanity checks
@@ -999,10 +1002,10 @@ fromElement :: DS.Element k v -> HD.SudElement k v
 fromElement (DS.Element slot d) = HD.SudElement slot (fromDiff d)
 
 fromDiff :: DS.Diff k v -> HD.UtxoDiff k v
-fromDiff (MapDiff.Diff m) = HD.UtxoDiff (fmap fromNEDiffHistory m)
+fromDiff (MapDiff.Internal.Diff m) = HD.UtxoDiff (fmap fromNEDiffHistory m)
 
-fromNEDiffHistory :: DS.NEDiffHistory v -> HD.UtxoEntryDiff v
-fromNEDiffHistory (MapDiff.NEDiffHistory neseq) = case neseq of
+fromNEDiffHistory :: MapDiff.Internal.NEDiffHistory v -> HD.UtxoEntryDiff v
+fromNEDiffHistory (MapDiff.Internal.NEDiffHistory neseq) = case neseq of
   Empty :|> x :||> y -> fromDiffEntry x <> fromDiffEntry y
   Empty :||> x ->  fromDiffEntry x
   _ ->       error "A DiffHistory is isomorphic to a UtxoEntryDiff under the \
@@ -1024,20 +1027,20 @@ fromSudElement :: Eq v => HD.SudElement k v -> DS.Element k v
 fromSudElement (HD.SudElement slot d) = DS.Element slot (fromUtxoDiff d)
 
 fromUtxoDiff :: Eq v => HD.UtxoDiff k v -> DS.Diff k v
-fromUtxoDiff (HD.UtxoDiff m) = MapDiff.Diff $ fmap fromUtxoEntryDiff m
+fromUtxoDiff (HD.UtxoDiff m) = MapDiff.Internal.Diff $ fmap fromUtxoEntryDiff m
 
-fromUtxoEntryDiff :: Eq v => HD.UtxoEntryDiff v -> DS.NEDiffHistory v
+fromUtxoEntryDiff :: Eq v => HD.UtxoEntryDiff v -> MapDiff.Internal.NEDiffHistory v
 fromUtxoEntryDiff (HD.UtxoEntryDiff x st) = case st of
-  HD.UedsIns       -> MapDiff.singletonInsert x
-  HD.UedsDel       -> MapDiff.singletonDelete x
+  HD.UedsIns       -> MapDiff.Internal.singletonInsert x
+  HD.UedsDel       -> MapDiff.Internal.singletonDelete x
   HD.UedsInsAndDel ->
-    MapDiff.unsafeFromDiffHistory (
-      MapDiff.toDiffHistory (MapDiff.singletonInsert x) <>
-      MapDiff.toDiffHistory (MapDiff.singletonDelete x)
+    MapDiff.Internal.unsafeFromDiffHistory (
+      MapDiff.Internal.toDiffHistory (MapDiff.Internal.singletonInsert x) <>
+      MapDiff.Internal.toDiffHistory (MapDiff.Internal.singletonDelete x)
     )
 
-fromValues :: DS.Values k v -> HD.UtxoValues k v
-fromValues (MapDiff.Values m) = HD.UtxoValues m
+fromValues :: Map k v -> HD.UtxoValues k v
+fromValues = HD.UtxoValues
 
-fromKeys :: DS.Keys k v1 -> HD.UtxoKeys k v2
-fromKeys (MapDiff.Keys m) = HD.UtxoKeys m
+fromKeys :: Set k -> HD.UtxoKeys k v
+fromKeys = HD.UtxoKeys

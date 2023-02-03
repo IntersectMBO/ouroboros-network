@@ -163,8 +163,9 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/anti-diffs
-  tag: 89f43e7c17edd81c2a5ddc23f93d69caba88a638
-  --sha256: 1jrghzy2lnhhjm2cjwfvb7ifnrqvcsw3sybn9i6l1v4lag42qaih
+  tag: e397fa0a1bed92b0ca19ecd79aa8659535c75177
+  --sha256: 06b6f2wyk4h7l5my8vnbr32c7rsiplp6v6xjc01bjb2klj4kmi4v
   subdir:
-    anti-diff
-    semigroupoid
+    fingertree-rm
+    diff-containers
+    simple-semigroupoids

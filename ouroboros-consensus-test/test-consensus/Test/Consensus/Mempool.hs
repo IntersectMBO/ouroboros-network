@@ -47,7 +47,6 @@ import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Storage.ChainDB (PointNotFound (..))
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM)
 import           Ouroboros.Consensus.Util.Condense (condense)
@@ -647,8 +646,8 @@ withTestMempool setup@TestSetup {..} prop =
       -- Set up the LedgerInterface
       varCurrentLedgerState <- uncheckedNewTVarM testLedgerState
       let f :: Ord k => ValuesMK k v -> KeysMK k v -> ValuesMK k v
-          f (ApplyValuesMK (DS.Values v)) (ApplyKeysMK (DS.Keys k)) =
-            ApplyValuesMK (DS.Values $ Map.restrictKeys v k)
+          f (ApplyValuesMK v) (ApplyKeysMK k) =
+            ApplyValuesMK (Map.restrictKeys v k)
       let ledgerInterface = LedgerInterface
             { getCurrentLedgerState = forgetLedgerTables <$> readTVar varCurrentLedgerState
             , getLedgerTablesAtFor = \pt txs -> do

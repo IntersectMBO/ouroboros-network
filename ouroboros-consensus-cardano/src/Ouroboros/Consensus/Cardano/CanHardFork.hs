@@ -884,9 +884,8 @@ translateLedgerStateShelleyToAllegraWrapper =
                   -- differences, we will have to revisit this.
                   avvmsAsDeletions = ShelleyLedgerTables
                                    . ApplyDiffMK
-                                   . DS.Diff
-                                   . Map.map (  DS.singletonDelete
-                                              . unTxOutWrapper
+                                   . DS.fromMapDeletes
+                                   . Map.map (  unTxOutWrapper
                                               . SL.translateEra' ()
                                               . TxOutWrapper
                                              )
@@ -900,7 +899,6 @@ translateLedgerStateShelleyToAllegraWrapper =
                               . withLedgerTables ls
                               . ShelleyLedgerTables
                               . ApplyValuesMK
-                              . DS.Values
                               $ avvms
 
                   resultingState = unFlip . unComp

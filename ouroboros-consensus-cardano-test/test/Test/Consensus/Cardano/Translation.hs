@@ -14,7 +14,7 @@ module Test.Consensus.Cardano.Translation (tests) where
 
 import           Data.Int (Int64)
 import qualified Data.ListMap as ListMap
-import           Data.Map.Diff.Strict (Diff (..))
+import           Data.Map.Diff.Strict (Diff)
 import qualified Data.Map.Diff.Strict as Diff
 import qualified Data.Map.Strict as Map
 import           Test.QuickCheck
@@ -214,9 +214,9 @@ byronUtxosAreInsertsInShelleyUtxoDiff srcLedgerState destLedgerState =
       let
         Byron.UTxO utxo = Byron.cvsUtxo $ byronLedgerState ledgerState
         keyFn = translateTxInByronToShelley . Byron.fromCompactTxIn
-        valFn = Diff.singletonInsert . translateCompactTxOutByronToShelley
+        valFn = translateCompactTxOutByronToShelley
       in
-        Diff $ dimap keyFn valFn utxo
+        Diff.fromMapInserts $ dimap keyFn valFn utxo
 
     translateTxInByronToShelley :: Byron.TxIn -> TxIn Crypto
     translateTxInByronToShelley byronTxIn =
@@ -238,8 +238,8 @@ shelleyAvvmAddressesAreDeletesInUtxoDiff srcLedgerState destLedgerState =
       -> Diff (TxIn Crypto) (Core.TxOut (AllegraEra Crypto))
     toNextUtxoDiff = avvmAddressesToUtxoDiff . stashedAVVMAddresses . shelleyLedgerState
     avvmAddressesToUtxoDiff (UTxO m) =
-      let func txOut = Diff.singletonDelete (Core.translateEra' () txOut)
-      in Diff $ dimap id func m
+      let func = Core.translateEra' ()
+      in Diff.fromMapDeletes $ dimap id func m
 
 utxoTablesAreEmpty
   :: LedgerState (ShelleyBlock srcProto srcEra) EmptyMK

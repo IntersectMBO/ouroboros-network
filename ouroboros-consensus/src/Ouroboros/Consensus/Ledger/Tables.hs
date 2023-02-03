@@ -1,15 +1,14 @@
-{-# LANGUAGE ConstraintKinds    #-}
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE DefaultSignatures  #-}
-{-# LANGUAGE DerivingVia        #-}
-{-# LANGUAGE FlexibleContexts   #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE LambdaCase         #-}
-{-# LANGUAGE PolyKinds          #-}
-{-# LANGUAGE Rank2Types         #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies       #-}
+{-# LANGUAGE ConstraintKinds   #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DerivingVia       #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE PolyKinds         #-}
+{-# LANGUAGE Rank2Types        #-}
+{-# LANGUAGE TypeFamilies      #-}
 
 -- | The Ledger Tables represent the portion of the data on disk that has been
 -- pulled from disk and attached to the in-memory Ledger State or that will
@@ -112,8 +111,10 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Control.Exception as Exn
 import           Data.Kind (Type)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Monoid (Sum (..))
+import           Data.Set (Set)
 import           NoThunks.Class (NoThunks (..))
 import qualified NoThunks.Class as NoThunks
 
@@ -374,13 +375,13 @@ type ApplyMapKind mk = mk
 data ApplyMapKind' :: MapKind' -> Type -> Type -> Type where
   ApplyDiffMK     :: !(Diff    k v)                -> ApplyMapKind' DiffMK'       k v
   ApplyEmptyMK    ::                                  ApplyMapKind' EmptyMK'      k v
-  ApplyKeysMK     :: !(Keys    k v)                -> ApplyMapKind' KeysMK'       k v
+  ApplyKeysMK     :: !(Set     k  )                -> ApplyMapKind' KeysMK'       k v
   ApplySeqDiffMK  :: !(DiffSeq k v)                -> ApplyMapKind' SeqDiffMK'    k v
-  ApplyTrackingMK :: !(Values  k v) -> !(Diff k v) -> ApplyMapKind' TrackingMK'   k v
-  ApplyValuesMK   :: !(Values  k v)                -> ApplyMapKind' ValuesMK'     k v
+  ApplyTrackingMK :: !(Map     k v) -> !(Diff k v) -> ApplyMapKind' TrackingMK'   k v
+  ApplyValuesMK   :: !(Map     k v)                -> ApplyMapKind' ValuesMK'     k v
 
-  ApplyQueryAllMK  ::                ApplyMapKind' QueryMK' k v
-  ApplyQuerySomeMK :: !(Keys k v) -> ApplyMapKind' QueryMK' k v
+  ApplyQueryAllMK  ::             ApplyMapKind' QueryMK' k v
+  ApplyQuerySomeMK :: !(Set k) -> ApplyMapKind' QueryMK' k v
 
 -- | A general interface to mapkinds.
 --
@@ -405,7 +406,7 @@ instance IsMapKind EmptyMK where
 
 instance IsMapKind KeysMK where
   emptyMK = ApplyKeysMK mempty
-  mapMK f (ApplyKeysMK ks) = ApplyKeysMK $ fmap f ks
+  mapMK _ (ApplyKeysMK ks) = ApplyKeysMK ks
 
 instance IsMapKind ValuesMK where
   emptyMK = ApplyValuesMK mempty
@@ -424,8 +425,8 @@ instance IsMapKind SeqDiffMK where
 
 instance IsMapKind (ApplyMapKind' QueryMK') where
   emptyMK = ApplyQuerySomeMK mempty
-  mapMK f qmk = case qmk of
-    ApplyQuerySomeMK ks -> ApplyQuerySomeMK $ fmap f ks
+  mapMK _ qmk = case qmk of
+    ApplyQuerySomeMK ks -> ApplyQuerySomeMK ks
     ApplyQueryAllMK     -> ApplyQueryAllMK
 
 instance Ord k => Semigroup (ApplyMapKind' KeysMK' k v) where
@@ -498,7 +499,7 @@ valuesMKEncoder tables =
     <> foldLedgerTables2 go codecLedgerTables tables
   where
     go :: CodecMK k v -> ApplyMapKind ValuesMK k v -> CBOR.Encoding
-    go (CodecMK encK encV _decK _decV) (ApplyValuesMK (Values m)) =
+    go (CodecMK encK encV _decK _decV) (ApplyValuesMK m) =
          CBOR.encodeMapLen (fromIntegral $ Map.size m)
       <> Map.foldMapWithKey (\k v -> encK k <> encV v) m
 
@@ -527,7 +528,7 @@ valuesMKDecoder = do
      -> CodecMK k v
      -> CBOR.Decoder s (ApplyMapKind ValuesMK k v)
   go len (CodecMK _encK _encV decK decV) =
-        ApplyValuesMK . Values . Map.fromList
+        ApplyValuesMK . Map.fromList
     <$> sequence (replicate len ((,) <$> decK <*> decV))
 
 {-------------------------------------------------------------------------------

@@ -75,8 +75,8 @@ test1 =
 
   step "read1"
   TLedgerTables
-    { lgrTbl1 = ApplyValuesMK (DS.Values t1_1)
-    , lgrTbl2 = ApplyValuesMK (DS.Values t2_1)
+    { lgrTbl1 = ApplyValuesMK t1_1
+    , lgrTbl2 = ApplyValuesMK t2_1
     } <- HD.bsvhRead vh1 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 True) t1_1
   Tasty.assertEqual "" (Map.singleton "1" 1) t2_1
@@ -84,8 +84,8 @@ test1 =
 
   step "read2"
   TLedgerTables
-    { lgrTbl1 = ApplyValuesMK (DS.Values t1_2)
-    , lgrTbl2 = ApplyValuesMK (DS.Values t2_2)
+    { lgrTbl1 = ApplyValuesMK t1_2
+    , lgrTbl2 = ApplyValuesMK t2_2
     } <- HD.bsvhRead vh2 simpleKeys
   Tasty.assertEqual "" (Map.singleton 1 False) t1_2
   Tasty.assertEqual "" (Map.singleton "1" 2) t2_2
@@ -248,6 +248,6 @@ simpleWrite2 = TLedgerTables
 
 simpleKeys :: LedgerTables T KeysMK
 simpleKeys = TLedgerTables
-  { lgrTbl1 = ApplyKeysMK $ DS.Keys $ Set.singleton 1
-  , lgrTbl2 = ApplyKeysMK $ DS.Keys $ Set.singleton "1"
+  { lgrTbl1 = ApplyKeysMK $ Set.singleton 1
+  , lgrTbl2 = ApplyKeysMK $ Set.singleton "1"
   }

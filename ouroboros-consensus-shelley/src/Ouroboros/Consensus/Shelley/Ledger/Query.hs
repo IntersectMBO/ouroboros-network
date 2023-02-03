@@ -60,7 +60,6 @@ import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.Tables
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 
 import           Cardano.Ledger.Compactible (Compactible (fromCompact))
@@ -368,7 +367,7 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
 
   prepareBlockQuery = \case
       GetCBOR q        -> prepareBlockQuery q
-      GetUTxOByTxIn ks -> ShelleyLedgerTables $ ApplyKeysMK $ DS.Keys ks
+      GetUTxOByTxIn ks -> ShelleyLedgerTables $ ApplyKeysMK ks
 
   answerWholeBlockQuery = \case
       GetCBOR qry            -> case answerWholeBlockQuery qry of

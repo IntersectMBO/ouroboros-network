@@ -107,7 +107,6 @@ import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 import           Ouroboros.Consensus.Mock.Ledger.UTxO (Tx (..))
 
@@ -393,7 +392,7 @@ instance MockProtocolSpecific c ext
 
   getBlockKeySets SimpleBlock{simpleBody = SimpleBody txs} =
     foldl' (zipLedgerTables (<>)) polyEmptyLedgerTables
-     [ SimpleLedgerTables $ ApplyKeysMK $ DS.Keys ins | Tx _ ins _ <- txs ]
+     [ SimpleLedgerTables $ ApplyKeysMK $ ins | Tx _ ins _ <- txs ]
 
 data instance LedgerState (SimpleBlock c ext) mk = SimpleLedgerState {
       simpleLedgerState  :: MockState (SimpleBlock c ext)
@@ -506,14 +505,14 @@ instance (SimpleCrypto c, Typeable ext) => StowableLedgerTables (LedgerState (Si
     where
       SimpleLedgerState {
           simpleLedgerState
-        , simpleLedgerTables = SimpleLedgerTables (ApplyValuesMK (DS.Values m))
+        , simpleLedgerTables = SimpleLedgerTables (ApplyValuesMK m)
         } = st
 
   unstowLedgerTables st =
     SimpleLedgerState {
         simpleLedgerState = simpleLedgerState { mockUtxo = mempty }
       , simpleLedgerTables =
-          SimpleLedgerTables (ApplyValuesMK (DS.Values (mockUtxo simpleLedgerState)))
+          SimpleLedgerTables (ApplyValuesMK (mockUtxo simpleLedgerState))
       }
     where
       SimpleLedgerState {
@@ -603,7 +602,7 @@ instance MockProtocolSpecific c ext
 
   getTransactionKeySets tx =
     let Tx _ ins _ = simpleGenTx tx
-    in SimpleLedgerTables $ ApplyKeysMK $ DS.Keys ins
+    in SimpleLedgerTables $ ApplyKeysMK ins
 
 newtype instance TxId (GenTx (SimpleBlock c ext)) = SimpleGenTxId {
       unSimpleGenTxId :: Mock.TxId

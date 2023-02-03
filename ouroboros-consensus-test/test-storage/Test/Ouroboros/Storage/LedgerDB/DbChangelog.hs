@@ -404,7 +404,7 @@ genOperations slotNo nOps = gosOps <$> execStateT (replicateM_ nOps genOperation
       nEntries <- lift $ chooseInt (1, 10)
       entries <- replicateM nEntries genUtxoDiffEntry
       modify' applyPending
-      pure $ DS.fromListEntries entries
+      pure $ DS.fromList entries
 
     genUtxoDiffEntry :: StateT GenOperationsState Gen (Key, DiffEntry Int)
     genUtxoDiffEntry = do

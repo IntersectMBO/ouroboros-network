@@ -41,7 +41,6 @@ import           Cardano.Ledger.Era (toTxSeq)
 import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL
 import           Data.Coerce (coerce)
-import           Data.Map.Diff.Strict
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import qualified Ouroboros.Consensus.Protocol.Praos.Header as Praos
@@ -197,7 +196,7 @@ instance CanMock proto era => Arbitrary (LedgerState (ShelleyBlock proto era) Va
     <$> arbitrary
     <*> arbitrary
     <*> arbitrary
-    <*> (ShelleyLedgerTables . ApplyValuesMK . Values <$> arbitrary)
+    <*> (ShelleyLedgerTables . ApplyValuesMK <$> arbitrary)
 
 instance CanMock proto era => Arbitrary (AnnTip (ShelleyBlock proto era)) where
   arbitrary = AnnTip

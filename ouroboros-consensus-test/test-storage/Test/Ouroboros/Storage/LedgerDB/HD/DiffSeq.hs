@@ -7,8 +7,8 @@ import           Data.Proxy
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Data.Semigroupoid.Auto
-import           Data.Semigroupoid.Laws
+import           Data.Semigroupoid.Simple.Auto
+import           Data.Semigroupoid.Simple.Laws
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.DiffSeq.Arbitrary ()

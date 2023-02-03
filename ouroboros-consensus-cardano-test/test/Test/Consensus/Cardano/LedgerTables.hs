@@ -6,7 +6,6 @@
 
 module Test.Consensus.Cardano.LedgerTables (tests) where
 
-import           Data.Map.Diff.Strict (Values (..))
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
 
@@ -85,6 +84,6 @@ sameEra ::
      Telescope (K Past) (Current (Flip LedgerState EmptyMK)) (CardanoEras Crypto)
   -> ApplyMapKind ValuesMK (SL.TxIn Crypto) (ShelleyTxOut (ShelleyBasedEras Crypto))
   -> Bool
-sameEra (TZ{})      (ApplyValuesMK (Values m))      = Map.null m
-sameEra (TS _ tele) (ApplyValuesMK (Values values)) =
+sameEra (TZ{})      (ApplyValuesMK m)      = Map.null m
+sameEra (TS _ tele) (ApplyValuesMK values) =
     all (nsToIndex (tip tele) ==) $ map (nsToIndex . unShelleyTxOut . snd) (Map.toList values)

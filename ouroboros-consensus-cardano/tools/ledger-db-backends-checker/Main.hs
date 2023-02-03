@@ -29,7 +29,6 @@ import           Ouroboros.Consensus.Ledger.Tables
 import qualified Ouroboros.Consensus.Storage.FS.API as FS
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
 import qualified Ouroboros.Consensus.Storage.FS.IO as FS
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB as Consensus.LMDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.LMDB.Bridge as Consensus.LMDB.Bridge
 
@@ -90,7 +89,7 @@ getLMDB dbFilePath = do
   where
     f :: Ord k => Consensus.LMDB.LMDBMK k v -> CodecMK k v -> LMDB.Transaction mode (ValuesMK k v)
     f (Consensus.LMDB.LMDBMK _ db) codecMK =
-      ApplyValuesMK . DS.Values <$>
+      ApplyValuesMK <$>
         Consensus.LMDB.Bridge.runCursorAsTransaction'
           (LMDB.Cursor.forEachForward
             (\acc k v -> Map.insert k v acc)

@@ -59,7 +59,6 @@ import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.HFEras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 import           Test.Util.Orphans.Arbitrary ()
 import qualified Test.Util.Serialisation.Golden as Golden
@@ -160,7 +159,6 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
                        (genesisHeaderState chainDepState)
     ledgerTables = ShelleyLedgerTables
                  $ ApplyValuesMK
-                 $ DS.Values
                  $ Map.fromList
                  $ zip exampleTxIns exampleTxOuts
       where
@@ -277,7 +275,6 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
                        (genesisHeaderState chainDepState)
     ledgerTables = ShelleyLedgerTables
                  $ ApplyValuesMK
-                 $ DS.Values
                  $ Map.fromList
                  $ zip exampleTxIns exampleTxOuts
       where

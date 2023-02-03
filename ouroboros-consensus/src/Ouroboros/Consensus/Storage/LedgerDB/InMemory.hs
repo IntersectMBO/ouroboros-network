@@ -75,7 +75,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory (
   , ledgerDbPush'
   , ledgerDbPushMany'
   , ledgerDbSwitch'
-  -- ** Push blocks
+    -- ** Push blocks
   , pushLedgerState
   ) where
 
@@ -84,6 +84,7 @@ import qualified Codec.Serialise.Decoding as Dec
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except hiding (ap)
 import           Control.Monad.Reader hiding (ap)
+import           Data.Either
 import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
@@ -401,7 +402,8 @@ forwardTableKeySets' seqNo chdiffs = \(UnforwardedReadSets seqNo' values keys) -
       -> ApplyMapKind SeqDiffMK k v
       -> ApplyMapKind ValuesMK  k v
     forward (ApplyValuesMK values) (ApplyKeysMK keys) (ApplySeqDiffMK diffs) =
-      ApplyValuesMK $ applyDiffForKeys values keys (cumulativeDiff diffs)
+      ApplyValuesMK $ fromRight (error "applyDiffForKeys failed") $
+        applyDiffForKeys values keys (cumulativeDiff diffs)
 
 forwardTableKeySets ::
      TableStuff l

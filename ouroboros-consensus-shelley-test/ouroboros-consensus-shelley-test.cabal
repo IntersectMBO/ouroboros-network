@@ -63,7 +63,8 @@ library
                      , ouroboros-consensus-protocol:ouroboros-consensus-protocol-test
                      , ouroboros-consensus-test
                      , ouroboros-consensus-shelley
-                     , anti-diff
+                     , diff-containers
+                     , fingertree-rm
 
                      , microlens
 

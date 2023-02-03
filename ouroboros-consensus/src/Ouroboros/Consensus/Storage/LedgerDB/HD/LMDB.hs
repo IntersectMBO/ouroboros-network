@@ -281,9 +281,9 @@ rangeRead ::
   -> (Maybe :..: KeysMK) k v
   -> LMDB.Transaction mode (ValuesMK k v)
 rangeRead count dbMK codecMK ksMK =
-    ApplyValuesMK . DS.Values <$> case unComp2 ksMK of
+    ApplyValuesMK <$> case unComp2 ksMK of
       Nothing -> runCursorHelper Nothing
-      Just (ApplyKeysMK (DS.Keys ks)) -> case Set.lookupMax ks of
+      Just (ApplyKeysMK ks) -> case Set.lookupMax ks of
         Nothing -> pure mempty
         Just lastExcludedKey ->
           runCursorHelper $ Just (lastExcludedKey, LMDB.Cursor.Exclusive)
@@ -304,7 +304,7 @@ initLMDBTable ::
   -> CodecMK  k v
   -> ValuesMK k v
   -> LMDB.Transaction LMDB.ReadWrite (EmptyMK k v)
-initLMDBTable (LMDBMK tblName db) codecMK (ApplyValuesMK (DS.Values utxoVals)) =
+initLMDBTable (LMDBMK tblName db) codecMK (ApplyValuesMK utxoVals) =
     ApplyEmptyMK <$ lmdbInitTable
   where
     lmdbInitTable  = do
@@ -320,10 +320,10 @@ readLMDBTable ::
   -> CodecMK k v
   -> KeysMK  k v
   -> LMDB.Transaction mode (ValuesMK k v)
-readLMDBTable (LMDBMK _ db) codecMK (ApplyKeysMK (DS.Keys keys)) =
+readLMDBTable (LMDBMK _ db) codecMK (ApplyKeysMK keys) =
     ApplyValuesMK <$> lmdbReadTable
   where
-    lmdbReadTable = DS.Values <$> foldlM' go Map.empty (Set.toList keys)
+    lmdbReadTable = foldlM' go Map.empty (Set.toList keys)
       where
         go m k = Bridge.get codecMK db k <&> \case
           Nothing -> m
@@ -337,10 +337,10 @@ writeLMDBTable ::
 writeLMDBTable (LMDBMK _ db) codecMK (ApplyDiffMK d) =
     ApplyEmptyMK <$ lmdbWriteTable
   where
-    lmdbWriteTable = void $ DS.traverseLastDiffEntries go d
+    lmdbWriteTable = void $ DS.traverseDiffEntryWithKey_ go d
       where
         go k de = case de of
-          DS.Delete _v           -> void $ Bridge.delete codecMK db k
+          DS.Delete _            -> void $ Bridge.delete codecMK db k
           DS.Insert v            -> Bridge.put codecMK db k v
           DS.UnsafeAntiDelete _v -> error "Found anti-delete."
           DS.UnsafeAntiInsert _v -> error "Found anti-insert."

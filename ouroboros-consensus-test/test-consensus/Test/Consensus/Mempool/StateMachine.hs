@@ -56,7 +56,6 @@ import           Ouroboros.Consensus.Mempool.Impl.Types (ForgeLedgerState (..),
 import           Ouroboros.Consensus.Mempool.TxSeq
 import           Ouroboros.Consensus.Storage.ChainDB.API hiding
                      (getLedgerTablesAtFor)
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike hiding (bracket)
 
@@ -551,8 +550,8 @@ newLedgerInterface initialLedger = do
     }
  where
    f :: Ord k => KeysMK k v -> ValuesMK k v -> ValuesMK k v
-   f (ApplyKeysMK (DS.Keys s)) (ApplyValuesMK (DS.Values v)) =
-      ApplyValuesMK (DS.Values (Map.restrictKeys v s))
+   f (ApplyKeysMK s) (ApplyValuesMK v) =
+      ApplyValuesMK (Map.restrictKeys v s)
 
 -- | Make a SUT
 mkSUT ::
@@ -954,7 +953,7 @@ instance ToExpr (LedgerTables (LedgerState TestBlock) ValuesMK) where
   toExpr = genericToExpr
 
 instance ToExpr (ValuesMK TxIn TxOut) where
-  toExpr (ApplyValuesMK (DS.Values m)) = App "Values" [ toExpr m ]
+  toExpr (ApplyValuesMK m) = App "Values" [ toExpr m ]
 
 class UnTick blk where
   unTick :: forall mk. TickedLedgerState blk mk ->  LedgerState blk mk

@@ -31,6 +31,8 @@ module Ouroboros.Consensus.Ledger.Tables.Utils (
   , rawPrependTrackingDiffs
   ) where
 
+import qualified Data.Map.Diff.Strict.Internal as Diff.Internal
+
 import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.Ledger.Tables
@@ -107,7 +109,7 @@ rawApplyDiffs ::
   => ValuesMK k v -- ^ Values to which differences are applied
   -> DiffMK   k v -- ^ Differences to apply
   -> ValuesMK k v
-rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK (applyDiff vals diffs)
+rawApplyDiffs (ApplyValuesMK vals) (ApplyDiffMK diffs) = ApplyValuesMK $ Diff.Internal.unsafeApplyDiff vals diffs
 
 applyLedgerTablesDiffs       ::       TableStuff l => l ValuesMK ->         l DiffMK ->         l ValuesMK
 applyLedgerTablesDiffsTicked :: TickedTableStuff l => l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
@@ -135,7 +137,7 @@ rawAttachAndApplyDiffs ::
   => DiffMK     k v
   -> ValuesMK   k v
   -> TrackingMK k v
-rawAttachAndApplyDiffs (ApplyDiffMK d) (ApplyValuesMK v) = ApplyTrackingMK (applyDiff v d) d
+rawAttachAndApplyDiffs (ApplyDiffMK d) (ApplyValuesMK v) = ApplyTrackingMK (Diff.Internal.unsafeApplyDiff v d) d
 
 -- | Replace the tables in the first parameter with the tables of the second
 -- parameter after applying the differences in the first parameter to them
@@ -172,7 +174,7 @@ rawReapplyTracking ::
   => TrackingMK k v
   -> ValuesMK   k v
   -> TrackingMK k v
-rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) = ApplyTrackingMK (applyDiff v d) d
+rawReapplyTracking (ApplyTrackingMK _v d) (ApplyValuesMK v) = ApplyTrackingMK (Diff.Internal.unsafeApplyDiff v d) d
 
 -- | Replace the tables in the first parameter with the tables of the second
 -- parameter after applying the differences in the first parameter to them

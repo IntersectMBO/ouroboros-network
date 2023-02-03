@@ -158,6 +158,7 @@ import           Control.Monad.Except
 import           Control.Tracer
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Map.Diff.Strict.Internal as Diff.Internal
 import           Data.Maybe (isJust, mapMaybe)
 import           Data.Monoid (Sum (..))
 import           Data.Ord (Down (..))
@@ -556,14 +557,14 @@ lookup_ ::
   -> ApplyMapKind ValuesMK k v
   -> ApplyMapKind ValuesMK k v
 lookup_ (ApplyKeysMK ks) (ApplyValuesMK vs) =
-  ApplyValuesMK (DS.restrictValues vs ks)
+  ApplyValuesMK (Map.restrictKeys vs ks)
 
 rangeRead0_ ::
      Int
   -> ApplyMapKind ValuesMK k v
   -> ApplyMapKind ValuesMK k v
-rangeRead0_ n (ApplyValuesMK (DS.Values vs)) =
-  ApplyValuesMK $ DS.Values $ Map.take n vs
+rangeRead0_ n (ApplyValuesMK vs) =
+  ApplyValuesMK $ Map.take n vs
 
 rangeRead_ ::
      Ord k
@@ -571,12 +572,12 @@ rangeRead_ ::
   -> ApplyMapKind KeysMK   k v
   -> ApplyMapKind ValuesMK k v
   -> ApplyMapKind ValuesMK k v
-rangeRead_ n prev (ApplyValuesMK (DS.Values vs)) =
+rangeRead_ n prev (ApplyValuesMK vs) =
     case Set.lookupMax ks of
-      Nothing -> ApplyValuesMK $ DS.Values Map.empty
-      Just  k -> ApplyValuesMK $ DS.Values $ Map.take n $ snd $ Map.split k vs
+      Nothing -> ApplyValuesMK Map.empty
+      Just  k -> ApplyValuesMK $ Map.take n $ snd $ Map.split k vs
   where
-    ApplyKeysMK (DS.Keys ks) = prev
+    ApplyKeysMK ks = prev
 
 applyDiff_ ::
      Ord k
@@ -584,7 +585,7 @@ applyDiff_ ::
   -> ApplyMapKind DiffMK   k v
   -> ApplyMapKind ValuesMK k v
 applyDiff_ (ApplyValuesMK values) (ApplyDiffMK diff) =
-  ApplyValuesMK (DS.applyDiff values diff)
+  ApplyValuesMK (Diff.Internal.unsafeApplyDiff values diff)
 
 newtype LedgerBackingStoreInitialiser m l = LedgerBackingStoreInitialiser
   (BackingStore.BackingStoreInitialiser m
@@ -671,17 +672,16 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
       => ApplyMapKind KeysMK k v
       -> ApplyMapKind DiffMK k v
       -> ApplyMapKind DiffMK k v
-    doDropLTE (ApplyKeysMK (DS.Keys ks)) (ApplyDiffMK (DS.Diff ds)) =
+    doDropLTE (ApplyKeysMK ks) (ApplyDiffMK d) =
         ApplyDiffMK
-      $ DS.Diff
       $ case Set.lookupMax ks of
-          Nothing -> ds
-          Just k  -> Map.filterWithKey (\dk _dv -> dk > k) ds
+          Nothing -> d
+          Just k  -> DS.filterOnlyKey (> k) d
 
     -- NOTE: this is counting the deletions wrt disk.
     numDeletesDiffMK :: ApplyMapKind DiffMK k v -> Int
     numDeletesDiffMK (ApplyDiffMK d) =
-      getSum $ DS.unsafeFoldMapDiffEntry (Sum . oneIfDel) d
+      getSum $ DS.foldMapDiffEntry (Sum . oneIfDel) d
       where
         oneIfDel x = case x of
           DS.Delete _           -> 1
@@ -731,10 +731,10 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
       -> ApplyMapKind ValuesMK k v
     doFixupReadResult
       nrequested
-      (ApplyDiffMK (DS.Diff ds))
-      (ApplyValuesMK (DS.Values vs)) =
+      (ApplyDiffMK d)
+      (ApplyValuesMK vs) =
         let includingAllKeys        =
-              DS.applyDiff (DS.Values vs) (DS.Diff ds)
+              Diff.Internal.unsafeApplyDiff vs d
             definitelyNoMoreToFetch = Map.size vs < nrequested
         in
         ApplyValuesMK
@@ -745,9 +745,9 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
               else error $ "Size of values " <> show (Map.size vs) <> ", nrequested " <> show nrequested
           Just ((k, _v), vs') ->
             if definitelyNoMoreToFetch then includingAllKeys else
-            DS.applyDiff
-              (DS.Values vs')
-              (DS.Diff $ Map.filterWithKey (\dk _dv -> dk < k) ds)
+            Diff.Internal.unsafeApplyDiff
+              vs'
+              (DS.filterOnlyKey (< k) d)
 
 readKeySets :: forall m l.
      IOLike m

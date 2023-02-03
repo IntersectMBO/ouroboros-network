@@ -47,6 +47,7 @@ import           Data.Foldable (toList)
 import           Data.Functor.Classes
 import qualified Data.List as L
 import           Data.List.NonEmpty (nonEmpty)
+import qualified Data.Map.Diff.Strict.Internal as MapDiff.Internal
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromJust, fromMaybe)
@@ -267,7 +268,7 @@ instance PayloadSemantics Tx where
           utxtokAfter  = testUtxtokTable $ utxtoktables stAfter
 
   getPayloadKeySets Tx{consumed} =
-    TokenToTValue $ ApplyKeysMK $ DS.Keys $ Set.singleton consumed
+    TokenToTValue $ ApplyKeysMK $ Set.singleton consumed
 
 deriving stock    instance (Eq        (PayloadDependentState Tx EmptyMK))
 deriving stock    instance (Eq        (PayloadDependentState Tx DiffMK))
@@ -287,14 +288,14 @@ onValues ::
 onValues f TokenToTValue {testUtxtokTable} = TokenToTValue $ updateMap testUtxtokTable
   where
     updateMap :: ApplyMapKind ValuesMK Token TValue -> ApplyMapKind ValuesMK Token TValue
-    updateMap (ApplyValuesMK (DS.Values utxovals)) =
-      ApplyValuesMK $ DS.Values $ f utxovals
+    updateMap (ApplyValuesMK utxovals) =
+      ApplyValuesMK $ f utxovals
 
 queryKeys ::
      (Map Token TValue -> a)
   -> LedgerTables (LedgerState TestBlock) ValuesMK
   -> a
-queryKeys f (TokenToTValue (ApplyValuesMK (DS.Values utxovals))) = f utxovals
+queryKeys f (TokenToTValue (ApplyValuesMK utxovals)) = f utxovals
 
 {-------------------------------------------------------------------------------
   Instances required for HD storage of ledger state tables
@@ -371,15 +372,16 @@ stowErr fname = error $ "Function " <> fname <> " should not be used in these te
 instance ToExpr (ApplyMapKind' mk' Token TValue) where
   toExpr ApplyEmptyMK                 = App "ApplyEmptyMK"     []
   toExpr (ApplyDiffMK diffs)          = App "ApplyDiffMK"      [genericToExpr diffs]
-  toExpr (ApplyKeysMK keys)           = App "ApplyKeysMK"      [genericToExpr keys]
+  toExpr (ApplyKeysMK keys)           = App "ApplyKeysMK"      [genericToExpr $ toList keys]
   toExpr (ApplySeqDiffMK (DS.UnsafeDiffSeq seqdiff))
                                       = App "ApplySeqDiffMK"   [genericToExpr $ toList seqdiff]
-  toExpr (ApplyTrackingMK vals diffs) = App "ApplyTrackingMK"  [ genericToExpr vals
+  toExpr (ApplyTrackingMK vals diffs) = App "ApplyTrackingMK"  [ genericToExpr $ toList vals
                                                                , genericToExpr diffs
                                                                ]
-  toExpr (ApplyValuesMK vals)         = App "ApplyValuesMK"    [genericToExpr vals]
+  toExpr (ApplyValuesMK vals)         = App "ApplyValuesMK"    [genericToExpr $ toList vals]
   toExpr ApplyQueryAllMK              = App "ApplyQueryAllMK"  []
-  toExpr (ApplyQuerySomeMK keys)      = App "ApplyQuerySomeMK" [genericToExpr keys]
+  toExpr (ApplyQuerySomeMK keys)      = App "ApplyQuerySomeMK" [genericToExpr $ toList keys]
+
 
 -- About this instance: we have that the use of
 --
@@ -399,8 +401,6 @@ instance ToExpr (ApplyMapKind' mk' Token TValue) where
 --
 deriving anyclass instance ToExpr v => ToExpr (DS.DiffEntry v)
 deriving anyclass instance (ToExpr k, ToExpr v) => ToExpr (DS.Diff k v)
-deriving anyclass instance (ToExpr k, ToExpr v) => ToExpr (DS.Values k v)
-deriving anyclass instance (ToExpr k, ToExpr v) => ToExpr (DS.Keys k v)
 deriving anyclass instance (ToExpr k, ToExpr v) => ToExpr (DS.RootMeasure k v)
 deriving anyclass instance (ToExpr k, ToExpr v) => ToExpr (DS.InternalMeasure k v)
 deriving anyclass instance (ToExpr k, ToExpr v) => ToExpr (DS.Element k v)
@@ -408,11 +408,13 @@ deriving anyclass instance ToExpr DS.Length
 deriving anyclass instance ToExpr DS.SlotNoUB
 deriving anyclass instance ToExpr DS.SlotNoLB
 
-instance ToExpr v => ToExpr (DS.DiffHistory v) where
-  toExpr h = App "DiffHistory" [genericToExpr . toList $ h]
+instance ToExpr v => ToExpr (MapDiff.Internal.DiffHistory v) where
+  toExpr (MapDiff.Internal.DiffHistory s) =
+    App "DiffHistory" [genericToExpr . toList $ s]
 
-instance ToExpr v => ToExpr (DS.NEDiffHistory v) where
-  toExpr h = App "NEDiffHistory" [genericToExpr . toList $ h]
+instance ToExpr v => ToExpr (MapDiff.Internal.NEDiffHistory v) where
+  toExpr (MapDiff.Internal.NEDiffHistory s) =
+    App "NEDiffHistory" [genericToExpr . toList $ s]
 
 instance ToExpr (ExtLedgerState TestBlock ValuesMK) where
   toExpr = genericToExpr
@@ -456,7 +458,6 @@ initialTestLedgerState :: PayloadDependentState Tx ValuesMK
 initialTestLedgerState = UTxTok {
     utxtoktables =   TokenToTValue
                    $ ApplyValuesMK
-                   $ DS.Values
                    $ Map.singleton initialToken (pointTValue initialToken)
   , utxhist      = Set.singleton initialToken
 
@@ -876,7 +877,7 @@ runMock cmd initMock =
           Nothing -> Tables $ Left $ PointNotFound pt
           Just (_, st) -> Tables $ Right $ zipLedgerTables f (projectLedgerTables st) keys
         where f :: Ord k => ValuesMK k v -> KeysMK k v -> ValuesMK k v
-              f (ApplyValuesMK (DS.Values vals)) (ApplyKeysMK (DS.Keys ks)) = ApplyValuesMK $ DS.Values $ vals `Map.restrictKeys` ks
+              f (ApplyValuesMK vals) (ApplyKeysMK ks) = ApplyValuesMK $ vals `Map.restrictKeys` ks
 
     push :: TestBlock -> StateT MockLedger (Except (ExtValidationError TestBlock)) ()
     push b = do
@@ -1354,7 +1355,6 @@ generator cd secParam (Model mock hs) =
                 keys <- ExtLedgerStateTables
                       . TokenToTValue
                       . ApplyKeysMK
-                      . DS.Keys
                     <$> QC.arbitrary
                 pure $ GetTablesAtFor pt keys
           in
@@ -1373,16 +1373,15 @@ generator cd secParam (Model mock hs) =
                      keys <- ExtLedgerStateTables
                           .  TokenToTValue
                           .  ApplyKeysMK
-                          .  DS.Keys
                          <$> QC.arbitrary
                      pure $ GetTablesAtFor (blockPoint blk) keys)
                , (1, randomGetTablesAtFor)
                ]
           where
             f :: Ord k => ValuesMK k v -> Gen (KeysMK k v)
-            f (ApplyValuesMK (DS.Values vals)) = do
+            f (ApplyValuesMK vals) = do
               requested <- QC.sublistOf (Set.toList $ Map.keysSet vals)
-              pure $ ApplyKeysMK $ DS.Keys $ Set.fromList requested
+              pure $ ApplyKeysMK $ Set.fromList requested
 
         mockCurrent :: Mock -> ExtLedgerState TestBlock ValuesMK
         mockCurrent Mock{..} =

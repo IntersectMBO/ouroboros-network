@@ -43,7 +43,6 @@ import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mock.Ledger hiding (TxId)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.Protocol.BFT
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
 import           Ouroboros.Consensus.Util (safeMaximumOn)
 
@@ -120,7 +119,7 @@ txIsValid ledgerState tx =
     isRight $ runExcept $ applyTxToLedger ledgerState tx
 
 genValidTx :: LedgerState TestBlock ValuesMK -> Gen (TestTx, LedgerState TestBlock ValuesMK)
-genValidTx ledgerState@(SimpleLedgerState MockState {} (SimpleLedgerTables (ApplyValuesMK (DS.Values utxo)))) = do
+genValidTx ledgerState@(SimpleLedgerState MockState {} (SimpleLedgerTables (ApplyValuesMK utxo))) = do
     -- Never let someone go broke, otherwise we risk concentrating all the
     -- wealth in one person. That would be problematic (for the society) but
     -- also because we wouldn't be able to generate any valid transactions
@@ -171,7 +170,7 @@ genInvalidTx ledgerState = do
 
   where
     SimpleLedgerState {
-      simpleLedgerTables = SimpleLedgerTables (ApplyValuesMK (DS.Values utxo))
+      simpleLedgerTables = SimpleLedgerTables (ApplyValuesMK utxo)
     } = ledgerState
 
 
