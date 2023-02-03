@@ -55,8 +55,8 @@ import           Data.Monoid (Sum (..))
 import           Data.Set (Set)
 import           GHC.Generics
 import           NoThunks.Class (NoThunks (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (DiffSeq,
-                     empty, mapDiffSeq)
+import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq (DiffSeq, empty,
+                     mapDiffSeq)
 import           Ouroboros.Consensus.Ticked
 
 {-------------------------------------------------------------------------------
