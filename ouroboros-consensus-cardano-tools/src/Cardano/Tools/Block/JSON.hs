@@ -45,8 +45,13 @@ import qualified Cardano.Ledger.Hashes as Ledger
 import qualified Cardano.Ledger.Keys as Ledger
 import Cardano.Ledger.Mary.Value (AssetName (AssetName), MaryValue (..), PolicyID (PolicyID))
 import qualified Cardano.Ledger.SafeHash as Ledger
+import Cardano.Ledger.Shelley.API (ShelleyTxOut (..))
 import qualified Cardano.Ledger.Shelley.API as Ledger
+import Cardano.Ledger.Shelley.BlockChain (txSeqTxns')
+import Cardano.Ledger.Shelley.Tx (WitnessSetHKD (WitnessSet))
+import Cardano.Ledger.ShelleyMA (MAAuxiliaryData, MATxBody, MaryOrAllegra (..), ShelleyMAEra)
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as Ledger.Mary
+import Cardano.Ledger.ShelleyMA.TxBody (MATxBody (..))
 import Data.Aeson (
     ToJSON (..),
     ToJSONKey,
@@ -91,6 +96,12 @@ instance ToJSON CBlock where
                 , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
                 ]
         block@(BlockAlonzo (ShelleyBlock (txSeqTxns . bbody -> txs) _)) ->
+            object
+                [ "transactions" .= toList txs
+                , "blockHash" .= getHeader block
+                , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
+                ]
+        block@(BlockAllegra (ShelleyBlock (txSeqTxns' . bbody -> txs) _)) ->
             object
                 [ "transactions" .= toList txs
                 , "blockHash" .= getHeader block
@@ -378,6 +389,50 @@ instance ToJSON AssetName where
 --
 -- ValidatedTx
 --
+
+instance ToJSON (Ledger.ShelleyTx (ShelleyMAEra 'Allegra StandardCrypto)) where
+    toJSON (Ledger.ShelleyTx txbody witnesses auxData) =
+        object $
+            mconcat
+                [ ["id" .= Block.txid txbody]
+                , ["body" .= txbody]
+                , ["witnesses" .= witnesses]
+                , onlyIf isSJust "auxiliaryData" auxData
+                ]
+
+instance ToJSON (MATxBody (ShelleyMAEra 'Allegra StandardCrypto)) where
+    toJSON (MATxBody inputs outputs certs wdrls txfee vldt _ adHash mint) =
+        object $
+            mconcat
+                [ onlyIf (const True) "inputs" inputs
+                , onlyIf (const True) "outputs" outputs
+                , onlyIf (not . null) "certificates" certs
+                , onlyIf (not . null . Ledger.unWdrl) "withdrawals" wdrls
+                , onlyIf (const True) "fees" txfee
+                , onlyIf (not . isOpenInterval) "validity" vldt
+                , -- TODO , onlyIf (not . null) "update" update
+                  onlyIf (/= mempty) "mint" mint
+                , onlyIf isSJust "auxiliaryDataHash" adHash
+                ]
+
+instance ToJSON (Ledger.ShelleyTxOut (ShelleyMAEra 'Allegra StandardCrypto)) where
+    toJSON (ShelleyTxOut ca val) =
+        object
+            [ "address" .= ca
+            , "value" .= val
+            ]
+
+instance Typeable era => ToJSON (MAAuxiliaryData (ShelleyMAEra era StandardCrypto)) where
+    toJSON = String . SE.decodeUtf8 . Base16.encode . serialize'
+
+instance ToJSON (Ledger.ShelleyWitnesses (ShelleyMAEra 'Allegra StandardCrypto)) where
+    toJSON (WitnessSet vkeys scripts boots) =
+        object $
+            mconcat
+                [ onlyIf (not . null) "keys" vkeys
+                , onlyIf (not . null) "bootstrap" boots
+                , onlyIf (not . null) "scripts" scripts
+                ]
 
 instance
     ( ToJSON (Ledger.Alonzo.TxWitness era)

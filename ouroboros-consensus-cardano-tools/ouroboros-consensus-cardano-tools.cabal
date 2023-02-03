@@ -76,6 +76,7 @@ library
                      , cardano-ledger-conway
                      , cardano-ledger-core
                      , cardano-ledger-shelley
+                     , cardano-ledger-shelley-ma
                      , cardano-protocol-tpraos
                      , cardano-prelude
                      , cardano-ledger-shelley-ma
