@@ -59,7 +59,6 @@ library
                        Test.Util.Orphans.Arbitrary
                        Test.Util.Orphans.DiffSeq.Arbitrary
                        Test.Util.Orphans.IOLike
-                       Test.Util.Orphans.Isomorphism
                        Test.Util.Orphans.NFData
                        Test.Util.Orphans.NoThunks
                        Test.Util.Orphans.SignableRepresentation
@@ -372,10 +371,12 @@ benchmark bench-storage
                        Bench.Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq
 
   build-depends:       base
+                     , anti-diff
                      , bytestring
                      , containers
                      , deepseq
                      , mtl
+                     , nonempty-containers
                      , QuickCheck
                      , QuickCheck-GenT
                      , cardano-strict-containers

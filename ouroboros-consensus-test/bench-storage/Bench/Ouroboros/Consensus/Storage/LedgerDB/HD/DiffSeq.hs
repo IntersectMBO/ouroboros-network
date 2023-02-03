@@ -104,12 +104,19 @@ import qualified Control.Exception as Exn
 import           Control.Monad (replicateM, replicateM_)
 import           Control.Monad.RWS (MonadReader (..), MonadState,
                      MonadTrans (lift), RWST (..), gets, modify)
+
+import           Data.Bifunctor (Bifunctor (second))
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as B
+import qualified Data.FingerTree.RootMeasured.Strict as RMFT
+import qualified Data.FingerTree.Strict as FT
 import           Data.Foldable (Foldable (foldl', toList))
 import           Data.Kind (Type)
+import qualified Data.Map.Diff.Strict as MapDiff
 import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (Proxy))
+import           Data.Sequence (Seq (..))
+import           Data.Sequence.NonEmpty (NESeq (..))
+
 import           GHC.Generics (Generic)
 
 import           QuickCheck.GenT (Arbitrary (arbitrary), Gen, MonadGen (..),
@@ -119,14 +126,12 @@ import           Test.Tasty.Bench (Benchmark, bcompare, bcompareWithin, bench,
 import           Test.Tasty.QuickCheck (Positive (getPositive), Property,
                      Small (getSmall), arbitraryBoundedIntegral, conjoin,
                      counterexample, forAll, generate, once, testProperty,
-                     (.&&.), (===))
+                     (===))
 
-import           Ouroboros.Consensus.Block (SlotNo (..))
+import           Ouroboros.Consensus.Block.Abstract (SlotNo (..))
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
 
-import           Test.Util.Orphans.Isomorphism (Isomorphism (..),
-                     isomorphismLaw)
 import           Test.Util.Orphans.NFData ()
 
 {-------------------------------------------------------------------------------
@@ -156,7 +161,11 @@ benchmarks = bgroup "DiffSeq" [
           \CmdGenResult {cmds, ds0} ->
               interpretAntidiff ds0 cmds
             ===
-              to interpretIntermediateSum ds0 cmds
+              fromSeqUtxoDiff (
+                  interpretIntermediateSum
+                    (fromDiffSeq ds0)
+                    (fmap fromDiffSeqCmd cmds)
+                )
     ]
   where
     mkBenchEnv ::
@@ -167,9 +176,9 @@ benchmarks = bgroup "DiffSeq" [
       CmdGenResult{cmds, ds0, finalModel} <- generate $ generator conf BenchMode
       pure $ BenchEnv {
           cmdsAntidiff        = cmds
-        , cmdsIntermediateSum = to cmds
+        , cmdsIntermediateSum = fmap fromDiffSeqCmd cmds
         , ds0Antidiff         = ds0
-        , ds0IntermediateSum  = to ds0
+        , ds0IntermediateSum  = fromDiffSeq ds0
         , model               = finalModel
         }
 
@@ -248,18 +257,6 @@ deriving stock instance ( Eq (ds k v)
                         , Eq (Values ds k v)
                         , Eq (Keys ds k v)
                         ) => Eq (Cmd ds k v)
-
-instance ( Ord k, Eq v
-         , Isomorphism (ds k v) (ds' k v)
-         , Isomorphism (Diff ds k v) (Diff ds' k v)
-         , Isomorphism (Values ds k v) (Values ds' k v)
-         , Isomorphism (Keys ds k v) (Keys ds' k v)
-         , Isomorphism (Pushes ds k v) (Pushes ds' k v)
-         ) => Isomorphism (Cmd ds k v) (Cmd ds' k v) where
-  to (Push sl d)     = Push sl (to d)
-  to (Flush n)       = Flush n
-  to (Switch n ps)   = Switch n (to ps)
-  to (Forward vs ks) = Forward (to vs) (to ks)
 
 {-------------------------------------------------------------------------------
   Interpreter
@@ -961,22 +958,22 @@ sanityCheck bEnv = conjoin [
     , modelMatchesInterpretation2
     , lengthsMatch1
     , lengthsMatch2
-    , isomorphismCheck1
-    , isomorphismCheck2
-    , isomorphismProperties1
-    , isomorphismProperties2
     ]
   where
     BenchEnv {cmdsAntidiff, cmdsIntermediateSum, ds0Antidiff, ds0IntermediateSum, model} = bEnv
 
     interpretationsMatch = counterexample "interpret matches" $
-      interpret ds0Antidiff cmdsAntidiff === to (interpret ds0IntermediateSum cmdsIntermediateSum)
+        interpret ds0Antidiff cmdsAntidiff
+      ===
+        fromSeqUtxoDiff (interpret ds0IntermediateSum cmdsIntermediateSum)
 
     modelMatchesInterpretation1 = counterexample "model matches interpretations 1" $
       diffs model === interpret ds0Antidiff cmdsAntidiff
 
     modelMatchesInterpretation2 = counterexample "model matches interpretations 2" $
-       diffs model === to (interpret ds0IntermediateSum cmdsIntermediateSum)
+        diffs model
+       ===
+        fromSeqUtxoDiff (interpret ds0IntermediateSum cmdsIntermediateSum)
 
     lengthsMatch1 = counterexample "Lengths of command/diff sequences match 1" $
       length cmdsAntidiff === length cmdsIntermediateSum
@@ -984,18 +981,63 @@ sanityCheck bEnv = conjoin [
     lengthsMatch2 = counterexample "Lengths of command/diff sequences match 2" $
       DS.length ds0Antidiff === HD.lengthSeqUtxoDiff ds0IntermediateSum
 
-    isomorphismCheck1 = counterexample "Isomorphism checks 1" $
-      cmdsAntidiff === to cmdsIntermediateSum .&&.
-      ds0Antidiff === to ds0IntermediateSum
+{-------------------------------------------------------------------------------
+  Conversion
+-------------------------------------------------------------------------------}
 
-    isomorphismCheck2 = counterexample "Isomorphism checks 2" $
-      to cmdsAntidiff === cmdsIntermediateSum .&&.
-      to ds0Antidiff === ds0IntermediateSum
+fromDiffSeqCmd :: Cmd DS.DiffSeq k v1 -> Cmd HD.SeqUtxoDiff k v1
+fromDiffSeqCmd cmd = case cmd of
+  Push sl d     -> Push sl (fromDiff d)
+  Flush n       -> Flush n
+  Switch n ps   -> Switch n (fmap (second fromDiff) ps)
+  Forward vs ks -> Forward (fromValues vs) (fromKeys ks)
 
-    isomorphismProperties1 = counterexample "Isomorphism properties 1" $
-      isomorphismLaw (Proxy @[Cmd HD.SeqUtxoDiff k v]) cmdsAntidiff .&&.
-      isomorphismLaw (Proxy @(HD.SeqUtxoDiff k v)) ds0Antidiff
+fromDiffSeq :: Ord k => DS.DiffSeq k v -> HD.SeqUtxoDiff k v
+fromDiffSeq (DS.UnsafeDiffSeq ft) = HD.SeqUtxoDiff . FT.fromList . map fromElement . toList $ ft
 
-    isomorphismProperties2 = counterexample "Isomorphism properties 2" $
-      isomorphismLaw (Proxy @[Cmd DS.DiffSeq k v]) cmdsIntermediateSum .&&.
-      isomorphismLaw (Proxy @(DS.DiffSeq k v)) ds0IntermediateSum
+fromElement :: DS.Element k v -> HD.SudElement k v
+fromElement (DS.Element slot d) = HD.SudElement slot (fromDiff d)
+
+fromDiff :: DS.Diff k v -> HD.UtxoDiff k v
+fromDiff (MapDiff.Diff m) = HD.UtxoDiff (fmap fromNEDiffHistory m)
+
+fromNEDiffHistory :: DS.NEDiffHistory v -> HD.UtxoEntryDiff v
+fromNEDiffHistory (MapDiff.NEDiffHistory neseq) = case neseq of
+  Empty :|> x :||> y -> fromDiffEntry x <> fromDiffEntry y
+  Empty :||> x ->  fromDiffEntry x
+  _ ->       error "A DiffHistory is isomorphic to a UtxoEntryDiff under the \
+                   \ assumption that diff histories contain exactly one      \
+                   \ insert, exactly one delete or exactly an insert AND a   \
+                   \ delete."
+
+fromDiffEntry :: DS.DiffEntry v -> HD.UtxoEntryDiff v
+fromDiffEntry de = case de of
+  MapDiff.Insert v            -> HD.UtxoEntryDiff v HD.UedsIns
+  MapDiff.Delete v            -> HD.UtxoEntryDiff v HD.UedsDel
+  MapDiff.UnsafeAntiInsert _v -> error "UnsafeAntiInsert found."
+  MapDiff.UnsafeAntiDelete _v -> error "UnsafeAntiDelete found."
+
+fromSeqUtxoDiff :: (Ord k, Eq v) => HD.SeqUtxoDiff k v -> DS.DiffSeq k v
+fromSeqUtxoDiff (HD.SeqUtxoDiff ft) = DS.UnsafeDiffSeq . RMFT.fromList . map fromSudElement . toList $ ft
+
+fromSudElement :: Eq v => HD.SudElement k v -> DS.Element k v
+fromSudElement (HD.SudElement slot d) = DS.Element slot (fromUtxoDiff d)
+
+fromUtxoDiff :: Eq v => HD.UtxoDiff k v -> DS.Diff k v
+fromUtxoDiff (HD.UtxoDiff m) = MapDiff.Diff $ fmap fromUtxoEntryDiff m
+
+fromUtxoEntryDiff :: Eq v => HD.UtxoEntryDiff v -> DS.NEDiffHistory v
+fromUtxoEntryDiff (HD.UtxoEntryDiff x st) = case st of
+  HD.UedsIns       -> MapDiff.singletonInsert x
+  HD.UedsDel       -> MapDiff.singletonDelete x
+  HD.UedsInsAndDel ->
+    MapDiff.unsafeFromDiffHistory (
+      MapDiff.toDiffHistory (MapDiff.singletonInsert x) <>
+      MapDiff.toDiffHistory (MapDiff.singletonDelete x)
+    )
+
+fromValues :: DS.Values k v -> HD.UtxoValues k v
+fromValues (MapDiff.Values m) = HD.UtxoValues m
+
+fromKeys :: DS.Keys k v1 -> HD.UtxoKeys k v2
+fromKeys (MapDiff.Keys m) = HD.UtxoKeys m
