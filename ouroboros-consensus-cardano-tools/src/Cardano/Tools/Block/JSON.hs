@@ -107,6 +107,12 @@ instance ToJSON CBlock where
                 , "blockHash" .= getHeader block
                 , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
                 ]
+        block@(BlockMary (ShelleyBlock (txSeqTxns' . bbody -> txs) _)) ->
+            object
+                [ "transactions" .= toList txs
+                , "blockHash" .= getHeader block
+                , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
+                ]
         block ->
             object
                 [ "blockHash" .= getHeader block
@@ -390,6 +396,8 @@ instance ToJSON AssetName where
 -- ValidatedTx
 --
 
+-- Allegra TX
+
 instance ToJSON (Ledger.ShelleyTx (ShelleyMAEra 'Allegra StandardCrypto)) where
     toJSON (Ledger.ShelleyTx txbody witnesses auxData) =
         object $
@@ -422,9 +430,6 @@ instance ToJSON (Ledger.ShelleyTxOut (ShelleyMAEra 'Allegra StandardCrypto)) whe
             , "value" .= val
             ]
 
-instance Typeable era => ToJSON (MAAuxiliaryData (ShelleyMAEra era StandardCrypto)) where
-    toJSON = String . SE.decodeUtf8 . Base16.encode . serialize'
-
 instance ToJSON (Ledger.ShelleyWitnesses (ShelleyMAEra 'Allegra StandardCrypto)) where
     toJSON (WitnessSet vkeys scripts boots) =
         object $
@@ -433,6 +438,52 @@ instance ToJSON (Ledger.ShelleyWitnesses (ShelleyMAEra 'Allegra StandardCrypto))
                 , onlyIf (not . null) "bootstrap" boots
                 , onlyIf (not . null) "scripts" scripts
                 ]
+
+-- Mary TX
+
+instance ToJSON (Ledger.ShelleyTx (ShelleyMAEra 'Mary StandardCrypto)) where
+    toJSON (Ledger.ShelleyTx txbody witnesses auxData) =
+        object $
+            mconcat
+                [ ["id" .= Block.txid txbody]
+                , ["body" .= txbody]
+                , ["witnesses" .= witnesses]
+                , onlyIf isSJust "auxiliaryData" auxData
+                ]
+
+instance ToJSON (MATxBody (ShelleyMAEra 'Mary StandardCrypto)) where
+    toJSON (MATxBody inputs outputs certs wdrls txfee vldt _ adHash mint) =
+        object $
+            mconcat
+                [ onlyIf (const True) "inputs" inputs
+                , onlyIf (const True) "outputs" outputs
+                , onlyIf (not . null) "certificates" certs
+                , onlyIf (not . null . Ledger.unWdrl) "withdrawals" wdrls
+                , onlyIf (const True) "fees" txfee
+                , onlyIf (not . isOpenInterval) "validity" vldt
+                , -- TODO , onlyIf (not . null) "update" update
+                  onlyIf (/= mempty) "mint" mint
+                , onlyIf isSJust "auxiliaryDataHash" adHash
+                ]
+
+instance ToJSON (Ledger.ShelleyTxOut (ShelleyMAEra 'Mary StandardCrypto)) where
+    toJSON (ShelleyTxOut ca val) =
+        object
+            [ "address" .= ca
+            , "value" .= val
+            ]
+
+instance ToJSON (Ledger.ShelleyWitnesses (ShelleyMAEra 'Mary StandardCrypto)) where
+    toJSON (WitnessSet vkeys scripts boots) =
+        object $
+            mconcat
+                [ onlyIf (not . null) "keys" vkeys
+                , onlyIf (not . null) "bootstrap" boots
+                , onlyIf (not . null) "scripts" scripts
+                ]
+
+instance Typeable era => ToJSON (MAAuxiliaryData (ShelleyMAEra era StandardCrypto)) where
+    toJSON = String . SE.decodeUtf8 . Base16.encode . serialize'
 
 instance
     ( ToJSON (Ledger.Alonzo.TxWitness era)
