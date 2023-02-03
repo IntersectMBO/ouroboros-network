@@ -351,6 +351,7 @@ library
                        -Wredundant-constraints
                        -Wmissing-export-lists
                        -Wunused-packages
+                       -Wno-unticked-promoted-constructors
 
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
