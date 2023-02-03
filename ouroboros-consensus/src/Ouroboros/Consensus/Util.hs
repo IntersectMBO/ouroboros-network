@@ -1,11 +1,14 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE ConstraintKinds          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE KindSignatures           #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeOperators            #-}
 
 -- | Miscellaneous utilities
 module Ouroboros.Consensus.Util (
@@ -53,6 +56,8 @@ module Ouroboros.Consensus.Util (
   , checkThat
     -- * Sets
   , allDisjoint
+    -- * Maps
+  , dimap
     -- * Composition
   , (......:)
   , (.....:)
@@ -60,16 +65,23 @@ module Ouroboros.Consensus.Util (
   , (...:)
   , (..:)
   , (.:)
+    -- * Type-level composition
+  , (:..:) (..)
     -- * Product
   , pairFst
   , pairSnd
     -- * Miscellaneous
   , eitherToMaybe
   , fib
+    -- * Static Either
+  , StaticEither (..)
+  , fromStaticLeft
+  , fromStaticRight
   ) where
 
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm, hashFromBytes,
                      hashFromBytesShort)
+import           Data.Bifunctor (Bifunctor (first, second))
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
@@ -80,6 +92,8 @@ import           Data.Functor.Product
 import           Data.Kind (Constraint, Type)
 import           Data.List (foldl', maximumBy)
 import           Data.List.NonEmpty (NonEmpty (..), (<|))
+import           Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -360,6 +374,15 @@ allDisjoint = go Set.empty
     go acc (xs:xss) = Set.disjoint acc xs && go (Set.union acc xs) xss
 
 {-------------------------------------------------------------------------------
+  Maps
+-------------------------------------------------------------------------------}
+
+-- | Map over keys and values
+dimap :: Ord k2 => (k1 -> k2) -> (v1 -> v2) -> Map k1 v1 -> Map k2 v2
+dimap keyFn valFn = Map.foldlWithKey update Map.empty
+  where update m k1 v1 =  Map.insert (keyFn k1) (valFn v1) m
+
+{-------------------------------------------------------------------------------
   Composition
 -------------------------------------------------------------------------------}
 
@@ -380,6 +403,19 @@ allDisjoint = go Set.empty
 
 (......:) :: (y -> z) -> (x0 -> x1 -> x2 -> x3 -> x4 -> x5 -> x6 -> y) -> (x0 -> x1 -> x2 -> x3 -> x4 -> x5 -> x6 -> z)
 (f ......: g) x0 x1 x2 x3 x4 x5 x6 = f (g x0 x1 x2 x3 x4 x5 x6)
+
+{-------------------------------------------------------------------------------
+  Type-level composition
+-------------------------------------------------------------------------------}
+
+-- | Compose two types where the second one expects two type variables
+--
+-- @@
+--   Comp2 (Just (Left "hi")) :: (Maybe :..: Either) String Int
+-- @@
+type (:..:) :: (y -> Type) -> (x0 -> x1 -> y) -> (x0 -> x1 -> Type)
+newtype (f :..: g) p r = Comp2 { unComp2 :: f (g p r) }
+
 {-------------------------------------------------------------------------------
   Product
 -------------------------------------------------------------------------------}
@@ -405,3 +441,24 @@ fib n = round $ phi ** fromIntegral n / sq5
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe (Left _)  = Nothing
 eitherToMaybe (Right x) = Just x
+
+{-------------------------------------------------------------------------------
+  Static Either
+-------------------------------------------------------------------------------}
+
+data StaticEither :: Bool -> Type -> Type -> Type where
+  StaticLeft  :: l -> StaticEither False l r
+  StaticRight :: r -> StaticEither True  l r
+
+instance Bifunctor (StaticEither b) where
+  first f (StaticLeft  l) = StaticLeft  (f l)
+  first _ (StaticRight r) = StaticRight    r
+
+  second _ (StaticLeft l)  = StaticLeft l
+  second f (StaticRight r) = StaticRight (f r)
+
+fromStaticLeft :: StaticEither 'False l r -> l
+fromStaticLeft (StaticLeft x) = x
+
+fromStaticRight :: StaticEither 'True l r -> r
+fromStaticRight (StaticRight x) = x

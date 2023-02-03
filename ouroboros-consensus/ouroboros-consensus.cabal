@@ -38,6 +38,7 @@ library
     Data.SOP.Strict
     Data.SOP.Tails
     Data.SOP.Telescope
+    Data.SOP.Tuples
     Ouroboros.Consensus.Block
     Ouroboros.Consensus.Block.Abstract
     Ouroboros.Consensus.Block.EBB
@@ -341,6 +342,7 @@ library
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts

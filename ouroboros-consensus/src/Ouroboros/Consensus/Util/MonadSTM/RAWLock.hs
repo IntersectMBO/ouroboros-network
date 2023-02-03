@@ -1,10 +1,11 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
--- | A Read-Append-Write (RAW) lock
+-- | A writer-biased Readers-Appender-Writer (RAW) lock
 --
 -- Intended for qualified import
 module Ouroboros.Consensus.Util.MonadSTM.RAWLock (
@@ -29,7 +30,7 @@ import           Control.Monad.Except
 import           Data.Functor (($>))
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, HasCallStack, callStack)
-import           NoThunks.Class (AllowThunk (..))
+import           NoThunks.Class (AllowThunk (..), OnlyCheckWhnfNamed (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Prelude hiding (read)
 
@@ -143,6 +144,7 @@ import           Prelude hiding (read)
 -- * All public functions are exception-safe.
 --
 newtype RAWLock m st = RAWLock (StrictTVar m (RAWState st))
+  deriving NoThunks via OnlyCheckWhnfNamed "RAWLock" (RAWLock m st)
 
 -- | Create a new 'RAWLock'
 new :: (IOLike m, NoThunks st) => st -> m (RAWLock m st)
