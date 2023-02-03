@@ -52,16 +52,16 @@ import           System.Random
 
 import           Ouroboros.Network.BlockFetch (FetchMode (..))
 import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers as ActivePeers
 import qualified Ouroboros.Network.PeerSelection.Governor.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.Monitor as Monitor
 import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.PeerMetric
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 
 {- $overview
 

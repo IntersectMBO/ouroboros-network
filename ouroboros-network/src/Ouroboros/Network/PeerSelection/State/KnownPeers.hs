@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.PeerSelection.KnownPeers
+module Ouroboros.Network.PeerSelection.State.KnownPeers
   ( -- * Types
     KnownPeers
   , invariant

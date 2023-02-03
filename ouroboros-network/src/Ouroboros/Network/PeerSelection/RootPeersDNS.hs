@@ -62,14 +62,14 @@ import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
 import           Data.Bifunctor (second)
-import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
-                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSActions (..), DNSorIOError (..), LookupReqs (..),
                      Resource (..), constantResource, ioDNSActions,
                      withResource')
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency, WarmValency)
 
 -----------------------------------------------
 -- local root peer set provider based on DNS

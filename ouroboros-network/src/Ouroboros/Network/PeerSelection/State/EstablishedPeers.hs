@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module Ouroboros.Network.PeerSelection.EstablishedPeers
+module Ouroboros.Network.PeerSelection.State.EstablishedPeers
   ( EstablishedPeers
   , empty
   , toMap

@@ -4,7 +4,7 @@
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE RecordWildCards    #-}
 
-module Ouroboros.Network.PeerSelection.LocalRootPeers
+module Ouroboros.Network.PeerSelection.State.LocalRootPeers
   ( -- * Types
     LocalRootPeers (..)
   , HotValency (..)

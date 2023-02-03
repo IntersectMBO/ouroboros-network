@@ -20,12 +20,12 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 import           System.Random (randomR)
 
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import           Ouroboros.Network.PeerSelection.LocalRootPeers
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (WarmValency (..))
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
 
 ---------------------------------

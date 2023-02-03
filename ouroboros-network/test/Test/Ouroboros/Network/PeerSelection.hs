@@ -48,13 +48,13 @@ import           Control.Tracer (Tracer (..))
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
 
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..), peerSharing)
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.Testing.Data.Script
 import           Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal,
@@ -71,11 +71,11 @@ import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.IOSim
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
-import           Ouroboros.Network.PeerSelection.LocalRootPeers
-                     (HotValency (..), LocalRootPeers, WarmValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency (..), LocalRootPeers, WarmValency (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type
                      (PeerSharingResult (..))
 import           Test.QuickCheck

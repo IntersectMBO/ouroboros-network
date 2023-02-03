@@ -60,18 +60,17 @@ import           Control.Monad.Class.MonadTime.SI
 import           System.Random (StdGen)
 
 import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.PeerSelection.EstablishedPeers
-                     (EstablishedPeers)
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as Established
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers)
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer)
-import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
-                     LocalRootPeers, WarmValency)
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.State.EstablishedPeers
+                     (EstablishedPeers)
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.State.KnownPeers (KnownPeers)
+import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency, LocalRootPeers, WarmValency)
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types (PeerSource (..),
                      PeerStatus (PeerHot, PeerWarm))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
@@ -371,7 +370,7 @@ toPublicState :: Ord peeraddr
 toPublicState PeerSelectionState { knownPeers
                                  , establishedPeers
                                  } =
-  let availableNow = Established.availableForPeerShare establishedPeers
+  let availableNow = EstablishedPeers.availableForPeerShare establishedPeers
       availableNowWithPermission =
         Set.filter (`KnownPeers.canPeerShareRequest` knownPeers) availableNow
    in PublicPeerSelectionState {

@@ -108,8 +108,6 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      TracePeerSelection (..), emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
-import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
-                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.PeerStateActions
@@ -123,6 +121,8 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
                      newLocalAndPublicRootDNSSemaphore,
                      resolveDomainAccessPoint)
 import           Ouroboros.Network.PeerSelection.Simple
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency, WarmValency)
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.RethrowPolicy

@@ -122,11 +122,11 @@ import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
-import           Ouroboros.Network.PeerSelection.LocalRootPeers
-                     (HotValency (..), WarmValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency (..), WarmValency (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
                      (byteLimitsPeerSharing, timeLimitsPeerSharing)
 import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()

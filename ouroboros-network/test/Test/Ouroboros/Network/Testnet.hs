@@ -43,14 +43,14 @@ import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.InboundGovernor hiding
                      (TrUnexpectedlyFalseAssertion)
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerStateActions
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
@@ -73,11 +73,11 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState (..))
 import           Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
-import           Ouroboros.Network.PeerSelection.LocalRootPeers
-                     (HotValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency (..))
 import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
                      connectionManagerTraceMap, validTransitionMap,
                      verifyAbstractTransition, verifyAbstractTransitionOrder)

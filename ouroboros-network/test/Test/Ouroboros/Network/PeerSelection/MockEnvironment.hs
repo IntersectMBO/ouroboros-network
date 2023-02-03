@@ -55,7 +55,7 @@ import           Control.Tracer (Tracer (..), contramap, traceWith)
 import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
                      ScriptDelay (..), TimedScript, arbitraryPickScript,
