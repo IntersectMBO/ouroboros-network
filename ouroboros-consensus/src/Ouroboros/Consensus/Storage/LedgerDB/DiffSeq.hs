@@ -59,7 +59,7 @@
    operation to facilitate computing updated root measures.
 
 -}
-module Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (
+module Ouroboros.Consensus.Storage.LedgerDB.DiffSeq (
     -- * Sequences of diffs
     DiffSeq (..)
   , Element (..)

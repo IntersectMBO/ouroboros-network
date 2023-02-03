@@ -60,7 +60,7 @@ import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.Ticked
 
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq (DiffSeq,
+import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq (DiffSeq,
                      empty, mapDiffSeq)
 
 {-------------------------------------------------------------------------------
