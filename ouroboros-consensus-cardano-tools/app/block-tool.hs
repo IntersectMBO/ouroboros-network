@@ -75,7 +75,7 @@ parseBlockOptions =
             <$> strOption
                 ( long "db-directory"
                     <> metavar "DIR"
-                    <> help "Path to the directory where cardano DB lives "
+                    <> help "Path to a Cardano DB"
                 )
                 <*> strOption
                     ( long "config"
