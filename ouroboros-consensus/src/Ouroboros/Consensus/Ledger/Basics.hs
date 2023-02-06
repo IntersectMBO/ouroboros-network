@@ -1,8 +1,11 @@
-{-# LANGUAGE DeriveFoldable    #-}
-{-# LANGUAGE DeriveFunctor     #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveFoldable           #-}
+{-# LANGUAGE DeriveFunctor            #-}
+{-# LANGUAGE DeriveTraversable        #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE QuantifiedConstraints    #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 -- | Definition is 'IsLedger'
 --
@@ -28,12 +31,15 @@ module Ouroboros.Consensus.Ledger.Basics (
   , LedgerError
   , LedgerState
   , TickedLedgerState
+    -- * Re-exports
+  , module Ouroboros.Consensus.Ledger.Tables
   ) where
 
-import           Data.Kind (Type)
+import           Data.Kind (Constraint, Type)
 import           NoThunks.Class (NoThunks)
 
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))
 
@@ -41,18 +47,19 @@ import           Ouroboros.Consensus.Util ((..:))
   Tip
 -------------------------------------------------------------------------------}
 
+type GetTip :: LedgerStateKind -> Constraint
 class GetTip l where
   -- | Point of the most recently applied block
   --
   -- Should be 'genesisPoint' when no blocks have been applied yet
-  getTip :: l -> Point l
+  getTip :: forall mk. l mk -> Point l
 
-type instance HeaderHash (Ticked l) = HeaderHash l
+type instance HeaderHash (Ticked1 l) = HeaderHash l
 
-getTipHash :: GetTip l => l -> ChainHash l
+getTipHash :: GetTip l => l mk -> ChainHash l
 getTipHash = pointHash . getTip
 
-getTipSlot :: GetTip l => l -> WithOrigin SlotNo
+getTipSlot :: GetTip l => l mk -> WithOrigin SlotNo
 getTipSlot = pointSlot . getTip
 
 {-------------------------------------------------------------------------------
@@ -61,6 +68,7 @@ getTipSlot = pointSlot . getTip
 
 -- | A 'Data.Void.Void' isomorph for explicitly declaring that some ledger has
 -- no events
+type VoidLedgerEvent :: LedgerStateKind -> Type
 data VoidLedgerEvent l
 
 -- | The result of invoke a ledger function that does validation
@@ -97,12 +105,14 @@ pureLedgerResult a = LedgerResult {
 -------------------------------------------------------------------------------}
 
 -- | Static environment required for the ledger
+type LedgerCfg :: LedgerStateKind -> Type
 type family LedgerCfg l :: Type
 
+type IsLedger :: LedgerStateKind -> Constraint
 class ( -- Requirements on the ledger state itself
-        Show     l
-      , Eq       l
-      , NoThunks l
+        forall mk. IsMapKind mk => Eq (l mk)
+      , forall mk. IsMapKind mk => NoThunks (l mk)
+      , forall mk. IsMapKind mk => Show (l mk)
         -- Requirements on 'LedgerCfg'
       , NoThunks (LedgerCfg l)
         -- Requirements on 'LedgerErr'
@@ -114,7 +124,7 @@ class ( -- Requirements on the ledger state itself
         -- See comment for 'applyChainTickLedgerResult' about the tip of the
         -- ticked ledger.
       , GetTip l
-      , GetTip (Ticked l)
+      , GetTip (Ticked1 l)
       ) => IsLedger l where
   -- | Errors that can arise when updating the ledger
   --
@@ -159,11 +169,16 @@ class ( -- Requirements on the ledger state itself
   applyChainTickLedgerResult ::
        LedgerCfg l
     -> SlotNo
-    -> l
-    -> LedgerResult l (Ticked l)
+    -> l EmptyMK
+    -> LedgerResult l (Ticked1 l DiffMK)
 
 -- | 'lrResult' after 'applyChainTickLedgerResult'
-applyChainTick :: IsLedger l => LedgerCfg l -> SlotNo -> l -> Ticked l
+applyChainTick ::
+     IsLedger l
+  => LedgerCfg l
+  -> SlotNo
+  -> l EmptyMK
+  -> Ticked1 l DiffMK
 applyChainTick = lrResult ..: applyChainTickLedgerResult
 
 {-------------------------------------------------------------------------------
@@ -171,10 +186,13 @@ applyChainTick = lrResult ..: applyChainTickLedgerResult
 -------------------------------------------------------------------------------}
 
 -- | Ledger state associated with a block
-data family LedgerState blk :: Type
+type LedgerState :: Type -> LedgerStateKind
+data family LedgerState blk mk
 
 type instance HeaderHash (LedgerState blk) = HeaderHash blk
 
-type LedgerConfig      blk = LedgerCfg (LedgerState blk)
-type LedgerError       blk = LedgerErr (LedgerState blk)
-type TickedLedgerState blk = Ticked    (LedgerState blk)
+instance StandardHash blk => StandardHash (LedgerState blk)
+
+type LedgerConfig      blk    = LedgerCfg (LedgerState blk)
+type LedgerError       blk    = LedgerErr (LedgerState blk)
+type TickedLedgerState blk mk = Ticked1   (LedgerState blk) mk

@@ -8,6 +8,7 @@
 {-# LANGUAGE NumDecimals                #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -104,13 +105,13 @@ genesisPoint :: Point block
 genesisPoint = Point origin
 
 -- | Header hash
-type family HeaderHash b :: Type
+type family HeaderHash (b :: k) :: Type
 
 -- | Header fields we expect to be present in a block
 --
 -- These fields are lazy because they are extracted from a block or block
 -- header; this type is not intended for storage.
-data HeaderFields b = HeaderFields {
+data HeaderFields (b :: k) = HeaderFields {
       headerFieldSlot    :: SlotNo
     , headerFieldBlockNo :: BlockNo
     , headerFieldHash    :: HeaderHash b
@@ -139,7 +140,7 @@ instance StandardHash b => StandardHash (HeaderFields b)
 class (StandardHash b, Typeable b) => HasHeader b where
   getHeaderFields :: b -> HeaderFields b
 
-instance (StandardHash b, Typeable b) => HasHeader (HeaderFields b) where
+instance (StandardHash b, Typeable b, Typeable k) => HasHeader (HeaderFields (b :: k)) where
   getHeaderFields = castHeaderFields
 
 blockHash :: HasHeader b => b -> HeaderHash b
