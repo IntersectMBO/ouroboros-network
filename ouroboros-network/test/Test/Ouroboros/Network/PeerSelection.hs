@@ -2296,6 +2296,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
                 peerConnToPeerSharing    = \ps -> ps,
                 requestPublicRootPeers   = \_ -> return (Map.empty, 0),
                 readNewInboundConnection = retry,
+                requestBigLedgerPeers    = \_ -> return (Set.empty, 0),
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
                   monitorPeerConnection    = error "monitorPeerConnection",

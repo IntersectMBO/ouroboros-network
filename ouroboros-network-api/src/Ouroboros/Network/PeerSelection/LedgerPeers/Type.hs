@@ -20,4 +20,4 @@ newtype PoolStake = PoolStake { unPoolStake :: Rational }
 -- relative stake of all preceding pools. A value in the range [0, 1].
 --
 newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
-    deriving (Eq, Num, Ord)
+    deriving (Eq, Fractional, Num, Ord, Show)

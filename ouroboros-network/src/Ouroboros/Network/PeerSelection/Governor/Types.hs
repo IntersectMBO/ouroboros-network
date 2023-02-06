@@ -233,16 +233,21 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- * stake pool relays published in the blockchain
        -- * a pre-distributed snapshot of stake pool relays from the blockchain
        --
-       requestPublicRootPeers   :: Int -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime),
+       requestPublicRootPeers :: Int -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime),
+
+
+       -- | Request a sample of big ledger peers.
+       --
+       requestBigLedgerPeers  :: Int -> m (Set peeraddr, DiffTime),
 
        -- | The action to contact a known peer and request a sample of its
        -- known peers.
        --
-       requestPeerShare         :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr),
+       requestPeerShare       :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr),
 
        -- | Core actions run by the governor to change 'PeerStatus'.
        --
-       peerStateActions         :: PeerStateActions peeraddr peerconn m
+       peerStateActions       :: PeerStateActions peeraddr peerconn m
      }
 
 -- | Callbacks which are performed to change peer state.

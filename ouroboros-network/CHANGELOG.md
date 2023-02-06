@@ -17,7 +17,15 @@
   * Added `readNewInboundConnection` field to `PeerSelectionActions` record.
 * The constructor `FetchDeclineChainNoIntersection` was renamed to
   `FetchDeclineChainIntersectionTooDeep` (#4541)
-- Include Warm Valency for Local Root Peers
+* Include Warm Valency for Local Root Peers
+* `TraceLedgerPeers` renamed some constructors:
+    - `PickedPeer  -> PickedLedgerPeer`
+    - `PickedPeers -> PickedLedgerPeers`;
+  added new ones:
+    - `PickedBigLedgerPeer`
+    - `PickedBigLedgerPeers`;
+  and `FetchingNewLedgerState` constructor has a new field: number of big
+  ledger peers.
 
 ### Non-breaking changes
 
@@ -132,6 +140,12 @@
          * `ouroboros-network-protocols:testlib`
 * Moved the `ipv6` cabal flag to `ouroboros-network-framework` package.
 * Build with `ghc-9.2`.
+
+## 0.3.0.2
+
+### Non-breaking changes
+
+- Fix interop problems between NonP2P and P2P nodes (PR #4465)
 
 ## 0.3.0.0 -- YYYY-MM-DD
 

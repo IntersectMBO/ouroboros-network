@@ -15,12 +15,14 @@ import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim hiding (SimResult)
 import           Control.Tracer (Tracer (..), showTracing, traceWith)
 import qualified Data.IP as IP
-import           Data.List (foldl', intercalate, nub)
+import           Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Monoid (Sum (..))
+import           Data.Ord (Down (..))
 import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -40,6 +42,7 @@ tests :: TestTree
 tests = testGroup "LedgerPeers"
   [ testProperty "Pick 100%" prop_pick100
   , testProperty "Pick" prop_pick
+  , testProperty "accBigPoolStake" prop_accBigPoolStake
   ]
 
 newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
@@ -98,14 +101,29 @@ instance Arbitrary LedgerPools where
             map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
                        , spRelay p)) sps
 
+newtype ArbLedgerPeersKind = ArbLedgerPeersKind LedgerPeersKind
+  deriving Show
+
+instance Arbitrary ArbLedgerPeersKind where
+    arbitrary = ArbLedgerPeersKind <$> elements [AllLedgerPeers, BigLedgerPeers]
+    shrink (ArbLedgerPeersKind AllLedgerPeers) = [ArbLedgerPeersKind BigLedgerPeers]
+    shrink (ArbLedgerPeersKind BigLedgerPeers) = []
+
 -- | A pool with 100% stake should always be picked.
 prop_pick100 :: Word16
+             -> NonNegative Int -- ^ number of pools with 0 stake
+             -> ArbLedgerPeersKind
              -> Property
-prop_pick100 seed =
+prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) =
     let rng = mkStdGen $ fromIntegral seed
-        sps = [ (1, RelayAccessAddress (read "1.1.1.1") 1  :| [])
-              , (0, RelayAccessAddress (read "0.0.0.0") 0  :| [])
+        sps = [ (0, RelayAccessAddress (read $ "0.0.0." ++ show a) 1 :| [])
+              | a <- [0..n]
               ]
+           ++ [ (1, RelayAccessAddress (read "1.1.1.1") 1  :| []) ]
+
+        accumulatedStakeMap = case ledgerPeersKind of
+          AllLedgerPeers -> accPoolStake sps
+          BigLedgerPeers -> accBigPoolStake sps
 
         sim :: IOSim s [RelayAccessPoint]
         sim = withLedgerPeers
@@ -115,7 +133,7 @@ prop_pick100 seed =
                 (\_ -> pure Map.empty) -- we're not relying on domain name resolution in this simulation
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
-                  resp <- request (NumberOfPeers 1)
+                  resp <- request (NumberOfPeers 1) ledgerPeersKind
                   pure $ case resp of
                     Nothing          -> []
                     Just (peers, _)  -> [ RelayAccessAddress ip port
@@ -124,9 +142,11 @@ prop_pick100 seed =
                                         ]
                 )
           where
-            interface = LedgerPeersConsensusInterface $ \_ -> pure (Just (Map.elems (accPoolStake sps)))
+            interface =
+                LedgerPeersConsensusInterface $ \_ ->
+                  pure (Just (Map.elems accumulatedStakeMap))
 
-    in ioProperty $ do
+    in counterexample (show accumulatedStakeMap) $ ioProperty $ do
         tr' <- evaluateTrace (runSimTrace sim)
         case tr' of
              SimException e trace -> do
@@ -139,10 +159,11 @@ prop_pick100 seed =
 
 -- | Verify that given at least one peer we manage to pick `count` peers.
 prop_pick :: LedgerPools
+          -> ArbLedgerPeersKind
           -> Word16
           -> Word16
           -> Property
-prop_pick (LedgerPools lps) count seed =
+prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed =
     let rng = mkStdGen $ fromIntegral seed
 
         sim :: IOSim s [RelayAccessPoint]
@@ -152,7 +173,7 @@ prop_pick (LedgerPools lps) count seed =
                 interface resolve
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
-                  resp <- request (NumberOfPeers count)
+                  resp <- request (NumberOfPeers count) ledgerPeersKind
                   pure $ case resp of
                     Nothing          -> []
                     Just (peers, _)  -> [ reverseLookup (RelayAccessAddress ip port)
@@ -161,8 +182,7 @@ prop_pick (LedgerPools lps) count seed =
                                         ]
                 )
           where
-            interface :: LedgerPeersConsensusInterface (IOSim s)
-            interface = LedgerPeersConsensusInterface $ \_ -> pure (Just (Map.elems (accPoolStake lps)))
+            interface = LedgerPeersConsensusInterface $ \_ -> pure (Just lps)
 
             domainMap :: Map Domain (Set IP)
             domainMap = Map.fromList [("relay.iohk.example", Set.singleton (read "2.2.2.2"))]
@@ -207,10 +227,43 @@ prop_pick (LedgerPools lps) count seed =
                                                     )
                                                     : trace)
                                       (numOfPeers
-                                        == fromIntegral count `min` numOfPeers)
+                                        === fromIntegral count `min` numOfPeers)
+
+
+prop_accBigPoolStake :: LedgerPools -> Property
+prop_accBigPoolStake  (LedgerPools [])        = property True
+prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
+
+         -- the accumulated map is non empty, whenever ledger peers set is non
+         -- empty
+         not (Map.null accumulatedStakeMap)
+
+         -- the relative stake of all large pools is greater than
+         -- bigLedgerPeerQuota
+    .&&. counterexample
+           ("not enough stake: " ++ show (accumulatedStakeMap, lps))
+           (unPoolStake (getSum (foldMap (Sum . fst) accumulatedStakeMap)
+                / sum (fst <$> lps))
+             >= unAccPoolStake bigLedgerPeerQuota)
+
+         -- This property checks that elements of
+         -- `accBigPoolStake` form an initial sub-list of the ordered ledger
+         -- peers by stake (from large to small).
+         --
+         -- We relay on the fact that `Map.elems` returns a list of elements
+         -- ordered by keys (as they are in the `Map`).
+    .&&. let lps'  = sortOn (Down . fst) lps
+             elems = Map.elems accumulatedStakeMap
+         in counterexample ("initial sublist vaiolation: " ++ show (elems, lps'))
+          $ elems `isPrefixOf` lps'
+  where
+    accumulatedStakeMap = accBigPoolStake lps
 
 prop :: Property
-prop = prop_pick (LedgerPools [(PoolStake {unPoolStake = 1 % 1},RelayAccessAddress (read "1.1.1.1") 1016 :| [])]) 0 2
+prop = prop_pick (LedgerPools [( PoolStake {unPoolStake = 1 % 1}
+                               , RelayAccessAddress (read "1.1.1.1") 1016 :| []
+                               )])
+                 (ArbLedgerPeersKind BigLedgerPeers) 0 2
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]
@@ -218,7 +271,7 @@ data SimResult a = SimReturn a [String]
                  | SimDeadLock [String]
 
 -- Traverses a list of trace events and returns the result along with all log messages.
--- Incase of a pure exception, ie an assert, all tracers evaluated so far are returned.
+-- In case of a pure exception, ie an assert, all tracers evaluated so far are returned.
 evaluateTrace :: SimTrace a -> IO (SimResult a)
 evaluateTrace = go []
   where

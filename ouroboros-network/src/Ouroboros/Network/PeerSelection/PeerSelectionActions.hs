@@ -75,7 +75,7 @@ withPeerSelectionActions
   -> STM m (peeraddr, PeerSharing)
   -- ^ Read New Inbound Connections
   -> PeerStateActions peeraddr peerconn m
-  -> (NumberOfPeers -> m (Maybe (Set peeraddr, DiffTime)))
+  -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
   -> (   Async m Void
       -> PeerSelectionActions peeraddr peerconn m
       -> m a)
@@ -106,6 +106,7 @@ withPeerSelectionActions
             peerSharing,
             peerConnToPeerSharing,
             requestPublicRootPeers = requestPublicRootPeers,
+            requestBigLedgerPeers,
             requestPeerShare = requestPeerShare,
             peerStateActions
           }
@@ -124,7 +125,7 @@ withPeerSelectionActions
     -- to using the manually configured bootstrap root peers.
     requestPublicRootPeers :: Int -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime)
     requestPublicRootPeers n = do
-      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n)
+      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n) AllLedgerPeers
       case peers_m of
            -- No peers from Ledger
            Nothing    -> do
@@ -154,6 +155,18 @@ withPeerSelectionActions
                               readPublicRootPeers
                               dnsActions
                               ($ n)
+
+    requestBigLedgerPeers :: Int -> m (Set peeraddr, DiffTime)
+    requestBigLedgerPeers n = do
+      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n) BigLedgerPeers
+      case peers_m of
+        Nothing    ->  do
+          (m, dt) <- requestConfiguredRootPeers n
+          -- TODO: we need to ensure we only choose from big configured root
+          -- peers, but for that the root peers need to contain stake
+          -- information!
+          return (Map.keysSet m, dt)
+        Just peers -> return peers
 
     requestPeerShare :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr)
     requestPeerShare amount peer = do
