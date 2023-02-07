@@ -34,6 +34,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
   , WithPoint (..)
   , getPoint
   , getSerialisedBlockWithPoint
+  , getSerialisedHeader
   , getSerialisedHeaderWithPoint
     -- * BlockComponent
   , BlockComponent (..)
