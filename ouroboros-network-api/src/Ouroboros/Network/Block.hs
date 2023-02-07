@@ -182,7 +182,7 @@ class ( Eq       (HeaderHash b)
       , Show     (HeaderHash b)
       , Typeable (HeaderHash b)
       , NoThunks (HeaderHash b)
-      ) => StandardHash b
+      ) => StandardHash (b :: k)
 
 data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
   deriving (Generic)

@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Util.TraceSize (
@@ -37,7 +39,7 @@ traceSize (Tracer f) = Tracer $ \a -> do
   Ledger DB specific
 -------------------------------------------------------------------------------}
 
-data LedgerDbSize l = LedgerDbSize {
+data LedgerDbSize (l :: LedgerStateKind) = LedgerDbSize {
       -- | The tip of the ledger DB
       ledgerDbTip       :: Point l
 

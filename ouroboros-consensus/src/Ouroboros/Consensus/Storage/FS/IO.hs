@@ -64,6 +64,8 @@ ioHasFS mount = HasFS {
         Dir.doesFileExist (root fp)
     , createDirectoryIfMissing = \createParent fp -> rethrowFsError fp $
         Dir.createDirectoryIfMissing createParent (root fp)
+    , removeDirectoryRecursive = \fp -> rethrowFsError fp $
+        Dir.removeDirectoryRecursive (root fp)
     , removeFile = \fp -> rethrowFsError fp $
         Dir.removeFile (root fp)
     , renameFile = \fp1 fp2 -> rethrowFsError fp1 $

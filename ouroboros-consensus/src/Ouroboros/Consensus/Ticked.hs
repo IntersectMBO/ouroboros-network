@@ -17,6 +17,8 @@ import           Data.Kind (Type)
 import           Data.SOP.BasicFunctors
 import           NoThunks.Class (NoThunks)
 
+import           Ouroboros.Network.Block (HeaderHash)
+
 {-------------------------------------------------------------------------------
   Ticked state
 -------------------------------------------------------------------------------}
@@ -66,3 +68,5 @@ deriving newtype instance
 
 type Ticked1 :: (k -> Type) -> (k -> Type)
 data family Ticked1 st
+
+type instance HeaderHash (Ticked1 (l :: k -> Type)) = HeaderHash l
