@@ -32,3 +32,13 @@ validateIS
   -> MempoolCapacityBytesOverride
   -> ValidationResult (Validated (GenTx blk)) blk
 validateIS = error "Deprecated"
+
+{-# DEPRECATED validateIS "This function should not be used (it will throw an error), it was internal no longer exists" #-}
+validateStateFor
+  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
+  => MempoolCapacityBytesOverride
+  -> LedgerConfig     blk
+  -> ForgeLedgerState blk
+  -> InternalState    blk
+  -> ValidationResult (Validated (GenTx blk)) blk
+validateStateFor = error "Deprecated"

@@ -42,7 +42,7 @@ import qualified Data.Measure as Measure
 
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ticked (Ticked (..))
+import           Ouroboros.Consensus.Ticked (Ticked1)
 
 {-------------------------------------------------------------------------------
   Mempool capacity in bytes
@@ -74,7 +74,7 @@ mkCapacityBytesOverride = MempoolCapacityBytesOverride . MempoolCapacityBytes
 -- the current ledger's maximum transaction capacity of a block.
 computeMempoolCapacity
   :: LedgerSupportsMempool blk
-  => TickedLedgerState blk
+  => TickedLedgerState blk mk
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity st mc = case mc of
@@ -126,7 +126,7 @@ class BoundedMeasure (TxMeasure blk) => TxLimits blk where
   txMeasure        :: Validated (GenTx blk)    -> TxMeasure blk
 
   -- | What is the allowed capacity for txs in an individual block?
-  txsBlockCapacity :: Ticked (LedgerState blk) -> TxMeasure blk
+  txsBlockCapacity :: Ticked1 (LedgerState blk) mk -> TxMeasure blk
 
 -- | Is every component of the first value less-than-or-equal-to the
 -- corresponding component of the second value?
