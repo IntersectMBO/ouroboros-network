@@ -8,6 +8,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets (
   , rewindTableKeySets
     -- * Read
   , KeySetsReader
+  , PointNotFound (..)
+  , getLedgerTablesFor
   , readKeySets
   , readKeySetsWith
   , withKeysReadSets
@@ -21,12 +23,14 @@ import           Data.Map.Diff.Strict.Internal (unsafeApplyDiffForKeys)
 
 import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq
+import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB (..))
 
 {-------------------------------------------------------------------------------
   Rewind
@@ -108,6 +112,22 @@ withHydratedLedgerState st dbch urs f =
           f
       .   withLedgerTables st
       <$> forwardTableKeySets dbch urs
+
+-- | The requested point is not found on the ledger db
+data PointNotFound blk = PointNotFound !(Point blk) deriving (Eq, Show)
+
+-- | Read and forward the values up to the tip of the given ledger db. Returns
+-- Left if the anchor moved.
+getLedgerTablesFor ::
+     (Monad m, HasLedgerTables l)
+  => LedgerDB l
+  -> LedgerTables l KeysMK
+  -> KeySetsReader m l
+  -> m (Either (WithOrigin SlotNo, WithOrigin SlotNo) (LedgerTables l ValuesMK))
+getLedgerTablesFor db keys ksRead = do
+  let aks = rewindTableKeySets (ledgerDbChangelog db) keys
+  urs <- ksRead aks
+  pure $ forwardTableKeySets (ledgerDbChangelog db) urs
 
 {-------------------------------------------------------------------------------
   Forward

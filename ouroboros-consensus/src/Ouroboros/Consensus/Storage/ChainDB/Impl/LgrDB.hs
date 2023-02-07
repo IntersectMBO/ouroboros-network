@@ -85,7 +85,8 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DbChangelog hiding (flush)
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.DbChangelog hiding
+                     (flush)
 import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
 import           Ouroboros.Consensus.Storage.LedgerDB.Stream
 

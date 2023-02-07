@@ -1,27 +1,30 @@
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveAnyClass           #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE QuantifiedConstraints    #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (
     -- * LedgerDB
-    Checkpoint (..)
-  , LedgerDB (..)
+    LedgerDB (..)
   , LedgerDB'
   , LedgerDbCfg (..)
   , configLedgerDb
   ) where
 
+import           Data.SOP (K, unK)
 import           GHC.Generics (Generic)
 
 import           NoThunks.Class (NoThunks)
 
-import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
-                     AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
 
 import           Ouroboros.Consensus.Block
@@ -30,6 +33,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerCfg (..),
                      ExtLedgerState)
 import           Ouroboros.Consensus.Protocol.Abstract (ConsensusProtocol)
+
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
+                     (DbChangelog (changelogVolatileStates),
+                     DbChangelogState (unDbChangelogState))
 
 {-------------------------------------------------------------------------------
   LedgerDB
@@ -77,43 +84,26 @@ import           Ouroboros.Consensus.Protocol.Abstract (ConsensusProtocol)
 --
 -- > L3 |> []
 newtype LedgerDB l = LedgerDB {
-      -- | Ledger states
-      ledgerDbCheckpoints :: AnchoredSeq
-                               (WithOrigin SlotNo)
-                               (Checkpoint l)
-                               (Checkpoint l)
+      ledgerDbChangelog :: DbChangelog l
     }
   deriving (Generic)
 
 type LedgerDB' blk = LedgerDB (ExtLedgerState blk)
 
-deriving instance Show     l => Show     (LedgerDB l)
-deriving instance Eq       l => Eq       (LedgerDB l)
-deriving instance NoThunks l => NoThunks (LedgerDB l)
+deriving instance Show     (DbChangelog l) => Show     (LedgerDB l)
+deriving instance Eq       (DbChangelog l) => Eq       (LedgerDB l)
+deriving instance NoThunks (DbChangelog l) => NoThunks (LedgerDB l)
 
-type instance HeaderHash (LedgerDB l) = HeaderHash l
+type instance HeaderHash (K @MapKind (LedgerDB' blk)) = HeaderHash (ExtLedgerState blk)
 
-instance IsLedger l => GetTip (LedgerDB l) where
+instance IsLedger (ExtLedgerState blk) => GetTip (K (LedgerDB' blk)) where
   getTip = castPoint
          . getTip
-         . either unCheckpoint unCheckpoint
+         . either unDbChangelogState unDbChangelogState
          . AS.head
-         . ledgerDbCheckpoints
-
--- | Internal newtype wrapper around a ledger state @l@ so that we can define a
--- non-blanket 'Anchorable' instance.
-newtype Checkpoint l = Checkpoint {
-      unCheckpoint :: l
-    }
-  deriving (Generic)
-
-deriving instance Show     l => Show     (Checkpoint l)
-deriving instance Eq       l => Eq       (Checkpoint l)
-deriving instance NoThunks l => NoThunks (Checkpoint l)
-
-instance GetTip l => Anchorable (WithOrigin SlotNo) (Checkpoint l) (Checkpoint l) where
-  asAnchor = id
-  getAnchorMeasure _ = getTipSlot . unCheckpoint
+         . changelogVolatileStates
+         . ledgerDbChangelog
+         . unK
 
 {-------------------------------------------------------------------------------
   LedgerDB Config

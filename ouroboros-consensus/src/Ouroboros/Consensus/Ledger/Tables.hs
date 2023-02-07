@@ -24,8 +24,6 @@ module Ouroboros.Consensus.Ledger.Tables (
   , zipOverLedgerTables
   , zipOverLedgerTablesTicked
     -- * @MapKind@s
-    -- $concrete-tables
-
     -- ** Interface
   , IsMapKind (..)
     -- ** Concrete definitions
@@ -60,8 +58,8 @@ import           NoThunks.Class (NoThunks (..))
 
 import           Ouroboros.Consensus.Ticked
 
-import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq (DiffSeq,
-                     empty, mapDiffSeq)
+import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq (DiffSeq, empty,
+                     mapDiffSeq)
 
 {-------------------------------------------------------------------------------
   Kinds
