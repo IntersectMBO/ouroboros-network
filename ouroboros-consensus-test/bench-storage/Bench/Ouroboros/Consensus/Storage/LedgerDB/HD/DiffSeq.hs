@@ -1004,11 +1004,11 @@ fromDiff (MapDiff.Diff m) = HD.UtxoDiff (fmap fromNEDiffHistory m)
 fromNEDiffHistory :: DS.NEDiffHistory v -> HD.UtxoEntryDiff v
 fromNEDiffHistory (MapDiff.NEDiffHistory neseq) = case neseq of
   Empty :|> x :||> y -> fromDiffEntry x <> fromDiffEntry y
-  Empty :||> x ->  fromDiffEntry x
-  _ ->       error "A DiffHistory is isomorphic to a UtxoEntryDiff under the \
-                   \ assumption that diff histories contain exactly one      \
-                   \ insert, exactly one delete or exactly an insert AND a   \
-                   \ delete."
+  Empty :||> x       -> fromDiffEntry x
+  _                  -> error "We can only create a UtxoEntryDiff from a \
+                          \ DiffHistory if that diff history contains  \
+                          \ exactly one insert, exactly one delete or exactly \
+                          \ an insert AND a delete."
 
 fromDiffEntry :: DS.DiffEntry v -> HD.UtxoEntryDiff v
 fromDiffEntry de = case de of
