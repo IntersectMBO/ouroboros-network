@@ -151,35 +151,41 @@ executable db-analyser
 
 
 executable block-tool
-  hs-source-dirs:      app
-  main-is:             block-tool.hs
-  build-depends:       base
-                     , base16-bytestring
-                     , bytestring
-                     , cardano-crypto-wrapper
-                     , cardano-ledger-byron
-                     , cborg
-                     , optparse-applicative
-                     , ouroboros-consensus
-                     , ouroboros-consensus-byron
-                     , ouroboros-consensus-cardano
-                     , ouroboros-consensus-cardano-tools
-                     , ouroboros-consensus-diffusion
-                     , ouroboros-consensus-shelley
-                     , text
-                     , unix
-                     , zlib
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -threaded
-                       -rtsopts
-                                              
+    hs-source-dirs:      app
+    main-is:             block-tool.hs
+    build-depends:       base
+                       , base16-bytestring
+                       , bytestring
+                       , cardano-crypto-wrapper
+                       , cardano-ledger-byron
+                       , cborg
+                       , optparse-applicative
+                       , ouroboros-consensus
+                       , ouroboros-consensus-byron
+                       , ouroboros-consensus-cardano
+                       , ouroboros-consensus-cardano-tools
+                       , ouroboros-consensus-diffusion
+                       , ouroboros-consensus-shelley
+                       , text
+                       , zlib
+-- does not work on Windows because of fancy stuff juggling with File descriptors
+-- too provide stdout/stdin with `HasFS` interface
+-- FIXME: this should probably disappear has there's not much point in having this
+-- level of indirection
+    if !os(windows)
+        build-depends:       unix
+
+    default-language:    Haskell2010
+    ghc-options:         -Wall
+                         -Wcompat
+                         -Wincomplete-uni-patterns
+                         -Wincomplete-record-updates
+                         -Wpartial-fields
+                         -Widentities
+                         -Wredundant-constraints
+                         -threaded
+                         -rtsopts
+
 executable db-synthesizer
   hs-source-dirs:      app
   main-is:             db-synthesizer.hs
@@ -219,7 +225,6 @@ test-suite test
   build-depends:       base              >=4.14 && <4.17
                      , tasty
                      , tasty-hunit
-
                      , ouroboros-consensus-cardano-tools
 
   ghc-options:       -Wall
