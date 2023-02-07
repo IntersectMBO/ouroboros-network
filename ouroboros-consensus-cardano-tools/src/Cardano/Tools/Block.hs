@@ -129,6 +129,7 @@ defaultCodecConfig =
         Shelley.ShelleyCodecConfig
         Shelley.ShelleyCodecConfig
         Shelley.ShelleyCodecConfig
+        Shelley.ShelleyCodecConfig
 
 readChainPoint :: String -> Maybe (Point (CardanoBlock StandardCrypto))
 readChainPoint = \case
