@@ -42,6 +42,8 @@ library
                      , Cardano.Tools.DBSynthesizer.Orphans
                      , Cardano.Tools.DBSynthesizer.Run
                      , Cardano.Tools.DBSynthesizer.Types
+                     , Cardano.Tools.ImmDBServer.Diffusion
+                     , Cardano.Tools.ImmDBServer.MiniProtocols
 
   build-depends:       base >=4.14 && <4.17
                      , aeson
@@ -55,6 +57,7 @@ library
                      , filepath
                      , microlens
                      , mtl
+                     , network
                      , nothunks
                      , serialise
                      , cardano-strict-containers
@@ -84,7 +87,9 @@ library
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-shelley
                      , ouroboros-network-api
+                     , ouroboros-network-framework
                      , ouroboros-network-protocols
+                     , ouroboros-network
                      , ouroboros-consensus-diffusion
 
   other-modules:       Cardano.Api.Key
@@ -171,6 +176,29 @@ executable db-synthesizer
                      -threaded
                      -rtsopts
                      "-with-rtsopts=-N -I0 -A16m"
+
+executable immdb-server
+  hs-source-dirs:      app
+  main-is:             immdb-server.hs
+  build-depends:       base              >=4.14 && <4.17
+                     , network
+                     , optparse-applicative
+                     , ouroboros-consensus
+                     , ouroboros-consensus-cardano-tools
+
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wunused-packages
+                       -threaded
+                       -rtsopts
+                       "-with-rtsopts=-I0 -N2 -A16m"
 
 test-suite test
   type:              exitcode-stdio-1.0

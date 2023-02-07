@@ -255,3 +255,24 @@ The tool expects the given ChainDB path (`--db` option) to *not* be present. Sho
 ### limiting synthesis
 
 A limit must be specified up to which the tool synthesizes a ChainDB. Possible limits are either the number of slots processed (`-s`), the number of epochs processed (`-e`) or the absolute number of blocks in the resulting ChainDB (`-b`).
+
+# ImmDB Server
+
+A standalone tool that serves a Cardano ImmutableDB via ChainSync and BlockFetch.
+
+This can be useful to locally test syncing without having to run a full node just for serving the chain.
+
+## Usage
+
+```
+ $ cabal run exe:immdb-server -- --help
+Usage: immdb-server --db PATH [--port ARG] --config PATH
+
+  Serve an ImmutableDB via ChainSync and BlockFetch
+
+Available options:
+  -h,--help                Show this help text
+  --db PATH                Path to the ImmutableDB
+  --port ARG               Port to serve on
+  --config PATH            Path to config file
+```
