@@ -228,7 +228,23 @@ following pieces of information:
 All mini-protocols are encoded using concise binary object representation
 (CBOR), see~\url{https://cbor.io}.  Each codec comes along with a specification
 written in CDDL,
-see~\url{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}.
+see \href{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}{'Coincise
+data definition language (CDDL)'}.
+
+Note that the networking layer knows very little about blocks, transactions or
+their indetifiers.  We use parametric polymorphism in the implementation which
+is not present in CDDL.  For this reason we have to make concrete choices which
+might not agree with what is used by `Cardano`.  Each ledger era has its own
+CDDL spec which you can find
+\href{https://github.com/input-output-hk/cardano-ledger#cardano-ledger}{here}.
+Note that there's also the hard fork combinator (HFC) which allows us to
+combine multiple eras into a single blockchain.  It affects how things are
+encoded across different eras.  Currently this is not properly documented (see
+\href{https://github.com/input-output-hk/ouroboros-consensus/issues/7}{issue
+#7}). In the mean time we can only offer informal advise: things are encoded as
+tuples (length 2 lists), where the first element is a zero based index of an
+era while the second item represents the data from that era (e.g. block,
+transaction, etc).
 
 \section{Dummy Protocols}
 Dummy protocols are only used for testing and are not needed either for
@@ -957,8 +973,8 @@ The version 2 is used by version 6 an higher of node-to-node protocol.
   \begin{tabular}{|l|l|}
     \hline
     \multicolumn{2}{|c|}{Agency} \\ \hline
-    Client has Agency & \StInit, \StTxIdsBlocking, \StTxIdsNonBlocking \\ \hline
-    Server has Agency & \StIdle, \StTxs \\ \hline
+    Client has Agency & \StInit, \StTxIdsBlocking, \StTxIdsNonBlocking, \StTxs \\ \hline
+    Server has Agency & \StIdle \\ \hline
   \end{tabular}
 \end{figure}
 
