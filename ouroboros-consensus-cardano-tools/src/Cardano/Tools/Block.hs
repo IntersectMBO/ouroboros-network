@@ -38,16 +38,15 @@ import Ouroboros.Consensus.Protocol.Praos.Translate ()
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import Ouroboros.Consensus.Storage.Common (BlockComponent (GetBlock))
-import Ouroboros.Consensus.Storage.FS.API (Handle, HasFS, hGetAll, hPutAll, withFile)
-import Ouroboros.Consensus.Storage.FS.API.Types (FsPath, OpenMode (ReadMode))
 import Ouroboros.Consensus.Storage.ImmutableDB.API (getBlockComponent)
 import Ouroboros.Consensus.Storage.Serialisation (decodeDisk)
 import Ouroboros.Consensus.Util.IOLike (Exception, MonadThrow (throwIO))
+import System.IO (Handle, IOMode (ReadMode), stdin, stdout, withFile)
 import Text.Read (readMaybe)
 
 data BlockOptions
     = ViewBlock
-        { blockFile :: Maybe FsPath
+        { blockFile :: Maybe FilePath
         }
     | ExtractBlock
         { dbDirectory :: FilePath
@@ -55,16 +54,16 @@ data BlockOptions
         , point :: Point CBlock
         }
 
-run :: HasFS IO h -> Handle h -> Handle h -> BlockOptions -> IO ()
-run hasFS stdinIO stdoutIO options = do
+run :: BlockOptions -> IO ()
+run options = do
     block <- case options of
         ViewBlock{blockFile} -> do
             case blockFile of
-                Just file -> withFile hasFS file ReadMode $ viewBlock hasFS
-                Nothing -> viewBlock hasFS stdinIO
+                Just file -> withFile file ReadMode $ viewBlock
+                Nothing -> viewBlock stdin
         ExtractBlock{dbDirectory, cardanoConfigPath, point} ->
             Aeson.encode <$> readBlockFromDB dbDirectory cardanoConfigPath point
-    void $ hPutAll hasFS stdoutIO block
+    void $ LBS.hPut stdout block
 
 readBlockFromDB :: FilePath -> FilePath -> Point CBlock -> IO CBlock
 readBlockFromDB dbDirectory configFilePath point =
@@ -88,12 +87,10 @@ type CBlock = CardanoBlock StandardCrypto
  `stdout`.
 -}
 viewBlock ::
-    (MonadThrow m) =>
-    HasFS m h ->
-    Handle h ->
-    m LBS.ByteString
-viewBlock hasFS hdl = do
-    bytes <- hGetAll hasFS hdl
+    Handle ->
+    IO LBS.ByteString
+viewBlock hdl = do
+    bytes <- LBS.hGetContents hdl
     cbor <- either (throwIO . BadHexEncoding) pure $ Hex.decode bytes
     Aeson.encode <$> parseBlock cbor
 

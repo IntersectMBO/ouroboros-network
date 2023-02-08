@@ -1,7 +1,4 @@
-{-# LANGUAGE NamedFieldPuns #-}
-
 import Cardano.Tools.Block (BlockOptions (..), readChainPoint, run)
-import Control.Concurrent.MVar (newMVar)
 import Options.Applicative (
     Parser,
     execParser,
@@ -19,29 +16,9 @@ import Options.Applicative (
     (<**>),
     (<|>),
  )
-import Ouroboros.Consensus.Storage.FS.API.Types (Handle (..), MountPoint (..), mkFsPath)
-import Ouroboros.Consensus.Storage.FS.Handle (HandleOS (..))
-import Ouroboros.Consensus.Storage.FS.IO (HandleIO, ioHasFS)
-import System.Posix (Fd, stdInput, stdOutput)
 
 main :: IO ()
-main = do
-    stdinIO <- mkHandle "<stdin>" stdInput
-    stdoutIO <- mkHandle "<stdout>" stdOutput
-    parseOptions >>= run (ioHasFS $ MountPoint ".") stdinIO stdoutIO
-
-mkHandle :: [Char] -> Fd -> IO (Handle HandleIO)
-mkHandle filePath fd = do
-    handle <- newMVar (Just fd)
-    pure $
-        Handle
-            { handlePath = mkFsPath [filePath]
-            , handleRaw =
-                HandleOS
-                    { filePath
-                    , handle
-                    }
-            }
+main = parseOptions >>= run
 
 parseOptions :: IO BlockOptions
 parseOptions = execParser opts
@@ -62,12 +39,11 @@ parseBlockOptions =
     viewBlockOptions =
         ViewBlock
             <$> optional
-                ( mkFsPath . (: [])
-                    <$> strOption
-                        ( long "file-in"
-                            <> metavar "FILE"
-                            <> help "Path to file containing hex-encoded CBOR-encoded block"
-                        )
+                ( strOption
+                    ( long "file-in"
+                        <> metavar "FILE"
+                        <> help "Path to file containing hex-encoded CBOR-encoded block"
+                    )
                 )
 
     extractBlockOptions =
