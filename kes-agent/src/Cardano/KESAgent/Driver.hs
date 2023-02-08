@@ -1,40 +1,48 @@
-{-#OPTIONS_GHC -Wno-deprecations #-}
-{-#LANGUAGE GADTs #-}
-{-#LANGUAGE TypeFamilies #-}
-{-#LANGUAGE DataKinds #-}
-{-#LANGUAGE EmptyCase #-}
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE TypeApplications #-}
-{-#LANGUAGE ScopedTypeVariables #-}
-{-#LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 module Cardano.KESAgent.Driver
 where
 
 import Foreign (Ptr, plusPtr)
-import Foreign.C.Types (CSize)
+import Foreign.C.Types (CSize, CChar)
+import Foreign.Marshal.Alloc (mallocBytes, free)
+import Foreign.Marshal.Utils (copyBytes)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
-import System.Socket
-import System.Socket.Unsafe
 import Control.Monad (void, when)
 import Data.Proxy
 import Text.Printf
-import Control.Concurrent.MVar
 import Data.Word
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import Data.Binary (encode, decode)
 import Data.Typeable
 import Control.Tracer (Tracer, traceWith)
+import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
+import Control.Monad.Class.MonadMVar
+import Control.Monad.Class.MonadST
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.DirectSerialise
+import Cardano.Crypto.MonadMLock
+          ( MonadMLock (..)
+          , MonadUnmanagedMemory (..)
+          , MonadByteStringMemory (..)
+          , packByteStringCStringLen
+          )
 import Cardano.Binary
 
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.RefCounting
+import Cardano.KESAgent.DirectBearer
 
 -- | Logging messages that the Driver may send
 data DriverTrace
@@ -48,33 +56,39 @@ data DriverTrace
   | DriverConnectionClosed
   deriving (Show)
 
-driver :: forall c f t p
+driver :: forall c m f t p
         . Crypto c
        => Typeable c
-       => VersionedProtocol (KESProtocol c)
-       => KESSignAlgorithm IO (KES c)
-       => DirectDeserialise (SignKeyKES (KES c))
-       => DirectSerialise (SignKeyKES (KES c))
-       => Socket f t p -- | A socket to read from
-       -> Tracer IO DriverTrace
-       -> Driver (KESProtocol c) () IO
+       => VersionedProtocol (KESProtocol m c)
+       => KESSignAlgorithm m (KES c)
+       => DirectDeserialise m (SignKeyKES (KES c))
+       => DirectSerialise m (SignKeyKES (KES c))
+       => MonadThrow m
+       => MonadMVar m
+       => MonadFail m
+       => MonadUnmanagedMemory m
+       => MonadByteStringMemory m
+       => MonadST m
+       => DirectBearer m
+       -> Tracer m DriverTrace
+       -> Driver (KESProtocol m c) () m
 driver s tracer = Driver
   { sendMessage = \agency msg -> case (agency, msg) of
       (ServerAgency TokInitial, VersionMessage) -> do
-        let VersionIdentifier v = versionIdentifier (Proxy @(KESProtocol c))
+        let VersionIdentifier v = versionIdentifier (Proxy @(KESProtocol m c))
         traceWith tracer (DriverSendingVersionID $ VersionIdentifier v)
-        void $ send s v msgNoSignal
+        void $ sendBS s v
       (ServerAgency TokIdle, KeyMessage skpRef oc) -> do
         traceWith tracer DriverSendingKey
         withCRefValue skpRef $ \(SignKeyWithPeriodKES sk t) -> do
           directSerialise (\buf bufSize -> do
-                n <- unsafeSend s buf bufSize opt
+                n <- send s buf bufSize
                 when (fromIntegral n /= bufSize) (error "AAAAA")
               ) sk
           let serializedOC = serialize' oc
-          sendWord32 s (fromIntegral $ t) opt
-          sendWord32 s (fromIntegral $ BS.length serializedOC) opt
-          send s serializedOC opt
+          sendWord32 s (fromIntegral t)
+          sendWord32 s (fromIntegral (BS.length serializedOC))
+          sendBS s serializedOC
           traceWith tracer DriverSentKey
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
@@ -82,9 +96,9 @@ driver s tracer = Driver
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
         traceWith tracer DriverReceivingVersionID
-        v <- VersionIdentifier <$> receive s versionIdentifierLength msgNoSignal
+        v <- VersionIdentifier <$> receiveBS s versionIdentifierLength
         traceWith tracer $ DriverReceivedVersionID v
-        let expectedV = versionIdentifier (Proxy @(KESProtocol c))
+        let expectedV = versionIdentifier (Proxy @(KESProtocol m c))
         if v == expectedV then
           return (SomeMessage VersionMessage, ())
         else
@@ -93,17 +107,17 @@ driver s tracer = Driver
         traceWith tracer DriverReceivingKey
         noReadVar <- newEmptyMVar
         sk <- directDeserialise
-                (\buf bufSize -> unsafeReceiveN s buf bufSize opt >>= \case
+                (\buf bufSize -> unsafeReceiveN s buf bufSize >>= \case
                     0 -> putMVar noReadVar ()
                     n -> when (fromIntegral n /= bufSize) (error "BBBBBB")
                 )
         t <- fromIntegral <$> (
-              maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s opt
+              maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s
              )
         l <- fromIntegral <$> (
-              maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s opt
+              maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s
              )
-        oc <- unsafeDeserialize' <$> receive s l opt
+        oc <- unsafeDeserialize' <$> receiveBS s l
 
         skpVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) (SignKeyWithPeriodKES sk t)
         succeeded <- isEmptyMVar noReadVar
@@ -119,27 +133,52 @@ driver s tracer = Driver
 
   , startDState = ()
   }
-  where
-    opt = msgNoSignal <> msgWaitAll
 
-receiveWord32 :: Socket f t p -> MessageFlags -> IO (Maybe Word32)
-receiveWord32 s opt =
-  receive s 4 opt >>= \case
+receiveBS :: (MonadST m, MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
+          => DirectBearer m
+          -> Int
+          -> m BS.ByteString
+receiveBS s size =
+  allocaBytes size $ \buf -> do
+    bytesRead <- unsafeReceiveN s buf (fromIntegral size)
+    case bytesRead of
+      0 -> return ""
+      n -> packByteStringCStringLen (buf, fromIntegral n)
+
+sendBS :: (MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
+       => DirectBearer m
+       -> BS.ByteString
+       -> m Int
+sendBS s bs =
+  allocaBytes (BS.length bs) $ \buf -> do
+    useByteStringAsCStringLen bs $ \(bsbuf, size) -> do
+      copyMem buf bsbuf (fromIntegral size)
+    fromIntegral <$> send s buf (fromIntegral $ BS.length bs)
+
+receiveWord32 :: (MonadThrow m, MonadST m, MonadUnmanagedMemory m, MonadByteStringMemory m)
+              => DirectBearer m
+              -> m (Maybe Word32)
+receiveWord32 s =
+  receiveBS s 4 >>= \case
     "" -> return Nothing
     xs -> (return . Just . fromIntegral) (decode @Word32 $ LBS.fromStrict xs)
 
-sendWord32 :: Socket f t p -> Word32 -> MessageFlags -> IO ()
-sendWord32 s val opt =
-  void $ send s (LBS.toStrict $ encode val) opt
+sendWord32 :: (MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
+           => DirectBearer m
+           -> Word32
+           -> m ()
+sendWord32 s val =
+  void $ sendBS s (LBS.toStrict $ encode val)
 
-unsafeReceiveN s buf bufSize opt = do
-  n <- unsafeReceive s buf bufSize opt
+unsafeReceiveN :: Monad m => DirectBearer m -> Ptr CChar -> CSize -> m CSize
+unsafeReceiveN s buf bufSize = do
+  n <- recv s buf bufSize
   if fromIntegral n == bufSize then
     return bufSize
   else if n == 0 then
     return 0
   else do
-    n' <- unsafeReceiveN s (plusPtr buf (fromIntegral n)) (bufSize - fromIntegral n) opt
+    n' <- unsafeReceiveN s (plusPtr buf (fromIntegral n)) (bufSize - fromIntegral n)
     if n' == 0 then
       return 0
     else

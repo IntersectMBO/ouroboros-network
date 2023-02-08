@@ -9,13 +9,17 @@ import Cardano.Crypto.KES.Class
 import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.KESAgent.OCert
 
-import Data.Time.Clock.POSIX (POSIXTime, getPOSIXTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import Control.Monad.Class.MonadTime
+
 import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
 
-getCurrentKESPeriod :: Integer -> IO KESPeriod
-getCurrentKESPeriod = getCurrentKESPeriodWith getPOSIXTime
+getCurrentKESPeriod :: MonadTime m => Integer -> m KESPeriod
+getCurrentKESPeriod genesisTimestamp = do
+  now <- utcTimeToPOSIXSeconds <$> getCurrentTime
+  getCurrentKESPeriodWith (pure now) genesisTimestamp
 
-getCurrentKESPeriodWith :: IO NominalDiffTime -> Integer -> IO KESPeriod
+getCurrentKESPeriodWith :: Monad m => m NominalDiffTime -> Integer -> m KESPeriod
 getCurrentKESPeriodWith now genesisTimestamp =
   KESPeriod
     . floor
@@ -24,22 +28,23 @@ getCurrentKESPeriodWith now genesisTimestamp =
     . nominalDiffTimeToSeconds
     <$> now
 
-updateKESToCurrent :: KESSignAlgorithm IO (KES v)
+updateKESToCurrent :: KESSignAlgorithm m (KES v)
+                   => MonadTime m
                    => Integer
                    -> ContextKES (KES v)
                    -> OCert v
                    -> SignKeyWithPeriodKES (KES v)
-                   -> IO (Maybe (SignKeyWithPeriodKES (KES v)))
+                   -> m (Maybe (SignKeyWithPeriodKES (KES v)))
 updateKESToCurrent genesisTimestamp context cert skp = do
   currentPeriod <- getCurrentKESPeriod genesisTimestamp
   updateKESTo context currentPeriod cert skp
 
-updateKESTo :: KESSignAlgorithm IO (KES v)
+updateKESTo :: KESSignAlgorithm m (KES v)
             => ContextKES (KES v)
             -> KESPeriod
             -> OCert v
             -> SignKeyWithPeriodKES (KES v)
-            -> IO (Maybe (SignKeyWithPeriodKES (KES v)))
+            -> m (Maybe (SignKeyWithPeriodKES (KES v)))
 updateKESTo context currentPeriod cert skp = do
   let targetEvolution =
         unKESPeriod currentPeriod -

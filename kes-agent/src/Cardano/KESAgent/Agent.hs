@@ -21,30 +21,35 @@ import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.RefCounting
 import Cardano.KESAgent.Evolution
+import Cardano.KESAgent.DirectBearer
 
 import Cardano.Crypto.DirectSerialise
 import Cardano.Binary
 import Cardano.Crypto.KES.Class
+import Cardano.Crypto.MonadMLock
 
 import Data.ByteString (ByteString)
-import Control.Concurrent.MVar (MVar, newEmptyMVar, newMVar, tryTakeMVar, putMVar, readMVar, withMVar)
-import Control.Concurrent.Chan (Chan, newChan, dupChan, writeChan, readChan)
-import Control.Concurrent.Async (concurrently)
-import Control.Concurrent (threadDelay)
 import Control.Monad (forever, void)
 import Control.Tracer (Tracer, traceWith)
-import Control.Exception (bracket, catch)
-import System.Socket (socket, SocketException, close, bind, listen, accept)
-import System.Socket.Type.Stream
-import System.Socket.Family.Unix
-import System.Socket.Protocol.Default
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Data.Functor.Contravariant ((>$<))
 import Data.Proxy (Proxy (..))
 import Data.Typeable
 import Data.Time (NominalDiffTime)
-import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (fromJust)
+import Ouroboros.Network.Snocket
+
+import Control.Monad.Class.MonadTime (MonadTime (..))
+import Control.Monad.Class.MonadMVar
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadTimer
+import Control.Monad.Class.MonadThrow
+import Control.Concurrent.Class.MonadSTM.TChan
+
+{-HLINT ignore "Use underscore" -}
 
 data AgentTrace
   = AgentServiceDriverTrace DriverTrace
@@ -53,14 +58,14 @@ data AgentTrace
   | AgentInstallingNewKey
   | AgentServiceSocketClosed
   | AgentListeningOnServiceSocket
-  | AgentServiceClientConnected (SocketAddress Unix)
-  | AgentServiceClientDisconnected (SocketAddress Unix)
-  | AgentServiceSocketError SocketException
+  | AgentServiceClientConnected -- (SocketAddress Unix)
+  | AgentServiceClientDisconnected -- (SocketAddress Unix)
+  | AgentServiceSocketError String
   | AgentControlSocketClosed
   | AgentListeningOnControlSocket
-  | AgentControlClientConnected (SocketAddress Unix)
-  | AgentControlClientDisconnected (SocketAddress Unix)
-  | AgentControlSocketError SocketException
+  | AgentControlClientConnected -- (SocketAddress Unix)
+  | AgentControlClientDisconnected -- (SocketAddress Unix)
+  | AgentControlSocketError String
   | AgentCheckEvolution KESPeriod
   | AgentUpdateKESPeriod KESPeriod KESPeriod
   | AgentKeyNotEvolved KESPeriod KESPeriod
@@ -72,14 +77,16 @@ data AgentTrace
   | AgentLockReleased String
   deriving (Show)
 
-data AgentOptions =
+data AgentOptions m fd addr =
   AgentOptions
-    { -- | Socket on which the agent will be listening for control messages,
+    { agentSnocket :: Snocket m fd addr
+      -- | Socket on which the agent will be listening for control messages,
       -- i.e., KES keys being pushed from a control server.
-      agentControlSocketAddress :: SocketAddress Unix
+
+    , agentControlAddr :: addr
 
       -- | Socket on which the agent will send KES keys to any connected nodes.
-    , agentServiceSocketAddress :: SocketAddress Unix
+    , agentServiceAddr :: addr
 
       -- | The genesis Unix timestamp; used to determine current KES period.
     , agentGenesisTimestamp :: Integer
@@ -87,36 +94,49 @@ data AgentOptions =
       -- | Return the current POSIX time. Should normally be set to
       -- 'getPOSIXTime', but overriding this may be desirable for testing
       -- purposes.
-    , agentGetCurrentTime :: IO NominalDiffTime
+    , agentGetCurrentTime :: m NominalDiffTime
     }
 
-defAgentOptions :: AgentOptions
+defAgentOptions :: MonadTime m => AgentOptions m fd addr
 defAgentOptions = AgentOptions
-  { agentControlSocketAddress = fromJust $ socketAddressUnixAbstract "kes-agent-control.socket"
-  , agentServiceSocketAddress = fromJust $ socketAddressUnixAbstract "kes-agent-service.socket"
+  { agentSnocket = error "default"
+  , agentControlAddr = error "default"
+  , agentServiceAddr = error "default"
   , agentGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
-  , agentGetCurrentTime = getPOSIXTime
+  , agentGetCurrentTime = utcTimeToPOSIXSeconds <$> getCurrentTime
   }
 
-runAgent :: forall c
+runAgent :: forall c m fd addr
           . Crypto c
-         => Typeable c
-         => KESSignAlgorithm IO (KES c)
          => ContextKES (KES c) ~ ()
-         => VersionedProtocol (KESProtocol c)
-         => DirectSerialise (SignKeyKES (KES c))
-         => DirectDeserialise (SignKeyKES (KES c))
+         => DirectDeserialise m (SignKeyKES (KES c))
+         => DirectSerialise m (SignKeyKES (KES c))
+         => KESSignAlgorithm m (KES c)
+         => MonadAsync m
+         => MonadByteStringMemory m
+         => MonadCatch m
+         => MonadDelay m
+         => MonadFail m
+         => MonadMVar m
+         => MonadST m
+         => MonadSTM m
+         => MonadThrow m
+         => MonadTime m
+         => MonadUnmanagedMemory m
+         => ToDirectBearer m fd
+         => Typeable c
+         => VersionedProtocol (KESProtocol m c)
          => Proxy c
-         -> AgentOptions
-         -> Tracer IO AgentTrace
-         -> IO ()
+         -> AgentOptions m fd addr
+         -> Tracer m AgentTrace
+         -> m ()
 runAgent proxy options tracer = do
   -- The key itself is stored as a 'CRef', rather than directly, which
   -- allows us to pass keys around and forget them exactly when the last
   -- reference is dropped. The downside to this is that we need to be explicit
   -- about those references, which is what the 'CRef' type achieves.
-  currentKeyVar :: MVar (CRef (SignKeyWithPeriodKES (KES c)), OCert c) <- newEmptyMVar
-  nextKeyChan <- newChan
+  currentKeyVar :: MVar m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) <- newEmptyMVar
+  nextKeyChan <- atomically newTChan
 
   -- The key update lock is required because we need to distinguish between two
   -- different situations in which the currentKey MVar may be empty:
@@ -148,8 +168,8 @@ runAgent proxy options tracer = do
   -- - takeMVar is not allowed, since it would 1) block, and 2) require
   --   acquisition of keyLock, resulting in a deadlock.
   -- - tryTakeMVar is allowed, but only while holding the keyLock.
-  keyLock :: MVar () <- newMVar ()
-  let withKeyUpdateLock :: forall a. String -> IO a -> IO a
+  keyLock :: MVar m () <- newMVar ()
+  let withKeyUpdateLock :: forall a. String -> m a -> m a
       withKeyUpdateLock context a = do
         traceWith tracer $ AgentLockRequest context
         withMVar keyLock $ \() -> do
@@ -186,7 +206,7 @@ runAgent proxy options tracer = do
               traceWith tracer $ AgentKeyNotEvolved p p'
               void $ putMVar currentKeyVar (keyVar, oc)
 
-  let pushKey :: CRef (SignKeyWithPeriodKES (KES c)) -> OCert c -> IO ()
+  let pushKey :: CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ()
       pushKey keyVar oc = do
         withKeyUpdateLock "pushKey" $ do
           acquireCRef keyVar
@@ -203,7 +223,7 @@ runAgent proxy options tracer = do
           -- such that when the consumer picks up the signal, the next update
           -- will be the correct one. Since the MVar is empty at this point, the
           -- consumers will block until we put the key back in.
-          writeChan nextKeyChan ()
+          atomically $ writeTChan nextKeyChan ()
           -- Consumers have been notified, put the key to un-block them.
           putMVar currentKeyVar (keyVar, oc)
 
@@ -213,7 +233,7 @@ runAgent proxy options tracer = do
         readMVar currentKeyVar
 
       nextKey = do
-        () <- readChan nextKeyChan
+        () <- atomically $ readTChan nextKeyChan
         readMVar currentKeyVar
 
   let runEvolution = do
@@ -224,62 +244,69 @@ runAgent proxy options tracer = do
           checkEvolution
 
   let runService =
-        void $ bracket
-          (socket @Unix @Stream @Default)
-          (\s -> do
-              close s
+        let s = agentSnocket options
+        in void $ bracket
+          (open s (addrFamily s $ agentServiceAddr options))
+          (\fd -> do
+              close s fd
               traceWith tracer AgentServiceSocketClosed
           )
-          (\s -> do
-            bind s (agentServiceSocketAddress options)
-            listen s 0
+          (\fd -> do
+            bind s fd (agentServiceAddr options)
+            listen s fd
             traceWith tracer AgentListeningOnServiceSocket
-            let acceptAndHandle s = bracket
-                  (accept s)
-                  ( \(p, addr) -> do
-                      close p
-                      traceWith tracer $ AgentServiceClientDisconnected addr
-                  )
-                  ( \(p, addr) -> do
-                      traceWith tracer $ AgentServiceClientConnected addr
-                      myNextKeyChan <- dupChan nextKeyChan
+
+            let loop :: Accept m fd addr -> m ()
+                loop a = do
+                  accepted <- runAccept a
+                  case accepted of
+                    (AcceptFailure e, next) ->
+                      throwIO e
+                    (Accepted fd' addr', next) -> do
+                      traceWith tracer AgentServiceClientConnected
                       void $ runPeerWithDriver
-                        (driver p $ AgentServiceDriverTrace >$< tracer)
+                        (driver (toDirectBearer fd') $ AgentServiceDriverTrace >$< tracer)
                         (kesPusher currentKey (Just <$> nextKey))
                         ()
-                  )
-
-            forever $ acceptAndHandle s `catch` \e -> do
-              traceWith tracer $ AgentServiceSocketError e
+                      close s fd'
+                      loop next
+            
+            (accept s fd >>= loop) `catch` \(e :: SomeException)-> do
+              traceWith tracer $ AgentServiceSocketError (show e)
+              throwIO e
           )
 
   let runControl =
-        void $ bracket
-          (socket @Unix @Stream @Default)
-          (\s -> do
-              close s
+        let s = agentSnocket options
+        in void $ bracket
+          (open s (addrFamily s $ agentServiceAddr options))
+          (\fd -> do
+              close s fd
               traceWith tracer AgentControlSocketClosed
           )
-          (\s -> do
-            bind s (agentControlSocketAddress options)
-            listen s 0
+          (\fd -> do
+            bind s fd (agentControlAddr options)
+            listen s fd
             traceWith tracer AgentListeningOnControlSocket
-            let acceptAndHandle s = bracket
-                  (accept s)
-                  ( \(p, addr) -> do
-                      close p
-                      traceWith tracer $ AgentControlClientDisconnected addr
-                  )
-                  ( \(p, addr) -> do
-                      traceWith tracer $ AgentControlClientConnected addr
+
+            let loop :: Accept m fd addr -> m ()
+                loop a = do
+                  accepted <- runAccept a
+                  case accepted of
+                    (AcceptFailure e, next) ->
+                      throwIO e
+                    (Accepted fd' addr', next) -> do
+                      traceWith tracer AgentControlClientConnected
                       void $ runPeerWithDriver
-                        (driver p $ AgentControlDriverTrace >$< tracer)
+                        (driver (toDirectBearer fd') $ AgentControlDriverTrace >$< tracer)
                         (kesReceiver pushKey)
                         ()
-                  )
-
-            forever $ acceptAndHandle s `catch` \e -> do
-              traceWith tracer $ AgentControlSocketError e
+                      close s fd'
+                      loop next
+            
+            (accept s fd >>= loop) `catch` \(e :: SomeException)-> do
+              traceWith tracer $ AgentControlSocketError (show e)
+              throwIO e
           )
 
   void $ runService `concurrently` runControl `concurrently` runEvolution

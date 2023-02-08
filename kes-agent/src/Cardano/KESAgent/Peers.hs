@@ -16,17 +16,18 @@ import Cardano.Crypto.KES.Class
 
 import Network.TypedProtocol.Core
 
-kesReceiver :: forall (c :: *)
+kesReceiver :: forall (c :: *) (m :: * -> *)
              . KESAlgorithm (KES c)
-            => (CRef (SignKeyWithPeriodKES (KES c)) -> OCert c -> IO ())
-            -> Peer (KESProtocol c) AsClient InitialState IO ()
+            => Monad m
+            => (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ())
+            -> Peer (KESProtocol m c) AsClient InitialState m ()
 kesReceiver receiveKey =
   Effect $ do
     return $
       Await (ServerAgency TokInitial) $ \VersionMessage ->
         Effect $ return go
   where
-    go :: Peer (KESProtocol c) AsClient IdleState IO ()
+    go :: Peer (KESProtocol m c) AsClient IdleState m ()
     go = Await (ServerAgency TokIdle) $ \case
           KeyMessage sk oc ->
             Effect $ do
@@ -35,18 +36,19 @@ kesReceiver receiveKey =
           EndMessage ->
             Done TokEnd ()
 
-kesPusher :: forall (c :: *)
+kesPusher :: forall (c :: *) (m :: (* -> *))
            . KESAlgorithm (KES c)
-          => (IO (CRef (SignKeyWithPeriodKES (KES c)), OCert c))
-          -> (IO (Maybe (CRef (SignKeyWithPeriodKES (KES c)), OCert c)))
-          -> Peer (KESProtocol c) AsServer InitialState IO ()
+          => Monad m
+          => m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
+          -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
+          -> Peer (KESProtocol m c) AsServer InitialState m ()
 kesPusher currentKey nextKey =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
       (sk, oc) <- currentKey
       return $ Yield (ServerAgency TokIdle) (KeyMessage sk oc) go
   where
-    go :: Peer (KESProtocol c) AsServer IdleState IO ()
+    go :: Peer (KESProtocol m c) AsServer IdleState m ()
     go = Effect $ do
       skOcMay <- nextKey
       case skOcMay of

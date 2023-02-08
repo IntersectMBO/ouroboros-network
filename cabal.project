@@ -39,7 +39,7 @@ package kes-agent
   tests: True
 
 package cardano-crypto-class
-  flags: -secp256k1-support
+  flags: +secp256k1-support
 
 -- ---------------------------------------------------------
 
@@ -52,11 +52,12 @@ package cardano-crypto-class
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 1e784917637accb7305166d1c80d9f31e772b1d1
+  tag: c4b68534f3bbaab347be5511e10b52df4b3f905f
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     cardano-crypto-class
     cardano-crypto-tests
+    cardano-crypto-praos
     cardano-mempool
 
     -- We pull the remaining sub-packages from CHaP, because our fork doesn't

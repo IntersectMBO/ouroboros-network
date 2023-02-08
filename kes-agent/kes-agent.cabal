@@ -15,7 +15,12 @@ maintainer:         tobias@well-typed.com
 -- category:
 -- extra-source-files:
 
+common project-config
+    ghc-options:
+        -with-rtsopts -threaded
+
 library
+    import: project-config
     exposed-modules: Cardano.KESAgent.Protocol
                    , Cardano.KESAgent.OCert
                    , Cardano.KESAgent.Driver
@@ -26,6 +31,7 @@ library
                    , Cardano.KESAgent.ControlClient
                    , Cardano.KESAgent.RetrySocket
                    , Cardano.KESAgent.RefCounting
+                   , Cardano.KESAgent.DirectBearer
 
     -- other-modules:
 
@@ -46,15 +52,19 @@ library
                  , contra-tracer ==0.1.0.1
                  , time >=1.10
                  , typed-protocols
+                 , network
+                 , network-mux
                  , socket >= 0.8.3 && <0.9
                  , socket-unix >=0.2.0.0
                  , nothunks
                  , quiet
                  , ouroboros-network-framework
+                 , io-classes
     hs-source-dirs:   src
     default-language: Haskell2010
 
 test-suite kes-agent-tests
+    import: project-config
     type: exitcode-stdio-1.0
     default-language: Haskell2010
     hs-source-dirs: test
@@ -76,3 +86,8 @@ test-suite kes-agent-tests
                  , tasty-quickcheck
                  , text >=1.2.5
                  , time >=1.10
+                 , ouroboros-network-framework
+                 , io-classes
+                 , ghc-prim
+                 , Win32-network
+                 , network

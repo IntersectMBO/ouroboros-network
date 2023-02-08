@@ -41,10 +41,10 @@ import NoThunks.Class (NoThunks (..))
 import Quiet
 import Data.Typeable
 
-data KESProtocol (k :: *) where
-  InitialState :: KESProtocol k
-  IdleState :: KESProtocol k
-  EndState :: KESProtocol k
+data KESProtocol (m :: * -> *) (k :: *) where
+  InitialState :: KESProtocol m k
+  IdleState :: KESProtocol m k
+  EndState :: KESProtocol m k
 
 class VersionedProtocol (p :: *) where
   versionIdentifier :: Proxy p -> VersionIdentifier
@@ -78,15 +78,15 @@ mkVersionIdentifier :: ByteString -> VersionIdentifier
 mkVersionIdentifier raw =
   VersionIdentifier $ BS.take versionIdentifierLength $ raw <> BS.replicate versionIdentifierLength 0
 
-instance VersionedProtocol (KESProtocol StandardCrypto) where
+instance VersionedProtocol (KESProtocol m StandardCrypto) where
   versionIdentifier _ =
     mkVersionIdentifier "StandardCrypto:0.1"
 
-instance VersionedProtocol (KESProtocol SingleCrypto) where
+instance VersionedProtocol (KESProtocol m SingleCrypto) where
   versionIdentifier _ =
     mkVersionIdentifier "SingleCrypto:0.1"
 
-instance VersionedProtocol (KESProtocol MockCrypto) where
+instance VersionedProtocol (KESProtocol m MockCrypto) where
   versionIdentifier _ =
     mkVersionIdentifier "MockCrypto:0.1"
 
@@ -109,13 +109,13 @@ instance VersionedProtocol (KESProtocol MockCrypto) where
 -- - The Agent stores the key locally in memory and pushes it to any connected
 --   Nodes.
 --
-instance Protocol (KESProtocol c) where
-  data Message (KESProtocol c) st st' where
-          VersionMessage :: Message (KESProtocol c) InitialState IdleState
-          KeyMessage :: CRef (SignKeyWithPeriodKES (KES c))
+instance Protocol (KESProtocol m c) where
+  data Message (KESProtocol m c) st st' where
+          VersionMessage :: Message (KESProtocol m c) InitialState IdleState
+          KeyMessage :: CRef m (SignKeyWithPeriodKES (KES c))
                      -> OCert c
-                     -> Message (KESProtocol c) IdleState IdleState
-          EndMessage :: Message (KESProtocol c) IdleState EndState
+                     -> Message (KESProtocol m c) IdleState IdleState
+          EndMessage :: Message (KESProtocol m c) IdleState EndState
 
   -- | Server always has agency
   data ServerHasAgency st where

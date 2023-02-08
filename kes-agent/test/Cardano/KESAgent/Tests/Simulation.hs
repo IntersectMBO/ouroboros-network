@@ -5,7 +5,7 @@
 {-#LANGUAGE FlexibleContexts #-}
 {-#LANGUAGE FlexibleInstances #-}
 {-#LANGUAGE TypeApplications #-}
-{-#LANGUAGE StandaloneDeriving #-}
+{-#LANGUAGE MultiParamTypeClasses #-}
 {-#LANGUAGE ScopedTypeVariables #-}
 {-#LANGUAGE TypeFamilies #-}
 {-#LANGUAGE RankNTypes #-}
@@ -15,7 +15,11 @@
 {-#LANGUAGE TypeOperators #-}
 {-#LANGUAGE DataKinds #-}
 module Cardano.KESAgent.Tests.Simulation
-( tests )
+( tests
+, Lock, withLock, mkLock
+, elaborateTracer
+, mvarPrettyTracer
+)
 where
 
 import Cardano.Crypto.DirectSerialise
@@ -28,17 +32,33 @@ import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Libsodium
+import Cardano.Crypto.MonadMLock
 import Cardano.Crypto.MLockedSeed
 import Cardano.Crypto.PinnedSizedBytes
 import Cardano.Crypto.Seed
 import Cardano.Binary (FromCBOR)
-import Test.Crypto.Util
+-- import Test.Crypto.Util
 import Test.Crypto.Instances
+import Ouroboros.Network.Snocket
+import Debug.Trace
 
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async
-import Control.Concurrent.MVar
-import Control.Exception (bracket, catch, SomeException)
+import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay, DiffTime)
+import Control.Monad.Class.MonadTime
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadMVar
+  ( MonadMVar
+  , MVar
+  , newMVar
+  , newEmptyMVar
+  , readMVar
+  , putMVar
+  , swapMVar
+  , takeMVar
+  , withMVar
+  , modifyMVar_
+  )
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow (MonadThrow, MonadCatch, bracket, catch, SomeException)
 import Control.Monad (forever, void, forM)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -54,11 +74,13 @@ import Test.Tasty.QuickCheck
 import Text.Printf (printf)
 import Data.Word
 import Data.Typeable
-import Data.Time (NominalDiffTime)
-import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Time (NominalDiffTime, picosecondsToDiffTime)
+import Data.Time.Clock.POSIX (getPOSIXTime, utcTimeToPOSIXSeconds)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Control.Tracer (Tracer (..), nullTracer)
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import qualified Data.Text as Text
+import Network.Socket
+import Foreign.Ptr (castPtr)
 
 import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Protocol
@@ -68,51 +90,104 @@ import Cardano.KESAgent.ControlClient
 import Cardano.KESAgent.Driver (DriverTrace (..))
 import Cardano.KESAgent.Evolution
 import Cardano.KESAgent.RefCounting
+import Cardano.KESAgent.DirectBearer
 
-tests :: Lock -> TestTree
-tests lock =
+tests :: Lock IO
+      -> (forall a. (Show a, TracePretty a) => Tracer IO a)
+      -> Snocket IO Socket SockAddr
+      -> TestTree
+tests lock tracer snocket =
   testGroup "Simulation"
-  [ testCrypto @MockCrypto Proxy lock
-  , testCrypto @SingleCrypto Proxy lock
-  , testCrypto @StandardCrypto Proxy lock
+  [ testCrypto @MockCrypto @IO Proxy Proxy lock tracer snocket (SockAddrUnix . ("./local" ++) . show)
+  , testCrypto @SingleCrypto @IO Proxy Proxy lock tracer snocket (SockAddrUnix . ("./local" ++) . show)
+  , testCrypto @StandardCrypto @IO Proxy Proxy lock tracer snocket (SockAddrUnix . ("./local" ++) . show)
   ]
 
-testCrypto :: forall c n
+traceShowTee :: Show a => String -> IO a -> IO a
+traceShowTee prefix a = do
+  result <- a
+  traceShowM result
+  return result
+
+instance ToDirectBearer IO Socket where
+  toDirectBearer socket =
+    DirectBearer
+      { send = \buf bufsize ->
+          fromIntegral <$> sendBuf socket (castPtr buf) (fromIntegral bufsize)
+      , recv = \buf bufsize ->
+          fromIntegral <$> recvBuf socket (castPtr buf) (fromIntegral bufsize)
+      }
+
+newtype Lock m = Lock { lockToMVar :: MVar m () }
+
+withLock :: MonadMVar m => Lock m -> m a -> m a
+withLock (Lock mv) = withMVar mv . const
+
+mkLock :: MonadMVar m => m (Lock m)
+mkLock = Lock <$> newMVar ()
+
+testCrypto :: forall c m n fd addr
             . Crypto c
            => Typeable c
-           => VersionedProtocol (KESProtocol c)
-           => UnsoundKESSignAlgorithm IO (KES c)
+           => VersionedProtocol (KESProtocol m c)
+           => UnsoundKESSignAlgorithm m (KES c)
            => ContextKES (KES c) ~ ()
-           => DirectSerialise (SignKeyKES (KES c))
-           => DirectDeserialise (SignKeyKES (KES c))
+           => DirectSerialise m (SignKeyKES (KES c))
+           => DirectDeserialise m (SignKeyKES (KES c))
            => DSIGN.Signable (DSIGN c) (OCertSignable c)
            => ContextDSIGN (DSIGN c) ~ ()
            => n ~ 10
            => KnownNat (SeedSizeKES (KES c) * n)
            => Show (SignKeyWithPeriodKES (KES c))
+           => Show addr
+           => MonadMLock m
+           => MonadAsync m
+           => MonadMVar m
+           => MonadProperty m
+           => MonadST m
+           => MonadThrow m
+           => MonadCatch m
+           => MonadFail m
+           => MonadTime m
+           => MonadTimer m
+           => MonadByteStringMemory m
+           => ToDirectBearer m fd
            => Proxy c
-           -> Lock
+           -> Proxy m
+           -> Lock m
+           -> (forall a. (Show a, TracePretty a) => Tracer m a)
+           -> Snocket m fd addr
+           -> (Word32 -> addr)
            -> TestTree
-testCrypto proxy lock =
+testCrypto proxyC proxyM lock tracer snocket mkAddr =
   testGroup name
-  [ testProperty "one key through chain" (testOneKeyThroughChain proxy lock)
-  , testProperty "concurrent pushes" (testConcurrentPushes proxy (Proxy @n) lock)
-  ]
+    [ testProperty "one key through chain" (testOneKeyThroughChain proxyC proxyM lock snocket mkAddr)
+    , testProperty "concurrent pushes" (testConcurrentPushes proxyC proxyM (Proxy @n) lock snocket mkAddr)
+    ]
   where
     name = Text.unpack .
            decodeUtf8 .
            unVersionIdentifier .
-           versionIdentifier $ (Proxy @(KESProtocol c))
+           versionIdentifier $ (Proxy @(KESProtocol m c))
 
-elaborateTracerLock :: MVar ()
+{-# NOINLINE elaborateTracerLock #-}
+elaborateTracerLock :: MVar IO ()
 elaborateTracerLock = unsafePerformIO $ newMVar ()
-{-#NOINLINE elaborateTracerLock #-}
 
 elaborateTracer :: TracePretty a => Tracer IO a
 elaborateTracer = Tracer $ \x -> withMVar elaborateTracerLock $ \() -> do
   t <- getPOSIXTime
-  hPutStrLn stdout $ printf "%015.4f %s" (realToFrac t :: Double) (tracePretty x)
+  putStrLn $ printf "%015.4f %s" (realToFrac t :: Double) (tracePretty x)
   hFlush stdout
+
+mvarPrettyTracer :: (MonadTime m, MonadMVar m)
+                 => MVar m [String]
+                 -> (forall a. (Show a, TracePretty a) => Tracer m a)
+mvarPrettyTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
+  t <- utcTimeToPOSIXSeconds <$> getCurrentTime
+  let str = printf "%015.4f %s" (realToFrac t :: Double) (tracePretty x)
+  return $ strs ++ [str]
+  
 
 class TracePretty a where
   tracePretty :: a -> String
@@ -123,32 +198,32 @@ strLength = length
 instance TracePretty AgentTrace where
   tracePretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ tracePretty d
   tracePretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ tracePretty d
-  tracePretty (AgentServiceClientConnected addr) = "Agent: ServiceClientConnected"
-  tracePretty (AgentServiceClientDisconnected addr) = "Agent: ServiceClientDisconnected"
-  tracePretty (AgentServiceSocketError err) = "Agent: ServiceSocketError " ++ (unwords . lines . show $ err)
-  tracePretty (AgentControlClientConnected addr) = "Agent: ControlClientConnected"
-  tracePretty (AgentControlClientDisconnected addr) = "Agent: ControlClientDisconnected"
-  tracePretty (AgentControlSocketError err) = "Agent: ControlSocketError " ++ (unwords . lines . show $ err)
+  tracePretty (AgentServiceClientConnected) = "Agent: ServiceClientConnected"
+  tracePretty (AgentServiceClientDisconnected) = "Agent: ServiceClientDisconnected"
+  tracePretty (AgentServiceSocketError e) = "Agent: ServiceSocketError: " ++ e
+  tracePretty (AgentControlClientConnected) = "Agent: ControlClientConnected"
+  tracePretty (AgentControlClientDisconnected) = "Agent: ControlClientDisconnected"
+  tracePretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
   tracePretty x = "Agent: " ++ (drop (strLength "Agent") (show x))
 
 instance TracePretty ControlClientTrace where
   tracePretty (ControlClientDriverTrace d) = "Control: Driver: " ++ tracePretty d
-  tracePretty (ControlClientConnected addr) = "Control: Connected"
+  tracePretty (ControlClientConnected) = "Control: Connected"
   tracePretty x = "Control: " ++ (drop (strLength "ControlClient") (show x))
 
 instance TracePretty ServiceClientTrace where
   tracePretty (ServiceClientDriverTrace d) = "Service: Driver: " ++ tracePretty d
-  tracePretty (ServiceClientConnected addr) = "Service: Connected"
+  tracePretty (ServiceClientConnected) = "Service: Connected"
   tracePretty x = "Service: " ++ (drop (strLength "ServiceClient") (show x))
 
 instance TracePretty DriverTrace where
   tracePretty x = drop (strLength "Driver") (show x)
 
-data Simulator c =
+data Simulator m c =
   Simulator
-    { sendKey :: (CRef (SignKeyWithPeriodKES (KES c)), OCert c) -> IO ()
-    , delay :: Int -> IO ()
-    , setTime :: NominalDiffTime -> IO ()
+    { sendKey :: (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
+    , delay :: DiffTime -> m ()
+    , setTime :: NominalDiffTime -> m ()
     }
 
 newtype PrettyBS = PrettyBS { unPrettyBS :: ByteString }
@@ -157,86 +232,108 @@ newtype PrettyBS = PrettyBS { unPrettyBS :: ByteString }
 instance Show PrettyBS where
   show = hexShowBS . unPrettyBS
 
-runTestNetwork :: forall c
+{- HLINT ignore "Eta reduce" -}
+
+runTestNetwork :: forall c m fd addr
                 . Crypto c
                => Typeable c
-               => VersionedProtocol (KESProtocol c)
-               => KESSignAlgorithm IO (KES c)
+               => VersionedProtocol (KESProtocol m c)
+               => KESSignAlgorithm m (KES c)
                => ContextKES (KES c) ~ ()
-               => DirectSerialise (SignKeyKES (KES c))
-               => DirectDeserialise (SignKeyKES (KES c))
+               => DirectSerialise m (SignKeyKES (KES c))
+               => DirectDeserialise m (SignKeyKES (KES c))
                => DSIGN.Signable (DSIGN c) (OCertSignable c)
                => ContextDSIGN (DSIGN c) ~ ()
                => Show (SignKeyWithPeriodKES (KES c))
+               => MonadMLock m
+               => MonadAsync m
+               => MonadMVar m
+               => MonadTime m
+               => MonadTimer m
+               => MonadThrow m
+               => MonadCatch m
+               => MonadFail m
+               => MonadST m
+               => MonadByteStringMemory m
+               => ToDirectBearer m fd
                => Proxy c
-               -> (forall a. (Show a, TracePretty a) => Tracer IO a)
-               -> SocketAddress Unix
-               -> SocketAddress Unix
+               -> (forall a. (Show a, TracePretty a) => Tracer m a)
+               -> Snocket m fd addr
+               -> addr
+               -> addr
                -> Integer
-               -> Word
-               -> Word
+               -> DiffTime
+               -> DiffTime
                -> -- | A \"sender\" script, i.e., the control server
-                  (Simulator c -> IO ())
+                  (Simulator m c -> m ())
                -> -- | A \"receiver\" job, which will receive keys as they
                   -- arrive at the Node.
-                  ((CRef (SignKeyWithPeriodKES (KES c)), OCert c) -> (Property -> IO ()) -> IO ())
-               -> IO Property
-runTestNetwork p tracer controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay senderScript receiverScript = do
-    propertyVar <- newEmptyMVar :: IO (MVar Property)
-    timeVar <- newMVar (fromInteger genesisTimestamp)
+                  ((CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> (Property -> m ()) -> m ())
+               -> m Property
+runTestNetwork p tracer snocket controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay senderScript receiverScript = do
+    propertyVar <- newEmptyMVar :: m (MVar m Property)
+    timeVar <- newMVar (fromInteger genesisTimestamp) :: m (MVar m NominalDiffTime)
 
-    let agentOptions = defAgentOptions
+    let agentOptions  :: AgentOptions m fd addr
+        agentOptions = AgentOptions
                           { agentGenesisTimestamp = genesisTimestamp
                           , agentGetCurrentTime = readMVar timeVar
-                          , agentControlSocketAddress = controlAddress
-                          , agentServiceSocketAddress = serviceAddress
+                          , agentControlAddr = controlAddress
+                          , agentServiceAddr = serviceAddress
+                          , agentSnocket = snocket
                           }
-        agent :: HasCallStack => Tracer IO AgentTrace -> IO ()
+        agent :: HasCallStack => Tracer m AgentTrace -> m ()
         agent tracer = runAgent p agentOptions tracer
 
         node :: HasCallStack
-             => Tracer IO ServiceClientTrace
-             -> MVar Property
-             -> IO ()
+             => Tracer m ServiceClientTrace
+             -> MVar m Property
+             -> m ()
         node tracer mvar = do
-          threadDelay (fromIntegral nodeDelay)
-          (runServiceClient p
-            ServiceClientOptions { serviceClientSocketAddress = agentServiceSocketAddress agentOptions }
+          threadDelay nodeDelay
+          runServiceClient p
+            ServiceClientOptions
+              { serviceClientSnocket = snocket
+              , serviceClientAddress = serviceAddress
+              }
             (\sk oc -> do
               receiverScript (sk, oc) (putMVar mvar)
-            ))
+            )
             tracer
             `catch` (\(e :: AsyncCancelled) -> return ())
-            `catch` (\(e :: SomeException) -> putStrLn $ "NODE: " ++ show e)
+            `catch` (\(e :: SomeException) -> traceWith tracer $ ServiceClientAbnormalTermination ("NODE: " ++ show e))
 
-        simulator :: Simulator c
+        simulator :: Simulator m c
         simulator = Simulator
           { sendKey = \(sk, oc) ->
-              (runControlClient1 p
-                ControlClientOptions { controlClientSocketAddress = agentControlSocketAddress agentOptions }
-                sk oc)
+              runControlClient1 p
+                ControlClientOptions
+                  { controlClientSnocket = snocket
+                  , controlClientAddress = controlAddress
+                  }
+                sk oc
                 tracer
                 `catch` (\(e :: AsyncCancelled) -> return ())
-                `catch` (\(e :: SomeException) -> putStrLn $ "CONTROL: " ++ show e)
+                `catch` (\(e :: SomeException) -> traceWith tracer $ ControlClientAbnormalTermination ("CONTROL: " ++ show e))
           , delay = threadDelay
           , setTime = void . swapMVar timeVar
           }
 
         controlServer :: HasCallStack
-                      => Tracer IO ControlClientTrace
-                      -> (Simulator c -> IO ())
-                      -> IO ()
+                      => Tracer m ControlClientTrace
+                      -> (Simulator m c -> m ())
+                      -> m ()
         controlServer tracer script = do
-          threadDelay (fromIntegral controlDelay)
+          threadDelay controlDelay
           script simulator
 
-        watch :: HasCallStack => MVar a -> IO a
+        watch :: HasCallStack => MVar m a -> m a
         watch mvar = do
           takeMVar mvar
 
     output <- race
           -- abort 5 seconds after both clients have started
-          (threadDelay $ 5000000 + (fromIntegral $ max controlDelay nodeDelay) + 500)
+          (threadDelay $ 5 + max controlDelay nodeDelay)
           (race
             -- run these to "completion"
             (agent tracer `concurrently_`
@@ -252,21 +349,37 @@ runTestNetwork p tracer controlAddress serviceAddress genesisTimestamp nodeDelay
         Right (Right prop) -> return prop
 
 
-testOneKeyThroughChain :: forall c
+testOneKeyThroughChain :: forall c m fd addr
                         . Crypto c
                        => Typeable c
-                       => VersionedProtocol (KESProtocol c)
-                       => UnsoundKESSignAlgorithm IO (KES c)
+                       => VersionedProtocol (KESProtocol m c)
+                       => UnsoundKESSignAlgorithm m (KES c)
                        => ContextKES (KES c) ~ ()
-                       => DirectSerialise (SignKeyKES (KES c))
-                       => DirectDeserialise (SignKeyKES (KES c))
+                       => DirectSerialise m (SignKeyKES (KES c))
+                       => DirectDeserialise m (SignKeyKES (KES c))
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => ContextDSIGN (DSIGN c) ~ ()
                        => Show (SignKeyWithPeriodKES (KES c))
+                       => MonadProperty m
+                       => MonadMVar m
+                       => MonadMLock m
+                       => MonadByteStringMemory m
+                       => MonadST m
+                       => MonadThrow m
+                       => MonadCatch m
+                       => MonadFail m
+                       => MonadAsync m
+                       => MonadTime m
+                       => MonadTimer m
+                       => ToDirectBearer m fd
+                       => Show addr
                        => Proxy c
-                       -> Lock
-                       -> Word64
-                       -> Word64
+                       -> Proxy m
+                       -> Lock m
+                       -> Snocket m fd addr
+                       -> (Word32 -> addr)
+                       -> Word32
+                       -> Word32
                        -> PinnedSizedBytes (SeedSizeKES (KES c))
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
@@ -274,34 +387,41 @@ testOneKeyThroughChain :: forall c
                        -> Word
                        -> Word
                        -> Property
-testOneKeyThroughChain p
+testOneKeyThroughChain p _proxyM
     lock
-    controlAddressStr
-    serviceAddressStr
+    snocket
+    mkAddress
+    controlAddressSeed
+    serviceAddressSeed
     seedKESPSB
     seedDSIGNPSB
     genesisTimestamp
     certN
     nodeDelay
     controlDelay =
-  ioProperty . withLock lock . withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
+  controlAddressSeed /= serviceAddressSeed ==>
+  mProperty . withLock lock . withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
+    traceMVar <- newMVar []
+    let controlAddress = mkAddress controlAddressSeed
+    let serviceAddress = mkAddress serviceAddressSeed
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
-    hSetBuffering stdout LineBuffering
-    expectedSK <- genKeyKES @IO @(KES c) seedKES
+    expectedSK <- genKeyKES @m @(KES c) seedKES
     let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
     expectedSKBS <- rawSerialiseSignKeyKES expectedSK
 
     withNewCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP $ \expectedSKPVar -> do
-      vkHot <- deriveVerKeyKES expectedSK
+      vkHot <- deriveVerKeyKES @m expectedSK
       let kesPeriod = KESPeriod 0
       let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
           expectedOC = makeOCert vkHot certN kesPeriod skCold
 
-      controlAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-control:" ++ show controlAddressStr)
-      serviceAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-service:" ++ show serviceAddressStr)
-
-      runTestNetwork p nullTracer controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay
+      prop <- runTestNetwork p (mvarPrettyTracer traceMVar) snocket
+        controlAddress
+        serviceAddress
+        genesisTimestamp
+        (picosecondsToDiffTime $ fromIntegral nodeDelay * 1000000)
+        (picosecondsToDiffTime $ fromIntegral controlDelay * 1000000)
         (\sim -> sendKey sim (expectedSKPVar, expectedOC))
         (\(resultSKPVar, resultOC) finish -> do
             (resultSKBS, resultPeriod) <- withCRefValue resultSKPVar $ \resultSKP -> do
@@ -309,50 +429,72 @@ testOneKeyThroughChain p
                             return (skp, periodKES resultSKP)
             finish ((PrettyBS expectedSKBS, expectedPeriod) === (PrettyBS resultSKBS, resultPeriod))
         )
+      log <- takeMVar traceMVar
+      return $ (counterexample $ unlines log) prop
 
-testConcurrentPushes :: forall c n
+testConcurrentPushes :: forall c m n fd addr
                       . KnownNat n
                      => Crypto c
                      => Typeable c
-                     => VersionedProtocol (KESProtocol c)
-                     => UnsoundKESSignAlgorithm IO (KES c)
+                     => VersionedProtocol (KESProtocol m c)
+                     => UnsoundKESSignAlgorithm m (KES c)
                      => ContextKES (KES c) ~ ()
-                     => DirectSerialise (SignKeyKES (KES c))
-                     => DirectDeserialise (SignKeyKES (KES c))
+                     => DirectSerialise m (SignKeyKES (KES c))
+                     => DirectDeserialise m (SignKeyKES (KES c))
                      => DSIGN.Signable (DSIGN c) (OCertSignable c)
                      => ContextDSIGN (DSIGN c) ~ ()
                      => Show (SignKeyWithPeriodKES (KES c))
+                     => MonadProperty m
+                     => MonadMVar m
+                     => MonadMLock m
+                     => MonadByteStringMemory m
+                     => MonadST m
+                     => MonadThrow m
+                     => MonadCatch m
+                     => MonadFail m
+                     => MonadAsync m
+                     => MonadTime m
+                     => MonadTimer m
+                     => ToDirectBearer m fd
                      => Proxy c
+                     -> Proxy m
                      -> Proxy n
-                     -> Lock
-                     -> Word64
-                     -> Word64
+                     -> Lock m
+                     -> Snocket m fd addr
+                     -> (Word32 -> addr)
+                     -> Word32
+                     -> Word32
                      -> PinnedSizedBytes (SeedSizeKES (KES c) * n)
                      -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                      -> Integer
                      -> Word
                      -> Word
                      -> Property
-testConcurrentPushes proxyCrypto proxyN
+testConcurrentPushes proxyCrypto proxyM proxyN
     lock
-    controlAddressStr
-    serviceAddressStr
+    snocket
+    mkAddress
+    controlAddressSeed
+    serviceAddressSeed
     seedsKESPSB
     seedDSIGNPSB
     genesisTimestamp
     nodeDelay
     controlDelay =
-  ioProperty . withLock lock $ do
+  controlAddressSeed /= serviceAddressSeed ==>
+  mProperty . withLock lock $ do
+    traceMVar <- newMVar []
+    let controlAddress = mkAddress controlAddressSeed
+    let serviceAddress = mkAddress serviceAddressSeed
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
-    hSetBuffering stdout LineBuffering
     let seedsKESBS = psbToByteString seedsKESPSB
         seedsKESRaw = map psbFromByteString $ chunksOfBS (fromIntegral $ natVal @(SeedSizeKES (KES c)) Proxy) seedsKESBS
     let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
 
     expectedSKOs <- forM (zip [0..] seedsKESRaw) $ \(certN, seedKESPSB) ->
         withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
-          expectedSK <- genKeyKES @IO @(KES c) seedKES
+          expectedSK <- genKeyKES @m @(KES c) seedKES
           let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
           expectedSKPVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP
           vkHot <- deriveVerKeyKES expectedSK
@@ -365,10 +507,12 @@ testConcurrentPushes proxyCrypto proxyN
             serialized <- rawSerialiseSignKeyKES . skWithoutPeriodKES $ skp
             return (ocertN oc, (PrettyBS serialized, periodKES skp))
 
-    controlAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-control:" ++ show controlAddressStr)
-    serviceAddress <- justOrError $ socketAddressUnixAbstract (encodeUtf8 . Text.pack $ "kes-agent-service:" ++ show serviceAddressStr)
-
-    prop <- runTestNetwork proxyCrypto nullTracer controlAddress serviceAddress genesisTimestamp nodeDelay controlDelay
+    prop <- runTestNetwork proxyCrypto (mvarPrettyTracer traceMVar) snocket
+              controlAddress
+              serviceAddress
+              genesisTimestamp
+              (picosecondsToDiffTime $ fromIntegral nodeDelay * 1000000000)
+              (picosecondsToDiffTime $ fromIntegral controlDelay * 1000000000)
       (\sim -> mapConcurrently_
                 (sendKey sim)
                 expectedSKOs)
@@ -381,7 +525,8 @@ testConcurrentPushes proxyCrypto proxyN
       )
 
     mapM_ (releaseCRef . fst) expectedSKOs
-    return prop
+    log <- takeMVar traceMVar
+    return $ (counterexample $ unlines log) prop
 
 -- Show instances for signing keys violate mlocking guarantees, but for testing
 -- purposes, this is fine, so we'll declare orphan instances here.
@@ -398,10 +543,16 @@ instance Show (SignKeyKES d) => Show (SignKeyKES (SumKES h d)) where
 hexShowBS :: ByteString -> String
 hexShowBS = concatMap (printf "%02x") . BS.unpack
 
-justOrError :: Maybe a -> IO a
+justOrError :: Applicative m => Maybe a -> m a
 justOrError Nothing = error "Nothing"
-justOrError (Just a) = return a
+justOrError (Just a) = pure a
 
 chunksOfBS :: Int -> ByteString -> [ByteString]
 chunksOfBS _ "" = []
 chunksOfBS n bs = BS.take n bs : chunksOfBS n (BS.drop n bs)
+
+class MonadProperty m where
+  mProperty :: forall p. Testable p => m p -> Property
+
+instance MonadProperty IO where
+  mProperty = ioProperty
