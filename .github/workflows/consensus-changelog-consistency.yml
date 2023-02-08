@@ -1,0 +1,19 @@
+name: Consensus changelog sanity check
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: "Check changelog consistency"
+      run: ./scripts/ci/check-consensus-release.sh

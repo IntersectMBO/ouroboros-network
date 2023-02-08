@@ -12,6 +12,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Workaround runner image issue
+      # https://github.com/actions/runner-images/issues/7061
+      run: sudo chown -R $USER /usr/local/.ghcup
+
     - name: Install Haskell
       uses: input-output-hk/setup-haskell@v1
       id: setup-haskell
@@ -42,6 +46,12 @@ jobs:
       SECP_CACHE_VERSION: "2022-12-30"
 
     steps:
+
+    - name: Workaround runner image issue
+      if: runner.os == 'Linux'
+      # https://github.com/actions/runner-images/issues/7061
+      run: sudo chown -R $USER /usr/local/.ghcup
+
     - name: Install Haskell
       uses: input-output-hk/setup-haskell@v1
       id: setup-haskell
@@ -98,13 +108,20 @@ jobs:
       run: |
         cp .github/workflows/cabal.project.local.Windows cabal.project.local
 
+    - name: Update PATH on windows
+      if: runner.os == 'Windows'
+      run: |
+        $env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)
+        echo "PATH=$env:PATH" >> $env:GITHUB_ENV
+
     - name: Update Hackage and CHaP
       run: cabal update
 
     - name: Record dependencies
       id: record-deps
-      run: cabal build all --dry-run
-        cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
+      run: |
+        cabal build all --dry-run
+        cat dist-newstyle/cache/plan.json | jq -L .github/workflows/jq-install-plan | sort | uniq > dependencies.txt
 
     - uses: actions/cache@v3
       name: "Cache `cabal store`"
@@ -121,12 +138,6 @@ jobs:
           !dist-newstyle/**/.git
         key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
         restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
-
-    - name: Update PATH on windows
-      if: runner.os == 'Windows'
-      run: |
-        $env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)
-        echo "PATH=$env:PATH" >> $env:GITHUB_ENV
 
     - name: Build dependencies
       run: cabal build --only-dependencies all -j

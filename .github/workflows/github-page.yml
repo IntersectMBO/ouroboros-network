@@ -50,6 +50,10 @@ jobs:
           flags: -external-libsodium-vrf
         EOF
 
+    - name: Workaround runner image issue
+      # https://github.com/actions/runner-images/issues/7061
+      run: sudo chown -R $USER /usr/local/.ghcup
+
     - name: Install Haskell
       uses: haskell/actions/setup@v2
       id: setup-haskell

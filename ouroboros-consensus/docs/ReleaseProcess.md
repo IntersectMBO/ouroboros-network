@@ -242,3 +242,15 @@ If you encounter an error mentioning:
 `pkg_resources.extern.packaging.version.InvalidVersion: Invalid version: ...` we
 found that downgrading `setuptools` to a version `< 66` seems to solve this
 problem.
+
+# Steps for cutting a release
+
+1. Update the version in `ouroboros-consensus` to a dummy value, e.g. `10.0.0.0`.
+2. Run `scriv collect`.
+3. Assess the change, whether it requires major, minor or patch bump.
+4. Undo the changes (`git reset --hard HEAD`).
+5. Update the version in accordance with step 3 in all the packages in the bundle. Each changelog describes the packages of its bundle.
+6. Run `scriv collect`.
+7. Repeat steps 1-6 but with `ouroboros-consensus-cardano`.
+8. Release these new versions into CHaP.
+
