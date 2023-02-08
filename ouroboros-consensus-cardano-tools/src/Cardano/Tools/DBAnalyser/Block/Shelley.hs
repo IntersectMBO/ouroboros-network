@@ -40,7 +40,7 @@ import           Cardano.Ledger.Conway (ConwayEra)
 import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Shelley (ShelleyEra)
 
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
@@ -159,5 +159,5 @@ mkShelleyProtocolInfo genesis initialNonce =
         }
       ProtocolParamsShelley {
           shelleyProtVer                = SL.ProtVer 2 0
-        , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+        , shelleyMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
         }

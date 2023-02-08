@@ -43,7 +43,7 @@ import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -128,7 +128,7 @@ type instance ForgeStateUpdateError ByronBlock = Void
 
 byronBlockForging
   :: Monad m
-  => TxLimits.Overrides ByronBlock
+  => Mempool.TxOverrides ByronBlock
   -> ByronLeaderCredentials
   -> BlockForging m ByronBlock
 byronBlockForging maxTxCapacityOverrides creds = BlockForging {
@@ -169,7 +169,7 @@ data ProtocolParamsByron = ProtocolParamsByron {
     , byronProtocolVersion        :: Update.ProtocolVersion
     , byronSoftwareVersion        :: Update.SoftwareVersion
     , byronLeaderCredentials      :: Maybe ByronLeaderCredentials
-    , byronMaxTxCapacityOverrides :: TxLimits.Overrides ByronBlock
+    , byronMaxTxCapacityOverrides :: Mempool.TxOverrides ByronBlock
     }
 
 protocolInfoByron ::

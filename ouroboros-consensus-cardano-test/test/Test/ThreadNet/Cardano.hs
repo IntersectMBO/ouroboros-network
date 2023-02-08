@@ -25,7 +25,7 @@ import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
@@ -502,7 +502,7 @@ mkProtocolCardanoAndHardForkTxs
           , byronProtocolVersion        = propPV
           , byronSoftwareVersion        = softVerByron
           , byronLeaderCredentials      = Just leaderCredentialsByron
-          , byronMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          , byronMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
           }
         ProtocolParamsShelleyBased {
             shelleyBasedGenesis           = genesisShelley
@@ -511,27 +511,27 @@ mkProtocolCardanoAndHardForkTxs
           }
         ProtocolParamsShelley {
             shelleyProtVer                = SL.ProtVer shelleyMajorVersion 0
-          , shelleyMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          , shelleyMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
           }
         ProtocolParamsAllegra {
             allegraProtVer                = SL.ProtVer allegraMajorVersion 0
-          , allegraMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          , allegraMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
           }
         ProtocolParamsMary {
             maryProtVer                   = SL.ProtVer maryMajorVersion    0
-          , maryMaxTxCapacityOverrides    = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          , maryMaxTxCapacityOverrides    = Mempool.mkOverrides Mempool.noOverridesMeasure
           }
         ProtocolParamsAlonzo {
             alonzoProtVer                 = SL.ProtVer alonzoMajorVersion  0
-          , alonzoMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          , alonzoMaxTxCapacityOverrides  = Mempool.mkOverrides Mempool.noOverridesMeasure
           }
         ProtocolParamsBabbage {
-            babbageProtVer                = SL.ProtVer babbageMajorVersion 0
-          , babbageMaxTxCapacityOverrides = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+            babbageProtVer                = SL.ProtVer babbageMajorVersion  0
+          , babbageMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
           }
         ProtocolParamsConway {
             conwayProtVer                 = SL.ProtVer conwayMajorVersion  0
-          , conwayMaxTxCapacityOverrides  = TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          , conwayMaxTxCapacityOverrides  = Mempool.mkOverrides Mempool.noOverridesMeasure
           }
         protocolParamsByronShelley
         ProtocolTransitionParamsShelleyBased {

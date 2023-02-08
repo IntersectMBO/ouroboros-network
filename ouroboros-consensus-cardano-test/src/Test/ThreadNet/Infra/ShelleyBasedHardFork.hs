@@ -49,8 +49,8 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
-import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import           Ouroboros.Consensus.Mempool (TxLimits)
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -269,7 +269,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
           protocolParamsShelleyBased
           ((), ())  -- trivial additional Genesis config and translation context
           protVer1
-          (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
+          (Mempool.mkOverrides Mempool.noOverridesMeasure)
 
     eraParams1 :: History.EraParams
     eraParams1 = shelleyEraParams genesis1
@@ -302,7 +302,7 @@ protocolInfoShelleyBasedHardFork protocolParamsShelleyBased
             }
           (transCtxt2, transCtxt2)
           protVer2
-          (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
+          (Mempool.mkOverrides Mempool.noOverridesMeasure)
 
     eraParams2 :: History.EraParams
     eraParams2 = shelleyEraParams genesis2

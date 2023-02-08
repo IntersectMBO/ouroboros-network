@@ -38,7 +38,7 @@ import           Cardano.Ledger.Keys (coerceKeyRole)
 import qualified Cardano.Ledger.Shelley.Genesis as Shelley
 
 import qualified Ouroboros.Consensus.Cardano as Consensus
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (PraosCanBeLeader (..))
 import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
@@ -97,7 +97,7 @@ mkSomeConsensusProtocolShelley NodeShelleyProtocolConfiguration {
         shelleyProtVer =
           ProtVer 2 0,
         shelleyMaxTxCapacityOverrides =
-          TxLimits.mkOverrides TxLimits.noOverridesMeasure
+          Mempool.mkOverrides Mempool.noOverridesMeasure
       }
 
 genesisHashToPraosNonce :: GenesisHash -> Nonce

@@ -27,7 +27,7 @@ import           Ouroboros.Consensus.Block (CannotForge, ForgeStateInfo,
                      ForgeStateUpdateError)
 import           Ouroboros.Consensus.Config (maxRollbacks)
 import           Ouroboros.Consensus.Config.SupportsNode
-import           Ouroboros.Consensus.Mempool.TxLimits (TxLimits)
+import           Ouroboros.Consensus.Mempool (TxLimits)
 import           Ouroboros.Consensus.Node.InitStorage
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Praos.Common

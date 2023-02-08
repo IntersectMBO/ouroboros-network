@@ -46,7 +46,7 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.PBFT
 
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
@@ -230,7 +230,7 @@ forgeDualByronBlock cfg curBlockNo curSlotNo tickedLedger vtxs isLeader =
     main :: ByronBlock
     main = forgeByronBlock
              (dualTopLevelConfigMain cfg)
-             (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
+             (Mempool.mkOverrides Mempool.noOverridesMeasure)
              curBlockNo
              curSlotNo
              (tickedDualLedgerStateMain tickedLedger)

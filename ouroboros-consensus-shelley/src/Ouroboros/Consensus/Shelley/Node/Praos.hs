@@ -20,8 +20,7 @@ import qualified Cardano.Protocol.TPraos.OCert as Absolute
 import qualified Cardano.Protocol.TPraos.OCert as SL
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config (configConsensus)
-import           Ouroboros.Consensus.Mempool.TxLimits
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..),
                      praosCheckCanForge)
@@ -46,11 +45,11 @@ praosBlockForging ::
      forall m era c.
      ( ShelleyCompatible (Praos c) era
      , c ~ EraCrypto era
-     , TxLimits (ShelleyBlock (Praos c) era)
+     , Mempool.TxLimits (ShelleyBlock (Praos c) era)
      , IOLike m
      )
   => PraosParams
-  -> TxLimits.Overrides (ShelleyBlock (Praos c) era)
+  -> Mempool.TxOverrides (ShelleyBlock (Praos c) era)
   -> ShelleyLeaderCredentials (EraCrypto era)
   -> m (BlockForging m (ShelleyBlock (Praos c) era))
 praosBlockForging praosParams maxTxCapacityOverrides credentials = do
@@ -83,7 +82,7 @@ praosSharedBlockForging ::
   => HotKey.HotKey c m
   -> (SlotNo -> Absolute.KESPeriod)
   -> ShelleyLeaderCredentials c
-  -> TxLimits.Overrides (ShelleyBlock (Praos c) era)
+  -> Mempool.TxOverrides (ShelleyBlock (Praos c) era)
   -> BlockForging m     (ShelleyBlock (Praos c) era)
 praosSharedBlockForging
   hotKey
@@ -118,11 +117,11 @@ praosSharedBlockForging
 -- | Parameters needed to run Babbage
 data ProtocolParamsBabbage c = ProtocolParamsBabbage {
     babbageProtVer                :: SL.ProtVer
-  , babbageMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (BabbageEra c))
+  , babbageMaxTxCapacityOverrides :: Mempool.TxOverrides (ShelleyBlock (Praos c) (BabbageEra c))
   }
 
 -- | Parameters needed to run Conway
 data ProtocolParamsConway c = ProtocolParamsConway {
     conwayProtVer                :: SL.ProtVer
-  , conwayMaxTxCapacityOverrides :: TxLimits.Overrides (ShelleyBlock (Praos c) (ConwayEra c))
+  , conwayMaxTxCapacityOverrides :: Mempool.TxOverrides (ShelleyBlock (Praos c) (ConwayEra c))
   }

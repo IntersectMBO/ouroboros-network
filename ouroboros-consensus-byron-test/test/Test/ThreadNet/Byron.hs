@@ -39,7 +39,7 @@ import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import qualified Ouroboros.Consensus.Mempool.TxLimits as TxLimits
+import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
@@ -1303,7 +1303,7 @@ mkRekeyUpd genesisConfig genesisSecrets cid pInfo eno newSK =
               creds' = updSignKey genSK bcfg cid (coerce eno) newSK
               blockForging' =
                 byronBlockForging
-                  (TxLimits.mkOverrides TxLimits.noOverridesMeasure)
+                  (Mempool.mkOverrides Mempool.noOverridesMeasure)
                   creds'
               pInfo' = pInfo { pInfoBlockForging = return [blockForging'] }
 

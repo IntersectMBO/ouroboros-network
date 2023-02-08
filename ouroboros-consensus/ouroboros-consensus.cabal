@@ -125,11 +125,15 @@ library
                        Ouroboros.Consensus.Ledger.SupportsProtocol
                        Ouroboros.Consensus.Mempool
                        Ouroboros.Consensus.Mempool.API
-                       Ouroboros.Consensus.Mempool.Impl
+                       Ouroboros.Consensus.Mempool.Capacity
+                       Ouroboros.Consensus.Mempool.Impl.Common
                        Ouroboros.Consensus.Mempool.Impl.Pure
                        Ouroboros.Consensus.Mempool.Impl.Types
                        Ouroboros.Consensus.Mempool.TxLimits
+                       Ouroboros.Consensus.Mempool.Init
+                       Ouroboros.Consensus.Mempool.Query
                        Ouroboros.Consensus.Mempool.TxSeq
+                       Ouroboros.Consensus.Mempool.Update
                        Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface
                        Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                        Ouroboros.Consensus.MiniProtocol.ChainSync.Client

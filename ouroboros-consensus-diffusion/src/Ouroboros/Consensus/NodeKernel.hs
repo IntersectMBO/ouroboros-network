@@ -90,7 +90,7 @@ data NodeKernel m remotePeer localPeer blk = NodeKernel {
       getChainDB             :: ChainDB m blk
 
       -- | The node's mempool
-    , getMempool             :: Mempool m blk TicketNo
+    , getMempool             :: Mempool m blk
 
       -- | The node's top-level static configuration
     , getTopLevelConfig      :: TopLevelConfig blk
@@ -182,7 +182,7 @@ data InternalState m remotePeer localPeer blk = IS {
     , blockFetchInterface :: BlockFetchConsensusInterface remotePeer (Header blk) blk m
     , fetchClientRegistry :: FetchClientRegistry remotePeer (Header blk) blk m
     , varCandidates       :: StrictTVar m (Map remotePeer (StrictTVar m (AnchoredFragment (Header blk))))
-    , mempool             :: Mempool m blk TicketNo
+    , mempool             :: Mempool m blk
     }
 
 initInternalState
@@ -530,15 +530,15 @@ getMempoolReader
      , IOLike m
      , HasTxId (GenTx blk)
      )
-  => Mempool m blk TicketNo
+  => Mempool m blk
   -> TxSubmissionMempoolReader (GenTxId blk) (Validated (GenTx blk)) TicketNo m
 getMempoolReader mempool = MempoolReader.TxSubmissionMempoolReader
-    { mempoolZeroIdx     = zeroIdx mempool
+    { mempoolZeroIdx     = zeroTicketNo
     , mempoolGetSnapshot = convertSnapshot <$> getSnapshot mempool
     }
   where
     convertSnapshot
-      :: MempoolSnapshot               blk                                   TicketNo
+      :: MempoolSnapshot               blk
       -> MempoolReader.MempoolSnapshot (GenTxId blk) (Validated (GenTx blk)) TicketNo
     convertSnapshot MempoolSnapshot { snapshotTxsAfter, snapshotLookupTx,
                                       snapshotHasTx } =
@@ -556,7 +556,7 @@ getMempoolWriter
      , IOLike m
      , HasTxId (GenTx blk)
      )
-  => Mempool m blk TicketNo
+  => Mempool m blk
   -> TxSubmissionMempoolWriter (GenTxId blk) (GenTx blk) TicketNo m
 getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
     { Inbound.txId          = txId
