@@ -168,7 +168,12 @@ connections PeerSelectionActions{
                      Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
               decisionTrace = [ TraceDemoteLocalAsynchronous localDemotions
-                              , TraceDemoteAsynchronous nonLocalDemotions],
+                              | not $ null localDemotions
+                              ]
+                           <> [ TraceDemoteAsynchronous nonLocalDemotions
+                              | not $ null nonLocalDemotions
+                              ],
+
               decisionJobs  = [],
               decisionState = st {
                                 activePeers       = activePeers',
