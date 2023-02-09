@@ -280,8 +280,6 @@ connectionManagerTraceMap (TrConnectionExists p _ as)      =
   "TrConnectionExists " ++ show p ++ " " ++ show as
 connectionManagerTraceMap (TrForbiddenConnection _)        =
   "TrForbiddenConnection"
-connectionManagerTraceMap (TrImpossibleConnection _)       =
-  "TrImpossibleConnection"
 connectionManagerTraceMap (TrConnectionFailure _)          =
   "TrConnectionFailure"
 connectionManagerTraceMap (TrConnectionNotFound p _)       =

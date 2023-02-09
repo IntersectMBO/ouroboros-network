@@ -837,7 +837,6 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrShutdown
   | TrConnectionExists             Provenance peerAddr    AbstractState
   | TrForbiddenConnection          (ConnectionId peerAddr)
-  | TrImpossibleConnection         (ConnectionId peerAddr)
   | TrConnectionFailure            (ConnectionId peerAddr)
   | TrConnectionNotFound           Provenance peerAddr
   | TrForbiddenOperation           peerAddr                AbstractState
