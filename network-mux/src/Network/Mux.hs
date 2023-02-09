@@ -413,9 +413,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                 >> return True
               _ -> writeTVar muxStatus (MuxFailed e)
                 >> return False
-          if r
-            then return ()
-            else throwIO e
+          unless r (throwIO e)
 
         EventControlCmd (CmdStartProtocolThread
                            StartEagerly
@@ -455,7 +453,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           go monitorCtx'
 
         EventControlCmd CmdShutdown -> do
-          traceWith tracer MuxTraceShutdown
+          traceWith tracer MuxTraceStopping
           atomically $ writeTVar muxStatus MuxStopping
           JobPool.cancelGroup jobpool MiniProtocolJob
           -- wait for 2 seconds before the egress queue is drained
@@ -464,6 +462,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                   tryPeekTBQueue egressQueue
               >>= check . isNothing
           atomically $ writeTVar muxStatus MuxStopped
+          traceWith tracer MuxTraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and
           -- muxer threads
 
