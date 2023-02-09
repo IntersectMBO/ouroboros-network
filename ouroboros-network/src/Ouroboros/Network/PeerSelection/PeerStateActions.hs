@@ -835,13 +835,13 @@ withPeerStateActions PeerStateActionsArguments {
             pchMux,
             pchAppHandles
           } = do
-      wasWarm <- atomically $ do
+      wasCold <- atomically $ do
         notCold <- isNotCold pchPeerStatus
         when notCold $ do
           writeTVar (getControlVar SingHot pchAppHandles) Terminate
           writeTVar (getControlVar SingWarm pchAppHandles) Continue
-        return notCold
-      when (not wasWarm) $ do
+        return (not notCold)
+      when wasCold $ do
         -- The governor attempted to demote an already cold peer.
         traceWith spsTracer (PeerStatusChangeFailure
                              (HotToWarm pchConnectionId)
@@ -875,7 +875,7 @@ withPeerStateActions PeerStateActionsArguments {
         Just AllSucceeded -> do
           -- we don't notify the connection manager as this connection is still
           -- useful to the outbound governor (warm peer).
-          wasWarm' <- atomically $ do
+          wasWarm <- atomically $ do
             -- Only set the status to PeerWarm if the peer isn't PeerCold
             -- (can happen asynchronously).
             notCold <- updateUnlessCold pchPeerStatus PeerWarm
@@ -886,7 +886,7 @@ withPeerStateActions PeerStateActionsArguments {
                          (\a -> Map.map (const (pure NotRunning)) a)
             return notCold
 
-          if wasWarm'
+          if wasWarm
              then traceWith spsTracer (PeerStatusChanged (HotToWarm pchConnectionId))
              else do
                  traceWith spsTracer (PeerStatusChangeFailure
