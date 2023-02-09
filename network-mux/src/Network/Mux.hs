@@ -282,9 +282,9 @@ miniProtocolJob tracer egressQueue
                         MiniProtocolNum a -> "prtcl-" ++ show a)
       w <- newTVarIO BL.empty
       let chan = muxChannel tracer egressQueue (Wanton w)
-                           miniProtocolNum miniProtocolDirEnum
-                           miniProtocolIngressQueue
-      (result, remainder)  <- protocolAction chan
+                            miniProtocolNum miniProtocolDirEnum
+                            miniProtocolIngressQueue
+      (result, remainder) <- protocolAction chan
       traceWith tracer (MuxTraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
         -- The Wanton w is the SDUs that are queued but not yet sent for this job.
@@ -685,7 +685,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       case st of
            MuxReady    -> readTMVar completionVar
            MuxStopping -> readTMVar completionVar
-                      <|> return (Left $ toException (MuxError (MuxShutdown Nothing) "Mux stoping"))
+                      <|> return (Left $ toException (MuxError (MuxShutdown Nothing) "Mux stopping"))
            MuxStopped  -> readTMVar completionVar
                       <|> return (Left $ toException (MuxError (MuxShutdown Nothing) "Mux stopped"))
            MuxFailed e -> readTMVar completionVar
