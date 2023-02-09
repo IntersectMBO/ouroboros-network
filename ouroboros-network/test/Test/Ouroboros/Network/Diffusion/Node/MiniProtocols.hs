@@ -161,7 +161,7 @@ data LimitsAndTimeouts block = LimitsAndTimeouts
 
 -- | Arguments for protocol handlers required by 'nodeApplications'.
 --
-data AppArgs m = AppArgs
+data AppArgs block m = AppArgs
   { aaLedgerPeersConsensusInterface
      :: LedgerPeersConsensusInterface m
   , aaKeepAliveStdGen
@@ -172,6 +172,11 @@ data AppArgs m = AppArgs
      :: DiffTime
   , aaPingPongInterval
      :: DiffTime
+
+    -- | if returns true, `chain-sync` client will exit as soon as it will see
+    -- that block.
+    --
+  , aaShouldChainSyncExit :: block -> m Bool
   }
 
 
@@ -196,7 +201,7 @@ applications :: forall block header m.
              -> NodeKernel header block m
              -> Codecs block m
              -> LimitsAndTimeouts block
-             -> AppArgs m
+             -> AppArgs block m
              -> m (Diff.Applications NtNAddr NtNVersion NtNVersionData
                                      NtCAddr NtCVersion NtCVersionData
                                      m ())
@@ -210,6 +215,7 @@ applications debugTracer nodeKernel
                , aaKeepAliveStdGen
                , aaKeepAliveInterval
                , aaPingPongInterval
+               , aaShouldChainSyncExit
                }
              = do
     return $ Diff.Applications
@@ -300,24 +306,46 @@ applications debugTracer nodeKernel
       -> MuxPeer ByteString m ()
     chainSyncInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
-      MuxPeerRaw $ \channel -> do
-        labelThisThread "ChainSyncClient"
-        bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
-                                   remoteAddress $
-          bracket (registerClientChains nodeKernel remoteAddress)
-                  (\_ -> unregisterClientChains nodeKernel remoteAddress)
-                  (\chainVar ->
-                    runPeerWithLimits
-                      nullTracer
-                      chainSyncCodec
-                      (chainSyncSizeLimits limits)
-                      (chainSyncTimeLimits limits)
-                      channel
-                      (chainSyncClientPeer $
-                         chainSyncClientExample
-                           chainVar
-                           (controlledClient controlMessageSTM))
-                  )
+        MuxPeerRaw $ \channel -> do
+          labelThisThread "ChainSyncClient"
+          bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
+                                     remoteAddress $
+            bracket (registerClientChains nodeKernel remoteAddress)
+                    (\_ -> unregisterClientChains nodeKernel remoteAddress)
+                    (\chainVar ->
+                      runPeerWithLimits
+                        nullTracer
+                        chainSyncCodec
+                        (chainSyncSizeLimits limits)
+                        (chainSyncTimeLimits limits)
+                        channel
+                        (chainSyncClientPeer $
+                           chainSyncClientExample
+                             chainVar
+                             client)
+                    )
+      where
+        client :: Client block point tip m ()
+        client = go
+          where
+            go = Client
+              { rollbackward = \_ _ -> do
+                  ctrl <- atomically controlMessageSTM
+                  case ctrl of
+                    Continue  -> pure (Right go)
+                    Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
+                    Terminate -> pure (Left ())
+              , rollforward = \header -> do
+                  exit <- aaShouldChainSyncExit header
+                  if exit
+                    then pure (Left ())
+                    else do ctrl <- atomically controlMessageSTM
+                            case ctrl of
+                              Continue  -> pure (Right go)
+                              Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
+                              Terminate -> pure (Left ())
+              , points = \_ -> pure go
+              }
 
     chainSyncResponder
       :: MuxPeer ByteString m ()

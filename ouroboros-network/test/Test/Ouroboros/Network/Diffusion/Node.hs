@@ -130,6 +130,7 @@ data Arguments m = Arguments
     , aDiffusionMode        :: DiffusionMode
     , aKeepAliveInterval    :: DiffTime
     , aPingPongInterval     :: DiffTime
+    , aShouldChainSyncExit  :: Block -> m Bool
 
     , aPeerSelectionTargets :: PeerSelectionTargets
     , aReadLocalRootPeers   :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
@@ -369,7 +370,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
       , Diff.P2P.daBulkChurnInterval     = 300
       }
 
-    appArgs :: Node.AppArgs m
+    appArgs :: Node.AppArgs Block m
     appArgs = Node.AppArgs
       { Node.aaLedgerPeersConsensusInterface
                                         = iLedgerPeersConsensusInterface ni
@@ -377,6 +378,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
       , Node.aaDiffusionMode            = aDiffusionMode na
       , Node.aaKeepAliveInterval        = aKeepAliveInterval na
       , Node.aaPingPongInterval         = aPingPongInterval na
+      , Node.aaShouldChainSyncExit      = aShouldChainSyncExit na
       }
 
 --- Utils
