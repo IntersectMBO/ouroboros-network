@@ -622,7 +622,7 @@ withPeerStateActions PeerStateActionsArguments {
           -- A /hot/ protocol terminated, we deactivate the connection and keep
           -- monitoring /warm/ and /established/ protocols.
           WithSomeProtocolTemperature (WithHot MiniProtocolSuccess {}) -> do
-            deactivatePeerConnection pch `catches` handlers
+            deactivatePeerConnection pch
             peerMonitoringLoop pch
 
           -- If an /established/ or /warm/ we demote the peer to 'PeerCold'.
@@ -632,20 +632,9 @@ withPeerStateActions PeerStateActionsArguments {
           -- supposed to terminate (unless the remote peer did something
           -- wrong).
           WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {}) ->
-            closePeerConnection pch `catches` handlers
+            closePeerConnection pch
           WithSomeProtocolTemperature (WithEstablished MiniProtocolSuccess {}) ->
-            closePeerConnection pch `catches` handlers
-
-      where
-        -- 'closePeerConnection' and 'deactivatePeerConnection' actions can
-        -- throw exceptions, but they maintain consistency of 'peerStateVar',
-        -- that's why these handlers are trivial.
-        handlers :: [Handler m ()]
-        handlers =
-          [ Handler (\(_ :: PeerSelectionActionException)               -> pure ()),
-            Handler (\(_ :: EstablishConnectionException versionNumber) -> pure ()),
-            Handler (\(_ :: PeerSelectionTimeoutException peerAddr)     -> pure ())
-          ]
+            closePeerConnection pch
 
 
 
