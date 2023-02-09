@@ -1,90 +1,85 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE ViewPatterns         #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Cardano.Tools.Block.JSON () where
 
-import Cardano.Binary (
-    ToCBOR (..),
-    encodeListLen,
-    encodeWord,
-    serialize',
-    serializeEncoding',
- )
+import           Cardano.Binary (ToCBOR (..), encodeListLen, encodeWord,
+                     serialize', serializeEncoding')
 import qualified Cardano.Crypto.Hash.Class as Crypto
 import qualified Cardano.Ledger.Address as Ledger
-import Cardano.Ledger.Alonzo (AlonzoAuxiliaryData, AlonzoEra, AlonzoScript, MaryValue)
-import Cardano.Ledger.Alonzo.Data (binaryDataToData)
+import           Cardano.Ledger.Alonzo (AlonzoAuxiliaryData, AlonzoEra,
+                     AlonzoScript, MaryValue)
+import           Cardano.Ledger.Alonzo.Data (binaryDataToData)
 import qualified Cardano.Ledger.Alonzo.Data as Ledger.Alonzo
-import Cardano.Ledger.Alonzo.Tx (AlonzoTx (..), AlonzoTxBody)
+import           Cardano.Ledger.Alonzo.Tx (AlonzoTx (..), AlonzoTxBody)
 import qualified Cardano.Ledger.Alonzo.Tx as Ledger.Alonzo
-import Cardano.Ledger.Alonzo.TxSeq (txSeqTxns)
+import           Cardano.Ledger.Alonzo.TxSeq (txSeqTxns)
 import qualified Cardano.Ledger.Alonzo.TxWitness as Ledger.Alonzo
 import qualified Cardano.Ledger.AuxiliaryData as Ledger
 import qualified Cardano.Ledger.Babbage as Ledger
-import Cardano.Ledger.Babbage.Scripts (AlonzoScript (..))
+import           Cardano.Ledger.Babbage.Scripts (AlonzoScript (..))
 import qualified Cardano.Ledger.Babbage.Tx as Ledger.Babbage
-import Cardano.Ledger.Babbage.TxBody (BabbageTxBody, BabbageTxOut (..), Datum (..))
+import           Cardano.Ledger.Babbage.TxBody (BabbageTxBody,
+                     BabbageTxOut (..), Datum (..))
 import qualified Cardano.Ledger.Babbage.TxBody as Ledger.Babbage
-import Cardano.Ledger.Block (bbody)
+import           Cardano.Ledger.Block (bbody)
 import qualified Cardano.Ledger.Block as Block
-import Cardano.Ledger.Core (ScriptHash (..))
+import           Cardano.Ledger.Core (ScriptHash (..))
 import qualified Cardano.Ledger.Core as Core
-import Cardano.Ledger.Crypto (Crypto, StandardCrypto)
-import Cardano.Ledger.Era (Era)
+import           Cardano.Ledger.Crypto (Crypto, StandardCrypto)
+import           Cardano.Ledger.Era (Era)
 import qualified Cardano.Ledger.Era as Ledger
 import qualified Cardano.Ledger.Hashes as Ledger
 import qualified Cardano.Ledger.Keys as Ledger
-import Cardano.Ledger.Mary.Value (AssetName (AssetName), MaryValue (..), PolicyID (PolicyID))
+import           Cardano.Ledger.Mary.Value (AssetName (AssetName),
+                     MaryValue (..), PolicyID (PolicyID))
 import qualified Cardano.Ledger.SafeHash as Ledger
-import Cardano.Ledger.Shelley.API (Metadata (Metadata), MultiSig (..), ShelleyTxBody (..), ShelleyTxOut (..))
+import           Cardano.Ledger.Shelley.API (Metadata (Metadata), MultiSig (..),
+                     ShelleyTxBody (..), ShelleyTxOut (..))
 import qualified Cardano.Ledger.Shelley.API as Ledger
-import Cardano.Ledger.Shelley.BlockChain (txSeqTxns')
+import           Cardano.Ledger.Shelley.BlockChain (txSeqTxns')
 import qualified Cardano.Ledger.Shelley.Metadata as Metadata
-import Cardano.Ledger.Shelley.Tx (WitnessSetHKD (WitnessSet))
-import Cardano.Ledger.ShelleyMA (MAAuxiliaryData, MATxBody, MaryOrAllegra (..), ShelleyMAEra)
+import           Cardano.Ledger.Shelley.Tx (WitnessSetHKD (WitnessSet))
+import           Cardano.Ledger.ShelleyMA (MAAuxiliaryData, MATxBody,
+                     MaryOrAllegra (..), ShelleyMAEra)
 import qualified Cardano.Ledger.ShelleyMA.Timelocks as Ledger.Mary
-import Cardano.Ledger.ShelleyMA.TxBody (MATxBody (..))
-import Data.Aeson (
-    ToJSON (..),
-    ToJSONKey,
-    Value (..),
-    object,
-    toJSONKey,
-    (.=),
- )
+import           Cardano.Ledger.ShelleyMA.TxBody (MATxBody (..))
+import           Data.Aeson (ToJSON (..), ToJSONKey, Value (..), object,
+                     toJSONKey, (.=))
 import qualified Data.Aeson as Aeson
-import Data.Aeson.Types (
-    Pair,
-    toJSONKeyText,
- )
+import           Data.Aeson.Types (Pair, toJSONKeyText)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Base16 as SHex
-import Data.ByteString.Short (fromShort)
-import Data.Foldable (toList)
+import           Data.ByteString.Short (fromShort)
+import           Data.Foldable (toList)
 import qualified Data.Map as Map
-import Data.Maybe.Strict (StrictMaybe (..), isSJust)
-import Data.Text (Text, pack)
+import           Data.Maybe.Strict (StrictMaybe (..), isSJust)
+import           Data.Text (Text, pack)
 import qualified Data.Text.Encoding as SE
-import Data.Typeable (Typeable)
-import Ouroboros.Consensus.Block (HeaderFields (..), getHeader, getHeaderFields, unBlockNo)
-import Ouroboros.Consensus.Byron.Ledger (ByronBlock (..))
-import Ouroboros.Consensus.Cardano (CardanoBlock)
-import Ouroboros.Consensus.Cardano.Block (HardForkBlock (..), Header, ShelleyEra)
-import Ouroboros.Consensus.HardFork.Combinator (OneEraBlock (getOneEraBlock), OneEraHash, getHardForkBlock, getOneEraHash)
-import Ouroboros.Consensus.Protocol.Praos.Translate ()
-import Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock (..))
-import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-import Ouroboros.Consensus.Util.SOP (nsToIndex)
+import           Data.Typeable (Typeable)
+import           Ouroboros.Consensus.Block (HeaderFields (..), getHeader,
+                     getHeaderFields, unBlockNo)
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock (..))
+import           Ouroboros.Consensus.Cardano (CardanoBlock)
+import           Ouroboros.Consensus.Cardano.Block (HardForkBlock (..), Header,
+                     ShelleyEra)
+import           Ouroboros.Consensus.HardFork.Combinator
+                     (OneEraBlock (getOneEraBlock), OneEraHash,
+                     getHardForkBlock, getOneEraHash)
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock (..))
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import           Ouroboros.Consensus.Util.SOP (nsToIndex)
 
 type CBlock = CardanoBlock StandardCrypto
 
@@ -352,7 +347,7 @@ instance ToJSON (Ledger.TxIn StandardCrypto) where
     toJSON (Ledger.TxIn ti ti') =
         case toJSON ti of
             String txt -> String $ txt <> "#" <> pack (show ti')
-            other -> error $ "Invalid encoding for txId: " <> show other
+            other      -> error $ "Invalid encoding for txId: " <> show other
 
 -- TxOut
 instance ToJSON (Ledger.Babbage.BabbageTxOut LedgerEra) where
@@ -367,9 +362,9 @@ instance ToJSON (Ledger.Babbage.BabbageTxOut LedgerEra) where
 -- Datum
 
 instance ToJSON (Ledger.Babbage.Datum LedgerEra) where
-    toJSON NoDatum = Null
+    toJSON NoDatum        = Null
     toJSON (DatumHash sh) = toJSON sh
-    toJSON (Datum sbs) = String $ pack $ show $ binaryDataToData sbs
+    toJSON (Datum sbs)    = String $ pack $ show $ binaryDataToData sbs
 
 -- Value
 
@@ -645,4 +640,4 @@ onlyIf predicate k v =
 isOpenInterval :: Ledger.Mary.ValidityInterval -> Bool
 isOpenInterval = \case
     Ledger.Mary.ValidityInterval SNothing SNothing -> True
-    _ -> False
+    _                                              -> False
