@@ -1,6 +1,8 @@
 
 ; The Codecs are polymorphic in the data types for blocks, points, slot
-; numbers etc..
+; numbers etc. In CDDL we need concrete values so we instantiate them
+; a bit arbitrarly.  See `CBOR and CDDL` in the network technical report
+; https://input-output-hk.github.io/ouroboros-network/pdfs/network-spec
 
 block           = [blockHeader, blockBody]
 
