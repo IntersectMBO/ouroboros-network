@@ -1,21 +1,9 @@
-import Cardano.Tools.Block (BlockOptions (..), readChainPoint, run)
-import Options.Applicative (
-    Parser,
-    execParser,
-    fullDesc,
-    help,
-    helper,
-    info,
-    long,
-    maybeReader,
-    metavar,
-    option,
-    optional,
-    progDesc,
-    strOption,
-    (<**>),
-    (<|>),
- )
+module Main where
+
+import           Cardano.Tools.Block (BlockOptions (..), readChainPoint, run)
+import           Options.Applicative (Parser, execParser, fullDesc, help,
+                     helper, info, long, maybeReader, metavar, option, optional,
+                     progDesc, strOption, (<**>), (<|>))
 
 main :: IO ()
 main = parseOptions >>= run
