@@ -126,6 +126,8 @@ tests =
                  prop_diffusion_cm_valid_transition_order
   , testProperty "unit 4258"
                  prop_unit_4258
+  , testProperty "connection manager no dodgy traces"
+                 prop_diffusion_cm_no_dodgy_traces
   , testProperty "inbound governor valid transitions"
                  prop_diffusion_ig_valid_transitions
   , testProperty "inbound governor valid transition order"
@@ -2215,6 +2217,73 @@ prop_unit_4258 =
   let bearerInfo = AbsBearerInfo {abiConnectionDelay = NormalDelay, abiInboundAttenuation = NoAttenuation FastSpeed, abiOutboundAttenuation = NoAttenuation FastSpeed, abiInboundWriteFailure = Nothing, abiOutboundWriteFailure = Nothing, abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted), abiSDUSize = LargeSDU}
       diffScript = DiffusionScript (SimArgs 1 10) [(NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224) [] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.4") 9)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.397} :| [DNSTimeout {getDNSTimeout = 0.382},DNSTimeout {getDNSTimeout = 0.321},DNSTimeout {getDNSTimeout = 0.143},DNSTimeout {getDNSTimeout = 0.256},DNSTimeout {getDNSTimeout = 0.142},DNSTimeout {getDNSTimeout = 0.341},DNSTimeout {getDNSTimeout = 0.236}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| [])) Nothing False,[JoinNetwork 4.166666666666 Nothing,Kill 0.3,JoinNetwork 1.517857142857 Nothing,Reconfigure 0.245238095238 [],Reconfigure 4.190476190476 []]),(NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269) [RelayAccessAddress "0.0.0.4" 9] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.8") 65531)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 4, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.281} :| [DNSTimeout {getDNSTimeout = 0.177},DNSTimeout {getDNSTimeout = 0.164},DNSTimeout {getDNSTimeout = 0.373}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.133} :| [DNSLookupDelay {getDNSLookupDelay = 0.128},DNSLookupDelay {getDNSLookupDelay = 0.049},DNSLookupDelay {getDNSLookupDelay = 0.058},DNSLookupDelay {getDNSLookupDelay = 0.042},DNSLookupDelay {getDNSLookupDelay = 0.117},DNSLookupDelay {getDNSLookupDelay = 0.064}])) Nothing False,[JoinNetwork 3.384615384615 Nothing,Reconfigure 3.583333333333 [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],Kill 15.55555555555,JoinNetwork 30.53333333333 Nothing,Kill 71.11111111111])]
    in prop_diffusion_cm_valid_transition_order bearerInfo diffScript
+
+
+-- | Verify that certain traces are never emitted by the simulation.
+--
+prop_diffusion_cm_no_dodgy_traces :: AbsBearerInfo
+                                  -> DiffusionScript
+                                  -> Property
+prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+                                  nullTracer
+
+        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+        events = fmap (Trace.fromList ())
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = (\(WithName _ (WithTime t _)) -> t)
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_cm_traces
+          $ (\(WithName _ (WithTime _ b)) -> b)
+          <$> ev
+        )
+      <$> events
+
+  where
+    verify_cm_traces :: Trace () DiffusionTestTrace -> Property
+    verify_cm_traces events =
+      let connectionManagerEvents :: [ConnectionManagerTrace
+                                        NtNAddr
+                                        (ConnectionHandlerTrace
+                                          NtNVersion
+                                          NtNVersionData)]
+          connectionManagerEvents =
+              Trace.toList
+            . selectDiffusionConnectionManagerEvents
+            $ events
+
+        in conjoin $ map
+             (\ev -> case ev of
+               TrConnectionExists {}    -> counterexample (show ev) False
+               TrForbiddenConnection {} -> counterexample (show ev) False
+               _                        -> property True
+             ) connectionManagerEvents
+
 
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server2.prop_inbound_governor_valid_transitions'
