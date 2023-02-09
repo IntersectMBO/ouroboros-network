@@ -82,10 +82,10 @@ injectNestedCtxt_ idx nc = case idx of
     IS idx' -> NCS (injectNestedCtxt_ idx' nc)
 
 injectQuery ::
-     forall x xs fp result.
+     forall x xs result.
      Index xs x
-  -> BlockQuery x      fp result
-  -> QueryIfCurrent xs fp result
+  -> BlockQuery x      result
+  -> QueryIfCurrent xs result
 injectQuery idx q = case idx of
     IZ      -> QZ q
     IS idx' -> QS (injectQuery idx' q)

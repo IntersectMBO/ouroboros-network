@@ -46,6 +46,7 @@ import           Data.Type.Equality
 import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (enforceSize)
+import           Cardano.Slotting.Slot (WithOrigin (At))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -57,10 +58,13 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
 import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..))
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.Counting (getExactly)
+import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -70,10 +74,12 @@ import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
-                     Past (..), Situated (..))
+                     HardForkState (..), Past (..), Situated (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
-                     (Mismatch (..), mustMatchNS)
+                     (Mismatch (..), matchNS, mustMatchNS)
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as T
 
 instance Typeable xs => ShowProxy (BlockQuery (HardForkBlock xs)) where
 
@@ -112,24 +118,24 @@ data instance BlockQuery (HardForkBlock xs) :: Type -> Type where
     => QueryHardFork (x ': xs) result
     -> BlockQuery (HardForkBlock (x ': xs)) result
 
-instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
+instance (HasLedgerTables (LedgerState (HardForkBlock xs)), All SingleEraBlock xs, LedgerTablesCanHardFork xs) => QueryLedger (HardForkBlock xs) where
   answerBlockQuery
     (ExtLedgerCfg cfg)
     query
-    ext@(ExtLedgerState st@(HardForkLedgerState hardForkState) _) =
+    dlv@(DiskLedgerView (ExtLedgerState st@(HardForkLedgerState hardForkState) _) _ _ _) =
       case query of
         QueryIfCurrent queryIfCurrent ->
           interpretQueryIfCurrent
             cfgs
             queryIfCurrent
-            (distribExtLedgerState ext)
-        QueryAnytime queryAnytime (EraIndex era) ->
+            (distribDiskLedgerView dlv)
+        QueryAnytime queryAnytime (EraIndex era) -> pure $
           interpretQueryAnytime
             lcfg
             queryAnytime
             (EraIndex era)
             hardForkState
-        QueryHardFork queryHardFork ->
+        QueryHardFork queryHardFork -> pure $
           interpretQueryHardFork
             lcfg
             queryHardFork
@@ -139,14 +145,88 @@ instance All SingleEraBlock xs => QueryLedger (HardForkBlock xs) where
       lcfg = configLedger cfg
       ei   = State.epochInfoLedger lcfg hardForkState
 
+  getQueryKeySets = \case
+    QueryIfCurrent queryIfCurrent -> getQueryKeySetsIfCurrent queryIfCurrent
+    QueryAnytime _ _              -> emptyLedgerTables
+    QueryHardFork _               -> emptyLedgerTables
+
+  tableTraversingQuery = \case
+    QueryIfCurrent queryIfCurrent -> tableTraversingQueryIfCurrent queryIfCurrent
+    QueryAnytime _ _ -> Nothing
+    QueryHardFork _  -> Nothing
+
+distribDiskLedgerView ::
+     forall xs m.
+     ( Monad m
+     , All SingleEraBlock xs
+     , LedgerTablesCanHardFork xs
+     )
+  => DiskLedgerView m (ExtLedgerState (HardForkBlock xs))
+  -> NS (DiskLedgerView m :.: ExtLedgerState) xs
+distribDiskLedgerView dlv =
+   hcimap (Proxy @Top) f $
+     mustMatchNS
+     "HeaderState"
+     (distribHeaderState headerState)
+     (State.tip (hardForkLedgerStatePerEra ledgerState))
+ where
+   DiskLedgerView (ExtLedgerState ledgerState headerState) query rangeQuery closer = dlv
+
+   f :: Index xs x
+     -> Product HeaderState (Flip LedgerState EmptyMK) x
+     -> (DiskLedgerView m :.: ExtLedgerState) x
+   f idx (Pair hst lst) = Comp
+                        $ DiskLedgerView
+                            (ExtLedgerState (unFlip lst) hst)
+                            (query' idx)
+                            (rangeQuery' idx)
+                            closer
+
+   query' :: forall x.
+        Index xs x
+     -> LedgerTables (ExtLedgerState x) KeysMK
+     -> m (LedgerTables (ExtLedgerState x) ValuesMK)
+   query' i = fmap (distribLedgerTables i) . query . injectLedgerTables i
+
+   rangeQuery' :: forall x.
+        Index xs x
+     -> RangeQuery (LedgerTables (ExtLedgerState x) KeysMK)
+     -> m (LedgerTables (ExtLedgerState x) ValuesMK)
+   rangeQuery' i = fmap (distribLedgerTables i) . rangeQuery . injectRangeQuery i
+
+   injectLedgerTables :: forall x mk.
+        IsMapKind mk
+     => Index xs x
+     -> LedgerTables (ExtLedgerState x) mk
+     -> LedgerTables (ExtLedgerState (HardForkBlock xs)) mk
+   injectLedgerTables i = ExtLedgerStateTables
+                        . applyInjectLedgerTables (projectNP i hardForkInjectLedgerTablesKeysMK)
+                        . unExtLedgerStateTables
+
+   injectRangeQuery :: forall x mk.
+        IsMapKind mk
+     => Index xs x
+     -> RangeQuery (LedgerTables (ExtLedgerState x) mk)
+     -> RangeQuery (LedgerTables (ExtLedgerState (HardForkBlock xs)) mk)
+   injectRangeQuery i (RangeQuery ks p) = RangeQuery (fmap (injectLedgerTables i) ks) p
+
+   distribLedgerTables :: forall x mk.
+        IsMapKind mk
+     => Index xs x
+     -> LedgerTables (ExtLedgerState (HardForkBlock xs)) mk
+     -> LedgerTables (ExtLedgerState x) mk
+   distribLedgerTables i = ExtLedgerStateTables
+                         . applyDistribLedgerTables (projectNP i hardForkInjectLedgerTablesKeysMK)
+                         . unExtLedgerStateTables
+
 -- | Precondition: the 'ledgerState' and 'headerState' should be from the same
 -- era. In practice, this is _always_ the case, unless the 'ExtLedgerState' was
 -- manually crafted.
 distribExtLedgerState ::
      All SingleEraBlock xs
-  => ExtLedgerState (HardForkBlock xs) -> NS ExtLedgerState xs
+  => ExtLedgerState (HardForkBlock xs) mk -> NS (Flip ExtLedgerState mk) xs
 distribExtLedgerState (ExtLedgerState ledgerState headerState) =
-    hmap (\(Pair hst lst) -> ExtLedgerState lst hst) $
+    hmap (\(Pair hst lst) -> Flip $ ExtLedgerState (unFlip lst) hst) $
       mustMatchNS
         "HeaderState"
         (distribHeaderState headerState)
@@ -227,27 +307,159 @@ instance All SingleEraBlock xs => SameDepIndex (QueryIfCurrent xs) where
   sameDepIndex (QS qry) (QS qry') = sameDepIndex qry qry'
   sameDepIndex _        _         = Nothing
 
+queryIfCurrent2NS :: forall xs f b.
+                     (All SingleEraBlock xs)
+                  => (forall x . SingleEraBlock x => BlockQuery x b -> f x)
+                  -> QueryIfCurrent xs b
+                  -> NS f xs
+queryIfCurrent2NS f (QZ q) = Z $ f q
+queryIfCurrent2NS f (QS q) = S (queryIfCurrent2NS f q)
+
 interpretQueryIfCurrent ::
-     forall result xs. All SingleEraBlock xs
+     forall result xs m. (Monad m, All SingleEraBlock xs)
   => NP ExtLedgerCfg xs
   -> QueryIfCurrent xs result
-  -> NS ExtLedgerState xs
-  -> HardForkQueryResult xs result
+  -> NS (DiskLedgerView m :.: ExtLedgerState) xs
+  -> m (HardForkQueryResult xs result)
 interpretQueryIfCurrent = go
   where
     go :: All SingleEraBlock xs'
        => NP ExtLedgerCfg xs'
        -> QueryIfCurrent xs' result
-       -> NS ExtLedgerState xs'
-       -> HardForkQueryResult xs' result
-    go (c :* _)  (QZ qry) (Z st) =
-        Right $ answerBlockQuery c qry st
+       -> NS (DiskLedgerView m :.: ExtLedgerState) xs'
+       -> m (HardForkQueryResult xs' result)
+    go (c :* _)  (QZ qry) (Z (Comp st)) =
+        Right <$> answerBlockQuery c qry st
     go (_ :* cs) (QS qry) (S st) =
-        first shiftMismatch $ go cs qry st
+        first shiftMismatch <$> go cs qry st
     go _         (QZ qry) (S st) =
-        Left $ MismatchEraInfo $ ML (queryInfo qry) (hcmap proxySingle ledgerInfo st)
-    go _         (QS qry) (Z st) =
-        Left $ MismatchEraInfo $ MR (hardForkQueryInfo qry) (ledgerInfo st)
+        pure $ Left $ MismatchEraInfo $ ML (queryInfo qry) (hcmap proxySingle f st)
+      where
+        f (Comp (DiskLedgerView s _ _ _)) = ledgerInfo s
+    go _         (QS qry) (Z (Comp (DiskLedgerView st _ _ _))) =
+        pure $ Left $ MismatchEraInfo $ MR (hardForkQueryInfo qry) (ledgerInfo st)
+
+getQueryKeySetsIfCurrent ::
+     forall result xs. (All SingleEraBlock xs, LedgerTablesCanHardFork xs)
+  => QueryIfCurrent xs result
+  -> LedgerTables (LedgerState (HardForkBlock xs)) KeysMK
+getQueryKeySetsIfCurrent = go hardForkInjectLedgerTablesKeysMK
+  where
+    go :: All SingleEraBlock xs' => NP (InjectLedgerTables xs) xs'
+       -> QueryIfCurrent xs' result
+       -> LedgerTables (LedgerState (HardForkBlock xs)) KeysMK
+    go (_ :* n) (QS query) = go n query
+    go (f :* _) (QZ query) = applyInjectLedgerTables f $ getQueryKeySets query
+    -- This case cannot happen because xs matches in both the query and the np
+    -- of injections, so there is no way we would reach the end of the np
+    -- without having matched before if we go unwrapping them at the same steps
+    go Nil _               = error "Mismatch in the number of eras!"
+
+-- TODO: #4399 This whole logic can use an audit
+tableTraversingQueryIfCurrent ::
+  forall result xs. (All SingleEraBlock xs) =>
+    QueryIfCurrent xs result
+    -> Maybe (TraversingQueryHandler (HardForkBlock xs) (Either (MismatchEraInfo xs) result))
+tableTraversingQueryIfCurrent = go
+  where
+    go :: All SingleEraBlock xs'
+       => QueryIfCurrent xs' result
+       -> Maybe (TraversingQueryHandler
+                   (HardForkBlock xs')
+                   (Either (MismatchEraInfo xs') result)
+                )
+    go q@(QS query) = (shiftTQH q) <$> go query
+    go q@(QZ query) = fmap (distrib q) $ tableTraversingQuery query
+
+    -- Embed a traverser for era x into a traverser for the hardfork x:(...)
+    distrib ::
+         All SingleEraBlock (x ': xs')
+      => QueryIfCurrent (x ': xs') result
+      -> TraversingQueryHandler x result
+      -> TraversingQueryHandler
+             (HardForkBlock (x ': xs'))
+             (Either (MismatchEraInfo (x ': xs')) result)
+    distrib qry (TraversingQueryHandler partial mt c p) =
+      TraversingQueryHandler
+         (f . distribExtLedgerState)
+         (Right mt)
+         (\x y -> c <$> x <*> y)
+         (fmap p)
+      where
+        f (Z (Flip v)) = Right $ partial v
+        f ss           = Left
+                       $ MismatchEraInfo
+                       $ case matchNS
+                                (queryIfCurrent2NS queryInfo qry)
+                                (hcmap proxySingle (ledgerInfo . unFlip) ss) of
+                           Left v  -> v
+                           Right _ -> error "Impossible!"
+
+
+    -- Having a traverser for xs, embed it into a traverser for x:xs
+    shiftTQH ::
+         All SingleEraBlock (x' ': xs')
+      => QueryIfCurrent (x' ': xs') result
+      -> TraversingQueryHandler
+           (HardForkBlock xs')
+           (Either (MismatchEraInfo xs') result)
+      -> TraversingQueryHandler
+           (HardForkBlock (x' ': xs'))
+           (Either (MismatchEraInfo (x' ': xs')) result)
+    shiftTQH qry (TraversingQueryHandler partial mt c ps) =
+      TraversingQueryHandler
+        (\ e -> f e . distribExtLedgerState $ e)
+        (Right mt)
+        (\x y -> c <$> x <*> y)
+        (>>= first shiftMismatch . ps)
+      where
+        f e (S _) = fmap partial $ shiftExtLedgerState qry e
+        f _ ss    = Left
+                  $ MismatchEraInfo
+                  $ case matchNS
+                          (queryIfCurrent2NS queryInfo qry)
+                          (hcmap proxySingle (ledgerInfo . unFlip) ss) of
+                      Left v  -> v
+                      Right _ -> error "Impossible!"
+
+    -- Given a ledger state of x:xs which MUST BE in xs (because the query is if
+    -- current and we just got this DiskLedgerView), then produce a state for
+    -- one of xs. If not, produce a mismatch error.
+    shiftExtLedgerState ::
+         All SingleEraBlock (x ': xs')
+      => QueryIfCurrent (x ': xs') result
+      -> ExtLedgerState (HardForkBlock (x ': xs')) mk
+      -> Either (MismatchEraInfo (x ': xs')) (ExtLedgerState (HardForkBlock xs') mk)
+    shiftExtLedgerState qry (ExtLedgerState lstate (HeaderState tip chainDepState)) = do
+        ls <- HardForkLedgerState . HardForkState <$> lstate'
+        t <- tip'
+        cd <- chainDepState'
+        pure (ExtLedgerState ls (HeaderState t cd))
+      where
+        mismatchError = MismatchEraInfo
+                      $ case matchNS
+                             (queryIfCurrent2NS queryInfo qry)
+                             (hcmap proxySingle g (T.tip . getHardForkState . hardForkLedgerStatePerEra $ lstate)) of
+                          Left v  -> v
+                          Right _ -> error "Impossible!"
+
+        lstate' = case getHardForkState . hardForkLedgerStatePerEra $ lstate of
+          T.TS _ ts -> Right ts
+          T.TZ _    -> Left mismatchError
+
+        chainDepState' = case getHardForkState chainDepState of
+          T.TS _ cd -> Right $ HardForkState cd
+          T.TZ _    -> Left mismatchError
+
+        tip' = case tip of
+          Origin -> Right Origin
+          At (AnnTip s b (OneEraTipInfo i)) ->
+            case i of
+              S ti -> Right (At (AnnTip s b (OneEraTipInfo ti)))
+              Z{}  -> Left mismatchError
+
+        g :: forall f blk. SingleEraBlock blk => f blk -> LedgerEraInfo blk
+        g _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 
 {-------------------------------------------------------------------------------
   Any era queries
@@ -265,11 +477,11 @@ instance SameDepIndex QueryAnytime where
   sameDepIndex GetEraStart GetEraStart = Just Refl
 
 interpretQueryAnytime ::
-     forall result xs. All SingleEraBlock xs
+     forall result xs mk. All SingleEraBlock xs
   => HardForkLedgerConfig xs
   -> QueryAnytime result
   -> EraIndex xs
-  -> State.HardForkState LedgerState xs
+  -> State.HardForkState (Flip LedgerState mk) xs
   -> result
 interpretQueryAnytime cfg query (EraIndex era) st =
     answerQueryAnytime cfg query (State.situate era st)
@@ -278,7 +490,7 @@ answerQueryAnytime ::
      All SingleEraBlock xs
   => HardForkLedgerConfig xs
   -> QueryAnytime result
-  -> Situated h LedgerState xs
+  -> Situated h (Flip LedgerState mk) xs
   -> result
 answerQueryAnytime HardForkLedgerConfig{..} =
     go cfgs (getExactly (getShape hardForkLedgerConfigShape))
@@ -289,7 +501,7 @@ answerQueryAnytime HardForkLedgerConfig{..} =
        => NP WrapPartialLedgerConfig xs'
        -> NP (K EraParams) xs'
        -> QueryAnytime result
-       -> Situated h LedgerState xs'
+       -> Situated h (Flip LedgerState mk) xs'
        -> result
     go Nil       _             _           ctxt = case ctxt of {}
     go (c :* cs) (K ps :* pss) GetEraStart ctxt = case ctxt of
@@ -303,7 +515,7 @@ answerQueryAnytime HardForkLedgerConfig{..} =
           (unwrapPartialLedgerConfig c)
           ps
           (currentStart cur)
-          (currentState cur)
+          (unFlip $ currentState cur)
 
 {-------------------------------------------------------------------------------
   Hard fork queries
@@ -333,7 +545,7 @@ interpretQueryHardFork ::
      All SingleEraBlock xs
   => HardForkLedgerConfig xs
   -> QueryHardFork xs result
-  -> LedgerState (HardForkBlock xs)
+  -> LedgerState (HardForkBlock xs) mk
   -> result
 interpretQueryHardFork cfg query st =
     case query of
@@ -383,8 +595,8 @@ decodeQueryHardForkResult = \case
   Auxiliary
 -------------------------------------------------------------------------------}
 
-ledgerInfo :: forall blk. SingleEraBlock blk
-           => ExtLedgerState blk
+ledgerInfo :: forall blk mk. SingleEraBlock blk
+           => ExtLedgerState blk mk
            -> LedgerEraInfo blk
 ledgerInfo _ = LedgerEraInfo $ singleEraInfo (Proxy @blk)
 

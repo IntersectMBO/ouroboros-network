@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -6,6 +7,7 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -20,11 +22,22 @@ module Ouroboros.Consensus.Ledger.Query (
   , nodeToClientVersionToQueryVersion
   , queryDecodeNodeToClient
   , queryEncodeNodeToClient
+    -- * Table queries
+  , DiskLedgerView (..)
+  , TraversingQueryHandler (..)
+  , handleQueryWithStowedKeySets
+  , handleTraversingQuery
+  , mkDiskLedgerView
   ) where
 
 import           Control.Exception (Exception, throw)
 import           Data.Kind (Type)
+import qualified Data.Map.Diff.Strict.Internal as DS
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
+import           Data.Monoid
+import           Data.Semigroup
+import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -47,14 +60,25 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..),
                      headerStateBlockNo, headerStatePoint)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query.Version
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (BlockNodeToClientVersion)
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
+import           Ouroboros.Consensus.Storage.LedgerDB
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.DbChangelog hiding
+                     (empty)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
 import           Ouroboros.Consensus.Util (ShowProxy (..), SomeSecond (..))
 import           Ouroboros.Consensus.Util.DepPair
+import           Ouroboros.Consensus.Util.IOLike (IOLike)
 
 {-------------------------------------------------------------------------------
   Queries
@@ -265,16 +289,19 @@ deriving instance Show (BlockQuery blk result) => Show (Query blk result)
 
 -- | Answer the given query about the extended ledger state.
 answerQuery ::
-     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
+     (QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk, Monad m)
   => ExtLedgerCfg blk
+  -> DiskLedgerView m (ExtLedgerState blk)
   -> Query blk result
-  -> ExtLedgerState blk
-  -> result
-answerQuery cfg query st = case query of
-  BlockQuery blockQuery -> answerBlockQuery cfg blockQuery st
-  GetSystemStart -> getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
-  GetChainBlockNo -> headerStateBlockNo (headerState st)
-  GetChainPoint -> headerStatePoint (headerState st)
+  -> m result
+answerQuery cfg dlv query = case query of
+    BlockQuery blockQuery -> answerBlockQuery cfg blockQuery dlv
+    GetSystemStart -> pure $ getSystemStart (topLevelConfigBlock (getExtLedgerCfg cfg))
+    GetChainBlockNo -> pure $ headerStateBlockNo (headerState st)
+    GetChainPoint -> pure $ headerStatePoint (headerState st)
+  where
+    DiskLedgerView st _ _ _ = dlv
+
 
 -- | Different queries supported by the ledger, indexed by the result type.
 data family BlockQuery blk :: Type -> Type
@@ -286,9 +313,208 @@ data family BlockQuery blk :: Type -> Type
 class (ShowQuery (BlockQuery blk), SameDepIndex (BlockQuery blk)) => QueryLedger blk where
 
   -- | Answer the given query about the extended ledger state.
-  answerBlockQuery :: ExtLedgerCfg blk -> BlockQuery blk result -> ExtLedgerState blk -> result
+  answerBlockQuery :: Monad m => ExtLedgerCfg blk -> BlockQuery blk result -> DiskLedgerView m (ExtLedgerState blk) -> m result
+
+  getQueryKeySets :: BlockQuery blk result -> LedgerTables (LedgerState blk) KeysMK
+
+  tableTraversingQuery :: BlockQuery blk result -> Maybe (TraversingQueryHandler blk result)
 
 instance SameDepIndex (BlockQuery blk) => Eq (SomeSecond BlockQuery blk) where
   SomeSecond qry == SomeSecond qry' = isJust (sameDepIndex qry qry')
 
 deriving instance (forall result. Show (BlockQuery blk result)) => Show (SomeSecond BlockQuery blk)
+
+{-------------------------------------------------------------------------------
+  Ledger Tables queries
+-------------------------------------------------------------------------------}
+
+data DiskLedgerView m l =
+    DiskLedgerView
+      !(l EmptyMK)
+      (LedgerTables l KeysMK -> m (LedgerTables l ValuesMK))
+      (RangeQuery (LedgerTables l KeysMK) -> m (LedgerTables l ValuesMK))
+      (m ())
+
+mkDiskLedgerView ::
+     (GetTip l, IOLike m, HasLedgerTables l)
+  => (LedgerBackingStoreValueHandle m l, LedgerDB l, m ())
+  -> DiskLedgerView m l
+mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
+    DiskLedgerView
+      (ledgerDbCurrent ldb)
+      (\ks -> do
+          let chlog = ledgerDbChangelog ldb
+              rew   = rewindTableKeySets chlog ks
+          unfwd <- readKeySetsWith
+                     (fmap (seqNo,) . BackingStore.bsvhRead vh)
+                     rew
+          case forwardTableKeySets chlog unfwd of
+              Left _err -> error "impossible!"
+              Right vs  -> pure vs
+      )
+      (\rq -> do
+          let chlog = ledgerDbChangelog ldb
+              -- Get the differences without the keys that are greater or equal
+              -- than the maximum previously seen key.
+              diffs =
+                maybe
+                  id
+                  (zipLedgerTables doDropLTE)
+                  (BackingStore.rqPrev rq)
+                  $ mapLedgerTables prj
+                  $ changelogDiffs chlog
+              -- (1) Ensure that we never delete everything read from disk (ie
+              --     if our result is non-empty then it contains something read
+              --     from disk).
+              --
+              -- (2) Also, read one additional key, which we will not include in
+              --     the result but need in order to know which in-memory
+              --     insertions to include.
+              maxDeletes = maybe 0 getMax
+                         $ foldLedgerTables (Just . Max . numDeletesDiffMK) diffs
+              nrequested = 1 + max (BackingStore.rqCount rq) (1 + maxDeletes)
+
+          values <- BackingStore.bsvhRangeRead vh (rq{BackingStore.rqCount = nrequested})
+          pure $ zipLedgerTables (doFixupReadResult nrequested) diffs values
+      )
+      close
+  where
+    prj ::
+         (Ord k, Eq v)
+      => SeqDiffMK k v
+      -> DiffMK k v
+    prj (SeqDiffMK sq) = DiffMK (DS.cumulativeDiff sq)
+
+    -- remove all diff elements that are <= to the greatest given key
+    doDropLTE ::
+         Ord k
+      => KeysMK k v
+      -> DiffMK k v
+      -> DiffMK k v
+    doDropLTE (KeysMK ks) (DiffMK ds) =
+        DiffMK
+      $ case Set.lookupMax ks of
+          Nothing -> ds
+          Just k  -> DS.filterOnlyKey (\dk -> dk > k) ds
+
+    -- NOTE: this is counting the deletions wrt disk.
+    numDeletesDiffMK :: DiffMK k v -> Int
+    numDeletesDiffMK (DiffMK d) =
+      getSum $ DS.foldMapDiffEntry (Sum . oneIfDel) d
+      where
+        oneIfDel x = case x of
+          DS.Delete _           -> 1
+          DS.Insert _           -> 0
+          DS.UnsafeAntiDelete _ -> 0
+          DS.UnsafeAntiInsert _ -> 0
+
+
+    -- INVARIANT: nrequested > 0
+    --
+    -- (1) if we reached the end of the store, then simply yield the given diff
+    --     applied to the given values
+    -- (2) otherwise, the readset must be non-empty, since 'rqCount' is positive
+    -- (3) remove the greatest read key
+    -- (4) remove all diff elements that are >= the greatest read key
+    -- (5) apply the remaining diff
+    -- (6) (the greatest read key will be the first fetched if the yield of this
+    --     result is next passed as 'rqPrev')
+    --
+    -- Note that if the in-memory changelog contains the greatest key, then
+    -- we'll return that in step (1) above, in which case the next passed
+    -- 'rqPrev' will contain it, which will cause 'doDropLTE' to result in an
+    -- empty diff, which will result in an entirely empty range query result,
+    -- which is the termination case.
+    doFixupReadResult ::
+         Ord k
+      => Int
+      -- ^ Number of requested keys from the backing store.
+      -> DiffMK   k v
+      -- ^ Differences that will be applied to the values read from the backing
+      -- store.
+      -> ValuesMK k v
+      -- ^ Values read from the backing store. The number of values read should
+      -- be at most @nrequested@.
+      -> ValuesMK k v
+    doFixupReadResult
+      nrequested
+      (DiffMK ds)
+      (ValuesMK vs) =
+        let includingAllKeys        =
+              DS.unsafeApplyDiff vs ds
+            definitelyNoMoreToFetch = Map.size vs < nrequested
+        in
+        ValuesMK
+      $ case Map.maxViewWithKey vs of
+          Nothing             ->
+              if definitelyNoMoreToFetch
+              then includingAllKeys
+              else error $ "Size of values " <> show (Map.size vs) <> ", nrequested " <> show nrequested
+          Just ((k, _v), vs') ->
+            if definitelyNoMoreToFetch then includingAllKeys else
+            DS.unsafeApplyDiff
+              vs'
+              (DS.filterOnlyKey (\dk -> dk < k) ds)
+
+
+{-------------------------------------------------------------------------------
+  Handle non in-mem queries
+-------------------------------------------------------------------------------}
+
+handleQueryWithStowedKeySets ::
+     forall blk m result.
+     ( QueryLedger blk
+     , Monad m
+     , LedgerSupportsProtocol blk
+     )
+  => DiskLedgerView m (ExtLedgerState blk)
+  -> BlockQuery blk result
+  -> (ExtLedgerState blk EmptyMK -> result)
+  -> m result
+handleQueryWithStowedKeySets dlv query f = do
+    let DiskLedgerView st dbRead _dbReadRange _dbClose = dlv
+        keys                                           = getQueryKeySets query
+    values <- dbRead (ExtLedgerStateTables keys)
+    pure $ f (stowLedgerTables $ st `withLedgerTables` values)
+
+data TraversingQueryHandler blk result where
+  TraversingQueryHandler :: (ExtLedgerState blk EmptyMK -> st)
+                         -> st
+                         -> (st -> st -> st)
+                         -> (st -> result)
+                         -> TraversingQueryHandler blk result
+
+handleTraversingQuery ::
+     forall blk m result.
+     ( QueryLedger blk
+     , Monad m
+     , LedgerSupportsProtocol blk
+     )
+  => DiskLedgerView m (ExtLedgerState blk)
+  -> BlockQuery blk result
+  -> m result
+handleTraversingQuery dlv query =
+  case tableTraversingQuery query of
+    Nothing -> error "Tried to perform a traversing query on a query that doesn't need to traverse the Ledger tables!"
+    Just (TraversingQueryHandler partial empty comb post) ->
+      let
+        loop !prev !acc = do
+          extValues <-
+            dbReadRange RangeQuery{rqPrev = prev, rqCount = batchSize}
+          if getAll $ foldLedgerTables (All . f) extValues
+          then pure acc
+          else loop
+                (Just $ mapLedgerTables toKeys extValues)
+                (comb acc $ partial (stowLedgerTables (st `withLedgerTables` extValues) `withLedgerTables` emptyLedgerTables))
+       in
+        post <$> loop Nothing empty
+  where
+    DiskLedgerView st _dbRead dbReadRange _dbClose = dlv
+
+    f :: ValuesMK k v -> Bool
+    f (ValuesMK vs) = Map.null vs
+
+    toKeys :: ValuesMK k v -> KeysMK k v
+    toKeys (ValuesMK vs) = KeysMK $ Map.keysSet vs
+
+    batchSize = 100000   -- TODO: #4401 tune, expose as config, etc

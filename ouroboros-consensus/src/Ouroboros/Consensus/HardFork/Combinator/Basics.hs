@@ -92,10 +92,14 @@ deriving newtype instance (IsMapKind mk, CanHardFork xs) => NoThunks (LedgerStat
 class LedgerTablesCanHardFork xs where
   hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables xs) xs
 
-newtype InjectLedgerTables xs x = InjectLedgerTables {
+data InjectLedgerTables xs x = InjectLedgerTables {
       applyInjectLedgerTables :: forall mk. IsMapKind mk =>
            LedgerTables (LedgerState                  x) mk
         -> LedgerTables (LedgerState (HardForkBlock xs)) mk
+
+      , applyDistribLedgerTables :: forall mk. IsMapKind mk =>
+           LedgerTables (LedgerState (HardForkBlock xs)) mk
+        -> LedgerTables (LedgerState                  x) mk
     }
 
 {-------------------------------------------------------------------------------

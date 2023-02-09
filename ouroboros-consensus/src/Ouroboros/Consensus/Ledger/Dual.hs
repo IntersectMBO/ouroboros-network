@@ -516,11 +516,8 @@ instance Bridge m a => HasHardForkHistory (DualBlock m a) where
   Querying the ledger
 -------------------------------------------------------------------------------}
 
-data instance BlockQuery (DualBlock m a) fp result
+data instance BlockQuery (DualBlock m a) result
   deriving (Show)
-
-instance SmallQuery (BlockQuery (DualBlock m a)) where
-  proveSmallQuery _k = \case {}
 
 instance (Typeable m, Typeable a)
     => ShowProxy (BlockQuery (DualBlock m a)) where
@@ -528,19 +525,20 @@ instance (Typeable m, Typeable a)
 -- | Not used in the tests: no constructors
 instance Bridge m a => QueryLedger (DualBlock m a) where
   answerBlockQuery _ = \case {}
+  getQueryKeySets = \case {}
+  tableTraversingQuery = \case {}
 
-instance EqQuery (BlockQuery (DualBlock m a)) where
-  eqQuery = \case {}
+instance SameDepIndex (BlockQuery (DualBlock m a)) where
+  sameDepIndex = \case {}
 
 instance ShowQuery (BlockQuery (DualBlock m a)) where
   showResult = \case {}
-
-instance IsQuery (BlockQuery (DualBlock m a))
 
 -- | Forward to the main ledger
 instance Bridge m a => CommonProtocolParams (DualBlock m a) where
   maxHeaderSize = maxHeaderSize . dualLedgerStateMain
   maxTxSize     = maxTxSize     . dualLedgerStateMain
+
 
 {-------------------------------------------------------------------------------
   Mempool support
