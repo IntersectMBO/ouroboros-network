@@ -66,6 +66,7 @@ import Data.Aeson.Types (
     Pair,
     toJSONKeyText,
  )
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Base16 as SHex
 import Data.ByteString.Short (fromShort)
@@ -76,6 +77,7 @@ import Data.Text (Text, pack)
 import qualified Data.Text.Encoding as SE
 import Data.Typeable (Typeable)
 import Ouroboros.Consensus.Block (HeaderFields (..), getHeader, getHeaderFields, unBlockNo)
+import Ouroboros.Consensus.Byron.Ledger (ByronBlock (..))
 import Ouroboros.Consensus.Cardano (CardanoBlock)
 import Ouroboros.Consensus.Cardano.Block (HardForkBlock (..), Header, ShelleyEra)
 import Ouroboros.Consensus.HardFork.Combinator (OneEraBlock (getOneEraBlock), OneEraHash, getHardForkBlock, getOneEraHash)
@@ -120,11 +122,20 @@ instance ToJSON CBlock where
                 , "blockHash" .= getHeader block
                 , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
                 ]
+        block@(BlockByron (ByronBlock abob _ _)) ->
+            object
+                [ "blockHash" .= getHeader block
+                , "body" .= abob
+                , "era" .= (0 :: Int)
+                ]
         block ->
             object
                 [ "blockHash" .= getHeader block
                 , "era" .= (nsToIndex . getOneEraBlock . getHardForkBlock $ block)
                 ]
+
+instance ToJSON BS.ByteString where
+    toJSON = String . SE.decodeUtf8 . SHex.encode
 
 -- | A very partial JSON instnace of the block header.
 instance ToJSON (Header CBlock) where
