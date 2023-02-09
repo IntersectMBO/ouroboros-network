@@ -459,7 +459,6 @@ instance ( Show versionNumber
 
 data PeerSelectionTimeoutException peerAddr
     = DeactivationTimeout    !(ConnectionId peerAddr)
-    | CloseConnectionTimeout !(ConnectionId peerAddr)
   deriving Show
 
 instance ( Show peerAddr
