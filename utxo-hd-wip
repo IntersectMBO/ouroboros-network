@@ -1,0 +1,4 @@
+This file is only here to make sure that this branch diverges from master at
+least in one change. Once the branches with all the batches of changes are
+merged, this file should be gone. If we forget about removing it and you see
+this message, please tell us!
