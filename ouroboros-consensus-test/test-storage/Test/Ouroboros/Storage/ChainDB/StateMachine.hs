@@ -1,22 +1,23 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DeriveTraversable     #-}
-{-# LANGUAGE DerivingVia           #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE DuplicateRecordFields      #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- | Main tests for the chain DB.
@@ -42,7 +43,25 @@
 -- the wallclock to a @SlotNo@, although we /can/ always translate the @SlotNo@
 -- at the tip of the chain to a @UTCTime@.
 --
-module Test.Ouroboros.Storage.ChainDB.StateMachine (tests) where
+module Test.Ouroboros.Storage.ChainDB.StateMachine (
+    -- * Commands
+    At (..)
+  , Cmd (..)
+  , FollowerRef
+  , IterRef
+  , IteratorResult (..)
+  , IteratorResultGCed (..)
+    -- * Responses
+  , Resp (..)
+  , Success (..)
+    -- * Model
+  , MaxClockSkew (..)
+  , Model
+    -- * Running the model
+  , runCmdsLockstep
+    -- * Entry point to the tests
+  , tests
+  ) where
 
 import           Codec.Serialise (Serialise)
 import           Control.Monad (replicateM, void)
@@ -121,21 +140,21 @@ import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
-import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.Model (FollowerId, IteratorId,
                      ModelSupportsBlock,
                      ShouldGarbageCollect (DoNotGarbageCollect, GarbageCollect))
+import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
 
 import           Test.Util.ChunkInfo
 import qualified Test.Util.Classify as C
-import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (MockFS)
+import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.QuickCheck
-import qualified Test.Util.RefEnv as RE
 import           Test.Util.RefEnv (RefEnv)
+import qualified Test.Util.RefEnv as RE
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 import           Test.Util.WithEq
@@ -764,7 +783,7 @@ newtype At t blk m r = At { unAt :: t blk (IterRef blk m r) (FollowerRef blk m r
   deriving (Generic)
 
 
-deriving instance Show (t blk (IterRef blk m r) (FollowerRef blk m r))
+deriving newtype instance Show (t blk (IterRef blk m r) (FollowerRef blk m r))
                => Show (At t blk m r)
 
 deriving instance (TestConstraints blk, Eq1 r) => Eq (At Resp blk m r)
@@ -1191,9 +1210,9 @@ deriving instance Generic (Chain blk)
 deriving instance Generic (ChainProducerState blk)
 deriving instance Generic (FollowerState blk)
 
-deriving instance ToExpr Fingerprint
-deriving instance ToExpr FollowerNext
-deriving instance ToExpr MaxSlotNo
+deriving anyclass instance ToExpr Fingerprint
+deriving anyclass instance ToExpr FollowerNext
+deriving anyclass instance ToExpr MaxSlotNo
 deriving instance ToExpr (HeaderHash blk) => ToExpr (ChainHash blk)
 deriving instance ToExpr (HeaderHash blk) => ToExpr (FollowerState blk)
 deriving instance ToExpr blk => ToExpr (Chain blk)
@@ -1225,14 +1244,15 @@ deriving instance ( ToExpr blk
 
 -- Blk specific instances
 
-deriving instance ToExpr EpochNo
+deriving anyclass instance ToExpr EpochNo
+deriving anyclass instance ToExpr ChainLength
+deriving anyclass instance ToExpr TestHeaderHash
+deriving anyclass instance ToExpr TestBodyHash
+
 deriving instance ToExpr EBB
 deriving instance ToExpr IsEBB
-deriving instance ToExpr ChainLength
 deriving instance ToExpr TestHeader
-deriving instance ToExpr TestHeaderHash
 deriving instance ToExpr TestBody
-deriving instance ToExpr TestBodyHash
 deriving instance ToExpr TestBlockError
 deriving instance ToExpr Blk
 deriving instance ToExpr (TipInfoIsEBB Blk)
@@ -1476,9 +1496,17 @@ smUnused maxClockSkew chunkInfo =
       maxClockSkew
 
 prop_sequential :: MaxClockSkew -> SmallChunkInfo -> Property
-prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
-    forAllCommands (smUnused maxClockSkew chunkInfo) Nothing $ \cmds ->
-      QC.monadicIO $ do
+prop_sequential maxClockSkew smallChunkInfo@(SmallChunkInfo chunkInfo)  =
+    forAllCommands (smUnused maxClockSkew chunkInfo) Nothing $
+      runCmdsLockstep maxClockSkew smallChunkInfo
+
+runCmdsLockstep ::
+     MaxClockSkew
+  -> SmallChunkInfo
+  -> QSM.Commands (At Cmd Blk IO) (At Resp Blk IO)
+  -> Property
+runCmdsLockstep maxClockSkew (SmallChunkInfo chunkInfo) cmds =
+    QC.monadicIO $ do
         let
           -- Current test case command names.
           ctcCmdNames :: [String]
@@ -1500,7 +1528,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
             ( QSM.History (At Cmd Blk IO) (At Resp Blk IO)
             , Property
             )
-    test cmds = do
+    test cmds' = do
       threadRegistry     <- unsafeNewRegistry
       iteratorRegistry   <- unsafeNewRegistry
       (tracer, getTrace) <- recordingTracerIORef
@@ -1527,7 +1555,7 @@ prop_sequential maxClockSkew (SmallChunkInfo chunkInfo) =
                 , args
                 }
               sm' = sm env (genBlk chunkInfo) testCfg testInitExtLedger maxClockSkew
-          (hist, model, res) <- QSM.runCommands' sm' cmds
+          (hist, model, res) <- QSM.runCommands' sm' cmds'
           trace <- getTrace
           return (hist, model, res, trace)
 
