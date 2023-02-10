@@ -1,9 +1,28 @@
 module Main where
 
-import           Cardano.Tools.Block (BlockOptions (..), readChainPoint, run)
-import           Options.Applicative (Parser, execParser, fullDesc, help,
-                     helper, info, long, maybeReader, metavar, option, optional,
-                     progDesc, strOption, (<**>), (<|>))
+import Cardano.Tools.Block (
+    BlockOptions (..),
+    BlockToQuery (..),
+    readChainPoint,
+    run,
+ )
+import Options.Applicative (
+    Parser,
+    execParser,
+    fullDesc,
+    help,
+    helper,
+    info,
+    long,
+    maybeReader,
+    metavar,
+    option,
+    optional,
+    progDesc,
+    strOption,
+    (<**>),
+    (<|>),
+ )
 
 main :: IO ()
 main = parseOptions >>= run
@@ -46,13 +65,18 @@ parseBlockOptions =
                         <> metavar "FILE"
                         <> help "Path to cardano node configuration file"
                     )
-                <*> option
-                    (maybeReader readChainPoint)
-                    ( long "point"
-                        <> metavar "SLOT.HEADER_HASH"
-                        <> help
-                            "The id of the block we want to start observing the chain from. \
-                            \If not given, uses the chain tip at startup. Composed by the slot \
-                            \number, a separator ('.') and the hash of the block header. \
-                            \For example: 52970883.d36a9936ae7a07f5f4bdc9ad0b23761cb7b14f35007e54947e27a1510f897f04."
-                    )
+                <*> blockQueryParser
+
+blockQueryParser :: Parser BlockToQuery
+blockQueryParser =
+    AtPoint
+        <$> option
+            (maybeReader readChainPoint)
+            ( long "point"
+                <> metavar "SLOT.HEADER_HASH"
+                <> help
+                    "The id of the block we want to start observing the chain from. \
+                    \If not given, uses the chain tip at startup. Composed by the slot \
+                    \number, a separator ('.') and the hash of the block header. \
+                    \For example: 52970883.d36a9936ae7a07f5f4bdc9ad0b23761cb7b14f35007e54947e27a1510f897f04."
+            )

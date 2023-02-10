@@ -1,58 +1,69 @@
-{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications  #-}
+{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
 -- | A tool to inspect the content of a block from various sources.
 module Cardano.Tools.Block (
-    BlockOptions (..)
-  , readChainPoint
-  , run
-  ) where
+    BlockOptions (..),
+    BlockToQuery (..),
+    readChainPoint,
+    run,
+) where
 
-import           Cardano.Chain.Slotting (EpochSlots (..))
-import           Cardano.Ledger.Crypto (StandardCrypto)
-import           Cardano.Tools.Block.JSON ()
-import           Cardano.Tools.DB (withImmutableDB)
+import Cardano.Chain.Slotting (EpochSlots (..))
+import Cardano.Ledger.Crypto (StandardCrypto)
+import Cardano.Tools.Block.JSON ()
+import Cardano.Tools.DB (withImmutableDB)
 import qualified Codec.CBOR.Read as CBOR
-import           Control.Monad (void)
+import Control.Monad (void)
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Base16 as SHex
 import qualified Data.ByteString.Base16.Lazy as Hex
 import qualified Data.ByteString.Lazy as LBS
-import           Data.Either (fromRight)
-import           Data.Proxy (Proxy (Proxy))
+import Data.Either (fromRight)
+import Data.Proxy (Proxy (Proxy))
 import qualified Data.Text as Text
-import           Data.Text.Encoding (encodeUtf8)
-import           Ouroboros.Consensus.Block (CodecConfig, Point (..),
-                     SlotNo (SlotNo), WithOrigin (..), fromRawHash,
-                     pointToWithOriginRealPoint)
+import Data.Text.Encoding (encodeUtf8)
+import Ouroboros.Consensus.Block (
+    CodecConfig,
+    Point (..),
+    SlotNo (SlotNo),
+    WithOrigin (..),
+    fromRawHash,
+    pointToWithOriginRealPoint,
+ )
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
-import           Ouroboros.Consensus.Cardano (CardanoBlock)
-import           Ouroboros.Consensus.Cardano.Block (CodecConfig (..))
-import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import Ouroboros.Consensus.Cardano (CardanoBlock)
+import Ouroboros.Consensus.Cardano.Block (CodecConfig (..))
+import Ouroboros.Consensus.Protocol.Praos.Translate ()
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
-import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (GetBlock))
-import           Ouroboros.Consensus.Storage.ImmutableDB.API (getBlockComponent)
-import           Ouroboros.Consensus.Storage.Serialisation (decodeDisk)
-import           Ouroboros.Consensus.Util.IOLike (Exception,
-                     MonadThrow (throwIO))
-import           System.IO (Handle, IOMode (ReadMode), stdin, stdout, withFile)
-import           Text.Read (readMaybe)
+import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import Ouroboros.Consensus.Storage.Common (BlockComponent (GetBlock))
+import Ouroboros.Consensus.Storage.ImmutableDB.API (getBlockComponent)
+import Ouroboros.Consensus.Storage.Serialisation (decodeDisk)
+import Ouroboros.Consensus.Util.IOLike (
+    Exception,
+    MonadThrow (throwIO),
+ )
+import System.IO (Handle, IOMode (ReadMode), stdin, stdout, withFile)
+import Text.Read (readMaybe)
 
 data BlockOptions
     = ViewBlock
         { blockFile :: Maybe FilePath
         }
     | ExtractBlock
-        { dbDirectory       :: FilePath
+        { dbDirectory :: FilePath
         , cardanoConfigPath :: FilePath
-        , point             :: Point CBlock
+        , blockToQuery :: BlockToQuery
         }
+
+-- | "Address" of the block to query.
+data BlockToQuery = AtPoint (Point CBlock)
 
 run :: BlockOptions -> IO ()
 run options = do
@@ -60,9 +71,11 @@ run options = do
         ViewBlock{blockFile} -> do
             case blockFile of
                 Just file -> withFile file ReadMode $ viewBlock
-                Nothing   -> viewBlock stdin
-        ExtractBlock{dbDirectory, cardanoConfigPath, point} ->
-            Aeson.encode <$> readBlockFromDB dbDirectory cardanoConfigPath point
+                Nothing -> viewBlock stdin
+        ExtractBlock{dbDirectory, cardanoConfigPath, blockToQuery} ->
+            Aeson.encode
+                <$> case blockToQuery of
+                    AtPoint point -> readBlockFromDB dbDirectory cardanoConfigPath point
     void $ LBS.hPut stdout block
 
 readBlockFromDB :: FilePath -> FilePath -> Point CBlock -> IO CBlock
