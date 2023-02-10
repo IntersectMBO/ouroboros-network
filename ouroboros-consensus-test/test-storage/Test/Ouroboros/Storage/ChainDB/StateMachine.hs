@@ -22,6 +22,7 @@
 module Test.Ouroboros.Storage.ChainDB.StateMachine (
     At (..)
   , Cmd (..)
+  , FollowerRef
   , IteratorResult (..)
   , IteratorResultGCed (..)
   , MaxClockSkew (..)
@@ -1485,6 +1486,7 @@ executeCommands maxClockSkew (SmallChunkInfo chunkInfo) cmds =
     nodeDBs            <- emptyNodeDBs
     let args = mkArgs testCfg chunkInfo testInitExtLedger threadRegistry nodeDBs tracer
                       maxClockSkew varCurSlot
+
 
     -- We might be closing a different ChainDB than the one we opened, as we
     -- can reopen the ChainDB, swapping the ChainDB in the MVar.

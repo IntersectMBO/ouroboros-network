@@ -20,6 +20,8 @@ source-repository head
 library
   hs-source-dirs:      src
   exposed-modules:
+                       Test.StateMachine.Step
+
                        Test.ThreadNet.General
                        Test.ThreadNet.Network
                        Test.ThreadNet.Ref.PBFT
@@ -221,7 +223,6 @@ test-suite test-storage
                        Test.Ouroboros.Storage
                        Test.Ouroboros.Storage.ChainDB
                        Test.Ouroboros.Storage.ChainDB.Counterexamples
-                       Test.Ouroboros.Storage.ChainDB.CounterExampleIterator
                        Test.Ouroboros.Storage.ChainDB.Iterator
                        Test.Ouroboros.Storage.ChainDB.FollowerPromptness
                        Test.Ouroboros.Storage.ChainDB.GcSchedule
