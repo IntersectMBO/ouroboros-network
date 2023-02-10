@@ -344,7 +344,8 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
   dnsLookupDelay <- arbitrary
   chainSyncExitOnBlockNo
     <- frequency [ (1,      Just . fromIntegral . getPositive
-                       <$> (arbitrary :: Gen (Positive Int)))
+                        <$> (arbitrary :: Gen (Positive Int))
+                            `suchThat` (\(Positive a) -> a < 5))
                  , (4, pure Nothing)
                  ]
 

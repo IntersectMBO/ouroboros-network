@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -18,12 +19,12 @@ import           Control.Monad.IOSim.Types (ThreadId)
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 import           Data.Bifoldable (bifoldMap)
 
-import           Data.List (intercalate)
+import           Data.List (find, intercalate, tails)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, mapMaybe)
 import           Data.Monoid (Sum (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -42,6 +43,7 @@ import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.P2P (TracersExtra (..))
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.InboundGovernor hiding
                      (TrUnexpectedlyFalseAssertion)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -64,6 +66,7 @@ import           Ouroboros.Network.Testing.Utils hiding (SmallDelay,
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
+import           Test.Ouroboros.Network.Diffusion.Node (config_RECONNECT_DELAY)
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 import           Test.Ouroboros.Network.Testnet.Simulation.Node
 import           Test.QuickCheck
@@ -128,6 +131,8 @@ tests =
                  prop_unit_4258
   , testProperty "connection manager no dodgy traces"
                  prop_diffusion_cm_no_dodgy_traces
+  , testProperty "peer selection actions no dodgy traces"
+                 prop_diffusion_peer_selection_actions_no_dodgy_traces
   , testProperty "inbound governor valid transitions"
                  prop_diffusion_ig_valid_transitions
   , testProperty "inbound governor valid transition order"
@@ -2285,6 +2290,254 @@ prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
              ) connectionManagerEvents
 
 
+prop_diffusion_peer_selection_actions_no_dodgy_traces :: AbsBearerInfo
+                                                      -> HotDiffusionScript
+                                                      -> Property
+prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiffusionScript sa hds) =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  (DiffusionScript sa hds)
+                                  tracersExtraWithTimeName
+                                  tracerDiffusionSimWithTimeName
+                                  nullTracer
+
+        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+        events = fmap (Trace.fromList ())
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in
+        classifyNumberOfPeerStateActionEvents events
+      . conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = (\(WithName _ (WithTime t _)) -> t)
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_psa_traces
+          $ fmap (\(WithName _ b) -> b)
+          $ ev
+        )
+      <$> events
+
+  where
+    showBucket :: Int -> Int -> String
+    showBucket size a | a < size
+                      = show a
+                      | otherwise
+                      = concat [ "["
+                               , show (a `div` size * size)
+                               , ", "
+                               , show (a `div` size * size + size)
+                               , ")"
+                               ]
+
+    classifyNumberOfPeerStateActionEvents
+      :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+      -> Property -> Property
+    classifyNumberOfPeerStateActionEvents evs =
+          label ("Number of Hot -> Warm successful demotions: "
+                 ++ showBucket 10 numOfHotToWarmDemotions)
+        . label ("Number of Hot -> Warm timeout errors: "
+                 ++ showBucket 5 numOfTimeoutErrors)
+        . label ("Number of Hot -> Warm ActivecCold errors: "
+                 ++ showBucket 5 numOfActiveColdErrors)
+        . label ("Number of Warm -> Hot promotions: "
+                 ++ showBucket 5 numOfWarmToHotPromotions)
+      where
+          evs' :: [PeerSelectionActionsTrace NtNAddr NtNVersion]
+          evs' = mapMaybe (\case
+                              DiffusionPeerSelectionActionsTrace ev
+                                -> Just ev
+                              _ -> Nothing)
+               . fmap (wtEvent . wnEvent)
+               . concatMap Trace.toList
+               $ evs
+
+          numOfHotToWarmDemotions  = length
+                                   . filter (\case
+                                                (PeerStatusChanged HotToWarm{})
+                                                  -> True
+                                                _ -> False)
+                                   $ evs'
+          numOfTimeoutErrors       = length
+                                   . filter (\case
+                                                (PeerStatusChangeFailure HotToWarm{} TimeoutError)
+                                                  -> True
+                                                _ -> False)
+                                   $ evs'
+          numOfActiveColdErrors    = length
+                                   . filter (\case
+                                                (PeerStatusChangeFailure HotToWarm{} ActiveCold)
+                                                  -> True
+                                                _ -> False)
+                                   $ evs'
+
+          numOfWarmToHotPromotions = length
+                                   . filter (\case
+                                                (PeerStatusChanged WarmToHot{})
+                                                  -> True
+                                                _ -> False)
+                                   $ evs'
+
+    verify_psa_traces :: Trace () (WithTime DiffusionTestTrace) -> Property
+    verify_psa_traces events =
+      let peerSelectionActionsEvents :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)]
+          peerSelectionActionsEvents =
+              Trace.toList
+            . selectTimedDiffusionPeerSelectionActionsEvents
+            $ events
+
+        in
+         ( conjoin
+         . map
+           (\case
+             ev@( WithTime _ (PeerStatusChangeFailure (HotToWarm _) TimeoutError)
+                , WithTime _ (PeerStatusChangeFailure (HotToWarm _) ActiveCold)
+                )
+               -> counterexample (show ev)
+                $ counterexample (unlines $ map show peerSelectionActionsEvents)
+                $ False
+             _ -> property True
+             )
+         $ zip       peerSelectionActionsEvents
+               (tail peerSelectionActionsEvents)
+         )
+         .&&.
+         ( let f :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)] -> Property
+               f as = conjoin $ g <$> tails as
+
+               g :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)] -> Property
+               g as@(WithTime demotionTime (PeerStatusChanged HotToWarm{}) : as') =
+                 case find (\case
+                               WithTime _ (PeerStatusChanged WarmToHot{}) -> True
+                               _ -> False)
+                           as' of
+
+                   Nothing                         -> property True
+                   Just (WithTime promotionTime _) -> counterexample (show as)
+                                                    $ ( promotionTime `diffTime` demotionTime
+                                                     >= reconnectDelay config_RECONNECT_DELAY
+                                                      )
+               g _ = property True
+           in
+           conjoin
+         . fmap ( conjoin
+                . fmap f
+                . splitWith (\x -> case x of
+                                    (_, Just (WithTime _ (PeerStatusChanged ColdToWarm{})))
+                                        -> False
+                                    (WithTime _ (PeerMonitoringResult{})
+                                      , _)
+                                        -> False
+                                    -- split trace if there are two consecutive `HotToWarm`, this
+                                    -- means that the node was restarted.
+                                    (WithTime _ (PeerStatusChanged HotToWarm{})
+                                      , Just (WithTime _ (PeerStatusChanged HotToWarm{})))
+                                        -> False
+                                    (WithTime _ (PeerStatusChangeFailure tr _)
+                                      , _) -> case tr of
+                                                HotToCold{}  -> False
+                                                WarmToCold{} -> False
+                                                _            -> True
+                                    _   -> True
+                            )
+                )
+           -- split the trace into different connections
+         . splitIntoStreams
+             (\case
+                WithTime _ (PeerStatusChanged type_)         -> getConnId type_
+                WithTime _ (PeerStatusChangeFailure type_ _) -> getConnId type_
+                WithTime _ (PeerMonitoringError connId _)    -> Just connId
+                WithTime _ (PeerMonitoringResult connId _)   -> Just connId)
+         $ peerSelectionActionsEvents
+         )
+
+    getConnId :: PeerStatusChangeType addr -> Maybe (ConnectionId addr)
+    getConnId (HotToWarm connId) = Just connId
+    getConnId (WarmToHot connId) = Just connId
+    getConnId (WarmToCold connId) = Just connId
+    getConnId (HotToCold connId) = Just connId
+    getConnId (ColdToWarm (Just localAddress) remoteAddress) = Just ConnectionId { localAddress, remoteAddress }
+    getConnId _ = Nothing
+
+
+-- | Like `(takeWhile f as, dropWhile f as)`
+--
+splitWhile :: (a -> Bool) -> [a] -> ([a], [a])
+splitWhile _ [] = ([], [])
+splitWhile f as@(a : as') = if f a
+                            then case splitWhile f as' of
+                                   (hs, ts) -> (a : hs, ts)
+                            else ([], as)
+
+
+
+
+splitWith :: forall a.
+             ((a, Maybe a) -> Bool)
+             -- ^ a predicate on current and next element in the list.
+          ->  [a]
+          -> [[a]]
+splitWith f = map unzip' . go . zip'
+  where
+    zip' :: [a] -> [(a, Maybe a)]
+    zip' xs = xs `zip` (map Just (tail xs) ++ [Nothing])
+
+    -- reverse of `zip'`
+    unzip' :: [(a,Maybe a)] -> [a]
+    unzip' = (\(xs, ys) -> take 1 xs ++ catMaybes ys) . unzip
+
+    go :: [(a,Maybe a)] -> [[(a,Maybe a)]]
+    go as =
+        case splitWhile f as of
+          ([], [])           -> []
+          ([], (a, _) : as') -> [(a,Nothing)] : go as'
+          (xs, [])           -> xs : []
+          (xs, _      : as') -> xs : go as'
+
+
+
+splitIntoStreams :: Ord k
+                 => (a -> Maybe k)
+                 -- ^ index function, 'Nothing` values are ignored
+                 ->  [a]
+                 -> [[a]]
+splitIntoStreams f = Map.elems
+                   . Map.fromListWith (\a b -> b ++ a)
+                   . map (\a -> (fromJust (f a), [a]))
+                   . filter (isJust . f)
+
+
+{-
+-- | 'splitWith' partitions elements into sub-lists.
+--
+prop_splitWith :: ( Arbitrary a
+                  , Eq a
+                  , Show a
+                  )
+               => ((a, Maybe a) -> Bool)
+               -> [a]
+               -> Property
+prop_splitWith f as = foldr (++) [] (splitWith f as) === as
+-}
+
+
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server2.prop_inbound_governor_valid_transitions'
 -- but for running on Diffusion. This means it has to have in consideration the
@@ -2560,6 +2813,18 @@ selectDiffusionConnectionManagerEvents =
   . mapMaybe
      (\case DiffusionConnectionManagerTrace e -> Just e
             _                                 -> Nothing)
+  . Trace.toList
+
+selectTimedDiffusionPeerSelectionActionsEvents
+  :: Trace () (WithTime DiffusionTestTrace)
+  -> Trace () (WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion))
+selectTimedDiffusionPeerSelectionActionsEvents =
+    Trace.fromList ()
+  . mapMaybe
+      (\case WithTime { wtTime
+                      , wtEvent = DiffusionPeerSelectionActionsTrace e
+                      } -> Just WithTime { wtTime, wtEvent = e }
+             _          -> Nothing)
   . Trace.toList
 
 selectDiffusionConnectionManagerTransitionEvents
