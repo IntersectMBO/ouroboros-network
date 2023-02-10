@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 module Test.Ouroboros.Storage.ChainDB.Counterexamples (tests) where
 
 import           Control.Monad (void)
@@ -14,36 +15,43 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.ChunkInfo (SmallChunkInfo (..))
 
-chunkInfo :: ChunkInfo
-chunkInfo = UniformChunkSize (ChunkSize {chunkCanContainEBB = True, numRegularBlocks = 11})
-
-maxClockSkew :: MaxClockSkew
-maxClockSkew = MaxClockSkew 100000
-
 tests :: TestTree
 tests = testGroup "ChainDB QSM-derived unit tests" [
-  testProperty "small chain" (prop_bogus example)
+  -- The example are labeled by Github issue, in the manner <repo-name>_<issue-number>.
+  testProperty "example_ouroboros_network_4183" (prop_example example_ouroboros_network_4183)
   ]
 
-prop_bogus :: QSM.Commands (At Cmd TestBlock IO) (At Resp TestBlock IO) -> Property
-prop_bogus commands = monadicIO $ do
-  (_, prop) <- QC.run $ executeCommands maxClockSkew (SmallChunkInfo chunkInfo) commands
+data Example blk m = Example {
+    exCommands     :: QSM.Commands (At Cmd blk m) (At Resp blk m)
+  , exChunkInfo    :: ChunkInfo
+  , exMaxClockSkew :: MaxClockSkew
+  }
+
+prop_example :: Example TestBlock IO -> Property
+prop_example Example {..} = monadicIO $ do
+  (_, prop) <- QC.run $ executeCommands exMaxClockSkew
+                                        (SmallChunkInfo exChunkInfo)
+                                        exCommands
   pure prop
 
-example :: QSM.Commands (At Cmd TestBlock IO) (At Resp TestBlock IO)
-example =
-  let fork i = TestBody { tbForkNo = i, tbIsValid = True }
-  in stepCommands (smUnused maxClockSkew chunkInfo) $ do
-    b1 <- addBlock $ firstEBB (const True) $ fork 0
-    b2 <- addBlock $ mkNextBlock b1 0 $ fork 0
-    b3 <- addBlock $ mkNextBlock b2 1 $ fork 0
-    b4 <- addBlock $ mkNextBlock b2 1 $ fork 1
-    f <- newFollower SelectedChain
-    followerForward f [blockPoint b1]
-    void $ addBlock $ mkNextBlock b4 2 $ fork 1
-    persistBlks
-    void $ addBlock $ mkNextBlock b3 2 $ fork 0
-    followerInstruction f
+example_ouroboros_network_4183 :: Example TestBlock IO
+example_ouroboros_network_4183 =
+  let exChunkInfo = simpleChunkInfo 11
+      exMaxClockSkew = MaxClockSkew 100000
+
+      fork i = TestBody { tbForkNo = i, tbIsValid = True }
+      exCommands = stepCommands (smUnused exMaxClockSkew exChunkInfo) $ do
+        b1 <- addBlock $ firstEBB (const True) $ fork 0
+        b2 <- addBlock $ mkNextBlock b1 0 $ fork 0
+        b3 <- addBlock $ mkNextBlock b2 1 $ fork 0
+        b4 <- addBlock $ mkNextBlock b2 1 $ fork 1
+        f <- newFollower SelectedChain
+        followerForward f [blockPoint b1]
+        void $ addBlock $ mkNextBlock b4 2 $ fork 1
+        persistBlks
+        void $ addBlock $ mkNextBlock b3 2 $ fork 0
+        followerInstruction f
+  in Example {..}
 
 newFollower :: ChainType -> Step (Model blk m) (At Cmd blk m) m (At Resp blk m)
   (FollowerRef blk m QSM.Symbolic)
@@ -65,6 +73,4 @@ followerInstruction :: FollowerRef blk m QSM.Symbolic
 followerInstruction flr = void $ feed (At $ FollowerInstruction flr)
 
 addBlock :: blk -> Step (Model blk m) (At Cmd blk m) m (At Resp blk m) blk
-addBlock blk = do
-  void $ feed (At $ AddBlock blk)
-  pure blk
+addBlock blk = feed (At $ AddBlock blk) >> pure blk
