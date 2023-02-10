@@ -1,7 +1,7 @@
 cabal-version: 3.0
 
 name:                   ouroboros-consensus-byronspec
-version:                0.1.0.0
+version:                0.2.0.0
 synopsis:               ByronSpec ledger integration in the Ouroboros consensus layer
 description:            ByronSpec ledger integration in the Ouroboros consensus layer.
 license:                Apache-2.0
