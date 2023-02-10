@@ -37,7 +37,7 @@ jobs:
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: "3.8.1.0"
+        cabal-version: "3.6.2.0"
         pacman-packages: >
           mingw-w64-x86_64-pkg-config
           mingw-w64-x86_64-libsodium
