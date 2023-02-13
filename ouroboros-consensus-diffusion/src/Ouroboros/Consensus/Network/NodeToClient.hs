@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -44,7 +45,6 @@ import           Data.Void (Void)
 
 import           Network.TypedProtocol.Codec
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
                      encodePoint, encodeTip)
 import           Ouroboros.Network.BlockFetch
@@ -81,7 +81,7 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import qualified Ouroboros.Consensus.Node.Tracers as Node
 import           Ouroboros.Consensus.NodeKernel
-import           Ouroboros.Consensus.Util (ShowProxy)
+import           Ouroboros.Consensus.Util (ShowProxy, StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -102,7 +102,8 @@ data Handlers m peer blk = Handlers {
         :: LocalTxSubmissionServer (GenTx blk) (ApplyTxErr blk) m ()
 
     , hStateQueryServer
-        :: LocalStateQueryServer blk (Point blk) (Query blk) m ()
+       :: ResourceRegistry m
+       -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
 
     , hTxMonitorServer
         :: LocalTxMonitorServer (GenTxId blk) (GenTx blk) SlotNo m ()
@@ -129,12 +130,16 @@ mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
           localTxSubmissionServer
             (Node.localTxSubmissionServerTracer tracers)
             getMempool
-      , hStateQueryServer =
+      , hStateQueryServer = \rreg ->
           localStateQueryServer
             (ExtLedgerCfg cfg)
-            (ChainDB.getTipPoint getChainDB)
-            (ChainDB.getPastLedger getChainDB)
-            (castPoint . AF.anchorPoint <$> ChainDB.getCurrentChain getChainDB)
+            (\seP -> do
+                se <- ChainDB.getLedgerBackingStoreValueHandle getChainDB rreg seP
+                case se of
+                  StaticRight (Left p)  -> pure $ StaticRight (Left p)
+                  StaticLeft         x  -> pure $ StaticLeft  $         mkDiskLedgerView x
+                  StaticRight (Right x) -> pure $ StaticRight $ Right $ mkDiskLedgerView x
+            )
 
       , hTxMonitorServer =
           localTxMonitorServer
@@ -434,13 +439,13 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
       :: localPeer
       -> Channel m bSQ
       -> m ((), Maybe bSQ)
-    aStateQueryServer them channel = do
+    aStateQueryServer them channel = withRegistry $ \reg -> do
       labelThisThread "LocalStateQueryServer"
       runPeer
         (contramap (TraceLabelPeer them) tStateQueryTracer)
         cStateQueryCodec
         channel
-        (localStateQueryServerPeer hStateQueryServer)
+        (localStateQueryServerPeer (hStateQueryServer reg))
 
     aTxMonitorServer
       :: localPeer

@@ -122,6 +122,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
                      defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
+import Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 
 {-------------------------------------------------------------------------------
   The arguments to the Consensus Layer node functionality
@@ -539,7 +540,7 @@ openChainDB
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger
   -> ChainDbArgs Defaults m blk
   -> (ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk)
@@ -559,7 +560,7 @@ mkChainDbArgs
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger
   -> ChunkInfo
   -> ChainDbArgs Defaults m blk
