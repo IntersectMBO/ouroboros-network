@@ -1,19 +1,14 @@
 {
   inputs = {
     nixpkgs.follows = "std/nixpkgs";
-    std.url = github:divnix/std;
+    std.url = "github:divnix/std";
     tullia = {
-      url = github:input-output-hk/tullia;
+      url = "github:input-output-hk/tullia";
       inputs.std.follows = "std";
     };
   };
 
-  outputs = {
-    self,
-    std,
-    tullia,
-    ...
-  } @ inputs:
+  outputs = { self, std, tullia, ... }@inputs:
     std.growOn {
       inherit inputs;
       cellsFrom = nix/cells;
@@ -23,20 +18,15 @@
         (tullia.tasks "pipelines")
         (std.functions "actions")
       ];
-    }
-    (
-      tullia.fromStd {
-        actions = std.harvest self ["cloud" "actions"];
-        tasks = std.harvest self ["automation" "pipelines"];
-      }
-    )
-    {
-      hydraJobs = std.harvest self ["automation" "hydraJobs"];
-    };
+    } (tullia.fromStd {
+      actions = std.harvest self [ "cloud" "actions" ];
+      tasks = std.harvest self [ "automation" "pipelines" ];
+    }) { hydraJobs = std.harvest self [ "automation" "hydraJobs" ]; };
 
   nixConfig = {
-    extra-substituters = ["https://cache.iog.io"];
-    extra-trusted-public-keys = ["hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="];
+    extra-substituters = [ "https://cache.iog.io" ];
+    extra-trusted-public-keys =
+      [ "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=" ];
     allow-import-from-derivation = true;
   };
 }
