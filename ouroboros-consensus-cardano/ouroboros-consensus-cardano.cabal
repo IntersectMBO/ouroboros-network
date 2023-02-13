@@ -1,7 +1,7 @@
 cabal-version:         3.0
 
 name:                   ouroboros-consensus-cardano
-version:                0.2.0.0
+version:                0.3.0.0
 synopsis:               The instantation of the Ouroboros consensus layer used by Cardano
 description:            The instantation of the Ouroboros consensus layer used by Cardano.
 license:                Apache-2.0
