@@ -18,8 +18,8 @@ process](../ouroboros-consensus/docs/ReleaseProcess.md).
 
 # Changelog entries
 
-<a id='changelog-0.2.0.0'></a>
-## 0.2.0.0 — 2023-02-09
+<a id='changelog-0.3.0.0'></a>
+## 0.3.0.0 — 2023-02-09
 
 ### Patch
 

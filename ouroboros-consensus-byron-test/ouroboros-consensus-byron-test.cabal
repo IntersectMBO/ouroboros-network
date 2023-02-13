@@ -1,7 +1,7 @@
 cabal-version: 3.0
 
 name:                   ouroboros-consensus-byron-test
-version:                0.2.0.0
+version:                0.3.0.0
 synopsis:               Test infrastructure for Byron
 description:            Test infrastructure for Byron.
 license:                Apache-2.0
