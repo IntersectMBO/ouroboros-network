@@ -5,6 +5,7 @@ on:
 
 jobs:
   build:
+    name: Consensus changelog sanity check
     runs-on: ubuntu-latest
 
     defaults:
