@@ -1,5 +1,6 @@
 {-#LANGUAGE FlexibleContexts #-}
 {-#LANGUAGE ScopedTypeVariables #-}
+{-#LANGUAGE MonoLocalBinds #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.ControlClient
@@ -7,31 +8,24 @@ where
 
 import Cardano.KESAgent.Driver (driver, DriverTrace)
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.RetrySocket
-import Cardano.KESAgent.RefCounting
-import Cardano.KESAgent.DirectBearer
+import Cardano.KESAgent.OCert (Crypto (..), OCert (..))
+import Cardano.KESAgent.RetrySocket (retrySocket)
+import Cardano.KESAgent.RefCounting (CRef)
+import Cardano.KESAgent.DirectBearer (toDirectBearer)
+import Cardano.KESAgent.Classes (MonadKES, MonadNetworking)
 
-import Cardano.Crypto.DirectSerialise
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.MonadMLock
-import Cardano.Binary
+import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..))
 
-import Ouroboros.Network.Snocket
+import Ouroboros.Network.Snocket (Snocket (..))
 
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Control.Tracer (Tracer, traceWith)
 import Data.Functor.Contravariant ((>$<))
 import Data.Proxy (Proxy (..))
-import Data.Typeable
 
 import Control.Monad (forever, void)
-import Control.Exception (Exception)
-import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer
-import Control.Monad.Class.MonadMVar
-import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow (SomeException, bracket)
+import Control.Monad.Class.MonadTimer (DiffTime)
 
 data ControlClientOptions m fd addr =
   ControlClientOptions
@@ -50,21 +44,8 @@ data ControlClientTrace
 
 -- | A simple control client: push one KES key, then exit.
 runControlClient1 :: forall c m fd addr
-                   . Crypto c
-                  => Typeable c
-                  => KESSignAlgorithm m (KES c)
-                  => DirectDeserialise m (SignKeyKES (KES c))
-                  => DirectSerialise m (SignKeyKES (KES c))
-                  => VersionedProtocol (KESProtocol m c)
-                  => MonadThrow m
-                  => MonadFail m
-                  => MonadUnmanagedMemory m
-                  => MonadByteStringMemory m
-                  => MonadST m
-                  => MonadCatch m
-                  => MonadDelay m
-                  => MonadMVar m
-                  => ToDirectBearer m fd
+                   . MonadKES m c
+                  => MonadNetworking m fd
                   => Proxy c
                   -> ControlClientOptions m fd addr
                   -> CRef m (SignKeyWithPeriodKES (KES c))

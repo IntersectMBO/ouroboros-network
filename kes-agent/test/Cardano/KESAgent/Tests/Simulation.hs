@@ -81,6 +81,7 @@ import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import qualified Data.Text as Text
 import Network.Socket
 import Foreign.Ptr (castPtr)
+import System.IOManager
 
 import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Protocol
@@ -91,16 +92,23 @@ import Cardano.KESAgent.Driver (DriverTrace (..))
 import Cardano.KESAgent.Evolution
 import Cardano.KESAgent.RefCounting
 import Cardano.KESAgent.DirectBearer
+import Cardano.KESAgent.Classes
 
 tests :: Lock IO
       -> (forall a. (Show a, TracePretty a) => Tracer IO a)
-      -> Snocket IO Socket SockAddr
+      -> IOManager
       -> TestTree
-tests lock tracer snocket =
+tests lock tracer ioManager =
   testGroup "Simulation"
-  [ testCrypto @MockCrypto @IO Proxy Proxy lock tracer snocket (SockAddrUnix . ("./local" ++) . show)
-  , testCrypto @SingleCrypto @IO Proxy Proxy lock tracer snocket (SockAddrUnix . ("./local" ++) . show)
-  , testCrypto @StandardCrypto @IO Proxy Proxy lock tracer snocket (SockAddrUnix . ("./local" ++) . show)
+  [ testCrypto @MockCrypto @IO
+      Proxy Proxy lock tracer
+      (socketSnocket ioManager) (SockAddrUnix . ("./local" ++) . show)
+  , testCrypto @SingleCrypto @IO
+      Proxy Proxy lock tracer
+      (socketSnocket ioManager) (SockAddrUnix . ("./local" ++) . show)
+  , testCrypto @StandardCrypto @IO
+      Proxy Proxy lock tracer
+      (socketSnocket ioManager) (SockAddrUnix . ("./local" ++) . show)
   ]
 
 traceShowTee :: Show a => String -> IO a -> IO a
@@ -118,40 +126,27 @@ instance ToDirectBearer IO Socket where
           fromIntegral <$> recvBuf socket (castPtr buf) (fromIntegral bufsize)
       }
 
-newtype Lock m = Lock { lockToMVar :: MVar m () }
-
-withLock :: MonadMVar m => Lock m -> m a -> m a
-withLock (Lock mv) = withMVar mv . const
+newtype Lock m = Lock { withLock :: forall a. m a -> m a }
 
 mkLock :: MonadMVar m => m (Lock m)
-mkLock = Lock <$> newMVar ()
+mkLock = do
+  var <- newMVar ()
+  return $ Lock {
+    withLock = withMVar var . const
+  }
 
 testCrypto :: forall c m n fd addr
-            . Crypto c
-           => Typeable c
-           => VersionedProtocol (KESProtocol m c)
+            . MonadKES m c
+           => MonadNetworking m fd
+           => MonadProperty m
+           => MonadTimer m
            => UnsoundKESSignAlgorithm m (KES c)
-           => ContextKES (KES c) ~ ()
-           => DirectSerialise m (SignKeyKES (KES c))
-           => DirectDeserialise m (SignKeyKES (KES c))
            => DSIGN.Signable (DSIGN c) (OCertSignable c)
            => ContextDSIGN (DSIGN c) ~ ()
            => n ~ 10
            => KnownNat (SeedSizeKES (KES c) * n)
            => Show (SignKeyWithPeriodKES (KES c))
            => Show addr
-           => MonadMLock m
-           => MonadAsync m
-           => MonadMVar m
-           => MonadProperty m
-           => MonadST m
-           => MonadThrow m
-           => MonadCatch m
-           => MonadFail m
-           => MonadTime m
-           => MonadTimer m
-           => MonadByteStringMemory m
-           => ToDirectBearer m fd
            => Proxy c
            -> Proxy m
            -> Lock m
@@ -235,27 +230,13 @@ instance Show PrettyBS where
 {- HLINT ignore "Eta reduce" -}
 
 runTestNetwork :: forall c m fd addr
-                . Crypto c
-               => Typeable c
-               => VersionedProtocol (KESProtocol m c)
-               => KESSignAlgorithm m (KES c)
-               => ContextKES (KES c) ~ ()
-               => DirectSerialise m (SignKeyKES (KES c))
-               => DirectDeserialise m (SignKeyKES (KES c))
+                . MonadKES m c
+               => MonadNetworking m fd
+               => MonadProperty m
+               => MonadTimer m
                => DSIGN.Signable (DSIGN c) (OCertSignable c)
                => ContextDSIGN (DSIGN c) ~ ()
                => Show (SignKeyWithPeriodKES (KES c))
-               => MonadMLock m
-               => MonadAsync m
-               => MonadMVar m
-               => MonadTime m
-               => MonadTimer m
-               => MonadThrow m
-               => MonadCatch m
-               => MonadFail m
-               => MonadST m
-               => MonadByteStringMemory m
-               => ToDirectBearer m fd
                => Proxy c
                -> (forall a. (Show a, TracePretty a) => Tracer m a)
                -> Snocket m fd addr
@@ -350,29 +331,14 @@ runTestNetwork p tracer snocket controlAddress serviceAddress genesisTimestamp n
 
 
 testOneKeyThroughChain :: forall c m fd addr
-                        . Crypto c
-                       => Typeable c
-                       => VersionedProtocol (KESProtocol m c)
-                       => UnsoundKESSignAlgorithm m (KES c)
-                       => ContextKES (KES c) ~ ()
-                       => DirectSerialise m (SignKeyKES (KES c))
-                       => DirectDeserialise m (SignKeyKES (KES c))
+                        . MonadKES m c
+                       => MonadNetworking m fd
+                       => MonadProperty m
+                       => MonadTimer m
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => ContextDSIGN (DSIGN c) ~ ()
                        => Show (SignKeyWithPeriodKES (KES c))
-                       => MonadProperty m
-                       => MonadMVar m
-                       => MonadMLock m
-                       => MonadByteStringMemory m
-                       => MonadST m
-                       => MonadThrow m
-                       => MonadCatch m
-                       => MonadFail m
-                       => MonadAsync m
-                       => MonadTime m
-                       => MonadTimer m
-                       => ToDirectBearer m fd
-                       => Show addr
+                       => UnsoundKESSignAlgorithm m (KES c)
                        => Proxy c
                        -> Proxy m
                        -> Lock m
@@ -433,29 +399,14 @@ testOneKeyThroughChain p _proxyM
       return $ (counterexample $ unlines log) prop
 
 testConcurrentPushes :: forall c m n fd addr
-                      . KnownNat n
-                     => Crypto c
-                     => Typeable c
-                     => VersionedProtocol (KESProtocol m c)
-                     => UnsoundKESSignAlgorithm m (KES c)
-                     => ContextKES (KES c) ~ ()
-                     => DirectSerialise m (SignKeyKES (KES c))
-                     => DirectDeserialise m (SignKeyKES (KES c))
+                      . MonadKES m c
+                     => MonadNetworking m fd
+                     => MonadProperty m
+                     => MonadTimer m
                      => DSIGN.Signable (DSIGN c) (OCertSignable c)
                      => ContextDSIGN (DSIGN c) ~ ()
                      => Show (SignKeyWithPeriodKES (KES c))
-                     => MonadProperty m
-                     => MonadMVar m
-                     => MonadMLock m
-                     => MonadByteStringMemory m
-                     => MonadST m
-                     => MonadThrow m
-                     => MonadCatch m
-                     => MonadFail m
-                     => MonadAsync m
-                     => MonadTime m
-                     => MonadTimer m
-                     => ToDirectBearer m fd
+                     => UnsoundKESSignAlgorithm m (KES c)
                      => Proxy c
                      -> Proxy m
                      -> Proxy n

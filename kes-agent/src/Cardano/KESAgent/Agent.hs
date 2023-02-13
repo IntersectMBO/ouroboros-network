@@ -1,9 +1,9 @@
-{-#LANGUAGE TypeApplications #-}
 {-#LANGUAGE FlexibleContexts #-}
 {-#LANGUAGE ScopedTypeVariables #-}
 {-#LANGUAGE TypeFamilies #-}
 {-#LANGUAGE NumericUnderscores #-}
 {-#LANGUAGE OverloadedStrings #-}
+{-#LANGUAGE MultiParamTypeClasses #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -17,16 +17,13 @@ where
 
 import Cardano.KESAgent.Driver (driver, DriverTrace (..))
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.RefCounting
-import Cardano.KESAgent.Evolution
-import Cardano.KESAgent.DirectBearer
+import Cardano.KESAgent.OCert (KESPeriod (..), KES, OCert (..))
+import Cardano.KESAgent.RefCounting (CRef, withCRefValue, newCRef, acquireCRef, releaseCRef)
+import Cardano.KESAgent.Evolution (getCurrentKESPeriodWith, updateKESTo)
+import Cardano.KESAgent.DirectBearer (toDirectBearer)
+import Cardano.KESAgent.Classes (MonadKES, MonadNetworking)
 
-import Cardano.Crypto.DirectSerialise
-import Cardano.Binary
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.MonadMLock
+import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..), forgetSignKeyKES)
 
 import Data.ByteString (ByteString)
 import Control.Monad (forever, void)
@@ -34,20 +31,18 @@ import Control.Tracer (Tracer, traceWith)
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Data.Functor.Contravariant ((>$<))
 import Data.Proxy (Proxy (..))
-import Data.Typeable
 import Data.Time (NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (fromJust)
-import Ouroboros.Network.Snocket
+import Ouroboros.Network.Snocket (Snocket (..), Accept (..), Accepted (..))
 
 import Control.Monad.Class.MonadTime (MonadTime (..))
-import Control.Monad.Class.MonadMVar
-import Control.Monad.Class.MonadST
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadTimer
-import Control.Monad.Class.MonadThrow
-import Control.Concurrent.Class.MonadSTM.TChan
+import Control.Monad.Class.MonadMVar (MVar, newEmptyMVar, newMVar, withMVar, tryTakeMVar, putMVar, readMVar)
+import Control.Monad.Class.MonadSTM (atomically)
+import Control.Monad.Class.MonadAsync (concurrently)
+import Control.Monad.Class.MonadTimer (threadDelay)
+import Control.Monad.Class.MonadThrow (SomeException, bracket, throwIO, catch)
+import Control.Concurrent.Class.MonadSTM.TChan (newTChan, writeTChan, readTChan)
 
 {-HLINT ignore "Use underscore" -}
 
@@ -107,25 +102,8 @@ defAgentOptions = AgentOptions
   }
 
 runAgent :: forall c m fd addr
-          . Crypto c
-         => ContextKES (KES c) ~ ()
-         => DirectDeserialise m (SignKeyKES (KES c))
-         => DirectSerialise m (SignKeyKES (KES c))
-         => KESSignAlgorithm m (KES c)
-         => MonadAsync m
-         => MonadByteStringMemory m
-         => MonadCatch m
-         => MonadDelay m
-         => MonadFail m
-         => MonadMVar m
-         => MonadST m
-         => MonadSTM m
-         => MonadThrow m
-         => MonadTime m
-         => MonadUnmanagedMemory m
-         => ToDirectBearer m fd
-         => Typeable c
-         => VersionedProtocol (KESProtocol m c)
+          . MonadKES m c
+         => MonadNetworking m fd
          => Proxy c
          -> AgentOptions m fd addr
          -> Tracer m AgentTrace

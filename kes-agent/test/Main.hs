@@ -13,11 +13,10 @@ main :: IO ()
 main = withIOManager $ \ioManager -> do
   sodiumInit
   lock <- Simulation.mkLock
-  let snocket = socketSnocket ioManager
-  defaultMain (tests lock snocket)
+  defaultMain (tests lock ioManager)
 
-tests :: Simulation.Lock IO -> Snocket IO Socket SockAddr -> TestTree
-tests lock snocket = testGroup "KES Agent"
+tests :: Simulation.Lock IO -> IOManager -> TestTree
+tests lock ioManager = testGroup "KES Agent"
   [ RefCounting.tests
-  , Simulation.tests lock nullTracer snocket
+  , Simulation.tests lock nullTracer ioManager
   ]

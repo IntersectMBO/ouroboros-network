@@ -2,17 +2,12 @@
 {-#LANGUAGE TypeFamilies #-}
 {-#LANGUAGE DataKinds #-}
 {-#LANGUAGE EmptyCase #-}
-{-#LANGUAGE KindSignatures #-}
 {-#LANGUAGE PolyKinds #-}
 {-#LANGUAGE FlexibleInstances #-}
 {-#LANGUAGE FlexibleContexts #-}
 {-#LANGUAGE OverloadedStrings #-}
-{-#LANGUAGE DerivingStrategies #-}
-{-#LANGUAGE DeriveGeneric #-}
 {-#LANGUAGE DerivingVia #-}
-{-#LANGUAGE DeriveAnyClass #-}
 {-#LANGUAGE GeneralizedNewtypeDeriving #-}
-{-#LANGUAGE TypeApplications #-}
 {-#LANGUAGE ScopedTypeVariables #-}
 module Cardano.KESAgent.Protocol
 where
