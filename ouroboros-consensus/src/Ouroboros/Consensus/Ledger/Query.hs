@@ -385,7 +385,7 @@ mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
       -> DiffMK k v
     prj (SeqDiffMK sq) = DiffMK (DS.cumulativeDiff sq)
 
-    -- remove all diff elements that are <= to the greatest given key
+    -- Remove all diff elements that are <= to the greatest given key
     doDropLTE ::
          Ord k
       => KeysMK k v

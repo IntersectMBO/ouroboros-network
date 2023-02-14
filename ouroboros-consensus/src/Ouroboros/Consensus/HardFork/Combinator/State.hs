@@ -245,7 +245,7 @@ extendToSlot ledgerCfg@HardForkLedgerConfig{..} slot ledgerSt@(HardForkState st)
         , Current {
               currentStart = currentEnd
             , currentState = Flip
-                             -- we need to bring back the diffs provided by
+                             -- We need to bring back the diffs provided by
                              -- previous translations. Note that if there is
                              -- only one translation or if the previous
                              -- translations don't add any new tables this will

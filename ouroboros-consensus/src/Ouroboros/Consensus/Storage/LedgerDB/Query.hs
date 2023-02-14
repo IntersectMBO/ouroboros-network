@@ -36,7 +36,7 @@ import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsHD
+import           Ouroboros.Consensus.Ledger.SupportsTables
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
@@ -103,7 +103,7 @@ ledgerDbIsSaturated (SecurityParam k) db =
 -- returned.
 ledgerDbPast ::
      ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
-     , StandardHash l, LedgerSupportsHD l
+     , StandardHash l, LedgerSupportsTables l
      )
   => Point blk
   -> LedgerDB l
@@ -118,7 +118,7 @@ ledgerDbPast pt db = ledgerDbCurrent <$> ledgerDbPrefix pt db
 -- returned.
 ledgerDbPrefix ::
      ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
-     , StandardHash l, LedgerSupportsHD l
+     , StandardHash l, LedgerSupportsTables l
      )
   => Point blk
   -> LedgerDB l

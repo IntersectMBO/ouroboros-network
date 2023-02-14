@@ -1,6 +1,6 @@
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RecordWildCards       #-}

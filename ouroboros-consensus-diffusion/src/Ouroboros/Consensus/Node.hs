@@ -111,6 +111,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
 
+import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
@@ -122,7 +123,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
                      defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
-import Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 
 {-------------------------------------------------------------------------------
   The arguments to the Consensus Layer node functionality

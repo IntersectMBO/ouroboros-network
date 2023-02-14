@@ -1,11 +1,11 @@
 {-# LANGUAGE ConstraintKinds #-}
 -- |
 
-module Ouroboros.Consensus.Ledger.SupportsHD (LedgerSupportsHD) where
+module Ouroboros.Consensus.Ledger.SupportsTables (LedgerSupportsTables) where
 
 import           Ouroboros.Consensus.Ledger.Tables
 
-type LedgerSupportsHD l =
+type LedgerSupportsTables l =
   ( HasTickedLedgerTables l
   , CanSerializeLedgerTables l
   , CanStowLedgerTables l

@@ -48,7 +48,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
-import           Ouroboros.Consensus.Ledger.SupportsHD
+import           Ouroboros.Consensus.Ledger.SupportsTables
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Ticked
@@ -183,7 +183,7 @@ tickOne ei slot sopIdx partialCfg st =
 -------------------------------------------------------------------------------}
 
 instance ( CanHardFork xs
-         , LedgerSupportsHD (LedgerState (HardForkBlock xs))
+         , LedgerSupportsTables (LedgerState (HardForkBlock xs))
          , LedgerTablesCanHardFork xs
          )
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
@@ -271,7 +271,7 @@ reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st))
 -------------------------------------------------------------------------------}
 
 instance ( CanHardFork xs
-         , LedgerSupportsHD (LedgerState (HardForkBlock xs))
+         , LedgerSupportsTables (LedgerState (HardForkBlock xs))
          , LedgerTablesCanHardFork xs
          )
       => UpdateLedger (HardForkBlock xs)
@@ -344,7 +344,7 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
 -------------------------------------------------------------------------------}
 
 instance ( CanHardFork xs
-         , LedgerSupportsHD (LedgerState (HardForkBlock xs))
+         , LedgerSupportsTables (LedgerState (HardForkBlock xs))
          , LedgerTablesCanHardFork xs
          )
       => LedgerSupportsProtocol (HardForkBlock xs) where
