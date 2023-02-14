@@ -33,7 +33,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                      (TraceEvent (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB (DiskPolicy (..))
+import           Ouroboros.Consensus.Storage.LedgerDB
+                     (BackingStoreSelector (..), DiskPolicy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 
 {-------------------------------------------------------------------------------
@@ -79,6 +80,10 @@ data ChainDbArgs f m blk = ChainDbArgs {
       -- is the maximum number of blocks that could be kept in memory at the
       -- same time when the background thread processing the blocks can't keep
       -- up.
+
+      -- LedgerDB Backing Store
+    , cdbBackingStoreSelector   :: !(BackingStoreSelector m)
+      -- ^ Which implementation of the backing store to use
     }
 
 -- | Arguments specific to the ChainDB, not to the ImmutableDB, VolatileDB, or
@@ -142,11 +147,12 @@ defaultArgs ::
      Monad m
   => (RelativeMountPoint -> SomeHasFS m)
   -> DiskPolicy
+  -> BackingStoreSelector m
   -> ChainDbArgs Defaults m blk
-defaultArgs mkFS diskPolicy =
+defaultArgs mkFS diskPolicy bss =
   toChainDbArgs (ImmutableDB.defaultArgs immFS)
                 (VolatileDB.defaultArgs  volFS)
-                (LgrDB.defaultArgs       lgrFS diskPolicy)
+                (LgrDB.defaultArgs       lgrFS diskPolicy bss)
                 defaultSpecificArgs
   where
     immFS, volFS, lgrFS :: SomeHasFS m
@@ -185,13 +191,14 @@ fromChainDbArgs ChainDbArgs{..} = (
         , volTracer           = contramap TraceVolatileDBEvent cdbTracer
         }
     , LgrDB.LgrDbArgs {
-          lgrTopLevelConfig   = cdbTopLevelConfig
-        , lgrHasFS            = cdbHasFSLgrDB
-        , lgrDiskPolicy       = cdbDiskPolicy
-        , lgrGenesis          = cdbGenesis
-        , lgrTracer           = contramap TraceSnapshotEvent cdbTracer
-        , lgrRegistry         = cdbRegistry
-        , lgrTraceLedger      = cdbTraceLedger
+          lgrTopLevelConfig       = cdbTopLevelConfig
+        , lgrHasFS                = cdbHasFSLgrDB
+        , lgrDiskPolicy           = cdbDiskPolicy
+        , lgrGenesis              = cdbGenesis
+        , lgrTracer               = contramap TraceLedgerDBEvent cdbTracer
+        , lgrRegistry             = cdbRegistry
+        , lgrTraceLedger          = cdbTraceLedger
+        , lgrBackingStoreSelector = cdbBackingStoreSelector
         }
     , ChainDbSpecificArgs {
           cdbsTracer          = cdbTracer
@@ -240,6 +247,8 @@ toChainDbArgs ImmutableDB.ImmutableDbArgs {..}
     , cdbGcDelay                = cdbsGcDelay
     , cdbGcInterval             = cdbsGcInterval
     , cdbBlocksToAddSize        = cdbsBlocksToAddSize
+      -- Backing store
+    , cdbBackingStoreSelector   = lgrBackingStoreSelector
     }
 
 {-------------------------------------------------------------------------------
