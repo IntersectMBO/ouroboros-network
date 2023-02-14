@@ -64,6 +64,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Proxy
 import GHC.TypeLits (KnownNat, natVal, type (*))
+import GHC.Types (Type)
 import GHC.Stack (HasCallStack)
 import System.Socket.Family.Unix
 import System.IO
@@ -100,15 +101,12 @@ tests :: Lock IO
       -> TestTree
 tests lock tracer ioManager =
   testGroup "Simulation"
-  [ testCrypto @MockCrypto @IO
-      Proxy Proxy lock tracer
-      (socketSnocket ioManager) (SockAddrUnix . ("./local" ++) . show)
-  , testCrypto @SingleCrypto @IO
-      Proxy Proxy lock tracer
-      (socketSnocket ioManager) (SockAddrUnix . ("./local" ++) . show)
-  , testCrypto @StandardCrypto @IO
-      Proxy Proxy lock tracer
-      (socketSnocket ioManager) (SockAddrUnix . ("./local" ++) . show)
+  [ testCrypto @MockCrypto
+      Proxy lock tracer ioManager
+  , testCrypto @SingleCrypto
+      Proxy lock tracer ioManager
+  , testCrypto @StandardCrypto
+      Proxy lock tracer ioManager
   ]
 
 traceShowTee :: Show a => String -> IO a -> IO a
@@ -126,44 +124,55 @@ instance ToDirectBearer IO Socket where
           fromIntegral <$> recvBuf socket (castPtr buf) (fromIntegral bufsize)
       }
 
-newtype Lock m = Lock { withLock :: forall a. m a -> m a }
+data Lock (m :: Type -> Type) =
+  Lock
+    { acquireLock :: m ()
+    , releaseLock :: () -> m ()
+    }
+
+withLock :: MonadCatch m => Lock m -> m a -> m a
+withLock lock = bracket (acquireLock lock) (releaseLock lock) . const
 
 mkLock :: MonadMVar m => m (Lock m)
 mkLock = do
   var <- newMVar ()
-  return $ Lock {
-    withLock = withMVar var . const
-  }
+  return $ Lock
+    { acquireLock = takeMVar var
+    , releaseLock = putMVar var
+    }
 
-testCrypto :: forall c m n fd addr
-            . MonadKES m c
-           => MonadNetworking m fd
-           => MonadProperty m
-           => MonadTimer m
-           => UnsoundKESSignAlgorithm m (KES c)
+hoistLock :: forall m n. (forall a. m a -> n a) -> Lock m -> Lock n
+hoistLock hoist (Lock acquire release) =
+  Lock (hoist acquire) (\() -> hoist (release ()))
+
+testCrypto :: forall c n
+            . MonadKES IO c
+           => UnsoundKESSignAlgorithm IO (KES c)
            => DSIGN.Signable (DSIGN c) (OCertSignable c)
            => ContextDSIGN (DSIGN c) ~ ()
            => n ~ 10
            => KnownNat (SeedSizeKES (KES c) * n)
            => Show (SignKeyWithPeriodKES (KES c))
-           => Show addr
            => Proxy c
-           -> Proxy m
-           -> Lock m
-           -> (forall a. (Show a, TracePretty a) => Tracer m a)
-           -> Snocket m fd addr
-           -> (Word32 -> addr)
+           -> Lock IO
+           -> (forall a. (Show a, TracePretty a) => Tracer IO a)
+           -> IOManager
            -> TestTree
-testCrypto proxyC proxyM lock tracer snocket mkAddr =
+testCrypto proxyC lock tracer ioManager =
   testGroup name
-    [ testProperty "one key through chain" (testOneKeyThroughChain proxyC proxyM lock snocket mkAddr)
-    , testProperty "concurrent pushes" (testConcurrentPushes proxyC proxyM (Proxy @n) lock snocket mkAddr)
+    [ testGroup "IO"
+      [ testProperty "one key through chain" (testOneKeyThroughChain proxyC (Proxy @IO) lock ioSnocket ioMkAddr)
+      , testProperty "concurrent pushes" (testConcurrentPushes proxyC (Proxy @IO) (Proxy @n) lock ioSnocket ioMkAddr)
+      ]
     ]
   where
+    ioSnocket = socketSnocket ioManager
+    ioMkAddr i = SockAddrUnix $ "./local" ++ show i
+    
     name = Text.unpack .
            decodeUtf8 .
            unVersionIdentifier .
-           versionIdentifier $ (Proxy @(KESProtocol m c))
+           versionIdentifier $ (Proxy @(KESProtocol IO c))
 
 {-# NOINLINE elaborateTracerLock #-}
 elaborateTracerLock :: MVar IO ()
