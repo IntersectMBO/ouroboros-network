@@ -120,8 +120,19 @@ data LgrDB m blk = LgrDB {
       -- ^ Handle to the ledger's backing store, containing the parts that grow
       -- too big for in-memory residency
     , lgrFlushLock    :: !(Lock.RAWLock m ())
-      -- ^ Lock used to ensure the contents of 'varDB' and 'lgrBackingStore'
-      -- remain coherent
+      -- ^ The flush lock to the 'BackingStore'. This lock is crucial when it
+      -- comes to keeping the data in memory consistent with the data on-disk.
+      --
+      -- This lock should be held whenever we want to keep a consistent view of
+      -- the backing store for some time. In particular we use this:
+      --
+      -- - when performing a query on the ledger state, we need to hold a
+      --   'DiskLedgerView' which, while live, must maintain a consistent view
+      --   of the DB, and therefore we acquire a Read lock.
+      --
+      -- - when taking a snapshot of the ledger db, we need to prevent others
+      --   from altering the backing store at the same time, thus we acquire a
+      --   Write lock.
     , resolveBlock    :: !(RealPoint blk -> m blk)
       -- ^ Read a block from disk
     , cfg             :: !(TopLevelConfig blk)

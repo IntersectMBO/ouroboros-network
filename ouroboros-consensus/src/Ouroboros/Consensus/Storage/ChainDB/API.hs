@@ -391,7 +391,7 @@ data ChainDB m blk = ChainDB {
     , isOpen             :: STM m Bool
 
       -- | Perform a monadic operation holding the read lock on the DB
-      -- changelog.
+      -- changelog. See the haddocks for 'lgrFlushLock' for more context.
     , withLgrReadLock :: forall a. m a -> m a
     }
 
