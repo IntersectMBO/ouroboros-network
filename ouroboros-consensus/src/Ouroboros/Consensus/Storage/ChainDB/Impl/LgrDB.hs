@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
@@ -168,6 +169,7 @@ data LgrDbArgs f m blk = LgrDbArgs {
     , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
     , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
     , lgrTracer         :: Tracer m (LedgerDB.TraceSnapshotEvent blk)
+    , lgrRegistry       :: HKD f (ResourceRegistry m)
     }
 
 -- | Default arguments
@@ -183,6 +185,7 @@ defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
     , lgrTopLevelConfig = NoDefault
     , lgrTraceLedger    = nullTracer
     , lgrTracer         = nullTracer
+    , lgrRegistry       = NoDefault
     }
 
 -- | Open the ledger DB
@@ -273,6 +276,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
         replayTracer
         lgrTracer
         hasFS
+        lgrRegistry
         decodeExtLedgerState'
         decode
         (LedgerDB.configLedgerDb lgrTopLevelConfig)
@@ -336,7 +340,15 @@ takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
       flush lgrDB
 
       -- CRITICAL: Snapshots are taken from the last flushed state and not from
-      -- the tip of the immutable db
+      -- the tip of the immutable db. See 'flush'.
+      --
+      -- In particular, the diffs for the immutable part have been flushed to
+      -- disk at this point and therefore it is that same state the one that we
+      -- should take a snapshot from. Usually it is the Immutable tip but
+      -- nothing prevents another thread from flushing again and therefore
+      -- moving the immutable tip. This *SHOULD* not happen because the write
+      -- lock is held here, but to be on the safe side, we take a snapshot from
+      -- the last flushed state which we know will be accurate.
       ledgerDB <- LedgerDB.ledgerDbLastFlushedState
                   <$> atomically (getCurrent lgrDB)
       LedgerDB.takeSnapshot
@@ -366,7 +378,10 @@ trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
 getDiskPolicy :: LgrDB m blk -> LedgerDB.DiskPolicy
 getDiskPolicy = diskPolicy
 
--- | The 'flushLock' write lock must be held before calling this function
+-- | Flush the "immutable" diffs into the 'BackingStore' and replace the
+-- 'LedgerDB' reference with the "volatile" part of the original db.
+--
+-- The 'flushLock' write lock must be held before calling this function
 flush :: (IOLike m, LedgerSupportsProtocol blk) => LgrDB m blk -> m ()
 flush LgrDB { varDB, lgrBackingStore } = do
     toFlush <- atomically $ do

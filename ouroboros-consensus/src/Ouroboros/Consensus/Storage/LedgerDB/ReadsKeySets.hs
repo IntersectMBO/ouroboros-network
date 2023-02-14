@@ -117,7 +117,9 @@ withHydratedLedgerState st dbch urs f =
 data PointNotFound blk = PointNotFound !(Point blk) deriving (Eq, Show)
 
 -- | Read and forward the values up to the tip of the given ledger db. Returns
--- Left if the anchor moved.
+-- Left if the anchor moved. If Left is returned, then the caller was just
+-- unlucky and scheduling of events happened to move the backing store. Reading
+-- again the LedgerDB and calling this function must eventually succeed.
 getLedgerTablesFor ::
      (Monad m, HasLedgerTables l)
   => LedgerDB l

@@ -51,6 +51,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Query
 import           Ouroboros.Consensus.Storage.LedgerDB.Snapshots
 import           Ouroboros.Consensus.Storage.LedgerDB.Stream
 import           Ouroboros.Consensus.Storage.LedgerDB.Update
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 {-------------------------------------------------------------------------------
   Initialize the DB
@@ -110,6 +111,7 @@ initLedgerDB ::
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceSnapshotEvent blk)
   -> SomeHasFS m
+  -> ResourceRegistry m
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDbCfg (ExtLedgerState blk)
@@ -119,6 +121,7 @@ initLedgerDB ::
 initLedgerDB replayTracer
              tracer
              hasFS
+             reg
              decLedger
              decHash
              cfg
@@ -145,7 +148,10 @@ initLedgerDB replayTracer
       genesisLedger <- getGenesisLedger
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
           initDb        = ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
-      backingStore <- newBackingStore lbsi hasFS (projectLedgerTables genesisLedger) -- TODO: needs to go into ResourceRegistry
+      (_, backingStore) <- allocate
+                             reg
+                             (\_ -> newBackingStore lbsi hasFS (projectLedgerTables genesisLedger))
+                             (\(LedgerBackingStore bs) -> bsClose bs)
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
                             cfg
@@ -184,7 +190,10 @@ initLedgerDB replayTracer
               tryNewestFirst (acc . InitFailure s InitFailureGenesis) []
 
             NotOrigin tip -> do
-              backingStore <- restoreBackingStore lbsi hasFS s -- TODO this needs to go in the resource registry
+              (_, backingStore) <- allocate
+                             reg
+                             (\_ -> restoreBackingStore lbsi hasFS s)
+                             (\(LedgerBackingStore bs) -> bsClose bs)
               traceWith replayTracer $
                 ReplayFromSnapshot s tip (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
@@ -208,6 +217,11 @@ initLedgerDB replayTracer
 -- on top of the given @LedgerDB' blk@.
 --
 -- It will also return the number of blocks that were replayed.
+--
+-- Note we do flush differences into the 'BackingStore' as we go, but we don't
+-- take snapshots of the in-memory parts.
+--
+-- TODO: expose the flushing frequence as a configuration
 replayStartingWith ::
      forall m blk. (
          IOLike m
@@ -231,8 +245,6 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
     push blk (!db, !replayed, !sinceLast) = do
         !db' <- ledgerDbPush cfg (ReapplyVal blk) (readKeySets backingStore) db
 
-        -- TODO flush policy: flush less often?
-
         -- It's OK to flush without a lock here, since the `LgrDB` has not
         -- finishined initializing: only this thread has access to the backing
         -- store.
@@ -244,8 +256,6 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
             flushIntoBackingStore backingStore toFlush
             pure (toKeep, 0)
           else pure (db', sinceLast + 1)
-
-        -- TODO snapshot policy: create snapshots during replay?
 
         let replayed' :: Word64
             !replayed' = replayed + 1
@@ -271,14 +281,6 @@ restoreBackingStore ::
   -> DiskSnapshot
   -> m (LedgerBackingStore m l)
 restoreBackingStore lbsi someHasFs snapshot = do
-    -- TODO a backing store that actually resides on-disk during use should have
-    -- a @new*@ function that receives both the location it should load from (ie
-    -- 'loadPath') and also the location at which it should maintain itself (ie
-    -- '_tablesPath'). Perhaps the specific logic could detect that the two are
-    -- equivalent. Or perhaps a specific back-end might be able to efficiently
-    -- reset the second location to the value of the first (a la @rsync@). Etc.
-    -- The in-memory backing store, on the other hand, keeps nothing at
-    -- '_tablesPath'.
     LedgerBackingStore <$>
       BackingStore.initFromCopy bsi someHasFs (BackingStore.BackingStorePath loadPath)
   where

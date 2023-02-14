@@ -190,6 +190,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceSnapshotEvent cdbTracer
+        , lgrRegistry         = cdbRegistry
         , lgrTraceLedger      = cdbTraceLedger
         }
     , ChainDbSpecificArgs {

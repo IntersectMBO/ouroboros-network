@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
   , getAnyKnownBlockComponent
   ) where
 
+import           Control.Exception (assert)
 import           Control.Monad (void)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -53,6 +54,7 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.HD.DbChangelog
 import qualified Ouroboros.Consensus.Storage.LedgerDB.LedgerDB as LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.Query as LedgerDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
@@ -236,8 +238,8 @@ getLedgerBackingStoreValueHandle CDB{..} rreg seP = LgrDB.withReadLock cdbLgrDB 
         (\_key -> do
             let BackingStore.LedgerBackingStore store =
                   LgrDB.lgrBackingStore cdbLgrDB
-            BackingStore.bsValueHandle store
-            -- TODO assert seqno is correct (b/c of lock)
+            (seqNo, vh) <- BackingStore.bsValueHandle store
+            assert (seqNo == changelogDiffAnchor (LedgerDB.ledgerDbChangelog ldb)) $ pure (seqNo, vh)
         )
         (\(_seqNo, vh) -> BackingStore.bsvhClose vh)
       pure
