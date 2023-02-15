@@ -52,8 +52,8 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
         -- simultaneous open; 'accept' will choose version (the greatest common
         -- version), and check if we can accept received version data.
         Done TokDone $ case acceptOrRefuse codec acceptVersion versions vMap of
-          Right r      -> Right $ HandshakeNegotiationResult r
-          Left vReason -> Left (HandshakeError vReason)
+          Right (r, vNumber, vData) -> Right $ HandshakeNegotiationResult r vNumber vData
+          Left vReason              -> Left (HandshakeError vReason)
 
       MsgQueryReply vMap ->
         Done TokDone $ Right $ decodeQueryResult decodeData vMap
@@ -76,10 +76,9 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
               Right vData' ->
                 case acceptVersion vData vData' of
                   Accept agreedData ->
-                    Done TokDone $ Right $ HandshakeNegotiationResult $ ( app agreedData
-                                                                        , vNumber
-                                                                        , agreedData
-                                                                        )
+                    Done TokDone $ Right $ HandshakeNegotiationResult (app agreedData)
+                                                                      vNumber
+                                                                      agreedData
                   Refuse err ->
                     Done TokDone (Left (InvalidServerSelection vNumber err))
 

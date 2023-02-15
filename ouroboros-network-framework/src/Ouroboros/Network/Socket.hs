@@ -4,7 +4,6 @@
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -358,7 +357,7 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientError err (diffTime ts_end ts_start)
              throwIO err
 
-         Right (HandshakeNegotiationResult (app, _versionNumber, _agreedOptions)) -> do
+         Right (HandshakeNegotiationResult app _versionNumber _agreedOptions) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
              bearer <- Snocket.toBearer sn sduTimeout muxTracer sd
              Mx.muxStart
@@ -368,7 +367,7 @@ connectToNode' sn handshakeCodec handshakeTimeLimits versionDataCodec NetworkCon
 
          Right (HandshakeQueryResult _vMap) -> do
              traceWith muxTracer $ Mx.MuxTraceHandshakeClientEnd (diffTime ts_end ts_start)
-             throwIO (QueryNotSupportedInThisVersion @vNumber)
+             throwIO (QueryNotSupported @vNumber)
 
 
 -- Wraps a Socket inside a Snocket and calls connectToNode'
@@ -490,7 +489,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
                  traceWith muxTracer' $ Mx.MuxTraceHandshakeServerError err
                  throwIO err
 
-             Right (HandshakeNegotiationResult (SomeResponderApplication app, _versionNumber, _agreedOptions)) -> do
+             Right (HandshakeNegotiationResult (SomeResponderApplication app) _versionNumber _agreedOptions) -> do
                  traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd
                  bearer <- Snocket.toBearer sn sduTimeout muxTracer' sd
                  Mx.muxStart
@@ -501,7 +500,7 @@ beginConnection sn muxTracer handshakeTracer handshakeCodec handshakeTimeLimits 
              Right (HandshakeQueryResult _vMap) -> do
                  traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd
                  -- Wait 20s for client to receive response, who should close the connection.
-                 threadDelay 20_000_000
+                 threadDelay 20
 
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 

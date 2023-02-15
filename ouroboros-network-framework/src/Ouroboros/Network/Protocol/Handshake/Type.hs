@@ -153,13 +153,13 @@ data HandshakeProtocolError vNumber
   = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
   | InvalidServerSelection vNumber Text
-  | QueryNotSupportedInThisVersion
+  | QueryNotSupported
   deriving (Eq, Show)
 
 -- | The result of a handshake.
 --
 data HandshakeResult r vNumber vData
-  = HandshakeNegotiationResult (r, vNumber, vData)
+  = HandshakeNegotiationResult r vNumber vData
   | HandshakeQueryResult (Map vNumber (Either Text vData))
 
 instance (Typeable vNumber, Show vNumber)
