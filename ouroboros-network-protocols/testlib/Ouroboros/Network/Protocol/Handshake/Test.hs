@@ -461,8 +461,8 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
         .&&.
            fromMaybe False serverRes === either (const False) extractRes serverRes'
   where
-    extractRes (HandshakeNegotiationResult (r,_,_)) = r
-    extractRes (HandshakeQueryResult _)             = False
+    extractRes (HandshakeNegotiationResult r _ _) = r
+    extractRes (HandshakeQueryResult _)           = False
 
 --
 -- Properties using a channel
@@ -501,7 +501,7 @@ prop_channel createChannels clientVersions serverVersions =
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
         -- a boolean value) is the one that was put inside 'Version'
-        (Right (HandshakeNegotiationResult (c,_,_)), Right (HandshakeNegotiationResult (s,_,_))) ->
+        (Right (HandshakeNegotiationResult c _ _), Right (HandshakeNegotiationResult s _ _)) ->
                Just c === clientRes
           .&&. Just s === serverRes
 
@@ -574,7 +574,7 @@ prop_channel_asymmetric createChannels clientVersions = do
           serverVersions)
     pure $
       case (clientRes', serverRes') of
-        (Right (HandshakeNegotiationResult (c,_,_)), Right (HandshakeNegotiationResult (s,_,_)))
+        (Right (HandshakeNegotiationResult c _ _), Right (HandshakeNegotiationResult s _ _))
                            -> Just c === clientRes
                          .&&. Just s === serverRes
         (Right (HandshakeQueryResult _), Right (HandshakeQueryResult _))
@@ -959,7 +959,7 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
     Left _ ->
       property True
     -- We should receive the queried versions.
-    Right (HandshakeNegotiationResult (_, k, _)) ->
+    Right (HandshakeNegotiationResult _ k _) ->
       -- We will only receive a negotiated result if the negotiated version does not support queries.
       property $ not $ supportsQuery k
     -- On successful handshakes, the received versions should match the server versions (ignoring `query`).
@@ -1099,7 +1099,7 @@ prop_channel_simultaneous_open createChannels codec versionDataCodec clientVersi
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
         -- a boolean value) is the one that was put inside 'Version'
-        (Right (HandshakeNegotiationResult (c,_,_)), Right (HandshakeNegotiationResult (s,_,_))) ->
+        (Right (HandshakeNegotiationResult c _ _), Right (HandshakeNegotiationResult s _ _)) ->
           label "both-succeed" $
                Just c === clientRes
           .&&. Just s === serverRes

@@ -35,11 +35,11 @@ handshakeServerPeer codec@VersionDataCodec {encodeData, decodeData} acceptVersio
     Await (ClientAgency TokPropose) $ \msg -> case msg of
       MsgProposeVersions vMap  ->
         case acceptOrRefuse codec acceptVersion versions vMap of
-          (Right r@(_, vNumber, agreedData)) ->
+          (Right (r, vNumber, agreedData)) ->
             let (response, r') = if query agreedData then
                     (MsgQueryReply $ encodeVersions encodeData versions, decodeQueryResult decodeData vMap)
                   else
-                    (MsgAcceptVersion vNumber $ encodeData vNumber agreedData, HandshakeNegotiationResult r)
+                    (MsgAcceptVersion vNumber $ encodeData vNumber agreedData, HandshakeNegotiationResult r vNumber agreedData)
             in
             Yield (ServerAgency TokConfirm)
                   response

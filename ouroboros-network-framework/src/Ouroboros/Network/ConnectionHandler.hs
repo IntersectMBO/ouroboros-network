@@ -5,7 +5,6 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE NumericUnderscores        #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeOperators             #-}
@@ -280,7 +279,7 @@ makeConnectionHandler muxTracer singMuxMode
                 atomically $ writePromise (Left (HandleHandshakeClientError err))
                 traceWith tracer (TrHandshakeClientError err)
 
-              Right (HandshakeNegotiationResult (app, versionNumber, agreedOptions)) ->
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
                   traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
@@ -352,7 +351,7 @@ makeConnectionHandler muxTracer singMuxMode
               Left !err -> do
                 atomically $ writePromise (Left (HandleHandshakeServerError err))
                 traceWith tracer (TrHandshakeServerError err)
-              Right (HandshakeNegotiationResult (app, versionNumber, agreedOptions)) ->
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
                   traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
@@ -380,7 +379,7 @@ makeConnectionHandler muxTracer singMuxMode
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap
                 -- Wait 20s for client to receive response, who should close the connection.
-                threadDelay 20_000_000
+                threadDelay 20
 
 
 
