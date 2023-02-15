@@ -552,6 +552,39 @@ data IteratorResult blk b =
     -- the VolatileDB, but not added to the ImmutableDB.
     --
     -- This will only happen when streaming very old forks very slowly.
+    --
+    -- The following example illustrates a situation in which an iterator result
+    -- could be a 'IteratorBlockGCed' value. Suppose we start with an iterator
+    -- positioned at block @c@, where @[[ x ]]@ denotes a block in the
+    -- immutable DB:
+    --
+    -- @
+    --                           iterator i
+    --                             ↓
+    -- ... ⟶ [[ a ]] → [[ b ]] → [ c ] -> [ d ]
+    -- ──────────────────────╯   ╰────────────╯
+    --   Immutable DB             Current chain
+    -- @
+    --
+    -- Suppose we switch to a longer fork that branches off from the immutable
+    -- tip ('[[b]]').
+    --
+    -- @
+    --                            iterator i
+    --                             ↓
+    -- ... ⟶ [[ a ]] → [[ b ]] → [ c ] -> [ d ]
+    -- ──────────────────────╯│
+    --    Immutable DB        │
+    --                        ╰-→ [ e ] -> [ f ] -> [ g ]
+    --                            ╰─────────────────────╯
+    --                                  Current chain
+    -- @
+    --
+    -- Assume @k=2@. This means that block @e@ is the new immutable tip. If we
+    -- would call 'iteratorNext' on @i@ __after__ block @e@ is copied to the
+    -- immutable DB and @c@ and @d@ are garbage collected, then we will get
+    -- 'IteratorBlockGCed'.
+    --
   deriving (Functor, Foldable, Traversable)
 
 deriving instance (Eq   blk, Eq   b, StandardHash blk)
@@ -646,11 +679,37 @@ data ChainType = SelectedChain | TentativeChain
 
 -- | Follower
 --
--- See 'newFollower' for more info.
+-- Unlike an 'Iterator', which is used to request a static segment of the
+-- current chain or a recent fork, a follower is used to __follow__ the
+-- __current chain__ either from the start or from a given point.
+--
+-- Unlike an 'Iterator', a 'Follower' is __dynamic__, that is, it will follow
+-- the chain when it grows or forks.
+--
+-- A follower is __pull-based__, which avoids the neeed to have a growing queue
+-- of changes to the chain on the server side in case the client is slower.
+--
+-- A follower always has an __implicit position__ associated with it. The
+-- 'followerInstruction' and 'followerInstructionBlocking' operations request
+-- the next 'ChainUpdate' wrt the follower's implicit position.
 --
 -- The type parameter @a@ will be instantiated with @blk@ or @'Header' blk@.
 data Follower m blk a = Follower {
       -- | The next chain update (if one exists)
+      --
+      -- The 'AddBlock' instruction (see 'ChainUpdate') indicates that, to
+      -- follow the current chain, the follower should extend its chain with the
+      -- given block component (which will be a value of type 'a').
+      --
+      -- The 'RollBack' instruction indicates that the follower should perform a
+      -- rollback by first backtracking to a certain point.
+      --
+      -- If a follower should switch to a fork, then it will first receive a
+      -- 'RollBack' instruction followed by as many 'AddBlock' as necessary to
+      -- reach the tip of the new chain.
+      --
+      -- When the follower's (implicit) position is in the immutable part of the
+      -- chain, no rollback instructions will be encountered.
       --
       -- Not in @STM@ because might have to read the blocks or headers from
       -- disk.
