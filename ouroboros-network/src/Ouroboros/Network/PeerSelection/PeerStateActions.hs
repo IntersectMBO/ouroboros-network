@@ -883,10 +883,8 @@ withPeerStateActions PeerStateActionsArguments {
             when notCold $ do
               -- We need to update hot protocols to indicate that they are not
               -- running.
-              stateTVar (getMiniProtocolsVar SingHot pchAppHandles)
-                        (\a -> ( ()
-                               , Map.map (const (pure NotRunning)) a
-                               ))
+              modifyTVar (getMiniProtocolsVar SingHot pchAppHandles)
+                         (\a -> Map.map (const (pure NotRunning)) a)
             return notCold
 
           if wasWarm'
