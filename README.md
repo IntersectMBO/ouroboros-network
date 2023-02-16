@@ -87,28 +87,6 @@ Consensus layer of the family Ouroboros blockchain protocols.
 
 ## Ouroboros-Consensus Documentation
 
-The `ouroboros-consensus/docs` folder contains documentation about the
-consensus layer. Start with the
-[README.md](https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-consensus/README.md).
-
-* [The Cardano Consensus and Storage Layer](https://input-output-hk.github.io/ouroboros-network/pdfs/report)
-
-  This technical report explains the design of the consensus and storage layer.
-
-## Formatting
-
-The consensus team uses `stylish-haskell` >= 0.11.0.0 to format its code. This
-is enforced by CI.
-
-Either enable editor integration or call the script used by CI itself:
-
-```bash
-./scripts/ci/check-stylish.sh
-```
-
-When using Nix, you can use the following command, which will build and use
-the right version of `stylish-haskell`.
-
-```bash
-nix-shell --run ./scripts/ci/check-stylish.sh
-```
+The documentation for the consensus layer in hosted in
+[`ouroboros-consensus`](https://github.com/input-output-hk/ouroboros-consensus/).
+We will eventually migrate the consensus layer source code to this repository.
