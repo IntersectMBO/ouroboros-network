@@ -241,7 +241,6 @@ data Success blk it flr
   | MbGCedAllComponents (MaybeGCedBlock (AllComponents blk))
   | MbHeader            (Maybe (Header blk))
   | Point               (Point blk)
-  | BlockNo             BlockNo
   | IsValid             IsValidResult
   | UnknownRange        (UnknownRange blk)
   | Iter                it
