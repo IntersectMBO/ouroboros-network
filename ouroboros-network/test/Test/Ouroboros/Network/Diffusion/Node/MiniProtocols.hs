@@ -344,7 +344,7 @@ applications debugTracer nodeKernel
                               Continue  -> pure (Right go)
                               Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
                               Terminate -> pure (Left ())
-              , points = \_ -> pure go
+              , points = \_ -> pure (Right go)
               }
 
     chainSyncResponder
