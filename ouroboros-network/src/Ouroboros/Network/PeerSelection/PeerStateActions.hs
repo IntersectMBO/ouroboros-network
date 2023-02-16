@@ -320,7 +320,7 @@ data FirstToFinishResult
     -- | A mini-protocol failed with an exception.
     = MiniProtocolError   !MiniProtocolException
 
-    -- | A mini-protocols terminated sucessfuly.
+    -- | A mini-protocols terminated successfully.
     --
     -- TODO: we should record the return value of a protocol: it is meaningful
     -- (for tracing).  But it requires more plumbing to be done: consensus
