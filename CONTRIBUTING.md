@@ -177,6 +177,22 @@ almost all of our code is written in polymorphic way using `io-classes` which
 comes with [`io-sim`]: `io-classes` expose a very similar API that the `base`,
 `async`, `stm` and `time` packages provides.
 
+### Important Coding Remarks
+
+* Please note that across this code base we are using a custom time functions
+  which are measured in seconds not nano or microseconds as similarly named
+  functions in `base` do.  This applies to:
+  - `timeout`
+  - `threadDelay`
+  - `registerDelay`
+  - `registerDelayCancellable` (which does not exist in `base`)
+  They all use `DiffTime` rather than `Int`, so you can use fractional values
+  if needed.
+
+  Failing to notice this, might lead to bugs where a delays which supposed to
+  be in order of seconds will be measured in months (`3*10^6` seconds ~ one
+  month)!
+
 ### Style Guides
 
 The network & consensus have slightly different style guides, see
