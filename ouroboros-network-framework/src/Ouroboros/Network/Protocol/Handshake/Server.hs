@@ -10,7 +10,8 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse, decodeQueryResult, encodeVersions)
+import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse,
+                     decodeQueryResult, encodeVersions)
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version

@@ -1,7 +1,5 @@
 
-module Ouroboros.Network.Handshake
-  ( HandshakeCallbacks (..)
-  ) where
+module Ouroboros.Network.Handshake (HandshakeCallbacks (..)) where
 
 import           Ouroboros.Network.Handshake.Acceptable (Accept)
 

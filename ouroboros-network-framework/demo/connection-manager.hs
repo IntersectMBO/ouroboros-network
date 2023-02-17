@@ -69,7 +69,8 @@ import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (timeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..), Queryable (..))
+import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
+                     Queryable (..))
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
