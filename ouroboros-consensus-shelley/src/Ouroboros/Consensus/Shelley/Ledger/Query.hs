@@ -322,8 +322,14 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
 
           case mPoolIds of
             Nothing ->
+              let poolIds = Set.fromList $ mconcat
+                    [ VMap.elems (SL._delegations _pstakeMark)
+                    , VMap.elems (SL._delegations _pstakeSet)
+                    , VMap.elems (SL._delegations _pstakeGo)
+                    ]
+              in
               StakeSnapshots
-                { ssStakeSnapshots = getPoolStakes (Set.fromList (VMap.elems (SL._delegations _pstakeMark)))
+                { ssStakeSnapshots = getPoolStakes poolIds
                 , ssMarkTotal      = getAllStake _pstakeMark
                 , ssSetTotal       = getAllStake _pstakeSet
                 , ssGoTotal        = getAllStake _pstakeGo
