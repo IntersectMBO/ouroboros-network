@@ -63,6 +63,17 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine (
   , Model
     -- * Running the model
   , runCmdsLockstep
+    -- * System under test
+  , ChainDBEnv (..)
+  , ChainDBState (..)
+  , close
+  , mkTestCfg
+  , open
+    -- * Specifying block components
+  , AllComponents
+  , allComponents
+    -- * Constraints
+  , TestConstraints
     -- * Entry point to the tests
   , tests
   ) where
@@ -1596,6 +1607,8 @@ runCmdsLockstep maxClockSkew (SmallChunkInfo chunkInfo) cmds =
             counterexample "There were registered clean-up actions"
                            (remainingCleanups === 0)
       return (hist, prop)
+
+
 
 prop_trace :: TopLevelConfig Blk -> DBModel Blk -> [TraceEvent Blk] -> Property
 prop_trace cfg dbModel trace =
