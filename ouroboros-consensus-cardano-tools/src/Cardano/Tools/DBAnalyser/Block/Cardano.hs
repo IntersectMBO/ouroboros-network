@@ -247,7 +247,7 @@ instance Aeson.FromJSON CardanoConfig where
         f "TestMaryHardForkAtEpoch"    4 (\_ -> ()) :*
         f "TestAlonzoHardForkAtEpoch"  5 fst        :*
         f "TestBabbageHardForkAtEpoch" 7 fst        :*
-        f "TestConwayHardForkAtEpoch"  8 snd        :*
+        f "TestConwayHardForkAtEpoch"  9 snd        :*
         Nil
 
       let isBad :: NP ShelleyTransitionArguments xs -> Bool
@@ -310,6 +310,9 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         , shelleyBasedLeaderCredentials = []
         }
       ProtocolParamsShelley {
+          -- Note that this is /not/ the Shelley protocol version, see
+          -- https://github.com/input-output-hk/cardano-node/blob/daeae61a005776ee7b7514ce47de3933074234a8/cardano-node/src/Cardano/Node/Protocol/Cardano.hs#L167-L170
+          -- and the succeeding comments.
           shelleyProtVer                = ProtVer 3 0
         , shelleyMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
@@ -322,11 +325,11 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
         , maryMaxTxCapacityOverrides    = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       ProtocolParamsAlonzo {
-          alonzoProtVer                 = ProtVer 6 0
+          alonzoProtVer                 = ProtVer 7 0
         , alonzoMaxTxCapacityOverrides  = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       ProtocolParamsBabbage {
-          babbageProtVer                 = ProtVer 7 0
+          babbageProtVer                 = ProtVer 9 0
         , babbageMaxTxCapacityOverrides  = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       ProtocolParamsConway {
