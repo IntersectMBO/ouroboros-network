@@ -32,6 +32,7 @@ import qualified Test.Ouroboros.Storage.ChainDB.Iterator as Iterator
 import qualified Test.Ouroboros.Storage.ChainDB.Model.Test as Model
 import qualified Test.Ouroboros.Storage.ChainDB.Paths as Paths
 import qualified Test.Ouroboros.Storage.ChainDB.StateMachine as StateMachine
+import qualified Test.Ouroboros.Storage.ChainDB.Unit as Unit
 
 tests :: TestTree
 tests = testGroup "ChainDB" $ [
@@ -40,6 +41,7 @@ tests = testGroup "ChainDB" $ [
     , GcSchedule.tests
     , Model.tests
     , Paths.tests
+    , Unit.tests
     ] <>
     -- The ChainDB q-s-m test is flaky on Windows, see
     -- https://github.com/input-output-hk/ouroboros-network/issues/3874
