@@ -158,8 +158,7 @@ instance IOLike m => Target (SystemM blk m) where
 
   followerInstruction = SystemM . lift . lift . API.followerInstruction
 
-instance (HasHeader blk, Model.ModelSupportsBlock blk)
-      => Target (ModelM blk) where
+instance Model.ModelSupportsBlock blk => Target (ModelM blk) where
 
   type FollowerId (ModelM blk) = Model.FollowerId
   type Block (ModelM blk) = blk
