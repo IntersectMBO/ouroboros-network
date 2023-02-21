@@ -1608,8 +1608,6 @@ runCmdsLockstep maxClockSkew (SmallChunkInfo chunkInfo) cmds =
                            (remainingCleanups === 0)
       return (hist, prop)
 
-
-
 prop_trace :: TopLevelConfig Blk -> DBModel Blk -> [TraceEvent Blk] -> Property
 prop_trace cfg dbModel trace =
     invalidBlockNeverValidatedAgain .&&.

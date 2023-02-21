@@ -16,7 +16,7 @@ import           Data.Maybe
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args
 import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Network.Block (ChainUpdate, HasHeader)
+import           Ouroboros.Network.Block (ChainUpdate)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.Model (Model)
 import           Test.Ouroboros.Storage.ChainDB.StateMachine (AllComponents,
@@ -36,7 +36,7 @@ import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks as ImmutableDB
 
 tests :: TestTree
-tests = testGroup "trivial"
+tests = testGroup "First follower instruction isJust on empty ChainDB"
   [ testCase "model" $ runModel' getFollowerInstruction
   , testCase "system" $ runSystem' getFollowerInstruction
   ]
@@ -62,11 +62,11 @@ toAssertion :: Either TestFailure a -> Assertion
 toAssertion (Left (TestFailure t)) = assertFailure t
 toAssertion (Right _)              = pure ()
 
-assert :: (MonadError TestFailure m) => Bool -> m ()
-assert b = unless b $ throwError (TestFailure "boom")
+orFailWith :: (MonadError TestFailure m) => Bool -> String -> m ()
+orFailWith b msg = unless b $ throwError (TestFailure msg)
 
--- | Targets for the test expression need to instantiate this class.
-class Target m where
+-- | SupportsUnitTests for the test expression need to instantiate this class.
+class SupportsUnitTest m where
   type FollowerId m
   type Block m
 
@@ -75,11 +75,11 @@ class Target m where
   followerInstruction
     :: FollowerId m -> m (Maybe (ChainUpdate (Block m) (AllComponents (Block m))))
 
-getFollowerInstruction :: (Target m, MonadError TestFailure m) => m ()
+getFollowerInstruction :: (SupportsUnitTest m, MonadError TestFailure m) => m ()
 getFollowerInstruction = do
   f <- newFollower
   instr <- followerInstruction f
-  assert $ isJust instr
+  isJust instr `orFailWith` "Expecting a follower instruction"
 
 -- | Tests against the model run in this monad.
 newtype ModelM blk a = ModelM
@@ -145,7 +145,7 @@ withTestChainDbEnv topLevelConfig chunkInfo extLedgerState
       , mcdbNodeDBs = nodeDbs
       }
 
-instance IOLike m => Target (SystemM blk m) where
+instance IOLike m => SupportsUnitTest (SystemM blk m) where
 
   type FollowerId (SystemM blk m) = API.Follower m blk (AllComponents blk)
   type Block (SystemM blk m) = blk
@@ -158,7 +158,7 @@ instance IOLike m => Target (SystemM blk m) where
 
   followerInstruction = SystemM . lift . lift . API.followerInstruction
 
-instance Model.ModelSupportsBlock blk => Target (ModelM blk) where
+instance Model.ModelSupportsBlock blk => SupportsUnitTest (ModelM blk) where
 
   type FollowerId (ModelM blk) = Model.FollowerId
   type Block (ModelM blk) = blk
