@@ -326,3 +326,27 @@ test-suite test-infra
                        -Wredundant-constraints
                        -Wmissing-export-lists
                        -fno-ignore-asserts
+
+benchmark bench-mempool
+  hs-source-dirs:      bench-mempool
+  main-is:             Main.hs
+  type:                exitcode-stdio-1.0
+  build-depends:       base
+                     , tasty-bench
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
+                       -fno-ignore-asserts
+                       -rtsopts
+                       "-with-rtsopts=-A32m"
+  -- We use this option to avoid skewed results due to changes in cache-line
+  -- alignment. See
+  -- https://github.com/Bodigrim/tasty-bench#comparison-against-baseline
+  if impl(ghc >= 8.6)
+    ghc-options: -fproc-alignment=64
