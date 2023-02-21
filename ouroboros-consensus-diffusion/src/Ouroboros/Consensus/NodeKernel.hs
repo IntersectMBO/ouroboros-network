@@ -246,6 +246,7 @@ forkBlockForging IS{..} blockForging =
     go currentSlot = do
         trace $ TraceStartLeadershipCheck currentSlot
 
+        _ <- lift $ ChainDB.integrateFutureBlocks chainDB
         -- Figure out which block to connect to
         --
         -- Normally this will be the current block at the tip, but it may
