@@ -48,7 +48,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , LedgerDB.ExceededRollback (..)
   , LedgerDB.TraceReplayEvent (..)
   , LedgerDB.TraceSnapshotEvent (..)
-  , LedgerDB.ledgerDbCurrent
+  , LedgerDB.current
     -- * Exported for testing purposes
   , mkLgrDB
   ) where
@@ -85,10 +85,9 @@ import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
 
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DbChangelog hiding
-                     (flush)
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog hiding (flush)
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
 import           Ouroboros.Consensus.Storage.LedgerDB.Stream
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
@@ -237,7 +236,7 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
     -- >k blocks long. Thus 'Lbn' is the oldest point we can roll back to.
     -- Therefore, we need to make the newest state (current) of the ledger DB
     -- the anchor.
-    let dbPrunedToImmDBTip = LedgerDB.ledgerDbPrune (SecurityParam 0) db
+    let dbPrunedToImmDBTip = LedgerDB.prune (SecurityParam 0) db
     (varDB, varPrevApplied) <-
       (,) <$> newTVarIO dbPrunedToImmDBTip <*> newTVarIO Set.empty
     flushLock <- Lock.new ()
@@ -272,7 +271,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
              replayTracer
              immutableDB = wrapFailure (Proxy @blk) $ do
     (_initLog, db, replayed, backingStore) <-
-      LedgerDB.initLedgerDB
+      LedgerDB.initialize
         replayTracer
         lgrTracer
         hasFS
@@ -326,7 +325,7 @@ currentPoint :: forall blk. UpdateLedger blk => LedgerDB' blk -> Point blk
 currentPoint = castPoint
              . ledgerTipPoint
              . ledgerState
-             . LedgerDB.ledgerDbCurrent
+             . LedgerDB.current
 
 takeSnapshot ::
      forall m blk.
@@ -349,7 +348,7 @@ takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
       -- moving the immutable tip. This *SHOULD* not happen because the write
       -- lock is held here, but to be on the safe side, we take a snapshot from
       -- the last flushed state which we know will be accurate.
-      ledgerDB <- LedgerDB.ledgerDbLastFlushedState
+      ledgerDB <- LedgerDB.lastFlushedState
                   <$> atomically (getCurrent lgrDB)
       LedgerDB.takeSnapshot
         tracer
@@ -381,12 +380,13 @@ getDiskPolicy = diskPolicy
 -- | Flush the "immutable" diffs into the 'BackingStore' and replace the
 -- 'LedgerDB' reference with the "volatile" part of the original db.
 --
--- The 'flushLock' write lock must be held before calling this function
+-- PRECONDITION: The 'flushLock' write lock must be held before calling this
+-- function
 flush :: (IOLike m, LedgerSupportsProtocol blk) => LgrDB m blk -> m ()
 flush LgrDB { varDB, lgrBackingStore } = do
     toFlush <- atomically $ do
       db <- readTVar varDB
-      let (toFlush, db') = LedgerDB.ledgerDbFlush FlushAllImmutable db
+      let (toFlush, db') = LedgerDB.flush FlushAllImmutable db
       writeTVar varDB db'
       pure toFlush
     flushIntoBackingStore lgrBackingStore toFlush
@@ -413,7 +413,7 @@ validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
 validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
-             LedgerDB.ledgerDbSwitch
+             LedgerDB.switch
                (LedgerDB.configLedgerDb cfg)
                numRollbacks
                (lift . lift . trace)
@@ -467,19 +467,19 @@ streamAPI ::
      forall m blk.
      (IOLike m, HasHeader blk)
   => ImmutableDB m blk -> StreamAPI m blk blk
-streamAPI = streamAPI' (return . NextBlock) GetBlock
+streamAPI = streamAPI' (return . NextItem) GetBlock
 
 streamAPI' ::
      forall m blk a.
      (IOLike m, HasHeader blk)
-  => (a -> m (NextBlock a)) -- ^ Stop condition
+  => (a -> m (NextItem a)) -- ^ Stop condition
   -> BlockComponent   blk a
   -> ImmutableDB    m blk
   -> StreamAPI      m blk a
 streamAPI' shouldStop blockComponent immutableDB = StreamAPI streamAfter
   where
     streamAfter :: Point blk
-                -> (Either (RealPoint blk) (m (NextBlock a)) -> m b)
+                -> (Either (RealPoint blk) (m (NextItem a)) -> m b)
                 -> m b
     streamAfter tip k = withRegistry $ \registry -> do
         eItr <-
@@ -494,11 +494,11 @@ streamAPI' shouldStop blockComponent immutableDB = StreamAPI streamAfter
           Right itr -> k $ Right $ streamUsing itr
 
     streamUsing :: ImmutableDB.Iterator m blk a
-                -> m (NextBlock a)
+                -> m (NextItem a)
     streamUsing itr = do
         itrResult <- ImmutableDB.iteratorNext itr
         case itrResult of
-          ImmutableDB.IteratorExhausted -> return NoMoreBlocks
+          ImmutableDB.IteratorExhausted -> return NoMoreItems
           ImmutableDB.IteratorResult b  -> shouldStop b
 
 {-------------------------------------------------------------------------------
@@ -562,7 +562,7 @@ getLedgerTablesAtFor ::
         (LedgerTables (ExtLedgerState blk) ValuesMK))
 getLedgerTablesAtFor pt keys lgr@LgrDB{ varDB, lgrBackingStore } = do
   lgrDb <- atomically $ readTVar varDB
-  case LedgerDB.ledgerDbPrefix pt lgrDb of
+  case LedgerDB.rollback pt lgrDb of
     Nothing -> pure $ Left $ PointNotFound pt
     Just l  -> do
       eValues <-

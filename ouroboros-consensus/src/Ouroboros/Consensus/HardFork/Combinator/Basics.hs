@@ -84,9 +84,12 @@ newtype instance LedgerState (HardForkBlock xs) mk = HardForkLedgerState {
       hardForkLedgerStatePerEra :: HardForkState (Flip LedgerState mk) xs
     }
 
-deriving stock   instance (IsMapKind mk, CanHardFork xs) => Show     (LedgerState (HardForkBlock xs) mk)
-deriving stock   instance (IsMapKind mk, CanHardFork xs) => Eq       (LedgerState (HardForkBlock xs) mk)
-deriving newtype instance (IsMapKind mk, CanHardFork xs) => NoThunks (LedgerState (HardForkBlock xs) mk)
+deriving stock   instance (IsMapKind mk, CanHardFork xs)
+              => Show     (LedgerState (HardForkBlock xs) mk)
+deriving stock   instance (IsMapKind mk, CanHardFork xs)
+              => Eq       (LedgerState (HardForkBlock xs) mk)
+deriving newtype instance (IsMapKind mk, CanHardFork xs)
+              => NoThunks (LedgerState (HardForkBlock xs) mk)
 
 -- | How to inject each era's ledger tables into their shared ledger tables
 class LedgerTablesCanHardFork xs where

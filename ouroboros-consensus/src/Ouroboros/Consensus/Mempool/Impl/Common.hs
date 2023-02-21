@@ -52,9 +52,9 @@ import           Control.Tracer
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
-                     (PointNotFound)
 import           Ouroboros.Consensus.Storage.LedgerDB.Query
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
+                     (PointNotFound)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
@@ -196,7 +196,7 @@ chainDBLedgerInterface ::
   => ChainDB m blk -> LedgerInterface m blk
 chainDBLedgerInterface chainDB = LedgerInterface
     { getCurrentLedgerState =
-        ledgerState . ledgerDbCurrent <$> ChainDB.getLedgerDB chainDB
+        ledgerState . current <$> ChainDB.getLedgerDB chainDB
     , getLedgerTablesAtFor = \pt txs -> do
         let keys = ExtLedgerStateTables
                  $ foldl' (zipLedgerTables (<>)) emptyLedgerTables

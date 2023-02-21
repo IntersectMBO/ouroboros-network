@@ -24,10 +24,8 @@
 -- the procedures to apply a block to a LedgerDB and pushing the resulting
 -- LedgerState into the DB.
 module Ouroboros.Consensus.Storage.LedgerDB.Update (
-    -- * LedgerDB management
-    ledgerDbWithAnchor
     -- * Applying blocks
-  , AnnLedgerError (..)
+    AnnLedgerError (..)
   , AnnLedgerError'
   , Ap (..)
   , ExceededRollback (..)
@@ -39,15 +37,15 @@ module Ouroboros.Consensus.Storage.LedgerDB.Update (
   , defaultResolveBlocks
     -- * Updates
   , defaultResolveWithErrors
-  , ledgerDbFlush
-  , ledgerDbPrune
-  , ledgerDbPush
-  , ledgerDbSwitch
+  , flush
+  , prune
+  , push
+  , switch
   , volatileStatesBimap
     -- * Pure API
-  , ledgerDbPush'
-  , ledgerDbPushMany'
-  , ledgerDbSwitch'
+  , push'
+  , pushMany'
+  , switch'
     -- * Trace
   , PushGoal (..)
   , PushStart (..)
@@ -75,7 +73,7 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (DbChangelog)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DbChangelog as DbChangelog
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
-import           Ouroboros.Consensus.Storage.LedgerDB.Query
+import qualified Ouroboros.Consensus.Storage.LedgerDB.Query as Query
 import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
 
 {-------------------------------------------------------------------------------
@@ -145,7 +143,7 @@ applyBlock cfg ap ksReader db = case ap of
       applyBlock cfg ap' ksReader db
   where
     l :: l EmptyMK
-    l = ledgerDbCurrent db
+    l = Query.current db
 
     withValues :: blk -> (l ValuesMK -> m (l DiffMK)) -> m (l DiffMK)
     withValues b f = withKeysReadSets l ksReader (ledgerDbChangelog db) (getBlockKeySets b) f
@@ -227,14 +225,6 @@ defaultResolveWithErrors resolve =
   LedgerDB management
 -------------------------------------------------------------------------------}
 
--- | Ledger DB starting at the specified ledger state
-ledgerDbWithAnchor ::
-     ( HasLedgerTables l
-     , GetTip l
-     )
-  => l EmptyMK -> LedgerDB l
-ledgerDbWithAnchor = LedgerDB . DbChangelog.empty
-
 -- | Transform the underlying 'AnchoredSeq' using the given functions.
 volatileStatesBimap ::
      Anchorable (WithOrigin SlotNo) a b
@@ -247,19 +237,19 @@ volatileStatesBimap f g =
     . DbChangelog.changelogVolatileStates
     . ledgerDbChangelog
 
--- | Prune snapshots until at we have at most @k@ snapshots in the LedgerDB,
--- excluding the snapshots stored at the anchor.
-ledgerDbPrune ::
+-- | Prune ledger states until at we have at most @k@ in the LedgerDB, excluding
+-- the one stored at the anchor.
+prune ::
      (GetTip l, StandardHash l)
   => SecurityParam -> LedgerDB l -> LedgerDB l
-ledgerDbPrune k db = db {
-      ledgerDbChangelog   = DbChangelog.pruneVolatilePart k (ledgerDbChangelog db)
+prune k db = db {
+      ledgerDbChangelog = DbChangelog.pruneVolatilePart k (ledgerDbChangelog db)
     }
 
- -- NOTE: we must inline 'ledgerDbPrune' otherwise we get unexplained thunks in
+ -- NOTE: we must inline 'prune' otherwise we get unexplained thunks in
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
  -- @-fstrictness@ optimisation (enabled by default for -O1). See #2532.
-{-# INLINE ledgerDbPrune #-}
+{-# INLINE prune #-}
 
 {-------------------------------------------------------------------------------
   Internal updates
@@ -272,7 +262,7 @@ pushLedgerState ::
   -> l DiffMK -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
 pushLedgerState secParam currentNew' db@LedgerDB{..}  =
-    ledgerDbPrune secParam $ db {
+    prune secParam $ db {
         ledgerDbChangelog   =
           DbChangelog.extend
             ledgerDbChangelog
@@ -292,7 +282,7 @@ rollback ::
   -> LedgerDB l
   -> Maybe (LedgerDB l)
 rollback n db@LedgerDB{..}
-    | n <= ledgerDbMaxRollback db
+    | n <= Query.maxRollback db
     = Just db {
           ledgerDbChangelog   = DbChangelog.rollbackN (fromIntegral n) ledgerDbChangelog
         }
@@ -315,40 +305,40 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-ledgerDbPush :: forall m c l blk. (ApplyBlock l blk, Monad m, StandardHash l, c)
-             => LedgerDbCfg l
-             -> Ap m l blk c -> KeySetsReader m l -> LedgerDB l -> m (LedgerDB l)
-ledgerDbPush cfg ap ksReader db =
+push :: forall m c l blk. (ApplyBlock l blk, Monad m, StandardHash l, c)
+     => LedgerDbCfg l
+     -> Ap m l blk c -> KeySetsReader m l -> LedgerDB l -> m (LedgerDB l)
+push cfg ap ksReader db =
     (\current' -> pushLedgerState (ledgerDbCfgSecParam cfg) current' db) <$>
       applyBlock (ledgerDbCfg cfg) ap ksReader db
 
 -- | Push a bunch of blocks (oldest first)
-ledgerDbPushMany ::
+pushMany ::
      forall m c l blk . (ApplyBlock l blk, Monad m, StandardHash l, c)
   => (Pushing blk -> m ())
   -> LedgerDbCfg l
   -> [Ap m l blk c] -> KeySetsReader m l -> LedgerDB l -> m (LedgerDB l)
-ledgerDbPushMany trace cfg aps ksReader initDb = (repeatedlyM pushAndTrace) aps initDb
+pushMany trace cfg aps ksReader initDb = (repeatedlyM pushAndTrace) aps initDb
   where
     pushAndTrace ap db = do
       let pushing = Pushing . toRealPoint $ ap
       trace pushing
-      ledgerDbPush cfg ap ksReader db
+      push cfg ap ksReader db
 
 -- | Switch to a fork
-ledgerDbSwitch :: (ApplyBlock l blk, Monad m, StandardHash l, c)
-               => LedgerDbCfg l
-               -> Word64          -- ^ How many blocks to roll back
-               -> (UpdateLedgerDbTraceEvent blk -> m ())
-               -> [Ap m l blk c]  -- ^ New blocks to apply
-               -> KeySetsReader m l
-               -> LedgerDB l
-               -> m (Either ExceededRollback (LedgerDB l))
-ledgerDbSwitch cfg numRollbacks trace newBlocks ksReader db =
-    case rollback numRollbacks db of
+switch :: (ApplyBlock l blk, Monad m, StandardHash l, c)
+       => LedgerDbCfg l
+       -> Word64          -- ^ How many blocks to roll back
+       -> (UpdateLedgerDbTraceEvent blk -> m ())
+       -> [Ap m l blk c]  -- ^ New blocks to apply
+       -> KeySetsReader m l
+       -> LedgerDB l
+       -> m (Either ExceededRollback (LedgerDB l))
+switch cfg numRollbacks trace newBlocks ksReader db =
+  case rollback numRollbacks db of
       Nothing ->
         return $ Left $ ExceededRollback {
-            rollbackMaximum   = ledgerDbMaxRollback db
+            rollbackMaximum   = Query.maxRollback db
           , rollbackRequested = numRollbacks
           }
       Just db' -> case newBlocks of
@@ -357,19 +347,17 @@ ledgerDbSwitch cfg numRollbacks trace newBlocks ksReader db =
         (firstBlock:_) -> do
           let start   = PushStart . toRealPoint $ firstBlock
               goal    = PushGoal  . toRealPoint . last $ newBlocks
-          Right <$> ledgerDbPushMany (trace . (StartedPushingBlockToTheLedgerDb start goal))
+          Right <$> pushMany (trace . (StartedPushingBlockToTheLedgerDb start goal))
                                      cfg
                                      newBlocks
                                      ksReader
                                      db'
 
 -- | Isolates the prefix of the changelog that should be flushed
---
--- TODO take some argument to bound the size of the resulting prefix?
-ledgerDbFlush ::
+flush ::
      (GetTip l, HasLedgerTables l)
   => DbChangelog.FlushPolicy -> LedgerDB l -> (DbChangelog l, LedgerDB l)
-ledgerDbFlush policy db = do
+flush policy db = do
     (l, db { ledgerDbChangelog = r })
   where
     (l, r) = DbChangelog.flush policy (ledgerDbChangelog db)
@@ -407,20 +395,20 @@ data UpdateLedgerDbTraceEvent blk =
 pureBlock :: blk -> Ap m l blk ()
 pureBlock = ReapplyVal
 
-ledgerDbPush' :: (ApplyBlock l blk, StandardHash l)
-              => LedgerDbCfg l -> blk -> KeySetsReader Identity l -> LedgerDB l -> LedgerDB l
-ledgerDbPush' cfg b bk = runIdentity . ledgerDbPush cfg (pureBlock b) bk
+push' :: (ApplyBlock l blk, StandardHash l)
+      => LedgerDbCfg l -> blk -> KeySetsReader Identity l -> LedgerDB l -> LedgerDB l
+push' cfg b bk = runIdentity . push cfg (pureBlock b) bk
 
-ledgerDbPushMany' :: (ApplyBlock l blk, StandardHash l)
-                  => LedgerDbCfg l -> [blk] -> KeySetsReader Identity l -> LedgerDB l -> LedgerDB l
-ledgerDbPushMany' cfg bs bk =
-  runIdentity . ledgerDbPushMany (const $ pure ()) cfg (map pureBlock bs) bk
+pushMany' :: (ApplyBlock l blk, StandardHash l)
+          => LedgerDbCfg l -> [blk] -> KeySetsReader Identity l -> LedgerDB l -> LedgerDB l
+pushMany' cfg bs bk =
+  runIdentity . pushMany (const $ pure ()) cfg (map pureBlock bs) bk
 
-ledgerDbSwitch' :: (ApplyBlock l blk, StandardHash l)
-                => LedgerDbCfg l
-                -> Word64 -> [blk] -> KeySetsReader Identity l -> LedgerDB l -> Maybe (LedgerDB l)
-ledgerDbSwitch' cfg n bs bk db =
-    case runIdentity $ ledgerDbSwitch cfg n (const $ pure ()) (map pureBlock bs) bk db of
+switch' :: (ApplyBlock l blk, StandardHash l)
+        => LedgerDbCfg l
+        -> Word64 -> [blk] -> KeySetsReader Identity l -> LedgerDB l -> Maybe (LedgerDB l)
+switch' cfg n bs bk db =
+    case runIdentity $ switch cfg n (const $ pure ()) (map pureBlock bs) bk db of
       Left  ExceededRollback{} -> Nothing
       Right db'                -> Just db'
 

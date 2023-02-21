@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.Stream (
-    NextBlock (..)
+    NextItem (..)
   , StreamAPI (..)
   , streamAll
   ) where
@@ -19,7 +19,7 @@ import           Ouroboros.Consensus.Block
 -------------------------------------------------------------------------------}
 
 -- | Next block returned during streaming
-data NextBlock blk = NoMoreBlocks | NextBlock blk
+data NextItem blk = NoMoreItems | NextItem blk
 
 -- | Stream blocks from the immutable DB
 --
@@ -35,7 +35,7 @@ newtype StreamAPI m blk a = StreamAPI {
         -- Reference to the block corresponding to the snapshot we found
         -- (or 'GenesisPoint' if we didn't find any)
 
-        -> (Either (RealPoint blk) (m (NextBlock a)) -> m b)
+        -> (Either (RealPoint blk) (m (NextItem a)) -> m b)
         -- Get the next block (by value)
         --
         -- Should be @Left pt@ if the snapshot we found is more recent than the
@@ -54,7 +54,7 @@ streamAll ::
   -> Point blk             -- ^ Starting point for streaming
   -> (RealPoint blk -> e)  -- ^ Error when tip not found
   -> a                     -- ^ Starting point when tip /is/ found
-  -> (b -> a -> m a)     -- ^ Update function for each block
+  -> (b -> a -> m a)       -- ^ Update function for each block
   -> ExceptT e m a
 streamAll StreamAPI{..} tip notFound e f = ExceptT $
     streamAfter tip $ \case
@@ -64,6 +64,6 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
         let go :: a -> m a
             go a = do mNext <- getNext
                       case mNext of
-                        NoMoreBlocks -> return a
-                        NextBlock b  -> go =<< f b a
+                        NoMoreItems -> return a
+                        NextItem b  -> go =<< f b a
         Right <$> go e

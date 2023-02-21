@@ -53,13 +53,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DbChangelog
+import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import qualified Ouroboros.Consensus.Storage.LedgerDB.LedgerDB as LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.Query as LedgerDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-
 
 -- | Return the last @k@ headers.
 --
@@ -222,8 +221,8 @@ getLedgerBackingStoreValueHandle CDB{..} rreg seP = LgrDB.withReadLock cdbLgrDB 
     ldb0 <- atomically $ LgrDB.getCurrent cdbLgrDB
     case seP of
       StaticLeft () -> StaticLeft  <$> finish ldb0
-      StaticRight p -> StaticRight <$> case LedgerDB.ledgerDbPrefix p ldb0 of
-        Nothing  -> pure $ Left $ castPoint $ getTip $ LedgerDB.ledgerDbAnchor ldb0
+      StaticRight p -> StaticRight <$> case LedgerDB.rollback p ldb0 of
+        Nothing  -> pure $ Left $ castPoint $ getTip $ LedgerDB.anchor ldb0
         Just ldb -> Right <$> finish ldb
   where
     finish ::

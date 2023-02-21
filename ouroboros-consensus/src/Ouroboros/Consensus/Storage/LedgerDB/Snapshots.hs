@@ -16,9 +16,9 @@
   = Snapshot managing and contents
 
   Snapshotting a ledger state means saving a copy of the in-memory part of the
-  ledger state serialized as a file on disk, as well as flushing differences
-  between the last snapshotted ledger state and the one that we are snapshotting
-  now and making a copy of that resulting on-disk state.
+  ledger state serialized as a file on disk, as well as flushing differences on
+  the ledger tables between the last snapshotted ledger state and the one that
+  we are snapshotting now and making a copy of that resulting on-disk state.
 
   == Startup
 
@@ -71,8 +71,10 @@
   copy the blocks which are more than @k@ blocks from the tip (i.e. the ones
   that must be considered immutable) to the immutable database and then:
 
-  1. Every time we have processed 100 or more blocks since the last flush, perform
-     a flush of differences in the DB up to the immutable db tip.
+  1. Every time we have processed a specific amount of blocks since the last
+     flush (currently statically set to 100, but ideally will be lifted into
+     some configuration parameter), perform a flush of differences in the DB up
+     to the immutable db tip.
 
   2. If dictated by the disk policy, flush immediately all the differences up to
      the immutable db tip and serialize the ledger database anchor
@@ -146,11 +148,33 @@ import           Ouroboros.Consensus.Util.Versioned
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
+
+data DiskSnapshot = DiskSnapshot {
+      -- | Snapshots are numbered. We will try the snapshots with the highest
+      -- number first.
+      --
+      -- When creating a snapshot, we use the slot number of the ledger state it
+      -- corresponds to as the snapshot number. This gives an indication of how
+      -- recent the snapshot is.
+      --
+      -- Note that the snapshot names are only indicative, we don't rely on the
+      -- snapshot number matching the slot number of the corresponding ledger
+      -- state. We only use the snapshots numbers to determine the order in
+      -- which we try them.
+      dsNumber :: Word64
+
+      -- | Snapshots can optionally have a suffix, separated by the snapshot
+      -- number with an underscore, e.g., @4492799_last_Byron@. This suffix acts
+      -- as metadata for the operator of the node. Snapshots with a suffix will
+      -- /not be trimmed/.
+    , dsSuffix :: Maybe String
+    }
+  deriving (Show, Eq, Ord, Generic)
 
 {-------------------------------------------------------------------------------
-  Write to disk
+  Read from disk
 -------------------------------------------------------------------------------}
 
 data SnapshotFailure blk =
@@ -167,14 +191,42 @@ data SnapshotFailure blk =
   | InitFailureGenesis
   deriving (Show, Eq, Generic)
 
-data TraceSnapshotEvent blk
-  = InvalidSnapshot DiskSnapshot (SnapshotFailure blk)
-    -- ^ An on disk snapshot was skipped because it was invalid.
-  | TookSnapshot DiskSnapshot (RealPoint blk)
-    -- ^ A snapshot was written to disk.
-  | DeletedSnapshot DiskSnapshot
-    -- ^ An old or invalid on-disk snapshot was deleted
-  deriving (Generic, Eq, Show)
+-- | Named snapshot are permanent, they will never be deleted when trimming.
+diskSnapshotIsPermanent :: DiskSnapshot -> Bool
+diskSnapshotIsPermanent = isJust . dsSuffix
+
+-- | The snapshots that are periodically created are temporary, they will be
+-- deleted when trimming
+diskSnapshotIsTemporary :: DiskSnapshot -> Bool
+diskSnapshotIsTemporary = not . diskSnapshotIsPermanent
+
+-- | Read snapshot from disk
+readSnapshot ::
+     forall m blk. IOLike m
+  => SomeHasFS m
+  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
+  -> (forall s. Decoder s (HeaderHash blk))
+  -> DiskSnapshot
+  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk EmptyMK)
+readSnapshot hasFS decLedger decHash = do
+      ExceptT
+    . readIncremental hasFS decoder
+    . snapshotToStatePath
+  where
+    decoder :: Decoder s (ExtLedgerState blk EmptyMK)
+    decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
+
+-- | List on-disk snapshots, highest number first.
+listSnapshots :: Monad m => SomeHasFS m -> m [DiskSnapshot]
+listSnapshots (SomeHasFS HasFS{..}) =
+    aux <$> listDirectory (mkFsPath [])
+  where
+    aux :: Set String -> [DiskSnapshot]
+    aux = List.sortOn (Down . dsNumber) . mapMaybe snapshotFromPath . Set.toList
+
+{-------------------------------------------------------------------------------
+  Write to disk
+-------------------------------------------------------------------------------}
 
 -- | Take a snapshot of the /oldest ledger state/ in the ledger DB
 --
@@ -238,57 +290,6 @@ trimSnapshots tracer hasFS DiskPolicy{..} = do
       traceWith tracer $ DeletedSnapshot snapshot
       return snapshot
 
-{-------------------------------------------------------------------------------
-  Internal: reading from disk
--------------------------------------------------------------------------------}
-
-data DiskSnapshot = DiskSnapshot {
-      -- | Snapshots are numbered. We will try the snapshots with the highest
-      -- number first.
-      --
-      -- When creating a snapshot, we use the slot number of the ledger state it
-      -- corresponds to as the snapshot number. This gives an indication of how
-      -- recent the snapshot is.
-      --
-      -- Note that the snapshot names are only indicative, we don't rely on the
-      -- snapshot number matching the slot number of the corresponding ledger
-      -- state. We only use the snapshots numbers to determine the order in
-      -- which we try them.
-      dsNumber :: Word64
-
-      -- | Snapshots can optionally have a suffix, separated by the snapshot
-      -- number with an underscore, e.g., @4492799_last_Byron@. This suffix acts
-      -- as metadata for the operator of the node. Snapshots with a suffix will
-      -- /not be trimmed/.
-    , dsSuffix :: Maybe String
-    }
-  deriving (Show, Eq, Ord, Generic)
-
--- | Named snapshot are permanent, they will never be deleted when trimming.
-diskSnapshotIsPermanent :: DiskSnapshot -> Bool
-diskSnapshotIsPermanent = isJust . dsSuffix
-
--- | The snapshots that are periodically created are temporary, they will be
--- deleted when trimming
-diskSnapshotIsTemporary :: DiskSnapshot -> Bool
-diskSnapshotIsTemporary = not . diskSnapshotIsPermanent
-
--- | Read snapshot from disk
-readSnapshot ::
-     forall m blk. IOLike m
-  => SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
-  -> (forall s. Decoder s (HeaderHash blk))
-  -> DiskSnapshot
-  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk EmptyMK)
-readSnapshot hasFS decLedger decHash = do
-      ExceptT
-    . readIncremental hasFS decoder
-    . snapshotToStatePath
-  where
-    decoder :: Decoder s (ExtLedgerState blk EmptyMK)
-    decoder = decodeSnapshotBackwardsCompatible (Proxy @blk) decLedger decHash
-
 -- | Write snapshot to disk
 writeSnapshot ::
      forall m blk. MonadThrow m
@@ -310,17 +311,17 @@ writeSnapshot (SomeHasFS hasFS) backingStore encLedger snapshot cs = do
     encode :: ExtLedgerState blk EmptyMK -> Encoding
     encode = encodeSnapshot encLedger
 
+{-------------------------------------------------------------------------------
+  Delete
+-------------------------------------------------------------------------------}
+
 -- | Delete snapshot from disk
 deleteSnapshot :: HasCallStack => SomeHasFS m -> DiskSnapshot -> m ()
 deleteSnapshot (SomeHasFS HasFS{..}) = removeDirectoryRecursive . snapshotToDirPath
 
--- | List on-disk snapshots, highest number first.
-listSnapshots :: Monad m => SomeHasFS m -> m [DiskSnapshot]
-listSnapshots (SomeHasFS HasFS{..}) =
-    aux <$> listDirectory (mkFsPath [])
-  where
-    aux :: Set String -> [DiskSnapshot]
-    aux = List.sortOn (Down . dsNumber) . mapMaybe snapshotFromPath . Set.toList
+{-------------------------------------------------------------------------------
+  Paths
+-------------------------------------------------------------------------------}
 
 snapshotToDirName :: DiskSnapshot -> String
 snapshotToDirName DiskSnapshot { dsNumber, dsSuffix } =
@@ -360,6 +361,19 @@ snapshotFromPath fileName = do
     suffix' = case suffix of
       ""      -> Nothing
       _ : str -> Just str
+
+{-------------------------------------------------------------------------------
+  Tracing
+-------------------------------------------------------------------------------}
+
+data TraceSnapshotEvent blk
+  = InvalidSnapshot DiskSnapshot (SnapshotFailure blk)
+    -- ^ An on disk snapshot was skipped because it was invalid.
+  | TookSnapshot DiskSnapshot (RealPoint blk)
+    -- ^ A snapshot was written to disk.
+  | DeletedSnapshot DiskSnapshot
+    -- ^ An old or invalid on-disk snapshot was deleted
+  deriving (Generic, Eq, Show)
 
 {-------------------------------------------------------------------------------
   Serialisation

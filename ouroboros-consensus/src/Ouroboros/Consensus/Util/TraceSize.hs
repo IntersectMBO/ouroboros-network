@@ -20,8 +20,7 @@ import           Data.Word
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Basics
 
-import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB,
-                     ledgerDbCurrent)
+import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB, current)
 
 {-------------------------------------------------------------------------------
   Generic
@@ -60,7 +59,7 @@ traceLedgerDbSize :: forall m l. (MonadIO m, GetTip l)
                   -> Tracer m (LedgerDbSize l)
                   -> Tracer m (LedgerDB l)
 traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
-    let !ledger = ledgerDbCurrent db
+    let !ledger = current db
         !tip    = getTip ledger
 
     when (shouldTrace tip) $ do

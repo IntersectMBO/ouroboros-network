@@ -191,7 +191,6 @@ refoldLedger ::
   => LedgerCfg l -> [blk] -> l ValuesMK -> l ValuesMK
 refoldLedger cfg = repeatedly (\blk state -> applyLedgerTablesDiffs state $ tickThenReapply cfg blk state)
 
-
 {-------------------------------------------------------------------------------
   Short-hand
 -------------------------------------------------------------------------------}

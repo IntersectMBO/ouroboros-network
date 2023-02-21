@@ -9,7 +9,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.Init (
     -- * Initialization
     InitLog (..)
   , ReplayStart (..)
-  , initLedgerDB
+  , initialize
     -- * Trace
   , ReplayGoal (..)
   , TraceReplayEvent (..)
@@ -20,7 +20,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.Init (
 import           Codec.Serialise.Decoding (Decoder)
 import           Control.Monad.Except
 import           Control.Tracer
-import qualified Data.Map.Diff.Strict.Internal as DS
+import qualified Data.Map.Diff.Strict.Internal as Diff.Internal
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Word
@@ -38,20 +38,23 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.FS.API
 
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore.InMemory as BackingStore
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DbChangelog
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
-import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
+import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingStore
+import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.InMemory as BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
+import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB',
+                     LedgerDbCfg)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.Query
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
 import           Ouroboros.Consensus.Storage.LedgerDB.Snapshots
 import           Ouroboros.Consensus.Storage.LedgerDB.Stream
-import           Ouroboros.Consensus.Storage.LedgerDB.Update
-import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Storage.LedgerDB.Update (Ap (..))
+import qualified Ouroboros.Consensus.Storage.LedgerDB.Update as LedgerDB
 
 {-------------------------------------------------------------------------------
   Initialize the DB
@@ -101,7 +104,7 @@ data InitLog blk =
 -- /compute/ all subsequent ones. This is important, because the ledger states
 -- obtained in this way will (hopefully) share much of their memory footprint
 -- with their predecessors.
-initLedgerDB ::
+initialize ::
      forall m blk. (
          IOLike m
        , LedgerSupportsProtocol blk
@@ -114,19 +117,19 @@ initLedgerDB ::
   -> ResourceRegistry m
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
-  -> LedgerDbCfg (ExtLedgerState blk)
+  -> LedgerDB.LedgerDbCfg (ExtLedgerState blk)
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
   -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
-initLedgerDB replayTracer
-             tracer
-             hasFS
-             reg
-             decLedger
-             decHash
-             cfg
-             getGenesisLedger
-             streamAPI = do
+initialize replayTracer
+           tracer
+           hasFS
+           reg
+           decLedger
+           decHash
+           cfg
+           getGenesisLedger
+           streamAPI =
     listSnapshots hasFS >>= tryNewestFirst id
   where
     lbsi ::
@@ -147,7 +150,7 @@ initLedgerDB replayTracer
       traceWith replayTracer ReplayFromGenesis
       genesisLedger <- getGenesisLedger
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-          initDb        = ledgerDbWithAnchor (forgetLedgerTables genesisLedger)
+          initDb        = LedgerDB.new (forgetLedgerTables genesisLedger)
       (_, backingStore) <- allocate
                              reg
                              (\_ -> newBackingStore lbsi hasFS (projectLedgerTables genesisLedger))
@@ -189,15 +192,16 @@ initLedgerDB replayTracer
               traceWith tracer . InvalidSnapshot s $ InitFailureGenesis
               tryNewestFirst (acc . InitFailure s InitFailureGenesis) []
 
-            NotOrigin tip -> do
-              (_, backingStore) <- allocate
-                             reg
-                             (\_ -> restoreBackingStore lbsi hasFS s)
-                             (\(LedgerBackingStore bs) -> bsClose bs)
+            NotOrigin pt -> do
+              (_, backingStore) <-
+                allocate
+                  reg
+                  (\_ -> restoreBackingStore lbsi hasFS s)
+                  (\(LedgerBackingStore bs) -> bsClose bs)
               traceWith replayTracer $
-                ReplayFromSnapshot s tip (ReplayStart initialPoint)
+                ReplayFromSnapshot s pt (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
-                  initDb  = ledgerDbWithAnchor extLedgerSt
+                  initDb  = LedgerDB.new extLedgerSt
               eDB <- runExceptT $ replayStartingWith
                                     tracer'
                                     cfg
@@ -210,10 +214,10 @@ initLedgerDB replayTracer
                   when (diskSnapshotIsTemporary s) $ deleteSnapshot hasFS s
                   tryNewestFirst (acc . InitFailure s err) ss
                 Right (db, replayed) ->
-                  return (acc (InitFromSnapshot s tip), db, replayed, backingStore)
+                  return (acc (InitFromSnapshot s pt), db, replayed, backingStore)
 
 
--- | Replay all blocks in the Immutable database using the ''StreamAPI' provided
+-- | Replay all blocks in the Immutable database using the 'StreamAPI' provided
 -- on top of the given @LedgerDB' blk@.
 --
 -- It will also return the number of blocks that were replayed.
@@ -236,14 +240,14 @@ replayStartingWith ::
   -> LedgerDB' blk
   -> ExceptT (SnapshotFailure blk) m (LedgerDB' blk, Word64)
 replayStartingWith tracer cfg backingStore streamAPI initDb = do
-    (\(a, b, _) -> (a, b)) <$> streamAll streamAPI (castPoint (ledgerDbTip initDb))
+    (\(a, b, _) -> (a, b)) <$> streamAll streamAPI (castPoint (tip initDb))
         InitFailureTooRecent
         (initDb, 0, 0)
         push
   where
     push :: blk -> (LedgerDB' blk, Word64, Word64) -> m (LedgerDB' blk, Word64, Word64)
     push blk (!db, !replayed, !sinceLast) = do
-        !db' <- ledgerDbPush cfg (ReapplyVal blk) (readKeySets backingStore) db
+        !db' <- LedgerDB.push cfg (ReapplyVal blk) (readKeySets backingStore) db
 
         -- It's OK to flush without a lock here, since the `LgrDB` has not
         -- finishined initializing: only this thread has access to the backing
@@ -252,7 +256,7 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
           if sinceLast == 100
           then do
             let (toFlush, toKeep) =
-                  ledgerDbFlush FlushAllImmutable db'
+                  LedgerDB.flush FlushAllImmutable db'
             flushIntoBackingStore backingStore toFlush
             pure (toKeep, 0)
           else pure (db', sinceLast + 1)
@@ -262,9 +266,9 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
 
             events :: [LedgerEvent blk]
             events = inspectLedger
-                       (getExtLedgerCfg (ledgerDbCfg cfg))
-                       (ledgerState (ledgerDbCurrent db))
-                       (ledgerState (ledgerDbCurrent db''))
+                       (getExtLedgerCfg (LedgerDB.ledgerDbCfg cfg))
+                       (ledgerState (current db))
+                       (ledgerState (current db''))
 
         traceWith tracer (ReplayedBlock (blockRealPoint blk) events)
         return (db'', replayed', sinceLast')
@@ -351,7 +355,7 @@ newBackingStoreInitialiser = LedgerBackingStoreInitialiser $
       -> DiffMK   k v
       -> ValuesMK k v
     applyDiff_ (ValuesMK values) (DiffMK diff) =
-      ValuesMK (DS.unsafeApplyDiff values diff)
+      ValuesMK (Diff.Internal.unsafeApplyDiff values diff)
 
 {-------------------------------------------------------------------------------
   Trace events

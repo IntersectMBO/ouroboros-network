@@ -93,9 +93,9 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
                      (LedgerBackingStoreValueHandle)
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
                      (PointNotFound)
 import           Ouroboros.Consensus.Storage.Serialisation
 
@@ -407,13 +407,13 @@ getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 getCurrentLedger ::
      (Monad (STM m), IsLedger (LedgerState blk))
   => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
-getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
+getCurrentLedger = fmap LedgerDB.current . getLedgerDB
 
 -- | Get the immutable ledger, i.e., typically @k@ blocks back.
 getImmutableLedger ::
      Monad (STM m)
   => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
-getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
+getImmutableLedger = fmap LedgerDB.anchor . getLedgerDB
 
 -- | Get the ledger for the given point.
 --
@@ -423,7 +423,7 @@ getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 getPastLedger ::
      (Monad (STM m), LedgerSupportsProtocol blk, StandardHash (ExtLedgerState blk))
   => ChainDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk EmptyMK))
-getPastLedger db pt = LedgerDB.ledgerDbPast pt <$> getLedgerDB db
+getPastLedger db pt = LedgerDB.getPastLedgerAt pt <$> getLedgerDB db
 
 -- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the
 -- last @k@ blocks of the current chain.

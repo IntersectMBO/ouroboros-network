@@ -41,7 +41,6 @@ module Ouroboros.Consensus.Ledger.Dual (
   , LedgerState (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
-  , Ticked (..)
   , TxId (..)
   , Validated (..)
     -- * Serialisation
@@ -88,10 +87,10 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
-import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
@@ -538,7 +537,6 @@ instance ShowQuery (BlockQuery (DualBlock m a)) where
 instance Bridge m a => CommonProtocolParams (DualBlock m a) where
   maxHeaderSize = maxHeaderSize . dualLedgerStateMain
   maxTxSize     = maxTxSize     . dualLedgerStateMain
-
 
 {-------------------------------------------------------------------------------
   Mempool support

@@ -26,7 +26,7 @@ import           Ouroboros.Consensus.Block.Abstract (castHash, castPoint,
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
                      (PointNotFound (..))
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike

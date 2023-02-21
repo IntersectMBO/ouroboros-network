@@ -688,7 +688,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
         cfg = cdbTopLevelConfig
 
         ledger :: LedgerState blk EmptyMK
-        ledger = ledgerState (LgrDB.ledgerDbCurrent newLedgerDB)
+        ledger = ledgerState (LgrDB.current newLedgerDB)
 
         summary :: History.Summary (HardForkIndices blk)
         summary = hardForkSummary
@@ -744,8 +744,8 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
               let events :: [LedgerEvent blk]
                   events = inspectLedger
                              cdbTopLevelConfig
-                             (ledgerState $ LgrDB.ledgerDbCurrent curLedger)
-                             (ledgerState $ LgrDB.ledgerDbCurrent newLedger)
+                             (ledgerState $ LgrDB.current curLedger)
+                             (ledgerState $ LgrDB.current newLedger)
 
               -- Clear the tentative header
               prevTentativeHeader <- swapTVar varTentativeHeader SNothing
@@ -1204,7 +1204,7 @@ futureCheckCandidate chainSelEnv validatedChainDiff =
       in
         validatedChainDiff' {
           VF.validatedLedger = ledgerState
-                             . LgrDB.ledgerDbCurrent
+                             . LgrDB.current
                              . unK
                              . VF.validatedLedger
                              $ validatedChainDiff'

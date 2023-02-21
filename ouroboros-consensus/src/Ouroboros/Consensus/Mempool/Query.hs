@@ -10,7 +10,7 @@ import           Ouroboros.Consensus.Block.Abstract (Point, SlotNo, castHash,
                      pointHash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
                      (PointNotFound (PointNotFound))
 import           Ouroboros.Consensus.Util.IOLike
 

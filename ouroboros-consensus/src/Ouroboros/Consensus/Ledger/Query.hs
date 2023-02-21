@@ -70,12 +70,11 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
 import           Ouroboros.Consensus.Storage.LedgerDB
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore as BackingStore
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.DbChangelog hiding
-                     (empty)
-import qualified Ouroboros.Consensus.Storage.LedgerDB.HD.DiffSeq as DS
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.ReadsKeySets
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
+import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog hiding (empty)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.DiffSeq as DS
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
 import           Ouroboros.Consensus.Util (ShowProxy (..), SomeSecond (..))
 import           Ouroboros.Consensus.Util.DepPair
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
@@ -341,7 +340,7 @@ mkDiskLedgerView ::
   -> DiskLedgerView m l
 mkDiskLedgerView (LedgerBackingStoreValueHandle seqNo vh, ldb, close) =
     DiskLedgerView
-      (ledgerDbCurrent ldb)
+      (current ldb)
       (\ks -> do
           let chlog = ledgerDbChangelog ldb
               rew   = rewindTableKeySets chlog ks

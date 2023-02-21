@@ -60,7 +60,7 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.HD.BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..))
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.Counting (getExactly)
@@ -118,7 +118,11 @@ data instance BlockQuery (HardForkBlock xs) :: Type -> Type where
     => QueryHardFork (x ': xs) result
     -> BlockQuery (HardForkBlock (x ': xs)) result
 
-instance (HasLedgerTables (LedgerState (HardForkBlock xs)), All SingleEraBlock xs, LedgerTablesCanHardFork xs) => QueryLedger (HardForkBlock xs) where
+instance ( HasLedgerTables (LedgerState (HardForkBlock xs))
+         , All SingleEraBlock xs
+         , LedgerTablesCanHardFork xs
+         )
+      => QueryLedger (HardForkBlock xs) where
   answerBlockQuery
     (ExtLedgerCfg cfg)
     query

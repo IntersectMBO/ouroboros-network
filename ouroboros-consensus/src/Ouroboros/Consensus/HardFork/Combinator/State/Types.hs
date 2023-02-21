@@ -102,8 +102,8 @@ newtype TranslateForecast f g x y = TranslateForecast {
 -- | Translate a LedgerState across an era transition.
 --
 -- As new tables might be populated on an era transition, the return map kind is
--- @ValuesMK@. If no tables are populated, normally this will be filled with
--- @polyEmptyLedgerTables@.
+-- @DiffMK@. If no tables are populated, normally this will be filled with
+-- @emptyLedgerTables@.
 data TranslateLedgerState x y = TranslateLedgerState {
         -- | How to translate a Ledger State during the era transition
         translateLedgerStateWith ::
