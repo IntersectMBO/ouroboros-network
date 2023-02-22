@@ -198,6 +198,7 @@ debugTracer = tracerWithTime
     tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
     tracer = Tracer traceM
 
+-- TODO: this should be part of the node setup if we use it for all the tests.
 tracersExtraWithTimeName
   :: NtNAddr
   -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
@@ -205,7 +206,7 @@ tracersExtraWithTimeName
                            SomeException (IOSim s)
 tracersExtraWithTimeName ntnAddr =
   Diff.P2P.TracersExtra {
-    dtTraceLocalRootPeersTracer           = contramap
+      dtTraceLocalRootPeersTracer         = contramap
                                              DiffusionLocalRootPeerTrace
                                           . tracerWithName ntnAddr
                                           . tracerWithTime
