@@ -281,7 +281,9 @@ genSimArgs raps = do
   -- chance that someone gets to make a block
   let bgaSlotDuration = secondsToDiffTime 1
       numberOfNodes   = length [ r | r@(RelayAccessAddress _ _) <- raps ]
-      quota = 20 `div` numberOfNodes
+      quota = if numberOfNodes > 0
+                then 20 `div` numberOfNodes
+                else 100
 
   return
    $ SimArgs
