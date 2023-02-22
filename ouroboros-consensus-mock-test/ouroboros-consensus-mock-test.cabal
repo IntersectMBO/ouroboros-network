@@ -55,6 +55,7 @@ test-suite test
   main-is:          Main.hs
   other-modules:
     Test.Consensus.Ledger.Mock
+    Test.Consensus.Ledger.Mock.LedgerTables
     Test.ThreadNet.BFT
     Test.ThreadNet.LeaderSchedule
     Test.ThreadNet.PBFT

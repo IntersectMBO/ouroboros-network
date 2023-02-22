@@ -36,14 +36,14 @@ newtype ForgeExt c ext = ForgeExt {
                -> SimpleBlock c ext
     }
 
-forgeSimple :: forall c ext.
+forgeSimple :: forall c ext mk.
                ( SimpleCrypto c
                )
             => ForgeExt c ext
             -> TopLevelConfig (SimpleBlock c ext)
             -> BlockNo                                   -- ^ Current block number
             -> SlotNo                                    -- ^ Current slot number
-            -> TickedLedgerState (SimpleBlock c ext)     -- ^ Current ledger
+            -> TickedLedgerState (SimpleBlock c ext) mk  -- ^ Current ledger
             -> [GenTx (SimpleBlock c ext)]               -- ^ Txs to include
             -> IsLeader (BlockProtocol (SimpleBlock c ext))
             -> SimpleBlock c ext

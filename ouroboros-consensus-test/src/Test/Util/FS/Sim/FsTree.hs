@@ -13,9 +13,12 @@ module Test.Util.FS.Sim.FsTree {-# DEPRECATED "Use System.FS.Sim.FsTree from fs-
   , createDirIfMissing
   , createDirWithParents
   , openFile
+  , removeDirRecursive
   , removeFile
   , renameFile
   , replace
+    -- * Path-listing
+  , find
     -- * Pretty-printing
   , pretty
   ) where
