@@ -178,6 +178,11 @@ data AppArgs block m = AppArgs
     -- that block.
     --
   , aaShouldChainSyncExit :: block -> m Bool
+
+    -- | if true, `chain-sync` will never go pass the query tip phase.  This
+    -- simulates too far behind the chain in a crude way.
+    --
+  , aaChainSyncEarlyExit  :: Bool
   }
 
 
@@ -217,6 +222,7 @@ applications debugTracer nodeKernel
                , aaKeepAliveInterval
                , aaPingPongInterval
                , aaShouldChainSyncExit
+               , aaChainSyncEarlyExit
                }
              = do
     return $ Diff.Applications
@@ -344,7 +350,10 @@ applications debugTracer nodeKernel
                               Continue  -> pure (Right go)
                               Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
                               Terminate -> pure (Left ())
-              , points = \_ -> pure (Right go)
+              , points = \_ -> pure $
+                                 if aaChainSyncEarlyExit
+                                 then Left ()
+                                 else Right go
               }
 
     chainSyncResponder

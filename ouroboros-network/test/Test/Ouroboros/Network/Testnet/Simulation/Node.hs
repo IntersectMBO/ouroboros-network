@@ -155,6 +155,7 @@ data NodeArgs =
     , naDNSLookupDelayScript   :: Script DNSLookupDelay
       -- ^ 'Arguments' 'aDNSLookupDelayScript' value
     , naChainSyncExitOnBlockNo :: Maybe BlockNo
+    , naChainSyncEarlyExit     :: Bool
     }
 
 instance Show NodeArgs where
@@ -347,6 +348,10 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
                  , (4, pure Nothing)
                  ]
 
+  chainSyncEarlyExit <- frequency [ (1, pure True)
+                                  , (9, pure False)
+                                  ]
+
   return
    $ NodeArgs
       { naSeed                   = seed
@@ -360,6 +365,7 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
       , naDNSTimeoutScript       = dnsTimeout
       , naDNSLookupDelayScript   = dnsLookupDelay
       , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
+      , naChainSyncEarlyExit     = chainSyncEarlyExit
       }
   where
     hasActive :: Int -> PeerSelectionTargets -> Bool
@@ -739,6 +745,7 @@ diffusionSimulation
             , naDNSTimeoutScript       = dnsTimeout
             , naDNSLookupDelayScript   = dnsLookupDelay
             , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
+            , naChainSyncEarlyExit     = chainSyncEarlyExit
             }
             ntnSnocket
             ntcSnocket
@@ -838,6 +845,7 @@ diffusionSimulation
               , NodeKernel.aPingPongInterval     = 10
               , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
               , NodeKernel.aShouldChainSyncExit  = shouldChainSyncExit chainSyncExitVar
+              , NodeKernel.aChainSyncEarlyExit   = chainSyncEarlyExit
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
               , NodeKernel.aReadUseLedgerAfter   = readUseLedgerAfter

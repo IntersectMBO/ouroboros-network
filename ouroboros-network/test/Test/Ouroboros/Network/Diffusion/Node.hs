@@ -134,6 +134,7 @@ data Arguments m = Arguments
     , aKeepAliveInterval    :: DiffTime
     , aPingPongInterval     :: DiffTime
     , aShouldChainSyncExit  :: Block -> m Bool
+    , aChainSyncEarlyExit   :: Bool
 
     , aPeerSelectionTargets :: PeerSelectionTargets
     , aReadLocalRootPeers   :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
@@ -379,6 +380,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
       , Node.aaKeepAliveInterval        = aKeepAliveInterval na
       , Node.aaPingPongInterval         = aPingPongInterval na
       , Node.aaShouldChainSyncExit      = aShouldChainSyncExit na
+      , Node.aaChainSyncEarlyExit       = aChainSyncEarlyExit na
       }
 
 --- Utils
