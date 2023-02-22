@@ -74,6 +74,7 @@ import           Ouroboros.Network.KeepAlive
 import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Network.Mock.ProducerState
 import           Ouroboros.Network.Mux
+import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface)
@@ -258,7 +259,7 @@ applications debugTracer nodeKernel
     initiatorAndResponderApp = TemperatureBundle
       { withHot = WithHot $ \ connId controlMessageSTM ->
           [ MiniProtocol
-              { miniProtocolNum    = MiniProtocolNum 2
+              { miniProtocolNum    = NodeToNode.chainSyncMiniProtocolNum
               , miniProtocolLimits = chainSyncLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
@@ -266,7 +267,7 @@ applications debugTracer nodeKernel
                     chainSyncResponder
               }
           , MiniProtocol
-              { miniProtocolNum    = MiniProtocolNum 3
+              { miniProtocolNum    = NodeToNode.blockFetchMiniProtocolNum
               , miniProtocolLimits = blockFetchLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
@@ -286,7 +287,7 @@ applications debugTracer nodeKernel
           ]
       , withEstablished = WithEstablished $ \ connId controlMessageSTM ->
           [ MiniProtocol
-              { miniProtocolNum    = MiniProtocolNum 8
+              { miniProtocolNum    = NodeToNode.keepAliveMiniProtocolNum
               , miniProtocolLimits = keepAliveLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
@@ -307,7 +308,6 @@ applications debugTracer nodeKernel
     chainSyncInitiator ConnectionId { remoteAddress }
                        controlMessageSTM =
         MuxPeerRaw $ \channel -> do
-          labelThisThread "ChainSyncClient"
           bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
                                      remoteAddress $
             bracket (registerClientChains nodeKernel remoteAddress)
