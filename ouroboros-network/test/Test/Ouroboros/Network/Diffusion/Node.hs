@@ -26,6 +26,8 @@ module Test.Ouroboros.Network.Diffusion.Node
   , PeerSelectionTargets (..)
   , RelayAccessPoint (..)
   , UseLedgerAfter (..)
+    -- * configuration constants
+  , config_RECONNECT_DELAY
   ) where
 
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
@@ -69,6 +71,7 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
@@ -242,7 +245,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daPeerMetrics            = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
               , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
-              , Diff.P2P.daReturnPolicy           = \_ -> 0
+              , Diff.P2P.daReturnPolicy           = \_ -> config_RECONNECT_DELAY
               }
 
         apps <- Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
@@ -389,3 +392,10 @@ ntnToIPv6 :: NtNAddr -> Maybe NtNAddr
 ntnToIPv6 ntnAddr@(TestAddress (Node.EphemeralIPv6Addr _)) = Just ntnAddr
 ntnToIPv6 ntnAddr@(TestAddress (Node.IPAddr (IPv6 _) _))   = Just ntnAddr
 ntnToIPv6 (TestAddress _)                                  = Nothing
+
+--
+-- Constants
+--
+
+config_RECONNECT_DELAY :: ReconnectDelay
+config_RECONNECT_DELAY = 10
