@@ -19,11 +19,13 @@ import           Control.Monad (forever, void)
 import qualified Control.Tracer as Tracer
 import           Data.Foldable (asum)
 import qualified Data.List as List
+import           Data.List.NonEmpty (singleton)
 import           Data.Void (Void, vacuous)
 import           Data.Word (Word32)
 import           Ouroboros.Consensus.Config.SecurityParam as Consensus
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as Mempool
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mempool (Mempool)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import qualified Ouroboros.Consensus.Mempool.Capacity as Mempool
@@ -82,9 +84,13 @@ testTxSizeFairness TestParams { mempoolMaxCapacity, smallTxSize, largeTxSize, nr
     --  Obtain a mempool.
     ----------------------------------------------------------------------------
     let
+      ledgerItf :: Mempool.LedgerInterface IO TestBlock
       ledgerItf = Mempool.LedgerInterface {
-              Mempool.getCurrentLedgerState = pure $ testInitLedgerWithState ()
-          }
+          Mempool.getCurrentLedgerState = pure $
+            testInitLedgerWithState NoPayLoadDependentState
+        , Mempool.getLedgerTablesAtFor = \_ _ -> pure $
+            Right emptyLedgerTables
+        }
 
       sampleLedgerConfig =
           HardFork.defaultEraParams (Consensus.SecurityParam 10) (Time.slotLengthFromSec 2)
@@ -203,7 +209,7 @@ remover mempool total = do
         -- transactions.
         threadDelay 1000
         gtx <- atomically $ getATxFromTheMempool
-        Mempool.removeTxs mempool [Mempool.txId gtx]
+        Mempool.removeTxs mempool (singleton $ Mempool.txId gtx)
         loop (unGenTx gtx:txs) (n-1)
       where
         getATxFromTheMempool =

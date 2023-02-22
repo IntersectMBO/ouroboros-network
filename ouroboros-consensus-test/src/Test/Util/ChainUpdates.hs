@@ -19,6 +19,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
 import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Test.QuickCheck
+import           Test.Util.QuickCheck (frequency')
 import           Test.Util.TestBlock
 
 data ChainUpdate =
@@ -159,17 +160,6 @@ genChainUpdateState updateBehavior securityParam n =
       genAddBlock Invalid
       genSwitchFork (pure 1)
 
--- | Variant of 'frequency' that allows for transformers of 'Gen'
-frequency' :: (MonadTrans t, Monad (t Gen)) => [(Int, t Gen a)] -> t Gen a
-frequency' [] = error "frequency' used with empty list"
-frequency' xs0 = lift (choose (1, tot)) >>= (`pick` xs0)
-  where
-    tot = sum (map fst xs0)
-
-    pick n ((k,x):xs)
-      | n <= k    = x
-      | otherwise = pick (n-k) xs
-    pick _ _  = error "pick used with empty list"
 
 -- | Test that applying the generated updates gives us the same chain
 -- as @cusCurrentChain@.

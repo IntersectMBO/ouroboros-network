@@ -90,7 +90,7 @@ data InitLog blk =
 data TraceLedgerDBEvent blk =
     LedgerDBSnapshotEvent (TraceSnapshotEvent blk)
   | BackingStoreEvent (BackingStoreTrace)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 -- | Initialize the ledger DB from the most recent snapshot on disk
 --

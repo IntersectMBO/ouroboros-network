@@ -8,6 +8,7 @@
 
 module Test.Consensus.Mempool.Fairness.TestBlock (
     TestBlock
+  , TestBlock.PayloadDependentState (..)
   , Tx
   , genTxSize
   , mkGenTx
@@ -15,11 +16,14 @@ module Test.Consensus.Mempool.Fairness.TestBlock (
   , unGenTx
   ) where
 
+import           Codec.Serialise
 import           Control.DeepSeq (NFData)
 import           Data.Word (Word32)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import qualified Ouroboros.Consensus.Block as Block
+import           Ouroboros.Consensus.Ledger.Abstract
+                     (LedgerTablesAreTrivial (convertMapKind))
 import qualified Ouroboros.Consensus.Ledger.Abstract as Ledger
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as Ledger
 import qualified Test.Util.TestBlock as TestBlock
@@ -45,11 +49,15 @@ data Tx = Tx { txNumber :: Int, txSize ::  Word32 }
 -------------------------------------------------------------------------------}
 
 instance TestBlock.PayloadSemantics Tx where
-  type PayloadDependentState Tx = ()
+  data instance PayloadDependentState Tx mk = NoPayLoadDependentState
+    deriving (Show, Eq, Ord, Generic, NoThunks)
+    deriving anyclass Serialise
 
   type PayloadDependentError Tx = ()
 
-  applyPayload st _tx = Right st
+  applyPayload NoPayLoadDependentState _tx = Right NoPayLoadDependentState
+
+  getPayloadKeySets = const NoTestLedgerTables
 
 
 data instance Block.CodecConfig TestBlock = TestBlockCodecConfig
@@ -87,9 +95,19 @@ mkGenTx :: Int -> Word32 -> Ledger.GenTx TestBlock
 mkGenTx anId aSize = TestBlockGenTx $ Tx { txNumber = anId, txSize = aSize }
 
 instance Ledger.LedgerSupportsMempool TestBlock where
-  applyTx _cfg _shouldIntervene _slot gtx st = pure (st, ValidatedGenTx gtx)
+  applyTx _cfg _shouldIntervene _slot gtx st = pure (
+        TestBlock.TickedTestLedger
+      $ convertMapKind
+      $ TestBlock.getTickedTestLedger
+        st
+    , ValidatedGenTx gtx
+    )
 
-  reapplyTx _cfg _slot _gtx gst = pure gst
+  reapplyTx _cfg _slot _gtx gst = pure
+    $ TestBlock.TickedTestLedger
+    $ convertMapKind
+    $ TestBlock.getTickedTestLedger
+      gst
 
   txsMaxBytes _ = error "The tests should override this value"
                   -- The tests should be in control of the mempool capacity,
@@ -100,8 +118,29 @@ instance Ledger.LedgerSupportsMempool TestBlock where
 
   txForgetValidated (ValidatedGenTx tx) = tx
 
+  getTransactionKeySets _ = NoTestLedgerTables
+
 {-------------------------------------------------------------------------------
-  Ledger support
+  Ledger support (empty tables)
 -------------------------------------------------------------------------------}
 
 type instance Ledger.ApplyTxErr TestBlock = ()
+
+instance Ledger.HasLedgerTables (Ledger.LedgerState TestBlock) where
+  data LedgerTables (Ledger.LedgerState TestBlock) mk = NoTestLedgerTables
+    deriving stock    (Generic, Eq, Show)
+    deriving anyclass (NoThunks)
+
+instance Ledger.LedgerTablesAreTrivial (Ledger.LedgerState TestBlock) where
+  convertMapKind st = TestBlock.TestLedger lap NoPayLoadDependentState
+    where
+        TestBlock.TestLedger lap NoPayLoadDependentState = st
+  trivialLedgerTables = NoTestLedgerTables
+
+instance Ledger.CanStowLedgerTables (Ledger.LedgerState TestBlock) where
+
+instance Ledger.HasTickedLedgerTables (Ledger.LedgerState TestBlock) where
+  withLedgerTablesTicked (TestBlock.TickedTestLedger st) tables =
+      TestBlock.TickedTestLedger $ Ledger.withLedgerTables st tables
+
+instance Ledger.CanSerializeLedgerTables (Ledger.LedgerState TestBlock) where

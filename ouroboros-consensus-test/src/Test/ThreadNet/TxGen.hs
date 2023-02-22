@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
@@ -13,12 +14,14 @@ module Test.ThreadNet.TxGen (
   ) where
 
 import           Data.Kind (Type)
+import           Data.SOP.Functors (Flip (..))
 import           Data.SOP.Index
 import           Data.SOP.Strict
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
 import           Test.QuickCheck (Gen)
@@ -45,7 +48,7 @@ class TxGen blk where
              -> SlotNo
              -> TopLevelConfig blk
              -> TxGenExtra blk
-             -> LedgerState blk
+             -> LedgerState blk ValuesMK
              -> Gen [GenTx blk]
 
 {-------------------------------------------------------------------------------
@@ -74,7 +77,7 @@ testGenTxsHfc ::
   -> SlotNo
   -> TopLevelConfig (HardForkBlock xs)
   -> NP WrapTxGenExtra xs
-  -> LedgerState (HardForkBlock xs)
+  -> LedgerState (HardForkBlock xs) ValuesMK
   -> Gen [GenTx (HardForkBlock xs)]
 testGenTxsHfc coreNodeId numCoreNodes curSlotNo cfg extras state =
     hcollapse $
@@ -95,8 +98,8 @@ testGenTxsHfc coreNodeId numCoreNodes curSlotNo cfg extras state =
       => Index xs blk
       -> TopLevelConfig blk
       -> WrapTxGenExtra blk
-      -> LedgerState blk
+      -> Flip LedgerState ValuesMK blk
       -> K (Gen [GenTx (HardForkBlock xs)]) blk
-    aux index cfg' (WrapTxGenExtra extra') state' = K $
+    aux index cfg' (WrapTxGenExtra extra') (Flip state') = K $
         fmap (injectNS' (Proxy @GenTx) index)
           <$> testGenTxs coreNodeId numCoreNodes curSlotNo cfg' extra' state'

@@ -17,6 +17,9 @@ module Test.Util.QuickCheck (
   , le
   , lt
   , strictlyIncreasing
+    -- * Gen variants that allow transformers
+  , frequency'
+  , oneof'
     -- * Comparing maps
   , isSubmapOfBy
     -- * Improved variants
@@ -191,3 +194,23 @@ shrinkNP g f np = npToSListI np $ cshrinkNP (Proxy @Top) g f np
 
 collects :: Show a => [a] -> Property -> Property
 collects = repeatedly collect
+
+{-------------------------------------------------------------------------------
+  Generator variants that allow for transformers
+-------------------------------------------------------------------------------}
+
+-- | Variant of 'frequency' that allows for transformers of 'Gen'
+frequency' :: (MonadTrans t, Monad (t Gen)) => [(Int, t Gen a)] -> t Gen a
+frequency' [] = error "frequency' used with empty list"
+frequency' xs0 = lift (choose (1, tot)) >>= (`pick` xs0)
+  where
+    tot = sum (map fst xs0)
+
+    pick n ((k,x):xs)
+      | n <= k    = x
+      | otherwise = pick (n-k) xs
+    pick _ _  = error "pick used with empty list"
+
+oneof' :: (MonadTrans t, Monad (t Gen)) => [t Gen a] -> t Gen a
+oneof' [] = error "QuickCheck.oneof used with empty list"
+oneof' gs = lift (chooseInt (0,length gs - 1)) >>= (gs !!)

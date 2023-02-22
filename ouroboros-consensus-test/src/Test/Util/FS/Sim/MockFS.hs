@@ -22,6 +22,7 @@ module Test.Util.FS.Sim.MockFS {-# DEPRECATED "Use System.FS.Sim.MockFS from fs-
   , doesDirectoryExist
   , doesFileExist
   , listDirectory
+  , removeDirectoryRecursive
   , removeFile
   , renameFile
     -- * Exported for the benefit of tests only

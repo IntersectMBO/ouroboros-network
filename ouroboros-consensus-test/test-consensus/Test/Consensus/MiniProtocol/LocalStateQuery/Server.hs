@@ -28,8 +28,11 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
+import           Ouroboros.Consensus.Ledger.Basics (getTip)
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.Query (Query (..))
+import           Ouroboros.Consensus.Ledger.Query (DiskLedgerView (..),
+                     Query (..))
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
@@ -38,11 +41,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCac
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
                      LgrDbArgs (..), mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
-                     defaultDiskPolicy)
-import qualified Ouroboros.Consensus.Storage.LedgerDB as LgrDB (ledgerDbPast,
-                     ledgerDbTip, ledgerDbWithAnchor)
+import           Ouroboros.Consensus.Storage.LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
+import           Ouroboros.Consensus.Util (StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Network.Mock.Chain (Chain (..))
 import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client
@@ -52,6 +56,8 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (AcquireFailure (..))
 import           System.FS.API (HasFS, SomeHasFS (..))
+import qualified System.FS.Sim.MockFS as Mock
+import           System.FS.Sim.STM (simHasFS)
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
@@ -175,13 +181,23 @@ mkServer k chain = do
     return $
       localStateQueryServer
         cfg
-        (castPoint . LgrDB.ledgerDbTip <$> LgrDB.getCurrent lgrDB)
-        (\pt -> LgrDB.ledgerDbPast pt <$> LgrDB.getCurrent lgrDB)
-        getImmutablePoint
+        (\seP -> do
+           ldb0 <- atomically $ LgrDB.getCurrent lgrDB
+           pure $ case seP of
+             StaticLeft ()  -> StaticLeft $ mkDLV ldb0
+             StaticRight pt -> StaticRight $ case LedgerDB.rollback pt ldb0 of
+               Nothing  -> Left  $ castPoint $ getTip $ LedgerDB.anchor ldb0
+               Just ldb -> Right $ mkDLV ldb
+        )
   where
     cfg = ExtLedgerCfg $ testCfg k
-    getImmutablePoint = return $ Chain.headPoint $
-      Chain.drop (fromIntegral (maxRollbacks k)) chain
+
+    mkDLV ldb =
+      DiskLedgerView
+        (LgrDB.current ldb)
+        (\(ExtLedgerStateTables NoTestLedgerTables) -> pure $ ExtLedgerStateTables NoTestLedgerTables)
+        (\_rq -> pure $ ExtLedgerStateTables NoTestLedgerTables)
+        (pure ())
 
 -- | Initialise a 'LgrDB' with the given chain.
 initLgrDB
@@ -192,7 +208,20 @@ initLgrDB
 initLgrDB k chain = do
     varDB          <- newTVarIO genesisLedgerDB
     varPrevApplied <- newTVarIO mempty
-    let lgrDB = mkLgrDB varDB varPrevApplied resolve args
+    let
+      backingStoreInitialiser =
+        LedgerDB.newBackingStoreInitialiser
+        mempty
+        LedgerDB.InMemoryBackingStore
+    backingStore <- do
+      v <- uncheckedNewTVarM Mock.empty
+      LedgerDB.newBackingStore
+        backingStoreInitialiser
+        (SomeHasFS (simHasFS v))
+        (ExtLedgerStateTables NoTestLedgerTables)
+    rawLock <- RAWLock.new ()
+    reg <- unsafeNewRegistry
+    let lgrDB = mkLgrDB varDB varPrevApplied backingStore rawLock resolve (args reg)
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0 noopTrace
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
         LgrDB.ValidateExceededRollBack _ ->
@@ -212,18 +241,20 @@ initLgrDB k chain = do
 
     cfg = testCfg k
 
-    genesisLedgerDB = LgrDB.ledgerDbWithAnchor testInitExtLedger
+    genesisLedgerDB = LedgerDB.mkWithAnchor (convertMapKind testInitExtLedger)
 
     noopTrace :: blk -> m ()
     noopTrace = const $ pure ()
 
-    args = LgrDbArgs
+    args rr = LgrDbArgs
       { lgrTopLevelConfig       = cfg
       , lgrHasFS                = SomeHasFS (error "lgrHasFS" :: HasFS m ())
       , lgrDiskPolicy           = defaultDiskPolicy k DefaultSnapshotInterval
       , lgrGenesis              = return testInitExtLedger
       , lgrTracer               = nullTracer
       , lgrTraceLedger          = nullTracer
+      , lgrBackingStoreSelector = LedgerDB.InMemoryBackingStore
+      , lgrRegistry             = rr
       }
 
 testCfg :: SecurityParam -> TopLevelConfig TestBlock

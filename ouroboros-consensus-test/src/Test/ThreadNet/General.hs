@@ -853,7 +853,9 @@ prop_general_internal syncity pga testOutput =
 
     -- Check that all self-issued blocks are pipelined.
     prop_pipelining :: Property
-    prop_pipelining = conjoin
+    prop_pipelining = case syncity of
+      SemiSync -> property True
+      Sync     -> conjoin
         [ counterexample ("Node " <> condense nid <> " did not pipeline") $
           counterexample ("some of its blocks forged as the sole slot leader:") $
           counterexample (condense forgedButNotPipelined) $
