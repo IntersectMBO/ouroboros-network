@@ -138,7 +138,7 @@ data BlockFetchConfiguration =
          -- | Maximum requests in flight per each peer.
          bfcMaxRequestsInflight    :: !Word,
 
-         -- | Desired intervall between calls to fetchLogicIteration
+         -- | Desired interval between calls to fetchLogicIteration
          bfcDecisionLoopInterval   :: !DiffTime,
 
          -- | Salt used when comparing peers
