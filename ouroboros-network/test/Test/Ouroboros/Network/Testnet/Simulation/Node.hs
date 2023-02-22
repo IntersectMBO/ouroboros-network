@@ -33,15 +33,13 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (forM, replicateM, (>=>))
 import           Control.Monad.Class.MonadAsync
-                     (MonadAsync (Async, cancel, waitAny, withAsync))
-import           Control.Monad.Class.MonadFork (MonadFork)
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
-                     MonadMask, MonadThrow, SomeException)
-import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
-import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
-import           Control.Monad.Fix (MonadFix)
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Fix
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import           Control.Monad.IOSim (IOSim, traceM)
@@ -729,22 +727,22 @@ diffusionSimulation
                          dMapVarMap'' sArgs nArgs' cs
     runCommand _ _ _ _ _ _ (JoinNetwork _ _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+    runCommand (Just (async_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Kill delay:cs) = do
       threadDelay delay
       traceWith tracer (WithName (naAddr nArgs) TrKillingNode)
-      cancel async
+      cancel async_
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs cs
     runCommand _ _ _ _ _ _ (Kill _:_) = do
       error "runCommand: Impossible happened"
     runCommand Nothing _ _ _ _ _ (Reconfigure _ _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+    runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Reconfigure delay newLrp:cs) = do
       threadDelay delay
       traceWith tracer (WithName (naAddr nArgs) TrReconfiguringNode)
       _ <- atomically $ writeTVar lrpVar newLrp
-      runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+      runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                  cs
 
     updateDomainMap :: DiffTime
