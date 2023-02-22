@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -59,6 +60,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (K1 (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope (..))
@@ -853,14 +855,14 @@ mockHardForkLedgerView = \(HF.Shape pss) (HF.Transitions ts) (Chain ess) ->
               -> Exactly  (x ': xs) HF.EraParams
               -> AtMost         xs  EpochNo
               -> NonEmpty (x ': xs) [Event]
-              -> Telescope (K Past) (Current (AnnForecast (K ()) (K ()))) (x : xs)
+              -> Telescope (K Past) (Current (AnnForecast (K1 ()) (K ()))) (x : xs)
     mockState start (ExactlyCons ps _) ts (NonEmptyOne es) =
         TZ $ Current start $ AnnForecast {
             annForecast      = Forecast {
                 forecastAt  = tip es -- forecast at tip of ledger
               , forecastFor = \_for -> return $ TickedK TickedTrivial
               }
-          , annForecastState = K ()
+          , annForecastState = K1 ()
           , annForecastTip   = tip es
           , annForecastEnd   = HF.mkUpperBound ps start <$> atMostHead ts
           }

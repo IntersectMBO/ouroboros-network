@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -39,6 +40,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger
                      (AnnForecast (..), mkHardForkForecast)
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors (K1 (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
@@ -225,13 +227,13 @@ withinEraForecast maxLookAhead st = Forecast{
 -- | Translations between eras
 translations :: forall xs.
      TestSetup xs
-  -> InPairs (TranslateForecast (K LedgerState) (K LedgerView)) xs
+  -> InPairs (TranslateForecast (K1 LedgerState) (K LedgerView)) xs
 translations TestSetup{..} =
     case isNonEmpty (Proxy @xs) of
       ProofNonEmpty{} -> go testLookahead
   where
     go :: Exactly (x ': xs') MaxLookahead
-       -> InPairs (TranslateForecast (K LedgerState) (K LedgerView)) (x ': xs')
+       -> InPairs (TranslateForecast (K1 LedgerState) (K LedgerView)) (x ': xs')
     go (ExactlyCons _ ExactlyNil) =
         InPairs.PNil
     go (ExactlyCons this rest@(ExactlyCons next _)) =
@@ -239,9 +241,9 @@ translations TestSetup{..} =
 
     tr :: MaxLookahead -- ^ Look-ahead in the current era
        -> MaxLookahead -- ^ Look-ahead in the next era
-       -> TranslateForecast (K LedgerState) (K LedgerView) era era'
+       -> TranslateForecast (K1 LedgerState) (K LedgerView) era era'
     tr thisLookahead nextLookahead =
-        TranslateForecast $ \transition sno (K st) ->
+        TranslateForecast $ \transition sno (K1 st) ->
           assert (sno >= boundSlot transition) $ do
             let tip :: WithOrigin SlotNo
                 tip = ledgerTip st
@@ -283,7 +285,7 @@ acrossErasForecast setup@TestSetup{..} ledgerStates =
         . tickedHardForkLedgerViewPerEra
 
     go :: NonEmpty xs' TestEra
-       -> Telescope (K Past) (Current (AnnForecast (K LedgerState) (K LedgerView))) xs'
+       -> Telescope (K Past) (Current (AnnForecast (K1 LedgerState) (K LedgerView))) xs'
     go (NonEmptyOne era) =
         assert (testEraContains testForecastAt era) $
         TZ $ Current {
@@ -293,7 +295,7 @@ acrossErasForecast setup@TestSetup{..} ledgerStates =
                                      withinEraForecast
                                        (testEraMaxLookahead era)
                                        st
-              , annForecastState = K st
+              , annForecastState = K1 st
               , annForecastTip   = testForecastAt
               , annForecastEnd   = Nothing
               }
@@ -310,7 +312,7 @@ acrossErasForecast setup@TestSetup{..} ledgerStates =
                                        withinEraForecast
                                          (testEraMaxLookahead era)
                                          st
-                , annForecastState = K st
+                , annForecastState = K1 st
                 , annForecastTip   = testForecastAt
                 , annForecastEnd   = Just end
                 }

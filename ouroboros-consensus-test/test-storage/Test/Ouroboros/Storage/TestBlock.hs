@@ -97,6 +97,7 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.NodeId
@@ -541,7 +542,7 @@ type instance LedgerCfg (LedgerState TestBlock) = HardFork.EraParams
 instance GetTip (LedgerState TestBlock) where
   getTip = castPoint . lastAppliedPoint
 
-instance GetTip (Ticked (LedgerState TestBlock)) where
+instance GetTip (Ticked1 (LedgerState TestBlock)) where
   getTip = castPoint . getTip . getTickedTestLedger
 
 instance IsLedger (LedgerState TestBlock) where
@@ -550,7 +551,26 @@ instance IsLedger (LedgerState TestBlock) where
   type AuxLedgerEvent (LedgerState TestBlock) =
     VoidLedgerEvent (LedgerState TestBlock)
 
-  applyChainTickLedgerResult _ _ = pureLedgerResult . TickedTestLedger
+  applyChainTickLedgerResult _ _ = pureLedgerResult
+                                 . TickedTestLedger
+                                 . noNewTickingDiffs
+
+instance HasLedgerTables (LedgerState TestBlock) where
+  data LedgerTables (LedgerState TestBlock) mk = NoTestLedgerTables
+    deriving stock    (Generic, Eq, Show)
+    deriving anyclass (NoThunks)
+
+instance CanSerializeLedgerTables (LedgerState TestBlock) where
+
+instance CanStowLedgerTables (LedgerState TestBlock) where
+
+instance HasTickedLedgerTables (LedgerState TestBlock) where
+  withLedgerTablesTicked (TickedTestLedger st) tables =
+      TickedTestLedger $ withLedgerTables st tables
+
+instance LedgerTablesAreTrivial (LedgerState TestBlock) where
+  convertMapKind TestLedger{..} = TestLedger{..}
+  trivialLedgerTables = NoTestLedgerTables
 
 instance ApplyBlock (LedgerState TestBlock) TestBlock where
   applyBlockLedgerResult _ tb@TestBlock{..} (TickedTestLedger TestLedger{..})
@@ -564,7 +584,9 @@ instance ApplyBlock (LedgerState TestBlock) TestBlock where
   reapplyBlockLedgerResult _ tb _ =
                    pureLedgerResult $ TestLedger (Chain.blockPoint tb) (BlockHash (blockHash tb))
 
-data instance LedgerState TestBlock =
+  getBlockKeySets _blk = NoTestLedgerTables
+
+data instance LedgerState TestBlock mk =
     TestLedger {
         -- The ledger state simply consists of the last applied block
         lastAppliedPoint :: !(Point TestBlock)
@@ -574,8 +596,8 @@ data instance LedgerState TestBlock =
   deriving anyclass (Serialise, NoThunks)
 
 -- Ticking has no effect on the test ledger state
-newtype instance Ticked (LedgerState TestBlock) = TickedTestLedger {
-      getTickedTestLedger :: LedgerState TestBlock
+newtype instance Ticked1 (LedgerState TestBlock) mk = TickedTestLedger {
+      getTickedTestLedger :: LedgerState TestBlock mk
     }
 
 instance UpdateLedger TestBlock
@@ -642,10 +664,10 @@ instance HasHardForkHistory TestBlock where
 instance InspectLedger TestBlock where
   -- Use defaults
 
-testInitLedger :: LedgerState TestBlock
+testInitLedger :: LedgerState TestBlock EmptyMK
 testInitLedger = TestLedger GenesisPoint GenesisHash
 
-testInitExtLedger :: ExtLedgerState TestBlock
+testInitExtLedger :: ExtLedgerState TestBlock EmptyMK
 testInitExtLedger = ExtLedgerState {
       ledgerState = testInitLedger
     , headerState = genesisHeaderState ()
@@ -722,8 +744,8 @@ instance EncodeDisk TestBlock (Header TestBlock)
 instance DecodeDisk TestBlock (Lazy.ByteString -> Header TestBlock) where
   decodeDisk _ = const <$> decode
 
-instance EncodeDisk TestBlock (LedgerState TestBlock)
-instance DecodeDisk TestBlock (LedgerState TestBlock)
+instance EncodeDisk TestBlock (LedgerState TestBlock EmptyMK)
+instance DecodeDisk TestBlock (LedgerState TestBlock EmptyMK)
 
 instance EncodeDisk TestBlock (AnnTip TestBlock) where
   encodeDisk _ = encodeAnnTipIsEBB encode

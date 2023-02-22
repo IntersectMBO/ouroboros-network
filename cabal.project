@@ -148,3 +148,9 @@ constraints:
 
 allow-newer:
     Unique:hashable
+
+source-repository-package
+  type: git
+  location: https://github.com/stevana/quickcheck-state-machine
+  tag: dba5d7edea6304c410d13182747d2cc483f134f3
+  --sha256: 13za4y26w2wi1fd9l3q40ln2ixm3pqccs0bawbbf230asdci56nf

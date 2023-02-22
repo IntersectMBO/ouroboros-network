@@ -16,6 +16,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -25,6 +26,7 @@ import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict hiding (shape)
 import           Data.Word
 import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
 import           Quiet (Quiet (..))
 
 import           Test.QuickCheck
@@ -54,8 +56,11 @@ import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (RequiringBoth (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
@@ -231,7 +236,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
         , pInfoInitLedger = ExtLedgerState {
               ledgerState = HardForkLedgerState $
                               initHardForkState
-                                initLedgerState
+                                (Flip initLedgerState)
             , headerState = genesisHeaderState $
                               initHardForkState
                                 (WrapChainDepState initChainDepState)
@@ -244,7 +249,7 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
             ]
         }
 
-    initLedgerState :: LedgerState BlockA
+    initLedgerState :: LedgerState BlockA ValuesMK
     initLedgerState = LgrA {
           lgrA_tip        = GenesisPoint
         , lgrA_transition = Nothing
@@ -362,6 +367,42 @@ prop_simple_hfc_convergence testSetup@TestSetup{..} =
 instance TxGen TestBlock where
   testGenTxs _ _ _ _ _ _ = return []
 
+instance HasLedgerTables (LedgerState TestBlock) where
+  data instance LedgerTables (LedgerState TestBlock) mk = NoABTables
+    deriving stock (Eq, Show, Generic)
+    deriving anyclass NoThunks
+
+instance HasTickedLedgerTables (LedgerState TestBlock) where
+  withLedgerTablesTicked (TickedHardForkLedgerState info hfstate) tbs =
+    TickedHardForkLedgerState info $
+     hczipWith
+      (Proxy @(Compose HasTickedLedgerTables LedgerState))
+      (\ilt st -> FlipTickedLedgerState
+                . flip withLedgerTablesTicked (applyDistribLedgerTables ilt tbs)
+                . getFlipTickedLedgerState $ st
+      )
+      hardForkInjectLedgerTables
+      hfstate
+
+instance CanSerializeLedgerTables (LedgerState TestBlock) where
+
+instance LedgerTablesAreTrivial (LedgerState TestBlock) where
+  convertMapKind = HardForkLedgerState . hcmap
+      (Proxy @(Compose LedgerTablesAreTrivial LedgerState))
+      (Flip . convertMapKind . unFlip)
+    . hardForkLedgerStatePerEra
+  trivialLedgerTables = NoABTables
+
+instance LedgerTablesCanHardFork '[BlockA, BlockB] where
+  hardForkInjectLedgerTables =
+       (InjectLedgerTables { applyInjectLedgerTables = \NoATables -> NoABTables
+                           , applyDistribLedgerTables = \NoABTables -> NoATables
+                           })
+    :* (InjectLedgerTables { applyInjectLedgerTables = \NoBTables -> NoABTables
+                           , applyDistribLedgerTables = \NoABTables -> NoBTables
+                           })
+    :* Nil
+
 {-------------------------------------------------------------------------------
   Hard fork
 -------------------------------------------------------------------------------}
@@ -411,11 +452,17 @@ instance SerialiseHFC '[BlockA, BlockB]
 ledgerState_AtoB ::
      RequiringBoth
        WrapLedgerConfig
-       (Translate LedgerState)
+       TranslateLedgerState
        BlockA
        BlockB
-ledgerState_AtoB = InPairs.ignoringBoth $ Translate $ \_ LgrA{..} -> LgrB {
-      lgrB_tip = castPoint lgrA_tip
+ledgerState_AtoB =
+    InPairs.ignoringBoth
+  $ TranslateLedgerState {
+        translateLedgerStateWith = \_ LgrA{..} ->
+            LgrB {
+              lgrB_tip = castPoint lgrA_tip
+            }
+      , translateLedgerTablesWith = \NoATables -> NoBTables
     }
 
 chainDepState_AtoB ::

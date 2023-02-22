@@ -20,7 +20,9 @@ source-repository head
 
 library
   hs-source-dirs:      src
+
   exposed-modules:
+                       Test.LedgerTables
                        Test.ThreadNet.General
                        Test.ThreadNet.Network
                        Test.ThreadNet.Ref.PBFT
@@ -51,6 +53,7 @@ library
                        Test.Util.HardFork.Future
                        Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
+                       Test.Util.LedgerStateOnlyTables
                        Test.Util.LogicalClock
                        Test.Util.MockChain
                        Test.Util.Orphans.Arbitrary
@@ -81,6 +84,7 @@ library
                      , base16-bytestring
                      , binary
                      , bytestring        >=0.10  && <0.12
+                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-ledger-binary:{testlib}
                      , cardano-prelude
@@ -114,6 +118,7 @@ library
                      , tree-diff
                      , utf8-string
 
+                     , diff-containers
                      , io-classes
                      , io-sim
 
@@ -136,6 +141,7 @@ library
                        -Wredundant-constraints
                        -Wmissing-export-lists
                        -Wunused-packages
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
 
 test-suite test-consensus
@@ -155,6 +161,8 @@ test-suite test-consensus
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool
+                       Test.Consensus.Mempool.StateMachine
+                       Test.Consensus.Mempool.Util
                        Test.Consensus.Node
                        Test.Consensus.ResourceRegistry
                        Test.Consensus.Util.MonadSTM.RAWLock
@@ -183,6 +191,7 @@ test-suite test-consensus
                      , tasty-quickcheck
                      , temporary
                      , time
+                     , transformers
                      , tree-diff
 
                      , io-classes
@@ -238,7 +247,14 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ImmutableDB.Primary
                        Test.Ouroboros.Storage.ImmutableDB.StateMachine
                        Test.Ouroboros.Storage.LedgerDB
+                       Test.Ouroboros.Storage.LedgerDB.DbChangelog
                        Test.Ouroboros.Storage.LedgerDB.DiskPolicy
+                       Test.Ouroboros.Storage.LedgerDB.HD
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Registry
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Lockstep
+                       Test.Ouroboros.Storage.LedgerDB.HD.BackingStore.Mock
+                       Test.Ouroboros.Storage.LedgerDB.HD.DiffSeq
                        Test.Ouroboros.Storage.LedgerDB.InMemory
                        Test.Ouroboros.Storage.LedgerDB.OnDisk
                        Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
@@ -251,20 +267,30 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ChainDB.Unit
 
   build-depends:       base              >=4.14 && <4.17
+                     , async
+                     , diff-containers
                      , bifunctors
                      , binary
                      , bytestring
+                     , cardano-binary
                      , cardano-crypto-class
+                     , cardano-strict-containers
+                     , cardano-ledger-binary:testlib
+                     , cardano-slotting
                      , cborg
+                     , constraints
                      , containers
                      , contra-tracer
                      , directory
                      , generics-sop
                      , hashable
                      , mtl
+                     , nonempty-containers
                      , nothunks
                      , pretty-show
                      , QuickCheck
+                     , quickcheck-dynamic
+                     , quickcheck-lockstep >=0.2.1
                      , quickcheck-state-machine >=0.7.0
                      , random
                      , serialise
@@ -274,9 +300,12 @@ test-suite test-storage
                      , temporary
                      , text
                      , time
+                     , transformers
                      , tree-diff
                      , vector
 
+                     , fingertree-rm
+                     , simple-semigroupoids
                      , io-classes
                      , io-sim
 
@@ -297,7 +326,9 @@ test-suite test-storage
                        -Wredundant-constraints
                        -Wmissing-export-lists
                        -Wunused-packages
+                       -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
+                       -threaded
 
 test-suite test-infra
   type:                exitcode-stdio-1.0

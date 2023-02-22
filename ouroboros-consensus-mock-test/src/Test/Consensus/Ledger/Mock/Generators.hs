@@ -25,7 +25,10 @@ import           Test.QuickCheck
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Basics
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Protocol.BFT
 
 import           Ouroboros.Consensus.Mock.Ledger.Block
@@ -110,8 +113,18 @@ instance Arbitrary (SomeSecond BlockQuery (SimpleBlock c ext)) where
 instance (SimpleCrypto c, Typeable ext) => Arbitrary (SomeResult (SimpleBlock c ext)) where
   arbitrary = SomeResult QueryLedgerTip <$> arbitrary
 
-instance Arbitrary (LedgerState (SimpleBlock c ext)) where
-  arbitrary = SimpleLedgerState <$> arbitrary
+instance (SimpleCrypto c, Typeable ext)
+         => Arbitrary (LedgerState (SimpleBlock c ext) EmptyMK) where
+  arbitrary =
+        forgetLedgerTables
+    <$> arbitrary @(LedgerState (SimpleBlock c ext) ValuesMK)
+
+instance (SimpleCrypto c, Typeable ext)
+         => Arbitrary (LedgerState (SimpleBlock c ext) ValuesMK) where
+  arbitrary =
+        unstowLedgerTables
+    .   flip SimpleLedgerState emptyLedgerTables
+    <$> arbitrary
 
 instance HashAlgorithm (SimpleHash c) => Arbitrary (AnnTip (SimpleBlock c ext)) where
   arbitrary = do

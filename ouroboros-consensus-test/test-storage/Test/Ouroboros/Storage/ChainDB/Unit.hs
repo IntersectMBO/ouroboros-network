@@ -7,14 +7,17 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 module Test.Ouroboros.Storage.ChainDB.Unit (tests) where
 
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.Maybe
+import           Ouroboros.Consensus.Ledger.Basics
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Network.Block (ChainUpdate)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
@@ -54,7 +57,7 @@ runSystem' expr = runSystem withChainDbEnv expr >>= toAssertion
   where
     chunkInfo = ImmutableDB.simpleChunkInfo 100
     topLevelConfig = mkTestCfg chunkInfo
-    withChainDbEnv = withTestChainDbEnv topLevelConfig chunkInfo testInitExtLedger
+    withChainDbEnv = withTestChainDbEnv topLevelConfig chunkInfo $ convertMapKind testInitExtLedger
 
 newtype TestFailure = TestFailure String deriving (Show)
 
@@ -109,7 +112,7 @@ withTestChainDbEnv
   :: (IOLike m, TestConstraints blk)
   => TopLevelConfig blk
   -> ImmutableDB.ChunkInfo
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk ValuesMK
   -> (ChainDBEnv m blk -> m a)
   -> m a
 withTestChainDbEnv topLevelConfig chunkInfo extLedgerState
@@ -143,6 +146,7 @@ withTestChainDbEnv topLevelConfig chunkInfo extLedgerState
       , mcdbInitLedger = extLedgerState
       , mcdbRegistry = registry
       , mcdbNodeDBs = nodeDbs
+      , mcdbBackingStoreSelector = LedgerDB.InMemoryBackingStore
       }
 
 instance IOLike m => SupportsUnitTest (SystemM blk m) where

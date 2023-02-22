@@ -40,7 +40,9 @@ pureHasFS = HasFS {
     , listDirectory            = Mock.listDirectory
     , doesDirectoryExist       = Mock.doesDirectoryExist
     , doesFileExist            = Mock.doesFileExist
+    , removeDirectoryRecursive = Mock.removeDirectoryRecursive
     , removeFile               = Mock.removeFile
     , renameFile               = Mock.renameFile
     , mkFsErrorPath            = fsToFsErrorPathUnmounted
+    , unsafeToFilePath         = \_ -> error "pureHasFS:unsafeToFilePath"
     }

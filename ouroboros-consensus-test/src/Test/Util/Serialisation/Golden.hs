@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DefaultSignatures   #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
@@ -85,6 +86,8 @@ import           Ouroboros.Consensus.Ledger.Query (BlockQuery, QueryVersion,
                      nodeToClientVersionToQueryVersion)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr, GenTx,
                      GenTxId)
+import           Ouroboros.Consensus.Ledger.Tables (EmptyMK, HasLedgerTables,
+                     LedgerTables, ValuesMK, valuesMKEncoder)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
                      (HasNetworkProtocolVersion (..),
                      SupportedNetworkProtocolVersion (..))
@@ -186,10 +189,12 @@ goldenTestCBOR testName example enc goldenFile =
               , diffExpr (CBORBytes golden) (CBORBytes actual)
               ]
 
-          (Right actualFlatTerm, Left _) -> Just $ unlines [
+          (Right actualFlatTerm, Left e) -> Just $ unlines [
                 "Golden output /= actual term:"
               , "Golden output is not valid CBOR:"
               , BS.UTF8.toString golden
+              , "Exception: "
+              , show e
               , "Actual term:"
               , condense actualFlatTerm
               ]
@@ -244,10 +249,11 @@ data Examples blk = Examples {
     , exampleQuery            :: Labelled (SomeSecond BlockQuery blk)
     , exampleResult           :: Labelled (SomeResult blk)
     , exampleAnnTip           :: Labelled (AnnTip blk)
-    , exampleLedgerState      :: Labelled (LedgerState blk)
+    , exampleLedgerState      :: Labelled (LedgerState blk EmptyMK)
     , exampleChainDepState    :: Labelled (ChainDepState (BlockProtocol blk))
-    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk)
+    , exampleExtLedgerState   :: Labelled (ExtLedgerState blk EmptyMK)
     , exampleSlotNo           :: Labelled SlotNo
+    , exampleLedgerTables     :: Labelled (LedgerTables (LedgerState blk) ValuesMK)
     }
 
 emptyExamples :: Examples blk
@@ -267,6 +273,7 @@ emptyExamples = Examples {
     , exampleChainDepState    = mempty
     , exampleExtLedgerState   = mempty
     , exampleSlotNo           = mempty
+    , exampleLedgerTables     = mempty
     }
 
 combineExamples ::
@@ -291,6 +298,7 @@ combineExamples f e1 e2 = Examples {
     , exampleChainDepState    = combine exampleChainDepState
     , exampleExtLedgerState   = combine exampleExtLedgerState
     , exampleSlotNo           = combine exampleSlotNo
+    , exampleLedgerTables     = combine exampleLedgerTables
     }
   where
     combine :: (Examples blk -> Labelled a) -> Labelled a
@@ -357,6 +365,7 @@ goldenTest_all ::
      ( SerialiseDiskConstraints         blk
      , SerialiseNodeToNodeConstraints   blk
      , SerialiseNodeToClientConstraints blk
+     , HasLedgerTables     (LedgerState blk)
      , SupportedNetworkProtocolVersion  blk
 
      , ToGoldenDirectory (BlockNodeToNodeVersion   blk)
@@ -380,7 +389,11 @@ goldenTest_all codecConfig goldenDir examples =
 -- TODO how can we ensure that we have a test for each constraint listed in
 -- 'SerialiseDiskConstraints'?
 goldenTest_SerialiseDisk ::
-     forall blk. (SerialiseDiskConstraints blk, HasCallStack)
+     forall blk.
+     ( HasLedgerTables (LedgerState blk)
+     , SerialiseDiskConstraints blk
+     , HasCallStack
+     )
   => CodecConfig blk
   -> FilePath
   -> Examples blk
@@ -393,6 +406,7 @@ goldenTest_SerialiseDisk codecConfig goldenDir Examples {..} =
       , test "AnnTip"         exampleAnnTip        (encodeDisk codecConfig)
       , test "ChainDepState"  exampleChainDepState (encodeDisk codecConfig)
       , test "ExtLedgerState" exampleExtLedgerState encodeExt
+      , test "LedgerTables"   exampleLedgerTables  valuesMKEncoder
       ]
   where
     test :: TestName -> Labelled a -> (a -> Encoding) -> TestTree

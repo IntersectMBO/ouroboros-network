@@ -42,6 +42,7 @@ module Ouroboros.Consensus.Ledger.Tables.Utils (
   , rawPrependTrackingDiffs
   , zipOverLedgerTables
   , zipOverLedgerTablesTicked
+  , restrictValues
   ) where
 
 import           Data.Map.Diff.Strict
@@ -50,6 +51,7 @@ import           Data.Map.Diff.Strict.Internal
 import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.Ledger.Tables
+import qualified Data.Map.Strict as Map
 
 {-------------------------------------------------------------------------------
   Util combinators
@@ -277,3 +279,17 @@ reapplyTrackingTicked ::
 reapplyTrackingTicked after before =
     zipOverLedgerTablesTicked rawReapplyTracking after
   $ projectLedgerTables before
+
+rawRestrictValues ::
+     Ord k
+  => ValuesMK k v
+  -> KeysMK k v
+  -> ValuesMK k v
+rawRestrictValues (ValuesMK v) (KeysMK k) = ValuesMK $ v `Map.restrictKeys` k
+
+restrictValues ::
+     HasLedgerTables l
+  => l ValuesMK
+  -> LedgerTables l KeysMK
+  -> LedgerTables l ValuesMK
+restrictValues st = zipLedgerTables rawRestrictValues (projectLedgerTables st)

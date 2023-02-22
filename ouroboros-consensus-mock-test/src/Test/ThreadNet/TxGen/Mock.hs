@@ -9,6 +9,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Mock.Ledger
 
 import           Test.QuickCheck hiding (elements)
@@ -32,7 +33,7 @@ instance TxGen (SimpleBlock SimpleMockCrypto ext) where
       addrs = Map.keys $ mkAddrDist numCoreNodes
 
       utxo :: Utxo
-      utxo = mockUtxo $ simpleLedgerState ledgerState
+      utxo = mockUtxo $ simpleLedgerState $ stowLedgerTables ledgerState
 
 genSimpleTx :: SlotNo -> [Addr] -> Utxo -> Gen Tx
 genSimpleTx curSlotNo addrs u = do
