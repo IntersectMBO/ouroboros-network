@@ -10,6 +10,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.Init (
     InitLog (..)
   , ReplayStart (..)
   , initialize
+  , newBackingStore
+  , newBackingStoreInitialiser
     -- * Trace
   , ReplayGoal (..)
   , TraceReplayEvent (..)

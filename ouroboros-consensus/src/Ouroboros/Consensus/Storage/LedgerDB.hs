@@ -9,6 +9,8 @@ module Ouroboros.Consensus.Storage.LedgerDB (
   , InitLog (..)
   , ReplayStart (..)
   , initialize
+  , newBackingStore
+  , newBackingStoreInitialiser
     -- * Trace
   , ReplayGoal (..)
   , TraceReplayEvent (..)
@@ -71,6 +73,7 @@ module Ouroboros.Consensus.Storage.LedgerDB (
     -- ** Delete
   , deleteSnapshot
     -- ** Paths
+  , snapshotToStatePath
   , snapshotToTablesPath
     -- ** Trace
   , TraceSnapshotEvent (..)
@@ -79,15 +82,20 @@ module Ouroboros.Consensus.Storage.LedgerDB (
   , SnapshotInterval (..)
   , TimeSinceLast (..)
   , defaultDiskPolicy
+    -- * Test
+  , decodeSnapshotBackwardsCompatible
+  , encodeSnapshot
   ) where
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..), SnapshotInterval (..),
                      TimeSinceLast (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.Init (InitLog (..),
-                     ReplayGoal (..), ReplayStart (..), TraceReplayEvent (..),
+import           Ouroboros.Consensus.Storage.LedgerDB.Init
+                     (BackingStoreSelector (..), InitLog (..), ReplayGoal (..),
+                     ReplayStart (..), TraceReplayEvent (..),
                      decorateReplayTracerWithGoal,
-                     decorateReplayTracerWithStart, initialize)
+                     decorateReplayTracerWithStart, initialize, newBackingStore,
+                     newBackingStoreInitialiser)
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB (..),
                      LedgerDB', LedgerDbCfg (..), configLedgerDb, new)
 import           Ouroboros.Consensus.Storage.LedgerDB.Query (anchor, current,
@@ -95,8 +103,9 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Query (anchor, current,
                      maxRollback, rollback, snapshots, tip)
 import           Ouroboros.Consensus.Storage.LedgerDB.Snapshots
                      (DiskSnapshot (..), SnapshotFailure (..),
-                     TraceSnapshotEvent (..), deleteSnapshot,
-                     diskSnapshotIsTemporary, listSnapshots, readSnapshot,
+                     TraceSnapshotEvent (..), decodeSnapshotBackwardsCompatible,
+                     deleteSnapshot, diskSnapshotIsTemporary, encodeSnapshot,
+                     listSnapshots, readSnapshot, snapshotToStatePath,
                      snapshotToTablesPath, takeSnapshot, trimSnapshots,
                      writeSnapshot)
 import           Ouroboros.Consensus.Storage.LedgerDB.Stream (NextItem (..),

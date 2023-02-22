@@ -608,8 +608,6 @@ class LedgerTablesAreTrivial l where
   -- This function is useful to combine functions that operate on functions that
   -- transform the map kind on a ledger state (eg @applyChainTickLedgerResult@).
   convertMapKind :: IsMapKind mk' => l mk -> l mk'
-  default convertMapKind :: (IsMapKind mk', HasLedgerTables l) => l mk -> l mk'
-  convertMapKind st = st `withLedgerTables` trivialLedgerTables
 
   -- | As the ledger tables are trivial, this functions provides the only data
   -- constructor that is defined for them.

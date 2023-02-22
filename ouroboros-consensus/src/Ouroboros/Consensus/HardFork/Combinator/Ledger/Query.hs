@@ -204,7 +204,7 @@ distribDiskLedgerView dlv =
      -> LedgerTables (ExtLedgerState x) mk
      -> LedgerTables (ExtLedgerState (HardForkBlock xs)) mk
    injectLedgerTables i = ExtLedgerStateTables
-                        . applyInjectLedgerTables (projectNP i hardForkInjectLedgerTablesKeysMK)
+                        . applyInjectLedgerTables (projectNP i hardForkInjectLedgerTables)
                         . unExtLedgerStateTables
 
    injectRangeQuery :: forall x mk.
@@ -220,7 +220,7 @@ distribDiskLedgerView dlv =
      -> LedgerTables (ExtLedgerState (HardForkBlock xs)) mk
      -> LedgerTables (ExtLedgerState x) mk
    distribLedgerTables i = ExtLedgerStateTables
-                         . applyDistribLedgerTables (projectNP i hardForkInjectLedgerTablesKeysMK)
+                         . applyDistribLedgerTables (projectNP i hardForkInjectLedgerTables)
                          . unExtLedgerStateTables
 
 -- | Precondition: the 'ledgerState' and 'headerState' should be from the same
@@ -347,7 +347,7 @@ getQueryKeySetsIfCurrent ::
      forall result xs. (All SingleEraBlock xs, LedgerTablesCanHardFork xs)
   => QueryIfCurrent xs result
   -> LedgerTables (LedgerState (HardForkBlock xs)) KeysMK
-getQueryKeySetsIfCurrent = go hardForkInjectLedgerTablesKeysMK
+getQueryKeySetsIfCurrent = go hardForkInjectLedgerTables
   where
     go :: All SingleEraBlock xs' => NP (InjectLedgerTables xs) xs'
        -> QueryIfCurrent xs' result

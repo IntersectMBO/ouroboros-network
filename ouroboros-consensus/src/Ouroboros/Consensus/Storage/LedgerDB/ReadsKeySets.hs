@@ -12,6 +12,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets (
   , getLedgerTablesFor
   , readKeySets
   , readKeySetsWith
+  , trivialKeySetsReader
   , withKeysReadSets
     -- * Forward
   , UnforwardedReadSets (..)
@@ -130,6 +131,9 @@ getLedgerTablesFor db keys ksRead = do
   let aks = rewindTableKeySets (ledgerDbChangelog db) keys
   urs <- ksRead aks
   pure $ forwardTableKeySets (ledgerDbChangelog db) urs
+
+trivialKeySetsReader :: (Monad m, LedgerTablesAreTrivial l) => KeySetsReader m l
+trivialKeySetsReader (RewoundTableKeySets s _) = pure $ UnforwardedReadSets s trivialLedgerTables trivialLedgerTables
 
 {-------------------------------------------------------------------------------
   Forward

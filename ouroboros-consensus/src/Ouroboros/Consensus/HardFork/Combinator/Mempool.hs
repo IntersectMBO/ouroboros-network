@@ -134,7 +134,7 @@ instance ( CanHardFork xs
 
   getTransactionKeySets (HardForkGenTx (OneEraGenTx ns)) =
         hcollapse
-      $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
+      $ hczipWith proxySingle f hardForkInjectLedgerTables ns
     where
       f ::
            SingleEraBlock                                           x

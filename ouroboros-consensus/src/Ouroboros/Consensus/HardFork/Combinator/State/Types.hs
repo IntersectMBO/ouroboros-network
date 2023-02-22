@@ -43,7 +43,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Teles
 -- This is used both for the consensus state and the ledger state.
 newtype HardForkState f xs = HardForkState {
       getHardForkState :: Telescope (K Past) (Current f) xs
-    }
+    } deriving (Generic)
 
 -- | Information about the current era
 data Current f blk = Current {

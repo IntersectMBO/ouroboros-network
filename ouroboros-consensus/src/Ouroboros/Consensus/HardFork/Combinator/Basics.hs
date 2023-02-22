@@ -93,7 +93,7 @@ deriving newtype instance (IsMapKind mk, CanHardFork xs)
 
 -- | How to inject each era's ledger tables into their shared ledger tables
 class LedgerTablesCanHardFork xs where
-  hardForkInjectLedgerTablesKeysMK :: NP (InjectLedgerTables xs) xs
+  hardForkInjectLedgerTables :: NP (InjectLedgerTables xs) xs
 
 data InjectLedgerTables xs x = InjectLedgerTables {
       applyInjectLedgerTables :: forall mk. IsMapKind mk =>

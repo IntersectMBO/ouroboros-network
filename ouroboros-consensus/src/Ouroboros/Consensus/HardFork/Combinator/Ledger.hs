@@ -109,14 +109,16 @@ instance CanHardFork xs => GetTip (Ticked1 (LedgerState (HardForkBlock xs))) whe
 
 newtype FlipTickedLedgerState mk blk = FlipTickedLedgerState {
   getFlipTickedLedgerState :: (Ticked1 (LedgerState blk) mk)
-  }
+  } deriving (Generic)
+
+deriving newtype instance NoThunks (Ticked1 (LedgerState blk) mk) => NoThunks (FlipTickedLedgerState mk blk)
 
 data instance Ticked1 (LedgerState (HardForkBlock xs)) mk =
     TickedHardForkLedgerState {
         tickedHardForkLedgerStateTransition :: !TransitionInfo
       , tickedHardForkLedgerStatePerEra     ::
           !(HardForkState (FlipTickedLedgerState mk) xs)
-      }
+      } deriving (Generic)
 
 instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
   type LedgerErr (LedgerState (HardForkBlock xs)) = HardForkLedgerError  xs
@@ -230,7 +232,7 @@ instance ( CanHardFork xs
 
   getBlockKeySets (HardForkBlock (OneEraBlock ns)) =
         hcollapse
-      $ hczipWith proxySingle f hardForkInjectLedgerTablesKeysMK ns
+      $ hczipWith proxySingle f hardForkInjectLedgerTables ns
     where
       f ::
            SingleEraBlock                                           x
