@@ -247,30 +247,27 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
 
         apps <- Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
 
-        registry <- newFetchClientRegistry
-
         withAsync
            (Diff.P2P.runM interfaces
                           Diff.nullTracers
                           tracersExtra
                           args argsExtra apps appsExtra)
            $ \ diffusionThread ->
-               withAsync (blockFetch registry nodeKernel) $ \blockFetchLogicThread ->
+               withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  wait diffusionThread
               <> wait blockFetchLogicThread
               <> wait nodeKernelThread
   where
-    blockFetch :: FetchClientRegistry NtNAddr BlockHeader Block m
-               -> NodeKernel BlockHeader Block m
+    blockFetch :: NodeKernel BlockHeader Block m
                -> m Void
-    blockFetch registry nodeKernel = do
+    blockFetch nodeKernel = do
       blockHeapVar <- LazySTM.newTVarIO Set.empty
 
       blockFetchLogic
         nullTracer
         nullTracer
         (blockFetchPolicy blockHeapVar nodeKernel)
-        registry
+        (nkFetchClientRegistry nodeKernel)
         (BlockFetchConfiguration {
           bfcMaxConcurrencyBulkSync = 1,
           bfcMaxConcurrencyDeadline = 2,
