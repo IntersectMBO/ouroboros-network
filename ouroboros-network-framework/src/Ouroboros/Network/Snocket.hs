@@ -60,6 +60,7 @@ import qualified Network.Socket as Socket
 
 import           Network.Mux.Bearer
 
+import           Ouroboros.Network.RawBearer
 import           Ouroboros.Network.IOManager
 
 
@@ -349,10 +350,17 @@ data LocalSocket = LocalSocket { getLocalHandle :: !LocalHandle
                                }
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
+
+instance ToRawBearer IO LocalSocket where
+  toRawBearer = return . win32HandleToRawBearer . getLocalHandle
+
 #else
 newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
+
+instance ToRawBearer IO LocalSocket where
+  toRawBearer = toRawBearer . getLocalHandle
 #endif
 
 makeLocalBearer :: MakeBearer IO LocalSocket
