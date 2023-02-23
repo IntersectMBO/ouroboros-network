@@ -46,6 +46,9 @@ module Ouroboros.Consensus.Storage.LedgerDB (
   , ledgerDbPushMany'
   , ledgerDbSwitch'
     -- ** Trace
+  , PushGoal (..)
+  , PushStart (..)
+  , Pushing (..)
   , UpdateLedgerDbTraceEvent (..)
     -- * Streaming
   , NextBlock (..)
@@ -99,7 +102,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Stream (NextBlock (..),
                      StreamAPI (..), streamAll)
 import           Ouroboros.Consensus.Storage.LedgerDB.Update
                      (AnnLedgerError (..), AnnLedgerError', Ap (..),
-                     ExceededRollback (..), ResolveBlock, ResolvesBlocks (..),
+                     ExceededRollback (..), PushGoal (..), PushStart (..),
+                     Pushing (..), ResolveBlock, ResolvesBlocks (..),
                      ThrowsLedgerError (..), UpdateLedgerDbTraceEvent (..),
                      defaultResolveWithErrors, defaultThrowLedgerErrors,
                      ledgerDbBimap, ledgerDbPrune, ledgerDbPush, ledgerDbPush',
