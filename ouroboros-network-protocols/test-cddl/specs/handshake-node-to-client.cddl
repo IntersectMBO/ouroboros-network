@@ -6,7 +6,7 @@ handshakeMessage
     = msgProposeVersions
     / msgAcceptVersion
     / msgRefuse
-    / msgQueryReply
+;   / msgQueryReply
 
 msgProposeVersions = [0, versionTable]
 msgAcceptVersion   = [1, oldVersionNumber, oldNodeToClientVersionData]
@@ -14,8 +14,8 @@ msgAcceptVersion   = [1, oldVersionNumber, oldNodeToClientVersionData]
 msgRefuse          = [2, refuseReason]
 msgQueryReply      = [3, versionTable]
 
-versionTable = { * versionNumber => nodeToNodeVersionData
-               , * oldVersionNumber => oldNodeToNodeVersionData
+versionTable = { * oldVersionNumber => oldNodeToClientVersionData
+               , *    versionNumber =>    nodeToClientVersionData
                }
 
 
@@ -27,6 +27,8 @@ versionNumber = 32783
 ; as of version 2 (which is no longer supported) we set 15th bit to 1
 ;                  9     / 10    / 11    / 12    / 13    / 14
 oldVersionNumber = 32777 / 32778 / 32779 / 32780 / 32781 / 32782
+
+anyVersionNumber = versionNumber / oldVersionNumber
 
 ; As of version 15
 nodeToClientVersionData = [networkMagic, query]
@@ -41,6 +43,6 @@ refuseReason
     / refuseReasonHandshakeDecodeError
     / refuseReasonRefused
 
-refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
-refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
-refuseReasonRefused              = [2, versionNumber, tstr]
+refuseReasonVersionMismatch      = [0, [ *anyVersionNumber ] ]
+refuseReasonHandshakeDecodeError = [1, anyVersionNumber, tstr]
+refuseReasonRefused              = [2, anyVersionNumber, tstr]

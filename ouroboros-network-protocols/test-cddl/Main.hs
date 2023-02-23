@@ -857,7 +857,7 @@ txSubmissionFix term =
 handshakeFix :: CBOR.Term -> CBOR.Term
 handshakeFix term =
     case term of
-      TList [TInt 0, TMap l] ->
+      TList [TInt x, TMap l] | x == 0 || x == 3 -> 
         TList
           [ TInt 0
           , TMap (sortOn
