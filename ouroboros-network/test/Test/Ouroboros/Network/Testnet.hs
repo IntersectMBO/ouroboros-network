@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -15,15 +16,15 @@ import           Control.Monad.Class.MonadTime (DiffTime, Time (Time), addTime,
                      diffTime)
 import           Control.Monad.IOSim
 import           Control.Monad.IOSim.Types (ThreadId)
-import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
+import           Control.Tracer (Tracer (Tracer))
 import           Data.Bifoldable (bifoldMap)
 
-import           Data.List (intercalate)
+import           Data.List (find, intercalate, tails)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe, mapMaybe)
+import           Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, mapMaybe)
 import           Data.Monoid (Sum (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -32,7 +33,6 @@ import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           Data.Word (Word32)
 
-import           GHC.Exception.Type (SomeException)
 import           System.Random (mkStdGen)
 
 import qualified Network.DNS.Types as DNS
@@ -40,8 +40,7 @@ import qualified Network.DNS.Types as DNS
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Diffusion.P2P (TracersExtra (..))
-import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.InboundGovernor hiding
                      (TrUnexpectedlyFalseAssertion)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -64,6 +63,7 @@ import           Ouroboros.Network.Testing.Utils hiding (SmallDelay,
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
+import           Test.Ouroboros.Network.Diffusion.Node (config_RECONNECT_DELAY)
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 import           Test.Ouroboros.Network.Testnet.Simulation.Node
 import           Test.QuickCheck
@@ -126,6 +126,10 @@ tests =
                  prop_diffusion_cm_valid_transition_order
   , testProperty "unit 4258"
                  prop_unit_4258
+  , testProperty "connection manager no dodgy traces"
+                 prop_diffusion_cm_no_dodgy_traces
+  , testProperty "peer selection actions no dodgy traces"
+                 prop_diffusion_peer_selection_actions_no_dodgy_traces
   , testProperty "inbound governor valid transitions"
                  prop_diffusion_ig_valid_transitions
   , testProperty "inbound governor valid transition order"
@@ -162,118 +166,6 @@ tests =
 #endif
   ]
 
--- Warning: be careful with writing properties that rely
--- on trace events from multiple components environment.
--- These events typically occur in separate threads and
--- so are not casually ordered. It is ok to use them for
--- timeout/eventually properties, but not for properties
--- that check conditions synchronously.
---
-data DiffusionTestTrace =
-      DiffusionLocalRootPeerTrace (TraceLocalRootPeers NtNAddr SomeException)
-    | DiffusionPublicRootPeerTrace TracePublicRootPeers
-    | DiffusionPeerSelectionTrace (TracePeerSelection NtNAddr)
-    | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
-    | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
-    | DiffusionConnectionManagerTrace
-        (ConnectionManagerTrace NtNAddr
-          (ConnectionHandlerTrace NtNVersion NtNVersionData))
-    | DiffusionDiffusionSimulationTrace DiffusionSimulationTrace
-    | DiffusionConnectionManagerTransitionTrace
-        (AbstractTransitionTrace NtNAddr)
-    | DiffusionInboundGovernorTransitionTrace
-        (RemoteTransitionTrace NtNAddr)
-    | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
-    | DiffusionServerTrace (ServerTrace NtNAddr)
-    | DiffusionDebugTrace String
-    deriving (Show)
-
-
--- | A debug tracer which embeds events in DiffusionTestTrace.
---
-debugTracer :: forall s. Tracer (IOSim s) (WithName NtNAddr String)
-debugTracer = tracerWithTime
-            $ fmap (fmap DiffusionDebugTrace) `contramap` tracer
-  where
-    tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
-    tracer = Tracer traceM
-
-tracersExtraWithTimeName
-  :: NtNAddr
-  -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
-                           NtCAddr NtCVersion NtCVersionData
-                           SomeException (IOSim s)
-tracersExtraWithTimeName ntnAddr =
-  Diff.P2P.TracersExtra {
-    dtTraceLocalRootPeersTracer           = contramap
-                                             DiffusionLocalRootPeerTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtTracePublicRootPeersTracer        = contramap
-                                             DiffusionPublicRootPeerTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtTracePeerSelectionTracer          = contramap
-                                             DiffusionPeerSelectionTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtDebugPeerSelectionInitiatorTracer = contramap
-                                             ( DiffusionDebugPeerSelectionTrace
-                                             . voidDebugPeerSelection
-                                             )
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtDebugPeerSelectionInitiatorResponderTracer
-        = contramap
-           ( DiffusionDebugPeerSelectionTrace
-           . voidDebugPeerSelection
-           )
-        . tracerWithName ntnAddr
-        . tracerWithTime
-        $ dynamicTracer
-    , dtTracePeerSelectionCounters        = nullTracer
-    , dtPeerSelectionActionsTracer        = contramap
-                                             DiffusionPeerSelectionActionsTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtConnectionManagerTracer           = contramap
-                                             DiffusionConnectionManagerTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtConnectionManagerTransitionTracer = contramap
-                                              DiffusionConnectionManagerTransitionTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtServerTracer                      = contramap DiffusionServerTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtInboundGovernorTracer             = contramap
-                                              DiffusionInboundGovernorTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtInboundGovernorTransitionTracer   = contramap
-                                              DiffusionInboundGovernorTransitionTrace
-                                          . tracerWithName ntnAddr
-                                          . tracerWithTime
-                                          $ dynamicTracer
-    , dtLocalConnectionManagerTracer      = nullTracer
-    , dtLocalServerTracer                 = nullTracer
-    , dtLocalInboundGovernorTracer        = nullTracer
-  }
-  where
-    voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
-    voidDebugPeerSelection (TraceGovernorState btime wtime state) =
-                            TraceGovernorState btime wtime (const () <$> state)
-
 
 tracerDiffusionSimWithTimeName :: Tracer (IOSim s) (WithName NtNAddr DiffusionSimulationTrace)
 tracerDiffusionSimWithTimeName = tracerWithTime tracer
@@ -292,9 +184,8 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                tracersExtraWithTimeName
+                                iosimTracer
                                 tracerDiffusionSimWithTimeName
-                                nullTracer
 
       events :: [ConnectionManagerTrace
                   NtNAddr
@@ -329,9 +220,8 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                tracersExtraWithTimeName
+                                iosimTracer
                                 tracerDiffusionSimWithTimeName
-                                nullTracer
 
       events :: [AbstractTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionConnectionManagerTransitionTrace st ->
@@ -367,9 +257,8 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                tracersExtraWithTimeName
+                                iosimTracer
                                 tracerDiffusionSimWithTimeName
-                                nullTracer
 
       events :: [InboundGovernorTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
@@ -401,9 +290,8 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                tracersExtraWithTimeName
+                                iosimTracer
                                 tracerDiffusionSimWithTimeName
-                                nullTracer
 
       events :: [RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
@@ -446,6 +334,8 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 2, targetNumberOfEstablishedPeers = 2, targetNumberOfActivePeers = 1}
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
+              Nothing
+              False
           , [JoinNetwork 1.742857142857 Nothing
             ,Reconfigure 6.33333333333 [(1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)])
                                         ,(1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)])]
@@ -461,6 +351,8 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
              PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 1, targetNumberOfActivePeers = 1}
              (Script (DNSTimeout {getDNSTimeout = 0.28} :| [DNSTimeout {getDNSTimeout = 0.204},DNSTimeout {getDNSTimeout = 0.213}]))
              (Script (DNSLookupDelay {getDNSLookupDelay = 0.066} :| [DNSLookupDelay {getDNSLookupDelay = 0.102},DNSLookupDelay {getDNSLookupDelay = 0.031}]))
+             Nothing
+             False
           , [JoinNetwork 0.183783783783 Nothing
             ,Reconfigure 4.533333333333 [(1,Map.fromList [])]
             ]
@@ -477,9 +369,8 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                tracersExtraWithTimeName
+                                iosimTracer
                                 tracerDiffusionSimWithTimeName
-                                nullTracer
 
       events :: [ServerTrace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
@@ -511,9 +402,8 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                tracersExtraWithTimeName
+                                iosimTracer
                                 tracerDiffusionSimWithTimeName
-                                nullTracer
 
       events :: [PeerSelectionActionsTrace NtNAddr NtNVersion]
       events = mapMaybe (\case DiffusionPeerSelectionActionsTrace st -> Just st
@@ -556,9 +446,8 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                tracersExtraWithTimeName
+                                iosimTracer
                                 tracerDiffusionSimWithTimeName
-                                nullTracer
 
       events :: [TracePeerSelection NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionTrace st -> Just st
@@ -656,9 +545,8 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ l) =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         trace :: [(Time, ThreadId, Maybe ThreadLabel, SimEventType)]
         trace = take 125000
@@ -727,9 +615,8 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -904,6 +791,8 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.05}
                                                                    , DNSLookupDelay {getDNSLookupDelay = 0.039}
                                                                    ]))
+            Nothing
+            False
             , [ JoinNetwork 6.710144927536 Nothing
               , Kill 7.454545454545
               , JoinNetwork 10.763157894736 (Just (TestAddress (IPAddr (read "4.138.119.62") 65527)))
@@ -931,9 +820,8 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1026,9 +914,8 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1107,9 +994,8 @@ prop_diffusion_target_active_local defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1188,9 +1074,8 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1310,9 +1195,8 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1476,9 +1360,8 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1627,9 +1510,8 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1802,7 +1684,11 @@ async_demotion_network_script =
                            = Governor.PeerSelectionTargets 0 1 1 1,
         naDNSTimeoutScript = singletonScript (DNSTimeout 3),
         naDNSLookupDelayScript
-                           = singletonScript (DNSLookupDelay 0.2)
+                           = singletonScript (DNSLookupDelay 0.2),
+        naChainSyncExitOnBlockNo
+                           = Nothing,
+        naChainSyncEarlyExit
+                           = False
       }
 
 
@@ -1815,9 +1701,8 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  debugTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1919,9 +1804,8 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  debugTracer
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -2042,9 +1926,8 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2144,9 +2027,8 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2196,11 +2078,327 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
 
 -- | Unit test that checks issue 4258
 -- https://github.com/input-output-hk/ouroboros-network/issues/4258
+--
+-- TODO: prettify the expression so it's easier to maintain it when things
+-- change.
 prop_unit_4258 :: Property
 prop_unit_4258 =
   let bearerInfo = AbsBearerInfo {abiConnectionDelay = NormalDelay, abiInboundAttenuation = NoAttenuation FastSpeed, abiOutboundAttenuation = NoAttenuation FastSpeed, abiInboundWriteFailure = Nothing, abiOutboundWriteFailure = Nothing, abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted), abiSDUSize = LargeSDU}
-      diffScript = DiffusionScript (SimArgs 1 10) [(NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224) [] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.4") 9)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.397} :| [DNSTimeout {getDNSTimeout = 0.382},DNSTimeout {getDNSTimeout = 0.321},DNSTimeout {getDNSTimeout = 0.143},DNSTimeout {getDNSTimeout = 0.256},DNSTimeout {getDNSTimeout = 0.142},DNSTimeout {getDNSTimeout = 0.341},DNSTimeout {getDNSTimeout = 0.236}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| [])),[JoinNetwork 4.166666666666 Nothing,Kill 0.3,JoinNetwork 1.517857142857 Nothing,Reconfigure 0.245238095238 [],Reconfigure 4.190476190476 []]),(NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269) [RelayAccessAddress "0.0.0.4" 9] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.8") 65531)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 4, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.281} :| [DNSTimeout {getDNSTimeout = 0.177},DNSTimeout {getDNSTimeout = 0.164},DNSTimeout {getDNSTimeout = 0.373}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.133} :| [DNSLookupDelay {getDNSLookupDelay = 0.128},DNSLookupDelay {getDNSLookupDelay = 0.049},DNSLookupDelay {getDNSLookupDelay = 0.058},DNSLookupDelay {getDNSLookupDelay = 0.042},DNSLookupDelay {getDNSLookupDelay = 0.117},DNSLookupDelay {getDNSLookupDelay = 0.064}])),[JoinNetwork 3.384615384615 Nothing,Reconfigure 3.583333333333 [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],Kill 15.55555555555,JoinNetwork 30.53333333333 Nothing,Kill 71.11111111111])]
+      diffScript = DiffusionScript (SimArgs 1 10) [(NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224) [] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.4") 9)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.397} :| [DNSTimeout {getDNSTimeout = 0.382},DNSTimeout {getDNSTimeout = 0.321},DNSTimeout {getDNSTimeout = 0.143},DNSTimeout {getDNSTimeout = 0.256},DNSTimeout {getDNSTimeout = 0.142},DNSTimeout {getDNSTimeout = 0.341},DNSTimeout {getDNSTimeout = 0.236}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| [])) Nothing False,[JoinNetwork 4.166666666666 Nothing,Kill 0.3,JoinNetwork 1.517857142857 Nothing,Reconfigure 0.245238095238 [],Reconfigure 4.190476190476 []]),(NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269) [RelayAccessAddress "0.0.0.4" 9] (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.8") 65531)) [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 4, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.281} :| [DNSTimeout {getDNSTimeout = 0.177},DNSTimeout {getDNSTimeout = 0.164},DNSTimeout {getDNSTimeout = 0.373}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.133} :| [DNSLookupDelay {getDNSLookupDelay = 0.128},DNSLookupDelay {getDNSLookupDelay = 0.049},DNSLookupDelay {getDNSLookupDelay = 0.058},DNSLookupDelay {getDNSLookupDelay = 0.042},DNSLookupDelay {getDNSLookupDelay = 0.117},DNSLookupDelay {getDNSLookupDelay = 0.064}])) Nothing False,[JoinNetwork 3.384615384615 Nothing,Reconfigure 3.583333333333 [(1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],Kill 15.55555555555,JoinNetwork 30.53333333333 Nothing,Kill 71.11111111111])]
    in prop_diffusion_cm_valid_transition_order bearerInfo diffScript
+
+
+-- | Verify that certain traces are never emitted by the simulation.
+--
+prop_diffusion_cm_no_dodgy_traces :: AbsBearerInfo
+                                  -> DiffusionScript
+                                  -> Property
+prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  iosimTracer
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+        events = fmap (Trace.fromList ())
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = (\(WithName _ (WithTime t _)) -> t)
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_cm_traces
+          $ (\(WithName _ (WithTime _ b)) -> b)
+          <$> ev
+        )
+      <$> events
+
+  where
+    verify_cm_traces :: Trace () DiffusionTestTrace -> Property
+    verify_cm_traces events =
+      let connectionManagerEvents :: [ConnectionManagerTrace
+                                        NtNAddr
+                                        (ConnectionHandlerTrace
+                                          NtNVersion
+                                          NtNVersionData)]
+          connectionManagerEvents =
+              Trace.toList
+            . selectDiffusionConnectionManagerEvents
+            $ events
+
+        in conjoin $ map
+             (\ev -> case ev of
+               TrConnectionExists {}    -> counterexample (show ev) False
+               TrForbiddenConnection {} -> counterexample (show ev) False
+               _                        -> property True
+             ) connectionManagerEvents
+
+
+prop_diffusion_peer_selection_actions_no_dodgy_traces :: AbsBearerInfo
+                                                      -> HotDiffusionScript
+                                                      -> Property
+prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiffusionScript sa hds) =
+    let sim :: forall s . IOSim s Void
+        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  (DiffusionScript sa hds)
+                                  iosimTracer
+                                  tracerDiffusionSimWithTimeName
+
+        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+        events = fmap (Trace.fromList ())
+               . Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.fromList (MainReturn (Time 0) () [])
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+
+     in
+        classifyNumberOfPeerStateActionEvents events
+      . conjoin
+      $ (\ev ->
+        let evsList = Trace.toList ev
+            lastTime = (\(WithName _ (WithTime t _)) -> t)
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_psa_traces
+          $ fmap (\(WithName _ b) -> b)
+          $ ev
+        )
+      <$> events
+
+  where
+    showBucket :: Int -> Int -> String
+    showBucket size a | a < size
+                      = show a
+                      | otherwise
+                      = concat [ "["
+                               , show (a `div` size * size)
+                               , ", "
+                               , show (a `div` size * size + size)
+                               , ")"
+                               ]
+
+    classifyNumberOfPeerStateActionEvents
+      :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+      -> Property -> Property
+    classifyNumberOfPeerStateActionEvents evs =
+          label ("Number of Hot -> Warm successful demotions: "
+                 ++ showBucket 10 numOfHotToWarmDemotions)
+        . label ("Number of Hot -> Warm timeout errors: "
+                 ++ showBucket 5 numOfTimeoutErrors)
+        . label ("Number of Hot -> Warm ActivecCold errors: "
+                 ++ showBucket 5 numOfActiveColdErrors)
+        . label ("Number of Warm -> Hot promotions: "
+                 ++ showBucket 5 numOfWarmToHotPromotions)
+      where
+          evs' :: [PeerSelectionActionsTrace NtNAddr NtNVersion]
+          evs' = mapMaybe (\case
+                              DiffusionPeerSelectionActionsTrace ev
+                                -> Just ev
+                              _ -> Nothing)
+               . fmap (wtEvent . wnEvent)
+               . concatMap Trace.toList
+               $ evs
+
+          numOfHotToWarmDemotions  = length
+                                   . filter (\case
+                                                (PeerStatusChanged HotToWarm{})
+                                                  -> True
+                                                _ -> False)
+                                   $ evs'
+          numOfTimeoutErrors       = length
+                                   . filter (\case
+                                                (PeerStatusChangeFailure HotToWarm{} TimeoutError)
+                                                  -> True
+                                                _ -> False)
+                                   $ evs'
+          numOfActiveColdErrors    = length
+                                   . filter (\case
+                                                (PeerStatusChangeFailure HotToWarm{} ActiveCold)
+                                                  -> True
+                                                _ -> False)
+                                   $ evs'
+
+          numOfWarmToHotPromotions = length
+                                   . filter (\case
+                                                (PeerStatusChanged WarmToHot{})
+                                                  -> True
+                                                _ -> False)
+                                   $ evs'
+
+    verify_psa_traces :: Trace () (WithTime DiffusionTestTrace) -> Property
+    verify_psa_traces events =
+      let peerSelectionActionsEvents :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)]
+          peerSelectionActionsEvents =
+              Trace.toList
+            . selectTimedDiffusionPeerSelectionActionsEvents
+            $ events
+
+        in
+         ( conjoin
+         . map
+           (\case
+             ev@( WithTime _ (PeerStatusChangeFailure (HotToWarm _) TimeoutError)
+                , WithTime _ (PeerStatusChangeFailure (HotToWarm _) ActiveCold)
+                )
+               -> counterexample (show ev)
+                $ counterexample (unlines $ map show peerSelectionActionsEvents)
+                $ False
+             _ -> property True
+             )
+         $ zip       peerSelectionActionsEvents
+               (tail peerSelectionActionsEvents)
+         )
+         .&&.
+         ( let f :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)] -> Property
+               f as = conjoin $ g <$> tails as
+
+               g :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)] -> Property
+               g as@(WithTime demotionTime (PeerStatusChanged HotToWarm{}) : as') =
+                 case find (\case
+                               WithTime _ (PeerStatusChanged WarmToHot{}) -> True
+                               _ -> False)
+                           as' of
+
+                   Nothing                         -> property True
+                   Just (WithTime promotionTime _) -> counterexample (show as)
+                                                    $ ( promotionTime `diffTime` demotionTime
+                                                     >= reconnectDelay config_RECONNECT_DELAY
+                                                      )
+               g _ = property True
+           in
+           conjoin
+         . fmap ( conjoin
+                . fmap f
+                . splitWith (\x -> case x of
+                                    (_, Just (WithTime _ (PeerStatusChanged ColdToWarm{})))
+                                        -> False
+                                    (WithTime _ (PeerMonitoringResult{})
+                                      , _)
+                                        -> False
+                                    -- split trace if there are two consecutive `HotToWarm`, this
+                                    -- means that the node was restarted.
+                                    (WithTime _ (PeerStatusChanged HotToWarm{})
+                                      , Just (WithTime _ (PeerStatusChanged HotToWarm{})))
+                                        -> False
+                                    (WithTime _ (PeerStatusChangeFailure tr _)
+                                      , _) -> case tr of
+                                                HotToCold{}  -> False
+                                                WarmToCold{} -> False
+                                                _            -> True
+                                    _   -> True
+                            )
+                )
+           -- split the trace into different connections
+         . splitIntoStreams
+             (\case
+                WithTime _ (PeerStatusChanged type_)         -> getConnId type_
+                WithTime _ (PeerStatusChangeFailure type_ _) -> getConnId type_
+                WithTime _ (PeerMonitoringError connId _)    -> Just connId
+                WithTime _ (PeerMonitoringResult connId _)   -> Just connId)
+         $ peerSelectionActionsEvents
+         )
+
+    getConnId :: PeerStatusChangeType addr -> Maybe (ConnectionId addr)
+    getConnId (HotToWarm connId) = Just connId
+    getConnId (WarmToHot connId) = Just connId
+    getConnId (WarmToCold connId) = Just connId
+    getConnId (HotToCold connId) = Just connId
+    getConnId (ColdToWarm (Just localAddress) remoteAddress) = Just ConnectionId { localAddress, remoteAddress }
+    getConnId _ = Nothing
+
+
+-- | Like `(takeWhile f as, dropWhile f as)`
+--
+splitWhile :: (a -> Bool) -> [a] -> ([a], [a])
+splitWhile _ [] = ([], [])
+splitWhile f as@(a : as') = if f a
+                            then case splitWhile f as' of
+                                   (hs, ts) -> (a : hs, ts)
+                            else ([], as)
+
+
+
+
+splitWith :: forall a.
+             ((a, Maybe a) -> Bool)
+             -- ^ a predicate on current and next element in the list.
+          ->  [a]
+          -> [[a]]
+splitWith f = map unzip' . go . zip'
+  where
+    zip' :: [a] -> [(a, Maybe a)]
+    zip' xs = xs `zip` (map Just (tail xs) ++ [Nothing])
+
+    -- reverse of `zip'`
+    unzip' :: [(a,Maybe a)] -> [a]
+    unzip' = (\(xs, ys) -> take 1 xs ++ catMaybes ys) . unzip
+
+    go :: [(a,Maybe a)] -> [[(a,Maybe a)]]
+    go as =
+        case splitWhile f as of
+          ([], [])           -> []
+          ([], (a, _) : as') -> [(a,Nothing)] : go as'
+          (xs, [])           -> xs : []
+          (xs, _      : as') -> xs : go as'
+
+
+
+splitIntoStreams :: Ord k
+                 => (a -> Maybe k)
+                 -- ^ index function, 'Nothing` values are ignored
+                 ->  [a]
+                 -> [[a]]
+splitIntoStreams f = Map.elems
+                   . Map.fromListWith (\a b -> b ++ a)
+                   . map (\a -> (fromJust (f a), [a]))
+                   . filter (isJust . f)
+
+
+{-
+-- | 'splitWith' partitions elements into sub-lists.
+--
+prop_splitWith :: ( Arbitrary a
+                  , Eq a
+                  , Show a
+                  )
+               => ((a, Maybe a) -> Bool)
+               -> [a]
+               -> Property
+prop_splitWith f as = foldr (++) [] (splitWith f as) === as
+-}
+
 
 -- | A variant of ouroboros-network-framework
 -- 'Test.Ouroboros.Network.Server2.prop_inbound_governor_valid_transitions'
@@ -2215,9 +2413,8 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2286,9 +2483,8 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2354,9 +2550,8 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Trace () (Time, DiffusionTestTrace)]
         events = fmap ( Trace.fromList ()
@@ -2477,6 +2672,18 @@ selectDiffusionConnectionManagerEvents =
   . mapMaybe
      (\case DiffusionConnectionManagerTrace e -> Just e
             _                                 -> Nothing)
+  . Trace.toList
+
+selectTimedDiffusionPeerSelectionActionsEvents
+  :: Trace () (WithTime DiffusionTestTrace)
+  -> Trace () (WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion))
+selectTimedDiffusionPeerSelectionActionsEvents =
+    Trace.fromList ()
+  . mapMaybe
+      (\case WithTime { wtTime
+                      , wtEvent = DiffusionPeerSelectionActionsTrace e
+                      } -> Just WithTime { wtTime, wtEvent = e }
+             _          -> Nothing)
   . Trace.toList
 
 selectDiffusionConnectionManagerTransitionEvents

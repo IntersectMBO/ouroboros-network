@@ -20,6 +20,9 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
   , prop_diffusionScript_commandScript_valid
   , diffusionSimulation
   , Command (..)
+    -- * Tracing
+  , DiffusionTestTrace (..)
+  , iosimTracer
     -- * Re-exports
   , TestAddress (..)
   , RelayAccessPoint (..)
@@ -30,16 +33,16 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (forM, replicateM, (>=>))
 import           Control.Monad.Class.MonadAsync
-                     (MonadAsync (Async, cancel, waitAny, withAsync))
-import           Control.Monad.Class.MonadFork (MonadFork)
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate,
-                     MonadMask, MonadThrow, SomeException)
-import           Control.Monad.Class.MonadTime (DiffTime, MonadTime)
-import           Control.Monad.Class.MonadTimer (MonadTimer, threadDelay)
-import           Control.Monad.Fix (MonadFix)
+import           Control.Monad.Class.MonadST
+import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Fix
 import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+
+import           Control.Monad.IOSim (IOSim, traceM)
 
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (traverse_)
@@ -60,19 +63,28 @@ import           Network.DNS (Domain, TTL)
 import           Network.TypedProtocol.Core (PeerHasAgency (..))
 import qualified Network.TypedProtocol.PingPong.Type as PingPong
 
+import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import           Ouroboros.Network.ConnectionManager.Types
+                     (AbstractTransitionTrace, ConnectionManagerTrace)
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
 import           Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
                      ProtocolTimeLimits (..))
+import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace,
+                     RemoteTransitionTrace)
 import           Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
-                     (PeerSelectionTargets (..))
+                     (DebugPeerSelection (..), PeerSelectionTargets (..),
+                     TracePeerSelection)
 import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
+import           Ouroboros.Network.PeerSelection.PeerStateActions
+                     (PeerSelectionActionsTrace)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..), PortNumber,
-                     RelayAccessPoint (..))
+                     RelayAccessPoint (..), TraceLocalRootPeers,
+                     TracePublicRootPeers)
 import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
                      (byteLimitsBlockFetch, timeLimitsBlockFetch)
@@ -85,12 +97,15 @@ import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
+import           Ouroboros.Network.Server2 (ServerTrace)
 import           Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
-import           Ouroboros.Network.Mock.ConcreteBlock (Block)
+import           Ouroboros.Network.Block (BlockNo)
+import           Ouroboros.Network.Mock.ConcreteBlock (Block (..),
+                     BlockHeader (..))
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
-import           Ouroboros.Network.Testing.Utils (WithName (..),
-                     genDelayWithPrecision, tracerWithName)
+import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
+                     genDelayWithPrecision, tracerWithName, tracerWithTime)
 import           Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
                      WithAddr (..), makeFDBearer, withSnocket)
 
@@ -104,9 +119,7 @@ import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelect
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay (..), DNSTimeout (..))
 
-import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose,
-                     chooseInt, counterexample, frequency, oneof, property,
-                     shrinkList, sized, sublistOf, suchThat, vectorOf, (.&&.))
+import           Test.QuickCheck
 
 -- | Diffusion Simulator Arguments
 --
@@ -135,25 +148,27 @@ instance Show SimArgs where
 --
 data NodeArgs =
   NodeArgs
-    { naSeed                  :: Int
+    { naSeed                   :: Int
       -- ^ 'randomBlockGenerationArgs' seed argument
-    , naDiffusionMode         :: DiffusionMode
-    , naMbTime                :: Maybe DiffTime
+    , naDiffusionMode          :: DiffusionMode
+    , naMbTime                 :: Maybe DiffTime
       -- ^ 'LimitsAndTimeouts' argument
-    , naRelays                :: [RelayAccessPoint]
+    , naRelays                 :: [RelayAccessPoint]
       -- ^ 'Interfaces' relays auxiliary value
-    , naDomainMap             :: Map Domain [IP]
+    , naDomainMap              :: Map Domain [IP]
       -- ^ 'Interfaces' 'iDomainMap' value
-    , naAddr                  :: NtNAddr
+    , naAddr                   :: NtNAddr
       -- ^ 'Arguments' 'aIPAddress' value
-    , naLocalRootPeers        :: [(Int, Map RelayAccessPoint PeerAdvertise)]
+    , naLocalRootPeers         :: [(Int, Map RelayAccessPoint PeerAdvertise)]
       -- ^ 'Arguments' 'LocalRootPeers' values
-    , naLocalSelectionTargets :: PeerSelectionTargets
+    , naLocalSelectionTargets  :: PeerSelectionTargets
       -- ^ 'Arguments' 'aLocalSelectionTargets' value
-    , naDNSTimeoutScript      :: Script DNSTimeout
+    , naDNSTimeoutScript       :: Script DNSTimeout
       -- ^ 'Arguments' 'aDNSTimeoutScript' value
-    , naDNSLookupDelayScript  :: Script DNSLookupDelay
+    , naDNSLookupDelayScript   :: Script DNSLookupDelay
       -- ^ 'Arguments' 'aDNSLookupDelayScript' value
+    , naChainSyncExitOnBlockNo :: Maybe BlockNo
+    , naChainSyncEarlyExit     :: Bool
     }
 
 instance Show NodeArgs where
@@ -280,7 +295,9 @@ genSimArgs raps = do
   -- chance that someone gets to make a block
   let bgaSlotDuration = secondsToDiffTime 1
       numberOfNodes   = length [ r | r@(RelayAccessAddress _ _) <- raps ]
-      quota = 20 `div` numberOfNodes
+      quota = if numberOfNodes > 0
+                then 20 `div` numberOfNodes
+                else 100
 
   return
    $ SimArgs
@@ -338,19 +355,31 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
 
   dnsTimeout <- arbitrary
   dnsLookupDelay <- arbitrary
+  chainSyncExitOnBlockNo
+    <- frequency [ (1,      Just . fromIntegral . getPositive
+                        <$> (arbitrary :: Gen (Positive Int))
+                            `suchThat` (\(Positive a) -> a < 5))
+                 , (4, pure Nothing)
+                 ]
+
+  chainSyncEarlyExit <- frequency [ (1, pure True)
+                                  , (9, pure False)
+                                  ]
 
   return
    $ NodeArgs
-      { naSeed                  = seed
-      , naDiffusionMode         = diffusionMode
-      , naMbTime                = mustReplyTimeout
-      , naRelays                = relays
-      , naDomainMap             = dMap
-      , naAddr                  = ntnAddr
-      , naLocalRootPeers        = lrp
-      , naLocalSelectionTargets = peerSelectionTargets
-      , naDNSTimeoutScript      = dnsTimeout
-      , naDNSLookupDelayScript  = dnsLookupDelay
+      { naSeed                   = seed
+      , naDiffusionMode          = diffusionMode
+      , naMbTime                 = mustReplyTimeout
+      , naRelays                 = relays
+      , naDomainMap              = dMap
+      , naAddr                   = ntnAddr
+      , naLocalRootPeers         = lrp
+      , naLocalSelectionTargets  = peerSelectionTargets
+      , naDNSTimeoutScript       = dnsTimeout
+      , naDNSLookupDelayScript   = dnsLookupDelay
+      , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
+      , naChainSyncEarlyExit     = chainSyncEarlyExit
       }
   where
     hasActive :: Int -> PeerSelectionTargets -> Bool
@@ -559,6 +588,42 @@ data DiffusionSimulationTrace
   | TrRunning
   deriving (Show)
 
+-- Warning: be careful with writing properties that rely
+-- on trace events from multiple components environment.
+-- These events typically occur in separate threads and
+-- so are not casually ordered. It is ok to use them for
+-- timeout/eventually properties, but not for properties
+-- that check conditions synchronously.
+--
+data DiffusionTestTrace =
+      DiffusionLocalRootPeerTrace (TraceLocalRootPeers NtNAddr SomeException)
+    | DiffusionPublicRootPeerTrace TracePublicRootPeers
+    | DiffusionPeerSelectionTrace (TracePeerSelection NtNAddr)
+    | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
+    | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
+    | DiffusionConnectionManagerTrace
+        (ConnectionManagerTrace NtNAddr
+          (ConnectionHandlerTrace NtNVersion NtNVersionData))
+    | DiffusionDiffusionSimulationTrace DiffusionSimulationTrace
+    | DiffusionConnectionManagerTransitionTrace
+        (AbstractTransitionTrace NtNAddr)
+    | DiffusionInboundGovernorTransitionTrace
+        (RemoteTransitionTrace NtNAddr)
+    | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
+    | DiffusionServerTrace (ServerTrace NtNAddr)
+    | DiffusionDebugTrace String
+    deriving (Show)
+
+
+-- | A debug tracer which embeds events in DiffusionTestTrace.
+--
+iosimTracer :: forall s. Tracer (IOSim s) (WithTime (WithName NtNAddr String))
+iosimTracer = fmap (fmap DiffusionDebugTrace) `contramap` tracer
+  where
+    tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
+    tracer = Tracer traceM
+
+
 -- | Run an arbitrary topology
 diffusionSimulation
   :: forall m. ( MonadAsync       m
@@ -579,19 +644,15 @@ diffusionSimulation
                )
   => BearerInfo
   -> DiffusionScript
-  -> ( NtNAddr
-     -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
-                              NtCAddr NtCVersion NtCVersionData
-                              SomeException m )
+  -> Tracer m (WithTime (WithName NtNAddr String))
+  -- ^ timed trace of nodes in the system
   -> Tracer m (WithName NtNAddr DiffusionSimulationTrace)
-  -> Tracer m (WithName NtNAddr String)
   -> m Void
 diffusionSimulation
   defaultBearerInfo
   (DiffusionScript simArgs nodeArgs)
-  tracersExtraWithTimeName
-  tracer
-  debugTracer =
+  nodeTracer
+  tracer =
     withSnocket netSimTracer defaultBearerInfo Map.empty
       $ \ntnSnocket _ ->
         withSnocket nullTracer defaultBearerInfo Map.empty
@@ -609,7 +670,7 @@ diffusionSimulation
   where
     netSimTracer :: Tracer m (WithAddr NtNAddr (SnocketTrace m NtNAddr))
     netSimTracer = (\(WithAddr l _ a) -> WithName (fromMaybe (TestAddress $ IPAddr (read "0.0.0.0") 0) l) (show a))
-       `contramap` debugTracer
+       `contramap` tracerWithTime nodeTracer
 
     -- | Runs a single node according to a list of commands.
     runCommand
@@ -666,22 +727,22 @@ diffusionSimulation
                          dMapVarMap'' sArgs nArgs' cs
     runCommand _ _ _ _ _ _ (JoinNetwork _ _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+    runCommand (Just (async_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Kill delay:cs) = do
       threadDelay delay
       traceWith tracer (WithName (naAddr nArgs) TrKillingNode)
-      cancel async
+      cancel async_
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs cs
     runCommand _ _ _ _ _ _ (Kill _:_) = do
       error "runCommand: Impossible happened"
     runCommand Nothing _ _ _ _ _ (Reconfigure _ _:_) =
       error "runCommand: Impossible happened"
-    runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+    runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Reconfigure delay newLrp:cs) = do
       threadDelay delay
       traceWith tracer (WithName (naAddr nArgs) TrReconfiguringNode)
       _ <- atomically $ writeTVar lrpVar newLrp
-      runCommand (Just (async, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
+      runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                  cs
 
     updateDomainMap :: DiffTime
@@ -722,18 +783,21 @@ diffusionSimulation
             , saQuota                 = quota
             }
             NodeArgs
-            { naSeed                  = seed
-            , naMbTime                = mustReplyTimeout
-            , naRelays                = raps
-            , naAddr                  = rap
-            , naLocalSelectionTargets = peerSelectionTargets
-            , naDNSTimeoutScript      = dnsTimeout
-            , naDNSLookupDelayScript  = dnsLookupDelay
+            { naSeed                   = seed
+            , naMbTime                 = mustReplyTimeout
+            , naRelays                 = raps
+            , naAddr                   = rap
+            , naLocalSelectionTargets  = peerSelectionTargets
+            , naDNSTimeoutScript       = dnsTimeout
+            , naDNSLookupDelayScript   = dnsLookupDelay
+            , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
+            , naChainSyncEarlyExit     = chainSyncEarlyExit
             }
             ntnSnocket
             ntcSnocket
             lrpVar
-            dMapVar =
+            dMapVar = do
+      chainSyncExitVar <- newTVarIO chainSyncExitOnBlockNo
       let (bgaRng, rng) = Random.split $ mkStdGen seed
           acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
@@ -802,6 +866,21 @@ diffusionSimulation
                                         $ \_ -> return Nothing
               }
 
+          shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> Block -> m Bool
+          shouldChainSyncExit v block = atomically $ do
+            mbBlockNo <- readTVar v
+            case mbBlockNo of
+              Nothing ->
+                return False
+
+              Just blockNo | blockNo >= headerBlockNo (blockHeader block) -> do
+                -- next time exit in 10 blocks
+                writeTVar v (Just $ blockNo + 10)
+                return True
+
+                           | otherwise ->
+                return False
+
           arguments :: NodeKernel.Arguments m
           arguments =
             NodeKernel.Arguments
@@ -811,6 +890,8 @@ diffusionSimulation
               , NodeKernel.aKeepAliveInterval    = 10
               , NodeKernel.aPingPongInterval     = 10
               , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
+              , NodeKernel.aShouldChainSyncExit  = shouldChainSyncExit chainSyncExitVar
+              , NodeKernel.aChainSyncEarlyExit   = chainSyncEarlyExit
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
               , NodeKernel.aReadUseLedgerAfter   = readUseLedgerAfter
@@ -818,15 +899,14 @@ diffusionSimulation
               , NodeKernel.aTimeWaitTimeout      = 30
               , NodeKernel.aDNSTimeoutScript     = dnsTimeout
               , NodeKernel.aDNSLookupDelayScript = dnsLookupDelay
-              , NodeKernel.aDebugTracer          = tracerWithName rap debugTracer
+              , NodeKernel.aDebugTracer          = nullTracer
               }
 
-       in NodeKernel.run (WithName rap `contramap` debugTracer)
-                         blockGeneratorArgs
-                         limitsAndTimeouts
-                         interfaces
-                         arguments
-                         (tracersExtraWithTimeName rap)
+      NodeKernel.run blockGeneratorArgs
+                     limitsAndTimeouts
+                     interfaces
+                     arguments
+                     (tracersExtra rap)
 
     domainResolver :: [RelayAccessPoint]
                    -> StrictTVar m (Map Domain [(IP, TTL)])
@@ -846,6 +926,84 @@ diffusionSimulation
                        , Map.member d dMap
                        ]
       return (Map.fromList mapDomains)
+
+    tracersExtra
+      :: NtNAddr
+      -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
+                               NtCAddr NtCVersion NtCVersionData
+                               SomeException m
+    tracersExtra ntnAddr =
+      Diff.P2P.TracersExtra {
+          Diff.P2P.dtTraceLocalRootPeersTracer         = contramap
+                                                          (show . DiffusionLocalRootPeerTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtTracePublicRootPeersTracer        = contramap
+                                                          (show . DiffusionPublicRootPeerTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtTracePeerSelectionTracer          = contramap
+                                                          (show . DiffusionPeerSelectionTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtDebugPeerSelectionInitiatorTracer = contramap
+                                                          ( show . DiffusionDebugPeerSelectionTrace
+                                                          . voidDebugPeerSelection
+                                                          )
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtDebugPeerSelectionInitiatorResponderTracer
+            = contramap
+               ( show
+               . DiffusionDebugPeerSelectionTrace
+               . voidDebugPeerSelection
+               )
+            . tracerWithName ntnAddr
+            . tracerWithTime
+            $ nodeTracer
+        , Diff.P2P.dtTracePeerSelectionCounters        = nullTracer
+        , Diff.P2P.dtPeerSelectionActionsTracer        = contramap
+                                                          (show . DiffusionPeerSelectionActionsTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtConnectionManagerTracer           = contramap
+                                                          (show . DiffusionConnectionManagerTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtConnectionManagerTransitionTracer = contramap
+                                                           (show . DiffusionConnectionManagerTransitionTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtServerTracer                      = contramap (show . DiffusionServerTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtInboundGovernorTracer             = contramap
+                                                           (show . DiffusionInboundGovernorTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtInboundGovernorTransitionTracer   = contramap
+                                                           (show . DiffusionInboundGovernorTransitionTrace)
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtLocalConnectionManagerTracer      = nullTracer
+        , Diff.P2P.dtLocalServerTracer                 = nullTracer
+        , Diff.P2P.dtLocalInboundGovernorTracer        = nullTracer
+      }
+      where
+        voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
+        voidDebugPeerSelection (TraceGovernorState btime wtime state) =
+                                TraceGovernorState btime wtime (const () <$> state)
+
 
 --
 -- PingPong byte & time limits

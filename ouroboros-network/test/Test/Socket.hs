@@ -227,7 +227,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
                     pure $ Left ()
                  else
                     pure $ Right $ consumerClient done target chain
-        , ChainSync.points = \_ -> pure $ consumerClient done target chain
+        , ChainSync.points = \_ -> pure $ Right $ consumerClient done target chain
         }
 
 data WithThreadAndTime a = WithThreadAndTime {

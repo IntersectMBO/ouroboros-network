@@ -244,5 +244,5 @@ demo chain0 updates = do
                     pure $ Left ()
                  else
                     pure $ Right $ consumerClient done target chain
-        , ChainSync.points = \_ -> pure $ consumerClient done target chain
+        , ChainSync.points = \_ -> pure $ Right $ consumerClient done target chain
         }

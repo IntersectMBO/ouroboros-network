@@ -153,7 +153,8 @@ data MuxTrace =
     | MuxTraceStartOnDemand MiniProtocolNum MiniProtocolDir
     | MuxTraceStartedOnDemand MiniProtocolNum MiniProtocolDir
     | MuxTraceTerminating MiniProtocolNum MiniProtocolDir
-    | MuxTraceShutdown
+    | MuxTraceStopping
+    | MuxTraceStopped
     | MuxTraceTCPInfo StructTCPInfo Word16
 
 instance Show MuxTrace where
@@ -191,7 +192,8 @@ instance Show MuxTrace where
     show (MuxTraceStartOnDemand mid dir) = printf "Preparing to start (%s) in %s" (show mid) (show dir)
     show (MuxTraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
     show (MuxTraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
-    show MuxTraceShutdown = "Mux shutdown"
+    show MuxTraceStopping = "Mux stopping"
+    show MuxTraceStopped  = "Mux stoppped"
 #ifdef os_HOST_linux
     show (MuxTraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans

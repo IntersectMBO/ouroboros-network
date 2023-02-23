@@ -124,7 +124,7 @@ testClient doneVar tip =
             atomically $ writeTVar doneVar True
             return $ Left ()
           else return $ Right (testClient doneVar tip),
-      ChainSyncExamples.points = \_ -> return (testClient doneVar tip)
+      ChainSyncExamples.points = \_ -> return (Right $ testClient doneVar tip)
     }
 
 -- | An experiment in which the client has a fork of the server chain.  The

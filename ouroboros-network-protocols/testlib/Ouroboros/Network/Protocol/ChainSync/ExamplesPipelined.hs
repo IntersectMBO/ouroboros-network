@@ -41,7 +41,7 @@ chainSyncClientPipelined
       -> Client header (Point header) (Tip header) m a
       -> ChainSyncClientPipelined header (Point header) (Tip header) m a
 chainSyncClientPipelined mkPipelineDecision0 chainvar =
-    ChainSyncClientPipelined . fmap initialise . getChainPoints
+    ChainSyncClientPipelined . fmap (either SendMsgDone initialise) . getChainPoints
   where
     initialise :: ([Point header], Client header (Point header) (Tip header) m a)
                -> ClientPipelinedStIdle Z header (Point header) (Tip header) m a
@@ -160,11 +160,13 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
 
 
     getChainPoints :: Client header (Point header) (Tip header) m a
-                   -> m ([Point header], Client header (Point header) (Tip header) m a)
+                   -> m (Either a ([Point header], Client header (Point header) (Tip header) m a))
     getChainPoints client = do
       pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
-      client' <- points client pts
-      pure (pts, client')
+      choice <- points client pts
+      pure $ case choice of
+        Left a        -> Left a
+        Right client' -> Right (pts, client')
 
     addBlock :: header -> m ()
     addBlock b = atomically $ do

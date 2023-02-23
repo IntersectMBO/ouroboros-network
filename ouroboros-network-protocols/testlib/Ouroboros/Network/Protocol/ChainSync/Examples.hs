@@ -33,7 +33,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Server
 data Client header point tip m t = Client
   { rollbackward :: point -> tip -> m (Either t (Client header point tip m t))
   , rollforward  :: header -> m (Either t (Client header point tip m t))
-  , points       :: [point] -> m (Client header point tip m t)
+  , points       :: [point] -> m (Either t (Client header point tip m t))
   }
 
 -- | A client which doesn't do anything and never ends. Used with
@@ -43,7 +43,7 @@ pureClient :: Applicative m => Client header point tip m void
 pureClient = Client
   { rollbackward = \_ _ -> pure (Right pureClient)
   , rollforward  = \_ -> pure (Right pureClient)
-  , points       = \_ -> pure pureClient
+  , points       = \_ -> pure (Right pureClient)
   }
 
 controlledClient :: MonadSTM m
@@ -64,7 +64,7 @@ controlledClient controlMessageSTM = go
             Continue  -> pure (Right go)
             Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
             Terminate -> pure (Left ())
-      , points = \_ -> pure go
+      , points = \_ -> pure (Right go)
       }
 
 
@@ -80,7 +80,7 @@ chainSyncClientExample :: forall header tip m a.
                        -> Client header (Point header) tip m a
                        -> ChainSyncClient header (Point header) tip m a
 chainSyncClientExample chainvar client = ChainSyncClient $
-    initialise <$> getChainPoints
+    either SendMsgDone initialise <$> getChainPoints
   where
     initialise :: ([Point header], Client header (Point header) tip m a)
                -> ClientStIdle header (Point header) tip m a
@@ -126,11 +126,13 @@ chainSyncClientExample chainvar client = ChainSyncClient $
             Right client'' -> requestNext client''
       }
 
-    getChainPoints :: m ([Point header], Client header (Point header) tip m a)
+    getChainPoints :: m (Either a ([Point header], Client header (Point header) tip m a))
     getChainPoints = do
       pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
-      client' <- points client pts
-      pure (pts, client')
+      choice <- points client pts
+      pure $ case choice of
+        Left a        -> Left a
+        Right client' -> Right (pts, client')
 
     addBlock :: header -> m ()
     addBlock b = atomically $ do

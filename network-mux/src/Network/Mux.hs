@@ -282,9 +282,9 @@ miniProtocolJob tracer egressQueue
                         MiniProtocolNum a -> "prtcl-" ++ show a)
       w <- newTVarIO BL.empty
       let chan = muxChannel tracer egressQueue (Wanton w)
-                           miniProtocolNum miniProtocolDirEnum
-                           miniProtocolIngressQueue
-      (result, remainder)  <- protocolAction chan
+                            miniProtocolNum miniProtocolDirEnum
+                            miniProtocolIngressQueue
+      (result, remainder) <- protocolAction chan
       traceWith tracer (MuxTraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
         -- The Wanton w is the SDUs that are queued but not yet sent for this job.
@@ -413,9 +413,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                 >> return True
               _ -> writeTVar muxStatus (MuxFailed e)
                 >> return False
-          if r
-            then return ()
-            else throwIO e
+          unless r (throwIO e)
 
         EventControlCmd (CmdStartProtocolThread
                            StartEagerly
@@ -455,7 +453,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           go monitorCtx'
 
         EventControlCmd CmdShutdown -> do
-          traceWith tracer MuxTraceShutdown
+          traceWith tracer MuxTraceStopping
           atomically $ writeTVar muxStatus MuxStopping
           JobPool.cancelGroup jobpool MiniProtocolJob
           -- wait for 2 seconds before the egress queue is drained
@@ -464,6 +462,7 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                   tryPeekTBQueue egressQueue
               >>= check . isNothing
           atomically $ writeTVar muxStatus MuxStopped
+          traceWith tracer MuxTraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and
           -- muxer threads
 
@@ -685,7 +684,7 @@ runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue , muxStatus}
       case st of
            MuxReady    -> readTMVar completionVar
            MuxStopping -> readTMVar completionVar
-                      <|> return (Left $ toException (MuxError (MuxShutdown Nothing) "Mux stoping"))
+                      <|> return (Left $ toException (MuxError (MuxShutdown Nothing) "Mux stopping"))
            MuxStopped  -> readTMVar completionVar
                       <|> return (Left $ toException (MuxError (MuxShutdown Nothing) "Mux stopped"))
            MuxFailed e -> readTMVar completionVar

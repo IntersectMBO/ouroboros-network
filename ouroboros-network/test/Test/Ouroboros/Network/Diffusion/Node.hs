@@ -26,6 +26,8 @@ module Test.Ouroboros.Network.Diffusion.Node
   , PeerSelectionTargets (..)
   , RelayAccessPoint (..)
   , UseLedgerAfter (..)
+    -- * configuration constants
+  , config_RECONNECT_DELAY
   ) where
 
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
@@ -69,6 +71,7 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
+import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
@@ -130,6 +133,8 @@ data Arguments m = Arguments
     , aDiffusionMode        :: DiffusionMode
     , aKeepAliveInterval    :: DiffTime
     , aPingPongInterval     :: DiffTime
+    , aShouldChainSyncExit  :: Block -> m Bool
+    , aChainSyncEarlyExit   :: Bool
 
     , aPeerSelectionTargets :: PeerSelectionTargets
     , aReadLocalRootPeers   :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
@@ -166,8 +171,7 @@ run :: forall resolver m.
        , forall a. Semigroup a => Semigroup (m a)
        , Eq (Async m Void)
        )
-    => Tracer m String
-    -> Node.BlockGeneratorArgs Block StdGen
+    => Node.BlockGeneratorArgs Block StdGen
     -> Node.LimitsAndTimeouts Block
     -> Interfaces m
     -> Arguments m
@@ -175,7 +179,7 @@ run :: forall resolver m.
                              NtCAddr NtCVersion NtCVersionData
                              ResolverException m
     -> m Void
-run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
+run blockGeneratorArgs limits ni na tracersExtra =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
@@ -241,12 +245,10 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daPeerMetrics            = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
               , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
-              , Diff.P2P.daReturnPolicy           = \_ -> 0
+              , Diff.P2P.daReturnPolicy           = \_ -> config_RECONNECT_DELAY
               }
 
         apps <- Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
-
-        registry <- newFetchClientRegistry
 
         withAsync
            (Diff.P2P.runM interfaces
@@ -254,22 +256,21 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
                           tracersExtra
                           args argsExtra apps appsExtra)
            $ \ diffusionThread ->
-               withAsync (blockFetch registry nodeKernel) $ \blockFetchLogicThread ->
+               withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  wait diffusionThread
               <> wait blockFetchLogicThread
               <> wait nodeKernelThread
   where
-    blockFetch :: FetchClientRegistry NtNAddr BlockHeader Block m
-               -> NodeKernel BlockHeader Block m
+    blockFetch :: NodeKernel BlockHeader Block m
                -> m Void
-    blockFetch registry nodeKernel = do
+    blockFetch nodeKernel = do
       blockHeapVar <- LazySTM.newTVarIO Set.empty
 
       blockFetchLogic
         nullTracer
         nullTracer
         (blockFetchPolicy blockHeapVar nodeKernel)
-        registry
+        (nkFetchClientRegistry nodeKernel)
         (BlockFetchConfiguration {
           bfcMaxConcurrencyBulkSync = 1,
           bfcMaxConcurrencyDeadline = 2,
@@ -369,7 +370,7 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
       , Diff.P2P.daBulkChurnInterval     = 300
       }
 
-    appArgs :: Node.AppArgs m
+    appArgs :: Node.AppArgs Block m
     appArgs = Node.AppArgs
       { Node.aaLedgerPeersConsensusInterface
                                         = iLedgerPeersConsensusInterface ni
@@ -377,6 +378,8 @@ run _debugTracer blockGeneratorArgs limits ni na tracersExtra =
       , Node.aaDiffusionMode            = aDiffusionMode na
       , Node.aaKeepAliveInterval        = aKeepAliveInterval na
       , Node.aaPingPongInterval         = aPingPongInterval na
+      , Node.aaShouldChainSyncExit      = aShouldChainSyncExit na
+      , Node.aaChainSyncEarlyExit       = aChainSyncEarlyExit na
       }
 
 --- Utils
@@ -390,3 +393,10 @@ ntnToIPv6 :: NtNAddr -> Maybe NtNAddr
 ntnToIPv6 ntnAddr@(TestAddress (Node.EphemeralIPv6Addr _)) = Just ntnAddr
 ntnToIPv6 ntnAddr@(TestAddress (Node.IPAddr (IPv6 _) _))   = Just ntnAddr
 ntnToIPv6 (TestAddress _)                                  = Nothing
+
+--
+-- Constants
+--
+
+config_RECONNECT_DELAY :: ReconnectDelay
+config_RECONNECT_DELAY = 10
