@@ -565,7 +565,7 @@ makeRawFDBearer :: forall addr m.
                 => FD m (TestAddress addr)
                 -> m (RawBearer m)
 makeRawFDBearer (FD {fdVar}) = do
-    (bufVar :: MVar m LBS.ByteString) <- newMVar LBS.empty
+    (bufVar :: StrictTMVar m LBS.ByteString) <- atomically $ newTMVar LBS.empty
     return RawBearer
               { send = \src srcSize -> do
                   labelTVarIO fdVar "sender"
@@ -589,7 +589,7 @@ makeRawFDBearer (FD {fdVar}) = do
                   case fd_ of
                     FDConnected _ conn -> do
                       say $ "Checking buffer"
-                      bytesFromBuffer <- takeMVar bufVar
+                      bytesFromBuffer <- atomically $ takeTMVar bufVar
                       say $ "Buffer: " ++ show bytesFromBuffer
                       (lhs, rhs) <- if not (LBS.null bytesFromBuffer) then do
                         say $ "Reading up to " ++ show size ++ " bytes from buffer"
@@ -600,7 +600,7 @@ makeRawFDBearer (FD {fdVar}) = do
                         return (LBS.take size64 bytesRead, LBS.drop size64 bytesRead)
                       say $ "Updating buffer; use: " ++ show lhs ++ " keep: " ++ show (LBS.take 10 rhs) ++
                             if (LBS.length . LBS.take 11 $ rhs) == 11 then "..." else ""
-                      putMVar bufVar rhs
+                      atomically $ putTMVar bufVar rhs
                       say $ "Receive: buffer updated"
                       if LBS.null lhs then do
                         say $ "Receive: End of stream"
