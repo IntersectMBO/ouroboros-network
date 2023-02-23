@@ -46,6 +46,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.Update (
   , ledgerDbPushMany'
   , ledgerDbSwitch'
     -- * Trace
+  , PushGoal (..)
+  , PushStart (..)
+  , Pushing (..)
   , UpdateLedgerDbTraceEvent (..)
   ) where
 

@@ -8,13 +8,13 @@
 # otherwise exits with exit code 1
 
 cardano_packages=$(find . -maxdepth 1 -type d -name "ouroboros-consensus-cardano*" -or -name "ouroboros-consensus-shelley*" -or -name "ouroboros-consensus-byron*")
-cardano_last_version=$(grep "<a id=" ouroboros-consensus-cardano/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2)
+cardano_last_version=$(grep "<a id=" ouroboros-consensus-cardano/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
 cardano_versions=$(for f in $cardano_packages; do
                        git show $(ls $f/*.cabal) | grep "+version" | rev | cut -d' ' -f1 | rev
                    done)
 
 consensus_packages=$(find . -maxdepth 1 -type d -name "ouroboros-consensus*" -not -name "*byron*" -not -name "*shelley*" -not -name "*cardano*")
-consensus_last_version=$(grep "<a id=" ouroboros-consensus/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2)
+consensus_last_version=$(grep "<a id=" ouroboros-consensus/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
 consensus_versions=$(for f in $consensus_packages; do
                          git show $(ls $f/*.cabal) | grep "+version" | rev | cut -d' ' -f1 | rev
                      done)
