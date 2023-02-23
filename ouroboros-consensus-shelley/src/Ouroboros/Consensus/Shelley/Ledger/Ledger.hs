@@ -320,9 +320,9 @@ deriving newtype  instance (ShelleyBasedEra era, Show     (mk (SL.TxIn (EraCrypt
 instance ShelleyBasedEra era => CanSerializeLedgerTables (LedgerState (ShelleyBlock proto era)) where
     codecLedgerTables = ShelleyLedgerTables (CodecMK
                                                (Core.toEraCBOR @era)
-                                               (Core.toEraCBOR @era)
+                                               toCBOR
                                                (Core.fromEraCBOR @era)
-                                               (Core.fromEraCBOR @era))
+                                               fromCBOR)
 
 instance
      ShelleyBasedEra era
@@ -577,25 +577,6 @@ instance Show ShelleyReapplyException where
   show (ShelleyReapplyException err) = "(ShelleyReapplyException " <> show err <> ")"
 
 instance Exception.Exception ShelleyReapplyException where
-
--- -- TODO float the stow/unstow logic out of the StowLedgerTables ShelleyBlock
--- -- instance and reuse it here instead of jumping through this confusing vnc/cnv
--- -- hoop (or instantiate the class for TickedLedgerState too)
--- cnv :: LedgerState (ShelleyBlock proto era) mk -> TickedLedgerState (ShelleyBlock proto era) mk
--- cnv ShelleyLedgerState{..} = TickedShelleyLedgerState {
---       untickedShelleyLedgerTip      = shelleyLedgerTip
---     , tickedShelleyLedgerTransition = shelleyLedgerTransition
---     , tickedShelleyLedgerState      = shelleyLedgerState
---     , tickedShelleyLedgerTables     = shelleyLedgerTables
---     }
-
--- vnc :: TickedLedgerState (ShelleyBlock proto era) mk -> LedgerState (ShelleyBlock proto era) mk
--- vnc TickedShelleyLedgerState{..} = ShelleyLedgerState {
---       shelleyLedgerTip        = untickedShelleyLedgerTip
---     , shelleyLedgerTransition = tickedShelleyLedgerTransition
---     , shelleyLedgerState      = tickedShelleyLedgerState
---     , shelleyLedgerTables     = tickedShelleyLedgerTables
---     }
 
 applyHelper :: forall proto m era.
      (ShelleyCompatible proto era, Monad m)

@@ -2,6 +2,9 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE PatternSynonyms          #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE ViewPatterns             #-}
 module Ouroboros.Consensus.Cardano.Block (
@@ -9,6 +12,7 @@ module Ouroboros.Consensus.Cardano.Block (
     CardanoEras
   , CardanoShelleyEras
   , module Ouroboros.Consensus.Shelley.Eras
+  , ShelleyBasedEras
     -- * Block
   , CardanoBlock
     -- Note: by exporting the pattern synonyms as part of the matching data
@@ -66,6 +70,8 @@ module Ouroboros.Consensus.Cardano.Block (
   , EraMismatch (..)
   ) where
 
+import           Data.Kind
+import           Data.SOP.Functors (Flip (..))
 import           Data.SOP.Strict
 import           Ouroboros.Consensus.Block (BlockProtocol)
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
@@ -93,8 +99,10 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 -- We parameterise over the crypto used in the post-Byron eras: @c@.
 --
 -- TODO: parameterise ByronBlock over crypto too
+type CardanoEras :: Type -> [Type]
 type CardanoEras c = ByronBlock ': CardanoShelleyEras c
 
+type CardanoShelleyEras :: Type -> [Type]
 type CardanoShelleyEras c =
   '[ ShelleyBlock (TPraos c) (ShelleyEra c)
    , ShelleyBlock (TPraos c) (AllegraEra c)
@@ -102,6 +110,16 @@ type CardanoShelleyEras c =
    , ShelleyBlock (TPraos c) (AlonzoEra c)
    , ShelleyBlock (Praos c)  (BabbageEra c)
    , ShelleyBlock (Praos c)  (ConwayEra c)
+   ]
+
+type ShelleyBasedEras :: Type -> [Type]
+type ShelleyBasedEras c =
+  '[ ShelleyEra c
+   , AllegraEra c
+   , MaryEra c
+   , AlonzoEra c
+   , BabbageEra c
+   , ConwayEra c
    ]
 
 {-------------------------------------------------------------------------------
@@ -199,7 +217,7 @@ pattern TeleConway  byron shelley allegra mary alonzo babbage x = TS byron (TS s
 -- | /The/ Cardano block.
 --
 -- Thanks to the pattern synonyms, you can treat this as a sum type with
--- constructors 'BlockByron' and 'BlockShelley'.
+-- constructors 'BlockByron', 'BlockShelley', etc.
 --
 -- > f :: CardanoBlock c -> _
 -- > f (BlockByron   b) = _
@@ -1036,63 +1054,63 @@ pattern CardanoLedgerConfig cfgByron cfgShelley cfgAllegra cfgMary cfgAlonzo cfg
 -- 'LedgerState'. We don't give access to those internal details through the
 -- pattern synonyms. This is also the reason the pattern synonyms are not
 -- bidirectional.
-type CardanoLedgerState c = LedgerState (CardanoBlock c)
+type CardanoLedgerState c mk = LedgerState (CardanoBlock c) mk
 
 pattern LedgerStateByron
-  :: LedgerState ByronBlock
-  -> CardanoLedgerState c
+  :: LedgerState ByronBlock mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateByron st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleByron (State.Current { currentState = st })))
+        (TeleByron (State.Current { currentState = Flip st })))
 
 pattern LedgerStateShelley
-  :: LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateShelley st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleShelley _ (State.Current { currentState = st })))
+        (TeleShelley _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateAllegra
-  :: LedgerState (ShelleyBlock (TPraos c) (AllegraEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (TPraos c) (AllegraEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateAllegra st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleAllegra _ _  (State.Current { currentState = st })))
+        (TeleAllegra _ _  (State.Current { currentState = Flip st })))
 
 pattern LedgerStateMary
-  :: LedgerState (ShelleyBlock (TPraos c) (MaryEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (TPraos c) (MaryEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateMary st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleMary _ _ _ (State.Current { currentState = st })))
+        (TeleMary _ _ _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateAlonzo
-  :: LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (TPraos c) (AlonzoEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateAlonzo st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleAlonzo _ _ _ _ (State.Current { currentState = st })))
+        (TeleAlonzo _ _ _ _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateBabbage
-  :: LedgerState (ShelleyBlock (Praos c) (BabbageEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (Praos c) (BabbageEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateBabbage st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleBabbage _ _ _ _ _ (State.Current { currentState = st })))
+        (TeleBabbage _ _ _ _ _ (State.Current { currentState = Flip st })))
 
 pattern LedgerStateConway
-  :: LedgerState (ShelleyBlock (Praos c) (ConwayEra c))
-  -> CardanoLedgerState c
+  :: LedgerState (ShelleyBlock (Praos c) (ConwayEra c)) mk
+  -> CardanoLedgerState c mk
 pattern LedgerStateConway st <-
     HardForkLedgerState
       (State.HardForkState
-        (TeleConway _ _ _ _ _ _ (State.Current { currentState = st })))
+        (TeleConway _ _ _ _ _ _ (State.Current { currentState = Flip st })))
 
 {-# COMPLETE LedgerStateByron
            , LedgerStateShelley
