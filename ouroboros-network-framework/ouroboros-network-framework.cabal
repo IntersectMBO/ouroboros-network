@@ -38,10 +38,10 @@ library
     Ouroboros.Network.Driver.Simple
     Ouroboros.Network.Driver.Stateful
     Ouroboros.Network.ErrorPolicy
-    Ouroboros.Network.IOManager
     Ouroboros.Network.InboundGovernor
     Ouroboros.Network.InboundGovernor.Event
     Ouroboros.Network.InboundGovernor.State
+    Ouroboros.Network.IOManager
     Ouroboros.Network.Mux
     Ouroboros.Network.MuxMode
     Ouroboros.Network.Protocol.Handshake
@@ -51,11 +51,12 @@ library
     Ouroboros.Network.Protocol.Handshake.Type
     Ouroboros.Network.Protocol.Handshake.Unversioned
     Ouroboros.Network.Protocol.Handshake.Version
+    Ouroboros.Network.RawBearer
     Ouroboros.Network.RethrowPolicy
+    Ouroboros.Network.Server2
     Ouroboros.Network.Server.ConnectionTable
     Ouroboros.Network.Server.RateLimiting
     Ouroboros.Network.Server.Socket
-    Ouroboros.Network.Server2
     Ouroboros.Network.Snocket
     Ouroboros.Network.Socket
     Ouroboros.Network.Subscription
@@ -173,15 +174,16 @@ test-suite sim-tests
     Test.Ouroboros.Network.Server2.Sim
     Test.Ouroboros.Network.Socket
     Test.Ouroboros.Network.Subscription
+    Test.Ouroboros.Network.RawBearer
     Test.Simulation.Network.Snocket
 
   build-depends:
-    QuickCheck,
     base >=4.14 && <4.21,
     bytestring,
     cborg,
     containers,
     contra-tracer,
+    directory,
     dns,
     io-classes,
     io-sim,
@@ -189,11 +191,13 @@ test-suite sim-tests
     monoidal-synchronisation,
     network,
     network-mux,
+    ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,
     ouroboros-network-testing,
     pretty-simple,
     psqueues,
+    QuickCheck,
     quickcheck-instances,
     quickcheck-monoids,
     quiet,
