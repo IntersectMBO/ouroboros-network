@@ -153,7 +153,6 @@ import           Ouroboros.Consensus.Util.Versioned
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingStore
-import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB as LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 
 data DiskSnapshot = DiskSnapshot {
@@ -378,7 +377,6 @@ data TraceSnapshotEvent blk
     -- ^ A snapshot was written to disk.
   | DeletedSnapshot DiskSnapshot
     -- ^ An old or invalid on-disk snapshot was deleted
-  | LMDBEvent LMDB.TraceDb
   deriving (Generic, Eq, Show)
 
 {-------------------------------------------------------------------------------

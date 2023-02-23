@@ -227,7 +227,7 @@ initialize replayTracer
 -- Note we do flush differences into the 'BackingStore' as we go, but we don't
 -- take snapshots of the in-memory parts.
 --
--- TODO: expose the flushing frequence as a configuration
+-- TODO: #4402 expose the flushing frequence as a configuration
 replayStartingWith ::
      forall m blk. (
          IOLike m

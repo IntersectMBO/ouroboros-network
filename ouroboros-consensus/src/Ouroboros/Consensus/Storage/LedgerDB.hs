@@ -90,9 +90,8 @@ module Ouroboros.Consensus.Storage.LedgerDB (
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..), SnapshotInterval (..),
                      TimeSinceLast (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.Init
-                     (BackingStoreSelector (..), InitLog (..), ReplayGoal (..),
-                     ReplayStart (..), TraceReplayEvent (..),
+import           Ouroboros.Consensus.Storage.LedgerDB.Init (InitLog (..),
+                     ReplayGoal (..), ReplayStart (..), TraceReplayEvent (..),
                      decorateReplayTracerWithGoal,
                      decorateReplayTracerWithStart, initialize, newBackingStore,
                      newBackingStoreInitialiser)
