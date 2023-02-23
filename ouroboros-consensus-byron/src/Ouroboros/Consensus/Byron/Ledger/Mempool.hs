@@ -73,6 +73,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Serialisation
                      (byronBlockEncodingOverhead)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
@@ -144,6 +145,8 @@ instance LedgerSupportsMempool ByronBlock where
     . toMempoolPayload
 
   txForgetValidated = forgetValidatedByronTx
+
+  getTransactionKeySets _ = emptyLedgerTables
 
 data instance TxId (GenTx ByronBlock)
   = ByronTxId             !Utxo.TxId
@@ -246,8 +249,8 @@ applyByronGenTx :: CC.ValidationMode
                 -> LedgerConfig ByronBlock
                 -> SlotNo
                 -> GenTx ByronBlock
-                -> TickedLedgerState ByronBlock
-                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock)
+                -> TickedLedgerState ByronBlock mk1
+                -> Except (ApplyTxErr ByronBlock) (TickedLedgerState ByronBlock mk2)
 applyByronGenTx validationMode cfg slot genTx st =
     (\state -> st {tickedByronLedgerState = state}) <$>
       CC.applyMempoolPayload
