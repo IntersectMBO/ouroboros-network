@@ -31,6 +31,7 @@ library
                        Ouroboros.Network.IOManager
                        Ouroboros.Network.Mux
                        Ouroboros.Network.MuxMode
+                       Ouroboros.Network.RawBearer
 
                        Ouroboros.Network.Protocol.Handshake
                        Ouroboros.Network.Protocol.Handshake.Type
@@ -157,12 +158,14 @@ test-suite test
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
                        Test.Ouroboros.Network.RateLimiting
+                       Test.Ouroboros.Network.RawBearer
                        Test.Simulation.Network.Snocket
 
   build-depends:       base              >=4.14 && <4.19
                      , bytestring
                      , cborg
                      , containers
+                     , directory
                      , dns
                      , iproute
                      , network

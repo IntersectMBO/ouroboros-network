@@ -5,6 +5,7 @@ import           Test.Tasty
 import qualified Test.Ouroboros.Network.ConnectionManager as ConnectionManager
 import qualified Test.Ouroboros.Network.Driver as Driver
 import qualified Test.Ouroboros.Network.RateLimiting as RateLimiting
+import qualified Test.Ouroboros.Network.RawBearer as RawBearer
 import qualified Test.Ouroboros.Network.Server2 as Server2
 import qualified Test.Ouroboros.Network.Socket as Socket
 import qualified Test.Ouroboros.Network.Subscription as Subscription
@@ -23,6 +24,7 @@ tests =
   , Subscription.tests
   , RateLimiting.tests
   , Snocket.tests
+  , RawBearer.tests
   ]
 
 
