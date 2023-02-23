@@ -16,6 +16,13 @@ process](./docs/ReleaseProcess.md).
 
 # Changelog entries
 
+<a id='changelog-0.2.1.0'></a>
+## 0.2.1.0 — 2023-02-23
+
+### Non-Breaking
+
+- Exposed the `Pushing` newtype wrappers for the tracing of the `LedgerDB`
+
 <a id='changelog-0.2.0.0'></a>
 ## 0.2.0.0 — 2023-02-09
 
