@@ -28,7 +28,7 @@ module Ouroboros.Consensus.Protocol.TPraos (
   , mkShelleyGlobals
   , mkTPraosParams
     -- * Crypto
-  , SL.PraosCrypto
+  , PraosCrypto
   , StandardCrypto
     -- * CannotForge
   , TPraosCannotForge (..)
@@ -74,6 +74,7 @@ import           Ouroboros.Consensus.Protocol.Praos.Common
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Versioned
+import           Ouroboros.Consensus.Protocol.Praos.Crypto (PraosCrypto)
 
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header

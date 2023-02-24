@@ -9,7 +9,7 @@ import           Cardano.Crypto.Hash (Blake2b_224, Blake2b_256)
 import           Cardano.Crypto.KES (MockKES)
 import           Cardano.Crypto.VRF (MockVRF)
 import           Cardano.Ledger.Crypto (Crypto (..))
-import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import qualified Cardano.Protocol.TPraos.API as Ledger
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 
 -- | A replacement for 'Test.Consensus.Shelley.MockCrypto' that is compatible
@@ -39,6 +39,6 @@ instance Crypto MockCryptoCompatByron where
   type KES      MockCryptoCompatByron = MockKES 10
   type VRF      MockCryptoCompatByron = MockVRF
 
-instance TPraos.PraosCrypto MockCryptoCompatByron
+instance Ledger.PraosCrypto MockCryptoCompatByron
 
-instance Praos.PraosCrypto MockCryptoCompatByron
+instance TPraos.PraosCrypto MockCryptoCompatByron

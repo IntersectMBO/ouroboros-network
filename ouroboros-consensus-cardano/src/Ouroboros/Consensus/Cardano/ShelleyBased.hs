@@ -16,7 +16,6 @@ import           Data.SOP.Strict hiding (All2)
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
-import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyCompatible)
@@ -25,7 +24,7 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
 -- given function to it.
 overShelleyBasedLedgerState ::
      forall c.
-     (TPraos.PraosCrypto c, Praos.PraosCrypto c)
+     (Praos.PraosCrypto c)
   => (   forall era proto. (EraCrypto era ~ c, ShelleyCompatible proto era)
       => LedgerState (ShelleyBlock proto era)
       -> LedgerState (ShelleyBlock proto era)

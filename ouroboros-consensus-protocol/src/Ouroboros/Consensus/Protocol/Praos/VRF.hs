@@ -30,8 +30,7 @@ import           Cardano.Crypto.Util
 import           Cardano.Crypto.VRF (CertifiedVRF (certifiedOutput),
                      OutputVRF (..), getOutputVRFBytes)
 import           Cardano.Ledger.BaseTypes (Nonce (NeutralNonce, Nonce))
-import           Cardano.Ledger.Binary (runByteBuilder)
-import           Cardano.Ledger.Crypto (Crypto (HASH, VRF))
+import           Cardano.Ledger.Serialization (runByteBuilder)
 import           Cardano.Ledger.Slot (SlotNo (SlotNo))
 import           Cardano.Protocol.TPraos.BHeader (BoundedNatural,
                      assertBoundedNatural)
@@ -86,12 +85,12 @@ data VRFResult (v :: VRFUsage)
 
 -- | Compute a hash of the unified VRF output appropriate to its usage.
 hashVRF ::
-  forall (v :: VRFUsage) c proxy.
-  (Crypto c) =>
-  proxy c ->
+  forall hash (v :: VRFUsage) vrf.
+  Hash.HashAlgorithm hash =>
+  Proxy hash ->
   SVRFUsage v ->
-  CertifiedVRF (VRF c) InputVRF ->
-  Hash (HASH c) (VRFResult v)
+  CertifiedVRF vrf InputVRF ->
+  Hash hash (VRFResult v)
 hashVRF _ use certVRF =
   let vrfOutputAsBytes = getOutputVRFBytes $ certifiedOutput certVRF
    in case use of
@@ -101,23 +100,23 @@ hashVRF _ use certVRF =
 -- | Range-extend a VRF output to be used for leader checks from the relevant
 -- hash. See section 4.1 of the linked paper for details.
 vrfLeaderValue ::
-  forall c proxy.
-  Crypto c =>
-  proxy c ->
-  CertifiedVRF (VRF c) InputVRF ->
+  forall hash vrf.
+  Hash.HashAlgorithm hash =>
+  Proxy hash ->
+  CertifiedVRF vrf InputVRF ->
   BoundedNatural
 vrfLeaderValue p cvrf =
   assertBoundedNatural
-    ((2 :: Natural) ^ (8 * sizeHash (Proxy @(HASH c))))
+    ((2 :: Natural) ^ (8 * sizeHash (Proxy @hash)))
     (bytesToNatural . hashToBytes $ hashVRF p SVRFLeader cvrf)
 
 -- | Range-extend a VRF output to be used for the evolving nonce. See section
 -- 4.1 of the linked paper for details.
 vrfNonceValue ::
-  forall c proxy.
-  Crypto c =>
-  proxy c ->
-  CertifiedVRF (VRF c) InputVRF ->
+  forall hash vrf.
+  Hash.HashAlgorithm hash =>
+  Proxy hash ->
+  CertifiedVRF vrf InputVRF ->
   Nonce
 vrfNonceValue p =
   -- The double hashing below is perhaps a little confusing. The first hash is

@@ -72,7 +72,7 @@ import           Data.Text (Text)
 import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
-import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import           Ouroboros.Consensus.Protocol.Praos (PraosCrypto)
 
 {-------------------------------------------------------------------------------
   Eras instantiated with standard crypto
@@ -182,35 +182,35 @@ defaultApplyShelleyBasedTx globals ledgerEnv mempoolState _wti tx =
       mempoolState
       tx
 
-instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => ShelleyBasedEra (ShelleyEra c) where
   shelleyBasedEraName _ = "Shelley"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => ShelleyBasedEra (AllegraEra c) where
   shelleyBasedEraName _ = "Allegra"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => ShelleyBasedEra (MaryEra c) where
   shelleyBasedEraName _ = "Mary"
 
   applyShelleyBasedTx = defaultApplyShelleyBasedTx
 
-instance (SL.PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+instance (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
   => ShelleyBasedEra (AlonzoEra c) where
   shelleyBasedEraName _ = "Alonzo"
 
   applyShelleyBasedTx = applyAlonzoBasedTx
 
-instance (Praos.PraosCrypto c) => ShelleyBasedEra (BabbageEra c) where
+instance (PraosCrypto c) => ShelleyBasedEra (BabbageEra c) where
   shelleyBasedEraName _ = "Babbage"
   applyShelleyBasedTx = applyAlonzoBasedTx
 
-instance (Praos.PraosCrypto c) => ShelleyBasedEra (ConwayEra c) where
+instance (PraosCrypto c) => ShelleyBasedEra (ConwayEra c) where
   shelleyBasedEraName _ = "Conway"
   applyShelleyBasedTx = applyAlonzoBasedTx
 

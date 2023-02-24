@@ -31,8 +31,7 @@ import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
-import           Cardano.Ledger.Hashes (EraIndependentTxBody)
-import           Cardano.Ledger.Keys (DSignable, Hash)
+import           Cardano.Ledger.Mary.Translation ()
 import qualified Cardano.Ledger.Shelley.API as SL
 import           Cardano.Ledger.Shelley.Translation
                      (toFromByronTranslationContext)
@@ -505,7 +504,7 @@ translateLedgerViewByronToShelleyWrapper =
 -------------------------------------------------------------------------------}
 
 translateLedgerStateShelleyToAllegraWrapper ::
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -517,7 +516,7 @@ translateLedgerStateShelleyToAllegraWrapper =
         unComp . SL.translateEra' () . Comp
 
 translateTxShelleyToAllegraWrapper ::
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => InjectTx
        (ShelleyBlock (TPraos c) (ShelleyEra c))
        (ShelleyBlock (TPraos c) (AllegraEra c))
@@ -525,7 +524,7 @@ translateTxShelleyToAllegraWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
 translateValidatedTxShelleyToAllegraWrapper ::
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => InjectValidatedTx
        (ShelleyBlock (TPraos c) (ShelleyEra c))
        (ShelleyBlock (TPraos c) (AllegraEra c))
@@ -537,7 +536,7 @@ translateValidatedTxShelleyToAllegraWrapper = InjectValidatedTx $
 -------------------------------------------------------------------------------}
 
 translateLedgerStateAllegraToMaryWrapper ::
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -553,7 +552,7 @@ translateLedgerStateAllegraToMaryWrapper =
 -------------------------------------------------------------------------------}
 
 translateTxAllegraToMaryWrapper ::
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => InjectTx
        (ShelleyBlock (TPraos c) (AllegraEra c))
        (ShelleyBlock (TPraos c) (MaryEra c))
@@ -561,7 +560,7 @@ translateTxAllegraToMaryWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
 translateValidatedTxAllegraToMaryWrapper ::
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => InjectValidatedTx
        (ShelleyBlock (TPraos c) (AllegraEra c))
        (ShelleyBlock (TPraos c) (MaryEra c))
@@ -573,7 +572,7 @@ translateValidatedTxAllegraToMaryWrapper = InjectValidatedTx $
 -------------------------------------------------------------------------------}
 
 translateLedgerStateMaryToAlonzoWrapper ::
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -591,7 +590,7 @@ getAlonzoTranslationContext =
     shelleyLedgerTranslationContext . unwrapLedgerConfig
 
 translateTxMaryToAlonzoWrapper ::
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => SL.TranslationContext (AlonzoEra c)
   -> InjectTx
        (ShelleyBlock (TPraos c) (MaryEra c))
@@ -601,7 +600,7 @@ translateTxMaryToAlonzoWrapper ctxt = InjectTx $
 
 translateValidatedTxMaryToAlonzoWrapper ::
      forall c.
-     (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
+     (PraosCrypto c)
   => SL.TranslationContext (AlonzoEra c)
   -> InjectValidatedTx
        (ShelleyBlock (TPraos c) (MaryEra c))
@@ -614,7 +613,7 @@ translateValidatedTxMaryToAlonzoWrapper ctxt = InjectValidatedTx $
 -------------------------------------------------------------------------------}
 
 translateLedgerStateAlonzoToBabbageWrapper ::
-     (Praos.PraosCrypto c, TPraos.PraosCrypto c)
+     (Praos.PraosCrypto c)
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
