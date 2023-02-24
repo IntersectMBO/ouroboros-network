@@ -65,7 +65,7 @@ library
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts
+    -Wno-unticked-promoted-constructors -fno-ignore-asserts
 
 test-suite test
   type:             exitcode-stdio-1.0
@@ -74,6 +74,7 @@ test-suite test
   other-modules:
     Test.Consensus.Shelley.Coherence
     Test.Consensus.Shelley.Golden
+    Test.Consensus.Shelley.LedgerTables
     Test.Consensus.Shelley.Serialisation
     Test.ThreadNet.Shelley
 
@@ -83,6 +84,7 @@ test-suite test
     , cardano-crypto-class
     , cardano-ledger-alonzo
     , cardano-ledger-alonzo-test
+    , cardano-ledger-babbage-test
     , cardano-ledger-core
     , cardano-ledger-shelley
     , cardano-protocol-tpraos
@@ -105,4 +107,5 @@ test-suite test
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts -threaded -rtsopts
+    -Wno-unticked-promoted-constructors -fno-ignore-asserts -threaded
+    -rtsopts

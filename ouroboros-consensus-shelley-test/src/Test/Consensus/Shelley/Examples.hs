@@ -22,14 +22,22 @@ module Test.Consensus.Shelley.Examples (
   ) where
 
 import qualified Cardano.Ledger.Block as SL
+import qualified Cardano.Ledger.Core as LC
 import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Ledger.Era (getAllTxInputs)
+import           Cardano.Ledger.Shelley.Tx (TxIn)
 import qualified Cardano.Protocol.TPraos.BHeader as SL
 import           Data.Coerce (coerce)
+import           Data.Foldable (toList)
+import qualified Data.Map as Map
 import qualified Data.Set as Set
+import           Lens.Micro
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import           Ouroboros.Consensus.Protocol.Praos.Header
                      (HeaderBody (HeaderBody))
@@ -63,7 +71,6 @@ import qualified Test.Util.Serialisation.Golden as Golden
 import           Test.Util.Serialisation.Golden (labelled, unlabelled)
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
-
 {-------------------------------------------------------------------------------
   Examples
 -------------------------------------------------------------------------------}
@@ -72,7 +79,7 @@ codecConfig :: CodecConfig StandardShelleyBlock
 codecConfig = ShelleyCodecConfig
 
 fromShelleyLedgerExamples
-  :: ShelleyCompatible (TPraos (EraCrypto era)) era
+  :: forall era. ShelleyCompatible (TPraos (EraCrypto era)) era
   => ShelleyLedgerExamples era
   -> Golden.Examples (ShelleyBlock (TPraos (EraCrypto era)) era)
 fromShelleyLedgerExamples ShelleyLedgerExamples {
@@ -94,6 +101,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
     , exampleSlotNo           = unlabelled slotNo
+    , exampleLedgerTables     = unlabelled ledgerTables
     }
   where
     blk = mkShelleyBlock sleBlock
@@ -135,11 +143,32 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
                                   }
     , shelleyLedgerState      = sleNewEpochState
     , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+    , shelleyLedgerTables     = ShelleyLedgerTables EmptyMK
     }
     chainDepState = TPraosState (NotOrigin 1) sleChainDepState
     extLedgerState = ExtLedgerState
                        ledgerState
                        (genesisHeaderState chainDepState)
+    ledgerTables = ShelleyLedgerTables
+                 $ ValuesMK
+                 $ Map.fromList
+                 $ zip exampleTxIns exampleTxOuts
+      where
+        exampleTxIns :: [TxIn (EraCrypto era)]
+        exampleTxIns  =
+          case toList $ getAllTxInputs (sleTx ^. LC.bodyTxL) of
+            [] -> error "No transaction inputs were provided to construct the ledger tables"
+                  -- We require at least one transaction input (and one
+                  -- transaction output) in the example provided by
+                  -- cardano-ledger to make sure that we test the serialization
+                  -- of ledger tables with at least one non-trivial example.
+            xs -> xs
+
+        exampleTxOuts :: [LC.TxOut era]
+        exampleTxOuts =
+          case toList (sleTx ^. LC.bodyTxL ^. LC.outputsTxBodyL) of
+            [] -> error "No transaction outputs were provided to construct the ledger tables"
+            xs -> xs
 
 -- | TODO Factor this out into something nicer.
 fromShelleyLedgerExamplesPraos ::
@@ -165,6 +194,7 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
     , exampleResult           = results
     , exampleAnnTip           = unlabelled annTip
     , exampleLedgerState      = unlabelled ledgerState
+    , exampleLedgerTables     = unlabelled ledgerTables
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
     , exampleSlotNo           = unlabelled slotNo
@@ -173,7 +203,7 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
     blk = mkShelleyBlock $ let
       SL.Block hdr1 bdy = sleBlock in SL.Block (translateHeader hdr1) bdy
 
-    translateHeader :: Crypto c => SL.BHeader c -> Praos.Header c
+    translateHeader :: Cardano.Ledger.Crypto.Crypto c => SL.BHeader c -> Praos.Header c
     translateHeader (SL.BHeader bhBody bhSig) =
         Praos.Header hBody hSig
       where
@@ -228,13 +258,33 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
                                   }
     , shelleyLedgerState      = sleNewEpochState
     , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+    , shelleyLedgerTables     = emptyLedgerTables
     }
     chainDepState = translateChainDepState @(TPraos (EraCrypto era)) @(Praos (EraCrypto era))
       $ TPraosState (NotOrigin 1) sleChainDepState
     extLedgerState = ExtLedgerState
                        ledgerState
                        (genesisHeaderState chainDepState)
+    ledgerTables = ShelleyLedgerTables
+                 $ ValuesMK
+                 $ Map.fromList
+                 $ zip exampleTxIns exampleTxOuts
+      where
+        exampleTxIns :: [TxIn (EraCrypto era)]
+        exampleTxIns  =
+          case toList $ getAllTxInputs (sleTx ^. LC.bodyTxL) of
+            [] -> error "No transaction inputs were provided to construct the ledger tables"
+                  -- We require at least one transaction input (and one
+                  -- transaction output) in the example provided by
+                  -- cardano-ledger to make sure that we test the serialization
+                  -- of ledger tables with at least one non-trivial example.
+            xs -> xs
 
+        exampleTxOuts :: [LC.TxOut era]
+        exampleTxOuts =
+          case toList (sleTx ^. LC.bodyTxL ^. LC.outputsTxBodyL) of
+            [] -> error "No transaction outputs were provided to construct the ledger tables"
+            xs -> xs
 
 
 examplesShelley :: Golden.Examples StandardShelleyBlock
