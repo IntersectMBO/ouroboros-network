@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -47,6 +48,7 @@ import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Node
 import           Ouroboros.Consensus.Byron.Protocol
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Tables
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -783,6 +785,7 @@ tests = testGroup "Byron" $
     defaultSlotLength :: SlotLength
     defaultSlotLength = slotLengthFromSec 1
 
+
 prop_deterministicPlan :: PBftParams -> NumSlots -> NumCoreNodes -> Property
 prop_deterministicPlan params numSlots numCoreNodes =
     property $ case Ref.simulate params njp numSlots of
@@ -966,7 +969,7 @@ prop_simple_real_pbft_convergence TestSetup
     finalChains :: [(NodeId, Chain ByronBlock)]
     finalChains = Map.toList $ nodeOutputFinalChain <$> testOutputNodes testOutput
 
-    finalLedgers :: [(NodeId, Byron.LedgerState ByronBlock)]
+    finalLedgers :: [(NodeId, Byron.LedgerState ByronBlock EmptyMK)]
     finalLedgers = Map.toList $ nodeOutputFinalLedger <$> testOutputNodes testOutput
 
     pvuLabels :: [(NodeId, ProtocolVersionUpdateLabel)]

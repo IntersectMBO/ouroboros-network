@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -18,6 +19,7 @@ import           Ouroboros.Consensus.ByronSpec.Ledger
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
@@ -61,9 +63,9 @@ instance DecodeDiskDep (NestedCtxt Header) DualByronBlock where
                 (NestedCtxt (CtxtDual ctxt)) =
       decodeDiskDep ccfg (NestedCtxt ctxt)
 
-instance EncodeDisk DualByronBlock (LedgerState DualByronBlock) where
+instance EncodeDisk DualByronBlock (LedgerState DualByronBlock EmptyMK) where
   encodeDisk _ = encodeDualLedgerState encodeByronLedgerState
-instance DecodeDisk DualByronBlock (LedgerState DualByronBlock) where
+instance DecodeDisk DualByronBlock (LedgerState DualByronBlock EmptyMK) where
   decodeDisk _ = decodeDualLedgerState decodeByronLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' 'DualByronBlock')@
