@@ -35,7 +35,6 @@ module Ouroboros.Network.Diffusion.P2P
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (IOException)
 import Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import Control.Monad.Class.MonadAsync qualified as Async
 import Control.Monad.Class.MonadFork
@@ -55,6 +54,7 @@ import Data.Map qualified as Map
 import Data.Maybe (catMaybes, maybeToList)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
+import GHC.IO.Exception (IOException (..), IOErrorType (..))
 import System.Exit (ExitCode)
 import System.Random (StdGen, newStdGen, split)
 #ifdef POSIX
@@ -708,14 +708,57 @@ runM Interfaces
       =
       Map.map diNtnPeerSharing inboundDuplexPeers
 
-    -- Only the 'IOManagerError's are fatal, all the other exceptions in the
-    -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
-    -- this is so).
+    -- TODO: this policy should also be used in `PeerStateActions` and
+    -- `InboundGovernor` (when creating or accepting connections)
     rethrowPolicy =
-      RethrowPolicy $ \_ctx err ->
+      -- Only the 'IOManagerError's are fatal, all the other exceptions in the
+      -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
+      -- this is so).
+      RethrowPolicy (\_ctx err ->
         case fromException err of
           Just (_ :: IOManagerError) -> ShutdownNode
-          Nothing                    -> mempty
+          Nothing                    -> mempty)
+      <>
+      RethrowPolicy (\_ctx err ->
+        case fromException err of
+          -- if we are out of file descriptors (either because we exhausted
+          -- process or system limit) we should shut down the node and let the
+          -- operator investigate.
+          --
+          -- Refs:
+          -- * https://hackage.haskell.org/package/ghc-internal-9.1001.0/docs/src/GHC.Internal.Foreign.C.Error.html#errnoToIOError
+          -- * man socket.2
+          -- * man connect.2
+          -- * man accept.2
+          -- NOTE: many `connect` and `accept` exceptions are classified as
+          -- `OtherError`, here we only distinguish fatal IO errors (e.g.
+          -- ones that propagate to the main thread).
+          -- NOTE: we don't use the rethrow policy for `accept` calls, where
+          -- all but `ECONNABORTED` are fatal exceptions.
+          Just IOError { ioe_type } ->
+            case ioe_type of
+              ResourceExhausted    -> ShutdownNode
+              -- EAGAIN            -- connect, accept
+              -- EMFILE            -- socket, accept
+              -- ENFILE            -- socket, accept
+              -- ENOBUFS           -- socket, accept
+              -- ENOMEM            -- socket, accept
+
+              UnsupportedOperation -> ShutdownNode
+              -- EADDRNOTAVAIL     -- connect
+              -- EAFNOSUPPRT       -- connect
+
+              InvalidArgument      -> ShutdownNode
+              -- EINVAL            -- socket, accept
+              -- ENOTSOCK          -- connect
+              -- EBADF             -- connect, accept
+
+              ProtocolError        -> ShutdownNode
+              -- EPROTONOSUPPOPRT  -- socket
+              -- EPROTO            -- accept
+
+              _                    -> mempty
+          Nothing -> mempty)
 
 
     -- | mkLocalThread - create local connection manager
