@@ -1,5 +1,11 @@
 # Revision history for ouroboros-network-framework
 
+## next version
+
+### Breaking
+
+- Removed `TrImpossibleConnection` trace (PR #4385)
+
 ## 0.3.0.0 -- 2023-01-25
 
 * Removed `toBearer` method of `Snocket`, instead the `Ouroboros.Network.Snocket` module exposes `makeSocketBearer`, `makeLocalBearer` and re-exports `MakeBearer` newtype wrapper.
