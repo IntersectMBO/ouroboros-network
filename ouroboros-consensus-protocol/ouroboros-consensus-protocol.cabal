@@ -31,6 +31,7 @@ library
     Ouroboros.Consensus.Protocol.Ledger.Util
     Ouroboros.Consensus.Protocol.Praos
     Ouroboros.Consensus.Protocol.Praos.Common
+    Ouroboros.Consensus.Protocol.Praos.Crypto
     Ouroboros.Consensus.Protocol.Praos.Header
     Ouroboros.Consensus.Protocol.Praos.Translate
     Ouroboros.Consensus.Protocol.Praos.Views
@@ -41,6 +42,7 @@ library
     base >=4.14 && <4.17,
     bytestring,
     cardano-binary,
+    cardano-crypto-praos  ^>= 2.0.0.0.1,
     cardano-crypto-class,
     cardano-ledger-binary,
     cardano-ledger-core,

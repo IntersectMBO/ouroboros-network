@@ -38,8 +38,6 @@ import           Cardano.Crypto.VRF (hashVerKeyVRF)
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Ledger.BaseTypes (ActiveSlotCoeff, Nonce, (⭒))
 import qualified Cardano.Ledger.BaseTypes as SL
-import           Cardano.Ledger.Crypto (Crypto, DSIGN, KES, StandardCrypto, VRF)
-import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.Keys (KeyHash, KeyRole (BlockIssuer),
                      VKey (VKey), coerceKeyRole, hashKey)
 import qualified Cardano.Ledger.Keys as SL
@@ -51,7 +49,7 @@ import           Cardano.Ledger.Slot (Duration (Duration), (+*))
 import           Cardano.Protocol.TPraos.BHeader (BoundedNatural (bvValue),
                      checkLeaderNatValue, prevHashToNonce)
 import           Cardano.Protocol.TPraos.OCert (KESPeriod (KESPeriod),
-                     OCert (OCert), OCertSignable)
+                     OCert (OCert))
 import qualified Cardano.Protocol.TPraos.OCert as OCert
 import           Cardano.Slotting.EpochInfo (EpochInfo, epochInfoEpoch,
                      epochInfoFirst, hoistEpochInfo)
@@ -80,10 +78,11 @@ import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Ledger.Util (isNewEpoch)
 import           Ouroboros.Consensus.Protocol.Praos.Common
-import           Ouroboros.Consensus.Protocol.Praos.Header (HeaderBody)
-import qualified Ouroboros.Consensus.Protocol.Praos.Views as Views
+import           Ouroboros.Consensus.Protocol.Praos.Crypto (HASH, PraosCrypto,
+                     VRF)
 import           Ouroboros.Consensus.Protocol.Praos.VRF (InputVRF, mkInputVRF,
                      vrfLeaderValue, vrfNonceValue)
+import qualified Ouroboros.Consensus.Protocol.Praos.Views as Views
 import           Ouroboros.Consensus.Protocol.TPraos
                      (ConsensusConfig (TPraosConfig, tpraosEpochInfo, tpraosParams))
 import           Ouroboros.Consensus.Ticked (Ticked)
@@ -91,17 +90,6 @@ import           Ouroboros.Consensus.Util.Versioned (VersionDecoder (Decode),
                      decodeVersion, encodeVersion)
 
 data Praos c
-
-class
-  ( Crypto c,
-    DSIGN.Signable (DSIGN c) (OCertSignable c),
-    DSIGN.Signable (DSIGN c) (SL.Hash c EraIndependentTxBody),
-    KES.Signable (KES c) (HeaderBody c),
-    VRF.Signable (VRF c) InputVRF
-  ) =>
-  PraosCrypto c
-
-instance PraosCrypto StandardCrypto
 
 {-------------------------------------------------------------------------------
   Fields required by Praos in the header
@@ -496,7 +484,7 @@ instance PraosCrypto c => ConsensusProtocol (Praos c) where
         cs = tickedPraosStateChainDepState tcs
         stabilityWindow =
           computeStabilityWindow (maxRollbacks praosSecurityParam) praosLeaderF
-        eta = vrfNonceValue (Proxy @c) $ Views.hvVrfRes b
+        eta = vrfNonceValue (Proxy @(HASH c)) $ Views.hvVrfRes b
         newEvolvingNonce = praosStateEvolvingNonce cs ⭒ eta
         OCert _ n _ _ = Views.hvOCert b
         hk = hashKey $ Views.hvVK b
@@ -516,7 +504,7 @@ meetsLeaderThreshold
   keyHash
   rho =
     checkLeaderNatValue
-      (vrfLeaderValue (Proxy @c) rho)
+      (vrfLeaderValue (Proxy @(HASH c)) rho)
       r
       (praosLeaderF praosParams)
     where
@@ -552,7 +540,7 @@ validateVRFSignature eta0 (Views.lvPoolDistr -> SL.PoolDistr pd) f b = do
     hk = coerceKeyRole . hashKey . Views.hvVK $ b
     vrfK = Views.hvVrfVK b
     vrfCert = Views.hvVrfRes b
-    vrfLeaderVal = vrfLeaderValue (Proxy @c) vrfCert
+    vrfLeaderVal = vrfLeaderValue (Proxy @(HASH c)) vrfCert
     slot = Views.hvSlotNo b
 
 validateKESSignature ::

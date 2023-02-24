@@ -54,12 +54,11 @@ import qualified Cardano.Ledger.BaseTypes as SL (mkVersion)
 import qualified Cardano.Ledger.Core as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
-import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Ouroboros.Consensus.Forecast as Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol, ledgerViewForecastAt)
 import           Ouroboros.Consensus.Protocol.Praos
-import           Ouroboros.Consensus.Protocol.TPraos hiding (PraosCrypto)
+import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Protocol.Translate (TranslateProto)
 import qualified Ouroboros.Consensus.Protocol.Translate as Proto
 import           Ouroboros.Consensus.Shelley.Eras
@@ -207,7 +206,7 @@ instance PraosCrypto c => HasPartialConsensusConfig (Praos c) where
 
   toPartialConsensusConfig _ = praosParams
 
-instance SL.PraosCrypto c => HasPartialConsensusConfig (TPraos c) where
+instance PraosCrypto c => HasPartialConsensusConfig (TPraos c) where
   type PartialConsensusConfig (TPraos c) = TPraosParams
 
   completeConsensusConfig _ tpraosEpochInfo tpraosParams = TPraosConfig {..}

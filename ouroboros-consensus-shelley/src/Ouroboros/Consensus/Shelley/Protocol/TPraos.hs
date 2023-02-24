@@ -10,7 +10,6 @@ import qualified Cardano.Crypto.KES as SL
 import           Cardano.Crypto.VRF (certifiedOutput)
 import           Cardano.Ledger.Chain (ChainPredicateFailure)
 import qualified Cardano.Ledger.Shelley.API as SL
-import           Cardano.Protocol.TPraos.API (PraosCrypto)
 import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL
 import           Cardano.Protocol.TPraos.OCert (ocertKESPeriod, ocertVkHot)
@@ -20,7 +19,7 @@ import           Data.Either (isRight)
 import           Ouroboros.Consensus.Protocol.Signed (Signed,
                      SignedHeader (headerSigned))
 import           Ouroboros.Consensus.Protocol.TPraos
-                     (MaxMajorProtVer (MaxMajorProtVer), TPraos,
+                     (MaxMajorProtVer (MaxMajorProtVer), PraosCrypto, TPraos,
                      TPraosCannotForge, TPraosFields (..), TPraosToSign (..),
                      Ticked (TickedPraosLedgerView), forgeTPraosFields,
                      tpraosMaxMajorPV, tpraosParams, tpraosSlotsPerKESPeriod)

@@ -28,7 +28,7 @@ module Ouroboros.Consensus.Protocol.TPraos (
   , mkShelleyGlobals
   , mkTPraosParams
     -- * Crypto
-  , SL.PraosCrypto
+  , PraosCrypto
   , StandardCrypto
     -- * CannotForge
   , TPraosCannotForge (..)
@@ -78,6 +78,7 @@ import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Ledger.Util
 import           Ouroboros.Consensus.Protocol.Praos.Common
+import           Ouroboros.Consensus.Protocol.Praos.Crypto (PraosCrypto)
 
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header

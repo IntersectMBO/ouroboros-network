@@ -27,9 +27,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 
 import qualified Cardano.Ledger.Shelley.API as SL
 
-import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Protocol.Praos (PraosState)
-import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
@@ -62,16 +60,17 @@ instance ShelleyCompatible proto era => DecodeDisk (ShelleyBlock proto era) (Led
   decodeDisk _ = decodeShelleyLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
-instance (ShelleyCompatible proto era, EraCrypto era ~ c, SL.PraosCrypto c) => EncodeDisk (ShelleyBlock proto era) (TPraosState c) where
+instance (ShelleyCompatible proto era, EraCrypto era ~ c, PraosCrypto c) => EncodeDisk (ShelleyBlock proto era) (TPraosState c) where
   encodeDisk _ = encode
+
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
-instance (ShelleyCompatible proto era, EraCrypto era ~ c, SL.PraosCrypto c) => DecodeDisk (ShelleyBlock proto era) (TPraosState c) where
+instance (ShelleyCompatible proto era, EraCrypto era ~ c, PraosCrypto c) => DecodeDisk (ShelleyBlock proto era) (TPraosState c) where
   decodeDisk _ = decode
 
-instance (ShelleyCompatible proto era, EraCrypto era ~ c, Praos.PraosCrypto c) => EncodeDisk (ShelleyBlock proto era) (PraosState c) where
+instance (ShelleyCompatible proto era, EraCrypto era ~ c, PraosCrypto c) => EncodeDisk (ShelleyBlock proto era) (PraosState c) where
   encodeDisk _ = encode
 -- | @'ChainDepState' ('BlockProtocol' ('ShelleyBlock' era))@
-instance (ShelleyCompatible proto era, EraCrypto era ~ c, Praos.PraosCrypto c) => DecodeDisk (ShelleyBlock proto era) (PraosState c) where
+instance (ShelleyCompatible proto era, EraCrypto era ~ c, PraosCrypto c) => DecodeDisk (ShelleyBlock proto era) (PraosState c) where
   decodeDisk _ = decode
 instance ShelleyCompatible proto era
   => EncodeDisk (ShelleyBlock proto era) (AnnTip (ShelleyBlock proto era)) where
