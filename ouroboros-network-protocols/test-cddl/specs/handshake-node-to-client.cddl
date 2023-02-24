@@ -6,7 +6,7 @@ handshakeMessage
     = msgProposeVersions
     / msgAcceptVersion
     / msgRefuse
-;   / msgQueryReply
+    / msgQueryReply
 
 msgProposeVersions = [0, versionTable]
 msgAcceptVersion   = [1, oldVersionNumber, oldNodeToClientVersionData]
@@ -14,6 +14,7 @@ msgAcceptVersion   = [1, oldVersionNumber, oldNodeToClientVersionData]
 msgRefuse          = [2, refuseReason]
 msgQueryReply      = [3, versionTable]
 
+; Entries must be sorted by version number. For testing, this is handled in `handshakeFix`.
 versionTable = { * oldVersionNumber => oldNodeToClientVersionData
                , *    versionNumber =>    nodeToClientVersionData
                }
