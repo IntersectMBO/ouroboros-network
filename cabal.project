@@ -31,6 +31,7 @@ packages: ./cardano-ping
           ./ouroboros-network-protocols
           ./ouroboros-network-testing
           ./ouroboros-consensus
+          ./ouroboros-consensus-tutorials
           ./ouroboros-consensus-byron
           ./ouroboros-consensus-byron-test
           ./ouroboros-consensus-byronspec
