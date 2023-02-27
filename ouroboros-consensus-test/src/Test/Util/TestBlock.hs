@@ -359,8 +359,8 @@ instance PayloadSemantics () where
 
   applyPayload _ _ = Right ()
 
--- | Apply the payload to a ticked state directly to the payload dependent state
--- portion of it, leaving the rest of the input ticked state unaltered.
+-- | Apply the payload directly to the payload dependent state portion of a
+-- ticked state, leaving the rest of the input ticked state unaltered.
 applyDirectlyToPayloadDependentState ::
      PayloadSemantics ptype
   => Ticked (LedgerState (TestBlockWith ptype))
@@ -370,6 +370,7 @@ applyDirectlyToPayloadDependentState ::
 applyDirectlyToPayloadDependentState (TickedTestLedger st) tx = do
     payloadDepSt' <- applyPayload (payloadDependentState st) tx
     pure $ TickedTestLedger $ st { payloadDependentState = payloadDepSt' }
+
 {-------------------------------------------------------------------------------
   NestedCtxt
 -------------------------------------------------------------------------------}

@@ -360,7 +360,6 @@ benchmark bench-mempool
                        -Wredundant-constraints
                        -Wmissing-export-lists
                        -Wno-unticked-promoted-constructors
-                       -fno-ignore-asserts
                        -rtsopts
                        "-with-rtsopts=-A32m"
   -- We use this option to avoid skewed results due to changes in cache-line
