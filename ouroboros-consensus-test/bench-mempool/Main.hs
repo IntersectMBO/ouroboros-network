@@ -1,15 +1,15 @@
+{-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedLists    #-}
-
+{-# LANGUAGE TupleSections      #-}
 
 module Main (main) where
 
-import           Control.Monad (void)
 import           Data.Set ()
 import           Test.Tasty.HUnit (testCase, (@?=))
 
 import qualified Control.Tracer as Tracer
-import           Test.Tasty.Bench (bench, bgroup, defaultMain, nfIO)
+import           Test.Tasty.Bench (bench, bgroup, defaultMain, env, nfIO)
 
 import           Bench.Consensus.Mempool
 import           Bench.Consensus.Mempool.TestBlock (TestBlock)
@@ -21,40 +21,41 @@ main :: IO ()
 main = defaultMain [ benchmarkJustAddingTransactions ]
   where
     benchmarkJustAddingTransactions =
-        bgroup "Just adding transactions"
-          $  fmap benchAddNTxs [1_000, 10_000, 100_000, 1_000_000]
-          <>
-             [ testCase "Transactions are added" $ do
-                 let
-                   n   = 1000
-                   txs = mkNTryAddTxs 1000
-                 mempool    <- addNTxs txs
-                 mempoolTxs <- getTxs mempool
-                 mempoolTxs @?= txsAddedInCmds txs
-                 length mempoolTxs @?= n
-             ]
+        bgroup "Just adding transactions" $
+            fmap benchAddNTxs [1_000, 10_000, 100_000, 1_000_000]
       where
-        benchAddNTxs n = bench (show n) $ nfIO $ addNTxs' $ mkNTryAddTxs n
-        -- FIXME: check that we need forcing. Forcing the list does not seem to make a difference
+        benchAddNTxs n =
+          env (let txs = mkNTryAddTxs n in fmap (, txs) (openMempoolWithCapacipyFor txs))
+              -- The irrefutable pattern was added to avoid the
+              --
+              -- > Unhandled resource. Probably a bug in the runner you're using.
+              --
+              -- error reported here https://hackage.haskell.org/package/tasty-bench-0.3.3/docs/Test-Tasty-Bench.html#v:env
+              (\ ~(mempool, txs) -> bgroup (show n) [
+                  bench    "benchmark"     $ nfIO $ run        mempool txs
+                , testCase "test"          $        testAddTxs mempool txs
+                , testCase "txs length"    $ length txs @?= n
+                ]
+              )
+          where
+            testAddTxs mempool txs = do
+                run mempool txs
+                mempoolTxs <- getTxs mempool
+                mempoolTxs @?= txsAddedInCmds txs
 
 {-------------------------------------------------------------------------------
   Adding TestBlock transactions to a mempool
 -------------------------------------------------------------------------------}
 
-addNTxs' :: [MempoolCmd TestBlock] -> IO ()
-addNTxs' = void . addNTxs
-
-addNTxs :: [MempoolCmd TestBlock] -> IO (MempoolWithMockedLedgerItf IO TestBlock)
-addNTxs cmds = do
-  let capacityRequiredByCmds = Mempool.mkCapacityBytesOverride  totalTxsSize   -- TODO: add a convenience function in the Mempool API.
-        where totalTxsSize = sum $ fmap TestBlock.txSize $ txsAddedInCmds cmds
-  mempool <- openMempoolWithMockedLedgerItf
-                 capacityRequiredByCmds
-                 Tracer.nullTracer
-                 TestBlock.txSize
-                 TestBlock.sampleMempoolAndModelParams
-  run mempool cmds
-  pure mempool
+openMempoolWithCapacipyFor :: [MempoolCmd TestBlock] ->  IO (MempoolWithMockedLedgerItf IO TestBlock)
+openMempoolWithCapacipyFor cmds =
+    openMempoolWithMockedLedgerItf capacityRequiredByCmds
+                                   Tracer.nullTracer
+                                   TestBlock.txSize
+                                   TestBlock.sampleMempoolAndModelParams
+  where
+    capacityRequiredByCmds = Mempool.mkCapacityBytesOverride  totalTxsSize
+      where totalTxsSize = sum $ fmap TestBlock.txSize $ txsAddedInCmds cmds
 
 mkNTryAddTxs :: Int -> [MempoolCmd TestBlock.TestBlock]
 mkNTryAddTxs 0 = []

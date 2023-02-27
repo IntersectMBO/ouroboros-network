@@ -13,6 +13,7 @@ module Bench.Consensus.MempoolWithMockedLedgerItf (
 
 import           Control.Concurrent.Class.MonadSTM.Strict (StrictTVar,
                      atomically, newTVarIO, readTVar, writeTVar)
+import           Control.DeepSeq (NFData (rnf))
 import           Control.Tracer (Tracer)
 
 import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
@@ -24,12 +25,22 @@ import           Ouroboros.Consensus.HeaderValidation as Header
 import           Ouroboros.Consensus.Mempool (Mempool)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 
-
 data MempoolWithMockedLedgerItf m blk = MempoolWithMockedLedgerItf {
       getLedgerInterface :: !(Mempool.LedgerInterface m blk)
     , getLedgerStateTVar :: !(StrictTVar m (LedgerState blk))
     , getMempool         :: !(Mempool m blk)
     }
+
+instance NFData (MempoolWithMockedLedgerItf m blk) where
+  -- TODO: check we're OK with skipping the evaluation of the
+  -- MempoolWithMockedLedgerItf. The only data we could force here is the
+  -- 'LedgerState' inside 'getLedgerStateTVar', but that would require adding a
+  -- 'NFData' constraint and perform unsafe IO. Since we only require this
+  -- instance to be able to use
+  -- [env](<https://hackage.haskell.org/package/tasty-bench-0.3.3/docs/Test-Tasty-Bench.html#v:env),
+  -- and we only care about initializing the mempool before running the
+  -- benchmarks, maybe this definition is enough.
+  rnf MempoolWithMockedLedgerItf {} = ()
 
 data InitialMempoolAndModelParams blk = MempoolAndModelParams {
       immpInitialState :: !(Ledger.LedgerState blk)
@@ -70,7 +81,6 @@ setLedgerState ::
   -> IO ()
 setLedgerState MempoolWithMockedLedgerItf {getLedgerStateTVar} newSt =
   atomically $ writeTVar getLedgerStateTVar newSt
-
 
 getTxs ::
      (Ledger.LedgerSupportsMempool blk)
