@@ -1,5 +1,12 @@
 # Revision history for mux
 
+## Next version
+
+### Breaking
+
+* Renamed `MuxTraceShutdown` as `MuxTraceStopping`
+* Fixed a typo now the mux stopping exception carries message: `Mux stopping`.
+
 ## 0.3.0.0 -- 2023-01-25
 
 * Provide a `MakeBearer` newtype: a function to constructs a `MuxBearer`.

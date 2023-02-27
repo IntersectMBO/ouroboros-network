@@ -1,5 +1,11 @@
 # Revision history for ouroboros-network
 
+## 0.4.0.1 -- 2023-02-24
+
+### Non-Breaking
+
+* Fixed bugs in peer state actions & testing framework (PR #4385)
+
 ## 0.4.0.0 -- 2023-01-25
 
 * Packages where reorganised:
