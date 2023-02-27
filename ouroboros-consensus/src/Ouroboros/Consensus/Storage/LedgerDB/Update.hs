@@ -35,6 +35,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.Update (
     -- * Block resolution
   , ResolveBlock
   , ResolvesBlocks (..)
+  , defaultResolveBlocks
     -- * Updates
   , defaultResolveWithErrors
   , ledgerDbBimap

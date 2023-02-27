@@ -20,7 +20,9 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
 
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Mempool.API hiding (MempoolCapacityBytes,
+                     MempoolCapacityBytesOverride, MempoolSize,
+                     TraceEventMempool, computeMempoolCapacity)
 import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
 import           Ouroboros.Consensus.Mempool.Query

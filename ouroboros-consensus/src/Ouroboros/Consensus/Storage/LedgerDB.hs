@@ -35,6 +35,7 @@ module Ouroboros.Consensus.Storage.LedgerDB (
     -- ** Block resolution
   , ResolveBlock
   , ResolvesBlocks (..)
+  , defaultResolveBlocks
     -- ** Operations
   , defaultResolveWithErrors
   , ledgerDbBimap
@@ -105,7 +106,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Update
                      ExceededRollback (..), PushGoal (..), PushStart (..),
                      Pushing (..), ResolveBlock, ResolvesBlocks (..),
                      ThrowsLedgerError (..), UpdateLedgerDbTraceEvent (..),
-                     defaultResolveWithErrors, defaultThrowLedgerErrors,
-                     ledgerDbBimap, ledgerDbPrune, ledgerDbPush, ledgerDbPush',
-                     ledgerDbPushMany', ledgerDbSwitch, ledgerDbSwitch',
-                     ledgerDbWithAnchor)
+                     defaultResolveBlocks, defaultResolveWithErrors,
+                     defaultThrowLedgerErrors, ledgerDbBimap, ledgerDbPrune,
+                     ledgerDbPush, ledgerDbPush', ledgerDbPushMany',
+                     ledgerDbSwitch, ledgerDbSwitch', ledgerDbWithAnchor)
