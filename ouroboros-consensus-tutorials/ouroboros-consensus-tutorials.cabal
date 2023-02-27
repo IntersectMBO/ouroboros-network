@@ -1,7 +1,7 @@
 cabal-version: 3.0
 
 name:                   ouroboros-consensus-tutorials
-version:                0.2.1.0
+version:                0.3.0.0
 synopsis:               Tutorials for the consensus layer for the Ouroboros blockchain protocol
 description:            Tutorials for the consensus layer for the Ouroboros blockchain protocol.
 license:                Apache-2.0
