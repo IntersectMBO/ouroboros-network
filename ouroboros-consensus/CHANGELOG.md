@@ -16,6 +16,17 @@ process](./docs/ReleaseProcess.md).
 
 # Changelog entries
 
+<a id='changelog-0.3.0.0'></a>
+## 0.3.0.0 — 2023-02-27
+
+### Breaking
+
+- `Ouroboros.Consensus.Storage.LedgerDB.*` and `Ouroboros.Consensus.Mempool.*`
+  modules now have deprecation warnings for the previously exposed API to ease
+  updates downstream. Old modules have deprecation headers and also every
+  function and type exposed is now an alias to the right entity coupled together
+  with a deprecation warning.
+
 <a id='changelog-0.2.1.0'></a>
 ## 0.2.1.0 — 2023-02-23
 
