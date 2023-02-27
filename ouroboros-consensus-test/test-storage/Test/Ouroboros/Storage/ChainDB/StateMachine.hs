@@ -20,6 +20,10 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+
+-- Remove this when @TraceLedgerEvent@ is gone
+{-# OPTIONS_GHC -Wno-deprecations #-}
+
 -- | Main tests for the chain DB.
 --
 -- These are the main tests for the chain DB. Commands include
@@ -1667,6 +1671,10 @@ traceEventName = \case
     TraceGCEvent                ev    -> "GC."                <> constrName ev
     TraceIteratorEvent          ev    -> "Iterator."          <> constrName ev
     TraceSnapshotEvent          ev    -> "Ledger."            <> constrName ev
+    -- This one is deprecated but unless we match it we get non-exhaustiveness
+    -- warnings. When this constructor is deleted we must remove this match as
+    -- well as re-enable the deprecation warnings at the top of this file.
+    TraceLedgerEvent            ev    -> "Ledger."            <> constrName ev
     TraceLedgerReplayEvent      ev    -> "LedgerReplay."      <> constrName ev
     TraceImmutableDBEvent       ev    -> "ImmutableDB."       <> constrName ev
     TraceVolatileDBEvent        ev    -> "VolatileDB."        <> constrName ev

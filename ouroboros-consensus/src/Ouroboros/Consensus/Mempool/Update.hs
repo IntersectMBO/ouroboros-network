@@ -24,7 +24,9 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Mempool.API hiding (MempoolCapacityBytes,
+                     MempoolCapacityBytesOverride, MempoolSize,
+                     TraceEventMempool, computeMempoolCapacity)
 import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
 import           Ouroboros.Consensus.Mempool.TxSeq (TxTicket (..))

@@ -29,6 +29,12 @@ module Ouroboros.Consensus.Mempool.API (
   , TicketNo
   , TxSizeInBytes
   , zeroTicketNo
+    -- * Deprecated re-exports
+  , MempoolCapacityBytes
+  , MempoolCapacityBytesOverride
+  , MempoolSize
+  , TraceEventMempool
+  , computeMempoolCapacity
   ) where
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
@@ -38,7 +44,10 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Mempool.Capacity hiding ((<=))
+import           Ouroboros.Consensus.Mempool.Capacity hiding
+                     (MempoolCapacityBytes, MempoolCapacityBytesOverride,
+                     MempoolSize, computeMempoolCapacity, (<=))
+import qualified Ouroboros.Consensus.Mempool.Capacity as Cap
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
 
 {-------------------------------------------------------------------------------
@@ -192,7 +201,7 @@ data Mempool m blk = Mempool {
       -- Instead, we treat it the same way as a Mempool which is /at/
       -- capacity, i.e., we won't admit new transactions until some have been
       -- removed because they have become invalid.
-    , getCapacity    :: STM m MempoolCapacityBytes
+    , getCapacity    :: STM m Cap.MempoolCapacityBytes
 
       -- | Return the post-serialisation size in bytes of a 'GenTx'.
     , getTxSize      :: GenTx blk -> TxSizeInBytes
@@ -275,7 +284,7 @@ addTxsHelper mempool wti = \txs -> do
       -- trying to add, otherwise there's no point in trying to add it.
       atomically $ do
         curSize <- msNumBytes . snapshotMempoolSize <$> getSnapshot mempool
-        MempoolCapacityBytes capacity <- getCapacity mempool
+        Cap.MempoolCapacityBytes capacity <- getCapacity mempool
         check (curSize + firstTxSize <= capacity)
       -- It is possible that between the check above and the call below, other
       -- transactions are added, stealing our spot, but that's fine, we'll
@@ -350,7 +359,7 @@ data MempoolSnapshot blk = MempoolSnapshot {
   , snapshotHasTx       :: GenTxId blk -> Bool
 
     -- | Get the size of the mempool snapshot.
-  , snapshotMempoolSize :: MempoolSize
+  , snapshotMempoolSize :: Cap.MempoolSize
 
     -- | The block number of the "virtual block" under construction
   , snapshotSlotNo      :: SlotNo
@@ -358,3 +367,27 @@ data MempoolSnapshot blk = MempoolSnapshot {
     -- | The ledger state after all transactions in the snapshot
   , snapshotLedgerState :: TickedLedgerState blk
   }
+
+{-------------------------------------------------------------------------------
+  Deprecations
+-------------------------------------------------------------------------------}
+
+{-# DEPRECATED MempoolCapacityBytes "Use Ouroboros.Consensus.Mempool (MempoolCapacityBytes)" #-}
+type MempoolCapacityBytes = Cap.MempoolCapacityBytes
+
+{-# DEPRECATED MempoolSize "Use Ouroboros.Consensus.Mempool (MempoolSize)" #-}
+type MempoolSize = Cap.MempoolSize
+
+{-# DEPRECATED MempoolCapacityBytesOverride "Use Ouroboros.Consensus.Mempool (MempoolCapacityBytesOverride)" #-}
+type MempoolCapacityBytesOverride = Cap.MempoolCapacityBytesOverride
+
+{-# DEPRECATED computeMempoolCapacity "Use Ouroboros.Consensus.Mempool (computeMempoolCapacity)" #-}
+computeMempoolCapacity
+  :: LedgerSupportsMempool blk
+  => TickedLedgerState blk
+  -> MempoolCapacityBytesOverride
+  -> MempoolCapacityBytes
+computeMempoolCapacity = Cap.computeMempoolCapacity
+
+{-# DEPRECATED TraceEventMempool "Use Ouroboros.Consensus.Mempool (TraceEventMempool)" #-}
+data TraceEventMempool

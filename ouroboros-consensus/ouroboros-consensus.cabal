@@ -130,6 +130,7 @@ library
                        Ouroboros.Consensus.Mempool.Impl.Pure
                        Ouroboros.Consensus.Mempool.Impl.Types
                        Ouroboros.Consensus.Mempool.TxLimits
+                       Ouroboros.Consensus.Mempool.Impl
                        Ouroboros.Consensus.Mempool.Init
                        Ouroboros.Consensus.Mempool.Query
                        Ouroboros.Consensus.Mempool.TxSeq
@@ -235,6 +236,7 @@ library
                        Ouroboros.Consensus.Storage.LedgerDB.Query
                        Ouroboros.Consensus.Storage.LedgerDB.Snapshots
                        Ouroboros.Consensus.Storage.LedgerDB.Stream
+                       Ouroboros.Consensus.Storage.LedgerDB.Types
                        Ouroboros.Consensus.Storage.LedgerDB.Update
                        Ouroboros.Consensus.Storage.Serialisation
                        Ouroboros.Consensus.Storage.VolatileDB

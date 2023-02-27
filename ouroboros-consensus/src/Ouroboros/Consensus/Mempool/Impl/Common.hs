@@ -58,7 +58,9 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Mempool.API
+import           Ouroboros.Consensus.Mempool.API hiding (MempoolCapacityBytes,
+                     MempoolCapacityBytesOverride, MempoolSize,
+                     TraceEventMempool, computeMempoolCapacity)
 import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.TxSeq (TxSeq (..), TxTicket (..))
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
