@@ -109,7 +109,7 @@ jobs:
 
     - name: Build documents
       run: |
-        for res in $(nix-build -A network-docs -A consensus-docs); do
+        for res in $(nix-build -A network-docs); do
           for pdf in $res/*.pdf; do
             PDF_DIR=haddocks/pdfs/$(basename $pdf .pdf)
             mkdir -p $PDF_DIR

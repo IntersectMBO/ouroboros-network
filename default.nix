@@ -32,7 +32,7 @@ let
   };
 
   self = {
-    inherit haskellPackages network-docs consensus-docs coveredProject;
+    inherit haskellPackages network-docs coveredProject;
 
     inherit (haskellPackages.ouroboros-network.identifier) version;
 

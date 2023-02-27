@@ -67,7 +67,6 @@ nix-repl> a = import ./release.nix {}
 nix-repl> a.x86_64-w64-mingw32.<TAB>
 a.x86_64-w64-mingw32.benchmarks       a.x86_64-w64-mingw32.exes             a.x86_64-w64-mingw32.nightly-checks
 a.x86_64-w64-mingw32.checks           a.x86_64-w64-mingw32.haskellPackages  a.x86_64-w64-mingw32.shell
-a.x86_64-w64-mingw32.consensus-docs   a.x86_64-w64-mingw32.libs             a.x86_64-w64-mingw32.tests
 a.x86_64-w64-mingw32.coveredProject   a.x86_64-w64-mingw32.network-docs     a.x86_64-w64-mingw32.version
 ```
 
@@ -157,11 +156,6 @@ distribution on your system with all the necessary packages; or build it with
 ```sh
 # build network-design & network-spec
 nix build -f default.nix network-docs
-```
-
-```sh
-# build consensus report
-nix build -f default.nix consensus-docs
 ```
 
 ## Coding Standards
