@@ -20,7 +20,6 @@ import           Data.ByteString (ByteString)
 import           Data.Coerce (coerce)
 import           GHC.Stack
 
-import           Cardano.Ledger.Binary (Annotated (..), reAnnotate, byronProtVer)
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Common as CC.Common
@@ -32,6 +31,8 @@ import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Crypto.DSIGN
+import           Cardano.Ledger.Binary (Annotated (..), byronProtVer,
+                     reAnnotate)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config

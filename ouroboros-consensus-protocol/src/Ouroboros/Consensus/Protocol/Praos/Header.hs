@@ -36,7 +36,7 @@ import           Cardano.Crypto.Util
                      (SignableRepresentation (getSignableRepresentation))
 import           Cardano.Ledger.BaseTypes (ProtVer (pvMajor))
 import           Cardano.Ledger.Binary (Annotator (..), CBORGroup (unCBORGroup),
-                     ToCBOR (..), DecCBOR (decCBOR), EncCBOR (..),
+                     DecCBOR (decCBOR), EncCBOR (..), ToCBOR (..),
                      encodedSigKESSizeExpr, serialize', withSlice)
 import           Cardano.Ledger.Binary.Coders
 import qualified Cardano.Ledger.Binary.Plain as Plain

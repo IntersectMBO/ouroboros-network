@@ -43,9 +43,9 @@ import           GHC.Natural (Natural)
 import           Lens.Micro ((^.))
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Ledger.Binary (Annotator (..), FromCBOR (..),
-                     ToCBOR (..), DecCBOR (..), FullByteString (..),
-                     EncCBOR (..), toPlainDecoder)
+import           Cardano.Ledger.Binary (Annotator (..), DecCBOR (..),
+                     EncCBOR (..), FromCBOR (..), FullByteString (..),
+                     ToCBOR (..), toPlainDecoder)
 import           Data.DerivingVia (InstantiatedAt (..))
 import           Data.Measure (BoundedMeasure, Measure)
 import qualified Data.Measure as Measure

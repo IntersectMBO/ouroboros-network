@@ -17,7 +17,7 @@ module Test.Util.Orphans.Arbitrary (
   , genLimitedSlotNo
   , genSmallEpochNo
   , genSmallSlotNo
-  -- * Time
+    -- * Time
   , genNominalDiffTime50Years
   , genUTCTime50Years
   ) where
@@ -56,8 +56,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
 
-import           Test.Util.Time (dawnOfTime)
 import           Test.Cardano.Ledger.Binary.Arbitrary ()
+import           Test.Util.Time (dawnOfTime)
 
 minNumCoreNodes :: Word64
 minNumCoreNodes = 2

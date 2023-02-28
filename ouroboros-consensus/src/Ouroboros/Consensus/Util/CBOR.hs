@@ -29,7 +29,7 @@ module Ouroboros.Consensus.Util.CBOR (
   , encodeWithOrigin
   ) where
 
-import           Cardano.Binary (encodeMaybe, decodeMaybe)
+import           Cardano.Binary (decodeMaybe, encodeMaybe)
 import qualified Codec.CBOR.Decoding as CBOR.D
 import qualified Codec.CBOR.Encoding as CBOR.E
 import qualified Codec.CBOR.FlatTerm as CBOR.F

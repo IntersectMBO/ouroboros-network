@@ -25,9 +25,9 @@ import           Lens.Micro ((^.))
 import           Lens.Micro.Extras (view)
 import           Text.Builder (decimal)
 
+import qualified Cardano.Ledger.BaseTypes as CL (natVersion)
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (Crypto)
-import qualified Cardano.Ledger.BaseTypes as CL (natVersion)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 

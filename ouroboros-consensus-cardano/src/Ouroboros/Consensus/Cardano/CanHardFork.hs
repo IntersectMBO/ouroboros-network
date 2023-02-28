@@ -72,12 +72,13 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.ShelleyHFC
 
-import           Cardano.Ledger.Crypto (Crypto, ADDRHASH, DSIGN, HASH)
+import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Hashes (EraIndependentTxBody)
 import           Cardano.Ledger.Keys (DSignable, Hash)
 import qualified Cardano.Ledger.Shelley.API as SL
-import           Cardano.Ledger.Shelley.Translation (toFromByronTranslationContext)
+import           Cardano.Ledger.Shelley.Translation
+                     (toFromByronTranslationContext)
 import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.Rules.Prtcl as SL
 import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL

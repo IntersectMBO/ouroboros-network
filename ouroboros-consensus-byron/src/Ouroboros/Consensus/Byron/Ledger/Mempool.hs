@@ -54,7 +54,7 @@ import           NoThunks.Class (InspectHeapNamed (..), NoThunks (..))
 
 import           Cardano.Crypto (hashDecoded)
 import           Cardano.Ledger.Binary (ByteSpan, DecoderError (..),
-                     byronProtVer, fromByronCBOR, toByronCBOR, serialize, slice,
+                     byronProtVer, fromByronCBOR, serialize, slice, toByronCBOR,
                      unsafeDeserialize)
 import           Cardano.Ledger.Binary.Plain (enforceSize)
 import           Cardano.Prelude (cborError)
