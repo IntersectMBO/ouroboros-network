@@ -56,7 +56,7 @@ import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochNumber (..), unEpochSlots)
 import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.DSIGN as Crypto
-import           Cardano.Ledger.Binary (reAnnotate, byronProtVer)
+import           Cardano.Ledger.Binary (byronProtVer, reAnnotate)
 import qualified Cardano.Ledger.Binary.Plain as Plain
 
 import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto

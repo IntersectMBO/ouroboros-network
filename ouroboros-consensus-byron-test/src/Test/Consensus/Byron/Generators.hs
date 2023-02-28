@@ -16,7 +16,6 @@ import           Control.Monad (replicateM)
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 
-import           Cardano.Ledger.Binary (decCBOR, encCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..),
                      ABlockOrBoundaryHdr (..))
 import qualified Cardano.Chain.Block as CC.Block
@@ -35,6 +34,7 @@ import qualified Cardano.Chain.Update.Validation.Registration as CC.Reg
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hashing (Hash)
+import           Cardano.Ledger.Binary (decCBOR, encCBOR)
 
 import           Ouroboros.Network.SizeInBytes
 

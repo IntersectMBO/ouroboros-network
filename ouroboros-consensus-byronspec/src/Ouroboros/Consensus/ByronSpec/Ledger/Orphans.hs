@@ -16,7 +16,7 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           GHC.Generics (Generic)
 
-import           Cardano.Ledger.Binary.Plain (ToCBOR (..), FromCBOR (..),
+import           Cardano.Ledger.Binary.Plain (FromCBOR (..), ToCBOR (..),
                      enforceSize)
 
 import qualified Byron.Spec.Chain.STS.Block as Spec

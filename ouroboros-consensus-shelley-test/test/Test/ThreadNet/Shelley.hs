@@ -30,7 +30,7 @@ import           Test.ThreadNet.Network (TestNodeInitialization (..),
                      nodeOutputFinalLedger)
 
 import qualified Cardano.Ledger.BaseTypes as SL (UnitInterval,
-                     mkNonceFromNumber, unboundRational, shelleyProtVer)
+                     mkNonceFromNumber, shelleyProtVer, unboundRational)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Core as SL
 import qualified Cardano.Ledger.Shelley.Translation as SL

@@ -47,7 +47,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 
 import           Cardano.Ledger.Binary (ByteSpan, annotationBytes, byronProtVer,
-                     fromByronCBOR, toByronCBOR, slice, toPlainDecoder)
+                     fromByronCBOR, slice, toByronCBOR, toPlainDecoder)
 import           Cardano.Ledger.Binary.Plain (Decoder, Encoding)
 
 import qualified Cardano.Chain.Block as CC

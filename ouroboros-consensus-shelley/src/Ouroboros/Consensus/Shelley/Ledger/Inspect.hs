@@ -36,8 +36,8 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Condense
 
 import           Cardano.Ledger.BaseTypes (strictMaybeToMaybe)
-import qualified Cardano.Ledger.Shelley.Core as Core
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Core as Core
 import qualified Cardano.Ledger.Shelley.PParams as SL
 
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)

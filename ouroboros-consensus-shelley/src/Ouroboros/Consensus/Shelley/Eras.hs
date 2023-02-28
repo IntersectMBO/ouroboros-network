@@ -55,7 +55,8 @@ import qualified Cardano.Ledger.Babbage.Translation as Babbage
 import           Cardano.Ledger.BaseTypes
 import           Cardano.Ledger.Binary (DecCBOR, EncCBOR)
 import           Cardano.Ledger.Conway (ConwayEra)
-import qualified Cardano.Ledger.Conway.Rules as SL (ConwayLedgerPredFailure(..))
+import qualified Cardano.Ledger.Conway.Rules as SL
+                     (ConwayLedgerPredFailure (..))
 import qualified Cardano.Ledger.Conway.Translation as Conway
 import           Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (StandardCrypto)

@@ -59,8 +59,8 @@ import           Data.Functor.Identity
 import qualified Data.Text as Text
 import           Data.Word
 import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks (..))
 import           Lens.Micro.Extras (view)
+import           NoThunks.Class (NoThunks (..))
 
 import           Cardano.Ledger.Binary.Plain (FromCBOR (..), ToCBOR (..),
                      enforceSize)

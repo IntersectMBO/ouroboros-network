@@ -25,7 +25,8 @@ import qualified Cardano.Chain.MempoolPayload as CC
 import qualified Cardano.Chain.Update as CC
 import qualified Cardano.Chain.UTxO as CC
 
-import           Cardano.Ledger.Binary (toByronCBOR, fromByronCBOR, Annotated(unAnnotated))
+import           Cardano.Ledger.Binary (Annotated (unAnnotated), fromByronCBOR,
+                     toByronCBOR)
 
 import           Ouroboros.Consensus.Util.Condense
 

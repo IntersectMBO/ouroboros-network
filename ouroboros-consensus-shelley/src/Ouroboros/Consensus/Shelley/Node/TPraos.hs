@@ -65,8 +65,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
 
-import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Coin as SL
+import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.LedgerState as SL
                      (incrementalStakeDistr, updateStakeDistribution)
