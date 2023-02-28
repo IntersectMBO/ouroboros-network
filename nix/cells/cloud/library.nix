@@ -1,6 +1,1 @@
-{
-  inputs,
-  cell,
-}: {
-  actionCiInputName = "GitHub event";
-}
+{ inputs, cell, }: { actionCiInputName = "GitHub event"; }

@@ -1,9 +1,6 @@
-{
-  cell,
-  inputs,
-}:
+{ cell, inputs, }:
 
 import "${inputs.self}/release.nix" {
   ouroboros-network = inputs.self;
-  supportedSystems = [inputs.nixpkgs.system];
+  supportedSystems = [ inputs.nixpkgs.system ];
 }

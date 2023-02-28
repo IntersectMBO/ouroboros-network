@@ -17,7 +17,8 @@ let
     # the Haskell.nix package set, reduced to local packages.
     (selectProjectPackages ouroborosNetworkHaskellPackages);
 
-  coveredProject = ouroborosNetworkHaskellPackages.appendModule { coverage = true; };
+  coveredProject =
+    ouroborosNetworkHaskellPackages.appendModule { coverage = true; };
 
   haskellPackagesWithTVarCheck = recRecurseIntoAttrs
     (selectProjectPackages ouroborosNetworkHaskellPackagesWithTVarCheck);
