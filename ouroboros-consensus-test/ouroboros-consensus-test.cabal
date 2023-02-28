@@ -247,6 +247,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.VolatileDB.Mock
                        Test.Ouroboros.Storage.VolatileDB.Model
                        Test.Ouroboros.Storage.VolatileDB.StateMachine
+                       Test.Ouroboros.Storage.ChainDB.Unit
 
   build-depends:       base              >=4.14 && <4.17
                      , bifunctors

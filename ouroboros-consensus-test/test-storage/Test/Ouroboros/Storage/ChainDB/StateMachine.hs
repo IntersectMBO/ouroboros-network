@@ -63,6 +63,17 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine (
   , Model
     -- * Running the model
   , runCmdsLockstep
+    -- * System under test
+  , ChainDBEnv (..)
+  , ChainDBState (..)
+  , close
+  , mkTestCfg
+  , open
+    -- * Specifying block components
+  , AllComponents
+  , allComponents
+    -- * Constraints
+  , TestConstraints
     -- * Entry point to the tests
   , tests
   ) where
