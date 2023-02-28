@@ -5,10 +5,10 @@
 , checkTVarInvariant ? false }:
 with pkgs;
 let
-  hsPkgs =
-    if checkTVarInvariant
-    then ouroborosNetworkHaskellPackagesWithTVarCheck
-    else ouroborosNetworkHaskellPackages;
+  hsPkgs = if checkTVarInvariant then
+    ouroborosNetworkHaskellPackagesWithTVarCheck
+  else
+    ouroborosNetworkHaskellPackages;
 
   # This provides a development environment that can be used with nix-shell or
   # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
@@ -16,16 +16,8 @@ let
     name = "cabal-dev-shell";
 
     # These programs will be available inside the nix-shell.
-    nativeBuildInputs = [
-      cabal
-      entr
-      fd
-      niv
-      pkgconfig
-      nixfmt
-      stylish-haskell
-      scriv
-    ];
+    nativeBuildInputs =
+      [ cabal entr fd niv pkgconfig nixfmt stylish-haskell scriv ];
 
     tools = {
       # IDE tools

@@ -1,7 +1,4 @@
-{
-  cell,
-  inputs,
-}: {
+{ cell, inputs, }: {
   "ouroboros-network/ci" = {
     task = "ci";
     io = ''
