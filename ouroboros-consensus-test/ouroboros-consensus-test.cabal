@@ -326,3 +326,44 @@ test-suite test-infra
                        -Wredundant-constraints
                        -Wmissing-export-lists
                        -fno-ignore-asserts
+
+benchmark bench-mempool
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      bench-mempool
+  main-is:             Main.hs
+  other-modules:       Bench.Consensus.Mempool
+                     , Bench.Consensus.MempoolWithMockedLedgerItf
+                     , Bench.Consensus.Mempool.TestBlock
+  build-depends:       base
+                     , cardano-slotting
+                     , containers
+                     , contra-tracer
+                     , deepseq
+                     , nothunks
+                     , QuickCheck
+                     , serialise         >=0.2   && <0.3
+                     , strict-stm
+                     , transformers
+                     , tree-diff
+                     , tasty-bench
+                     , tasty-hunit
+
+                     , ouroboros-consensus
+                     , ouroboros-consensus-test
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
+                       -Wno-unticked-promoted-constructors
+                       -rtsopts
+                       "-with-rtsopts=-A32m"
+  -- We use this option to avoid skewed results due to changes in cache-line
+  -- alignment. See
+  -- https://github.com/Bodigrim/tasty-bench#comparison-against-baseline
+  if impl(ghc >= 8.6)
+    ghc-options: -fproc-alignment=64

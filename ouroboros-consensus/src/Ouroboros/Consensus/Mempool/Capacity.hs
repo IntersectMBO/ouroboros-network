@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Mempool.Capacity (
     MempoolCapacityBytes (..)
   , MempoolCapacityBytesOverride (..)
   , computeMempoolCapacity
+  , mkCapacityBytesOverride
     -- * Mempool Size
   , MempoolSize (..)
     -- * Transaction size
@@ -64,6 +65,10 @@ data MempoolCapacityBytesOverride
     -- ^ Use the following 'MempoolCapacityBytes'.
   deriving (Eq, Show)
 
+-- | Create an override for the mempool capacity using the provided number of
+-- bytes.
+mkCapacityBytesOverride :: Word32 -> MempoolCapacityBytesOverride
+mkCapacityBytesOverride = MempoolCapacityBytesOverride . MempoolCapacityBytes
 
 -- | If no override is provided, calculate the default mempool capacity as 2x
 -- the current ledger's maximum transaction capacity of a block.
