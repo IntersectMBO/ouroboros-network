@@ -185,8 +185,9 @@ run :: forall resolver m.
     -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
                              NtCAddr NtCVersion NtCVersionData
                              ResolverException m
+    -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
-run blockGeneratorArgs limits ni na tracersExtra =
+run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
@@ -280,7 +281,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
 
       blockFetchLogic
         nullTracer
-        nullTracer
+        tracerBlockFetch
         (blockFetchPolicy blockHeapVar nodeKernel)
         (nkFetchClientRegistry nodeKernel)
         (BlockFetchConfiguration {

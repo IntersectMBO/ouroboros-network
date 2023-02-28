@@ -104,7 +104,8 @@ import           Ouroboros.Network.Mock.ConcreteBlock (Block (..),
                      BlockHeader (..))
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-                     genDelayWithPrecision, tracerWithName, tracerWithTime)
+                     genDelayWithPrecision, tracerWithName,
+                     tracerWithTime)
 import           Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
                      WithAddr (..), makeFDBearer, withSnocket)
 
@@ -124,6 +125,8 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
                      (byteLimitsPeerSharing, timeLimitsPeerSharing)
+import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
+                     TraceLabelPeer (..))
 import           Test.QuickCheck
 
 -- | Diffusion Simulator Arguments
@@ -623,17 +626,15 @@ data DiffusionTestTrace =
         (RemoteTransitionTrace NtNAddr)
     | DiffusionInboundGovernorTrace (InboundGovernorTrace NtNAddr)
     | DiffusionServerTrace (ServerTrace NtNAddr)
+    | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionDebugTrace String
     deriving (Show)
 
 
 -- | A debug tracer which embeds events in DiffusionTestTrace.
 --
-iosimTracer :: forall s. Tracer (IOSim s) (WithTime (WithName NtNAddr String))
-iosimTracer = fmap (fmap DiffusionDebugTrace) `contramap` tracer
-  where
-    tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
-    tracer = Tracer traceM
+iosimTracer :: forall s. Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
+iosimTracer = Tracer traceM
 
 
 -- | Run an arbitrary topology
@@ -657,7 +658,7 @@ diffusionSimulation
                )
   => BearerInfo
   -> DiffusionScript
-  -> Tracer m (WithTime (WithName NtNAddr String))
+  -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
   -- ^ timed trace of nodes in the system
   -> Tracer m (WithName NtNAddr DiffusionSimulationTrace)
   -> m Void
@@ -683,7 +684,7 @@ diffusionSimulation
   where
     netSimTracer :: Tracer m (WithAddr NtNAddr (SnocketTrace m NtNAddr))
     netSimTracer = (\(WithAddr l _ a) -> WithName (fromMaybe (TestAddress $ IPAddr (read "0.0.0.0") 0) l) (show a))
-       `contramap` tracerWithTime nodeTracer
+       `contramap` tracerWithTime nullTracer
 
     -- | Runs a single node according to a list of commands.
     runCommand
@@ -928,6 +929,10 @@ diffusionSimulation
                      interfaces
                      arguments
                      (tracersExtra rap)
+                     ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
+                     . tracerWithName rap
+                     . tracerWithTime
+                     $ nodeTracer)
 
     domainResolver :: Map RelayAccessPoint PeerAdvertise
                    -> StrictTVar m (Map Domain [(IP, TTL)])
@@ -955,23 +960,22 @@ diffusionSimulation
                                SomeException m
     tracersExtra ntnAddr =
       Diff.P2P.TracersExtra {
-          Diff.P2P.dtTraceLocalRootPeersTracer         = contramap
-                                                          (show . DiffusionLocalRootPeerTrace)
+          Diff.P2P.dtTraceLocalRootPeersTracer         = contramap DiffusionLocalRootPeerTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
         , Diff.P2P.dtTracePublicRootPeersTracer        = contramap
-                                                          (show . DiffusionPublicRootPeerTrace)
+                                                          DiffusionPublicRootPeerTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
         , Diff.P2P.dtTracePeerSelectionTracer          = contramap
-                                                          (show . DiffusionPeerSelectionTrace)
+                                                          DiffusionPeerSelectionTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
         , Diff.P2P.dtDebugPeerSelectionInitiatorTracer = contramap
-                                                          ( show . DiffusionDebugPeerSelectionTrace
+                                                          ( DiffusionDebugPeerSelectionTrace
                                                           . voidDebugPeerSelection
                                                           )
                                                        . tracerWithName ntnAddr
@@ -979,8 +983,7 @@ diffusionSimulation
                                                        $ nodeTracer
         , Diff.P2P.dtDebugPeerSelectionInitiatorResponderTracer
             = contramap
-               ( show
-               . DiffusionDebugPeerSelectionTrace
+               ( DiffusionDebugPeerSelectionTrace
                . voidDebugPeerSelection
                )
             . tracerWithName ntnAddr
@@ -988,31 +991,31 @@ diffusionSimulation
             $ nodeTracer
         , Diff.P2P.dtTracePeerSelectionCounters        = nullTracer
         , Diff.P2P.dtPeerSelectionActionsTracer        = contramap
-                                                          (show . DiffusionPeerSelectionActionsTrace)
+                                                          DiffusionPeerSelectionActionsTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
         , Diff.P2P.dtConnectionManagerTracer           = contramap
-                                                          (show . DiffusionConnectionManagerTrace)
+                                                          DiffusionConnectionManagerTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
         , Diff.P2P.dtConnectionManagerTransitionTracer = contramap
-                                                           (show . DiffusionConnectionManagerTransitionTrace)
+                                                           DiffusionConnectionManagerTransitionTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
-        , Diff.P2P.dtServerTracer                      = contramap (show . DiffusionServerTrace)
+        , Diff.P2P.dtServerTracer                      = contramap DiffusionServerTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
         , Diff.P2P.dtInboundGovernorTracer             = contramap
-                                                           (show . DiffusionInboundGovernorTrace)
+                                                           DiffusionInboundGovernorTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
         , Diff.P2P.dtInboundGovernorTransitionTracer   = contramap
-                                                           (show . DiffusionInboundGovernorTransitionTrace)
+                                                           DiffusionInboundGovernorTransitionTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
