@@ -293,11 +293,10 @@ fixupCommands (jn@(JoinNetwork _ _):t) = jn : go jn t
         _                                    -> cmd : go cmd cmds
 fixupCommands (_:t) = fixupCommands t
 
--- | Given a NtNAddr generate the necessary things to run in Simulation
+-- | Arguments to run in simulation
 --
-genSimArgs :: [RelayAccessPoint]
-           -> Gen SimArgs
-genSimArgs raps = do
+mainnetSimArgs :: [RelayAccessPoint] -> SimArgs
+mainnetSimArgs raps =
   -- Slot length needs to be greater than 0 else we get a livelock on
   -- the IOSim.
   --
@@ -309,11 +308,9 @@ genSimArgs raps = do
                 then 20 `div` numberOfNodes
                 else 100
 
-  return
-   $ SimArgs
-      { saSlot                  = bgaSlotDuration
-      , saQuota                 = quota
-      }
+   in SimArgs { saSlot  = bgaSlotDuration,
+                saQuota = quota
+              }
 
 -- | Given a NtNAddr generate the necessary things to run a node in
 -- Simulation
@@ -423,7 +420,7 @@ genNonHotDiffusionScript = do
   raps <- nub <$> vectorOf size arbitrary
 
   let toRunRaps = [ r | r@(RelayAccessAddress _ _) <- raps ]
-  simArgs <- genSimArgs raps
+      simArgs = mainnetSimArgs raps
   toRun <- mapM (genNodeArgs raps 0 genLocalRootPeers)
                [ (ntnToPeerAddr ip p, r)
                | r@(RelayAccessAddress ip p) <- toRunRaps ]
@@ -487,7 +484,7 @@ genHotDiffusionScript = do
         -- Nodes are not killed
         comands = repeat [JoinNetwork 0 Nothing]
 
-    simArgs <- genSimArgs allRaps
+        simArgs = mainnetSimArgs allRaps
     toRun <- mapM (genNodeArgs allRaps minConnected genLocalRootPeers)
                  [ (ntnToPeerAddr ip p, r)
                  | r@(RelayAccessAddress ip p) <- toRunRaps ]
