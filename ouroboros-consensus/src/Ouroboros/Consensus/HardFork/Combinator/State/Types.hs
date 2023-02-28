@@ -105,29 +105,42 @@ newtype TranslateForecast f g x y = TranslateForecast {
 -- @DiffMK@. If no tables are populated, normally this will be filled with
 -- @emptyLedgerTables@.
 data TranslateLedgerState x y = TranslateLedgerState {
-        -- | How to translate a Ledger State during the era transition
-        translateLedgerStateWith ::
-            EpochNo
-         -> LedgerState x EmptyMK
-         -> LedgerState y DiffMK
+    -- | How to translate a Ledger State during the era transition
+    --
+    -- When translating between eras, it can be the case that values are
+    -- modified, thus requiring this to be a @DiffMK@ on the return type. There
+    -- are currently two cases in which this is of vital importance:
+    -- Byron->Shelley and Shelley->Allegra.
+    --
+    -- On Byron->Shelley we basically dump the whole UTxO set as insertions
+    -- because the LedgerTables only exist for Shelley blocks.
+    --
+    -- On Shelley->Allegra, there were a bunch of UTxOs that were moved around,
+    -- related to the AVVMs. In particular they were deleted and included in the
+    -- reserves. See the code that performs the translation Shelley->Allegra for
+    -- more information.
+    translateLedgerStateWith ::
+         EpochNo
+      -> LedgerState x EmptyMK
+      -> LedgerState y DiffMK
 
-        -- | How to translate tables on an era transition.
-        --
-        -- This is a rather technical subtlety. When performing a ledger state
-        -- translation, the provided input ledger state will be initially
-        -- populated with a @polyEmptyLedgerTables@. This step is required so
-        -- that the operation provided to 'Telescope.extend' is an automorphism.
-        --
-        -- If we only extend by one era, this function is a no-op, as the input
-        -- will be empty ledger states. However, if we extend across multiple
-        -- eras, previous eras might populate tables thus creating Values that
-        -- now need to be translated to newer eras. This function fills that
-        -- hole and allows us to promote tables from one era into tables from
-        -- the next era.
-      , translateLedgerTablesWith ::
-            LedgerTables (LedgerState x) DiffMK
-         -> LedgerTables (LedgerState y) DiffMK
-    }
+    -- | How to translate tables on an era transition.
+    --
+    -- This is a rather technical subtlety. When performing a ledger state
+    -- translation, the provided input ledger state will be initially
+    -- populated with a @emptyLedgerTables@. This step is required so
+    -- that the operation provided to 'Telescope.extend' is an automorphism.
+    --
+    -- If we only extend by one era, this function is a no-op, as the input
+    -- will be empty ledger states. However, if we extend across multiple
+    -- eras, previous eras might populate tables thus creating Values that
+    -- now need to be translated to newer eras. This function fills that
+    -- hole and allows us to promote tables from one era into tables from
+    -- the next era.
+  , translateLedgerTablesWith ::
+      LedgerTables (LedgerState x) DiffMK
+      -> LedgerTables (LedgerState y) DiffMK
+  }
 
 -- | Knowledge in a particular era of the transition to the next era
 data TransitionInfo =

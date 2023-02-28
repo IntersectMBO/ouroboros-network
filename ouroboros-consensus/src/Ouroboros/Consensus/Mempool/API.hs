@@ -44,7 +44,6 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 import           Ouroboros.Consensus.Block (ChainHash, Point, SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Mempool.Capacity hiding
@@ -376,7 +375,7 @@ data MempoolSnapshot blk = MempoolSnapshot {
 
     -- | The resulting state currently in the mempool after applying the
     -- transactions
-  , snapshotState       :: Ticked1 (LedgerState blk) DiffMK
+  , snapshotState       :: TickedLedgerState blk DiffMK
   }
 
 {-------------------------------------------------------------------------------
@@ -395,7 +394,7 @@ type MempoolCapacityBytesOverride = Cap.MempoolCapacityBytesOverride
 {-# DEPRECATED computeMempoolCapacity "Use Ouroboros.Consensus.Mempool (computeMempoolCapacity)" #-}
 computeMempoolCapacity
   :: LedgerSupportsMempool blk
-  => TickedLedgerState blk
+  => TickedLedgerState blk mk
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity = Cap.computeMempoolCapacity

@@ -115,10 +115,5 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Update
                      Pushing (..), ResolveBlock, ResolvesBlocks (..),
                      ThrowsLedgerError (..), UpdateLedgerDbTraceEvent (..),
                      defaultResolveBlocks, defaultResolveWithErrors,
-                     defaultThrowLedgerErrors, ledgerDbBimap, ledgerDbFlush,
-                     ledgerDbPrune, ledgerDbPush, ledgerDbPush',
-                     ledgerDbPushMany', ledgerDbSwitch, ledgerDbSwitch',
-                     ledgerDbWithAnchor, volatileStatesBimap,
-                     defaultResolveWithErrors, defaultThrowLedgerErrors, flush,
-                     prune, push, push', pushMany', switch, switch',
-                     volatileStatesBimap)
+                     defaultThrowLedgerErrors, flush, prune, push, push',
+                     pushMany', switch, switch', volatileStatesBimap)

@@ -13,6 +13,8 @@ module Ouroboros.Consensus.Mempool.Impl.Pure {-# DEPRECATED "User Ouroboros.Cons
   , implSnapshotFromIS
   ) where
 
+import Ouroboros.Consensus.Ledger.Basics (LedgerState, GetTip)
+import           Ouroboros.Consensus.Ticked (Ticked1)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import           Ouroboros.Consensus.Mempool.Update
@@ -22,7 +24,7 @@ import           Ouroboros.Consensus.Mempool.API
 
 {-# DEPRECATED implSnapshotFromIS "Use Ouroboros.Consensus.Mempool.Impl.Common (snapshotFromIS)" #-}
 implSnapshotFromIS
-  :: HasTxId (GenTx blk)
+  :: (HasTxId (GenTx blk), GetTip (Ticked1 (LedgerState blk)))
   => InternalState blk
   -> MempoolSnapshot blk
 implSnapshotFromIS = snapshotFromIS

@@ -39,8 +39,10 @@ module Ouroboros.Consensus.Ledger.Dual (
   , GenTx (..)
   , Header (..)
   , LedgerState (..)
+  , LedgerTables (..)
   , NestedCtxt_ (..)
   , StorageConfig (..)
+  , Ticked1 (..)
   , TxId (..)
   , Validated (..)
     -- * Serialisation
@@ -1035,13 +1037,26 @@ instance CanSerializeLedgerTables (LedgerState m)
 
 instance CanStowLedgerTables (LedgerState m)
       => CanStowLedgerTables (LedgerState (DualBlock m a)) where
-  stowLedgerTables DualLedgerState{..} =
+  stowLedgerTables dls =
     DualLedgerState{
       dualLedgerStateMain = stowLedgerTables dualLedgerStateMain
-    , ..
+    , dualLedgerStateAux
+    , dualLedgerStateBridge
     }
-  unstowLedgerTables DualLedgerState{..} =
+   where
+    DualLedgerState { dualLedgerStateMain
+                    , dualLedgerStateAux
+                    , dualLedgerStateBridge
+                    } = dls
+
+  unstowLedgerTables dls =
     DualLedgerState{
       dualLedgerStateMain = unstowLedgerTables dualLedgerStateMain
-    , ..
+    , dualLedgerStateAux
+    , dualLedgerStateBridge
     }
+   where
+    DualLedgerState { dualLedgerStateMain
+                    , dualLedgerStateAux
+                    , dualLedgerStateBridge
+                    } = dls

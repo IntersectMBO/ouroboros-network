@@ -23,20 +23,20 @@ import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
+import           Ouroboros.Consensus.Mempool.API (ForgeLedgerState)
 
 {-# DEPRECATED validateIS "This function should not be used (it will throw an error), it was internal no longer exists" #-}
 validateIS
   :: InternalState blk
-  -> LedgerState blk
+  -> LedgerState blk mk
   -> LedgerConfig blk
   -> MempoolCapacityBytesOverride
   -> ValidationResult (Validated (GenTx blk)) blk
 validateIS = error "Deprecated"
 
-{-# DEPRECATED validateIS "This function should not be used (it will throw an error), it was internal no longer exists" #-}
+{-# DEPRECATED validateStateFor "This function should not be used (it will throw an error), it was internal no longer exists" #-}
 validateStateFor
-  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
-  => MempoolCapacityBytesOverride
+  :: MempoolCapacityBytesOverride
   -> LedgerConfig     blk
   -> ForgeLedgerState blk
   -> InternalState    blk

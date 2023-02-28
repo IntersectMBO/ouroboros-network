@@ -411,4 +411,3 @@ switch' cfg n bs bk db =
     case runIdentity $ switch cfg n (const $ pure ()) (map pureBlock bs) bk db of
       Left  ExceededRollback{} -> Nothing
       Right db'                -> Just db'
-

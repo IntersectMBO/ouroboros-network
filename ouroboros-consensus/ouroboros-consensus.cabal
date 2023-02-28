@@ -120,7 +120,6 @@ library
                        Ouroboros.Consensus.Ledger.Inspect
                        Ouroboros.Consensus.Ledger.Query
                        Ouroboros.Consensus.Ledger.Query.Version
-                       Ouroboros.Consensus.Ledger.SupportsTables
                        Ouroboros.Consensus.Ledger.SupportsMempool
                        Ouroboros.Consensus.Ledger.SupportsPeerSelection
                        Ouroboros.Consensus.Ledger.SupportsProtocol

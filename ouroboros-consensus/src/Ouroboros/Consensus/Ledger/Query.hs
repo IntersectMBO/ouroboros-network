@@ -465,6 +465,7 @@ handleQueryWithStowedKeySets ::
      ( QueryLedger blk
      , Monad m
      , LedgerSupportsProtocol blk
+     , CanStowLedgerTables (LedgerState blk)
      )
   => DiskLedgerView m (ExtLedgerState blk)
   -> BlockQuery blk result
@@ -488,6 +489,7 @@ handleTraversingQuery ::
      ( QueryLedger blk
      , Monad m
      , LedgerSupportsProtocol blk
+     , CanStowLedgerTables (LedgerState blk)
      )
   => DiskLedgerView m (ExtLedgerState blk)
   -> BlockQuery blk result

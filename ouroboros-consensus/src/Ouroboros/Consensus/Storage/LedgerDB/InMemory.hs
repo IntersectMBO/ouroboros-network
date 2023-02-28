@@ -47,6 +47,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.InMemory {-# DEPRECATED "Use Ourobor
   , ledgerDbSwitch'
   ) where
 
+import Data.Functor.Identity
+
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except hiding (ap)
@@ -60,6 +62,7 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LDB
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
 
 {-------------------------------------------------------------------------------
   Local non-exported aliases
@@ -75,9 +78,9 @@ type LedgerDbCfg l        = LDB.LedgerDbCfg l
   Deprecated functions
 -------------------------------------------------------------------------------}
 
-{-# DEPRECATED ledgerDbWithAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbWithAnchor)" #-}
-ledgerDbWithAnchor :: GetTip l => l -> LedgerDB l
-ledgerDbWithAnchor = LDB.ledgerDbWithAnchor
+{-# DEPRECATED ledgerDbWithAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (new)" #-}
+ledgerDbWithAnchor :: (HasLedgerTables l, GetTip l) => l EmptyMK -> LedgerDB l
+ledgerDbWithAnchor = LDB.new
 
 {-# DEPRECATED defaultResolveBlocks "Use Ouroboros.Consensus.Storage.LedgerDB (defaultResolveBlocks)" #-}
 defaultResolveBlocks :: ResolveBlock m blk
@@ -98,83 +101,99 @@ defaultResolveWithErrors :: ResolveBlock m blk
                          -> m (Either (AnnLedgerError l blk) a)
 defaultResolveWithErrors = LDB.defaultResolveWithErrors
 
-{-# DEPRECATED ledgerDbCurrent "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbCurrent)" #-}
-ledgerDbCurrent :: GetTip l => LedgerDB l -> l
-ledgerDbCurrent = LDB.ledgerDbCurrent
+{-# DEPRECATED ledgerDbCurrent "Use Ouroboros.Consensus.Storage.LedgerDB (current)" #-}
+ledgerDbCurrent :: GetTip l => LedgerDB l -> l EmptyMK
+ledgerDbCurrent = LDB.current
 
-{-# DEPRECATED ledgerDbAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbAnchor)" #-}
-ledgerDbAnchor :: LedgerDB l -> l
-ledgerDbAnchor = LDB.ledgerDbAnchor
+{-# DEPRECATED ledgerDbAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (anchor)" #-}
+ledgerDbAnchor :: LedgerDB l -> l EmptyMK
+ledgerDbAnchor = LDB.anchor
 
-{-# DEPRECATED ledgerDbSnapshots "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbSnapshots)" #-}
-ledgerDbSnapshots :: LedgerDB l -> [(Word64, l)]
-ledgerDbSnapshots = LDB.ledgerDbSnapshots
+{-# DEPRECATED ledgerDbSnapshots "Use Ouroboros.Consensus.Storage.LedgerDB (snapshots)" #-}
+ledgerDbSnapshots :: LedgerDB l -> [(Word64, l EmptyMK)]
+ledgerDbSnapshots = LDB.snapshots
 
-{-# DEPRECATED ledgerDbMaxRollback "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbMaxRollback)" #-}
+{-# DEPRECATED ledgerDbMaxRollback "Use Ouroboros.Consensus.Storage.LedgerDB (maxRollback)" #-}
 ledgerDbMaxRollback :: GetTip l => LedgerDB l -> Word64
-ledgerDbMaxRollback = LDB.ledgerDbMaxRollback
+ledgerDbMaxRollback = LDB.maxRollback
 
-{-# DEPRECATED ledgerDbTip "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbTip)" #-}
+{-# DEPRECATED ledgerDbTip "Use Ouroboros.Consensus.Storage.LedgerDB (tip)" #-}
 ledgerDbTip :: GetTip l => LedgerDB l -> Point l
-ledgerDbTip = LDB.ledgerDbTip
+ledgerDbTip = LDB.tip
 
-{-# DEPRECATED ledgerDbIsSaturated "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbIsSaturated)" #-}
+{-# DEPRECATED ledgerDbIsSaturated "Use Ouroboros.Consensus.Storage.LedgerDB (isSaturated)" #-}
 ledgerDbIsSaturated :: GetTip l => SecurityParam -> LedgerDB l -> Bool
-ledgerDbIsSaturated = LDB.ledgerDbIsSaturated
+ledgerDbIsSaturated = LDB.isSaturated
 
-{-# DEPRECATED ledgerDbPast "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbPast)" #-}
+{-# DEPRECATED ledgerDbPast "Use Ouroboros.Consensus.Storage.LedgerDB (getPastLedgerAt)" #-}
 ledgerDbPast ::
-     (HeaderHash blk ~ HeaderHash l, HasHeader blk, IsLedger l)
+     ( HeaderHash blk ~ HeaderHash l, HasHeader blk, IsLedger l
+     , StandardHash l, HasTickedLedgerTables l)
   => Point blk
   -> LedgerDB l
-  -> Maybe l
-ledgerDbPast = LDB.ledgerDbPast
+  -> Maybe (l EmptyMK)
+ledgerDbPast = LDB.getPastLedgerAt
 
-{-# DEPRECATED ledgerDbBimap "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbBimap)" #-}
+{-# DEPRECATED ledgerDbBimap "Use Ouroboros.Consensus.Storage.LedgerDB (volatileStatesBimap)" #-}
 ledgerDbBimap ::
      (Anchorable (WithOrigin SlotNo) a b)
-  => (l -> a)
-  -> (l -> b)
+  => (l EmptyMK -> a)
+  -> (l EmptyMK -> b)
   -> LedgerDB l
   -> AnchoredSeq (WithOrigin SlotNo) a b
-ledgerDbBimap = LDB.ledgerDbBimap
+ledgerDbBimap = LDB.volatileStatesBimap
 
-{-# DEPRECATED ledgerDbPrune "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbPrune)" #-}
-ledgerDbPrune :: GetTip l => SecurityParam -> LedgerDB l -> LedgerDB l
-ledgerDbPrune = LDB.ledgerDbPrune
+{-# DEPRECATED ledgerDbPrune "Use Ouroboros.Consensus.Storage.LedgerDB (prune)" #-}
+ledgerDbPrune :: (GetTip l, StandardHash l) => SecurityParam -> LedgerDB l -> LedgerDB l
+ledgerDbPrune = LDB.prune
 
+{-# DEPRECATED ledgerDbPush "Use Ouroboros.Consensus.Storage.LedgerDB (push)" #-}
+ledgerDbPush :: (ApplyBlock l blk, Monad m, c, StandardHash l)
+             => LedgerDbCfg l
+             -> Ap m l blk c
+             -> KeySetsReader m l
+             -> LedgerDB l
+             -> m (LedgerDB l)
+ledgerDbPush = LDB.push
 
-
-{-# DEPRECATED ledgerDbPush "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbPush)" #-}
-ledgerDbPush :: (ApplyBlock l blk, Monad m, c) => LedgerDbCfg l
-             -> Ap m l blk c -> LedgerDB l -> m (LedgerDB l)
-ledgerDbPush = LDB.ledgerDbPush
-
-{-# DEPRECATED ledgerDbSwitch "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbSwitch)" #-}
-ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c)
+{-# DEPRECATED ledgerDbSwitch "Use Ouroboros.Consensus.Storage.LedgerDB (switch)" #-}
+ledgerDbSwitch :: (ApplyBlock l blk, Monad m, c, StandardHash l)
                => LedgerDbCfg l
                -> Word64          -- ^ How many blocks to roll back
                -> (LDB.UpdateLedgerDbTraceEvent blk -> m ())
                -> [Ap m l blk c]  -- ^ New blocks to apply
+               -> KeySetsReader m l
                -> LedgerDB l
                -> m (Either ExceededRollback (LedgerDB l))
-ledgerDbSwitch = LDB.ledgerDbSwitch
+ledgerDbSwitch = LDB.switch
 
-{-# DEPRECATED ledgerDbPush' "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbPush')" #-}
-ledgerDbPush' :: ApplyBlock l blk
-              => LedgerDbCfg l -> blk -> LedgerDB l -> LedgerDB l
-ledgerDbPush' = LDB.ledgerDbPush'
+{-# DEPRECATED ledgerDbPush' "Use Ouroboros.Consensus.Storage.LedgerDB (push')" #-}
+ledgerDbPush' :: (ApplyBlock l blk, StandardHash l)
+              => LedgerDbCfg l
+              -> blk
+              -> KeySetsReader Identity l
+              -> LedgerDB l
+              -> LedgerDB l
+ledgerDbPush' = LDB.push'
 
-{-# DEPRECATED ledgerDbPushMany' "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbPushMany')" #-}
-ledgerDbPushMany' :: ApplyBlock l blk
-                  => LedgerDbCfg l -> [blk] -> LedgerDB l -> LedgerDB l
-ledgerDbPushMany' = LDB.ledgerDbPushMany'
+{-# DEPRECATED ledgerDbPushMany' "Use Ouroboros.Consensus.Storage.LedgerDB (pushMany')" #-}
+ledgerDbPushMany' :: (ApplyBlock l blk, StandardHash l)
+                  => LedgerDbCfg l
+                  -> [blk]
+                  -> KeySetsReader Identity l
+                  -> LedgerDB l
+                  -> LedgerDB l
+ledgerDbPushMany' = LDB.pushMany'
 
-{-# DEPRECATED ledgerDbSwitch' "Use Ouroboros.Consensus.Storage.LedgerDB (ledgerDbSwitch')" #-}
-ledgerDbSwitch' :: ApplyBlock l blk
+{-# DEPRECATED ledgerDbSwitch' "Use Ouroboros.Consensus.Storage.LedgerDB (switch')" #-}
+ledgerDbSwitch' :: (ApplyBlock l blk, StandardHash l)
                 => LedgerDbCfg l
-                -> Word64 -> [blk] -> LedgerDB l -> Maybe (LedgerDB l)
-ledgerDbSwitch' = LDB.ledgerDbSwitch'
+                -> Word64
+                -> [blk]
+                -> KeySetsReader Identity l
+                -> LedgerDB l
+                -> Maybe (LedgerDB l)
+ledgerDbSwitch' = LDB.switch'
 
 {-# DEPRECATED encodeSnapshot "Use Ouroboros.Consensus.Storage.LedgerDB (encodeSnapshot)" #-}
 encodeSnapshot :: (l -> Encoding) -> l -> Encoding

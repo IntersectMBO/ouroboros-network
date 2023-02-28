@@ -18,8 +18,9 @@ import           Ouroboros.Consensus.Block
   Abstraction over the streaming API provided by the Chain DB
 -------------------------------------------------------------------------------}
 
+{-# DEPRECATED NextBlock "Use Ouroboros.Consensus.Storage.LedgerDB (NextItem(NextItem))" #-}
 -- | Next block returned during streaming
-data NextItem blk = NoMoreItems | NextItem blk
+data NextItem blk = NoMoreItems | NextItem blk | NextBlock blk
 
 -- | Stream blocks from the immutable DB
 --
@@ -66,4 +67,7 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
                       case mNext of
                         NoMoreItems -> return a
                         NextItem b  -> go =<< f b a
+                        -- This is here only to silence the non-exhaustiveness
+                        -- check but it will never be matched
+                        NextBlock b -> go =<< f b a
         Right <$> go e

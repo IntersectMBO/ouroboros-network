@@ -111,6 +111,7 @@ initialize ::
          IOLike m
        , LedgerSupportsProtocol blk
        , InspectLedger blk
+       , CanSerializeLedgerTables (LedgerState blk)
        , HasCallStack
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)

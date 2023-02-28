@@ -19,7 +19,6 @@ import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsTables
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
@@ -86,7 +85,7 @@ isSaturated (SecurityParam k) db =
 -- returned.
 getPastLedgerAt ::
      ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
-     , StandardHash l, LedgerSupportsTables l
+     , StandardHash l, HasTickedLedgerTables l
      )
   => Point blk
   -> LedgerDB l
@@ -101,7 +100,7 @@ getPastLedgerAt pt db = current <$> rollback pt db
 -- returned.
 rollback ::
      ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
-     , StandardHash l, LedgerSupportsTables l
+     , StandardHash l, HasTickedLedgerTables l
      )
   => Point blk
   -> LedgerDB l

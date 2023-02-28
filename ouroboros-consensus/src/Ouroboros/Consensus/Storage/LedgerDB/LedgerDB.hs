@@ -19,6 +19,8 @@ module Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (
   , LedgerDbCfg (..)
   , configLedgerDb
   , new
+    -- * Deprecations
+  , ledgerDbWithAnchor
   ) where
 
 import           Data.SOP (K, unK)
@@ -96,3 +98,15 @@ configLedgerDb cfg = LedgerDbCfg {
       ledgerDbCfgSecParam = configSecurityParam cfg
     , ledgerDbCfg         = ExtLedgerCfg cfg
     }
+
+{-------------------------------------------------------------------------------
+  Deprecations
+-------------------------------------------------------------------------------}
+
+{-# DEPRECATED ledgerDbWithAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (new)" #-}
+ledgerDbWithAnchor ::
+     ( HasLedgerTables l
+     , GetTip l
+     )
+  => l EmptyMK -> LedgerDB l
+ledgerDbWithAnchor = new

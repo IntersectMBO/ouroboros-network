@@ -51,7 +51,6 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Ledger.SupportsTables
 import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -113,7 +112,8 @@ newtype FlipTickedLedgerState mk blk = FlipTickedLedgerState {
   getFlipTickedLedgerState :: (Ticked1 (LedgerState blk) mk)
   } deriving (Generic)
 
-deriving newtype instance NoThunks (Ticked1 (LedgerState blk) mk) => NoThunks (FlipTickedLedgerState mk blk)
+deriving newtype instance NoThunks (Ticked1 (LedgerState blk) mk)
+                       => NoThunks (FlipTickedLedgerState mk blk)
 
 data instance Ticked1 (LedgerState (HardForkBlock xs)) mk =
     TickedHardForkLedgerState {
@@ -187,7 +187,7 @@ tickOne ei slot sopIdx partialCfg st =
 -------------------------------------------------------------------------------}
 
 instance ( CanHardFork xs
-         , LedgerSupportsTables (LedgerState (HardForkBlock xs))
+         , HasTickedLedgerTables (LedgerState (HardForkBlock xs))
          , LedgerTablesCanHardFork xs
          )
       => ApplyBlock (LedgerState (HardForkBlock xs)) (HardForkBlock xs) where
@@ -275,7 +275,7 @@ reapply index (WrapLedgerConfig cfg) (Pair (I block) (FlipTickedLedgerState st))
 -------------------------------------------------------------------------------}
 
 instance ( CanHardFork xs
-         , LedgerSupportsTables (LedgerState (HardForkBlock xs))
+         , HasTickedLedgerTables (LedgerState (HardForkBlock xs))
          , LedgerTablesCanHardFork xs
          )
       => UpdateLedger (HardForkBlock xs)
@@ -348,7 +348,7 @@ instance CanHardFork xs => ValidateEnvelope (HardForkBlock xs) where
 -------------------------------------------------------------------------------}
 
 instance ( CanHardFork xs
-         , LedgerSupportsTables (LedgerState (HardForkBlock xs))
+         , HasTickedLedgerTables (LedgerState (HardForkBlock xs))
          , LedgerTablesCanHardFork xs
          )
       => LedgerSupportsProtocol (HardForkBlock xs) where
@@ -799,9 +799,15 @@ injectLedgerEvent index =
     . injectNS index
     . WrapLedgerEvent
 
-
 {-------------------------------------------------------------------------------
   Ledger Tables for the unary HardForkBlock
+
+  In particular this is needed because we will instantiate the Shelley unary
+  HF Block, which will require to be able to serialize ledger tables in order to
+  comply with the required classes, therefore bringing in all these instances.
+
+  Instead of defining this on Shelley, it sounds reasonable to define it here
+  for the unary HF block.
 -------------------------------------------------------------------------------}
 
 instance HasLedgerTables (LedgerState blk)
