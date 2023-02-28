@@ -51,7 +51,7 @@ library
     containers,
     mtl,
     nothunks,
-    ouroboros-consensus,
+    ouroboros-consensus ==0.3.0.0,
     serialise,
     text
   ghc-options:

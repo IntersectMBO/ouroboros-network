@@ -51,11 +51,12 @@ library
                      , byron-spec-ledger
 
                      , ouroboros-network-api
-                     , ouroboros-consensus
-                     , ouroboros-consensus-test
-                     , ouroboros-consensus-byron
-                     , ouroboros-consensus-byronspec
 
+                     , ouroboros-consensus      ^>=0.3
+                     , ouroboros-consensus-test ^>=0.3
+
+                     , ouroboros-consensus-byron     ==0.3.0.0
+                     , ouroboros-consensus-byronspec ==0.3.0.0
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -102,11 +103,14 @@ test-suite test
                      , small-steps-test
 
                      , ouroboros-network-mock
-                     , ouroboros-consensus
-                     , ouroboros-consensus-test
-                     , ouroboros-consensus-byron
+
+                     , ouroboros-consensus      ^>=0.3
+                     , ouroboros-consensus-test ^>=0.3
+
+                     , ouroboros-consensus-byron     ==0.3.0.0
+                     , ouroboros-consensus-byronspec ==0.3.0.0
+
                      , ouroboros-consensus-byron-test
-                     , ouroboros-consensus-byronspec
 
   default-language:    Haskell2010
   ghc-options:         -Wall

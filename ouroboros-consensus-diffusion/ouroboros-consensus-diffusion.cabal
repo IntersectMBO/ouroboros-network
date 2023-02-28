@@ -93,7 +93,8 @@ library
                      , ouroboros-network-framework ^>=0.3
                      , ouroboros-network-protocols ^>=0.3
                      , ouroboros-network ^>=0.4.0.1
-                     , ouroboros-consensus ^>=0.3
+
+                     , ouroboros-consensus ==0.3.0.0
 
   ghc-options:         -Wall
                        -Wcompat
