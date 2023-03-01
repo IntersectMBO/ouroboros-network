@@ -65,7 +65,7 @@ import           Ouroboros.Network.Mock.ConcreteBlock (Block (..),
 import           Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (MaxSlotNo (..), Point,
+import           Ouroboros.Network.Block (MaxSlotNo (..),
                      maxSlotNoFromWithOrigin, pointSlot)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
@@ -107,6 +107,8 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSharing
                      (PeerSharingRegistry (PeerSharingRegistry))
+import           Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
+                     getBlockPointSet)
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -277,12 +279,10 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     blockFetch :: NodeKernel BlockHeader Block m
                -> m Void
     blockFetch nodeKernel = do
-      blockHeapVar <- LazySTM.newTVarIO Set.empty
-
       blockFetchLogic
         nullTracer
         tracerBlockFetch
-        (blockFetchPolicy blockHeapVar nodeKernel)
+        (blockFetchPolicy nodeKernel)
         (nkFetchClientRegistry nodeKernel)
         (BlockFetchConfiguration {
           bfcMaxConcurrencyBulkSync = 1,
@@ -292,10 +292,9 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           bfcSalt                   = 0
         })
 
-    blockFetchPolicy :: LazySTM.TVar m (Set (Point Block))
-                     -> NodeKernel BlockHeader Block m
+    blockFetchPolicy :: NodeKernel BlockHeader Block m
                      -> BlockFetchConsensusInterface NtNAddr BlockHeader Block m
-    blockFetchPolicy blockHeapVar nodeKernel =
+    blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {
           readCandidateChains    = readTVar (nkClientChains nodeKernel)
                                    >>= traverse (readTVar
@@ -303,14 +302,14 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           readCurrentChain       = readTVar (nkChainProducerState nodeKernel)
                                    >>= (return . toAnchoredFragmentHeader . chainState),
           readFetchMode          = return FetchModeBulkSync,
-          readFetchedBlocks      = flip Set.member <$> LazySTM.readTVar blockHeapVar,
+          readFetchedBlocks      = flip Set.member <$> getBlockPointSet (nkChainDB nodeKernel),
           readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
                                    map (maxSlotNoFromWithOrigin . pointSlot) .
                                    Set.elems <$>
-                                   LazySTM.readTVar blockHeapVar,
-          mkAddFetchedBlock        = \_enablePipelining -> do
-              pure $ \p _b ->
-                atomically (LazySTM.modifyTVar' blockHeapVar (Set.insert p)),
+                                   getBlockPointSet (nkChainDB nodeKernel),
+          mkAddFetchedBlock        = \_enablePipelining ->
+              pure $ \_p b ->
+                atomically (addBlock b (nkChainDB nodeKernel)),
 
           plausibleCandidateChain,
           compareCandidateChains,

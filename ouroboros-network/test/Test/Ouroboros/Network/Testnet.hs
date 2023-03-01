@@ -70,7 +70,7 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.BlockFetch (TraceFetchClientState)
+import           Ouroboros.Network.BlockFetch (TraceFetchClientState (..))
 import           Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
@@ -352,12 +352,24 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
              . traceEvents
              $ runSimTrace sim
 
-      transitionsSeenNames = map show events
+      transitionsSeenNames = map traceFetchClientStateMap events
 
    -- TODO: Add checkCoverage here
    in tabulate "fetch client state trace" transitionsSeenNames
       True
   where
+    traceFetchClientStateMap :: TraceFetchClientState BlockHeader
+                             -> String
+    traceFetchClientStateMap AddedFetchRequest{}   = "AddedFetchRequest"
+    traceFetchClientStateMap AcknowledgedFetchRequest{} =
+      "AcknowledgedFetchRequest"
+    traceFetchClientStateMap SendFetchRequest{}    = "SendFetchRequest"
+    traceFetchClientStateMap StartedFetchBatch{}   = "StartedFetchBatch"
+    traceFetchClientStateMap CompletedBlockFetch{} = "CompletedBlockFetch"
+    traceFetchClientStateMap CompletedFetchBatch{} = "CompletedFetchBatch"
+    traceFetchClientStateMap RejectedFetchBatch{}  = "RejectedFetchBatch"
+    traceFetchClientStateMap (ClientTerminating n) = "ClientTerminating "
+                                                   ++ show n
 
 -- | Unit test which covers issue #4177
 --
