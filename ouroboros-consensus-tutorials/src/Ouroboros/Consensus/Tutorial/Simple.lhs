@@ -50,7 +50,7 @@ First, some imports we'll need:
 >    HeaderHash, Point, StandardHash)
 > import Ouroboros.Consensus.Protocol.Abstract
 >   (SecurityParam(..), ConsensusConfig, ConsensusProtocol(..) )
-> import Ouroboros.Consensus.Ticked ( Ticked(TickedTrivial) )
+> import Ouroboros.Consensus.Ticked ( Ticked1, Ticked(TickedTrivial) )
 > import Ouroboros.Consensus.Block
 >   (BlockSupportsProtocol (selectView, validateView))
 > import Ouroboros.Consensus.Ledger.Abstract
@@ -62,6 +62,7 @@ First, some imports we'll need:
 > import Ouroboros.Consensus.Forecast (trivialForecast)
 > import Ouroboros.Consensus.HeaderValidation
 >   (ValidateEnvelope, BasicEnvelopeValidation, HasAnnTip)
+> import Ouroboros.Consensus.Ledger.Tables
 
 Conceptual Overview and Definitions of Key Terms
 ================================================
@@ -498,6 +499,10 @@ state.
 Below we'll define a group of typeclasses that together implement a simple
 ledger that uses `BlockC` and that is suitable for our consensus protocol `SP`.
 
+For this tutorial we will be ignoring the definitions related to UTxO-HD. In
+particular one can ignore type variables named `mk`, types of the form `*MK`,
+and anything mentioning to tables or `KeySets`. There is an appendix at the end
+of this document that briefly outlines UTxO-HD.
 
 `LedgerCfg` - Ledger Static Configuration
 -----------------------------------------
@@ -521,7 +526,7 @@ Given that the `BlockC` transactions consist of incrementing and decrementing a
 number, we materialize that number in the `LedgerState`.  We'll also need to
 keep track of some information about the most recent block we have seen.
 
-> data instance LedgerState BlockC =
+> data instance LedgerState BlockC mk =
 >
 >   LedgerC
 >     -- the hash and slot number of the most recent block
@@ -538,13 +543,13 @@ place in the blockchain - a pair of a slot and a block hash.
 ---------------------------------------
 
 Again, the slot abstraction defines a logical clock - and instances of the
-`Ticked` family describe values that evolve with respect to this logical clock.
-As such, we will also need to define an instance of `Ticked` for our ledger
+`Ticked1` family describe values that evolve with respect to this logical clock.
+As such, we will also need to define an instance of `Ticked1` for our ledger
 state.  In our example, this is essentially an `Identity` functor:
 
-> newtype instance Ticked (LedgerState BlockC) =
+> newtype instance Ticked1 (LedgerState BlockC) mk =
 >   TickedLedgerStateC
->     { unTickedLedgerStateC :: LedgerState BlockC }
+>     { unTickedLedgerStateC :: LedgerState BlockC mk }
 >   deriving (Show, Eq, Generic, Serialise)
 
 
@@ -560,7 +565,7 @@ types for a ledger.  Though we are here using
 >
 >   applyChainTickLedgerResult _cfg _slot ldgrSt =
 >     LedgerResult { lrEvents = []
->                  , lrResult = TickedLedgerStateC ldgrSt
+>                  , lrResult = TickedLedgerStateC $ convertMapKind ldgrSt
 >                  }
 
 The `LedgerErr` type is the type of errors associated with this ledger that can
@@ -586,7 +591,7 @@ A block `b` is said to have been `applied` to a `LedgerState` if that
 `LedgerState` is the result of having witnessed `b` at some point.  We can
 express this as a function:
 
-> applyBlockTo :: BlockC -> Ticked (LedgerState BlockC) -> LedgerState BlockC
+> applyBlockTo :: BlockC -> Ticked1 (LedgerState BlockC) mk -> LedgerState BlockC mk
 > applyBlockTo block tickedLedgerState =
 >   ledgerState { lsbc_tip = blockPoint block
 >               , lsbc_count = lsbc_count'
@@ -599,7 +604,7 @@ express this as a function:
 >         Inc -> i + 1
 >         Dec -> i - 1
 
-We use a `Ticked (LedgerState BlockC)` to enforce the invariant that we should
+We use a `Ticked1 (LedgerState BlockC)` to enforce the invariant that we should
 not apply two blocks in a row - at least one tick (aka slot) must have elapsed
 between block applications.
 
@@ -610,13 +615,15 @@ the `ApplyBlock` typeclass:
 > instance ApplyBlock (LedgerState BlockC) BlockC where
 >   applyBlockLedgerResult _ldgrCfg block tickedLdgrSt =
 >     pure $ LedgerResult { lrEvents = []
->                         , lrResult = block `applyBlockTo` tickedLdgrSt
+>                         , lrResult = convertMapKind $ block `applyBlockTo` tickedLdgrSt
 >                         }
 >
 >   reapplyBlockLedgerResult _ldgrCfg block tickedLdgrSt =
 >     LedgerResult { lrEvents = []
->                  , lrResult = block `applyBlockTo` tickedLdgrSt
+>                  , lrResult = convertMapKind $ block `applyBlockTo` tickedLdgrSt
 >                  }
+>
+>   getBlockKeySets = const NoLedgerTables
 >
 >
 
@@ -653,7 +660,7 @@ The `GetTip` typeclass describes how to get the `Point` of the tip - which is
 the most recently applied block.  We need to implement this both for
 `LedgerState BlockC` as well as its ticked version:
 
-> instance GetTip (Ticked (LedgerState BlockC)) where
+> instance GetTip (Ticked1 (LedgerState BlockC)) where
 >    getTip = castPoint . lsbc_tip . unTickedLedgerStateC
 
 > instance GetTip (LedgerState BlockC) where
@@ -703,6 +710,45 @@ To focus on the salient ideas of this document, we've put all the derivations of
 >   instance NoThunks BlockC
 > deriving via OnlyCheckWhnfNamed "HdrBlockC" (Header BlockC)
 >   instance NoThunks (Header BlockC)
-> deriving via OnlyCheckWhnfNamed "LedgerC" (LedgerState BlockC)
->   instance NoThunks (LedgerState BlockC)
-> deriving instance NoThunks (Ticked (LedgerState BlockC))
+> deriving via OnlyCheckWhnfNamed "LedgerC" (LedgerState BlockC mk)
+>   instance NoThunks (LedgerState BlockC mk)
+> deriving instance NoThunks (Ticked1 (LedgerState BlockC) mk)
+
+Appendix: UTxO-HD features
+==========================
+
+The introduction of UTxO-HD is out of the scope of this tutorial but we will
+describe here a few hints on how it would be defined. In broad terms, with the
+introduction of UTxO-HD a part of the ledger state (the UTxO set) was moved to
+the disk and now consensus:
+
+- provides subsets of that data to the ledger rules (i.e. only the consumed
+  UTxOs on a block)
+
+- stores a sequence of deltas (diffs) produced by the execution of the ledger
+  rules
+
+These subsets are defined in terms of the `LedgerTables` and the `mk` type
+variable that indicates if the collection is made of key-value pairs, only keys
+or to keys-delta pairs.
+
+The `HasLedgerTables` class defines the basic operations that can be done with
+the `LedgerTables`. For a Ledger state definition as simple as the one we are
+defining there the tables are trivially empty so the operations are all trivial
+and we use the default implementation
+
+> instance HasLedgerTables (LedgerState BlockC) where
+>   data LedgerTables (LedgerState BlockC) mk =
+>        NoLedgerTables
+>        deriving (Generic, Eq, Show, NoThunks)
+>
+> instance HasTickedLedgerTables (LedgerState BlockC) where
+>   withLedgerTablesTicked (TickedLedgerStateC st) tbs =
+>     TickedLedgerStateC (withLedgerTables st tbs)
+>
+> instance CanSerializeLedgerTables (LedgerState BlockC)
+> instance CanStowLedgerTables (LedgerState BlockC)
+>
+> instance LedgerTablesAreTrivial (LedgerState BlockC) where
+>   convertMapKind (LedgerC t c) = LedgerC t c
+>   trivialLedgerTables = NoLedgerTables
