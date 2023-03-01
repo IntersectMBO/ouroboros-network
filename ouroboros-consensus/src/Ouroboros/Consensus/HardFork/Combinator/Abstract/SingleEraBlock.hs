@@ -66,6 +66,7 @@ class ( LedgerSupportsProtocol blk
       , ConfigSupportsNode blk
       , NodeInitStorage blk
       , BlockSupportsMetrics blk
+      , CanStowLedgerTables (LedgerState blk)
         -- Instances required to support testing
       , Eq   (GenTx blk)
       , Eq   (Validated (GenTx blk))

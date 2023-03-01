@@ -122,6 +122,9 @@ data instance Ticked1 (LedgerState (HardForkBlock xs)) mk =
           !(HardForkState (FlipTickedLedgerState mk) xs)
       } deriving (Generic)
 
+deriving instance All SingleEraBlock xs
+               => NoThunks (Ticked1 (LedgerState (HardForkBlock xs)) TrackingMK)
+
 instance CanHardFork xs => IsLedger (LedgerState (HardForkBlock xs)) where
   type LedgerErr (LedgerState (HardForkBlock xs)) = HardForkLedgerError  xs
 
@@ -814,7 +817,7 @@ instance HasLedgerTables (LedgerState blk)
       => HasLedgerTables (LedgerState (HardForkBlock '[blk])) where
 
   newtype LedgerTables (LedgerState (HardForkBlock '[blk])) mk = OneEraLedgerTables {
-      unExtLedgerStateTables :: LedgerTables (LedgerState blk) mk
+      unOneEraLedgerTables :: LedgerTables (LedgerState blk) mk
       }
     deriving (Generic)
 
@@ -876,3 +879,25 @@ instance CanStowLedgerTables (LedgerState blk)
 
    unstowLedgerTables (HardForkLedgerState (HardForkState (Telescope.TZ (Current s (Flip lstate))))) =
       HardForkLedgerState (HardForkState (Telescope.TZ (Current s (Flip $ unstowLedgerTables lstate))))
+
+instance LedgerTablesCanHardFork '[blk] where
+  hardForkInjectLedgerTables =
+       (InjectLedgerTables { applyInjectLedgerTables = OneEraLedgerTables
+                           , applyDistribLedgerTables = unOneEraLedgerTables
+                           })
+    :* Nil
+
+instance All SingleEraBlock xs
+      => CanStowLedgerTables (LedgerState (HardForkBlock xs)) where
+  stowLedgerTables =
+        HardForkLedgerState
+      . hcmap
+          proxySingle
+          (Flip . stowLedgerTables . unFlip)
+      . hardForkLedgerStatePerEra
+  unstowLedgerTables =
+        HardForkLedgerState
+      . hcmap
+          proxySingle
+          (Flip . unstowLedgerTables . unFlip)
+      . hardForkLedgerStatePerEra
