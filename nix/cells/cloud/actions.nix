@@ -18,7 +18,11 @@
           #default_branch: true
           #branch: "staging|trying"
         },
-        #lib.io.github_pr & github,
+        {
+          #lib.io.github_pr
+          github
+          inputs: (github.#input): match: github_body: pull_request: draft: false
+        },
       ]
     '';
   };
