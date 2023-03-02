@@ -1,0 +1,45 @@
+name: Project checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - 'staging'
+      - 'trying'
+
+jobs:
+  check-git-dependencies:
+
+    name: Check git dependencies
+
+    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
+
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - run: ./scripts/ci/check-git-dependencies.sh
+
+  consensus-changelog:
+
+    name: Consensus changelog sanity check
+
+    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
+
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - run: CI=1 ./scripts/ci/check-consensus-release.sh

@@ -3,12 +3,14 @@ reorder-goals: True
 ignore-project: False
 tests: True
 
+program-options
+  ghc-options: -Werror
+
 package Win32-network
   ghc-options: -Werror
   flags: +demo
 
 package ntp-client
-  ghc-options: -Werror
   flags: +demo
 
 package io-sim
@@ -19,9 +21,6 @@ package io-sim
 package io-classes
   flags: +checktvarinvariant
 
-package monoidal-synchronisation
-  ghc-options: -Werror
-
 package typed-protocols
   ghc-options: -Werror
 
@@ -30,21 +29,10 @@ package typed-protocols-examples
   flags:
 
 package network-mux
-  ghc-options: -Werror
   flags: +ipv6 +asserts
 
-package ouroboros-network-testing
-  ghc-options: -Werror
-
-package ouroboros-network-framework
-  ghc-options: -Werror
-
 package ouroboros-network
-  ghc-options: -Werror
   flags: +ipv6 +cddl +asserts
-
-package cardano-client
-  ghc-options: -Werror
 
 package cardano-crypto-praos
   flags: -external-libsodium-vrf

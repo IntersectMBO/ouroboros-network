@@ -29,12 +29,15 @@ jobs:
 
   build:
     runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
 
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10.7", "9.2.5"]
-        os: [ubuntu-latest, windows-latest]
+        # Currently Hydra/Cicero build with 8.10.7
+        ghc: ["9.2.5"]
+        # This is the only OS that Hydra/Cicero cannot run.
+        os: [windows-latest]
 
     env:
       # Modify this value to "invalidate" the cabal cache.
@@ -47,11 +50,6 @@ jobs:
 
     steps:
 
-    - name: Workaround runner image issue
-      if: runner.os == 'Linux'
-      # https://github.com/actions/runner-images/issues/7061
-      run: sudo chown -R $USER /usr/local/.ghcup
-
     - name: Install Haskell
       uses: input-output-hk/setup-haskell@v1
       id: setup-haskell
@@ -62,6 +60,7 @@ jobs:
           mingw-w64-x86_64-pkg-config
           mingw-w64-x86_64-libsodium
           mingw-w64-x86_64-openssl
+          mingw-w64-x86_64-sed
           base-devel
           autoconf-wrapper
           autoconf
@@ -77,19 +76,6 @@ jobs:
         echo "CACHE_VERSION=20220919" >> $GITHUB_OUTPUT
         echo "DIST_CACHE_VERSION=20221122" >> $GITHUB_OUTPUT
 
-    - name: "LINUX: Install build environment (apt-get)"
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install libsodium23 libsodium-dev
-        sudo apt-get -y install libsystemd0 libsystemd-dev
-        sudo apt-get -y remove --purge software-properties-common
-        sudo apt-get -y autoremove
-
-    - name: "LINUX: Install build environment (for secp256k1)"
-      if: runner.os == 'Linux'
-      run: sudo apt-get -y install autoconf automake libtool
-
     - uses: actions/checkout@v3
 
     - name: Install secp256k1
@@ -99,17 +85,10 @@ jobs:
         cache-version: ${{ env.SECP_CACHE_VERSION }}
 
     - name: "Configure cabal.project.local"
-      if: runner.os != 'Windows'
-      run: |
-        cp .github/workflows/cabal.project.local.Linux cabal.project.local
-
-    - name: "Configure cabal.project.local Windows"
-      if: runner.os == 'Windows'
       run: |
         cp .github/workflows/cabal.project.local.Windows cabal.project.local
 
-    - name: Update PATH on windows
-      if: runner.os == 'Windows'
+    - name: Update PATH
       run: |
         $env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)
         echo "PATH=$env:PATH" >> $env:GITHUB_ENV
