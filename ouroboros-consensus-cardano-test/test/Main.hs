@@ -8,6 +8,7 @@ import           Cardano.Crypto.Libsodium (sodiumInit)
 import           Test.Tasty
 
 import qualified Test.Consensus.Cardano.ByronCompatibility (tests)
+import qualified Test.Consensus.Cardano.Crypto (tests)
 import qualified Test.Consensus.Cardano.Golden (tests)
 import qualified Test.Consensus.Cardano.Serialisation (tests)
 import qualified Test.ThreadNet.AllegraMary (tests)
@@ -30,6 +31,7 @@ tests =
   [ Test.Consensus.Cardano.ByronCompatibility.tests
   , Test.Consensus.Cardano.Golden.tests
   , Test.Consensus.Cardano.Serialisation.tests
+  , Test.Consensus.Cardano.Crypto.tests
   , Test.ThreadNet.AllegraMary.tests
   , Test.ThreadNet.Cardano.tests
   , Test.ThreadNet.MaryAlonzo.tests
