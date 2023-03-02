@@ -90,3 +90,6 @@ package ouroboros-consensus-cardano-tools
 
 package ouroboros-consensus-diffusion
   ghc-options: -Werror
+
+package ouroboros-consensus-tutorials
+  ghc-options: -Werror

@@ -38,7 +38,6 @@ library
                      , bimap             >=0.4   && <0.5
                      , cardano-ledger-binary
                      , cardano-ledger-byron-test
-                     , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
                      , byron-spec-chain
@@ -49,7 +48,6 @@ library
                      , small-steps
                      , transformers
 
-                     , ouroboros-network
                      , ouroboros-consensus
 
   default-language:    Haskell2010
@@ -61,3 +59,4 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages

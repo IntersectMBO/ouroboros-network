@@ -42,22 +42,16 @@ library
                      , mtl
                      , microlens
                      , QuickCheck
-                     , sop-core
                      , cardano-strict-containers
 
-                     , cardano-ledger-alonzo
                      , cardano-ledger-alonzo-test
-                     , cardano-ledger-babbage
-                     , cardano-ledger-babbage-test
                      , cardano-ledger-conway-test
                      , cardano-ledger-byron
                      , cardano-ledger-core:{cardano-ledger-core, testlib}
                      , cardano-ledger-shelley
-                     , cardano-ledger-shelley-test
                      , cardano-protocol-tpraos
 
                      , ouroboros-network-api
-                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron
@@ -78,6 +72,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts
 
 test-suite test
@@ -108,13 +103,11 @@ test-suite test
 
                      , cardano-ledger-alonzo
                      , cardano-ledger-byron
-                     , cardano-ledger-conway
                      , cardano-ledger-core
                      , cardano-ledger-shelley
                      , cardano-protocol-tpraos
 
                      , ouroboros-network-api
-                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-test
                      , ouroboros-consensus-byron
@@ -134,6 +127,7 @@ test-suite test
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts

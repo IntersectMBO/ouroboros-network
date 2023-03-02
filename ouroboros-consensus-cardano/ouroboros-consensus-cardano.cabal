@@ -45,19 +45,13 @@ library
                      , cardano-binary
                      , cardano-crypto-class
                      , cardano-data
-                     , cardano-ledger-alonzo
-                     , cardano-ledger-allegra
-                     , cardano-ledger-babbage
                      , cardano-ledger-byron
-                     , cardano-ledger-conway
                      , cardano-ledger-core
-                     , cardano-ledger-mary
                      , cardano-ledger-shelley
                      , cardano-prelude
                      , cardano-protocol-tpraos
                      , cardano-slotting
 
-                     , ouroboros-network ^>= 0.4
                      , ouroboros-consensus
                      , ouroboros-consensus-byron
                      , ouroboros-consensus-protocol
@@ -72,5 +66,6 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts

@@ -84,7 +84,6 @@ library
                      , cardano-crypto-class
                      , cardano-ledger-binary:{testlib}
                      , cardano-prelude
-                     , cardano-slotting
                      , cborg             >=0.2.2 && <0.3
                      , containers        >=0.5   && <0.7
                      , contra-tracer
@@ -112,7 +111,6 @@ library
                      , template-haskell
                      , text              >=1.2   && <1.3
                      , time
-                     , transformers
                      , tree-diff
                      , utf8-string
 
@@ -136,6 +134,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts
 
 test-suite test-consensus
@@ -178,13 +177,11 @@ test-suite test-consensus
                      , quickcheck-state-machine
                      , quiet
                      , serialise
-                     , sop-core
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
                      , temporary
                      , time
-                     , transformers
                      , tree-diff
 
                      , io-classes
@@ -210,6 +207,7 @@ test-suite test-consensus
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts
@@ -254,7 +252,6 @@ test-suite test-storage
                      , binary
                      , bytestring
                      , cardano-crypto-class
-                     , cardano-slotting
                      , cborg
                      , containers
                      , contra-tracer
@@ -268,14 +265,12 @@ test-suite test-storage
                      , quickcheck-state-machine >=0.7.0
                      , random
                      , serialise
-                     , cardano-strict-containers
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
                      , temporary
                      , text
                      , time
-                     , transformers
                      , tree-diff
                      , vector
 
@@ -283,7 +278,6 @@ test-suite test-storage
                      , io-sim
                      , ouroboros-network-api
                      , ouroboros-network-mock
-                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-test
 
@@ -296,6 +290,7 @@ test-suite test-storage
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts
 
 test-suite test-infra
@@ -326,6 +321,7 @@ test-suite test-infra
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts
 
 benchmark bench-mempool
@@ -341,13 +337,12 @@ benchmark bench-mempool
                      , contra-tracer
                      , deepseq
                      , nothunks
-                     , QuickCheck
                      , serialise         >=0.2   && <0.3
                      , strict-stm
-                     , transformers
                      , tree-diff
                      , tasty-bench
                      , tasty-hunit
+                     , transformers
 
                      , ouroboros-consensus
                      , ouroboros-consensus-test
@@ -360,6 +355,7 @@ benchmark bench-mempool
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -Wno-unticked-promoted-constructors
                        -rtsopts
                        "-with-rtsopts=-A32m"
