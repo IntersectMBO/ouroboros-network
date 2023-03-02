@@ -335,7 +335,9 @@ benchmark bench-mempool
                      , Bench.Consensus.MempoolWithMockedLedgerItf
                      , Bench.Consensus.Mempool.TestBlock
   build-depends:       base
-                     , cardano-slotting
+                     , aeson
+                     , bytestring
+                     , cassava
                      , containers
                      , contra-tracer
                      , deepseq
@@ -343,9 +345,13 @@ benchmark bench-mempool
                      , serialise         >=0.2   && <0.3
                      , strict-stm
                      , tree-diff
+                     , tasty
                      , tasty-bench
                      , tasty-hunit
                      , transformers
+                     , text
+
+                     , cardano-slotting
 
                      , ouroboros-consensus
                      , ouroboros-consensus-test
