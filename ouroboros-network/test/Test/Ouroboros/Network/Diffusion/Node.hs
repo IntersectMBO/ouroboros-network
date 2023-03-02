@@ -58,7 +58,8 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.DNS (Domain, TTL)
 
-import           Ouroboros.Network.Mock.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.Mock.Chain (Chain, toAnchoredFragment,
+                     toOldestFirst)
 import           Ouroboros.Network.Mock.ConcreteBlock (Block (..),
                      BlockHeader (..),
                      convertSlotToTimeForTestsAssumingNoHardFork)
@@ -140,7 +141,7 @@ data Arguments m = Arguments
     , aDiffusionMode        :: DiffusionMode
     , aKeepAliveInterval    :: DiffTime
     , aPingPongInterval     :: DiffTime
-    , aShouldChainSyncExit  :: Block -> m Bool
+    , aShouldChainSyncExit  :: BlockHeader -> m Bool
     , aChainSyncEarlyExit   :: Bool
 
     , aPeerSelectionTargets :: PeerSelectionTargets
@@ -181,7 +182,7 @@ run :: forall resolver m.
        , Eq (Async m Void)
        )
     => Node.BlockGeneratorArgs Block StdGen
-    -> Node.LimitsAndTimeouts Block
+    -> Node.LimitsAndTimeouts BlockHeader Block
     -> Interfaces m
     -> Arguments m
     -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
@@ -263,7 +264,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
               , Diff.P2P.daPeerSharingRegistry    = peerSharingRegistry
               }
 
-        let apps = Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
+        let apps = Node.applications (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs blockHeader
 
         withAsync
            (Diff.P2P.runM interfaces
@@ -298,7 +299,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
         BlockFetchConsensusInterface {
           readCandidateChains    = readTVar (nkClientChains nodeKernel)
                                    >>= traverse (readTVar
-                                       >=> (return . toAnchoredFragmentHeader)),
+                                       >=> (return . toAnchoredFragment)),
           readCurrentChain       = readTVar (nkChainProducerState nodeKernel)
                                    >>= (return . toAnchoredFragmentHeader . chainState),
           readFetchMode          = return FetchModeBulkSync,
@@ -394,7 +395,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Diff.P2P.daBulkChurnInterval     = 300
       }
 
-    appArgs :: Node.AppArgs Block m
+    appArgs :: Node.AppArgs BlockHeader Block m
     appArgs = Node.AppArgs
       { Node.aaLedgerPeersConsensusInterface
                                         = iLedgerPeersConsensusInterface ni

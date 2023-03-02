@@ -237,7 +237,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
 data NodeKernel header block m = NodeKernel {
       -- | upstream chains
       nkClientChains
-        :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain block))),
+        :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain header))),
 
       -- | chain producer state
       nkChainProducerState
@@ -263,7 +263,7 @@ newNodeKernel = NodeKernel
 registerClientChains :: MonadSTM m
                      => NodeKernel header block m
                      -> NtNAddr
-                     -> m (StrictTVar m (Chain block))
+                     -> m (StrictTVar m (Chain header))
 registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
     chainVar <- newTVar Genesis
     modifyTVar nkClientChains (Map.insert peerAddr chainVar)

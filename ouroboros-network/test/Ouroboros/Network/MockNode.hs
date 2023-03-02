@@ -290,7 +290,7 @@ relayNode _nid initChain chans = do
   forkRelayKernel upstream cpsVar
 
   -- producers which share @'ChainProducerState'@
-  let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar)
+  let producer = chainSyncServerPeer (chainSyncServerExample () cpsVar id)
   mapM_ (uncurry $ startProducer producer) (zip [0..] (producerChans chans))
 
   return cpsVar

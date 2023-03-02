@@ -174,7 +174,7 @@ demo chain0 updates = do
                           (consumerClient done target consumerVar)))
 
             server :: ChainSyncServer block (Point block) (Tip block) IO ()
-            server = ChainSync.chainSyncServerExample () producerVar
+            server = ChainSync.chainSyncServerExample () producerVar id
 
             producerApp ::OuroborosApplication ResponderMode String BL.ByteString IO Void ()
             producerApp = demoProtocols chainSyncResponder

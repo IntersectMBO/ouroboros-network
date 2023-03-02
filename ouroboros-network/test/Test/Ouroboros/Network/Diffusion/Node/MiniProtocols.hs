@@ -104,8 +104,8 @@ import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 -- | Protocol codecs.
 --
-data Codecs addr block m = Codecs
-  { chainSyncCodec   :: Codec (ChainSync block (Point block) (Tip block))
+data Codecs addr header block m = Codecs
+  { chainSyncCodec   :: Codec (ChainSync header (Point block) (Tip block))
                           CBOR.DeserialiseFailure m ByteString
   , blockFetchCodec  :: Codec (BlockFetch block (Point block))
                           CBOR.DeserialiseFailure m ByteString
@@ -117,7 +117,7 @@ data Codecs addr block m = Codecs
                          CBOR.DeserialiseFailure m ByteString
   }
 
-cborCodecs :: MonadST m => Codecs NtNAddr Block m
+cborCodecs :: MonadST m => Codecs NtNAddr BlockHeader Block m
 cborCodecs = Codecs
   { chainSyncCodec = codecChainSync Serialise.encode Serialise.decode
                                     Serialise.encode Serialise.decode
@@ -132,15 +132,15 @@ cborCodecs = Codecs
 
 
 -- | Limits and protocol timeouts
-data LimitsAndTimeouts block = LimitsAndTimeouts
+data LimitsAndTimeouts header block = LimitsAndTimeouts
   { -- chain-sync
     chainSyncLimits
       :: MiniProtocolLimits
   , chainSyncSizeLimits
-      :: ProtocolSizeLimits (ChainSync block (Point block) (Tip block))
+      :: ProtocolSizeLimits (ChainSync header (Point block) (Tip block))
                             ByteString
   , chainSyncTimeLimits
-      :: ProtocolTimeLimits (ChainSync block (Point block) (Tip block))
+      :: ProtocolTimeLimits (ChainSync header (Point block) (Tip block))
 
     -- block-fetch
   , blockFetchLimits
@@ -186,7 +186,7 @@ data LimitsAndTimeouts block = LimitsAndTimeouts
 
 -- | Arguments for protocol handlers required by 'nodeApplications'.
 --
-data AppArgs block m = AppArgs
+data AppArgs header block m = AppArgs
   { aaLedgerPeersConsensusInterface
      :: LedgerPeersConsensusInterface m
   , aaKeepAliveStdGen
@@ -201,7 +201,7 @@ data AppArgs block m = AppArgs
     -- | if returns true, `chain-sync` client will exit as soon as it will see
     -- that block.
     --
-  , aaShouldChainSyncExit :: block -> m Bool
+  , aaShouldChainSyncExit :: header -> m Bool
 
     -- | if true, `chain-sync` will never go pass the query tip phase.  This
     -- simulates too far behind the chain in a crude way.
@@ -229,12 +229,14 @@ applications :: forall block header m.
                 , HeaderHash header ~ HeaderHash block
                 , Show block
                 , ShowProxy block
+                , ShowProxy header
                 )
              => Tracer m String
              -> NodeKernel header block m
-             -> Codecs NtNAddr block m
-             -> LimitsAndTimeouts block
-             -> AppArgs block m
+             -> Codecs NtNAddr header block m
+             -> LimitsAndTimeouts header block
+             -> AppArgs header block m
+             -> (block -> header)
              -> Diff.Applications NtNAddr NtNVersion NtNVersionData
                                   NtCAddr NtCVersion NtCVersionData
                                   m ()
@@ -253,7 +255,8 @@ applications debugTracer nodeKernel
                , aaShouldChainSyncExit
                , aaChainSyncEarlyExit
                , aaOwnPeerSharing
-               } =
+               }
+             toHeader =
     Diff.Applications
       { Diff.daApplicationInitiatorMode =
           simpleSingletonVersions UnversionedProtocol
@@ -372,7 +375,7 @@ applications debugTracer nodeKernel
                              client)
                     )
       where
-        client :: Client block point tip m ()
+        client :: Client header point tip m ()
         client = go
           where
             go = Client
@@ -409,7 +412,7 @@ applications debugTracer nodeKernel
         channel
         (chainSyncServerPeer
           (chainSyncServerExample
-            () (nkChainProducerState nodeKernel)))
+            () (nkChainProducerState nodeKernel) toHeader))
 
     blockFetchInitiator
       :: ConnectionId NtNAddr

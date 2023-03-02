@@ -838,7 +838,7 @@ diffusionSimulation
                 , mustReplyTimeout
                 }
 
-          limitsAndTimeouts :: NodeKernel.LimitsAndTimeouts Block
+          limitsAndTimeouts :: NodeKernel.LimitsAndTimeouts BlockHeader Block
           limitsAndTimeouts
             = NodeKernel.LimitsAndTimeouts
                 { NodeKernel.chainSyncLimits      = defaultMiniProtocolsLimit
@@ -884,14 +884,14 @@ diffusionSimulation
                                         $ \_ -> return Nothing
               }
 
-          shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> Block -> m Bool
-          shouldChainSyncExit v block = atomically $ do
+          shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> BlockHeader -> m Bool
+          shouldChainSyncExit v header = atomically $ do
             mbBlockNo <- readTVar v
             case mbBlockNo of
               Nothing ->
                 return False
 
-              Just blockNo | blockNo >= headerBlockNo (blockHeader block) -> do
+              Just blockNo | blockNo >= headerBlockNo header -> do
                 -- next time exit in 10 blocks
                 writeTVar v (Just $ blockNo + 10)
                 return True
