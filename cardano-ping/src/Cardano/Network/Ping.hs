@@ -463,25 +463,26 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
           vs -> Right $ foldr1 max vs
 
     isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
-    isSameVersionAndMagic (NodeToClientVersionV9 m1)  (NodeToClientVersionV9 m2)  = m1 == m2
-    isSameVersionAndMagic (NodeToClientVersionV10 m1) (NodeToClientVersionV10 m2) = m1 == m2
-    isSameVersionAndMagic (NodeToClientVersionV11 m1) (NodeToClientVersionV11 m2) = m1 == m2
-    isSameVersionAndMagic (NodeToClientVersionV12 m1) (NodeToClientVersionV12 m2) = m1 == m2
-    isSameVersionAndMagic (NodeToClientVersionV13 m1) (NodeToClientVersionV13 m2) = m1 == m2
-    isSameVersionAndMagic (NodeToClientVersionV14 m1) (NodeToClientVersionV14 m2) = m1 == m2
-    isSameVersionAndMagic (NodeToClientVersionV15 m1) (NodeToClientVersionV15 m2) = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV1 m1)    (NodeToNodeVersionV1 m2)    = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV2 m1)    (NodeToNodeVersionV2 m2)    = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV3 m1)    (NodeToNodeVersionV3 m2)    = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV4 m1 _)  (NodeToNodeVersionV4 m2 _)  = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV5 m1 _)  (NodeToNodeVersionV5 m2 _)  = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV6 m1 _)  (NodeToNodeVersionV6 m2 _)  = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV7 m1 _)  (NodeToNodeVersionV7 m2 _)  = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV8 m1 _)  (NodeToNodeVersionV8 m2 _)  = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV9 m1 _)  (NodeToNodeVersionV9 m2 _)  = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV10 m1 _) (NodeToNodeVersionV10 m2 _) = m1 == m2
-    isSameVersionAndMagic (NodeToNodeVersionV11 m1 _) (NodeToNodeVersionV11 m2 _) = m1 == m2
-    isSameVersionAndMagic _ _ = False
+    isSameVersionAndMagic v1 v2 = extract v1 == extract v2
+      where extract :: NodeVersion -> (Int, Word32)
+            extract (NodeToClientVersionV9 m)  = (-9, m)
+            extract (NodeToClientVersionV10 m) = (-10, m)
+            extract (NodeToClientVersionV11 m) = (-11, m)
+            extract (NodeToClientVersionV12 m) = (-12, m)
+            extract (NodeToClientVersionV13 m) = (-13, m)
+            extract (NodeToClientVersionV14 m) = (-14, m)
+            extract (NodeToClientVersionV15 m) = (-15, m)
+            extract (NodeToNodeVersionV1 m)    = (1, m)
+            extract (NodeToNodeVersionV2 m)    = (2, m)
+            extract (NodeToNodeVersionV3 m)    = (3, m)
+            extract (NodeToNodeVersionV4 m _)  = (4, m)
+            extract (NodeToNodeVersionV5 m _)  = (5, m)
+            extract (NodeToNodeVersionV6 m _)  = (6, m)
+            extract (NodeToNodeVersionV7 m _)  = (7, m)
+            extract (NodeToNodeVersionV8 m _)  = (8, m)
+            extract (NodeToNodeVersionV9 m _)  = (9, m)
+            extract (NodeToNodeVersionV10 m _) = (10, m)
+            extract (NodeToNodeVersionV11 m _) = (11, m)
 
     peerString :: IO String
     peerString =
