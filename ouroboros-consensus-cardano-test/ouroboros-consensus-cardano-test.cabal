@@ -89,6 +89,7 @@ test-suite test
     , base                              >=4.14    && <4.17
     , bytestring
     , cardano-crypto-class
+    , cardano-crypto-praos              ^>=2.1
     , cardano-ledger-alonzo
     , cardano-ledger-byron
     , cardano-ledger-core

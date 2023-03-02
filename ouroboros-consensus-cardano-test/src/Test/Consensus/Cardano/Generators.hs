@@ -20,6 +20,13 @@
 -- Cardano instances by picking randomly from one of the eras.
 module Test.Consensus.Cardano.Generators (module Test.Consensus.Byron.Generators) where
 
+import qualified Cardano.Crypto.DSIGN as DSIGN
+import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
+import qualified Cardano.Crypto.KES as KES
+import           Cardano.Crypto.Util (SignableRepresentation)
+import qualified Cardano.Crypto.VRF as VRF
+import qualified Cardano.Ledger.BaseTypes as SL
+import           Cardano.Ledger.Crypto (Crypto (..))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, fromMaybe)
 import           Data.Proxy
@@ -37,32 +44,12 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos)
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Block ()
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Test.Cardano.Ledger.Alonzo.Serialisation.Generators ()
-import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos)
-import           Ouroboros.Consensus.Shelley.Ledger.Block ()
-import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Counting (NonEmpty (..),
-                     nonEmptyFromList, nonEmptyToList)
-import           Ouroboros.Consensus.Util.SOP (nsFromIndex)
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
-
-import           Ouroboros.Consensus.Byron.Ledger
-
-import           Ouroboros.Consensus.Shelley.Ledger
-
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
-
-import           Cardano.Ledger.Crypto (Crypto (..))
-
 import           Test.Cardano.Ledger.Conway.Serialisation.Generators ()
 import           Test.Consensus.Byron.Generators
 import           Test.Consensus.Cardano.MockCrypto
@@ -73,13 +60,6 @@ import           Test.QuickCheck
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      WithVersion (..))
-
-import qualified Cardano.Crypto.DSIGN as DSIGN
-import           Cardano.Crypto.Hash.Blake2b (Blake2b_256, Blake2b_224)
-import qualified Cardano.Crypto.KES as KES
-import           Cardano.Crypto.Util (SignableRepresentation)
-import qualified Cardano.Crypto.VRF as VRF
-import qualified Cardano.Ledger.BaseTypes as SL
 
 {-------------------------------------------------------------------------------
   Disk
