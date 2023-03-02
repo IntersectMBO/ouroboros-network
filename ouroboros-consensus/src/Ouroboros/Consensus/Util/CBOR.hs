@@ -49,6 +49,8 @@ import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
+import           System.FS.API
+import           System.FS.API.Types
 
 import           Cardano.Slotting.Slot (WithOrigin (..), withOriginFromMaybe,
                      withOriginToMaybe)
@@ -59,9 +61,6 @@ import           Streaming.Prelude (Of (..), Stream)
 
 --import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
-
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
 
 {-------------------------------------------------------------------------------
   Incremental parsing in I/O

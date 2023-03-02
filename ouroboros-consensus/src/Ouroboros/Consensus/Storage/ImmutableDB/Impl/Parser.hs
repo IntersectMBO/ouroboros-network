@@ -21,16 +21,16 @@ import           Data.Word (Word64)
 import qualified Streaming as S
 import           Streaming (Of, Stream)
 import qualified Streaming.Prelude as S
+import           System.FS.API (HasFS)
+import           System.FS.API.Types (FsPath)
+import           System.FS.CRC
 
 import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util.CBOR (withStreamIncrementalOffsets)
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (HasFS)
-import           Ouroboros.Consensus.Storage.FS.CRC
 
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as Secondary
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..),

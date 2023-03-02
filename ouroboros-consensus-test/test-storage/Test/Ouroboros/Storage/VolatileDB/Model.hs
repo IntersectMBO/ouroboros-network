@@ -43,13 +43,13 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
+import           System.FS.API.Types (FsPath)
 
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      extractHeader)
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Consensus.Storage.Serialisation
                      (BinaryBlockInfo (..), EncodeDisk (..),
                      HasBinaryBlockInfo (..))

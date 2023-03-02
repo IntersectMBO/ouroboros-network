@@ -44,6 +44,9 @@ import           Test.QuickCheck
 
 import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 
+import qualified System.FS.Sim.MockFS as Mock
+import           System.FS.Sim.MockFS (MockFS)
+
 import qualified Ouroboros.Network.Mock.Chain as MockChain
 
 import           Ouroboros.Consensus.Block
@@ -74,8 +77,6 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
 
-import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.FS.Sim.MockFS (MockFS)
 import           Test.Util.HardFork.Future (Future)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.IOLike ()

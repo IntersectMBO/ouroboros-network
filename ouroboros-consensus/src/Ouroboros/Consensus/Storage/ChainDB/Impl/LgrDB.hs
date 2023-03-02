@@ -58,6 +58,8 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+import           System.FS.API (SomeHasFS (..), createDirectoryIfMissing)
+import           System.FS.API.Types (FsError, mkFsPath)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -72,9 +74,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
-                     createDirectoryIfMissing)
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
 
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB

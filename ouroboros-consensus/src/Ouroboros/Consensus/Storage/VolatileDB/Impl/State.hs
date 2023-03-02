@@ -43,6 +43,8 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
+import           System.FS.API
+import           System.FS.API.Types
 
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
@@ -54,8 +56,6 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
                      allocateTemp, modifyWithTempRegistry)
 
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo as FileInfo

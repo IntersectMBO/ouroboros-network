@@ -60,6 +60,10 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
 import           GHC.Generics (Generic)
+import           System.FS.API
+import           System.FS.API.Types
+import qualified System.FS.Sim.MockFS as MockFS
+import           System.FS.Sim.STM
 import           System.Random (getStdRandom, randomR)
 
 import qualified Test.QuickCheck as QC
@@ -80,12 +84,8 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.LedgerDB
 
-import qualified Test.Util.FS.Sim.MockFS as MockFS
-import           Test.Util.FS.Sim.STM
 import           Test.Util.Range
 import           Test.Util.TestBlock hiding (TestBlock, TestBlockCodecConfig,
                      TestBlockStorageConfig)

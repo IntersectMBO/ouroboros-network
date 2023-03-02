@@ -88,6 +88,8 @@ library
                      , ouroboros-consensus-shelley ^>=0.4.0
                      , ouroboros-consensus-cardano ^>=0.4.0
 
+                     , fs-api
+
   other-modules:       Cardano.Api.Key
                      , Cardano.Api.KeysByron
                      , Cardano.Api.KeysPraos

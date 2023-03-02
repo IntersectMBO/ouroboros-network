@@ -3,6 +3,7 @@
 module Test.Ouroboros.Storage.Orphans () where
 
 import           Data.Maybe (isJust)
+import           System.FS.API.Types (FsError, sameFsError)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CallStack
@@ -10,7 +11,6 @@ import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError,
                      ChainDbFailure)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, sameFsError)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDBError)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB.API (VolatileDBError)

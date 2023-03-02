@@ -67,6 +67,7 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
 import           Control.Monad (void)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
+import           System.FS.API.Types (FsError)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -90,7 +91,6 @@ import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
                      (InvalidBlockPunishment)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.Serialisation

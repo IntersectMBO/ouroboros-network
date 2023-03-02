@@ -62,14 +62,13 @@ import qualified Data.Vector.Unboxed as V
 import           Data.Word
 import           Foreign.Storable (sizeOf)
 import           GHC.Generics (Generic)
+import           System.FS.API
+import           System.FS.API.Types (AbsOffset (..), AllowExisting (..),
+                     OpenMode (..), SeekMode (..))
 
 import           Ouroboros.Consensus.Block (StandardHash)
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
-
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
-                     AllowExisting (..), OpenMode (..), SeekMode (..))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
                      (ImmutableDBError (..), UnexpectedFailure (..))

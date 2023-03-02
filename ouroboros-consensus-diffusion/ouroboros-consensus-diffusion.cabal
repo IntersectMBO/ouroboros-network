@@ -96,6 +96,8 @@ library
 
                      , ouroboros-consensus ==0.3.1.0
 
+                     , fs-api
+
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns

@@ -28,14 +28,13 @@ import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
 import           Streaming (Of (..))
 import qualified Streaming.Prelude as S
+import           System.FS.API
+import           System.FS.API.Types
 
 import           Ouroboros.Consensus.Block hiding (hashSize)
 import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks

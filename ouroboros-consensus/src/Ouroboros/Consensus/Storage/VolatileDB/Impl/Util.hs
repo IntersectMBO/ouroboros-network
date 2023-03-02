@@ -28,13 +28,13 @@ import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
+import           System.FS.API.Types
 import           Text.Read (readMaybe)
 
 import           Ouroboros.Consensus.Block (StandardHash)
 import           Ouroboros.Consensus.Util (lastMaybe)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 

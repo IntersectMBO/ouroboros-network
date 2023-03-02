@@ -10,13 +10,14 @@ import           Data.Typeable (Typeable)
 
 import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 
+import           System.FS.API.Types (FsError)
+
 import           Ouroboros.Network.ErrorPolicy
 
 import           Ouroboros.Consensus.Block (StandardHash)
 
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
                      ChainDbFailure)
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDBError)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB.API (VolatileDBError)

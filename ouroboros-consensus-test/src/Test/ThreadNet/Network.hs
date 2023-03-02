@@ -56,6 +56,8 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
+import qualified System.FS.Sim.MockFS as Mock
+import           System.FS.Sim.MockFS (MockFS)
 import           System.Random (mkStdGen)
 
 import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
@@ -121,8 +123,6 @@ import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
 
 import           Test.Util.ChainDB
-import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.FS.Sim.MockFS (MockFS)
 import qualified Test.Util.HardFork.Future as HFF
 import           Test.Util.HardFork.Future (Future)
 import qualified Test.Util.HardFork.OracularClock as OracularClock

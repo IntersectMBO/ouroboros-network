@@ -42,11 +42,6 @@ library
                        Test.Util.Classify
                        Test.Util.Corruption
                        Test.Util.FileLock
-                       Test.Util.FS.Sim.Error
-                       Test.Util.FS.Sim.FsTree
-                       Test.Util.FS.Sim.MockFS
-                       Test.Util.FS.Sim.Pure
-                       Test.Util.FS.Sim.STM
                        Test.Util.HardFork.Future
                        Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
@@ -125,6 +120,9 @@ library
                      , ouroboros-consensus           ^>=0.3.1
                      , ouroboros-consensus-diffusion ^>=0.3.1
 
+                     , fs-api
+                     , fs-sim
+
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
@@ -200,6 +198,9 @@ test-suite test-consensus
                      , ouroboros-consensus-mock      ==0.3.1.0
                      , ouroboros-consensus-test
 
+                     , fs-api
+                     , fs-sim
+
   default-language:    Haskell2010
   ghc-options:         -Wall
                        -Wcompat
@@ -229,8 +230,6 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ChainDB.Paths
                        Test.Ouroboros.Storage.ChainDB.StateMachine
                        Test.Ouroboros.Storage.ChainDB.StateMachine.Utils.RunOnRepl
-                       Test.Ouroboros.Storage.FS
-                       Test.Ouroboros.Storage.FS.StateMachine
                        Test.Ouroboros.Storage.ImmutableDB
                        Test.Ouroboros.Storage.ImmutableDB.Mock
                        Test.Ouroboros.Storage.ImmutableDB.Model
@@ -285,6 +284,9 @@ test-suite test-storage
                      , ouroboros-consensus      ^>=0.3.1
 
                      , ouroboros-consensus-test
+
+                     , fs-api
+                     , fs-sim
 
   default-language:    Haskell2010
   ghc-options:         -Wall

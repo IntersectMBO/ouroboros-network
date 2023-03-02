@@ -68,6 +68,10 @@ import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (AllowThunk (..))
+import           System.FS.API (HasFS (..), SomeHasFS (..))
+import           System.FS.API.Types (FsError (..), FsPath, mkFsPath)
+import           System.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
+import qualified System.FS.Sim.MockFS as Mock
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)
 
@@ -88,9 +92,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), SomeHasFS (..))
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath,
-                     mkFsPath)
 import           Ouroboros.Consensus.Storage.ImmutableDB hiding (streamAll)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
@@ -100,8 +101,6 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 
 import           Test.Util.ChunkInfo
-import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
-import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.QuickCheck (collects)
