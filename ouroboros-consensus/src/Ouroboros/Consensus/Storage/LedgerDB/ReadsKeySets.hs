@@ -75,15 +75,15 @@ readKeySetsWith readKeys (RewoundTableKeySets _seqNo rew) = do
     }
 
 withKeysReadSets ::
-  forall m l mk1 mk2.
+  forall m l mk1 a.
   ( HasLedgerTables l, Monad m
   )
   => l mk1
   -> KeySetsReader m l
   -> DbChangelog l
   -> LedgerTables l KeysMK
-  -> (l ValuesMK -> m (l mk2))
-  -> m (l mk2)
+  -> (l ValuesMK -> m a)
+  -> m a
 withKeysReadSets st ksReader dbch ks f = do
       let aks = rewindTableKeySets dbch ks :: RewoundTableKeySets l
       urs <- ksReader aks
