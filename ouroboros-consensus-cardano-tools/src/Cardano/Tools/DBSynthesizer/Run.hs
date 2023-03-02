@@ -34,8 +34,9 @@ import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB (defaultArgs,
                      getTipPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDB (cdbTracer,
                      withDB)
-import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
-                     defaultDiskPolicy)
+import           Ouroboros.Consensus.Storage.LedgerDB
+                     (BackingStoreSelector (InMemoryBackingStore),
+                     SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Network.Block
@@ -121,7 +122,7 @@ synthesize DBSynthesizerConfig{confOptions, confShelleyGenesis, confDbDir} (Some
             diskPolicy  = defaultDiskPolicy k DefaultSnapshotInterval
             dbArgs      = Node.mkChainDbArgs
                 registry InFuture.dontCheck pInfoConfig pInfoInitLedger chunkInfo $
-                    ChainDB.defaultArgs (Node.stdMkChainDbHasFS confDbDir) diskPolicy
+                    ChainDB.defaultArgs (Node.stdMkChainDbHasFS confDbDir) diskPolicy InMemoryBackingStore
 
         forgers <- pInfoBlockForging
         let fCount = length forgers

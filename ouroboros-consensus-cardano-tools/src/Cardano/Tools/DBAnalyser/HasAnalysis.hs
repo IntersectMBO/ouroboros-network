@@ -23,8 +23,8 @@ import           Text.Builder (Builder)
 
 data WithLedgerState blk = WithLedgerState
   { wlsBlk         :: blk
-  , wlsStateBefore :: LedgerState blk
-  , wlsStateAfter  :: LedgerState blk
+  , wlsStateBefore :: LedgerState blk EmptyMK
+  , wlsStateAfter  :: LedgerState blk EmptyMK
   }
 
 class (HasAnnTip blk, GetPrevHash blk, Condense (HeaderHash blk)) => HasAnalysis blk where

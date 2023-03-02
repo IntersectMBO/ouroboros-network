@@ -19,7 +19,9 @@ import           Text.Builder (Builder, decimal, intercalate)
 --  1. Header tick.
 --  2. Header application.
 --  3. Block tick.
---  4. Block application.
+--  4. Ledger state hydrate.
+--  5. Block application.
+--  6. Diffs flushing
 --
 -- It is up to the user of a slot data point to decide which units the data
 -- represent (eg milliseconds, nanoseconds, etc)
@@ -47,6 +49,8 @@ data SlotDataPoint =
       , mut_headerApply :: !Int64
       , mut_blockTick   :: !Int64
       , mut_blockApply  :: !Int64
+      , mut_hydrate     :: !Int64
+      , mut_flush       :: !Int64
       }
 
 -- | Return the headers that correspond to the fields of 'SlotDataPoint'.
@@ -76,4 +80,6 @@ showHeadersAndData =
     , ("mut_headerApply", decimal . mut_headerApply)
     , ("mut_blockTick"  , decimal . mut_blockTick)
     , ("mut_blockApply" , decimal . mut_blockApply)
+    , ("mut_hydrate"    , decimal . mut_hydrate)
+    , ("mut_flush"      , decimal . mut_flush)
     ]
