@@ -35,7 +35,7 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos)
 import           Ouroboros.Consensus.Shelley.Ledger.Block ()
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -53,28 +53,41 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
 
+import           Cardano.Ledger.Crypto (Crypto (..))
+
 import           Test.Cardano.Ledger.Conway.Serialisation.Generators ()
 import           Test.Consensus.Byron.Generators
 import           Test.Consensus.Cardano.MockCrypto
 import           Test.Consensus.Protocol.Serialisation.Generators ()
-import           Test.Consensus.Shelley.Generators
+import           Test.Consensus.Shelley.Generators (SomeResult (..))
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      WithVersion (..))
 
+import qualified Cardano.Crypto.DSIGN as DSIGN
+import           Cardano.Crypto.Hash.Blake2b (Blake2b_256, Blake2b_224)
+import qualified Cardano.Crypto.KES as KES
+import           Cardano.Crypto.Util (SignableRepresentation)
+import qualified Cardano.Crypto.VRF as VRF
+import qualified Cardano.Ledger.BaseTypes as SL
+
 {-------------------------------------------------------------------------------
   Disk
 -------------------------------------------------------------------------------}
 
-instance Arbitrary (CardanoBlock MockCryptoCompatByron) where
+instance ( DSIGN.Signable (DSIGN c) ~ SignableRepresentation
+         , KES.Signable (KES c) ~ SignableRepresentation
+         , VRF.Signable (VRF c) SL.Seed
+         , PraosCrypto c
+         ) => Arbitrary (CardanoBlock c) where
   arbitrary =
       oneof $ catMaybes $ hcollapse generators
     where
       generators ::
         NP
-          (K (Maybe (Gen (CardanoBlock MockCryptoCompatByron))))
-          (CardanoEras MockCryptoCompatByron)
+          (K (Maybe (Gen (CardanoBlock c))))
+          (CardanoEras c)
       generators =
             mk BlockByron
          :* mk BlockShelley
@@ -87,18 +100,22 @@ instance Arbitrary (CardanoBlock MockCryptoCompatByron) where
 
       mk ::
            forall a x. Arbitrary a
-        => (a -> CardanoBlock MockCryptoCompatByron)
-        -> K (Maybe (Gen (CardanoBlock MockCryptoCompatByron))) x
+        => (a -> CardanoBlock c)
+        -> K (Maybe (Gen (CardanoBlock c))) x
       mk f = K $ Just $ f <$> arbitrary
 
-instance Arbitrary (Coherent (CardanoBlock MockCryptoCompatByron)) where
+instance ( DSIGN.Signable (DSIGN c) ~ SignableRepresentation
+         , KES.Signable (KES c) ~ SignableRepresentation
+         , VRF.Signable (VRF c) SL.Seed
+         , PraosCrypto c
+         ) => Arbitrary (Coherent (CardanoBlock c)) where
   arbitrary =
       fmap Coherent $ oneof $ catMaybes $ hcollapse generators
     where
       generators ::
         NP
-          (K (Maybe (Gen (CardanoBlock MockCryptoCompatByron))))
-          (CardanoEras MockCryptoCompatByron)
+          (K (Maybe (Gen (CardanoBlock c))))
+          (CardanoEras c)
       generators =
             mk BlockByron
          :* mk BlockShelley
@@ -111,11 +128,18 @@ instance Arbitrary (Coherent (CardanoBlock MockCryptoCompatByron)) where
 
       mk ::
            forall a x. Arbitrary (Coherent a)
-        => (a -> CardanoBlock MockCryptoCompatByron)
-        -> K (Maybe (Gen (CardanoBlock MockCryptoCompatByron))) x
+        => (a -> CardanoBlock c)
+        -> K (Maybe (Gen (CardanoBlock c))) x
       mk f = K $ Just $ f . getCoherent <$> arbitrary
 
-instance Arbitrary (CardanoHeader MockCryptoCompatByron) where
+instance ( DSIGN.Signable (DSIGN c) ~ SignableRepresentation
+         , KES.Signable (KES c) ~ SignableRepresentation
+         , VRF.Signable (VRF c) SL.Seed
+         , HASH c ~ Blake2b_256
+         , ADDRHASH c ~ Blake2b_224
+         , DSIGN c ~ DSIGN.Ed25519DSIGN
+         , PraosCrypto c
+         ) => Arbitrary (CardanoHeader c) where
   arbitrary = getHeader <$> arbitrary
 
 instance (CanMock (TPraos c) (ShelleyEra c), CardanoHardForkConstraints c)
