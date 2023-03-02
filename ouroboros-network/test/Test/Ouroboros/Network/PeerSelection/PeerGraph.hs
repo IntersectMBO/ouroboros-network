@@ -41,7 +41,7 @@ import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.ShrinkCarefully
 
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Test.QuickCheck
 
 

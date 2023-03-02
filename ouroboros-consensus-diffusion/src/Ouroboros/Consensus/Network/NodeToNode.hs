@@ -114,7 +114,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Control.Monad.Class.MonadMVar (MonadMVar)
-import qualified Ouroboros.Network.PeerSelection.PeerSharing.Type as PSTypes
+import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
 import           Ouroboros.Network.PeerSharing (PeerSharingController,
                      bracketPeerSharingClient, peerSharingClient,
                      peerSharingServer)

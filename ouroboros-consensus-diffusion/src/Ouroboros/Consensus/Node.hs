@@ -125,9 +125,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing,
-                     decodeRemoteAddress, encodeRemoteAddress)
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing, encodeRemoteAddress, decodeRemoteAddress)
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 {-------------------------------------------------------------------------------
   The arguments to the Consensus Layer node functionality

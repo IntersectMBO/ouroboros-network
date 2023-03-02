@@ -49,7 +49,7 @@ import qualified Control.Monad.Class.MonadTimer as MonadTimer
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
                      Script (Script), initScript', scriptHead, singletonScript,

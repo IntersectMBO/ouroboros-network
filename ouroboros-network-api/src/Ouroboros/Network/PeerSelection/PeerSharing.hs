@@ -2,7 +2,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.PeerSelection.PeerSharing.Type
+module Ouroboros.Network.PeerSelection.PeerSharing
   ( PeerSharing (..)
   , combinePeerInformation
   , encodePortNumber
@@ -18,7 +18,7 @@ import           Data.Aeson.Types (FromJSON (..), ToJSON (..), Value (..),
 import qualified Data.Text as Text
 import           GHC.Generics (Generic)
 import           Network.Socket (PortNumber, SockAddr (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Text.Read (readMaybe)
 

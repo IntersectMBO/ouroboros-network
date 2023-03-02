@@ -103,14 +103,15 @@ import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelect
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay (..), DNSTimeout (..))
 
-import           Test.QuickCheck
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
-import Ouroboros.Network.Block (BlockNo(..))
 import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
                      (byteLimitsPeerSharing, timeLimitsPeerSharing)
+import           Test.QuickCheck (Arbitrary (..), Gen, Property, choose,
+                     chooseInt, counterexample, frequency, oneof, property,
+                     shrinkList, sized, sublistOf, suchThat, vectorOf, (.&&.), Positive (..))
+import Test.Ouroboros.Network.Diffusion.Node (PeerAdvertise)
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Cardano.Slotting.Block (BlockNo)
 
 -- | Diffusion Simulator Arguments
 --

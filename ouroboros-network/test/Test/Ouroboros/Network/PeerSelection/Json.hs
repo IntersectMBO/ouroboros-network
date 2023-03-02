@@ -5,7 +5,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), RelayAccessPoint (..))
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)

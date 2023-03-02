@@ -99,9 +99,9 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
 import           Control.Monad.Class.MonadMVar (MonadMVar)
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+import           Ouroboros.Network.PeerSelection.PeerSharing
                      (PeerSharing (..))
 import           Ouroboros.Network.PeerSharing
                      (PeerSharingRegistry (PeerSharingRegistry))
