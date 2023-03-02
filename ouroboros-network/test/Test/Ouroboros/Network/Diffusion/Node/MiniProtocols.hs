@@ -89,7 +89,7 @@ import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
                      chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
                      peerSharingMiniProtocolNum)
-import qualified Ouroboros.Network.PeerSelection.PeerSharing.Type as PSTypes
+import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
 import           Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
                      peerSharingClient, peerSharingServer)
 import           Ouroboros.Network.Protocol.PeerSharing.Client

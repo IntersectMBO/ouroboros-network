@@ -71,9 +71,9 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+import           Ouroboros.Network.PeerSelection.PeerSharing
                      (PeerSharing (..))
 import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
                      connectionManagerTraceMap, validTransitionMap,

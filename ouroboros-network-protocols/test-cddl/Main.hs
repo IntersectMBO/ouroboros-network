@@ -104,7 +104,7 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import qualified Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
 
 import           Network.Socket (SockAddr (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+import           Ouroboros.Network.PeerSelection.PeerSharing
                      (PeerSharing (..), decodeRemoteAddress,
                      encodeRemoteAddress)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)

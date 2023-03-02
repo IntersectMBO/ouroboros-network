@@ -49,7 +49,7 @@ import           Ouroboros.Network.Util.ShowProxy
 
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+import           Ouroboros.Network.PeerSelection.PeerSharing
                      (PeerSharing (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)

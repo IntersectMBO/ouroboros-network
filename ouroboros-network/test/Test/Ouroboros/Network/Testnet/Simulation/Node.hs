@@ -119,10 +119,10 @@ import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay (..), DNSTimeout (..))
 
 import           Test.QuickCheck
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
 import           Control.Monad.Class.MonadMVar (MonadMVar)
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
                      (byteLimitsPeerSharing, timeLimitsPeerSharing)
 

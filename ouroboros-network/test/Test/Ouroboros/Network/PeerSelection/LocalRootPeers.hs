@@ -25,7 +25,7 @@ import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
 import           Test.Ouroboros.Network.PeerSelection.Instances
 
 
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)

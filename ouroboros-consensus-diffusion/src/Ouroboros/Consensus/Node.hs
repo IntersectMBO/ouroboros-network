@@ -124,8 +124,8 @@ import           System.FS.API (SomeHasFS (..))
 import           System.FS.API.Types
 import           System.FS.IO (ioHasFS)
 import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type (decodeRemoteAddress, encodeRemoteAddress)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing,
+                     decodeRemoteAddress, encodeRemoteAddress)
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 {-------------------------------------------------------------------------------

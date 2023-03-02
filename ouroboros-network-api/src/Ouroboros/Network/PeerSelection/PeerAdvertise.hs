@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module Ouroboros.Network.PeerSelection.PeerAdvertise.Type (PeerAdvertise (..)) where
+module Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..)) where
 
 import           Data.Aeson
 import           Data.Bool (bool)

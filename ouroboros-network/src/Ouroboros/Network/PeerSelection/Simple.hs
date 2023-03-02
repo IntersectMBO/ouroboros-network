@@ -32,9 +32,9 @@ import qualified Network.Socket as Socket
 import           Control.Monad.Class.MonadMVar (MonadMVar (..), takeMVar)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSharing (PeerSharingController (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type

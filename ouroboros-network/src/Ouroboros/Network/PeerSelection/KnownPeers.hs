@@ -46,9 +46,9 @@ import           Control.Exception (assert)
 import           Control.Monad.Class.MonadTime
 
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise.Type
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+import           Ouroboros.Network.PeerSelection.PeerSharing
                      (PeerSharing (..), combinePeerInformation)
 
 

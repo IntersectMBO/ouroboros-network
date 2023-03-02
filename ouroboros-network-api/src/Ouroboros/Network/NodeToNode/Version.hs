@@ -22,7 +22,7 @@ import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.PeerSelection.PeerSharing.Type
+import           Ouroboros.Network.PeerSelection.PeerSharing
                      (PeerSharing (..))
 
 
