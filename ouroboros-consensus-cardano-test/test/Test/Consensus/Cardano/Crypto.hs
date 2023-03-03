@@ -17,7 +17,8 @@
 module Test.Consensus.Cardano.Crypto (tests) where
 
 import           Cardano.Crypto.VRF (sizeCertVRF)
-import           Cardano.Crypto.VRF.Praos (certSizeVRF)
+import qualified Cardano.Crypto.VRF.Praos as Praos
+import qualified Cardano.Crypto.VRF.PraosBatchCompat as BatchCompat
 import           Data.Function ((&))
 import           Ouroboros.Consensus.Cardano.Block (CardanoHeader,
                      StandardCrypto, pattern HeaderAllegra,
@@ -89,10 +90,8 @@ prop_VRFCryptoDependsOnBlockEra = \case
     HeaderBabbage ShelleyHeader {shelleyHeaderRaw} ->
       certVRFHasPraosSize shelleyHeaderRaw & label "Babbage"
     HeaderConway ShelleyHeader {shelleyHeaderRaw} ->
-      -- TODO: this is were we need to change to check we use in the Conway case
-      -- Cardano.Crypto.VRF.PraosBatchCompat.certSizevrf
-      certVRFHasPraosSize shelleyHeaderRaw & label "Conway"
+      certVRFHasBatchCompatSize shelleyHeaderRaw & label "Conway"
     HeaderByron _ -> property True & label "Byron"
-
   where
-    certVRFHasPraosSize hdrRaw = sizeCertVRF (pTieBreakVRFValue hdrRaw) === fromIntegral certSizeVRF
+    certVRFHasPraosSize hdrRaw = sizeCertVRF (pTieBreakVRFValue hdrRaw) === fromIntegral Praos.certSizeVRF
+    certVRFHasBatchCompatSize hdrRaw = sizeCertVRF (pTieBreakVRFValue hdrRaw) === fromIntegral BatchCompat.certSizeVRF
