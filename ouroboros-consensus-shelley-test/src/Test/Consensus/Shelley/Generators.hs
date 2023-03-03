@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos,
                      TPraosState (..))
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Protocol.Abstract (pHeaderHash)
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 
 import           Generic.Random (genericArbitraryU)
@@ -109,7 +110,9 @@ instance (CanMock (Praos crypto) era, crypto ~ EraCrypto era)
 
 instance (CanMock (TPraos crypto) era, crypto ~ EraCrypto era)
   => Arbitrary (Header (ShelleyBlock (TPraos crypto) era)) where
-  arbitrary = getHeader <$> arbitrary
+  arbitrary = do
+    hdr <- arbitrary
+    pure $ ShelleyHeader hdr (pHeaderHash hdr)
 
 instance (CanMock (Praos crypto) era, crypto ~ EraCrypto era)
   => Arbitrary (Header (ShelleyBlock (Praos crypto) era)) where
