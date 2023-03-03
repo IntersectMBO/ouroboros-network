@@ -53,6 +53,7 @@ belowTarget actions
               policyPeerShareRetryTime
             }
             st@PeerSelectionState {
+              bigLedgerPeers,
               knownPeers,
               establishedPeers,
               inProgressPeerShareReqs,
@@ -122,7 +123,8 @@ belowTarget actions
   | otherwise
   = GuardedSkip Nothing
   where
-    numKnownPeers            = KnownPeers.size knownPeers
+    numKnownPeers            = Set.size $ KnownPeers.toSet knownPeers
+                                   Set.\\ bigLedgerPeers
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
                              - inProgressPeerShareReqs
     availableForPeerShare    = EstablishedPeers.availableForPeerShare establishedPeers
@@ -327,6 +329,7 @@ aboveTarget PeerSelectionPolicy {
             st@PeerSelectionState {
               localRootPeers,
               publicRootPeers,
+              bigLedgerPeers,
               knownPeers,
               establishedPeers,
               inProgressPromoteCold,
@@ -362,6 +365,7 @@ aboveTarget PeerSelectionPolicy {
                                   Set.\\ (if numRootPeersCanForget <= 0
                                             then publicRootPeers else Set.empty)
                                   Set.\\ inProgressPromoteCold
+                                  Set.\\ bigLedgerPeers
 
   , not (Set.null availableToForget)
   = Guarded Nothing $ do
@@ -402,8 +406,10 @@ aboveTarget PeerSelectionPolicy {
   = GuardedSkip Nothing
   where
     numKnownPeers, numEstablishedPeers :: Int
-    numKnownPeers        = KnownPeers.size knownPeers
-    numEstablishedPeers  = EstablishedPeers.size establishedPeers
+    numKnownPeers        = Set.size $ KnownPeers.toSet knownPeers
+                               Set.\\ bigLedgerPeers
+    numEstablishedPeers  = Set.size $ EstablishedPeers.toSet establishedPeers
+                               Set.\\ bigLedgerPeers
 
 
 -------------------------------

@@ -113,6 +113,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
       return $ Completion $ \st now ->
         let newPeers         = results `Map.withoutKeys` LocalRootPeers.keysSet (localRootPeers st)
                                        `Map.withoutKeys` publicRootPeers st
+                                       `Map.withoutKeys` bigLedgerPeers st
             publicRootPeers' = publicRootPeers st <> Map.keysSet newPeers
             knownPeers'      = KnownPeers.insert
                                  -- When we don't know about the PeerSharing information

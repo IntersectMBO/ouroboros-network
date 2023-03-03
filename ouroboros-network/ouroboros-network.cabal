@@ -64,6 +64,7 @@ library
                        Ouroboros.Network.PeerSelection.Governor.ActivePeers
                        Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
                        Ouroboros.Network.PeerSelection.Governor.KnownPeers
+                       Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
                        Ouroboros.Network.PeerSelection.Governor.Monitor
                        Ouroboros.Network.PeerSelection.Governor.RootPeers
                        Ouroboros.Network.PeerSelection.Governor.Types

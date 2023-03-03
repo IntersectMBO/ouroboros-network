@@ -370,7 +370,7 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
 
   -- Make sure our targets for active peers cover the maximum of peers
   -- one generated
-  peerSelectionTargets <- arbitrary `suchThat` hasActive minConnected
+  peerSelectionTargets <- arbitrary `suchThat` hasActive
 
   dnsTimeout <- arbitrary
   dnsLookupDelay <- arbitrary
@@ -404,8 +404,12 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
       , naPeerSharing            = peerSharing
       }
   where
-    hasActive :: Int -> PeerSelectionTargets -> Bool
-    hasActive minConn (PeerSelectionTargets _ _ _ y) = y > minConn
+    hasActive :: PeerSelectionTargets -> Bool
+    hasActive (PeerSelectionTargets {
+                 targetNumberOfActivePeers = y,
+                 targetNumberOfActiveBigLedgerPeers = z
+               }) =
+      y + z > minConnected
 
 -- | Multinode Diffusion Simulator Script
 --

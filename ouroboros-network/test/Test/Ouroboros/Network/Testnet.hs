@@ -542,68 +542,104 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
              $ runSimTrace sim
 
       peerSelectionTraceMap :: TracePeerSelection NtNAddr -> String
-      peerSelectionTraceMap (TraceLocalRootPeersChanged _ _)    =
+      peerSelectionTraceMap TraceLocalRootPeersChanged {}            =
         "TraceLocalRootPeersChanged"
-      peerSelectionTraceMap (TraceTargetsChanged _ _)           =
+      peerSelectionTraceMap TraceTargetsChanged {}                   =
         "TraceTargetsChanged"
-      peerSelectionTraceMap (TracePublicRootsRequest _ _)       =
+      peerSelectionTraceMap TracePublicRootsRequest {}               =
         "TracePublicRootsRequest"
-      peerSelectionTraceMap (TracePublicRootsResults _ _ _)     =
+      peerSelectionTraceMap TracePublicRootsResults {}               =
         "TracePublicRootsResults"
-      peerSelectionTraceMap (TracePublicRootsFailure se _ _)    =
+      peerSelectionTraceMap (TracePublicRootsFailure se _ _)         =
         "TracePublicRootsFailure " ++ show se
-      peerSelectionTraceMap (TracePeerShareRequests _ _ _ _)    =
+      peerSelectionTraceMap TracePeerShareRequests {}                =
         "TracePeerShareRequests"
-      peerSelectionTraceMap (TracePeerShareResults _)           =
+      peerSelectionTraceMap TracePeerShareResults {}                 =
         "TracePeerShareResults"
-      peerSelectionTraceMap (TracePeerShareResultsFiltered _)   =
+      peerSelectionTraceMap TracePeerShareResultsFiltered {}         =
         "TracePeerShareResultsFiltered"
       peerSelectionTraceMap (TraceKnownInboundConnection addr ps) =
         "TraceKnownInboundConnection " ++ show addr ++ " " ++ show ps
-      peerSelectionTraceMap (TraceForgetColdPeers _ _ _)        =
+      peerSelectionTraceMap TraceForgetColdPeers {}                  =
         "TraceForgetColdPeers"
-      peerSelectionTraceMap (TracePromoteColdPeers _ _ _)       =
+      peerSelectionTraceMap TracePromoteColdPeers {}                 =
         "TracePromoteColdPeers"
-      peerSelectionTraceMap (TracePromoteColdLocalPeers _ _)  =
+      peerSelectionTraceMap TracePromoteColdLocalPeers {}            =
         "TracePromoteColdLocalPeers"
-      peerSelectionTraceMap (TracePromoteColdFailed _ _ _ _ _)  =
+      peerSelectionTraceMap TracePromoteColdFailed {}                =
         "TracePromoteColdFailed"
-      peerSelectionTraceMap (TracePromoteColdDone _ _ _)        =
+      peerSelectionTraceMap TracePromoteColdDone {}                  =
         "TracePromoteColdDone"
-      peerSelectionTraceMap (TracePromoteWarmPeers _ _ _)       =
+      peerSelectionTraceMap TracePromoteWarmPeers {}                 =
         "TracePromoteWarmPeers"
-      peerSelectionTraceMap (TracePromoteWarmLocalPeers _ _)    =
+      peerSelectionTraceMap TracePromoteWarmLocalPeers {}            =
         "TracePromoteWarmLocalPeers"
-      peerSelectionTraceMap (TracePromoteWarmFailed _ _ _ _)    =
+      peerSelectionTraceMap TracePromoteWarmFailed {}                =
         "TracePromoteWarmFailed"
-      peerSelectionTraceMap (TracePromoteWarmDone _ _ _)        =
+      peerSelectionTraceMap TracePromoteWarmDone {}                  =
         "TracePromoteWarmDone"
-      peerSelectionTraceMap (TracePromoteWarmAborted _ _ _)     =
+      peerSelectionTraceMap TracePromoteWarmAborted {}               =
         "TracePromoteWarmAborted"
-      peerSelectionTraceMap (TraceDemoteWarmPeers _ _ _)        =
+      peerSelectionTraceMap TraceDemoteWarmPeers {}                  =
         "TraceDemoteWarmPeers"
-      peerSelectionTraceMap (TraceDemoteWarmFailed _ _ _ _)     =
+      peerSelectionTraceMap TraceDemoteWarmFailed {}                 =
         "TraceDemoteWarmFailed"
-      peerSelectionTraceMap (TraceDemoteWarmDone _ _ _)         =
+      peerSelectionTraceMap TraceDemoteWarmDone {}                   =
         "TraceDemoteWarmDone"
-      peerSelectionTraceMap (TraceDemoteHotPeers _ _ _)         =
+      peerSelectionTraceMap TraceDemoteHotPeers {}                   =
         "TraceDemoteHotPeers"
-      peerSelectionTraceMap (TraceDemoteLocalHotPeers _ _)      =
+      peerSelectionTraceMap TraceDemoteLocalHotPeers {}              =
         "TraceDemoteLocalHotPeers"
-      peerSelectionTraceMap (TraceDemoteHotFailed _ _ _ _)      =
+      peerSelectionTraceMap TraceDemoteHotFailed {}                  =
         "TraceDemoteHotFailed"
-      peerSelectionTraceMap (TraceDemoteHotDone _ _ _)          =
+      peerSelectionTraceMap TraceDemoteHotDone {}                    =
         "TraceDemoteHotDone"
-      peerSelectionTraceMap (TraceDemoteAsynchronous _)         =
+      peerSelectionTraceMap TraceDemoteAsynchronous {}               =
         "TraceDemoteAsynchronous"
-      peerSelectionTraceMap (TraceDemoteLocalAsynchronous _)    =
+      peerSelectionTraceMap TraceDemoteLocalAsynchronous {}          =
         "TraceDemoteLocalAsynchronous"
-      peerSelectionTraceMap TraceGovernorWakeup                 =
+      peerSelectionTraceMap TraceGovernorWakeup                      =
         "TraceGovernorWakeup"
-      peerSelectionTraceMap (TraceChurnWait _)                  =
+      peerSelectionTraceMap TraceChurnWait {}                        =
         "TraceChurnWait"
-      peerSelectionTraceMap (TraceChurnMode cm)                 =
+      peerSelectionTraceMap (TraceChurnMode cm)                      =
         "TraceChurnMode " ++ show cm
+      peerSelectionTraceMap TraceForgetBigLedgerPeers {}             =
+        "TraceForgetBigLedgerPeers"
+      peerSelectionTraceMap TraceBigLedgerPeersRequest {}            =
+        "TraceBigLedgerPeersRequest"
+      peerSelectionTraceMap TraceBigLedgerPeersResults {}            =
+        "TraceBigLedgerPeersResults"
+      peerSelectionTraceMap TraceBigLedgerPeersFailure {}            =
+        "TraceBigLedgerPeersFailure"
+      peerSelectionTraceMap TracePromoteColdBigLedgerPeers {}        =
+        "TracePromoteColdBigLedgerPeers"
+      peerSelectionTraceMap TracePromoteColdBigLedgerPeerFailed {}   =
+        "TracePromoteColdBigLedgerPeerFailed"
+      peerSelectionTraceMap TracePromoteColdBigLedgerPeerDone {}     =
+        "TracePromoteColdBigLedgerPeerDone"
+      peerSelectionTraceMap TracePromoteWarmBigLedgerPeers {}        =
+        "TracePromoteWarmBigLedgerPeers"
+      peerSelectionTraceMap TracePromoteWarmBigLedgerPeerFailed {}   =
+        "TracePromoteWarmBigLedgerPeerFailed"
+      peerSelectionTraceMap TracePromoteWarmBigLedgerPeerDone {}     =
+        "TracePromoteWarmBigLedgerPeerDone"
+      peerSelectionTraceMap TracePromoteWarmBigLedgerPeerAborted {}  =
+        "TracePromoteWarmBigLedgerPeerAborted"
+      peerSelectionTraceMap TraceDemoteWarmBigLedgerPeers {}         =
+        "TraceDemoteWarmBigLedgerPeers"
+      peerSelectionTraceMap TraceDemoteWarmBigLedgerPeerFailed {}    =
+        "TraceDemoteWarmBigLedgerPeerFailed"
+      peerSelectionTraceMap TraceDemoteWarmBigLedgerPeerDone {}      =
+        "TraceDemoteWarmBigLedgerPeerDone"
+      peerSelectionTraceMap TraceDemoteHotBigLedgerPeers {}          =
+        "TraceDemoteHotBigLedgerPeers"
+      peerSelectionTraceMap TraceDemoteHotBigLedgerPeerFailed {}     =
+        "TraceDemoteHotBigLedgerPeerFailed"
+      peerSelectionTraceMap TraceDemoteHotBigLedgerPeerDone {}       =
+        "TraceDemoteHotBigLedgerPeerDone"
+      peerSelectionTraceMap TraceDemoteBigLedgerPeersAsynchronous {} =
+        "TraceDemoteBigLedgerPeersAsynchronous"
 
       eventsSeenNames = map peerSelectionTraceMap events
 
@@ -1848,13 +1884,14 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                . traceEvents
                $ runSimTrace sim
 
-     in conjoin
+    in conjoin
       $ (\ev ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
-         in classifySimulatedTime lastTime
+        in counterexample (unlines $ map show evsList)
+          $ classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_async_demotions ev
         )
@@ -1883,6 +1920,10 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                            Just $ Left (Just failures)
                          where
                            failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                       DiffusionPeerSelectionTrace (TraceDemoteBigLedgerPeersAsynchronous status) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
                        DiffusionPeerSelectionTrace (TraceDemoteLocalAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
@@ -1901,7 +1942,7 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
           demotionOpportunitiesTooLong =
               Signal.keyedTimeout 1 id demotionOpportunities
 
-       in signalProperty
+      in signalProperty
             20 show Set.null
             demotionOpportunitiesTooLong
 

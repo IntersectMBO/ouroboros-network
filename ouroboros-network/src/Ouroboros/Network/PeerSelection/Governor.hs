@@ -51,6 +51,7 @@ import           System.Random
 
 import           Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers as ActivePeers
+import qualified Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers as BigLedgerPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.Governor.Monitor as Monitor
@@ -567,6 +568,10 @@ peerSelectionGovernorLoop tracer
       <> Monitor.jobs                 jobPool st
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions policy st
+
+      -- The non-blocking decisions regarding (known) big ledger peers
+      <> BigLedgerPeers.belowTarget   actions blockedAt        st
+      <> BigLedgerPeers.aboveTarget                     policy st
 
       -- All the alternative non-blocking internal decisions.
       <> RootPeers.belowTarget        actions blockedAt         st

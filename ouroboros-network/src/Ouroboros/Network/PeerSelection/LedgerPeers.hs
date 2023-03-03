@@ -70,6 +70,7 @@ data IsLedgerPeer = IsLedgerPeer
                   | IsNotLedgerPeer
   deriving (Eq, Show)
 
+
 -- | Which ledger peers to pick.
 --
 data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers

@@ -448,5 +448,8 @@ sampleAdvertisedPeers _ _ _ = []
 isKnownLedgerPeer :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 isKnownLedgerPeer peeraddr KnownPeers { allPeers } =
   case Map.lookup peeraddr allPeers of
-    Just (KnownPeerInfo _ _ _ _ IsLedgerPeer) -> True
-    _                                         -> False
+    Just KnownPeerInfo { knownLedgerPeer } ->
+      case knownLedgerPeer of
+        IsLedgerPeer    -> True
+        IsNotLedgerPeer -> False
+    Nothing             -> False
