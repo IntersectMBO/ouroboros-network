@@ -513,7 +513,7 @@ translateLedgerViewByronToShelleyWrapper =
 -------------------------------------------------------------------------------}
 
 translateLedgerStateShelleyToAllegraWrapper ::
-     (PraosCrypto c)
+     PraosCrypto c
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -525,7 +525,7 @@ translateLedgerStateShelleyToAllegraWrapper =
         unComp . SL.translateEra' () . Comp
 
 translateTxShelleyToAllegraWrapper ::
-     (PraosCrypto c)
+     PraosCrypto c
   => InjectTx
        (ShelleyBlock (TPraos c) (ShelleyEra c))
        (ShelleyBlock (TPraos c) (AllegraEra c))
@@ -533,7 +533,7 @@ translateTxShelleyToAllegraWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
 translateValidatedTxShelleyToAllegraWrapper ::
-     (PraosCrypto c)
+     PraosCrypto c
   => InjectValidatedTx
        (ShelleyBlock (TPraos c) (ShelleyEra c))
        (ShelleyBlock (TPraos c) (AllegraEra c))
@@ -545,7 +545,7 @@ translateValidatedTxShelleyToAllegraWrapper = InjectValidatedTx $
 -------------------------------------------------------------------------------}
 
 translateLedgerStateAllegraToMaryWrapper ::
-     (PraosCrypto c)
+     PraosCrypto c
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -561,7 +561,7 @@ translateLedgerStateAllegraToMaryWrapper =
 -------------------------------------------------------------------------------}
 
 translateTxAllegraToMaryWrapper ::
-     (PraosCrypto c)
+     PraosCrypto c
   => InjectTx
        (ShelleyBlock (TPraos c) (AllegraEra c))
        (ShelleyBlock (TPraos c) (MaryEra c))
@@ -569,7 +569,7 @@ translateTxAllegraToMaryWrapper = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
 translateValidatedTxAllegraToMaryWrapper ::
-     (PraosCrypto c)
+     PraosCrypto c
   => InjectValidatedTx
        (ShelleyBlock (TPraos c) (AllegraEra c))
        (ShelleyBlock (TPraos c) (MaryEra c))
@@ -581,7 +581,7 @@ translateValidatedTxAllegraToMaryWrapper = InjectValidatedTx $
 -------------------------------------------------------------------------------}
 
 translateLedgerStateMaryToAlonzoWrapper ::
-     (PraosCrypto c)
+     PraosCrypto c
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -599,7 +599,7 @@ getAlonzoTranslationContext =
     shelleyLedgerTranslationContext . unwrapLedgerConfig
 
 translateTxMaryToAlonzoWrapper ::
-     (PraosCrypto c)
+     PraosCrypto c
   => SL.TranslationContext (AlonzoEra c)
   -> InjectTx
        (ShelleyBlock (TPraos c) (MaryEra c))
@@ -622,7 +622,7 @@ translateValidatedTxMaryToAlonzoWrapper ctxt = InjectValidatedTx $
 -------------------------------------------------------------------------------}
 
 translateLedgerStateAlonzoToBabbageWrapper ::
-     (Praos.PraosCrypto c)
+     PraosCrypto c
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -644,7 +644,7 @@ translateLedgerStateAlonzoToBabbageWrapper =
         }
 
 translateTxAlonzoToBabbageWrapper ::
-     (Praos.PraosCrypto c)
+     Praos.PraosCrypto c
   => SL.TranslationContext (BabbageEra c)
   -> InjectTx
        (ShelleyBlock (TPraos c) (AlonzoEra c))
@@ -659,7 +659,7 @@ translateTxAlonzoToBabbageWrapper ctxt = InjectTx $
 
 translateValidatedTxAlonzoToBabbageWrapper ::
      forall c.
-     (Praos.PraosCrypto c)
+     Praos.PraosCrypto c
   => SL.TranslationContext (BabbageEra c)
   -> InjectValidatedTx
        (ShelleyBlock (TPraos c) (AlonzoEra c))
@@ -684,7 +684,7 @@ translateValidatedTxAlonzoToBabbageWrapper ctxt = InjectValidatedTx $
 -------------------------------------------------------------------------------}
 
 translateLedgerStateBabbageToConwayWrapper ::
-     (Praos.PraosCrypto c)
+     PraosCrypto c
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -702,7 +702,7 @@ getConwayTranslationContext =
     shelleyLedgerTranslationContext . unwrapLedgerConfig
 
 translateTxBabbageToConwayWrapper ::
-     (Praos.PraosCrypto c)
+     Praos.PraosCrypto c
   => SL.TranslationContext (ConwayEra c)
   -> InjectTx
        (ShelleyBlock (Praos c) (BabbageEra c))
@@ -711,8 +711,7 @@ translateTxBabbageToConwayWrapper ctxt = InjectTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
 
 translateValidatedTxBabbageToConwayWrapper ::
-     forall c.
-     (Praos.PraosCrypto c)
+     PraosCrypto c
   => SL.TranslationContext (ConwayEra c)
   -> InjectValidatedTx
        (ShelleyBlock (Praos c) (BabbageEra c))
