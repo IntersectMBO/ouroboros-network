@@ -54,6 +54,7 @@ import           Ouroboros.Network.InboundGovernor
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket
+import Ouroboros.Network.ConnectionManager.InformationChannel (InboundGovernorInfoChannel)
 
 
 --

@@ -76,7 +76,7 @@ unversionedProtocol = simpleSingletonVersions UnversionedProtocol UnversionedPro
 --
 data DataFlowProtocolData =
     DataFlowProtocolData {
-      getProtocolDataFlow :: DataFlow,
+      getProtocolDataFlow    :: DataFlow,
       getProtocolPeerSharing :: PeerSharing
     }
   deriving (Eq, Show)

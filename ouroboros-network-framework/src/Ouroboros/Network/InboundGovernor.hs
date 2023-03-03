@@ -21,9 +21,6 @@ module Ouroboros.Network.InboundGovernor
   , newObservableStateVarFromSeed
     -- * Run Inbound Protocol Governor
   , inboundGovernor
-    -- * Auxiliary Types
-  , InboundGovernorInfoChannel
-  , OutboundGovernorInfoChannel
     -- * Trace
   , InboundGovernorTrace (..)
   , RemoteSt (..)
@@ -59,14 +56,13 @@ import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (InformationChannel)
+                     (InboundGovernorInfoChannel)
 import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
 import           Ouroboros.Network.ConnectionManager.Types hiding
                      (TrUnexpectedlyFalseAssertion)
 import           Ouroboros.Network.InboundGovernor.Event
 import           Ouroboros.Network.InboundGovernor.State
 import           Ouroboros.Network.Mux
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Server.RateLimiting
 
 -- | Run the server, which consists of the following components:
@@ -503,28 +499,6 @@ runResponder mux
             Mux.ResponderDirection
             startStrategy
             (runMuxPeer responder . fromChannel)
-
---
--- Auxiliary Types
---
-
--- | A Server control channel which instantiates to 'NewConnection' and 'Handle'.
---
--- It allows to pass 'STM' transactions which will resolve to 'NewConnection'.
--- Server's monitoring thread is the consumer of these messages; there are two
--- producers: accept loop and connection handler for outbound connections.
---
-type InboundGovernorInfoChannel (muxMode :: MuxMode) peerAddr versionData bytes m a b =
-    InformationChannel (NewConnectionInfo peerAddr (Handle muxMode peerAddr versionData bytes m a b)) m
-
--- | Control Channel between Server and Outbound Governor.
---
--- Control channel that is meant to share inbound connections with the Peer
--- Selection Governor. So the consumer is the Governor and Producer is the
--- Server.
---
-type OutboundGovernorInfoChannel peerAddr m =
-    InformationChannel (peerAddr, PeerSharing) m
 
 --
 -- Trace
