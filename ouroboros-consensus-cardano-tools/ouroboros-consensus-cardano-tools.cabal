@@ -50,7 +50,6 @@ library
                      , cborg
                      , containers
                      , contra-tracer
-                     , deepseq
                      , directory
                      , filepath
                      , microlens
@@ -85,7 +84,6 @@ library
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-shelley
                      , ouroboros-network-api
-                     , ouroboros-network-protocols
                      , ouroboros-consensus-diffusion
 
   other-modules:       Cardano.Api.Key
@@ -112,6 +110,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
@@ -137,6 +136,7 @@ executable db-analyser
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -threaded
                        -rtsopts
                        "-with-rtsopts=-T -I0 -N2 -A16m"
@@ -148,19 +148,13 @@ executable db-synthesizer
   default-language:    Haskell2010
 
   build-depends:       base              >=4.14 && <4.17
-                     , aeson
-                     , bytestring
-                     , directory
-                     , filepath
                      , optparse-applicative
                      , ouroboros-consensus
                      , ouroboros-consensus-cardano-tools
-                     , transformers
-                     , transformers-except
 
   other-modules:     DBSynthesizer.Parsers
 
-  ghc-options:       -Wall
+  ghc-options:        -Wall
                      -Wcompat
                      -Wincomplete-uni-patterns
                      -Wincomplete-record-updates
@@ -168,6 +162,7 @@ executable db-synthesizer
                      -Widentities
                      -Wredundant-constraints
                      -Wmissing-export-lists
+                     -Wunused-packages
                      -O2
                      -threaded
                      -rtsopts
@@ -184,7 +179,7 @@ test-suite test
                      , ouroboros-consensus-cardano-tools
                      , tasty
                      , tasty-hunit
-                     
+
   ghc-options:       -Wall
                      -Wcompat
                      -Wincomplete-uni-patterns
@@ -193,6 +188,7 @@ test-suite test
                      -Widentities
                      -Wredundant-constraints
                      -Wmissing-export-lists
+                     -Wunused-packages
                      -threaded
                      -rtsopts
                      "-with-rtsopts=-N -I0 -A16m"

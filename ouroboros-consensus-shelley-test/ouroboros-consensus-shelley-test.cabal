@@ -35,7 +35,6 @@ library
                      , cardano-data
                      , cardano-ledger-core:{cardano-ledger-core, testlib}
                      , cardano-protocol-tpraos
-                     , cardano-slotting
                      , containers        >=0.5   && <0.7
                      , generic-random
                      , quiet             >=0.2   && <0.3
@@ -43,7 +42,6 @@ library
                      , microlens
                      , QuickCheck
                      , cardano-strict-containers
-                     , transformers
 
                        -- cardano-ledger
                      , cardano-ledger-allegra
@@ -60,7 +58,6 @@ library
                      , small-steps
 
                      , ouroboros-network-api
-                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-protocol:ouroboros-consensus-protocol-test
@@ -76,6 +73,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts
 
 test-suite test
@@ -107,7 +105,6 @@ test-suite test
                      , cardano-ledger-shelley
                      , cardano-protocol-tpraos
 
-                     , ouroboros-network-protocols
                      , ouroboros-consensus
                      , ouroboros-consensus-protocol
                      , ouroboros-consensus-test
@@ -123,6 +120,7 @@ test-suite test
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts
                        -threaded
                        -rtsopts

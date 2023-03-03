@@ -42,7 +42,6 @@ library
     bytestring,
     cardano-binary,
     cardano-crypto-class,
-    cardano-data,
     cardano-ledger-binary,
     cardano-ledger-core,
     cardano-ledger-shelley,
@@ -54,7 +53,6 @@ library
     nothunks,
     ouroboros-consensus,
     serialise,
-    small-steps,
     text
   ghc-options:
     -Wall
@@ -65,6 +63,7 @@ library
     -Widentities
     -Wredundant-constraints
     -Wmissing-export-lists
+    -Wunused-packages
   if flag(asserts)
     ghc-options:
       -fno-ignore-asserts

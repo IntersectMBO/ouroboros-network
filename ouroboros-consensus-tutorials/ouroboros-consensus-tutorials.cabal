@@ -45,4 +45,5 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
                        -fno-ignore-asserts

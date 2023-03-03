@@ -350,6 +350,7 @@ library
                        -Widentities
                        -Wredundant-constraints
                        -Wmissing-export-lists
+                       -Wunused-packages
 
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
