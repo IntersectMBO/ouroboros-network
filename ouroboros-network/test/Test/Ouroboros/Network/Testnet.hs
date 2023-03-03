@@ -2443,9 +2443,8 @@ prop_never_connects_to_self absBearerInfo diffScript =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo absBearerInfo)
                                   diffScript
-                                  tracersExtraWithTimeName
+                                  iosimTracer
                                   tracerDiffusionSimWithTimeName
-                                  nullTracer
 
         events :: [Trace () DiffusionTestTrace]
         events = fmap ( Trace.fromList ()
