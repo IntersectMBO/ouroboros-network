@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+
+# Build and then run the tests with a nicer output than `cabal test`
+#
+# Usage: `cabal-test $PKG` where $PKG is either
+# - `all`
+# - the name of a package
+# - a sequence of names of packages
+#
+# For example:
+# $ ./scripts/cabal-test all
+# $ ./scripts/cabal-test ouroboros-consensus-cardano-test
+# $ ./scripts/cabal-test ouroboros-consensus-cardano-test  ouroboros-consensus-test
+
+[ -f cabal_pids ] && rm cabal_pids cabal_status cabal_logs
+
+declare -gA cabal_pids
+declare -gA cabal_status
+declare -gA cabal_logs
+height=0
+
+function print_centered {
+     [[ $# == 0 ]] && return 1
+
+     declare -i TERM_COLS="$(tput cols)"
+     declare -i str_len="${#1}"
+     [[ $str_len -ge $TERM_COLS ]] && {
+          echo "$1";
+          return 0;
+     }
+
+     declare -i filler_len="$(( (TERM_COLS - str_len) / 2 ))"
+     [[ $# -ge 2 ]] && ch="${2:0:1}" || ch=" "
+     filler=""
+     for (( i = 0; i < filler_len; i++ )); do
+          filler="${filler}${ch}"
+     done
+
+     printf "%s%s%s" "$filler" "$1" "$filler"
+     [[ $(( (TERM_COLS - str_len) % 2 )) -ne 0 ]] && printf "%s" "${ch}"
+     printf "\n"
+
+     return 0
+}
+export -f print_centered
+
+function ppp {
+    print_centered "-" "-"
+    print_centered "================= $1 =================" " "
+    print_centered "-" "-"
+}
+export -f ppp
+
+update() {
+    if [[ -f cabal_pids ]]; then
+        height=$(($(cat cabal_pids | sort | uniq | wc -l) + 3))
+        printf "\033[${height}A\033[J"
+        echo $1
+        ppp "TESTING SUMMARY"
+        (paste -d@ cabal_pids cabal_status cabal_logs | while IFS="@" read -r test_name status log; do
+            if [[ -f $log ]]; then
+                if [[ $(grep "Test suite .*: PASS" $log) ]]; then
+                    printf "\033[38;5;8m%-50s%s\t\033[38;5;46mpassed [$(cat $log | grep "tests passed (")]\033[0m\n" "$test_name"
+                else
+                    printf "\033[38;5;196m%-50s%s\tfailed [$(cat $log| grep "tests failed (")]\033[0m\n" "$test_name"
+                fi
+            else
+                printf "\033[38;5;3m%-50s%s\trunning\033[0m\n" "$test_name"
+            fi
+
+         done) | sort | uniq
+    else
+        printf "\033[3A\033[J"
+        echo $1
+        ppp "TESTING SUMMARY"
+    fi
+}
+export -f update
+
+ppp "BUILDING"
+cabal build $1
+
+ppp "BUILD FINISHED"
+ppp "TESTING"
+
+# TODO: xargs trims the prepended whitespaces so everything is aligned to the
+# left. This is probably not very nice, but I don't know how to fix it. My guess
+# would be to count the number of whitespaces before calling `update` and
+# passing it as a parameter used then when printing, but I don't know how to do
+# this
+cabal test --test-show-details=direct $1 > >(xargs -I {} bash -c "update \"{}\"") &
+
+pid=$!
+
+# If this script is killed, kill the `cabal test all'.
+trap "kill $pid 2> /dev/null && [ -f cabal_pids ] && rm cabal_pids cabal_status cabal_logs" EXIT
+
+# While cabal is running...
+while kill -0 $pid 2> /dev/null; do
+    IFS=$'\n'
+    subpids=($(pgrep -P $pid))
+
+    for subpid in "${subpids[@]}"; do
+        if [[ ! " ${!cabal_pids[@]} " =~ ${subpid} ]]; then
+            builddir=$(ps -o cmd -p $subpid | tail -n1 | awk -F'--builddir=' '{ for(i=1;i<=NF;i++) print $i }' | tail -n1 | cut -d' ' -f1)
+            cmd=$(echo $builddir | rev | cut -d'/' -f1,3 | rev | sed 's/\//:/g')
+            logfile="$builddir/test/$(echo $builddir | rev | cut -d'/' -f3 | rev)-$(echo $builddir | rev | cut -d'/' -f1 | rev).log"
+            if [[ "$cmd" != "xargs" ]]; then
+                cabal_pids+=([$subpid]="$cmd")
+                cabal_status+=([$subpid]=1)
+                cabal_logs+=([$subpid]="$logfile")
+            fi
+        fi
+    done
+
+    for subpid in "${!cabal_pids[@]}"; do
+        if [[ ! " ${subpids[@]} " =~ ${subpid} ]]; then
+            cabal_status[$subpid]=0
+        fi
+    done
+    if [ ! ${#cabal_pids[@]} -eq 0 ]; then
+        echo "${cabal_pids[*]}" > cabal_pids
+        echo "${cabal_status[*]}" > cabal_status
+        echo "${cabal_logs[*]}" > cabal_logs
+    fi
+    sleep 1
+done
+
+# Disable the trap on a normal exit.
+trap - EXIT
+
+[ -f cabal_pids ] && rm cabal_pids cabal_status cabal_logs
