@@ -1,15 +1,13 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-
-
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -18,18 +16,20 @@
 -- | Tests consensus-specific crypto operations in relationship with blocks/headers.
 module Test.Consensus.Cardano.Crypto (tests) where
 
-
 import           Cardano.Crypto.VRF (sizeCertVRF)
 import           Cardano.Crypto.VRF.Praos (certSizeVRF)
+import           Data.Function ((&))
 import           Ouroboros.Consensus.Cardano.Block (CardanoHeader,
-                     StandardCrypto, pattern HeaderBabbage,
-                     pattern HeaderConway)
+                     StandardCrypto, pattern HeaderAllegra,
+                     pattern HeaderAlonzo, pattern HeaderBabbage,
+                     pattern HeaderByron, pattern HeaderConway,
+                     pattern HeaderMary, pattern HeaderShelley)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (Header (..))
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
                      (pTieBreakVRFValue)
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Test.Consensus.Cardano.Generators ()
-import           Test.QuickCheck (Property, property, (===))
+import           Test.QuickCheck (Property, label, property, (===))
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -73,12 +73,22 @@ tests =
 -- different eras.
 --
 prop_VRFCryptoDependsOnBlockEra :: CardanoHeader StandardCrypto -> Property
-prop_VRFCryptoDependsOnBlockEra h =
-  case h of
+prop_VRFCryptoDependsOnBlockEra = \case
+    HeaderShelley ShelleyHeader {shelleyHeaderRaw} ->
+      certVRFHasPraosSize shelleyHeaderRaw & label "Shelley"
+    HeaderAllegra ShelleyHeader {shelleyHeaderRaw} ->
+      certVRFHasPraosSize shelleyHeaderRaw & label "Allegra"
+    HeaderMary ShelleyHeader {shelleyHeaderRaw} ->
+      certVRFHasPraosSize shelleyHeaderRaw & label "Mary"
+    HeaderAlonzo ShelleyHeader {shelleyHeaderRaw} ->
+      certVRFHasPraosSize shelleyHeaderRaw & label "Alonzo"
     HeaderBabbage ShelleyHeader {shelleyHeaderRaw} ->
-      sizeCertVRF (pTieBreakVRFValue shelleyHeaderRaw) === fromIntegral certSizeVRF
+      certVRFHasPraosSize shelleyHeaderRaw & label "Babbage"
     HeaderConway ShelleyHeader {shelleyHeaderRaw} ->
       -- TODO: this is were we need to change to check we use in the Conway case
       -- Cardano.Crypto.VRF.PraosBatchCompat.certSizevrf
-      sizeCertVRF (pTieBreakVRFValue shelleyHeaderRaw) === fromIntegral certSizeVRF
-    _ -> property True
+      certVRFHasPraosSize shelleyHeaderRaw & label "Conway"
+    HeaderByron _ -> property True & label "Byron"
+
+  where
+    certVRFHasPraosSize hdrRaw = sizeCertVRF (pTieBreakVRFValue hdrRaw) === fromIntegral certSizeVRF
