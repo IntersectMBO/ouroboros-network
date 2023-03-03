@@ -49,7 +49,7 @@ tests =
 --    - the header should be valid
 --
 -- * why not mock everything? because it does not check that we are implementing things correctly for Conway
---   we would like to test the dispatchign induced by this type, to make clear Conway relies on different
+--   we would like to test the dispatching induced by this type, to make it clear that Conway relies on different
 --   crypto primitives
 --
 -- What needs to change is this type:
