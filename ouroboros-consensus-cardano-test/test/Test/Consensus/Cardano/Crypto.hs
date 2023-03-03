@@ -39,7 +39,7 @@ tests =
           testProperty "era-dependent VRF" prop_VRFCryptoDependsOnBlockEra
     ]
 
--- | Check Babbage and Conway blocks use different VRF crypto.
+-- | Check that Babbage and Conway blocks use different VRF crypto.
 --
 -- 1. generate (forge?) babbage or conway headers
 --   - those should contain different VRF proofs (because they are supposed to use different algorithms)
