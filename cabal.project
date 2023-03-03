@@ -47,6 +47,7 @@ packages: ./cardano-ping
           ./ouroboros-consensus-diffusion
           ./ntp-client
           ./cardano-client
+          ./strict-mvar
 
 tests: True
 

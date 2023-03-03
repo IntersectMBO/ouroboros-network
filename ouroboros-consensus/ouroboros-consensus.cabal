@@ -173,9 +173,7 @@ library
                        Ouroboros.Consensus.Util.Enclose
                        Ouroboros.Consensus.Util.HList
                        Ouroboros.Consensus.Util.IOLike
-                       Ouroboros.Consensus.Util.MonadSTM.NormalForm
                        Ouroboros.Consensus.Util.MonadSTM.RAWLock
-                       Ouroboros.Consensus.Util.MonadSTM.StrictMVar
                        Ouroboros.Consensus.Util.OptNP
                        Ouroboros.Consensus.Util.Orphans
                        Ouroboros.Consensus.Util.RedundantConstraints
@@ -334,6 +332,7 @@ library
                      , ouroboros-network-mock
                      , ouroboros-network-protocols >=0.2
                      , strict-stm       ^>=0.2
+                     , strict-mvar == 0.1.0.0
 
 
   if os(windows)

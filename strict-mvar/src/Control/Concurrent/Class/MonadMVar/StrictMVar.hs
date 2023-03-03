@@ -7,7 +7,7 @@
 
 -- TODO: this module ought to use 'MonadMVar'
 -- See https://github.com/input-output-hk/io-sim/issues/34
-module Ouroboros.Consensus.Util.MonadSTM.StrictMVar (
+module Control.Concurrent.Class.MonadMVar.StrictMVar (
     castStrictMVar
   , isEmptyMVar
   , modifyMVar

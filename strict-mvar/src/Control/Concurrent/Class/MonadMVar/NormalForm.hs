@@ -1,6 +1,6 @@
-module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
+module Control.Concurrent.Class.MonadMVar.NormalForm (
     module LazySTM
-  , module Ouroboros.Consensus.Util.MonadSTM.StrictMVar
+  , module Control.Concurrent.Class.MonadMVar.StrictMVar
   , module StrictSTM
   , newEmptyMVar
   , newMVar
@@ -16,7 +16,7 @@ import           GHC.Stack
 import           NoThunks.Class (NoThunks (..), unsafeNoThunks)
 
 
-import           Ouroboros.Consensus.Util.MonadSTM.StrictMVar hiding
+import           Control.Concurrent.Class.MonadMVar.StrictMVar hiding
                      (newEmptyMVar, newEmptyMVarWithInvariant, newMVar,
                      newMVarWithInvariant)
 
@@ -33,7 +33,7 @@ import           Control.Concurrent.Class.MonadSTM.TQueue as LazySTM
 import           Control.Monad.Class.MonadSTM as StrictSTM
 
 import qualified Control.Concurrent.Class.MonadSTM.Strict as Strict
-import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
+import qualified Control.Concurrent.Class.MonadMVar.StrictMVar as Strict
 
 {-------------------------------------------------------------------------------
   Wrappers that check for thunks
