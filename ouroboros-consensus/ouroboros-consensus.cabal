@@ -331,8 +331,7 @@ library
                      , ouroboros-network-api
                      , ouroboros-network-mock
                      , ouroboros-network-protocols >=0.2
-                     , strict-stm       ^>=0.2
-                     , strict-mvar == 0.1.0.0
+                     , strict-mvar       == 0.1.0.0
 
 
   if os(windows)

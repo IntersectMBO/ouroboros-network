@@ -116,6 +116,7 @@ library
 
                      , io-classes
                      , io-sim
+                     , strict-mvar
 
                      , ouroboros-network-api
                      , ouroboros-network

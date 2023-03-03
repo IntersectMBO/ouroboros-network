@@ -13,7 +13,7 @@ module Ouroboros.Consensus.Util.IOLike (
   , MonadThrow (..)
   , SomeException
     -- *** MonadSTM
-  , module Ouroboros.Consensus.Util.MonadSTM.NormalForm
+  , module Control.Concurrent.Class.MonadMVar.NormalForm
     -- *** MonadFork, TODO: Should we hide this in favour of MonadAsync?
   , MonadFork (..)
   , MonadThread (..)
@@ -54,7 +54,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime hiding (MonadTime (..))
 import           Control.Monad.Class.MonadTimer
 
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Control.Concurrent.Class.MonadMVar.NormalForm
 import           Ouroboros.Consensus.Util.Orphans ()
 
 import           Data.Functor (void)

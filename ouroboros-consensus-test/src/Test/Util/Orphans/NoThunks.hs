@@ -5,10 +5,10 @@ module Test.Util.Orphans.NoThunks () where
 
 import           NoThunks.Class (NoThunks (..))
 
+import           Control.Concurrent.Class.MonadMVar.NormalForm
 import           Control.Monad.IOSim
 import           Control.Monad.ST.Lazy
 import           Control.Monad.ST.Unsafe (unsafeSTToIO)
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 
 -- | Just like the IO instance, we don't actually check anything here

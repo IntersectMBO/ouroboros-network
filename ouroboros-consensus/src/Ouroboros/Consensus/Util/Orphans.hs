@@ -27,7 +27,7 @@ import           Control.Tracer (Tracer)
 
 import           Control.Monad.Class.MonadTime (Time (..))
 
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Control.Concurrent.Class.MonadMVar.NormalForm
 
 import           Cardano.Crypto.DSIGN.Class
 import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)

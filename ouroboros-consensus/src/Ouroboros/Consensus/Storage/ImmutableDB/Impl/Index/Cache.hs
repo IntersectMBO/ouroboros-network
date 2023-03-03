@@ -56,12 +56,12 @@ import           NoThunks.Class (unsafeNoThunks)
 
 import           Cardano.Prelude (forceElemsToWHNF)
 
+import qualified Control.Concurrent.Class.MonadMVar.StrictMVar as Strict
 import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB (..),
                      StandardHash)
 import           Ouroboros.Consensus.Util (takeUntil, whenJust)
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
-import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), withFile)

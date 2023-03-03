@@ -7,7 +7,7 @@ import           Data.IORef
 
 import           Control.Tracer
 
-import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
+import           Control.Concurrent.Class.MonadMVar.NormalForm
 
 -- | Create a 'Tracer' that stores all events in an 'IORef' that is atomically
 -- updated. The second return value lets you obtain the events recorded so far
