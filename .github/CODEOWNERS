@@ -8,52 +8,50 @@
 
 docs                               @coot @bolt12 @njd42 @peterwthomson @input-output-hk/network-superowners
 
-io-sim                             @coot @input-output-hk/network-superowners
-io-sim-classes                     @coot @input-output-hk/network-superowners
-
+monoidal-synchronization           @coot @input-output-hk/network-superowners
 network-mux                        @coot @input-output-hk/network-superowners
 ntp-client                         @coot @input-output-hk/network-superowners
-typed-protocols                    @coot @input-output-hk/network-superowners
-typed-protocols-examples           @coot @input-output-hk/network-superowners
-Win32-network                      @coot @input-output-hk/network-superowners
 
+ouroboros-network-api              @coot @input-output-hk/network-superowners
 ouroboros-network-framework        @coot @input-output-hk/network-superowners
+ouroboros-network-mock             @coot @input-output-hk/network-superowners
+ouroboros-network-protocols        @coot @input-output-hk/network-superowners
+ouroboros-network-testing          @coot @input-output-hk/network-superowners
 ouroboros-network                  @coot @input-output-hk/network-superowners
 ouroboros-network/wireshark-plugin @coot @input-output-hk/network-superowners
-ouroboros-network-testing          @coot @input-output-hk/network-superowners
 
 cardano-client                     @coot @input-output-hk/network-superowners
+cardano-ping                       @coot @input-output-hk/network-superowners
 
 scripts/haddocs.sh                 @coot @input-output-hk/network-superowners
 scripts/install.ps1                @coot @input-output-hk/network-superowners
-scripts/test.sh                    @coot @input-output-hk/network-superowners
 
 # Consensus Team
 
-ouroboros-consensus/               @nfrisby @dnadales @input-output-hk/consensus-superowners
-ouroboros-consensus-test/          @nfrisby @dnadales @input-output-hk/consensus-superowners
-ouroboros-consensus-mock/          @nfrisby @dnadales @input-output-hk/consensus-superowners
-ouroboros-consensus-mock-test/     @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-byron-test/    @nfrisby @dnadales @input-output-hk/consensus-superowners
 ouroboros-consensus-byron/         @nfrisby @dnadales @input-output-hk/consensus-superowners
 ouroboros-consensus-byronspec/     @nfrisby @dnadales @input-output-hk/consensus-superowners
-ouroboros-consensus-byron-test/    @nfrisby @dnadales @input-output-hk/consensus-superowners
-ouroboros-consensus-shelley/       @nfrisby @dnadales @input-output-hk/consensus-superowners
-ouroboros-consensus-shelley-test/  @nfrisby @dnadales @input-output-hk/consensus-superowners
-ouroboros-consensus-cardano/       @nfrisby @dnadales @input-output-hk/consensus-superowners
 ouroboros-consensus-cardano-test/  @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-cardano-tools/ @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-cardano/       @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-diffusion/     @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-mock-test/     @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-mock/          @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-protocol/      @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-shelley-test/  @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-shelley/       @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-test/          @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus-tutorials/     @nfrisby @dnadales @input-output-hk/consensus-superowners
+ouroboros-consensus/               @nfrisby @dnadales @input-output-hk/consensus-superowners
 
-scripts/buildkite/check-stylish.sh @nfrisby @input-output-hk/consensus-superowners
+scripts/check-stylish.sh           @nfrisby @input-output-hk/consensus-superowners
 
 # CICD
 
 bors.toml                          @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 nix/                               @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 *.nix                              @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-.github/workflows/                 @coot @newhoggy @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+.github/workflows/                 @coot @newhoggy @Jasagredo @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 
-cabal.project.local.ci.windows     @coot @newhoggy @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 cabal.project.local.github-pages   @coot @newhoggy @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
 .github/workflows/github-page.yml  @coot @newhoggy @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-
-.buildkite/slow-ThreadNet-tests.sh @nfrisby @input-output-hk/consensus-superowners
-.buildkite/validate-mainnet.sh     @nfrisby @input-output-hk/consensus-superowners
