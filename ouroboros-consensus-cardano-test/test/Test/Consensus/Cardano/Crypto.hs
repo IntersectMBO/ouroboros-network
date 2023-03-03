@@ -41,16 +41,20 @@ tests =
 
 -- | Check that Babbage and Conway blocks use different VRF crypto.
 --
+-- This test is based on the following steps:
+--
 -- 1. generate (forge?) babbage or conway headers
---   - those should contain different VRF proofs (because they are supposed to use different algorithms)
+--   - those should contain different VRF proofs (because they are supposed to
+--     use different algorithms)
 --   - the VRF proof should be invalid for the other era
 -- 2. call some header validation functions that's calling VRF certificate check
 -- 3. assert that different VRF function is called for each era
 --    - the header should be valid
 --
--- * why not mock everything? because it does not check that we are implementing things correctly for Conway
---   we would like to test the dispatching induced by this type, to make it clear that Conway relies on different
---   crypto primitives
+-- * why not mock everything? because it does not check that we are
+--   implementing things correctly for Conway we would like to test
+--   the dispatchign induced by this type, to make clear Conway relies
+--   on different crypto primitives
 --
 -- What needs to change is this type:
 --
