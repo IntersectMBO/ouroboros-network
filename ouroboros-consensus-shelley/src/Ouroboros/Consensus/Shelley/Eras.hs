@@ -39,27 +39,24 @@ module Ouroboros.Consensus.Shelley.Eras (
 
 import           Control.Exception (Exception, throw)
 import           Control.Monad.Except
-import           Data.Default.Class (Default)
 import qualified Data.Set as Set
 import           Data.Text (Text)
-import           GHC.Records
 import           NoThunks.Class (NoThunks)
-import           Numeric.Natural (Natural)
 
-import           Cardano.Binary (FromCBOR, ToCBOR)
 import           Cardano.Ledger.Allegra (AllegraEra)
 import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Alonzo (AlonzoEra)
-import           Cardano.Ledger.Alonzo.PParams
 import qualified Cardano.Ledger.Alonzo.Rules as Alonzo
 import qualified Cardano.Ledger.Alonzo.Translation as Alonzo
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import           Cardano.Ledger.Babbage (BabbageEra)
-import           Cardano.Ledger.Babbage.PParams (BabbagePParamsHKD (..))
 import qualified Cardano.Ledger.Babbage.Rules as Babbage
 import qualified Cardano.Ledger.Babbage.Translation as Babbage
 import           Cardano.Ledger.BaseTypes
+import           Cardano.Ledger.Binary (DecCBOR, EncCBOR)
 import           Cardano.Ledger.Conway (ConwayEra)
+import qualified Cardano.Ledger.Conway.Rules as SL
+                     (ConwayLedgerPredFailure (..))
 import qualified Cardano.Ledger.Conway.Translation as Conway
 import           Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto (StandardCrypto)
@@ -68,12 +65,11 @@ import           Cardano.Ledger.Mary (MaryEra)
 import           Cardano.Ledger.Mary.Translation ()
 import           Cardano.Ledger.Shelley (ShelleyEra)
 import qualified Cardano.Ledger.Shelley.API as SL
+import           Cardano.Ledger.Shelley.Core as Core
 import qualified Cardano.Ledger.Shelley.LedgerState as SL
-import qualified Cardano.Ledger.Shelley.Rules.Ledger as SL
-import qualified Cardano.Ledger.Shelley.Rules.Utxow as SL
-import           Cardano.Ledger.ShelleyMA ()
+import qualified Cardano.Ledger.Shelley.Rules as SL
 import qualified Cardano.Protocol.TPraos.API as SL
-import           Control.State.Transition (PredicateFailure, State)
+import           Control.State.Transition (PredicateFailure)
 import           Data.Data (Proxy (Proxy))
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
@@ -102,16 +98,6 @@ type StandardBabbage = BabbageEra StandardCrypto
 type StandardConway = ConwayEra StandardCrypto
 
 {-------------------------------------------------------------------------------
-  Type synonyms for convenience
--------------------------------------------------------------------------------}
-
--- | The 'Cardano.Ledger.Era.Crypto' type family conflicts with the
--- 'Cardano.Ledger.Crypto.Crypto' class. To avoid having to import one or both
--- of them qualified, define 'EraCrypto' as an alias of the former: /return the
--- crypto used by this era/.
-type EraCrypto era = Crypto era
-
-{-------------------------------------------------------------------------------
   Era polymorphism
 -------------------------------------------------------------------------------}
 
@@ -132,6 +118,7 @@ type EraCrypto era = Crypto era
 -- replaced with an appropriate API - see
 -- https://github.com/input-output-hk/ouroboros-network/issues/2890
 class ( Core.EraSegWits era
+      , Core.EraGovernance era
       , SL.ApplyTx era
       , SL.ApplyBlock era
       , SL.CanStartFromGenesis era
@@ -140,34 +127,22 @@ class ( Core.EraSegWits era
         -- original TPraos ledger view. We would like to ultimately remove it.
       , SL.GetLedgerView era
 
-      , State (Core.EraRule "PPUP" era) ~ SL.PPUPState era
-      , Default (State (Core.EraRule "PPUP" era))
-
-      , HasField "_maxBBSize" (Core.PParams era) Natural
-      , HasField "_maxBHSize" (Core.PParams era) Natural
-      , HasField "_maxTxSize" (Core.PParams era) Natural
-      , HasField "_a0" (Core.PParams era) NonNegativeInterval
-      , HasField "_nOpt" (Core.PParams era) Natural
-      , HasField "_rho" (Core.PParams era) UnitInterval
-      , HasField "_tau" (Core.PParams era) UnitInterval
-
-      , HasField "_protocolVersion" (Core.PParamsUpdate era) (SL.StrictMaybe SL.ProtVer)
-
       , NoThunks (SL.StashedAVVMAddresses era)
-      , FromCBOR (SL.StashedAVVMAddresses era)
-      , ToCBOR (SL.StashedAVVMAddresses era)
+      , EncCBOR (SL.StashedAVVMAddresses era)
+      , DecCBOR (SL.StashedAVVMAddresses era)
       , Show (SL.StashedAVVMAddresses era)
       , Eq (SL.StashedAVVMAddresses era)
 
-      , FromCBOR (PredicateFailure (EraRule "DELEGS" era))
-      , ToCBOR (PredicateFailure (EraRule "DELEGS" era))
-      , FromCBOR (PredicateFailure (EraRule "UTXOW" era))
-      , ToCBOR (PredicateFailure (EraRule "UTXOW" era))
+      , DecCBOR (PredicateFailure (EraRule "LEDGER" era))
+      , EncCBOR (PredicateFailure (EraRule "LEDGER" era))
+      , DecCBOR (PredicateFailure (EraRule "DELEGS" era))
+      , EncCBOR (PredicateFailure (EraRule "DELEGS" era))
+      , DecCBOR (PredicateFailure (EraRule "UTXOW" era))
+      , EncCBOR (PredicateFailure (EraRule "UTXOW" era))
 
       , DSignable (EraCrypto era) (Hash (EraCrypto era) EraIndependentTxBody)
       , NoThunks (PredicateFailure (Core.EraRule "BBODY" era))
       , NoThunks (Core.TranslationContext era)
-      , NoThunks (Core.Value era)
 
       ) => ShelleyBasedEra era where
 
@@ -337,7 +312,7 @@ instance SupportsTwoPhaseValidation (BabbageEra c) where
 
 instance SupportsTwoPhaseValidation (ConwayEra c) where
   incorrectClaimedFlag _ pf = case pf of
-    SL.UtxowFailure
+    SL.ConwayUtxowFailure
       ( Babbage.AlonzoInBabbageUtxowPredFailure
           ( Alonzo.ShelleyInAlonzoUtxowPredFailure
               ( SL.UtxoFailure

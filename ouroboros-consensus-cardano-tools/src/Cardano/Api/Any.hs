@@ -22,8 +22,9 @@ import           Data.Text as Text (Text)
 import qualified Data.Text.Encoding as Text (decodeUtf8)
 import           System.IO (Handle)
 
-import           Cardano.Binary as Cbor (FromCBOR (..), ToCBOR (..))
-import qualified Cardano.Binary as CBOR
+import           Cardano.Ledger.Binary as Cbor (DecCBOR (..), EncCBOR (..),
+                     FromCBOR (..), ToCBOR (..))
+import qualified Cardano.Ledger.Binary.Plain as CBOR
 
 
 

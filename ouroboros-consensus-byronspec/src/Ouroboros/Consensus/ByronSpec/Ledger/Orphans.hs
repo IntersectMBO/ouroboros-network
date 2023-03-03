@@ -16,8 +16,8 @@ import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           GHC.Generics (Generic)
 
-import           Cardano.Binary (enforceSize)
-import qualified Cardano.Binary
+import           Cardano.Ledger.Binary.Plain (FromCBOR (..), ToCBOR (..),
+                     enforceSize)
 
 import qualified Byron.Spec.Chain.STS.Block as Spec
 import qualified Byron.Spec.Chain.STS.Rule.BBody as Spec
@@ -173,8 +173,6 @@ instance ( Ord k, Ord v
 
 newtype ToFromCBOR a = ToFromCBOR { unToFromCBOR :: a }
 
-instance ( Cardano.Binary.ToCBOR   a
-         , Cardano.Binary.FromCBOR a
-         ) => Serialise (ToFromCBOR a) where
-  encode = Cardano.Binary.toCBOR . unToFromCBOR
-  decode = ToFromCBOR <$> Cardano.Binary.fromCBOR
+instance (ToCBOR a, FromCBOR a) => Serialise (ToFromCBOR a) where
+  encode = toCBOR . unToFromCBOR
+  decode = ToFromCBOR <$> fromCBOR

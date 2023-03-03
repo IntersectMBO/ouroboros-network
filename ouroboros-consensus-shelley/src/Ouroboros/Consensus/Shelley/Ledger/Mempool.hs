@@ -40,12 +40,12 @@ import           Data.Foldable (toList)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Natural (Natural)
-import           GHC.Records
 import           Lens.Micro ((^.))
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (Annotator (..), FromCBOR (..),
-                     FullByteString (..), ToCBOR (..))
+import           Cardano.Ledger.Binary (Annotator (..), DecCBOR (..),
+                     EncCBOR (..), FromCBOR (..), FullByteString (..),
+                     ToCBOR (..), toPlainDecoder)
 import           Data.DerivingVia (InstantiatedAt (..))
 import           Data.Measure (BoundedMeasure, Measure)
 import qualified Data.Measure as Measure
@@ -61,11 +61,10 @@ import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 
-import           Cardano.Ledger.Alonzo.PParams
+import           Cardano.Ledger.Alonzo.Core (Tx, TxSeq, bodyTxL, eraProtVerLow,
+                     fromTxSeq, ppMaxBBSizeL, ppMaxBlockExUnitsL, sizeTxF)
 import           Cardano.Ledger.Alonzo.Tx (totExUnits)
-import           Cardano.Ledger.Babbage.PParams
 import qualified Cardano.Ledger.Block as SL (txid)
-import           Cardano.Ledger.Core (Tx, TxSeq, bodyTxL, fromTxSeq, sizeTxF)
 import qualified Cardano.Ledger.Shelley.API as SL
 
 import           Cardano.Ledger.Crypto (Crypto)
@@ -142,7 +141,7 @@ instance ShelleyCompatible proto era
   txsMaxBytes TickedShelleyLedgerState { tickedShelleyLedgerState = shelleyState } =
       fromIntegral maxBlockBodySize - fixedBlockBodyOverhead
     where
-      maxBlockBodySize = getField @"_maxBBSize" $ getPParams shelleyState
+      maxBlockBodySize = getPParams shelleyState ^. ppMaxBBSizeL
 
   txInBlockSize (ShelleyTx _ tx) = txSize + perTxOverhead
     where
@@ -165,9 +164,9 @@ newtype instance TxId (GenTx (ShelleyBlock proto era)) = ShelleyTxId (SL.TxId (E
   deriving newtype (Eq, Ord, NoThunks)
 
 deriving newtype instance (Crypto (EraCrypto era), Typeable era, Typeable proto)
-                       => ToCBOR (TxId (GenTx (ShelleyBlock proto era)))
+                       => EncCBOR (TxId (GenTx (ShelleyBlock proto era)))
 deriving newtype instance (Crypto (EraCrypto era), Typeable era, Typeable proto)
-                       => FromCBOR (TxId (GenTx (ShelleyBlock proto era)))
+                       => DecCBOR (TxId (GenTx (ShelleyBlock proto era)))
 
 instance (Typeable era, Typeable proto)
   => ShowProxy (TxId (GenTx (ShelleyBlock proto era))) where
@@ -196,7 +195,7 @@ instance ShelleyCompatible proto era => ToCBOR (GenTx (ShelleyBlock proto era)) 
 
 instance ShelleyCompatible proto era => FromCBOR (GenTx (ShelleyBlock proto era)) where
   fromCBOR = fmap mkShelleyTx $ unwrapCBORinCBOR
-    $ (. Full) . runAnnotator <$> fromCBOR
+    $ toPlainDecoder (eraProtVerLow @era) $ (. Full) . runAnnotator <$> decCBOR
 
 {-------------------------------------------------------------------------------
   Pretty-printing
@@ -314,7 +313,7 @@ instance ( ShelleyCompatible p (AlonzoEra c)
   txsBlockCapacity ledgerState =
       AlonzoMeasure {
           byteSize = Mempool.ByteSize $ txsMaxBytes ledgerState
-        , exUnits  = fromExUnits $ getField @"_maxBlockExUnits" pparams
+        , exUnits  = fromExUnits $ pparams ^. ppMaxBlockExUnitsL
         }
     where
       pparams = getPParams $ tickedShelleyLedgerState ledgerState
@@ -343,7 +342,7 @@ instance ( ShelleyCompatible p (BabbageEra c)
   txsBlockCapacity ledgerState =
       AlonzoMeasure {
           byteSize = Mempool.ByteSize $ txsMaxBytes ledgerState
-        , exUnits  = fromExUnits $ getField @"_maxBlockExUnits" pparams
+        , exUnits  = fromExUnits $ pparams ^. ppMaxBlockExUnitsL
         }
     where
       pparams = getPParams $ tickedShelleyLedgerState ledgerState
@@ -362,7 +361,7 @@ instance ( ShelleyCompatible p (ConwayEra c)
   txsBlockCapacity ledgerState =
       AlonzoMeasure {
           byteSize = Mempool.ByteSize $ txsMaxBytes ledgerState
-        , exUnits  = fromExUnits $ getField @"_maxBlockExUnits" pparams
+        , exUnits  = fromExUnits $ pparams ^. ppMaxBlockExUnitsL
         }
     where
       pparams = getPParams $ tickedShelleyLedgerState ledgerState

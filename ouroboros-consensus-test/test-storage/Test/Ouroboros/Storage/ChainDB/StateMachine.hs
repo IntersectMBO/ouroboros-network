@@ -86,7 +86,6 @@ import           Data.Bifunctor
 import qualified Data.Bifunctor.TH as TH
 import           Data.Bitraversable
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Foldable (toList)
 import           Data.Functor.Classes (Eq1, Show1)
 import           Data.Functor.Identity (Identity)
 import           Data.List (sortOn)
@@ -95,7 +94,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Ord (Down (..))
 import           Data.Proxy
-import           Data.Sequence.Strict (StrictSeq)
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word16, Word32, Word64)
@@ -1259,7 +1257,6 @@ deriving instance ( ToExpr blk
 
 -- Blk specific instances
 
-deriving anyclass instance ToExpr EpochNo
 deriving anyclass instance ToExpr ChainLength
 deriving anyclass instance ToExpr TestHeaderHash
 deriving anyclass instance ToExpr TestBodyHash
@@ -1277,9 +1274,6 @@ deriving instance ToExpr TestBlockOtherHeaderEnvelopeError
 deriving instance ToExpr (HeaderEnvelopeError Blk)
 deriving instance ToExpr BftValidationErr
 deriving instance ToExpr (ExtValidationError Blk)
-
-instance ToExpr a => ToExpr (StrictSeq a) where
-  toExpr = toExpr . toList
 
 {-------------------------------------------------------------------------------
   Labelling

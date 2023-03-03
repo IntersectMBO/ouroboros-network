@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
@@ -49,7 +50,8 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.TypeFamilyWrappers
 
-import qualified Cardano.Ledger.Era as SL
+import qualified Cardano.Ledger.BaseTypes as SL (mkVersion)
+import qualified Cardano.Ledger.Core as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 
 import qualified Cardano.Protocol.TPraos.API as SL
@@ -137,7 +139,7 @@ shelleyTransition ::
   -> LedgerState (ShelleyBlock proto era)
   -> Maybe EpochNo
 shelleyTransition ShelleyPartialLedgerConfig{..}
-                  transitionMajorVersion
+                  transitionMajorVersionRaw
                   state =
       takeAny
     . mapMaybe isTransition
@@ -148,7 +150,7 @@ shelleyTransition ShelleyPartialLedgerConfig{..}
 
     -- 'shelleyLedgerConfig' contains a dummy 'EpochInfo' but this does not
     -- matter for extracting the genesis config
-    genesis :: SL.ShelleyGenesis era
+    genesis :: SL.ShelleyGenesis (EraCrypto era)
     genesis = shelleyLedgerGenesis shelleyLedgerConfig
 
     k :: Word64
@@ -157,7 +159,8 @@ shelleyTransition ShelleyPartialLedgerConfig{..}
     isTransition :: Shelley.Inspect.ProtocolUpdate era -> Maybe EpochNo
     isTransition Shelley.Inspect.ProtocolUpdate{..} = do
          SL.ProtVer major _minor <- proposalVersion
-         guard $ fromIntegral major == transitionMajorVersion
+         transitionMajorVersion <- SL.mkVersion transitionMajorVersionRaw
+         guard $ major == transitionMajorVersion
          guard $ proposalReachedQuorum
          guard $ shelleyAfterVoting >= fromIntegral k
          return proposalEpoch
@@ -222,7 +225,10 @@ data ShelleyPartialLedgerConfig era = ShelleyPartialLedgerConfig {
       shelleyLedgerConfig    :: !(ShelleyLedgerConfig era)
     , shelleyTriggerHardFork :: !TriggerHardFork
     }
-  deriving (Generic, NoThunks)
+  deriving (Generic)
+
+deriving instance (NoThunks (SL.TranslationContext era), SL.Era era) =>
+    NoThunks (ShelleyPartialLedgerConfig era)
 
 instance ShelleyCompatible proto era => HasPartialLedgerConfig (ShelleyBlock proto era) where
   type PartialLedgerConfig (ShelleyBlock proto era) = ShelleyPartialLedgerConfig era

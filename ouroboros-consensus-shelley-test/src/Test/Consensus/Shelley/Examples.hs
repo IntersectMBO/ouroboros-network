@@ -60,7 +60,6 @@ import           Test.Cardano.Ledger.Mary.Examples.Consensus
 import           Test.Cardano.Ledger.Shelley.Examples.Consensus
                      (ShelleyLedgerExamples (..), ShelleyResultExamples (..),
                      ledgerExamplesShelley, testShelleyGenesis)
-import           Test.Cardano.Ledger.Shelley.Orphans ()
 import           Test.Util.Orphans.Arbitrary ()
 import qualified Test.Util.Serialisation.Golden as Golden
 import           Test.Util.Serialisation.Golden (labelled, unlabelled)

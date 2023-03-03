@@ -60,7 +60,6 @@ library
                      , cardano-crypto-class
                      , cardano-crypto-praos
                      , cardano-data
-                     , cardano-ledger-core
                      , cardano-protocol-tpraos
                      , cardano-prelude
                      , cardano-slotting
@@ -79,12 +78,15 @@ library
                      , transformers
                      , vector-map
 
-                       -- cardano-ledger-specs
+                       -- cardano-ledger
                      , cardano-ledger-alonzo
+                     , cardano-ledger-allegra
                      , cardano-ledger-babbage
+                     , cardano-ledger-binary
                      , cardano-ledger-conway
+                     , cardano-ledger-core
                      , cardano-ledger-shelley
-                     , cardano-ledger-shelley-ma
+                     , cardano-ledger-mary
                      , small-steps
 
                      , ouroboros-network-api

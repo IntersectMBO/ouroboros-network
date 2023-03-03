@@ -80,7 +80,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.Error hiding (null)
 import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.Orphans.Slotting.Arbitrary ()
+import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
@@ -181,8 +181,6 @@ deriving instance Generic1        (At Resp)
 deriving instance Rank2.Foldable  (At Resp)
 deriving instance Show1 r => Show (Resp :@ r)
 
-deriving instance ToExpr EpochNo
-deriving instance ToExpr SlotNo
 deriving instance ToExpr FsPath
 deriving instance ToExpr MaxSlotNo
 deriving instance ToExpr IsEBB
@@ -202,7 +200,6 @@ deriving instance ToExpr TestBody
 deriving instance ToExpr TestBlock
 deriving instance ToExpr BinaryBlockInfo
 deriving instance ToExpr (ChainHash TestHeader)
-deriving instance ToExpr BlockNo
 
 instance CommandNames (At Cmd) where
   cmdName (At cmd) = constrName cmd

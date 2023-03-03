@@ -608,7 +608,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
                       , conwayMaxTxCapacityOverrides = maxTxCapacityOverridesConway
                       }
                     ProtocolTransitionParamsShelleyBased {
-                        transitionTranslationContext = ()
+                        transitionTranslationContext = transCtxtShelley
                       , transitionTrigger            = triggerHardForkShelley
                       }
                     ProtocolTransitionParamsShelleyBased {
@@ -727,7 +727,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigShelley =
         mkPartialLedgerConfigShelley
           genesisShelley
-          ()  -- trivial translation context
+          transCtxtShelley
           maxMajorProtVer
           triggerHardForkAllegra
 
@@ -736,14 +736,11 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
     -- Allegra
 
-    genesisAllegra :: ShelleyGenesis (AllegraEra c)
-    genesisAllegra = Core.translateEra' () genesisShelley
-
     blockConfigAllegra :: BlockConfig (ShelleyBlock (TPraos c) (AllegraEra c))
     blockConfigAllegra =
         Shelley.mkShelleyBlockConfig
           protVerAllegra
-          genesisAllegra
+          genesisShelley
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigAllegra ::
@@ -753,21 +750,18 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigAllegra :: PartialLedgerConfig (ShelleyBlock (TPraos c) (AllegraEra c))
     partialLedgerConfigAllegra =
         mkPartialLedgerConfigShelley
-          genesisAllegra
+          genesisShelley
           ()  -- trivial translation context
           maxMajorProtVer
           triggerHardForkMary
 
     -- Mary
 
-    genesisMary :: ShelleyGenesis (MaryEra c)
-    genesisMary = Core.translateEra' () genesisAllegra
-
     blockConfigMary :: BlockConfig (ShelleyBlock (TPraos c) (MaryEra c))
     blockConfigMary =
         Shelley.mkShelleyBlockConfig
           protVerMary
-          genesisMary
+          genesisShelley
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigMary ::
@@ -777,21 +771,18 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigMary :: PartialLedgerConfig (ShelleyBlock (TPraos c) (MaryEra c))
     partialLedgerConfigMary =
         mkPartialLedgerConfigShelley
-          genesisMary
+          genesisShelley
           ()  -- trivial translation context
           maxMajorProtVer
           triggerHardForkAlonzo
 
     -- Alonzo
 
-    genesisAlonzo :: ShelleyGenesis (AlonzoEra c)
-    genesisAlonzo = Core.translateEra' transCtxtAlonzo genesisMary
-
     blockConfigAlonzo :: BlockConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
     blockConfigAlonzo =
         Shelley.mkShelleyBlockConfig
           protVerAlonzo
-          genesisAlonzo
+          genesisShelley
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigAlonzo ::
@@ -801,21 +792,18 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigAlonzo :: PartialLedgerConfig (ShelleyBlock (TPraos c) (AlonzoEra c))
     partialLedgerConfigAlonzo =
         mkPartialLedgerConfigShelley
-          genesisAlonzo
+          genesisShelley
           transCtxtAlonzo
           maxMajorProtVer
           triggerHardForkBabbage
 
     -- Babbage
 
-    genesisBabbage :: ShelleyGenesis (BabbageEra c)
-    genesisBabbage = Core.translateEra' transCtxtBabbage genesisAlonzo
-
     blockConfigBabbage :: BlockConfig (ShelleyBlock (Praos c) (BabbageEra c))
     blockConfigBabbage =
         Shelley.mkShelleyBlockConfig
           protVerBabbage
-          genesisBabbage
+          genesisShelley
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigBabbage ::
@@ -825,21 +813,18 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigBabbage :: PartialLedgerConfig (ShelleyBlock (Praos c) (BabbageEra c))
     partialLedgerConfigBabbage =
         mkPartialLedgerConfigShelley
-          genesisBabbage
+          genesisShelley
           transCtxtBabbage
           maxMajorProtVer
           triggerHardForkConway
 
     -- Conway
 
-    genesisConway :: ShelleyGenesis (ConwayEra c)
-    genesisConway = Core.translateEra' transCtxtConway genesisBabbage
-
     blockConfigConway :: BlockConfig (ShelleyBlock (Praos c) (ConwayEra c))
     blockConfigConway =
         Shelley.mkShelleyBlockConfig
           protVerConway
-          genesisConway
+          genesisShelley
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigConway ::
@@ -849,7 +834,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigConway :: PartialLedgerConfig (ShelleyBlock (Praos c) (ConwayEra c))
     partialLedgerConfigConway =
         mkPartialLedgerConfigShelley
-          genesisConway
+          genesisShelley
           transCtxtConway
           maxMajorProtVer
           TriggerHardForkNever
@@ -863,11 +848,11 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     shape = History.Shape $ Exactly $
            K (Byron.byronEraParams     genesisByron)
         :* K (Shelley.shelleyEraParams genesisShelley)
-        :* K (Shelley.shelleyEraParams genesisAllegra)
-        :* K (Shelley.shelleyEraParams genesisMary)
-        :* K (Shelley.shelleyEraParams genesisAlonzo)
-        :* K (Shelley.shelleyEraParams genesisBabbage)
-        :* K (Shelley.shelleyEraParams genesisConway)
+        :* K (Shelley.shelleyEraParams genesisShelley)
+        :* K (Shelley.shelleyEraParams genesisShelley)
+        :* K (Shelley.shelleyEraParams genesisShelley)
+        :* K (Shelley.shelleyEraParams genesisShelley)
+        :* K (Shelley.shelleyEraParams genesisShelley)
         :* Nil
 
     cfg :: TopLevelConfig (CardanoBlock c)
@@ -1065,7 +1050,7 @@ protocolClientInfoCardano epochSlots = ProtocolClientInfo {
 -------------------------------------------------------------------------------}
 
 mkPartialLedgerConfigShelley ::
-     ShelleyGenesis era
+     ShelleyGenesis (EraCrypto era)
   -> Core.TranslationContext era
   -> MaxMajorProtVer
   -> TriggerHardFork

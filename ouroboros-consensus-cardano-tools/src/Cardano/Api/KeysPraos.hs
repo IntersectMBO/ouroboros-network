@@ -54,13 +54,13 @@ instance Key KesKey where
         KesVerificationKey (Shelley.VerKeyKES StandardCrypto)
       deriving stock (Eq)
       deriving (Show, IsString) via UsingRawBytesHex (VerificationKey KesKey)
-      deriving newtype (ToCBOR, FromCBOR)
+      deriving newtype (EncCBOR, DecCBOR, ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
 
     newtype SigningKey KesKey =
         KesSigningKey (Shelley.SignKeyKES StandardCrypto)
       deriving (Show, IsString) via UsingRawBytesHex (SigningKey KesKey)
-      deriving newtype (ToCBOR, FromCBOR)
+      deriving newtype (EncCBOR, DecCBOR, ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
 
     --This loses the mlock safety of the seed, since it starts from a normal in-memory seed.
@@ -154,13 +154,13 @@ instance Key VrfKey where
         VrfVerificationKey (Shelley.VerKeyVRF StandardCrypto)
       deriving stock (Eq)
       deriving (Show, IsString) via UsingRawBytesHex (VerificationKey VrfKey)
-      deriving newtype (ToCBOR, FromCBOR)
+      deriving newtype (EncCBOR, DecCBOR, ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
 
     newtype SigningKey VrfKey =
         VrfSigningKey (Shelley.SignKeyVRF StandardCrypto)
       deriving (Show, IsString) via UsingRawBytesHex (SigningKey VrfKey)
-      deriving newtype (ToCBOR, FromCBOR)
+      deriving newtype (EncCBOR, DecCBOR, ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
 
     deterministicSigningKey :: AsType VrfKey -> Crypto.Seed -> SigningKey VrfKey

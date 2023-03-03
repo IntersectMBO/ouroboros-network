@@ -16,7 +16,6 @@ import           Control.Monad (replicateM)
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 
-import           Cardano.Binary (fromCBOR, toCBOR)
 import           Cardano.Chain.Block (ABlockOrBoundary (..),
                      ABlockOrBoundaryHdr (..))
 import qualified Cardano.Chain.Block as CC.Block
@@ -35,6 +34,7 @@ import qualified Cardano.Chain.Update.Validation.Registration as CC.Reg
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hashing (Hash)
+import           Cardano.Ledger.Binary (decCBOR, encCBOR)
 
 import           Ouroboros.Network.SizeInBytes
 
@@ -59,6 +59,7 @@ import qualified Test.Cardano.Chain.Slotting.Gen as CC
 import qualified Test.Cardano.Chain.Update.Gen as UG
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
 import qualified Test.Cardano.Crypto.Gen as CC
+import           Test.Cardano.Ledger.Binary.Arbitrary ()
 
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
@@ -115,8 +116,8 @@ instance Arbitrary (Header ByronBlock) where
         blockSize <- SizeInBytes <$> arbitrary
         flip (mkByronHeader epochSlots) blockSize . ABOBBlockHdr .
           API.reAnnotateUsing
-            (CC.Block.toCBORHeader epochSlots)
-            (CC.Block.fromCBORAHeader epochSlots) <$>
+            (CC.Block.encCBORHeader epochSlots)
+            (CC.Block.decCBORAHeader epochSlots) <$>
           hedgehog (CC.genHeader protocolMagicId epochSlots)
 
       genBoundaryHeader :: Gen (Header ByronBlock)
@@ -124,8 +125,8 @@ instance Arbitrary (Header ByronBlock) where
         blockSize <- SizeInBytes <$> arbitrary
         flip (mkByronHeader epochSlots) blockSize . ABOBBoundaryHdr .
           API.reAnnotateUsing
-            (CC.Block.toCBORABoundaryHeader protocolMagicId)
-            CC.Block.fromCBORABoundaryHeader <$>
+            (CC.Block.encCBORABoundaryHeader protocolMagicId)
+            CC.Block.decCBORABoundaryHeader <$>
           hedgehog CC.genBoundaryHeader
 
 instance Arbitrary (Hash a) where
@@ -139,7 +140,7 @@ instance Arbitrary KeyHash where
 
 instance Arbitrary (GenTx ByronBlock) where
   arbitrary =
-    fromMempoolPayload . API.reAnnotateUsing toCBOR fromCBOR <$>
+    fromMempoolPayload . API.reAnnotateUsing encCBOR decCBOR <$>
     hedgehog (CC.genMempoolPayload protocolMagicId)
 
 instance Arbitrary (GenTxId ByronBlock) where

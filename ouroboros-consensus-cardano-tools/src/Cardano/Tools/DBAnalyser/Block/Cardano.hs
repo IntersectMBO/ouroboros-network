@@ -1,4 +1,5 @@
 {-# LANGUAGE ApplicativeDo         #-}
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -33,16 +34,20 @@ import           Data.Word (Word16)
 import           System.Directory (makeAbsolute)
 import           System.FilePath (takeDirectory, (</>))
 
-import           Cardano.Binary (Raw)
 import qualified Cardano.Chain.Genesis as Byron.Genesis
 import qualified Cardano.Chain.Update as Byron.Update
 import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto as Crypto
 import qualified Cardano.Crypto.Hash.Class as CryptoClass
+import           Cardano.Crypto.Raw (Raw)
 import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
-import qualified Cardano.Ledger.Conway.Genesis as SL (ConwayGenesis)
+import qualified Cardano.Ledger.BaseTypes as SL (natVersion)
+import qualified Cardano.Ledger.Conway.Genesis as SL
+                     (ConwayGenesis (cgGenDelegs))
+import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto
-import qualified Cardano.Ledger.Era as Core
+import qualified Cardano.Ledger.Shelley.Translation as SL
+                     (toFromByronTranslationContext)
 import qualified Cardano.Tools.DBAnalyser.Block.Byron as BlockByron
 import           Cardano.Tools.DBAnalyser.Block.Shelley ()
 
@@ -63,7 +68,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
-import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
@@ -207,7 +211,8 @@ instance AdjustFilePaths CardanoConfig where
 data ShelleyTransitionArguments :: Type -> Type where
   ShelleyTransitionArguments ::
        -- so far, the context is either () or AlonzoGenesis or ConwayGenesis
-       ((SL.AlonzoGenesis, SL.ConwayGenesis StandardCrypto) -> Core.TranslationContext era)
+       ((ShelleyGenesis StandardCrypto, SL.AlonzoGenesis, SL.ConwayGenesis StandardCrypto) ->
+        Core.TranslationContext era)
     -> TriggerHardFork
     -> ShelleyTransitionArguments (ShelleyBlock proto era)
 
@@ -234,21 +239,22 @@ instance Aeson.FromJSON CardanoConfig where
       let f ::
                Aeson.Key
             -> Word16   -- ^ the argument to 'TriggerHardForkAtVersion'
-            -> ((SL.AlonzoGenesis, SL.ConwayGenesis StandardCrypto) -> Core.TranslationContext era)
+            -> ((ShelleyGenesis StandardCrypto, SL.AlonzoGenesis, SL.ConwayGenesis StandardCrypto) ->
+                Core.TranslationContext era)
             -> (Aeson.Parser :.: ShelleyTransitionArguments) (ShelleyBlock proto era)
           f nm majProtVer ctxt = Comp $
               fmap (ShelleyTransitionArguments ctxt)
             $           (fmap TriggerHardForkAtEpoch <$> (v Aeson..:? nm))
               Aeson..!= (TriggerHardForkAtVersion majProtVer)
 
-      stas <- hsequence' $
-        f "TestShelleyHardForkAtEpoch" 2 (\_ -> ()) :*
-        f "TestAllegraHardForkAtEpoch" 3 (\_ -> ()) :*
-        f "TestMaryHardForkAtEpoch"    4 (\_ -> ()) :*
-        f "TestAlonzoHardForkAtEpoch"  5 fst        :*
-        f "TestBabbageHardForkAtEpoch" 7 fst        :*
-        f "TestConwayHardForkAtEpoch"  9 snd        :*
-        Nil
+      stas <- hsequence'
+        $  f "TestShelleyHardForkAtEpoch" 2 (\(sg, _, _) -> SL.toFromByronTranslationContext sg)
+        :* f "TestAllegraHardForkAtEpoch" 3 (\_ -> ())
+        :* f "TestMaryHardForkAtEpoch"    4 (\_ -> ())
+        :* f "TestAlonzoHardForkAtEpoch"  5 ((\(_, ag, _) -> ag))
+        :* f "TestBabbageHardForkAtEpoch" 7 (\_ -> ())
+        :* f "TestConwayHardForkAtEpoch"  9 (\(_, _, cg) -> SL.cgGenDelegs cg)
+        :* Nil
 
       let isBad :: NP ShelleyTransitionArguments xs -> Bool
           isBad = \case
@@ -288,7 +294,7 @@ type CardanoBlockArgs = Args (CardanoBlock StandardCrypto)
 mkCardanoProtocolInfo ::
      Byron.Genesis.Config
   -> Maybe PBftSignatureThreshold
-  -> ShelleyGenesis StandardShelley
+  -> ShelleyGenesis StandardCrypto
   -> SL.AlonzoGenesis
   -> SL.ConwayGenesis StandardCrypto
   -> Nonce
@@ -313,27 +319,27 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
           -- Note that this is /not/ the Shelley protocol version, see
           -- https://github.com/input-output-hk/cardano-node/blob/daeae61a005776ee7b7514ce47de3933074234a8/cardano-node/src/Cardano/Node/Protocol/Cardano.hs#L167-L170
           -- and the succeeding comments.
-          shelleyProtVer                = ProtVer 3 0
+          shelleyProtVer                = ProtVer (SL.natVersion @3) 0
         , shelleyMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       ProtocolParamsAllegra {
-          allegraProtVer                = ProtVer 4 0
+          allegraProtVer                = ProtVer (SL.natVersion @4) 0
         , allegraMaxTxCapacityOverrides = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       ProtocolParamsMary {
-          maryProtVer                   = ProtVer 5 0
+          maryProtVer                   = ProtVer (SL.natVersion @5) 0
         , maryMaxTxCapacityOverrides    = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       ProtocolParamsAlonzo {
-          alonzoProtVer                 = ProtVer 7 0
+          alonzoProtVer                 = ProtVer (SL.natVersion @7) 0
         , alonzoMaxTxCapacityOverrides  = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       ProtocolParamsBabbage {
-          babbageProtVer                 = ProtVer 9 0
+          babbageProtVer                 = ProtVer (SL.natVersion @9) 0
         , babbageMaxTxCapacityOverrides  = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       ProtocolParamsConway {
-          conwayProtVer                  = ProtVer 9 0
+          conwayProtVer                  = ProtVer (SL.natVersion @9) 0
         , conwayMaxTxCapacityOverrides   = Mempool.mkOverrides Mempool.noOverridesMeasure
         }
       (unShelleyTransitionArguments shelleyTransition)
@@ -356,7 +362,9 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
          ShelleyTransitionArguments (ShelleyBlock proto era)
       -> ProtocolTransitionParamsShelleyBased era
     unShelleyTransitionArguments (ShelleyTransitionArguments ctxt trigger) =
-      ProtocolTransitionParamsShelleyBased (ctxt (genesisAlonzo, genesisConway)) trigger
+      ProtocolTransitionParamsShelleyBased
+      (ctxt (genesisShelley, genesisAlonzo, genesisConway))
+      trigger
 
 castHeaderHash ::
      HeaderHash ByronBlock

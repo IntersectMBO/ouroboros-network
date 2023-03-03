@@ -16,7 +16,7 @@ module Ouroboros.Consensus.Protocol.Praos.Common (
   ) where
 
 import qualified Cardano.Crypto.VRF as VRF
-import           Cardano.Ledger.BaseTypes (Nonce)
+import           Cardano.Ledger.BaseTypes (Nonce, Version)
 import           Cardano.Ledger.Crypto (Crypto, VRF)
 import           Cardano.Ledger.Keys (KeyHash, KeyRole (BlockIssuer))
 import qualified Cardano.Ledger.Shelley.API as SL
@@ -29,7 +29,6 @@ import           Data.Ord (Down (Down))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-import           Numeric.Natural (Natural)
 import           Ouroboros.Consensus.Protocol.Abstract
 
 -- | The maximum major protocol version.
@@ -37,7 +36,7 @@ import           Ouroboros.Consensus.Protocol.Abstract
 -- Must be at least the current major protocol version. For Cardano mainnet, the
 -- Shelley era has major protocol verison __2__.
 newtype MaxMajorProtVer = MaxMajorProtVer
-  { getMaxMajorProtVer :: Natural
+  { getMaxMajorProtVer :: Version
   }
   deriving (Eq, Show, Generic)
   deriving newtype NoThunks

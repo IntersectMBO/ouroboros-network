@@ -40,6 +40,7 @@ library
                      , cardano-slotting
                      , containers
                      , mtl
+                     , microlens
                      , QuickCheck
                      , sop-core
                      , cardano-strict-containers
@@ -50,7 +51,7 @@ library
                      , cardano-ledger-babbage-test
                      , cardano-ledger-conway-test
                      , cardano-ledger-byron
-                     , cardano-ledger-core
+                     , cardano-ledger-core:{cardano-ledger-core, testlib}
                      , cardano-ledger-shelley
                      , cardano-ledger-shelley-test
                      , cardano-protocol-tpraos
@@ -99,6 +100,7 @@ test-suite test
                      , cborg
                      , containers
                      , filepath
+                     , microlens
                      , QuickCheck
                      , sop-core
                      , tasty

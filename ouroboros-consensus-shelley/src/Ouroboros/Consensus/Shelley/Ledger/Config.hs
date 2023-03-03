@@ -24,7 +24,8 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (FromCBOR, ToCBOR)
+import           Cardano.Ledger.Binary (FromCBOR, ToCBOR)
+import           Cardano.Ledger.Crypto (Crypto)
 
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
@@ -61,7 +62,7 @@ deriving instance ShelleyBasedEra era => NoThunks (BlockConfig (ShelleyBlock pro
 mkShelleyBlockConfig ::
      ShelleyBasedEra era
   => SL.ProtVer
-  -> SL.ShelleyGenesis era
+  -> SL.ShelleyGenesis (EraCrypto era)
   -> [SL.VKey 'SL.BlockIssuer (EraCrypto era)]
   -> BlockConfig (ShelleyBlock proto era)
 mkShelleyBlockConfig protVer genesis blockIssuerVKeys = ShelleyConfig {
@@ -108,16 +109,16 @@ data instance StorageConfig (ShelleyBlock proto era) = ShelleyStorageConfig {
 --
 -- * The 'sgStaking' field is erased. It is only used to register initial stake
 --   pools in tests and benchmarks.
-newtype CompactGenesis era = CompactGenesis {
-      getCompactGenesis :: SL.ShelleyGenesis era
+newtype CompactGenesis c = CompactGenesis {
+      getCompactGenesis :: SL.ShelleyGenesis c
     }
   deriving stock (Eq, Show, Generic)
-  deriving newtype (FromCBOR, ToCBOR)
+  deriving newtype (ToCBOR, FromCBOR)
 
-deriving anyclass instance ShelleyBasedEra era => NoThunks (CompactGenesis era)
+deriving anyclass instance Crypto c => NoThunks (CompactGenesis c)
 
 -- | Compacts the given 'SL.ShelleyGenesis'.
-compactGenesis :: SL.ShelleyGenesis era -> CompactGenesis era
+compactGenesis :: SL.ShelleyGenesis c -> CompactGenesis c
 compactGenesis genesis = CompactGenesis $
     genesis {
         SL.sgInitialFunds = mempty

@@ -5,9 +5,9 @@ import           Data.Aeson as Aeson (Value)
 import           Data.Word (Word64)
 
 import           Ouroboros.Consensus.Block.Abstract (SlotNo)
-import           Ouroboros.Consensus.Shelley.Eras (StandardShelley)
 import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis)
 
+import           Cardano.Ledger.Crypto (StandardCrypto)
 import           Cardano.Node.Types (ProtocolFilepaths)
 
 
@@ -59,7 +59,7 @@ data DBSynthesizerConfig = DBSynthesizerConfig {
     confConfigStub          :: NodeConfigStub
   , confOptions             :: DBSynthesizerOptions
   , confProtocolCredentials :: ProtocolFilepaths
-  , confShelleyGenesis      :: ShelleyGenesis StandardShelley
+  , confShelleyGenesis      :: ShelleyGenesis StandardCrypto
   , confDbDir               :: FilePath
   }
   deriving Show

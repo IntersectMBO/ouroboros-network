@@ -36,10 +36,10 @@ library
 
   build-depends:       base              >=4.14  && <4.17
                      , bytestring        >=0.10  && <0.12
-                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-test
                      , cardano-crypto-wrapper
+                     , cardano-ledger-binary:{cardano-ledger-binary, testlib}
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
                      , containers        >=0.5   && <0.7
@@ -83,9 +83,9 @@ test-suite test
   build-depends:       base              >=4.14 && <4.17
                      , binary-search
                      , bytestring
-                     , cardano-binary
                      , cardano-crypto-class
                      , cardano-crypto-wrapper
+                     , cardano-ledger-binary
                      , cardano-ledger-byron
                      , cardano-ledger-byron-test
                      , cardano-slotting

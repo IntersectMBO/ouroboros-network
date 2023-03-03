@@ -46,7 +46,9 @@ import           Data.Word (Word32)
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
 
-import           Cardano.Binary
+import           Cardano.Ledger.Binary (ByteSpan, annotationBytes, byronProtVer,
+                     fromByronCBOR, slice, toByronCBOR, toPlainDecoder)
+import           Cardano.Ledger.Binary.Plain (Decoder, Encoding)
 
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Chain.Slotting as CC
@@ -154,20 +156,20 @@ byronBlockEncodingOverhead =
     safetyMargin = 1024
 
 encodeByronHeaderHash :: HeaderHash ByronBlock -> Encoding
-encodeByronHeaderHash = toCBOR
+encodeByronHeaderHash = toByronCBOR
 
 decodeByronHeaderHash :: Decoder s (HeaderHash ByronBlock)
-decodeByronHeaderHash = fromCBOR
+decodeByronHeaderHash = fromByronCBOR
 
 -- | Encode a block
 --
 -- Should be backwards compatible with legacy (cardano-sl) nodes.
 --
--- Implementation note: the decoder uses 'CC.fromCBORABlockOrBoundary', which
--- has inverse 'CC.toCBORABlockOrBoundary'. This encoder is intended to be
--- binary compatible with 'CC.toCBORABlockOrBoundary', but does not use it and
+-- Implementation note: the decoder uses 'CC.decCBORABlockOrBoundary', which
+-- has inverse 'CC.encCBORABlockOrBoundary'. This encoder is intended to be
+-- binary compatible with 'CC.encCBORABlockOrBoundary', but does not use it and
 -- instead takes advantage of the annotations (using 'encodePreEncoded').
-encodeByronBlock :: ByronBlock -> Encoding
+encodeByronBlock :: ByronBlock -> CBOR.Encoding
 encodeByronBlock blk = mconcat [
       CBOR.encodeListLen 2
     , case byronBlockRaw blk of
@@ -184,69 +186,74 @@ encodeByronBlock blk = mconcat [
 -- | Inverse of 'encodeByronBlock'
 decodeByronBlock :: CC.EpochSlots -> Decoder s (Lazy.ByteString -> ByronBlock)
 decodeByronBlock epochSlots =
+    toPlainDecoder byronProtVer $
     flip (\bs -> mkByronBlock epochSlots
                . annotationBytes bs)
-    <$> CC.fromCBORABlockOrBoundary epochSlots
+    <$> CC.decCBORABlockOrBoundary epochSlots
 
 -- | Decoder for a regular (non-EBB) Byron block.
 --
 -- PRECONDITION: the 'Lazy.ByteString' given as argument to the decoder is the
 -- same as the one that is decoded.
 --
--- This is a wrapper for 'CC.fromCBORABlock'.
+-- This is a wrapper for 'CC.decCBORABlock'.
 --
 -- Use 'decodeByronBlock' when you can, this function is provided for use by
 -- the hard-fork combinator.
 decodeByronRegularBlock :: CC.EpochSlots
                         -> Decoder s (Lazy.ByteString -> ByronBlock)
 decodeByronRegularBlock epochSlots =
+    toPlainDecoder byronProtVer $
     flip (\bs -> mkByronBlock epochSlots
                . annotationBytes bs
                . CC.ABOBBlock)
-    <$> CC.fromCBORABlock epochSlots
+    <$> CC.decCBORABlock epochSlots
 
 -- | Decoder for a boundary Byron block.
 --
 -- PRECONDITION: the 'Lazy.ByteString' given as argument to the decoder is the
 -- same as the one that is decoded.
 --
--- This is a wrapper for 'CC.fromCBORABoundaryBlock'.
+-- This is a wrapper for 'CC.decCBORABoundaryBlock'.
 --
 -- Use 'decodeByronBlock' when you can, this function is provided for use by
 -- the hard-fork combinator.
 decodeByronBoundaryBlock :: CC.EpochSlots
                          -> Decoder s (Lazy.ByteString -> ByronBlock)
 decodeByronBoundaryBlock epochSlots =
+    toPlainDecoder byronProtVer $
     flip (\bs -> mkByronBlock epochSlots
                . annotationBytes bs
                . CC.ABOBBoundary)
-    <$> CC.fromCBORABoundaryBlock
+    <$> CC.decCBORABoundaryBlock
 
 -- | Encodes a raw Byron header /without/ a tag indicating whether it's a
 -- regular header or an EBB header.
 --
 -- Uses the annotation, so cheap.
-encodeByronRegularHeader :: RawHeader -> Encoding
-encodeByronRegularHeader = CBOR.encodePreEncoded . CC.headerAnnotation
+encodeByronRegularHeader :: RawHeader -> CBOR.Encoding
+encodeByronRegularHeader = toByronCBOR . CBOR.encodePreEncoded . CC.headerAnnotation
 
 -- | Inverse of 'encodeByronRegularHeader'
 decodeByronRegularHeader
   :: CC.EpochSlots
   -> Decoder s (Lazy.ByteString -> RawHeader)
 decodeByronRegularHeader epochSlots =
-    flip annotationBytes <$> CC.fromCBORAHeader epochSlots
+    toPlainDecoder byronProtVer $
+    flip annotationBytes <$> CC.decCBORAHeader epochSlots
 
 -- | Encodes a raw Byron EBB header /without/ a tag indicating whether it's a
 -- regular header or an EBB header.
 --
 -- Uses the annotation, so cheap.
-encodeByronBoundaryHeader :: RawBoundaryHeader -> Encoding
-encodeByronBoundaryHeader = CBOR.encodePreEncoded . CC.boundaryHeaderAnnotation
+encodeByronBoundaryHeader :: RawBoundaryHeader -> CBOR.Encoding
+encodeByronBoundaryHeader = toByronCBOR . CBOR.encodePreEncoded . CC.boundaryHeaderAnnotation
 
 -- | Inverse of 'encodeByronBoundaryHeader'
 decodeByronBoundaryHeader :: Decoder s (Lazy.ByteString -> RawBoundaryHeader)
 decodeByronBoundaryHeader =
-    flip annotationBytes <$> CC.fromCBORABoundaryHeader
+    toPlainDecoder byronProtVer $
+    flip annotationBytes <$> CC.decCBORABoundaryHeader
 
 -- | The 'BinaryBlockInfo' of the given 'ByronBlock'.
 --
@@ -317,16 +324,17 @@ fakeByronBlockSizeHint = 2000
 --
 -- Does /not/ have to backwards compatible with legacy (cardano-sl) nodes
 -- (which never send or store these headers), but should be inverse to
--- 'decodeSizedHeader', and moreover uses 'fromCBORABlockOrBoundaryHdr' from
+-- 'decodeSizedHeader', and moreover uses 'decCBORABlockOrBoundaryHdr' from
 -- cardano-ledger-byron, and so we don't have too much choice in this encoder.
 encodeUnsizedHeader :: UnsizedHeader -> Encoding
-encodeUnsizedHeader (UnsizedHeader raw _ _) = CC.toCBORABlockOrBoundaryHdr raw
+encodeUnsizedHeader (UnsizedHeader raw _ _) = toByronCBOR $ CC.encCBORABlockOrBoundaryHdr raw
 
 -- | Inverse of 'encodeSizedHeader'
 decodeUnsizedHeader :: CC.EpochSlots
                     -> Decoder s (Lazy.ByteString -> UnsizedHeader)
 decodeUnsizedHeader epochSlots =
-    fillInByteString <$> CC.fromCBORABlockOrBoundaryHdr epochSlots
+    toPlainDecoder byronProtVer $
+    fillInByteString <$> CC.decCBORABlockOrBoundaryHdr epochSlots
   where
     fillInByteString :: CC.ABlockOrBoundaryHdr ByteSpan
                      -> Lazy.ByteString

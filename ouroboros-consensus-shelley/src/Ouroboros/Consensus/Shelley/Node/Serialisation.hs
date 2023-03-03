@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -9,7 +11,8 @@ import           Control.Exception (Exception, throw)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Typeable (Typeable)
 
-import           Cardano.Binary (fromCBOR, toCBOR)
+import           Cardano.Ledger.Binary (fromCBOR, toCBOR)
+import           Cardano.Ledger.Core (fromEraCBOR, toEraCBOR)
 import           Codec.Serialise (decode, encode)
 
 import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
@@ -118,7 +121,7 @@ instance SerialiseNodeToNode (ShelleyBlock proto era) (SerialisedHeader (Shelley
   encodeNodeToNode _ _ = encodeTrivialSerialisedHeader
   decodeNodeToNode _ _ = decodeTrivialSerialisedHeader
 
--- | The @To/FromCBOR@ instances defined in @cardano-ledger-specs@ use
+-- | The @To/FromCBOR@ instances defined in @cardano-ledger@ use
 -- CBOR-in-CBOR to get the annotation.
 instance ShelleyCompatible proto era
   => SerialiseNodeToNode (ShelleyBlock proto era) (GenTx (ShelleyBlock proto era)) where
@@ -127,8 +130,8 @@ instance ShelleyCompatible proto era
 
 instance ShelleyCompatible proto era
   => SerialiseNodeToNode (ShelleyBlock proto era) (GenTxId (ShelleyBlock proto era)) where
-  encodeNodeToNode _ _ = toCBOR
-  decodeNodeToNode _ _ = fromCBOR
+  encodeNodeToNode _ _ = toEraCBOR @era
+  decodeNodeToNode _ _ = fromEraCBOR @era
 
 {-------------------------------------------------------------------------------
   SerialiseNodeToClient
@@ -168,13 +171,13 @@ instance ShelleyCompatible proto era
 
 instance ShelleyCompatible proto era
   => SerialiseNodeToClient (ShelleyBlock proto era) (GenTxId (ShelleyBlock proto era)) where
-  encodeNodeToClient _ _ = toCBOR
-  decodeNodeToClient _ _ = fromCBOR
+  encodeNodeToClient _ _ = toEraCBOR @era
+  decodeNodeToClient _ _ = fromEraCBOR @era
 
 -- | @'ApplyTxErr' '(ShelleyBlock era)'@
 instance ShelleyBasedEra era => SerialiseNodeToClient (ShelleyBlock proto era) (SL.ApplyTxError era) where
-  encodeNodeToClient _ _ = toCBOR
-  decodeNodeToClient _ _ = fromCBOR
+  encodeNodeToClient _ _ = toEraCBOR @era
+  decodeNodeToClient _ _ = fromEraCBOR @era
 
 instance ShelleyCompatible proto era
       => SerialiseNodeToClient (ShelleyBlock proto era) (SomeSecond BlockQuery (ShelleyBlock proto era)) where

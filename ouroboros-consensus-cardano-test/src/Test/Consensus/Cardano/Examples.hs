@@ -151,22 +151,22 @@ byronEraParams :: History.EraParams
 byronEraParams = Byron.byronEraParams Byron.ledgerConfig
 
 shelleyEraParams :: History.EraParams
-shelleyEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+shelleyEraParams = Shelley.shelleyEraParams @StandardCrypto Shelley.testShelleyGenesis
 
 allegraEraParams :: History.EraParams
-allegraEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+allegraEraParams = Shelley.shelleyEraParams @StandardCrypto Shelley.testShelleyGenesis
 
 maryEraParams :: History.EraParams
-maryEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+maryEraParams = Shelley.shelleyEraParams @StandardCrypto Shelley.testShelleyGenesis
 
 alonzoEraParams :: History.EraParams
-alonzoEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+alonzoEraParams = Shelley.shelleyEraParams @StandardCrypto Shelley.testShelleyGenesis
 
 babbageEraParams :: History.EraParams
-babbageEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+babbageEraParams = Shelley.shelleyEraParams @StandardCrypto Shelley.testShelleyGenesis
 
 conwayEraParams :: History.EraParams
-conwayEraParams = Shelley.shelleyEraParams Shelley.testShelleyGenesis
+conwayEraParams = Shelley.shelleyEraParams @StandardCrypto Shelley.testShelleyGenesis
 
 -- | We use 10, 20, 30, 40, ... as the transition epochs
 shelleyTransitionEpoch :: EpochNo

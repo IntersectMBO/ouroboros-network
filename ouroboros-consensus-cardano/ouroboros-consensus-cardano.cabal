@@ -46,12 +46,13 @@ library
                      , cardano-crypto-class
                      , cardano-data
                      , cardano-ledger-alonzo
+                     , cardano-ledger-allegra
                      , cardano-ledger-babbage
                      , cardano-ledger-byron
                      , cardano-ledger-conway
                      , cardano-ledger-core
+                     , cardano-ledger-mary
                      , cardano-ledger-shelley
-                     , cardano-ledger-shelley-ma
                      , cardano-prelude
                      , cardano-protocol-tpraos
                      , cardano-slotting

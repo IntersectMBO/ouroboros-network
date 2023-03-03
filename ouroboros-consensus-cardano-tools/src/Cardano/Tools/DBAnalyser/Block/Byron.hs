@@ -16,9 +16,10 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Text.Builder (decimal)
 
-import           Cardano.Binary (Raw, unAnnotated)
 import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto as Crypto
+import           Cardano.Crypto.Raw (Raw)
+import           Cardano.Ledger.Binary (unAnnotated)
 
 import qualified Cardano.Chain.Block as Chain
 import qualified Cardano.Chain.Genesis as Genesis

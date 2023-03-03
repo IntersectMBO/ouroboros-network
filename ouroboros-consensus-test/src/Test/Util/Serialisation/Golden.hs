@@ -58,21 +58,15 @@ module Test.Util.Serialisation.Golden (
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.FlatTerm (TermToken (..))
 import qualified Codec.CBOR.FlatTerm as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (encode)
 import           Control.Exception (SomeException, evaluate, try)
-import           Data.Bifunctor (bimap, first)
+import           Data.Bifunctor (first)
 import qualified Data.ByteString as Strict
-import qualified Data.ByteString.Base16 as Base16 (encode)
-import qualified Data.ByteString.Char8 as Strict8 (unpack)
-import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.UTF8 as BS.UTF8
 import           Data.List (nub)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
-import           Data.TreeDiff (Expr (..), ToExpr (..), ansiWlEditExpr, ediff)
 import           GHC.Stack (HasCallStack)
 import           System.Directory (createDirectoryIfMissing)
 import           System.FilePath (takeDirectory, (</>))
@@ -109,6 +103,7 @@ import           Ouroboros.Consensus.Util.Condense (Condense (..))
 import           Test.Tasty
 import           Test.Tasty.Golden.Advanced (goldenTest)
 
+import           Test.Cardano.Ledger.Binary.TreeDiff (CBORBytes (..), diffExpr)
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 {-------------------------------------------------------------------------------
@@ -188,7 +183,7 @@ goldenTestCBOR testName example enc goldenFile =
             | actual == golden -> Nothing
             | otherwise -> Just $ unlines [
                 "Golden term /= actual term, diff golden actual:"
-              , diffToExpr (CBORBytes golden) (CBORBytes actual)
+              , diffExpr (CBORBytes golden) (CBORBytes actual)
               ]
 
           (Right actualFlatTerm, Left _) -> Just $ unlines [
@@ -503,69 +498,3 @@ goldenTest_SerialiseNodeToClient codecConfig goldenDir Examples {..} =
 
 instance Condense TermToken where
   condense = show
-
-{-------------------------------------------------------------------------------
-  Diffing Cbor
--------------------------------------------------------------------------------}
-
-diffToExpr :: ToExpr a => a -> a -> String
-diffToExpr x y = show (ansiWlEditExpr (ediff x y))
-
-newtype CBORBytes = CBORBytes Strict.ByteString
-
-instance ToExpr CBORBytes where
-  toExpr (CBORBytes bytes) =
-      case CBOR.deserialiseFromBytes CBOR.decodeTerm $ Lazy.fromStrict bytes of
-        Left err -> error $ "Error decoding CBOR: " ++ show err
-        Right (bytesLeftOver, term)
-          | Lazy.null bytesLeftOver -> termToExpr term
-          | otherwise ->
-            error $
-            unlines
-              [ "Unexpected leftover bytes: "
-              , show $ showHexBytesGrouped $ Lazy.toStrict bytesLeftOver
-              , "when decoding"
-              , show term
-              ]
-    where
-      hexByteString bs =
-        [ toExpr (Strict.length bs)
-        , Lst (map toExpr $ showHexBytesGrouped bs)
-        ]
-      termToExpr =
-        \case
-          CBOR.TInt i                     -> App "TInt" [toExpr i]
-          CBOR.TInteger i                 -> App "TInteger" [toExpr i]
-          CBOR.TBytes bs                  -> App "TBytes" $ hexByteString bs
-          CBOR.TBytesI bs                 ->
-            App "TBytesI" $ hexByteString $ Lazy.toStrict bs
-          CBOR.TString s                  -> App "TString" [toExpr s]
-          CBOR.TStringI s                 -> App "TStringI" [toExpr s]
-          CBOR.TList xs                   ->
-            App "TList" [Lst (map termToExpr xs)]
-          CBOR.TListI xs                  ->
-            App "TListI" [Lst (map termToExpr xs)]
-          CBOR.TMap xs                    ->
-            App "TMap" [Lst (map (toExpr . bimap termToExpr termToExpr) xs)]
-          CBOR.TMapI xs                   ->
-            App "TMapI" [Lst (map (toExpr . bimap termToExpr termToExpr) xs)]
-          CBOR.TTagged 24 (CBOR.TBytes x) ->
-            App "CBOR-in-CBOR" [toExpr (CBORBytes x)]
-          CBOR.TTagged t x                ->
-            App "TTagged" [toExpr t, termToExpr x]
-          CBOR.TBool x                    -> App "TBool" [toExpr x]
-          CBOR.TNull                      -> App "TNull" []
-          CBOR.TSimple x                  -> App "TSimple" [toExpr x]
-          CBOR.THalf x                    -> App "THalf" [toExpr x]
-          CBOR.TFloat x                   -> App "TFloat" [toExpr x]
-          CBOR.TDouble x                  -> App "TDouble" [toExpr x]
-
--- | Show a ByteString as hex groups of 8bytes each. This is a slightly more
--- useful form for debugging, rather than bunch of escaped characters.
-showHexBytesGrouped :: Strict.ByteString -> [String]
-showHexBytesGrouped bs =
-    [ "0x" <> Strict8.unpack (Strict.take 16 $ Strict.drop i bs16)
-    | i <- [0,16 .. Strict.length bs16 - 1]
-    ]
-  where
-    bs16 = Base16.encode bs

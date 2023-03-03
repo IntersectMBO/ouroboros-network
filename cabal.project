@@ -13,12 +13,12 @@ repository cardano-haskell-packages
 -- See CONTRIBUTING for some Nix commands you will need to run if you
 -- update either of these.
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
-index-state: 2023-01-19T00:00:00Z
-index-state: 
+index-state: 2023-02-22T00:00:00Z
+index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2023-01-19T00:00:00Z
+  , hackage.haskell.org 2023-02-22T00:00:00Z
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2022-11-15T00:00:00Z
+  , cardano-haskell-packages 2023-02-23T15:33:46Z
 
 packages: ./cardano-ping
           ./ouroboros-network-testing
@@ -114,34 +114,37 @@ constraints:
   , prettyprinter-configurable >= 0.1.0.0
   , plutus-ghc-stub >= 8.6.5
   , word-array >= 0.1.0.0
-  , word-array >= 0.1.0.0
   , typed-protocols >= 0.1.0.1
   , typed-protocols-examples >= 0.1.0.1
-
-  , cardano-ledger-alonzo ^>= 0.1.1.1
-  , cardano-ledger-alonzo-test ^>= 0.1.1.1
-  , cardano-ledger-babbage ^>= 0.1.1.1
-  , cardano-ledger-babbage-test ^>= 0.1.1.1
-  , byron-spec-chain ^>= 0.1.1.2
-  , cardano-crypto-wrapper ^>= 1.4.1
-  , cardano-crypto-test ^>= 1.4.2
-  , byron-spec-ledger ^>= 0.1.1.2
-  , cardano-ledger-byron ^>= 0.1.1.1
-  , cardano-ledger-byron-test ^>= 1.4.1
-  , cardano-ledger-conway ^>= 0.1.1.1
-  , cardano-ledger-shelley-ma ^>= 0.1.1.1
-  , cardano-ledger-shelley-ma-test ^>= 0.1.1.1
-  , cardano-ledger-shelley ^>= 0.1.1.1
-  , cardano-ledger-shelley-test ^>= 0.1.1.1
-  , cardano-data ^>= 0.1.1.1
-  , cardano-ledger-core ^>= 0.1.1.1
-  , cardano-ledger-pretty ^>= 0.1.1.1
-  , cardano-protocol-tpraos ^>= 0.1.1.1
-  , non-integral ^>= 0.1.1.1
-  , set-algebra ^>= 0.1.1.1
-  , small-steps ^>= 0.1.1.1
-  , small-steps-test ^>= 0.1.1.1
-  , vector-map ^>= 0.1.1.1
+  -- cardano-ledger
+  , cardano-ledger-alonzo >= 1.0.0.0
+  , cardano-ledger-babbage >= 1.0.0.0
+  , cardano-ledger-conway >= 1.0.0.0
+  , cardano-ledger-allegra >= 1.0.0.0
+  , cardano-ledger-mary >= 1.0.0.0
+  , cardano-ledger-shelley >= 1.0.0.0
+  , cardano-ledger-alonzo-test >= 1.0.0.0
+  , cardano-ledger-babbage-test >= 1.0.0.0
+  , cardano-ledger-conway-test >= 1.0.0.0
+  , cardano-ledger-shelley-test >= 1.0.0.0
+  , cardano-ledger-shelley-ma-test >= 1.0.0.0
+  , cardano-ledger-binary >= 1.0.0.0
+  , cardano-protocol-tpraos >= 1.0.0.0
+  , cardano-ledger-pretty >= 1.0.0.0
+  , cardano-data >= 1.0.0.0
+  , non-integral >= 1.0.0.0
+  , set-algebra >= 1.0.0.0
+  , small-steps >= 1.0.0.0
+  , small-steps-test >= 1.0.0.0
+  , vector-map >= 1.0.0.0
+  -- Byron era
+  , cardano-ledger-core >= 1.0.0.0
+  , cardano-crypto-test >= 1.5.0.0
+  , cardano-crypto-wrapper >= 1.5.0.0
+  , cardano-ledger-byron-test >= 1.5.0.0
+  , cardano-ledger-byron >= 1.0.0.0
+  , byron-spec-ledger >= 1.0.0.0
+  , byron-spec-chain >= 1.0.0.0
 
 allow-newer:
     Unique:hashable

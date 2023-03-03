@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -26,8 +27,8 @@ module Ouroboros.Consensus.Ledger.Extended (
   , Ticked (..)
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
+import           Cardano.Ledger.Binary.Plain (Decoder, Encoding,
+                     decodeRecordNamed, encodeListLen)
 import           Control.Monad.Except
 import           Data.Coerce
 import           Data.Functor ((<&>))
@@ -183,7 +184,8 @@ encodeExtLedgerState encodeLedgerState
                      encodeChainDepState
                      encodeAnnTip
                      ExtLedgerState{..} = mconcat [
-      encodeLedgerState  ledgerState
+      encodeListLen 2
+    , encodeLedgerState  ledgerState
     , encodeHeaderState' headerState
     ]
   where
@@ -197,10 +199,11 @@ decodeExtLedgerState :: (forall s. Decoder s (LedgerState    blk))
                      -> (forall s. Decoder s (ExtLedgerState blk))
 decodeExtLedgerState decodeLedgerState
                      decodeChainDepState
-                     decodeAnnTip = do
-    ledgerState <- decodeLedgerState
-    headerState <- decodeHeaderState'
-    return ExtLedgerState{..}
+                     decodeAnnTip =
+    decodeRecordNamed "ExtLedgerState" (const 2) $ do
+      ledgerState <- decodeLedgerState
+      headerState <- decodeHeaderState'
+      return ExtLedgerState{..}
   where
     decodeHeaderState' = decodeHeaderState
                            decodeChainDepState

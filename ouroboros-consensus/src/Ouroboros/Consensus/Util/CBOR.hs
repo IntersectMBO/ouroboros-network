@@ -29,6 +29,7 @@ module Ouroboros.Consensus.Util.CBOR (
   , encodeWithOrigin
   ) where
 
+import           Cardano.Binary (decodeMaybe, encodeMaybe)
 import qualified Codec.CBOR.Decoding as CBOR.D
 import qualified Codec.CBOR.Encoding as CBOR.E
 import qualified Codec.CBOR.FlatTerm as CBOR.F
@@ -314,20 +315,6 @@ encodeSeq f = encodeList f . toList
 
 decodeSeq :: CBOR.D.Decoder s a -> CBOR.D.Decoder s (StrictSeq a)
 decodeSeq f = Seq.fromList <$> decodeList f
-
-encodeMaybe :: (a -> CBOR.E.Encoding) -> Maybe a -> CBOR.E.Encoding
-encodeMaybe enc = \case
-    Nothing -> CBOR.E.encodeListLen 0
-    Just x  -> CBOR.E.encodeListLen 1 <> enc x
-
-decodeMaybe :: CBOR.D.Decoder s a -> CBOR.D.Decoder s (Maybe a)
-decodeMaybe dec = do
-    n <- CBOR.D.decodeListLen
-    case n of
-      0 -> return Nothing
-      1 -> do !x <- dec
-              return (Just x)
-      _ -> fail "unknown tag"
 
 encodeWithOrigin :: (a -> CBOR.E.Encoding) -> WithOrigin a -> CBOR.E.Encoding
 encodeWithOrigin f = encodeMaybe f . withOriginToMaybe

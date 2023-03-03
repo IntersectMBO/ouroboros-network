@@ -23,7 +23,7 @@ import           Cardano.Api.Any
 
 
 -- | For use with @deriving via@, to provide 'ToCBOR' and 'FromCBOR' instances,
--- based on the 'SerialiseAsRawBytes' instance.
+-- based on the 'SerialiseAsRawBytes' instance. Eg:
 --
 -- > deriving (ToCBOR, FromCBOR) via (UsingRawBytes Blah)
 --
@@ -41,6 +41,10 @@ instance (SerialiseAsRawBytes a, Typeable a) => FromCBOR (UsingRawBytes a) where
       where
         ttoken = proxyToAsType (Proxy :: Proxy a)
         tname  = (tyConName . typeRepTyCon . typeRep) (Proxy :: Proxy a)
+
+instance (SerialiseAsRawBytes a, Typeable a) => EncCBOR (UsingRawBytes a)
+
+instance (SerialiseAsRawBytes a, Typeable a) => DecCBOR (UsingRawBytes a)
 
 
 -- | For use with @deriving via@, to provide instances for any\/all of 'Show',

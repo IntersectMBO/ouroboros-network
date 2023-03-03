@@ -34,16 +34,12 @@ module Ouroboros.Consensus.Shelley.Ledger.Block (
   , toShelleyPrevHash
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (coerce)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
 
-import           Cardano.Binary (Annotator (..), FromCBOR (..),
-                     FullByteString (..), ToCBOR (..), serialize)
 import qualified Cardano.Crypto.Hash as Crypto
 
 import           Ouroboros.Consensus.Block
@@ -52,6 +48,11 @@ import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE)
 import           Ouroboros.Consensus.Util.Condense
 
+import           Cardano.Ledger.Binary (Annotator (..), DecCBOR (..),
+                     EncCBOR (..), FullByteString (..), serialize,
+                     toPlainDecoder)
+import qualified Cardano.Ledger.Binary.Plain as Plain
+import           Cardano.Ledger.Core as SL (eraProtVerLow, toEraCBOR)
 import           Cardano.Ledger.Crypto (HASH)
 import qualified Cardano.Ledger.Era as SL (hashTxSeq)
 import qualified Cardano.Ledger.Shelley.API as SL
@@ -84,8 +85,8 @@ class
   , Eq (ShelleyProtocolHeader proto)
   , Show (ShelleyProtocolHeader proto)
   , NoThunks (ShelleyProtocolHeader proto)
-  , ToCBOR (ShelleyProtocolHeader proto)
-  , FromCBOR (Annotator (ShelleyProtocolHeader proto))
+  , EncCBOR (ShelleyProtocolHeader proto)
+  , DecCBOR (Annotator (ShelleyProtocolHeader proto))
   , Show (CannotForgeError proto)
     -- Currently the chain select view is identical
   , SelectView proto ~ PraosChainSelectView (EraCrypto era)
@@ -98,7 +99,7 @@ class
   , EraCrypto era ~ ProtoCrypto proto
     -- Hard-fork related constraints
   , HasPartialConsensusConfig proto
-  , FromCBOR (SL.PState (ProtoCrypto proto))
+  , DecCBOR (SL.PState (ProtoCrypto proto))
   ) => ShelleyCompatible proto era
 
 instance ShelleyCompatible proto era => ConvertRawHash (ShelleyBlock proto era) where
@@ -234,40 +235,48 @@ instance HasNestedContent f (ShelleyBlock proto era)
   Serialisation
 -------------------------------------------------------------------------------}
 
-instance ShelleyCompatible proto era => ToCBOR (ShelleyBlock proto era) where
+instance ShelleyCompatible proto era => EncCBOR (ShelleyBlock proto era) where
   -- Don't encode the header hash, we recompute it during deserialisation
-  toCBOR = toCBOR . shelleyBlockRaw
+  encCBOR = encCBOR . shelleyBlockRaw
 
-instance ShelleyCompatible proto era => FromCBOR (Annotator (ShelleyBlock proto era)) where
-  fromCBOR = fmap mkShelleyBlock <$> fromCBOR
+instance ShelleyCompatible proto era => DecCBOR (Annotator (ShelleyBlock proto era)) where
+  decCBOR = fmap mkShelleyBlock <$> decCBOR
 
-instance ShelleyCompatible proto era => ToCBOR (Header (ShelleyBlock proto era)) where
+instance ShelleyCompatible proto era => EncCBOR (Header (ShelleyBlock proto era)) where
   -- Don't encode the header hash, we recompute it during deserialisation
-  toCBOR = toCBOR . shelleyHeaderRaw
+  encCBOR = encCBOR . shelleyHeaderRaw
 
-instance ShelleyCompatible proto era => FromCBOR (Annotator (Header (ShelleyBlock proto era))) where
-  fromCBOR = fmap mkShelleyHeader <$> fromCBOR
+instance ShelleyCompatible proto era => DecCBOR (Annotator (Header (ShelleyBlock proto era))) where
+  decCBOR = fmap mkShelleyHeader <$> decCBOR
 
-encodeShelleyBlock :: ShelleyCompatible proto era => ShelleyBlock proto era-> Encoding
-encodeShelleyBlock = toCBOR
+encodeShelleyBlock ::
+  forall proto era. ShelleyCompatible proto era
+  => ShelleyBlock proto era -> Plain.Encoding
+encodeShelleyBlock = toEraCBOR @era
 
-decodeShelleyBlock :: ShelleyCompatible proto era => Decoder s (Lazy.ByteString -> ShelleyBlock proto era)
-decodeShelleyBlock = (. Full) . runAnnotator <$> fromCBOR
+decodeShelleyBlock ::
+  forall proto era. ShelleyCompatible proto era
+  => forall s. Plain.Decoder s (Lazy.ByteString -> ShelleyBlock proto era)
+decodeShelleyBlock = toPlainDecoder (eraProtVerLow @era) $ (. Full) . runAnnotator <$> decCBOR
 
-shelleyBinaryBlockInfo :: ShelleyCompatible proto era => ShelleyBlock proto era-> BinaryBlockInfo
+shelleyBinaryBlockInfo :: forall proto era. ShelleyCompatible proto era => ShelleyBlock proto era -> BinaryBlockInfo
 shelleyBinaryBlockInfo blk = BinaryBlockInfo {
       -- Drop the 'encodeListLen' that precedes the header and the body (= tx
       -- seq)
       headerOffset = 1
       -- The Shelley decoders use annotations, so this is cheap
-    , headerSize   = fromIntegral $ Lazy.length (serialize (getHeader blk))
+    , headerSize   = fromIntegral $ Lazy.length (serialize (SL.eraProtVerLow @era) (getHeader blk))
     }
 
-encodeShelleyHeader :: ShelleyCompatible proto era => Header (ShelleyBlock proto era) -> Encoding
-encodeShelleyHeader = toCBOR
+encodeShelleyHeader ::
+  forall proto era. ShelleyCompatible proto era
+  => Header (ShelleyBlock proto era) -> Plain.Encoding
+encodeShelleyHeader = toEraCBOR @era
 
-decodeShelleyHeader :: ShelleyCompatible proto era => Decoder s (Lazy.ByteString -> Header (ShelleyBlock proto era))
-decodeShelleyHeader = (. Full) . runAnnotator <$> fromCBOR
+decodeShelleyHeader ::
+  forall proto era. ShelleyCompatible proto era
+  => forall s. Plain.Decoder s (Lazy.ByteString -> Header (ShelleyBlock proto era))
+decodeShelleyHeader = toPlainDecoder (eraProtVerLow @era) $ (. Full) . runAnnotator <$> decCBOR
 
 {-------------------------------------------------------------------------------
   Condense
