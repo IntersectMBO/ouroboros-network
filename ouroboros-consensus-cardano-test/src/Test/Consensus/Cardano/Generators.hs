@@ -129,7 +129,29 @@ instance ( DSIGN.Signable (DSIGN c) ~ SignableRepresentation
          , DSIGN c ~ DSIGN.Ed25519DSIGN
          , PraosCrypto c
          ) => Arbitrary (CardanoHeader c) where
-  arbitrary = getHeader <$> arbitrary
+ arbitrary =
+      oneof $ catMaybes $ hcollapse generators
+    where
+      generators ::
+        NP
+          (K (Maybe (Gen (CardanoHeader c))))
+          (CardanoEras c)
+      generators =
+            mk HeaderByron
+         :* mk HeaderShelley
+         :* mk HeaderAllegra
+         :* mk HeaderMary
+         :* mk HeaderAlonzo
+         :* mk HeaderBabbage
+         :* mk HeaderConway
+         :* Nil
+
+      mk ::
+           forall a x. Arbitrary a
+        => (a -> CardanoHeader c)
+        -> K (Maybe (Gen (CardanoHeader c))) x
+      mk f = K $ Just $ f <$> arbitrary
+
 
 instance (CanMock (TPraos c) (ShelleyEra c), CardanoHardForkConstraints c)
       => Arbitrary (OneEraHash (CardanoEras c)) where

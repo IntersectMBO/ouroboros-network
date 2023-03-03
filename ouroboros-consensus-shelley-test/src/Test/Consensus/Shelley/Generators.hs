@@ -29,6 +29,15 @@ import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos,
                      TPraosState (..))
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Protocol.Abstract (pHeaderHash)
+import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
+
+import           Test.QuickCheck hiding (Result)
+
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Serialisation.Roundtrip (Coherent (..),
+                     SomeResult (..), WithVersion (..))
+
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 import           Ouroboros.Network.Block (mkSerialised)
@@ -43,10 +52,7 @@ import           Test.Cardano.Ledger.Shelley.Serialisation.Generators ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
-import           Test.QuickCheck hiding (Result)
 import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Roundtrip (Coherent (..),
-                     SomeResult (..), WithVersion (..))
 
 {-------------------------------------------------------------------------------
   Generators
@@ -103,7 +109,9 @@ instance (CanMock (Praos crypto) era, crypto ~ EraCrypto era)
 
 instance (CanMock (TPraos crypto) era, crypto ~ EraCrypto era)
   => Arbitrary (Header (ShelleyBlock (TPraos crypto) era)) where
-  arbitrary = getHeader <$> arbitrary
+  arbitrary = do
+    hdr <- arbitrary
+    pure $ ShelleyHeader hdr (pHeaderHash hdr)
 
 instance (CanMock (Praos crypto) era, crypto ~ EraCrypto era)
   => Arbitrary (Header (ShelleyBlock (Praos crypto) era)) where
