@@ -67,6 +67,7 @@ import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck.Monadic as QC
 import qualified Test.QuickCheck.Random as QC
 import           Test.StateMachine hiding (showLabelledExamples)
+import qualified Test.StateMachine.Labelling as C
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
@@ -83,7 +84,6 @@ import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.LedgerDB
 
-import qualified Test.Util.Classify as C
 import qualified Test.Util.FS.Sim.MockFS as MockFS
 import           Test.Util.FS.Sim.STM
 import           Test.Util.Range

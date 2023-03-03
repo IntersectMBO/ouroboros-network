@@ -71,13 +71,13 @@ import           Test.QuickCheck.Monadic
 import           Test.QuickCheck.Random (mkQCGen)
 import           Test.StateMachine hiding (showLabelledExamples,
                      showLabelledExamples')
+import qualified Test.StateMachine.Labelling as C
 import qualified Test.StateMachine.Sequential as QSM
 import           Test.StateMachine.Types
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.Error hiding (null)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary ()
