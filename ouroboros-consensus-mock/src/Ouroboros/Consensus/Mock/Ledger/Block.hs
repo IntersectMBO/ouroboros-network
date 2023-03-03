@@ -382,12 +382,6 @@ instance MockProtocolSpecific c ext
     foldMap' id
      [ SimpleLedgerTables $ KeysMK ins | Mock.Tx _ ins _ <- txs ]
 
-deriving newtype instance Semigroup (mk Mock.TxIn Mock.TxOut)
-                       => Semigroup (LedgerTables (LedgerState (SimpleBlock c ext)) mk)
-
-deriving newtype instance Monoid (mk Mock.TxIn Mock.TxOut)
-                       => Monoid (LedgerTables (LedgerState (SimpleBlock c ext)) mk)
-
 data instance LedgerState (SimpleBlock c ext) mk  = SimpleLedgerState {
       simpleLedgerState :: MockState (SimpleBlock c ext)
     , simpleLedgerTables :: LedgerTables (LedgerState (SimpleBlock c ext)) mk

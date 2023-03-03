@@ -131,12 +131,13 @@ instance CanSerializeLedgerTables (LedgerState ByronSpecBlock) where
 instance HasTickedLedgerTables (LedgerState ByronSpecBlock) where
   projectLedgerTablesTicked _st                     = NoByronSpecLedgerTables
   withLedgerTablesTicked st NoByronSpecLedgerTables =
-    TickedByronSpecLedgerState { untickedByronSpecLedgerTip
-                               , tickedByronSpecLedgerState
-                               }
-    where TickedByronSpecLedgerState { untickedByronSpecLedgerTip
-                                     , tickedByronSpecLedgerState
-                                     } = st
+      TickedByronSpecLedgerState { untickedByronSpecLedgerTip
+                                 , tickedByronSpecLedgerState
+                                 }
+    where
+      TickedByronSpecLedgerState { untickedByronSpecLedgerTip
+                                 , tickedByronSpecLedgerState
+                                 } = st
 
 instance LedgerTablesAreTrivial (LedgerState ByronSpecBlock) where
   convertMapKind st =

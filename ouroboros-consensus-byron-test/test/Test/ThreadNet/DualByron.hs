@@ -58,7 +58,8 @@ import           Test.Util.Slots (NumSlots (..))
 
 tests :: TestTree
 tests = testGroup "DualByron" [
-      localOption (QuickCheckTests 10) $ testProperty "convergence" $ prop_convergence
+      localOption (QuickCheckTests 10)
+        $ testProperty "convergence" prop_convergence
     ]
 
 -- These tests are very expensive, due to the Byron generators
@@ -258,7 +259,10 @@ byronPBftParams ByronSpecGenesis{..} =
 instance TxGen DualByronBlock where
   testGenTxs _coreNodeId _numCoreNodes curSlotNo cfg () = \st -> do
       n <- choose (0, 20)
-      go [] n $ applyLedgerTablesDiffsTicked st $ applyChainTick (configLedger cfg) curSlotNo $ forgetLedgerTables st
+      go [] n
+        $ applyLedgerTablesDiffsTicked st
+        $ applyChainTick (configLedger cfg) curSlotNo
+        $ forgetLedgerTables st
     where
       -- Attempt to produce @n@ transactions
       -- Stops when the transaction generator cannot produce more txs
@@ -275,7 +279,8 @@ instance TxGen DualByronBlock where
                              curSlotNo
                              tx
                              st of
-            Right (st', _vtx) -> go (tx:acc) (n - 1) (forgetLedgerTablesDiffsTicked st')
+            Right (st', _vtx) ->
+              go (tx:acc) (n - 1) (forgetLedgerTablesDiffsTicked st')
             Left _            -> error "testGenTxs: unexpected invalid tx"
 
 -- | Generate transaction

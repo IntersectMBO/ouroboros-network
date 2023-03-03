@@ -78,6 +78,30 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 codecConfig :: CodecConfig StandardShelleyBlock
 codecConfig = ShelleyCodecConfig
 
+mkLedgerTables :: forall proto era.
+     ShelleyCompatible proto era
+  => LC.Tx era
+  -> LedgerTables (LedgerState (ShelleyBlock proto era)) ValuesMK
+mkLedgerTables tx =
+      ShelleyLedgerTables
+    $ ValuesMK
+    $ Map.fromList
+    $ zip exampleTxIns exampleTxOuts
+  where
+    exampleTxIns :: [TxIn (EraCrypto era)]
+    exampleTxIns  = case toList $ getAllTxInputs (tx ^. LC.bodyTxL) of
+      [] -> error "No transaction inputs were provided to construct the ledger tables"
+            -- We require at least one transaction input (and one
+            -- transaction output) in the example provided by
+            -- cardano-ledger to make sure that we test the serialization
+            -- of ledger tables with at least one non-trivial example.
+      xs -> xs
+
+    exampleTxOuts :: [LC.TxOut era]
+    exampleTxOuts = case toList (tx ^. (LC.bodyTxL . LC.outputsTxBodyL)) of
+      [] -> error "No transaction outputs were provided to construct the ledger tables"
+      xs -> xs
+
 fromShelleyLedgerExamples
   :: forall era. ShelleyCompatible (TPraos (EraCrypto era)) era
   => ShelleyLedgerExamples era
@@ -101,7 +125,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
     , exampleSlotNo           = unlabelled slotNo
-    , exampleLedgerTables     = unlabelled ledgerTables
+    , exampleLedgerTables     = unlabelled $ mkLedgerTables sleTx
     }
   where
     blk = mkShelleyBlock sleBlock
@@ -149,26 +173,7 @@ fromShelleyLedgerExamples ShelleyLedgerExamples {
     extLedgerState = ExtLedgerState
                        ledgerState
                        (genesisHeaderState chainDepState)
-    ledgerTables = ShelleyLedgerTables
-                 $ ValuesMK
-                 $ Map.fromList
-                 $ zip exampleTxIns exampleTxOuts
-      where
-        exampleTxIns :: [TxIn (EraCrypto era)]
-        exampleTxIns  =
-          case toList $ getAllTxInputs (sleTx ^. LC.bodyTxL) of
-            [] -> error "No transaction inputs were provided to construct the ledger tables"
-                  -- We require at least one transaction input (and one
-                  -- transaction output) in the example provided by
-                  -- cardano-ledger to make sure that we test the serialization
-                  -- of ledger tables with at least one non-trivial example.
-            xs -> xs
 
-        exampleTxOuts :: [LC.TxOut era]
-        exampleTxOuts =
-          case toList (sleTx ^. LC.bodyTxL ^. LC.outputsTxBodyL) of
-            [] -> error "No transaction outputs were provided to construct the ledger tables"
-            xs -> xs
 
 -- | TODO Factor this out into something nicer.
 fromShelleyLedgerExamplesPraos ::
@@ -194,7 +199,7 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
     , exampleResult           = results
     , exampleAnnTip           = unlabelled annTip
     , exampleLedgerState      = unlabelled ledgerState
-    , exampleLedgerTables     = unlabelled ledgerTables
+    , exampleLedgerTables     = unlabelled $ mkLedgerTables sleTx
     , exampleChainDepState    = unlabelled chainDepState
     , exampleExtLedgerState   = unlabelled extLedgerState
     , exampleSlotNo           = unlabelled slotNo
@@ -265,27 +270,6 @@ fromShelleyLedgerExamplesPraos ShelleyLedgerExamples {
     extLedgerState = ExtLedgerState
                        ledgerState
                        (genesisHeaderState chainDepState)
-    ledgerTables = ShelleyLedgerTables
-                 $ ValuesMK
-                 $ Map.fromList
-                 $ zip exampleTxIns exampleTxOuts
-      where
-        exampleTxIns :: [TxIn (EraCrypto era)]
-        exampleTxIns  =
-          case toList $ getAllTxInputs (sleTx ^. LC.bodyTxL) of
-            [] -> error "No transaction inputs were provided to construct the ledger tables"
-                  -- We require at least one transaction input (and one
-                  -- transaction output) in the example provided by
-                  -- cardano-ledger to make sure that we test the serialization
-                  -- of ledger tables with at least one non-trivial example.
-            xs -> xs
-
-        exampleTxOuts :: [LC.TxOut era]
-        exampleTxOuts =
-          case toList (sleTx ^. LC.bodyTxL ^. LC.outputsTxBodyL) of
-            [] -> error "No transaction outputs were provided to construct the ledger tables"
-            xs -> xs
-
 
 examplesShelley :: Golden.Examples StandardShelleyBlock
 examplesShelley = fromShelleyLedgerExamples ledgerExamplesShelley

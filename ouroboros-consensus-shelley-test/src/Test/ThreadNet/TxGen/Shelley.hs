@@ -58,7 +58,10 @@ instance HashAlgorithm h => TxGen (ShelleyBlock (TPraos (MockCrypto h)) (MockShe
 
       | otherwise               = do
       n <- choose (0, 20)
-      go [] n $ applyLedgerTablesDiffsTicked lst $ applyChainTick lcfg curSlotNo $ forgetLedgerTables lst
+      go [] n
+        $ applyLedgerTablesDiffsTicked lst
+        $ applyChainTick lcfg curSlotNo
+        $ forgetLedgerTables lst
     where
       ShelleyTxGenExtra
         { stgeGenEnv

@@ -785,7 +785,6 @@ tests = testGroup "Byron" $
     defaultSlotLength :: SlotLength
     defaultSlotLength = slotLengthFromSec 1
 
-
 prop_deterministicPlan :: PBftParams -> NumSlots -> NumCoreNodes -> Property
 prop_deterministicPlan params numSlots numCoreNodes =
     property $ case Ref.simulate params njp numSlots of
