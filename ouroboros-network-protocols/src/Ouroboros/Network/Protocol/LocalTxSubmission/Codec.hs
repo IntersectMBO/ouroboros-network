@@ -21,19 +21,19 @@ import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR
 
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 
 codecLocalTxSubmission
   :: forall tx reject m.
      MonadST m
-  => (tx -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s tx)
-  -> (reject -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s reject)
+  => CBORCodec tx
+  -> CBORCodec reject
   -> Codec (LocalTxSubmission tx reject) CBOR.DeserialiseFailure m ByteString
-codecLocalTxSubmission encodeTx decodeTx encodeReject decodeReject =
-    mkCodecCborLazyBS encode decode
+codecLocalTxSubmission (CBORCodec encodeTx decodeTx)
+                       (CBORCodec encodeReject decodeReject) =
+  mkCodecCborLazyBS encode decode
   where
     encode :: forall (pr :: PeerRole) st st'.
               PeerHasAgency pr st

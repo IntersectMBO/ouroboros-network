@@ -59,6 +59,7 @@ import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Testing.Utils
 
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec' (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -171,8 +172,8 @@ txSubmissionCodec2 :: MonadST m
                    => Codec (TxSubmission2 Int (Tx Int))
                             CBOR.DeserialiseFailure m ByteString
 txSubmissionCodec2 =
-    codecTxSubmission2 CBOR.encodeInt CBOR.decodeInt
-                       encodeTx decodeTx
+    codecTxSubmission2 (CBORCodec CBOR.encodeInt CBOR.decodeInt)
+                       (CBORCodec encodeTx decodeTx)
   where
     encodeTx Tx {getTxId, getTxSize, getTxValid} =
          CBOR.encodeListLen 3

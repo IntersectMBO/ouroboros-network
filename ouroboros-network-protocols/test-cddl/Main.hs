@@ -106,6 +106,8 @@ import qualified Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
 import           Network.Socket (SockAddr (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..),
                      decodeRemoteAddress, encodeRemoteAddress)
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec' (..),
+                     serialiseCodec)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import           Ouroboros.Network.Protocol.PeerSharing.Test ()
 import           Ouroboros.Network.Protocol.PeerSharing.Type
@@ -282,51 +284,41 @@ chainSyncCodec :: Codec (ChainSync BlockHeader (Point BlockHeader) (Tip BlockHea
                         CBOR.DeserialiseFailure IO BL.ByteString
 chainSyncCodec =
     codecChainSync
-      (wrapCBORinCBOR Serialise.encode)
-      (unwrapCBORinCBOR (const <$> Serialise.decode))
-      Serialise.encode
-      Serialise.decode
-      (encodeTip Serialise.encode)
-      (decodeTip Serialise.decode)
+      (CBORCodec (wrapCBORinCBOR Serialise.encode)
+                  (unwrapCBORinCBOR (const <$> Serialise.decode)))
+      serialiseCodec
+      (CBORCodec (encodeTip Serialise.encode)
+                  (decodeTip Serialise.decode))
 
 
 blockFetchCodec :: Codec (BlockFetch Block (Point Block))
                          CBOR.DeserialiseFailure IO BL.ByteString
 blockFetchCodec =
     codecBlockFetch
-      (wrapCBORinCBOR Serialise.encode)
-      (unwrapCBORinCBOR (const <$> Serialise.decode))
-      Serialise.encode
-      Serialise.decode
+      (CBORCodec (wrapCBORinCBOR Serialise.encode)
+                  (unwrapCBORinCBOR (const <$> Serialise.decode)))
+      serialiseCodec
 
 
 txSubmissionCodec2 :: Codec (TxSubmission2 TxId Tx)
                             CBOR.DeserialiseFailure IO BL.ByteString
 txSubmissionCodec2 =
     codecTxSubmission2
-      Serialise.encode
-      Serialise.decode
-      Serialise.encode
-      Serialise.decode
+      serialiseCodec
+      serialiseCodec
 
 
 localTxSubmissionCodec :: Codec (LocalTxSubmission LocalTxSubmission.Tx LocalTxSubmission.Reject)
                                 CBOR.DeserialiseFailure IO BL.ByteString
 localTxSubmissionCodec =
     codecLocalTxSubmission
-      Serialise.encode
-      Serialise.decode
-      Serialise.encode
-      Serialise.decode
+      serialiseCodec
+      serialiseCodec
 
 
 localTxMonitorCodec :: Codec (LocalTxMonitor TxId Tx SlotNo)
                                 CBOR.DeserialiseFailure IO BL.ByteString
-localTxMonitorCodec =
-    codecLocalTxMonitor
-      Serialise.encode Serialise.decode
-      Serialise.encode Serialise.decode
-      Serialise.encode Serialise.decode
+localTxMonitorCodec = codecLocalTxMonitor serialiseCodec serialiseCodec serialiseCodec
 
 
 localStateQueryCodec :: Codec (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
@@ -588,7 +580,7 @@ prop_encodePeerSharing
     -> AnyMessageAndAgency (PeerSharing.PeerSharing SockAddr)
     -> Property
 prop_encodePeerSharing spec =
-  validateEncoder spec (codecPeerSharing encodeRemoteAddress decodeRemoteAddress)
+  validateEncoder spec (codecPeerSharing (CBORCodec encodeRemoteAddress decodeRemoteAddress))
 
 
 --
@@ -811,7 +803,7 @@ unit_decodePeerSharing
     -> Assertion
 unit_decodePeerSharing spec =
     validateDecoder Nothing
-      spec (codecPeerSharing encodeRemoteAddress decodeRemoteAddress)
+      spec (codecPeerSharing (CBORCodec encodeRemoteAddress decodeRemoteAddress))
       [ SomeAgency $ ClientAgency TokIdle
       , SomeAgency $ ServerAgency TokBusy
       ]

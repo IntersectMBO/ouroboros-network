@@ -47,6 +47,8 @@ import qualified Network.Mux.Bearer as Mx
 import qualified Network.Mux.Bearer.Queues as Mx
 import qualified Network.Mux.Compat as Mx (muxStart)
 import           Ouroboros.Network.Mux as Mx
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec' (..),
+                     serialiseCodec)
 
 
 tests :: TestTree
@@ -117,9 +119,9 @@ demo chain0 updates delay = do
           MuxPeer
             nullTracer
             (ChainSync.codecChainSync
-               encode             decode
-               encode             decode
-               (encodeTip encode) (decodeTip decode))
+               serialiseCodec
+               serialiseCodec
+               (CBORCodec (encodeTip encode) (decodeTip decode)))
             consumerPeer
 
         consumerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
@@ -135,9 +137,9 @@ demo chain0 updates delay = do
           MuxPeer
             nullTracer
             (ChainSync.codecChainSync
-               encode             decode
-               encode             decode
-               (encodeTip encode) (decodeTip decode))
+               serialiseCodec
+               serialiseCodec
+               (CBORCodec (encodeTip encode) (decodeTip decode)))
             producerPeer
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))

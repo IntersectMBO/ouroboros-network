@@ -32,7 +32,6 @@ import           Control.Monad.ST (runST)
 import           Control.Tracer (Tracer (..), nullTracer)
 
 import           Codec.Serialise (DeserialiseFailure, Serialise)
-import qualified Codec.Serialise as Serialise (decode, encode)
 
 import           Network.TypedProtocol.Codec hiding (prop_codec)
 import           Network.TypedProtocol.Proofs
@@ -51,6 +50,7 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
+import           Ouroboros.Network.Protocol.CBOR (serialiseCodec)
 import           Test.QuickCheck as QC
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -304,9 +304,7 @@ codec_v2 :: MonadST m
          => Codec (TxSubmission2 TxId Tx)
                    DeserialiseFailure
                    m ByteString
-codec_v2 = codecTxSubmission2
-           Serialise.encode Serialise.decode
-           Serialise.encode Serialise.decode
+codec_v2 = codecTxSubmission2 serialiseCodec serialiseCodec
 
 
 -- | Check the codec round trip property.

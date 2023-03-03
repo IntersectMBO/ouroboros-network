@@ -57,6 +57,8 @@ import           Test.ChainProducerState (ChainProducerStateForkTest (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..),
+                     serialiseCodec)
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -421,9 +423,13 @@ codec :: ( MonadST m
       => Codec (ChainSync block (Point block) (Tip block))
                S.DeserialiseFailure
                m ByteString
-codec = codecChainSync S.encode             S.decode
-                       S.encode             S.decode
-                       (encodeTip S.encode) (decodeTip S.decode)
+codec = codecChainSync serialiseCodec
+                       serialiseCodec
+                       tipCodec
+
+tipCodec :: (S.Serialise (Chain.HeaderHash block))
+         => CBORCodec (Tip block)
+tipCodec = CBORCodec (encodeTip S.encode) (decodeTip S.decode)
 
 codecWrapped :: ( MonadST m
                 , S.Serialise block
@@ -433,9 +439,9 @@ codecWrapped :: ( MonadST m
                       S.DeserialiseFailure
                       m ByteString
 codecWrapped =
-    codecChainSync (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const <$> S.decode))
-                   S.encode                  S.decode
-                   (encodeTip S.encode)      (decodeTip S.decode)
+    codecChainSync (CBORCodec (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const <$> S.decode)))
+                   serialiseCodec
+                   tipCodec
 
 prop_codec_ChainSync
   :: AnyMessageAndAgency ChainSync_BlockHeader
@@ -480,9 +486,9 @@ codecSerialised
            S.DeserialiseFailure
            m ByteString
 codecSerialised = codecChainSync
-    S.encode             S.decode
-    S.encode             S.decode
-    (encodeTip S.encode) (decodeTip S.decode)
+    serialiseCodec
+    serialiseCodec
+    tipCodec
 
 prop_codec_ChainSyncSerialised
   :: AnyMessageAndAgency ChainSync_Serialised_BlockHeader

@@ -28,6 +28,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (encodeListLen, encodeWord)
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Text.Printf
 
 
@@ -89,17 +90,14 @@ timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
 codecChainSync
   :: forall header point tip m.
      (MonadST m)
-  => (header -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s header)
-  -> (point -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s point)
-  -> (tip -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s tip)
+  => CBORCodec header
+  -> CBORCodec point
+  -> CBORCodec tip
   -> Codec (ChainSync header point tip)
            CBOR.DeserialiseFailure m LBS.ByteString
-codecChainSync encodeHeader decodeHeader
-               encodePoint  decodePoint
-               encodeTip    decodeTip =
+codecChainSync (CBORCodec encodeHeader decodeHeader)
+               (CBORCodec encodePoint  decodePoint)
+               (CBORCodec encodeTip    decodeTip) =
     mkCodecCborLazyBS encode decode
   where
     encode :: forall (pr  :: PeerRole)

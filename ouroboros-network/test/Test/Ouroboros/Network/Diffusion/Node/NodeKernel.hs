@@ -9,8 +9,7 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   ( -- * Common types
     NtNAddr
   , NtNAddr_ (..)
-  , encodeNtNAddr
-  , decodeNtNAddr
+  , ntnAddrCodec
   , NtNVersion
   , NtNVersionData (..)
   , NtCAddr
@@ -79,6 +78,7 @@ import           Ouroboros.Network.NodeToNode ()
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..),
                      newPeerSharingRegistry)
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
                      oneof)
 
@@ -152,6 +152,9 @@ decodeNtNAddr = do
     1 -> (TestAddress . EphemeralIPv6Addr . fromIntegral) <$> CBOR.decodeWord
     2 -> TestAddress <$> (IPAddr <$> decodeIP <*> decodePortNumber)
     _ -> fail ("decodeNtNAddr: unknown tok:" ++ show tok)
+
+ntnAddrCodec :: CBORCodec NtNAddr
+ntnAddrCodec = CBORCodec encodeNtNAddr decodeNtNAddr
 
 encodeIP :: IP -> CBOR.Encoding
 encodeIP (IPv4 ip) = CBOR.encodeListLen 2

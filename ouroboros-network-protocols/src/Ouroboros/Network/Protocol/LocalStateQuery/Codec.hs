@@ -24,6 +24,7 @@ import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR
 
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
@@ -35,16 +36,14 @@ codecLocalStateQuery
      ( MonadST m
      , ShowQuery query
      )
-  => (point -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s point)
-  -> (forall result . query result -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s (Some query))
-  -> (forall result . query result -> result -> CBOR.Encoding)
-  -> (forall result . query result -> forall s . CBOR.Decoder s result)
+  => CBORCodec point
+  -> (forall result . CBORCodec' (query result) (Some query))
+  -> (forall result . query result -> CBORCodec result)
   -> Codec (LocalStateQuery block point query) CBOR.DeserialiseFailure m ByteString
-codecLocalStateQuery encodePoint  decodePoint
-                     encodeQuery  decodeQuery
-                     encodeResult decodeResult =
+codecLocalStateQuery (CBORCodec encodePoint decodePoint)
+                     codecQueryResult
+                     codecResult
+                     =
     mkCodecCborLazyBS encode decode
   where
     encodeFailure :: AcquireFailure -> CBOR.Encoding
@@ -86,12 +85,12 @@ codecLocalStateQuery encodePoint  decodePoint
     encode (ClientAgency TokAcquired) (MsgQuery query) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 3
-     <> encodeQuery query
+     <> (encodeCBOR codecQueryResult) query
 
     encode (ServerAgency (TokQuerying _query)) (MsgResult query result) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 4
-     <> encodeResult query result
+     <> encodeCBOR (codecResult query) result
 
     encode (ClientAgency TokAcquired) MsgRelease =
         CBOR.encodeListLen 1
@@ -132,11 +131,11 @@ codecLocalStateQuery encodePoint  decodePoint
           return (SomeMessage (MsgFailure failure))
 
         (ClientAgency TokAcquired, 2, 3) -> do
-          Some query <- decodeQuery
+          Some query <- decodeCBOR codecQueryResult
           return (SomeMessage (MsgQuery query))
 
         (ServerAgency (TokQuerying query), 2, 4) -> do
-          result <- decodeResult query
+          result <- decodeCBOR (codecResult query)
           return (SomeMessage (MsgResult query result))
 
         (ClientAgency TokAcquired, 1, 5) ->

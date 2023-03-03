@@ -56,6 +56,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Type
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Mock.ConcreteBlock
+import           Ouroboros.Network.Protocol.CBOR (serialiseCodec)
 
 
 -- | Run a single block fetch protocol until the chain is downloaded.
@@ -336,7 +337,7 @@ runFetchClient tracer version isPipeliningEnabled registry peerid channel client
         runPipelinedPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
           timeLimitsBlockFetch channel (client clientCtx)
   where
-    codec = codecBlockFetch encode decode encode decode
+    codec = codecBlockFetch serialiseCodec serialiseCodec
 
 runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                    MonadST m, MonadTime m, MonadTimer m,
@@ -352,7 +353,7 @@ runFetchServer tracer channel server =
       runPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
         timeLimitsBlockFetch channel (blockFetchServerPeer server)
   where
-    codec = codecBlockFetch encode decode encode decode
+    codec = codecBlockFetch serialiseCodec serialiseCodec
 
 runFetchClientAndServerAsync
                :: forall peerid block header version m a b.

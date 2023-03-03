@@ -44,6 +44,8 @@ import           Test.ChainGenerators (TestChainAndPoints (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec' (..),
+                     serialiseCodec)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -320,8 +322,7 @@ codec :: MonadST m
       => Codec (BlockFetch Block (Point Block))
                S.DeserialiseFailure
                m ByteString
-codec = codecBlockFetch S.encode S.decode
-                        S.encode S.decode
+codec = codecBlockFetch serialiseCodec serialiseCodec
 
 codecWrapped :: MonadST m
              => Codec (BlockFetch Block (Point Block))
@@ -329,14 +330,14 @@ codecWrapped :: MonadST m
                       m ByteString
 codecWrapped =
     codecBlockFetch
-      (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const <$> S.decode))
-      S.encode                  S.decode
+      (CBORCodec (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const <$> S.decode)))
+      serialiseCodec
 
 codecSerialised :: MonadST m
                 => Codec (BlockFetch (Serialised Block) (Point Block))
                          S.DeserialiseFailure
                          m ByteString
-codecSerialised = codecBlockFetch S.encode S.decode S.encode S.decode
+codecSerialised = codecBlockFetch serialiseCodec serialiseCodec
 
 genBlockFetch :: Gen block
               -> Gen (ChainRange point)

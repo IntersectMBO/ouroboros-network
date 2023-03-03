@@ -35,6 +35,7 @@ import           Ouroboros.Network.Protocol.LocalTxMonitor.Examples
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
+import           Ouroboros.Network.Protocol.CBOR (serialiseCodec)
 import           Test.ChainGenerators ()
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
@@ -68,10 +69,7 @@ codec ::
      ( MonadST m
      )
   => Codec (LocalTxMonitor TxId Tx SlotNo) S.DeserialiseFailure m ByteString
-codec = codecLocalTxMonitor
-  S.encode S.decode
-  S.encode S.decode
-  S.encode S.decode
+codec = codecLocalTxMonitor serialiseCodec serialiseCodec serialiseCodec
 
 --
 -- Properties

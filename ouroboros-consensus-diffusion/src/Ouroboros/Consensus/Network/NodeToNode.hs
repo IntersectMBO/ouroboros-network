@@ -37,10 +37,6 @@ module Ouroboros.Consensus.Network.NodeToNode (
   , ChainSyncTimeout (..)
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import qualified Codec.CBOR.Decoding as CBOR
-import           Codec.CBOR.Encoding (Encoding)
-import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.CBOR.Read (DeserialiseFailure)
 import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Control.Monad.Class.MonadTime (MonadTime)
@@ -95,6 +91,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch (..))
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
@@ -276,64 +273,34 @@ defaultCodecs :: forall m blk addr.
                 )
               => CodecConfig       blk
               -> BlockNodeToNodeVersion blk
-              -> (addr -> CBOR.Encoding)
-              -> (forall s . CBOR.Decoder s addr)
+              -> CBORCodec addr
               -> NodeToNodeVersion
               -> Codecs blk addr DeserialiseFailure m
                    ByteString ByteString ByteString ByteString ByteString ByteString ByteString
-defaultCodecs ccfg version encAddr decAddr _nodeToNodeVersion = Codecs {
-      cChainSyncCodec =
-        codecChainSync
-          enc
-          dec
-          (encodePoint (encodeRawHash p))
-          (decodePoint (decodeRawHash p))
-          (encodeTip   (encodeRawHash p))
-          (decodeTip   (decodeRawHash p))
-
-    , cChainSyncCodecSerialised =
-        codecChainSync
-          enc
-          dec
-          (encodePoint (encodeRawHash p))
-          (decodePoint (decodeRawHash p))
-          (encodeTip   (encodeRawHash p))
-          (decodeTip   (decodeRawHash p))
-
-    , cBlockFetchCodec =
-        codecBlockFetch
-          enc
-          dec
-          (encodePoint (encodeRawHash p))
-          (decodePoint (decodeRawHash p))
-
-    , cBlockFetchCodecSerialised =
-        codecBlockFetch
-          enc
-          dec
-          (encodePoint (encodeRawHash p))
-          (decodePoint (decodeRawHash p))
-
-    , cTxSubmission2Codec =
-        codecTxSubmission2
-          enc
-          dec
-          enc
-          dec
-
+defaultCodecs ccfg version addrCodec _nodeToNodeVersion = Codecs {
+      cChainSyncCodec = codecChainSync codec pointCodec tipCodec
+    , cChainSyncCodecSerialised = codecChainSync codec pointCodec tipCodec
+    , cBlockFetchCodec = codecBlockFetch codec pointCodec
+    , cBlockFetchCodecSerialised = codecBlockFetch codec pointCodec
+    , cTxSubmission2Codec = codecTxSubmission2 codec codec
     , cKeepAliveCodec = codecKeepAlive_v2
-
-    , cPeerSharingCodec = codecPeerSharing encAddr decAddr
+    , cPeerSharingCodec = codecPeerSharing addrCodec
     }
   where
     p :: Proxy blk
     p = Proxy
 
-    enc :: SerialiseNodeToNode blk a => a -> Encoding
-    enc = encodeNodeToNode ccfg version
+    codec :: SerialiseNodeToNode blk a => CBORCodec a
+    codec = CBORCodec (encodeNodeToNode ccfg version)
+                      (decodeNodeToNode ccfg version)
 
-    dec :: SerialiseNodeToNode blk a => forall s. Decoder s a
-    dec = decodeNodeToNode ccfg version
+    pointCodec :: CBORCodec (Point blk)
+    pointCodec = CBORCodec (encodePoint (encodeRawHash p))
+                           (decodePoint (decodeRawHash p))
+
+    tipCodec :: CBORCodec (Tip blk)
+    tipCodec = CBORCodec (encodeTip (encodeRawHash p))
+                         (decodeTip (decodeRawHash p))
 
 -- | Identity codecs used in tests.
 identityCodecs :: Monad m

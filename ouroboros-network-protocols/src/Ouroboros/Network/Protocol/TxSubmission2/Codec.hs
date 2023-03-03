@@ -27,6 +27,7 @@ import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR
 
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.Limits
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
@@ -66,13 +67,11 @@ timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
 codecTxSubmission2
   :: forall txid tx m.
      MonadST m
-  => (txid -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s txid)
-  -> (tx -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s tx)
+  => CBORCodec txid
+  -> CBORCodec tx
   -> Codec (TxSubmission2 txid tx) CBOR.DeserialiseFailure m ByteString
-codecTxSubmission2 encodeTxId decodeTxId
-                   encodeTx   decodeTx =
+codecTxSubmission2 (CBORCodec encodeTxId decodeTxId)
+                   (CBORCodec encodeTx   decodeTx) =
     mkCodecCborLazyBS
       (encodeTxSubmission2 encodeTxId encodeTx)
       decode

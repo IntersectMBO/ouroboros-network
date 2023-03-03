@@ -23,17 +23,18 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type
                      ServerHasAgency (..))
 
 import           Control.Monad.Class.MonadTime (DiffTime)
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.Limits
 
 codecPeerSharing :: forall m peerAddress.
                     MonadST m
-                 => (peerAddress -> CBOR.Encoding)
-                 -> (forall s . CBOR.Decoder s peerAddress)
+                 => CBORCodec peerAddress
                  -> Codec (PeerSharing peerAddress)
                          CBOR.DeserialiseFailure
                          m
                          ByteString
-codecPeerSharing encodeAddress decodeAddress = mkCodecCborLazyBS encodeMsg decodeMsg
+codecPeerSharing (CBORCodec encodeAddress decodeAddress) =
+  mkCodecCborLazyBS encodeMsg decodeMsg
   where
     encodeMsg :: PeerHasAgency pr st
               -> Message (PeerSharing peerAddress) st st'

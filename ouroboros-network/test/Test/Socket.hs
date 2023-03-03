@@ -50,6 +50,8 @@ import           Ouroboros.Network.Util.ShowProxy
 import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
 
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec' (..),
+                     serialiseCodec)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -148,9 +150,9 @@ demo chain0 updates = withIOManager $ \iocp -> do
                     codecChainSync
                     (ChainSync.chainSyncServerPeer server)
 
-        codecChainSync = ChainSync.codecChainSync encode             decode
-                                                  encode             decode
-                                                  (encodeTip encode) (decodeTip decode)
+        codecChainSync = ChainSync.codecChainSync serialiseCodec
+                                                  serialiseCodec
+                                                  (CBORCodec (encodeTip encode) (decodeTip decode))
 
     withServerNode
       (socketSnocket iocp)

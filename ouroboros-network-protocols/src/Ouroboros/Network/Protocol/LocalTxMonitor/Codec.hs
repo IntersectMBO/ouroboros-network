@@ -23,6 +23,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Text.Printf
 
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 codecLocalTxMonitor ::
@@ -30,16 +31,13 @@ codecLocalTxMonitor ::
      ( MonadST m
      , ptcl ~ LocalTxMonitor txid tx slot
      )
-  => (txid -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s txid)
-  -> (tx -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s tx)
-  -> (slot -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s slot)
+  => CBORCodec txid
+  -> CBORCodec tx
+  -> CBORCodec slot
   -> Codec (LocalTxMonitor txid tx slot) CBOR.DeserialiseFailure m ByteString
-codecLocalTxMonitor encodeTxId decodeTxId
-                    encodeTx   decodeTx
-                    encodeSlot decodeSlot =
+codecLocalTxMonitor (CBORCodec encodeTxId decodeTxId)
+                    (CBORCodec encodeTx   decodeTx)
+                    (CBORCodec encodeSlot decodeSlot) =
     mkCodecCborLazyBS encode decode
   where
     encode ::

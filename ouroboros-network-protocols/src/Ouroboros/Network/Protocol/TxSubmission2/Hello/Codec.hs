@@ -53,13 +53,11 @@ codecTxSubmission2
      , ShowProxy txid
      , ShowProxy tx
      )
-  => (txid -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s txid)
-  -> (tx -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s tx)
+  => CBORCodec txid
+  -> CBORCodec tx
   -> Codec (TxSubmission2 txid tx) CBOR.DeserialiseFailure m ByteString
-codecTxSubmission2 encodeTxId decodeTxId
-                   encodeTx   decodeTx =
+codecTxSubmission2 (CBORCodec encodeTxId)
+                   (CBORCodec encodeTx   decodeTx) =
     codecHello
       6
       (encodeTxSubmission encodeTxId encodeTx)

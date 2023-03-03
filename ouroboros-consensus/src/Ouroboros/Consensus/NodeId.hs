@@ -12,6 +12,7 @@ module Ouroboros.Consensus.NodeId (
   , decodeNodeId
   , encodeNodeId
   , fromCoreNodeId
+  , nodeIdCodec
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -22,6 +23,7 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 import           Quiet
 
@@ -70,6 +72,9 @@ decodeNodeId = do
     0 -> (CoreId . CoreNodeId) <$> CBOR.decodeWord64
     1 -> RelayId <$> CBOR.decodeWord64
     _ -> fail ("decodeNodeId: unknown tok:" ++ show tok)
+
+nodeIdCodec :: CBORCodec NodeId
+nodeIdCodec = CBORCodec encodeNodeId decodeNodeId
 
 fromCoreNodeId :: CoreNodeId -> NodeId
 fromCoreNodeId = CoreId

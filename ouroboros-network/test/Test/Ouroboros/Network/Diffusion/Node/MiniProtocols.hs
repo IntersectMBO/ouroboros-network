@@ -92,6 +92,8 @@ import           Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
 import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
 import           Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
                      peerSharingClient, peerSharingServer)
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec' (..),
+                     serialiseCodec)
 import           Ouroboros.Network.Protocol.PeerSharing.Client
                      (peerSharingClientPeer)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
@@ -119,15 +121,14 @@ data Codecs addr block m = Codecs
 
 cborCodecs :: MonadST m => Codecs NtNAddr Block m
 cborCodecs = Codecs
-  { chainSyncCodec = codecChainSync Serialise.encode Serialise.decode
-                                    Serialise.encode Serialise.decode
-                                    (Block.encodeTip Serialise.encode)
-                                    (Block.decodeTip Serialise.decode)
-  , blockFetchCodec = codecBlockFetch Serialise.encode Serialise.decode
-                                      Serialise.encode Serialise.decode
+  { chainSyncCodec = codecChainSync serialiseCodec
+                                    serialiseCodec
+                                    (CBORCodec (Block.encodeTip Serialise.encode)
+                                               (Block.decodeTip Serialise.decode))
+  , blockFetchCodec = codecBlockFetch serialiseCodec serialiseCodec
   , keepAliveCodec = codecKeepAlive_v2
   , pingPongCodec  = codecPingPong
-  , peerSharingCodec  = codecPeerSharing encodeNtNAddr decodeNtNAddr
+  , peerSharingCodec  = codecPeerSharing ntnAddrCodec
   }
 
 

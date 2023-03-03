@@ -70,6 +70,7 @@ import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.Protocol.CBOR (serialiseCodec)
 
 
 main :: IO ()
@@ -229,9 +230,9 @@ codecChainSync :: ( CBOR.Serialise block
                         IO LBS.ByteString
 codecChainSync =
     ChainSync.codecChainSync
-      CBOR.encode CBOR.decode
-      CBOR.encode CBOR.decode
-      CBOR.encode CBOR.decode
+      serialiseCodec
+      serialiseCodec
+      serialiseCodec
 
 
 --
@@ -476,8 +477,8 @@ codecBlockFetch :: Codec (BlockFetch.BlockFetch Block (Point Block))
                          IO LBS.ByteString
 codecBlockFetch =
     BlockFetch.codecBlockFetch
-      CBOR.encode CBOR.decode
-      CBOR.encode CBOR.decode
+      serialiseCodec
+      serialiseCodec
 
 
 --

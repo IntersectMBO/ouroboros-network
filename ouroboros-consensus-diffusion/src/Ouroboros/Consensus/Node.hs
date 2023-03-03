@@ -51,8 +51,6 @@ module Ouroboros.Consensus.Node (
   , openChainDB
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (DeserialiseFailure)
 import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Control.Monad.Class.MonadTime (MonadTime)
@@ -117,6 +115,7 @@ import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
                      newPeerMetric, reportMetric)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing,
                      decodeRemoteAddress, encodeRemoteAddress)
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.Limits (shortWait)
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.RethrowPolicy
@@ -272,7 +271,9 @@ run :: forall blk p2p.
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
-run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args encodeRemoteAddress decodeRemoteAddress
+run args stdArgs =
+  stdLowLevelRunNodeArgsIO args stdArgs
+    >>= runWith args (CBORCodec encodeRemoteAddress decodeRemoteAddress)
 
 -- | Start a node.
 --
@@ -286,11 +287,10 @@ runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      , Hashable addrNTN, Ord addrNTN, Show addrNTN, Typeable addrNTN
      )
   => RunNodeArgs m addrNTN addrNTC blk p2p
-  -> (addrNTN -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s addrNTN)
+  -> CBORCodec addrNTN
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
   -> m ()
-runWith RunNodeArgs{..} encAddrNtN decAddrNtN LowLevelRunNodeArgs{..} =
+runWith RunNodeArgs{..} addrNTNCodec LowLevelRunNodeArgs{..} =
 
     llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) continueWithCleanChainDB ->
     withRegistry $ \registry ->
@@ -370,7 +370,7 @@ runWith RunNodeArgs{..} encAddrNtN decAddrNtN LowLevelRunNodeArgs{..} =
           rnNodeKernelHook registry nodeKernel
 
           peerMetrics <- newPeerMetric Diffusion.peerMetricsConfiguration
-          let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics encAddrNtN decAddrNtN
+          let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
               ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
               (apps, appsExtra) = mkDiffusionApplications
                                         rnEnableP2P
@@ -395,8 +395,6 @@ runWith RunNodeArgs{..} encAddrNtN decAddrNtN LowLevelRunNodeArgs{..} =
       :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
       -> NodeKernel     m addrNTN (ConnectionId addrNTC) blk
       -> PeerMetrics m addrNTN
-      -> (addrNTN -> CBOR.Encoding)
-      -> (forall s . CBOR.Decoder s addrNTN)
       -> BlockNodeToNodeVersion blk
       -> (PeerSharingAmount -> m [addrNTN])
       -- ^ Peer Sharing result computation callback
@@ -409,11 +407,11 @@ runWith RunNodeArgs{..} encAddrNtN decAddrNtN LowLevelRunNodeArgs{..} =
           ByteString
           NodeToNodeInitiatorResult
           ()
-    mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics encAddrNTN decAddrNTN version computePeers =
+    mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics version computePeers =
         NTN.mkApps
           nodeKernel
           rnTraceNTN
-          (NTN.defaultCodecs codecConfig version encAddrNTN decAddrNTN)
+          (NTN.defaultCodecs codecConfig version addrNTNCodec)
           NTN.byteLimits
           llrnChainSyncTimeout
           (reportMetric Diffusion.peerMetricsConfiguration peerMetrics)

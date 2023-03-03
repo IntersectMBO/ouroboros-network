@@ -98,6 +98,8 @@ import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
                      (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..),
+                     serialiseCodec)
 
 {-------------------------------------------------------------------------------
   Definition of a block
@@ -589,10 +591,9 @@ encodeSimpleHeader encodeExt SimpleHeader{..} =  mconcat [
     ]
 
 decodeSimpleHeader :: SimpleCrypto c
-                   => (ext' -> CBOR.Encoding)
-                   -> (forall s. CBOR.Decoder s ext')
+                   => CBORCodec ext'
                    -> forall s. CBOR.Decoder s (Header (SimpleBlock' c ext ext'))
-decodeSimpleHeader encodeExt decodeExt = do
+decodeSimpleHeader (CBORCodec encodeExt decodeExt) = do
     CBOR.decodeListLenOf 2
     mkSimpleHeader encodeExt <$> decode <*> decodeExt
 
@@ -600,7 +601,7 @@ decodeSimpleHeader encodeExt decodeExt = do
 instance (SimpleCrypto c, Serialise ext')
       => Serialise (Header (SimpleBlock' c ext ext')) where
   encode = encodeSimpleHeader encode
-  decode = decodeSimpleHeader encode decode
+  decode = decodeSimpleHeader serialiseCodec
 
 simpleBlockBinaryBlockInfo ::
      (SimpleCrypto c, Serialise ext', Typeable ext, Typeable ext')

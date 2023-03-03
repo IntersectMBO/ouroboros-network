@@ -27,6 +27,7 @@ import           Text.Printf
 import           Network.TypedProtocol.Codec.CBOR
 
 import           Ouroboros.Network.Protocol.BlockFetch.Type
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.Limits
 
 -- | Byte Limit.
@@ -63,13 +64,11 @@ timeLimitsBlockFetch = ProtocolTimeLimits stateToLimit
 codecBlockFetch
   :: forall block point m.
      MonadST m
-  => (block            -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s block)
-  -> (point -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s point)
+  => CBORCodec block
+  -> CBORCodec point
   -> Codec (BlockFetch block point) CBOR.DeserialiseFailure m LBS.ByteString
-codecBlockFetch encodeBlock decodeBlock
-                encodePoint decodePoint =
+codecBlockFetch (CBORCodec encodeBlock decodeBlock)
+                (CBORCodec encodePoint decodePoint) =
     mkCodecCborLazyBS encode decode
  where
   encode :: forall (pr :: PeerRole) st st'.

@@ -49,22 +49,23 @@ library
     Ouroboros.Consensus.Mock.Protocol.Praos
 
   build-depends:
-    , base                    >=4.14   && <4.17
-    , bimap                   >=0.4    && <0.5
-    , bytestring              >=0.10   && <0.12
+    , base                         >=4.14   && <4.17
+    , bimap                        >=0.4    && <0.5
+    , bytestring                   >=0.10   && <0.12
     , cardano-binary
     , cardano-crypto-class
     , cardano-slotting
-    , cborg                   >=0.2.2  && <0.3
-    , containers              >=0.5    && <0.7
+    , cborg                        >=0.2.2  && <0.3
+    , containers                   >=0.5    && <0.7
     , deepseq
     , hashable
-    , mtl                     >=2.2    && <2.3
+    , mtl                          >=2.2    && <2.3
     , nothunks
-    , ouroboros-consensus     ^>=0.3.1
+    , ouroboros-consensus          ^>=0.3.1
     , ouroboros-network-api
     , ouroboros-network-mock
-    , serialise               >=0.2    && <0.3
+    , ouroboros-network-protocols
+    , serialise                    >=0.2    && <0.3
     , time
 
   default-language: Haskell2010

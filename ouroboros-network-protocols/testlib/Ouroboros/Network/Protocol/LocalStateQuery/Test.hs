@@ -51,6 +51,8 @@ import           Test.ChainGenerators ()
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec' (..),
+                     serialiseCodec)
 import           Test.QuickCheck as QC hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -327,9 +329,9 @@ codec :: MonadST m
                 m ByteString
 codec =
     codecLocalStateQuery
-      Serialise.encode Serialise.decode
-      encodeQuery      decodeQuery
-      encodeResult     decodeResult
+      serialiseCodec
+      (CBORCodec (\qr -> encodeQuery qr) decodeQuery)
+      (\qr -> CBORCodec (encodeResult qr) (decodeResult qr))
   where
     encodeQuery :: Query result -> CBOR.Encoding
     encodeQuery QueryPoint = Serialise.encode ()

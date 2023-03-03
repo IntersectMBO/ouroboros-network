@@ -48,6 +48,8 @@ import           Ouroboros.Network.ControlMessage (continueForever)
 import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Mock.Chain as Chain
 import qualified Ouroboros.Network.Mock.ProducerState as CPS
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec' (..),
+                     serialiseCodec)
 import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
@@ -166,9 +168,9 @@ demo chain0 updates = do
             chainSyncInitator =
               InitiatorProtocolOnly $
                 MuxPeer nullTracer
-                        (ChainSync.codecChainSync encode             decode
-                                                  encode             decode
-                                                  (encodeTip encode) (decodeTip decode))
+                        (ChainSync.codecChainSync serialiseCodec
+                                                  serialiseCodec
+                                                  (CBORCodec (encodeTip encode) (decodeTip decode)))
                         (ChainSync.chainSyncClientPeer
                           (ChainSync.chainSyncClientExample consumerVar
                           (consumerClient done target consumerVar)))
@@ -182,9 +184,9 @@ demo chain0 updates = do
             chainSyncResponder =
               ResponderProtocolOnly $
                 MuxPeer nullTracer
-                        (ChainSync.codecChainSync encode             decode
-                                                  encode             decode
-                                                  (encodeTip encode) (decodeTip decode))
+                        (ChainSync.codecChainSync serialiseCodec
+                                                  serialiseCodec
+                                                  (CBORCodec (encodeTip encode) (decodeTip decode)))
                         (ChainSync.chainSyncServerPeer server)
 
         clientBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan1

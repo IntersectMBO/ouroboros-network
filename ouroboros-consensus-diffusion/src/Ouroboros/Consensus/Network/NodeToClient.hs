@@ -33,8 +33,6 @@ module Ouroboros.Consensus.Network.NodeToClient (
   , responder
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
 import           Control.Tracer
@@ -70,6 +68,7 @@ import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToClient hiding
                      (NodeToClientVersion (..))
 import qualified Ouroboros.Network.NodeToClient as N (NodeToClientVersion (..))
+import           Ouroboros.Network.Protocol.CBOR (CBORCodec, CBORCodec' (..))
 import           Ouroboros.Network.Protocol.ChainSync.Codec
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
@@ -183,36 +182,16 @@ defaultCodecs :: forall m blk.
               -> N.NodeToClientVersion
               -> DefaultCodecs blk m
 defaultCodecs ccfg version networkVersion = Codecs {
-      cChainSyncCodec =
-        codecChainSync
-          enc
-          dec
-          (encodePoint (encodeRawHash p))
-          (decodePoint (decodeRawHash p))
-          (encodeTip   (encodeRawHash p))
-          (decodeTip   (decodeRawHash p))
-
-    , cTxSubmissionCodec =
-        codecLocalTxSubmission
-          enc
-          dec
-          enc
-          dec
-
+      cChainSyncCodec = codecChainSync codec pointCodec tipCodec
+    , cTxSubmissionCodec = codecLocalTxSubmission codec codec
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint (encodeRawHash p))
-          (decodePoint (decodeRawHash p))
-          (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
-          ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
-          (encodeResult ccfg version)
-          (decodeResult ccfg version)
-
-    , cTxMonitorCodec =
-        codecLocalTxMonitor
-          enc dec
-          enc dec
-          enc dec
+          pointCodec
+          (CBORCodec (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
+                      ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version))
+          (\qr -> CBORCodec (encodeResult ccfg version qr)
+                            (decodeResult ccfg version qr))
+    , cTxMonitorCodec = codecLocalTxMonitor codec codec codec
     }
   where
     queryVersion :: QueryVersion
@@ -221,11 +200,17 @@ defaultCodecs ccfg version networkVersion = Codecs {
     p :: Proxy blk
     p = Proxy
 
-    enc :: SerialiseNodeToClient blk a => a -> Encoding
-    enc = encodeNodeToClient ccfg version
+    codec :: SerialiseNodeToClient blk a => CBORCodec a
+    codec = CBORCodec (encodeNodeToClient ccfg version)
+                      (decodeNodeToClient ccfg version)
 
-    dec :: SerialiseNodeToClient blk a => forall s. Decoder s a
-    dec = decodeNodeToClient ccfg version
+    pointCodec :: CBORCodec (Point blk)
+    pointCodec = CBORCodec (encodePoint (encodeRawHash p))
+                           (decodePoint (decodeRawHash p))
+
+    tipCodec :: CBORCodec (Tip blk)
+    tipCodec = CBORCodec (encodeTip (encodeRawHash p))
+                         (decodeTip (decodeRawHash p))
 
 -- | Protocol codecs for the node-to-client protocols which serialise
 -- / deserialise blocks in /chain-sync/ protocol.
@@ -242,36 +227,16 @@ clientCodecs :: forall m blk.
              -> N.NodeToClientVersion
              -> ClientCodecs blk m
 clientCodecs ccfg version networkVersion = Codecs {
-      cChainSyncCodec =
-        codecChainSync
-          enc
-          dec
-          (encodePoint (encodeRawHash p))
-          (decodePoint (decodeRawHash p))
-          (encodeTip   (encodeRawHash p))
-          (decodeTip   (decodeRawHash p))
-
-    , cTxSubmissionCodec =
-        codecLocalTxSubmission
-          enc
-          dec
-          enc
-          dec
-
+      cChainSyncCodec = codecChainSync codec pointCodec tipCodec
+    , cTxSubmissionCodec = codecLocalTxSubmission codec codec
     , cStateQueryCodec =
         codecLocalStateQuery
-          (encodePoint (encodeRawHash p))
-          (decodePoint (decodeRawHash p))
-          (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
-          ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version)
-          (encodeResult ccfg version)
-          (decodeResult ccfg version)
-
-    , cTxMonitorCodec =
-        codecLocalTxMonitor
-          enc dec
-          enc dec
-          enc dec
+          pointCodec
+          (CBORCodec (queryEncodeNodeToClient ccfg queryVersion version . SomeSecond)
+                     ((\(SomeSecond qry) -> Some qry) <$> queryDecodeNodeToClient ccfg queryVersion version))
+          (\qr -> CBORCodec (encodeResult ccfg version qr)
+                            (decodeResult ccfg version qr))
+    , cTxMonitorCodec = codecLocalTxMonitor codec codec codec
     }
   where
     queryVersion :: QueryVersion
@@ -280,11 +245,17 @@ clientCodecs ccfg version networkVersion = Codecs {
     p :: Proxy blk
     p = Proxy
 
-    enc :: SerialiseNodeToClient blk a => a -> Encoding
-    enc = encodeNodeToClient ccfg version
+    codec :: SerialiseNodeToClient blk a => CBORCodec a
+    codec = CBORCodec (encodeNodeToClient ccfg version)
+                      (decodeNodeToClient ccfg version)
 
-    dec :: SerialiseNodeToClient blk a => forall s. Decoder s a
-    dec = decodeNodeToClient ccfg version
+    pointCodec :: CBORCodec (Point blk)
+    pointCodec = CBORCodec (encodePoint (encodeRawHash p))
+                           (decodePoint (decodeRawHash p))
+
+    tipCodec :: CBORCodec (Tip blk)
+    tipCodec = CBORCodec (encodeTip (encodeRawHash p))
+                         (decodeTip (decodeRawHash p))
 
 -- | Identity codecs used in tests.
 identityCodecs :: (Monad m, QueryLedger blk)
