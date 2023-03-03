@@ -10,7 +10,7 @@ import           Cardano.Crypto.KES (MockKES)
 import           Cardano.Crypto.VRF (MockVRF)
 
 import           Cardano.Ledger.Crypto (Crypto (..))
-import qualified Cardano.Protocol.TPraos.API as Ledger
+import qualified Cardano.Protocol.TPraos.API as Protocol
 
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 
@@ -41,6 +41,6 @@ instance Crypto MockCryptoCompatByron where
   type KES      MockCryptoCompatByron = MockKES 10
   type VRF      MockCryptoCompatByron = MockVRF
 
-instance Ledger.PraosCrypto MockCryptoCompatByron
+instance Protocol.PraosCrypto MockCryptoCompatByron
 
 instance TPraos.PraosCrypto MockCryptoCompatByron
