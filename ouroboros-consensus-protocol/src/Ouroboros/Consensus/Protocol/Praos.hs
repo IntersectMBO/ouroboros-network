@@ -80,9 +80,9 @@ import           Ouroboros.Consensus.Protocol.Ledger.Util (isNewEpoch)
 import           Ouroboros.Consensus.Protocol.Praos.Common
 import           Ouroboros.Consensus.Protocol.Praos.Crypto (HASH, PraosCrypto,
                      VRF)
+import qualified Ouroboros.Consensus.Protocol.Praos.Views as Views
 import           Ouroboros.Consensus.Protocol.Praos.VRF (InputVRF, mkInputVRF,
                      vrfLeaderValue, vrfNonceValue)
-import qualified Ouroboros.Consensus.Protocol.Praos.Views as Views
 import           Ouroboros.Consensus.Protocol.TPraos
                      (ConsensusConfig (TPraosConfig, tpraosEpochInfo, tpraosParams))
 import           Ouroboros.Consensus.Ticked (Ticked)
