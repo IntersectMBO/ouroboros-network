@@ -78,13 +78,15 @@ library
                      , cardano-prelude
                      , cardano-slotting
 
-                     , ouroboros-consensus
-                     , ouroboros-consensus-byron
-                     , ouroboros-consensus-cardano
-                     , ouroboros-consensus-protocol
-                     , ouroboros-consensus-shelley
                      , ouroboros-network-api
-                     , ouroboros-consensus-diffusion
+
+                     , ouroboros-consensus           ^>=0.3
+                     , ouroboros-consensus-diffusion ^>=0.3
+                     , ouroboros-consensus-protocol  ^>=0.3
+
+                     , ouroboros-consensus-byron   ==0.3.0.0
+                     , ouroboros-consensus-shelley ==0.3.0.0
+                     , ouroboros-consensus-cardano ==0.3.0.0
 
   other-modules:       Cardano.Api.Key
                      , Cardano.Api.KeysByron
@@ -120,10 +122,12 @@ executable db-analyser
   build-depends:       base              >=4.14 && <4.17
                      , cardano-crypto-wrapper
                      , optparse-applicative
-                     , ouroboros-consensus
-                     , ouroboros-consensus-byron
+
+                     , ouroboros-consensus ^>=0.3
+
+                     , ouroboros-consensus-byron         ==0.3.0.0
+                     , ouroboros-consensus-shelley       ==0.3.0.0
                      , ouroboros-consensus-cardano-tools
-                     , ouroboros-consensus-shelley
 
   other-modules:     DBAnalyser.Parsers
 
@@ -149,7 +153,9 @@ executable db-synthesizer
 
   build-depends:       base              >=4.14 && <4.17
                      , optparse-applicative
-                     , ouroboros-consensus
+
+                     , ouroboros-consensus ==0.3.0.0
+
                      , ouroboros-consensus-cardano-tools
 
   other-modules:     DBSynthesizer.Parsers
@@ -176,9 +182,10 @@ test-suite test
   default-language:  Haskell2010
 
   build-depends:       base              >=4.14 && <4.17
-                     , ouroboros-consensus-cardano-tools
                      , tasty
                      , tasty-hunit
+
+                     , ouroboros-consensus-cardano-tools
 
   ghc-options:       -Wall
                      -Wcompat
