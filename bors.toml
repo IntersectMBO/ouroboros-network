@@ -2,12 +2,10 @@ status = [
   "ci",
   "ci (x86_64-linux)",
   "ci (x86_64-darwin)",
-  "build (8.10.7, ubuntu-latest)",
-  "build (8.10.7, windows-latest)",
-  "build (9.2.5, ubuntu-latest)",
+  "check-cabal-files",
   "build (9.2.5, windows-latest)",
   "Consensus changelog sanity check",
-  "check-cabal-files"
+  "Check git dependencies"
 ]
 timeout_sec = 10800
 required_approvals = 1
