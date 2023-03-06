@@ -45,7 +45,10 @@ import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
+import           Data.SOP.InPairs (RequiringBoth (..), ignoringBoth)
 import           Data.SOP.Strict (hpure, unComp, (:.:) (..))
+import           Data.SOP.Tails (Tails (..))
+import qualified Data.SOP.Tails as Tails
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -57,10 +60,6 @@ import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (RequiringBoth (..), ignoringBoth)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
                      addSlots)
 import           Ouroboros.Consensus.HardFork.Simple

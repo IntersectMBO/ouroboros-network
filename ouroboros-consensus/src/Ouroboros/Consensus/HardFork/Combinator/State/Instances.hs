@@ -21,19 +21,20 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Instances (
   , encodePast
   ) where
 
-import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise
 import           Data.SOP.Strict hiding (shape)
+import qualified Data.SOP.Telescope as Telescope
 import           NoThunks.Class (NoThunks)
+import           Prelude hiding (sequence)
+
+import           Cardano.Binary (enforceSize)
+
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
+import           Ouroboros.Consensus.HardFork.Combinator.Lifting
 import           Ouroboros.Consensus.HardFork.Combinator.State.Lift
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import           Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
-import           Ouroboros.Consensus.Util.SOP
-import           Prelude hiding (sequence)
 
 {-------------------------------------------------------------------------------
   SOP class instances

@@ -18,13 +18,16 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel (
 
 import           Data.Kind (Type)
 import           Data.SOP.Strict
+import           Data.SOP.Tails (Tails (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
+
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
-import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
+
+import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
+
+import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
   Configuration

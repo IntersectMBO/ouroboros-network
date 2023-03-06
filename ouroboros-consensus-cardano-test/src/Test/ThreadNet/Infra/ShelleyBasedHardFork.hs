@@ -28,7 +28,9 @@ import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 import           Control.Monad.Except (runExcept)
 import qualified Data.Map.Strict as Map
+import qualified Data.SOP.InPairs as InPairs
 import           Data.SOP.Strict
+import qualified Data.SOP.Tails as Tails
 import           Data.Void (Void)
 import           Ouroboros.Consensus.Cardano.CanHardFork
                      (ShelleyPartialLedgerConfig (..), forecastAcrossShelley,
@@ -40,8 +42,6 @@ import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import qualified Ouroboros.Consensus.HardFork.Combinator.State.Types as HFC
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol

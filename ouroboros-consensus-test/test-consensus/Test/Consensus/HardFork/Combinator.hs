@@ -22,43 +22,51 @@
 module Test.Consensus.HardFork.Combinator (tests) where
 
 import qualified Data.Map.Strict as Map
+import           Data.SOP.Counting
+import           Data.SOP.InPairs (RequiringBoth (..))
+import qualified Data.SOP.InPairs as InPairs
+import           Data.SOP.OptNP (OptNP (..))
 import           Data.SOP.Strict hiding (shape)
+import qualified Data.SOP.Tails as Tails
 import           Data.Word
 import           GHC.Generics (Generic)
+import           Quiet (Quiet (..))
+
+import qualified Ouroboros.Network.Mock.Chain as Mock
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
-import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (RequiringBoth (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
-import           Ouroboros.Consensus.HardFork.History (EraParams (..))
-import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.Orphans ()
+
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.History (EraParams (..))
+import qualified Ouroboros.Consensus.HardFork.History as History
+
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
                      (LeaderSchedule (..), leaderScheduleFor)
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Counting
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
-import           Ouroboros.Consensus.Util.Orphans ()
-import qualified Ouroboros.Network.Mock.Chain as Mock
-import           Quiet (Quiet (..))
+
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.ProtocolInfo
+
 import           Test.Consensus.HardFork.Combinator.A
 import           Test.Consensus.HardFork.Combinator.B
+
 import           Test.QuickCheck
+
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
+
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
@@ -68,6 +76,7 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
+
 import           Test.Util.HardFork.Future
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Time (dawnOfTime)

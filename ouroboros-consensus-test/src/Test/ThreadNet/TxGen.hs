@@ -13,14 +13,19 @@ module Test.ThreadNet.TxGen (
   ) where
 
 import           Data.Kind (Type)
+import           Data.SOP.Index
 import           Data.SOP.Strict
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.NodeId (CoreNodeId)
+
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-import           Ouroboros.Consensus.NodeId (CoreNodeId)
-import           Ouroboros.Consensus.Util.SOP
+
 import           Test.QuickCheck (Gen)
 
 {-------------------------------------------------------------------------------

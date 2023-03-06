@@ -32,8 +32,18 @@ module Ouroboros.Consensus.HardFork.Combinator.State (
 import           Control.Monad (guard)
 import           Data.Functor.Product
 import           Data.Proxy
+import           Data.SOP.Counting (getExactly)
+import           Data.SOP.InPairs (InPairs, Requiring (..))
+import qualified Data.SOP.InPairs as InPairs
 import           Data.SOP.Strict hiding (shape)
+import           Data.SOP.Telescope (Extend (..), ScanNext (..), Telescope)
+import qualified Data.SOP.Telescope as Telescope
+import           Prelude hiding (sequence)
+
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Abstract hiding (getTip)
+import           Ouroboros.Consensus.Util ((.:))
+
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -42,17 +52,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.State.Infra as X
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances as X ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types as X
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
-                     Requiring (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (Extend (..), ScanNext (..), Telescope)
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Ledger.Abstract hiding (getTip)
-import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.Counting (getExactly)
-import           Prelude hiding (sequence)
 
 {-------------------------------------------------------------------------------
   GetTip

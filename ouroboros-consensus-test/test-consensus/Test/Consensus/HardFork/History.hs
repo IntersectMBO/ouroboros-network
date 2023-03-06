@@ -29,7 +29,6 @@
 --
 module Test.Consensus.HardFork.History (tests) where
 
-import           Cardano.Slotting.EpochInfo
 import           Control.Exception (throw)
 import           Control.Monad.Except
 import           Data.Bifunctor
@@ -38,27 +37,34 @@ import           Data.Function (on)
 import           Data.Functor.Identity
 import qualified Data.List as L
 import           Data.Maybe (catMaybes, fromMaybe)
+import           Data.SOP.Counting
+import qualified Data.SOP.InPairs as InPairs
+import           Data.SOP.NonEmpty
 import           Data.SOP.Strict hiding (shape, shift)
+import           Data.SOP.Telescope (Telescope (..))
 import           Data.Time
 import           Data.Word
+
+import           Cardano.Slotting.EpochInfo
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.Util (nTimes)
+
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (Telescope (..))
 import qualified Ouroboros.Consensus.HardFork.History as HF
-import           Ouroboros.Consensus.Util (nTimes)
-import           Ouroboros.Consensus.Util.Counting
-import           Ouroboros.Consensus.Util.SOP
+
 import           Test.Consensus.HardFork.Infra
+
 import           Test.QuickCheck
+
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
+
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
 

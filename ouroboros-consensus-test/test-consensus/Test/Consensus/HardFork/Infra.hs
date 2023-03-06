@@ -27,13 +27,16 @@ module Test.Consensus.HardFork.Infra (
 
 import           Data.Kind (Type)
 import           Data.Maybe (fromMaybe)
+import           Data.SOP.Counting
+import           Data.SOP.NonEmpty
 import           Data.SOP.Strict
 import           Data.Word
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+
 import qualified Ouroboros.Consensus.HardFork.History as HF
-import           Ouroboros.Consensus.Util.Counting
-import           Ouroboros.Consensus.Util.SOP
+
 import           Test.QuickCheck hiding (elements)
 
 {-------------------------------------------------------------------------------
