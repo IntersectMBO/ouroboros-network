@@ -33,12 +33,27 @@ import           Control.Monad.Except
 import           Data.Functor ((<&>))
 import           Data.Functor.Product
 import           Data.Proxy
+import           Data.SOP.Counting (getExactly)
+import           Data.SOP.Index
+import           Data.SOP.InPairs (InPairs (..))
+import qualified Data.SOP.InPairs as InPairs
+import qualified Data.SOP.Match as Match
 import           Data.SOP.Strict hiding (shape)
+import           Data.SOP.Telescope (Telescope (..))
+import qualified Data.SOP.Telescope as Telescope
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.Condense
+
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -51,24 +66,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (InPairs (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (Telescope (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
                      SafeZone (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Inspect
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.Counting (getExactly)
-import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
   Errors

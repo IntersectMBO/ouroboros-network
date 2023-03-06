@@ -51,7 +51,6 @@ import           Data.Type.Equality
 import           GHC.Stack (HasCallStack)
 import           Prelude hiding (zipWith)
 
-
 type NonEmptyOptNP = OptNP 'False
 
 -- | Like an 'NP', but with optional values

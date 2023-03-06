@@ -7,6 +7,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Embed.Binary (protocolInfoBinary)
 
 import           Control.Exception (assert)
 import           Data.Align (alignWith)
+import           Data.SOP.Counting (exactlyTwo)
+import           Data.SOP.OptNP (OptNP (..))
 import           Data.SOP.Strict (NP (..))
 import           Data.These (These (..))
 import           Ouroboros.Consensus.Block
@@ -19,8 +21,6 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract (protocolSecurityParam)
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 
 {-------------------------------------------------------------------------------
   ProtocolInfo

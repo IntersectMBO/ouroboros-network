@@ -47,21 +47,23 @@ import           Data.Fixed (divMod')
 import           Data.Foldable (toList)
 import           Data.Functor.Identity
 import           Data.Kind (Type)
+import           Data.SOP.Counting (NonEmpty (..))
 import           Data.SOP.Strict (SListI)
 import           Data.Time hiding (UTCTime)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Show (showSpace)
 import           GHC.Stack
+import           Quiet
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
+import           Ouroboros.Consensus.Util (Some (..))
+import           Ouroboros.Consensus.Util.IOLike
+
 import           Ouroboros.Consensus.HardFork.History.EraParams
 import           Ouroboros.Consensus.HardFork.History.Summary
 import           Ouroboros.Consensus.HardFork.History.Util
-import           Ouroboros.Consensus.Util (Some (..))
-import           Ouroboros.Consensus.Util.Counting (NonEmpty (..))
-import           Ouroboros.Consensus.Util.IOLike
-import           Quiet
 
 {-------------------------------------------------------------------------------
   Internal: reified queries

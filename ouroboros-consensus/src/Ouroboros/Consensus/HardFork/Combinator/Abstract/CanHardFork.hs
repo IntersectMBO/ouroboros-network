@@ -6,22 +6,21 @@
 
 module Ouroboros.Consensus.HardFork.Combinator.Abstract.CanHardFork (CanHardFork (..)) where
 
+import           Data.SOP.Functors (Product2)
+import           Data.SOP.InPairs (InPairs, RequiringBoth)
+import qualified Data.SOP.InPairs as InPairs
+import           Data.SOP.NonEmpty
 import           Data.SOP.Strict
+import           Data.SOP.Tails (Tails)
+import qualified Data.SOP.Tails as Tails
 import           Data.Typeable
+
+import           Ouroboros.Consensus.TypeFamilyWrappers
+
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Product2)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
-                     RequiringBoth)
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails)
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.SOP
-
 {-------------------------------------------------------------------------------
   CanHardFork
 -------------------------------------------------------------------------------}

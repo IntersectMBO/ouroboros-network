@@ -32,16 +32,26 @@ module Ouroboros.Consensus.HardFork.Combinator.Embed.Unary (
   , Proxy (..)
   ) where
 
-import           Cardano.Slotting.EpochInfo
 import           Data.Bifunctor (first)
 import           Data.Coerce
 import           Data.Kind (Type)
 import           Data.Proxy
+import qualified Data.SOP.OptNP as OptNP
 import           Data.SOP.Strict
+import qualified Data.SOP.Telescope as Telescope
 import           Data.Type.Equality
 import           Data.Void
+
+import           Cardano.Slotting.EpochInfo
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.TypeFamilyWrappers
+
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -54,19 +64,15 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
 import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Protocol.Abstract
+
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import qualified Ouroboros.Consensus.Util.OptNP as OptNP
+
+import           Ouroboros.Consensus.Protocol.Abstract
+
+import           Ouroboros.Consensus.Node.ProtocolInfo
 
 {-------------------------------------------------------------------------------
   Projection/injection for a single block into degenerate HardForkBlock
