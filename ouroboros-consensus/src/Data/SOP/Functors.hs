@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Util.Functors (Product2 (..)) where
+module Data.SOP.Functors (Product2 (..)) where
 
 import           GHC.Generics (Generic)
 

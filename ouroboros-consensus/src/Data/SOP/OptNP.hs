@@ -18,9 +18,9 @@
 --
 -- Intended for qualified import
 --
--- > import           Ouroboros.Consensus.Util.OptNP (OptNP (..), ViewOptNP (..))
--- > import qualified Ouroboros.Consensus.Util.OptNP as OptNP
-module Ouroboros.Consensus.Util.OptNP (
+-- > import           Data.SOP.OptNP (OptNP (..), ViewOptNP (..))
+-- > import qualified Data.SOP.OptNP as OptNP
+module Data.SOP.OptNP (
     NonEmptyOptNP
   , OptNP (..)
   , at
@@ -43,12 +43,14 @@ import           Control.Monad (guard)
 import           Data.Functor.These (These1 (..))
 import           Data.Kind (Type)
 import           Data.Maybe (isJust)
+import           Data.SOP.Index
+import           Data.SOP.NonEmpty
 import           Data.SOP.Strict hiding (And)
 import           Data.Type.Bool (type (&&))
 import           Data.Type.Equality
 import           GHC.Stack (HasCallStack)
-import           Ouroboros.Consensus.Util.SOP
 import           Prelude hiding (zipWith)
+
 
 type NonEmptyOptNP = OptNP 'False
 

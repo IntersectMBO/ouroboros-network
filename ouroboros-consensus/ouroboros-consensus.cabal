@@ -27,7 +27,17 @@ flag asserts
 library
   hs-source-dirs:   src
   exposed-modules:
+    Data.SOP.Counting
+    Data.SOP.Functors
+    Data.SOP.Index
+    Data.SOP.InPairs
+    Data.SOP.Lenses
+    Data.SOP.Match
+    Data.SOP.NonEmpty
+    Data.SOP.OptNP
     Data.SOP.Strict
+    Data.SOP.Tails
+    Data.SOP.Telescope
     Ouroboros.Consensus.Block
     Ouroboros.Consensus.Block.Abstract
     Ouroboros.Consensus.Block.EBB

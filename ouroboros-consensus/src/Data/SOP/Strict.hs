@@ -22,15 +22,21 @@ module Data.SOP.Strict (
     -- * NP
     NP (..)
   , hd
+  , map_NP'
+  , npToSListI
   , singletonNP
   , tl
     -- * NS
   , NS (..)
   , index_NS
+  , partition_NS
+  , sequence_NS'
   , unZ
     -- * Injections
   , Injection
   , injections
+    -- * fn
+  , fn_5
     -- * Re-exports from @sop-core@
   , module Data.SOP
   , module Data.SOP.Constraint
@@ -129,6 +135,26 @@ coerce_NP ::
      AllZip (LiftedCoercible f g) xs ys
   => NP f xs -> NP g ys
 coerce_NP = trans_NP (Proxy @(LiftedCoercible f g)) coerce
+
+-- | Version of 'map_NP' that does not require a singleton
+map_NP' :: forall f g xs. (forall a. f a -> g a) -> NP f xs -> NP g xs
+map_NP' f = go
+  where
+    go :: NP f xs' -> NP g xs'
+    go Nil       = Nil
+    go (x :* xs) = f x :* go xs
+
+-- | Conjure up an 'SListI' constraint from an 'NP'
+npToSListI :: NP a xs -> (SListI xs => r) -> r
+npToSListI np = sListToSListI $ npToSList np
+  where
+    sListToSListI :: SList xs -> (SListI xs => r) -> r
+    sListToSListI SNil  k = k
+    sListToSListI SCons k = k
+
+    npToSList :: NP a xs -> SList xs
+    npToSList Nil       = SNil
+    npToSList (_ :* xs) = sListToSListI (npToSList xs) SCons
 
 instance HPure NP where
   hpure  = pure_NP
@@ -230,6 +256,31 @@ coerce_NS :: forall f g xs ys. AllZip (LiftedCoercible f g) xs ys
           => NS f xs -> NS g ys
 coerce_NS = trans_NS (Proxy @(LiftedCoercible f g)) coerce
 
+-- | Version of 'sequence_NS' that requires only 'Functor'
+--
+-- The version in the library requires 'Applicative', which is unnecessary.
+sequence_NS' :: forall xs f g. Functor f
+             => NS (f :.: g) xs -> f (NS g xs)
+sequence_NS' = go
+  where
+    go :: NS (f :.: g) xs' -> f (NS g xs')
+    go (Z (Comp fx)) = Z <$> fx
+    go (S r)         = S <$> go r
+
+partition_NS :: forall xs f. SListI xs => [NS f xs] -> NP ([] :.: f) xs
+partition_NS =
+      foldr (hzipWith append) (hpure nil)
+    . map (hexpand nil . hmap singleton)
+  where
+    nil :: ([] :.: f) a
+    nil = Comp []
+
+    singleton :: f a -> ([] :.: f) a
+    singleton = Comp . (:[])
+
+    append :: ([] :.: f) a -> ([] :.: f) a -> ([] :.: f) a
+    append (Comp as) (Comp as') = Comp (as ++ as')
+
 instance HExpand NS where
   hexpand  = expand_NS
   hcexpand = cexpand_NS
@@ -264,6 +315,19 @@ injections = go sList
 
 shiftInjection :: Injection f xs a -> Injection f (x ': xs) a
 shiftInjection (Fn f) = Fn $ K . S . unK . f
+
+{-------------------------------------------------------------------------------
+  fn
+-------------------------------------------------------------------------------}
+
+fn_5 :: (f0 a -> f1 a -> f2 a -> f3 a -> f4 a -> f5 a)
+     -> (f0 -.-> f1 -.-> f2 -.-> f3 -.-> f4 -.-> f5) a
+fn_5 f = Fn $ \x0 ->
+         Fn $ \x1 ->
+         Fn $ \x2 ->
+         Fn $ \x3 ->
+         Fn $ \x4 ->
+         f x0 x1 x2 x3 x4
 
 {-------------------------------------------------------------------------------
   Instances

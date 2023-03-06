@@ -15,8 +15,9 @@
 
 -- | Intended for qualified import
 --
--- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
-module Ouroboros.Consensus.HardFork.Combinator.Util.Telescope (
+-- > import           Data.SOP.Telescope (Telescope(..))
+-- > import qualified Data.SOP.Telescope as Telescope
+module Data.SOP.Telescope (
     -- * Telescope
     Telescope (..)
   , sequence
@@ -49,16 +50,14 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Telescope (
 
 import           Data.Functor.Product
 import           Data.Kind
+import           Data.SOP.Counting
+import           Data.SOP.InPairs (InPairs (..), Requiring (..))
+import qualified Data.SOP.InPairs as InPairs
 import           Data.SOP.Strict
+import           Data.SOP.Tails (Tails (..))
+import qualified Data.SOP.Tails as Tails
 import           GHC.Stack
 import           NoThunks.Class (NoThunks (..), allNoThunks)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (InPairs (..), Requiring (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
-import           Ouroboros.Consensus.Util.Counting
-import           Ouroboros.Consensus.Util.SOP
 import           Prelude hiding (scanl, sequence, zipWith)
 
 {-------------------------------------------------------------------------------

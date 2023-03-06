@@ -19,7 +19,7 @@
 -- | Type-level counting
 --
 -- Intended for unqualified import.
-module Ouroboros.Consensus.Util.Counting (
+module Data.SOP.Counting (
     AtMost (..)
   , Exactly (.., ExactlyNil, ExactlyCons)
   , NonEmpty (..)
@@ -56,8 +56,8 @@ import           Control.Applicative
 import qualified Data.Foldable as Foldable
 import           Data.Kind (Type)
 import           Data.SOP.Dict
+import           Data.SOP.NonEmpty
 import           Data.SOP.Strict
-import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
   Types

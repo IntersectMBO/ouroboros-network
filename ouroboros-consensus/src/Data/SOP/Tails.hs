@@ -8,9 +8,11 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
--- > import Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails(..))
--- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
-module Ouroboros.Consensus.HardFork.Combinator.Util.Tails (
+-- | Intended for qualified import
+--
+-- > import           Data.SOP.Tails (Tails(..))
+-- > import qualified Data.SOP.Tails as Tails
+module Data.SOP.Tails (
     Tails (..)
     -- * Convenience constructors
   , mk1
