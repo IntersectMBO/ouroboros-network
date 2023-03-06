@@ -54,16 +54,14 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Show (showSpace)
 import           GHC.Stack
-import           Quiet
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
-import           Ouroboros.Consensus.Util (Some (..))
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.HardFork.History.EraParams
 import           Ouroboros.Consensus.HardFork.History.Summary
 import           Ouroboros.Consensus.HardFork.History.Util
+import           Ouroboros.Consensus.Util (Some (..))
+import           Ouroboros.Consensus.Util.IOLike
+import           Quiet
 
 {-------------------------------------------------------------------------------
   Internal: reified queries

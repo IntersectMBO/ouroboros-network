@@ -13,8 +13,15 @@ fd -p ouroboros-consensus \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs\
     -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Util/Counting.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Util/SOP.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Util/OptNP.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Functors.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/InPairs.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Match.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Telescope.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/DerivingVia.hs \
     -E ouroboros-consensus-test/src/Test/Util/Classify.hs \
-    -E ouroboros-consensus/src-win32/Ouroboros/Consensus/Storage/IO.hs \
     -E ouroboros-consensus-cardano-tools/app/DBAnalyser/Parsers.hs \
     -X stylish-haskell \
     -c .stylish-haskell.yaml -i
@@ -27,6 +34,14 @@ grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Im
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types.hs        >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs              >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs          >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Util/Counting.hs                         >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Util/SOP.hs                              >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Util/OptNP.hs                            >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Functors.hs     >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/InPairs.hs      >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Match.hs        >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Telescope.hs    >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/DerivingVia.hs  >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/Classify.hs                       >/dev/null 2>&1
 
 fd -p ouroboros-consensus -e cabal -x cabal-fmt -i

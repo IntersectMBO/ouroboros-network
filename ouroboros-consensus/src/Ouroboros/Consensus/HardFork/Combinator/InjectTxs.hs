@@ -32,12 +32,10 @@ import           Data.SOP.Match
 import           Data.SOP.Strict
 import           Data.SOP.Telescope (Telescope (..))
 import qualified Data.SOP.Telescope as Telescope
-
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (pairFst)
-
-import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 
 {-------------------------------------------------------------------------------
   Polymorphic definitions

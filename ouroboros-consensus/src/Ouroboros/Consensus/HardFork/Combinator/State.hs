@@ -38,12 +38,7 @@ import qualified Data.SOP.InPairs as InPairs
 import           Data.SOP.Strict hiding (shape)
 import           Data.SOP.Telescope (Extend (..), ScanNext (..), Telescope)
 import qualified Data.SOP.Telescope as Telescope
-import           Prelude hiding (sequence)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract hiding (getTip)
-import           Ouroboros.Consensus.Util ((.:))
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -53,6 +48,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.State.Instances as X ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types as X
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
 import qualified Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.Ledger.Abstract hiding (getTip)
+import           Ouroboros.Consensus.Util ((.:))
+import           Prelude hiding (sequence)
 
 {-------------------------------------------------------------------------------
   GetTip

@@ -14,13 +14,11 @@ import           Data.SOP.Strict
 import           Data.SOP.Tails (Tails)
 import qualified Data.SOP.Tails as Tails
 import           Data.Typeable
-
-import           Ouroboros.Consensus.TypeFamilyWrappers
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
+import           Ouroboros.Consensus.TypeFamilyWrappers
 {-------------------------------------------------------------------------------
   CanHardFork
 -------------------------------------------------------------------------------}

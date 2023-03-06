@@ -6,15 +6,12 @@ module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage () where
 
 import           Data.SOP.Index
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-
-import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
-
 import           Ouroboros.Consensus.Node.InitStorage
+import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 
 instance CanHardFork xs => NodeInitStorage (HardForkBlock xs) where
   -- We use the chunk info from the first era

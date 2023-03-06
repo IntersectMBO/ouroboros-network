@@ -44,6 +44,7 @@ module Ouroboros.Consensus.HardFork.History.Summary (
   , summaryInit
   ) where
 
+import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (TokenType (TypeNull), decodeNull,
                      peekTokenType)
 import           Codec.CBOR.Encoding (encodeListLen, encodeNull)
@@ -60,12 +61,8 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (InspectHeapNamed (..), NoThunks)
-
-import           Cardano.Binary (enforceSize)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
-
 import           Ouroboros.Consensus.HardFork.History.EraParams
 import           Ouroboros.Consensus.HardFork.History.Util
 

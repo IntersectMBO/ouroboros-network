@@ -32,11 +32,8 @@ import           Data.SOP.Strict
 import           Data.SOP.Telescope (Telescope (..))
 import           Data.Word
 import           GHC.Stack
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
-import           Ouroboros.Consensus.Util (Some (..), repeatedly, splits)
-
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
                      (AnnForecast (..), mkHardForkForecast)
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
@@ -45,14 +42,11 @@ import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
                      EraParams (..), EraSummary (..), Summary (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HardFork.History.Util
-
+import           Ouroboros.Consensus.Util (Some (..), repeatedly, splits)
 import           Test.Consensus.HardFork.Infra
-
 import           Test.QuickCheck hiding (elements)
-
 import           Test.Tasty
 import           Test.Tasty.QuickCheck hiding (elements)
-
 import           Test.Util.QuickCheck
 
 tests :: TestTree
