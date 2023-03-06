@@ -10,9 +10,9 @@
 
 -- | Intended for qualified import
 --
--- > import Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs(..))
--- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
+-- > import           Data.SOP.InPairs (InPairs(..))
+-- > import qualified Data.SOP.InPairs as InPairs
+module Data.SOP.InPairs (
     -- * InPairs
     InPairs (..)
     -- * Convenience constructors
@@ -34,8 +34,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (
   ) where
 
 import           Data.Kind (Type)
+import           Data.SOP.NonEmpty
 import           Data.SOP.Strict hiding (hcmap, hcpure, hmap, hpure)
-import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
   InPairs

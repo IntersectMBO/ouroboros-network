@@ -15,9 +15,9 @@
 
 -- | Intended for qualified import
 --
--- > import Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch(..))
--- > import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
+-- > import           Data.SOP.Match (Mismatch(..))
+-- > import qualified Data.SOP.Match as Match
+module Data.SOP.Match (
     Mismatch (..)
   , flip
   , matchNS
@@ -40,22 +40,26 @@ import           Data.Bifunctor
 import           Data.Functor.Product
 import           Data.Kind (Type)
 import           Data.SOP.Strict
+import           Data.SOP.Telescope (Telescope (..))
+import qualified Data.SOP.Telescope as Telescope
 import           Data.Void
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), allNoThunks)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (Telescope (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
-import           Ouroboros.Consensus.Util.SOP ()
 import           Prelude hiding (flip)
 
 {-------------------------------------------------------------------------------
   Main API
 -------------------------------------------------------------------------------}
 
+-- | We have a mismatch in the index between two NS
 data Mismatch :: (k -> Type) -> (k -> Type) -> [k] -> Type where
+  -- | The left is at the current @x@ and the right is somewhere in the later
+  -- @xs@
   ML :: f x -> NS g xs -> Mismatch f g (x ': xs)
+  -- | The right is at the current @x@ and the left is somewhere in the later
+  -- @xs@
   MR :: NS f xs -> g x -> Mismatch f g (x ': xs)
+  -- | There is a mismatch later on in the @xs@
   MS :: Mismatch f g xs -> Mismatch f g (x ': xs)
 
 flip :: Mismatch f g xs -> Mismatch g f xs

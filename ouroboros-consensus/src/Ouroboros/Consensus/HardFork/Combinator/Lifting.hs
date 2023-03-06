@@ -7,7 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 
-module Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia (
+module Ouroboros.Consensus.HardFork.Combinator.Lifting (
     LiftMismatch (..)
   , LiftNP (..)
   , LiftNS (..)
@@ -22,15 +22,14 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia (
 import           Data.List (intercalate)
 import           Data.Proxy
 import           Data.SOP.Dict
+import           Data.SOP.Match (Mismatch)
+import           Data.SOP.OptNP (OptNP (..))
 import           Data.SOP.Strict
+import           Data.SOP.Telescope (Telescope)
 import           Data.Typeable
 import           GHC.TypeLits
 import           NoThunks.Class (NoThunks (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (Telescope)
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 
 {-------------------------------------------------------------------------------
   Auxiliary
