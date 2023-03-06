@@ -9,6 +9,17 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.ThreadNet.TxGen.Cardano (CardanoTxGenExtra (..)) where
 
+import qualified Cardano.Chain.Common as Byron
+import           Cardano.Chain.Genesis (GeneratedSecrets (..))
+import           Cardano.Crypto (toVerification)
+import qualified Cardano.Crypto.Signing as Byron
+import qualified Cardano.Ledger.Address as SL (BootstrapAddress (..))
+import qualified Cardano.Ledger.Hashes as SL
+import qualified Cardano.Ledger.Keys.Bootstrap as SL (makeBootstrapWitness)
+import qualified Cardano.Ledger.SafeHash as SL
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Core as SL
+import           Cardano.Ledger.Val ((<->))
 import           Control.Exception (assert)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -18,46 +29,24 @@ import qualified Data.Set as Set
 import           Data.SOP.Strict
 import           Data.SOP.Telescope as Tele
 import           Lens.Micro
-
-import           Cardano.Crypto (toVerification)
-import qualified Cardano.Crypto.Signing as Byron
-
-import qualified Cardano.Chain.Common as Byron
-import           Cardano.Chain.Genesis (GeneratedSecrets (..))
-
 import           Ouroboros.Consensus.Block (SlotNo (..))
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig, LedgerState,
-                     applyChainTick)
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger
-                     (tickedHardForkLedgerStatePerEra)
-import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-                     (currentState, getHardForkState)
-
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
-
-import qualified Cardano.Ledger.Address as SL (BootstrapAddress (..))
-import qualified Cardano.Ledger.Hashes as SL
-import qualified Cardano.Ledger.Keys.Bootstrap as SL (makeBootstrapWitness)
-import qualified Cardano.Ledger.SafeHash as SL
-import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.Core as SL
-import           Cardano.Ledger.Val ((<->))
-
-import           Ouroboros.Consensus.Shelley.Ledger (GenTx, ShelleyBlock,
-                     mkShelleyTx)
-import           Ouroboros.Consensus.Shelley.Ledger.Ledger (Ticked,
-                     tickedShelleyLedgerState)
-
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block (CardanoEras, GenTx (..),
                      ShelleyEra)
 import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
-
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger
+                     (tickedHardForkLedgerStatePerEra)
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+                     (currentState, getHardForkState)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig, LedgerState,
+                     applyChainTick)
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock, mkShelleyTx)
+import           Ouroboros.Consensus.Shelley.Ledger.Ledger (Ticked,
+                     tickedShelleyLedgerState)
 import qualified Test.Cardano.Ledger.Core.KeyPair as TL (mkWitnessVKey)
-
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.TxGen
 

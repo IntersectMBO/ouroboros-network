@@ -22,13 +22,11 @@ import           Data.SOP.Telescope (Telescope)
 import qualified Data.SOP.Telescope as Telescope
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-import           Prelude
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
-import           Ouroboros.Consensus.Ticked
-
 import           Ouroboros.Consensus.HardFork.History (Bound)
+import           Ouroboros.Consensus.Ticked
+import           Prelude
 
 {-------------------------------------------------------------------------------
   Types

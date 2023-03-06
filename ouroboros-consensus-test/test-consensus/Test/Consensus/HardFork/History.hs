@@ -29,6 +29,7 @@
 --
 module Test.Consensus.HardFork.History (tests) where
 
+import           Cardano.Slotting.EpochInfo
 import           Control.Exception (throw)
 import           Control.Monad.Except
 import           Data.Bifunctor
@@ -44,27 +45,19 @@ import           Data.SOP.Strict hiding (shape, shift)
 import           Data.SOP.Telescope (Telescope (..))
 import           Data.Time
 import           Data.Word
-
-import           Cardano.Slotting.EpochInfo
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast
-import           Ouroboros.Consensus.Util (nTimes)
-
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import qualified Ouroboros.Consensus.HardFork.History as HF
-
+import           Ouroboros.Consensus.Util (nTimes)
 import           Test.Consensus.HardFork.Infra
-
 import           Test.QuickCheck
-
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
 

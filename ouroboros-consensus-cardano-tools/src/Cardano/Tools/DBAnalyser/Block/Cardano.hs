@@ -22,6 +22,24 @@ module Cardano.Tools.DBAnalyser.Block.Cardano (
   , CardanoBlockArgs
   ) where
 
+import qualified Cardano.Chain.Genesis as Byron.Genesis
+import qualified Cardano.Chain.Update as Byron.Update
+import           Cardano.Crypto (RequiresNetworkMagic (..))
+import qualified Cardano.Crypto as Crypto
+import qualified Cardano.Crypto.Hash.Class as CryptoClass
+import           Cardano.Crypto.Raw (Raw)
+import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
+import qualified Cardano.Ledger.BaseTypes as SL (natVersion)
+import qualified Cardano.Ledger.Conway.Genesis as SL
+                     (ConwayGenesis (cgGenDelegs))
+import qualified Cardano.Ledger.Core as Core
+import           Cardano.Ledger.Crypto
+import qualified Cardano.Ledger.Shelley.Translation as SL
+                     (toFromByronTranslationContext)
+import           Cardano.Node.Types (AdjustFilePaths (..))
+import qualified Cardano.Tools.DBAnalyser.Block.Byron as BlockByron
+import           Cardano.Tools.DBAnalyser.Block.Shelley ()
+import           Cardano.Tools.DBAnalyser.HasAnalysis
 import           Control.Monad (when)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.Types as Aeson
@@ -32,57 +50,28 @@ import           Data.Maybe (fromJust)
 import           Data.SOP.Strict
 import qualified Data.SOP.Telescope as Telescope
 import           Data.Word (Word16)
-import           System.Directory (makeAbsolute)
-import           System.FilePath (takeDirectory, (</>))
-
-import           Cardano.Node.Types (AdjustFilePaths (..))
-import qualified Cardano.Tools.DBAnalyser.Block.Byron as BlockByron
-import           Cardano.Tools.DBAnalyser.Block.Shelley ()
-import           Cardano.Tools.DBAnalyser.HasAnalysis
-
-import           Cardano.Crypto (RequiresNetworkMagic (..))
-import qualified Cardano.Crypto as Crypto
-import qualified Cardano.Crypto.Hash.Class as CryptoClass
-import           Cardano.Crypto.Raw (Raw)
-
-import qualified Cardano.Chain.Genesis as Byron.Genesis
-import qualified Cardano.Chain.Update as Byron.Update
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation (HasAnnTip)
-import           Ouroboros.Consensus.Ledger.Abstract
-import qualified Ouroboros.Consensus.Mempool as Mempool
-
-import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
-                     OneEraBlock (..), OneEraHash (..), getHardForkState,
-                     hardForkLedgerStatePerEra)
-import           Ouroboros.Consensus.HardFork.Combinator.State (currentState)
-
-import           Ouroboros.Consensus.Protocol.Praos.Translate ()
-
-import           Ouroboros.Consensus.Node.ProtocolInfo
-
-import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
-import qualified Cardano.Ledger.BaseTypes as SL (natVersion)
-import qualified Cardano.Ledger.Conway.Genesis as SL
-                     (ConwayGenesis (cgGenDelegs))
-import qualified Cardano.Ledger.Core as Core
-import           Cardano.Ledger.Crypto
-import qualified Cardano.Ledger.Shelley.Translation as SL
-                     (toFromByronTranslationContext)
-
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-
-import           Ouroboros.Consensus.Shelley.HFEras ()
-import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
-import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-import           Ouroboros.Consensus.Shelley.Node.Praos
-
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block (CardanoEras,
                      CardanoShelleyEras)
 import           Ouroboros.Consensus.Cardano.Node (TriggerHardFork (..),
                      protocolInfoCardano)
+import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
+                     OneEraBlock (..), OneEraHash (..), getHardForkState,
+                     hardForkLedgerStatePerEra)
+import           Ouroboros.Consensus.HardFork.Combinator.State (currentState)
+import           Ouroboros.Consensus.HeaderValidation (HasAnnTip)
+import           Ouroboros.Consensus.Ledger.Abstract
+import qualified Ouroboros.Consensus.Mempool as Mempool
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import           Ouroboros.Consensus.Shelley.HFEras ()
+import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import           Ouroboros.Consensus.Shelley.Node.Praos
+import           System.Directory (makeAbsolute)
+import           System.FilePath (takeDirectory, (</>))
 
 analyseBlock ::
      (forall blk. HasAnalysis blk => blk -> a)

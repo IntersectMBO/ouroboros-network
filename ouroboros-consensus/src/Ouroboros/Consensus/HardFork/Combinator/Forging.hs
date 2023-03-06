@@ -26,13 +26,8 @@ import           Data.SOP.OptNP (NonEmptyOptNP, OptNP, ViewOptNP (..))
 import qualified Data.SOP.OptNP as OptNP
 import           Data.SOP.Strict
 import           Data.Text (Text)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util ((.:))
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -41,6 +36,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util ((.:))
 
 -- | If we cannot forge, it's because the current era could not forge
 type HardForkCannotForge xs = OneEraCannotForge xs

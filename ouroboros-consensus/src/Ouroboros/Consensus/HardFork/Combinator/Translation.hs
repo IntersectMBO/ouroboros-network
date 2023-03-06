@@ -9,11 +9,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Translation (
 
 import           Data.SOP.InPairs (InPairs (..), RequiringBoth (..))
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
-
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
-
-import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 {-------------------------------------------------------------------------------
   Translate from one era to the next
 -------------------------------------------------------------------------------}

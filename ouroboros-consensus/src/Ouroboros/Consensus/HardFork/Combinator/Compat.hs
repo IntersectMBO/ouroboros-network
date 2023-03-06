@@ -20,10 +20,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Compat (
 import           Data.Kind (Type)
 import           Data.SOP.NonEmpty
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.Basics

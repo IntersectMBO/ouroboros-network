@@ -83,6 +83,7 @@ library
     Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams
     Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection
     Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
+    Ouroboros.Consensus.HardFork.Combinator.Lifting
     Ouroboros.Consensus.HardFork.Combinator.Mempool
     Ouroboros.Consensus.HardFork.Combinator.Node
     Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage

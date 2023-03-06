@@ -35,16 +35,14 @@ import qualified Data.SOP.Match as Match
 import           Data.SOP.Strict hiding (shape)
 import           Data.SOP.Telescope (Extend (..), Telescope (..))
 import qualified Data.SOP.Telescope as Telescope
-import           Prelude hiding (sequence)
-
 import           Ouroboros.Consensus.Block
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.State.Lift
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
                      EraParams (..), EraSummary (..), SafeZone (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
+import           Prelude hiding (sequence)
 
 {-------------------------------------------------------------------------------
   Initialization

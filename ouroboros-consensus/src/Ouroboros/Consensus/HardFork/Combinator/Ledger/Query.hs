@@ -32,6 +32,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Ledger.Query (
   , hardForkQueryInfo
   ) where
 
+import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
@@ -46,18 +47,8 @@ import           Data.SOP.Match (Mismatch (..), mustMatchNS)
 import           Data.SOP.Strict
 import           Data.Type.Equality
 import           Data.Typeable (Typeable)
-
-import           Cardano.Binary (enforceSize)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.Query
-import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..))
-import           Ouroboros.Consensus.Util (ShowProxy)
-
 import           Ouroboros.Consensus.HardFork.Abstract (hardForkSummary)
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
@@ -72,8 +63,12 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
                      Shape (..))
 import qualified Ouroboros.Consensus.HardFork.History as History
-
+import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.TypeFamilyWrappers (WrapChainDepState (..))
+import           Ouroboros.Consensus.Util (ShowProxy)
 
 instance Typeable xs => ShowProxy (BlockQuery (HardForkBlock xs)) where
 

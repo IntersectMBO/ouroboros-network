@@ -26,41 +26,30 @@ import           Data.Proxy
 import           Data.SOP.Counting
 import           Data.SOP.Index
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.TypeFamilyWrappers
-
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import qualified Ouroboros.Consensus.HardFork.History as History
-
-import           Ouroboros.Consensus.Protocol.Praos.Translate ()
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
-
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
-
-import           Ouroboros.Consensus.Byron.Ledger
-
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Block ()
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.Node (CardanoHardForkConstraints)
-
+import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Test.Cardano.Ledger.Alonzo.Serialisation.Generators ()
 import           Test.Cardano.Ledger.Conway.Serialisation.Generators ()
-
 import           Test.Consensus.Byron.Generators
 import           Test.Consensus.Cardano.MockCrypto
 import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.Generators
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
-
 import           Test.QuickCheck
-
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      WithVersion (..))

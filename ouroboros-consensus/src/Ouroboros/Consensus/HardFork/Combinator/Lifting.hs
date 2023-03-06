@@ -29,7 +29,6 @@ import           Data.SOP.Telescope (Telescope)
 import           Data.Typeable
 import           GHC.TypeLits
 import           NoThunks.Class (NoThunks (..))
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 
 {-------------------------------------------------------------------------------

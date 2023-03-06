@@ -9,7 +9,6 @@ import           Data.SOP.Functors as X (Product2 (..))
 import           Data.SOP.InPairs as X (InPairs (..))
 import           Data.SOP.Match as X (Mismatch (..))
 import           Data.SOP.Telescope as X (Telescope (..))
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract as X
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
                      (MismatchEraInfo (..), OneEraApplyTxErr (..),
