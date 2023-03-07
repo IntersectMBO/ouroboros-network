@@ -1,6 +1,6 @@
 module Control.Concurrent.Class.MonadMVar.NormalForm (
-    module LazySTM
-  , module Control.Concurrent.Class.MonadMVar.StrictMVar
+    module Control.Concurrent.Class.MonadMVar.StrictMVar
+  , module LazySTM
   , module StrictSTM
   , newEmptyMVar
   , newMVar
@@ -32,8 +32,8 @@ import           Control.Concurrent.Class.MonadSTM.TBQueue as LazySTM
 import           Control.Concurrent.Class.MonadSTM.TQueue as LazySTM
 import           Control.Monad.Class.MonadSTM as StrictSTM
 
-import qualified Control.Concurrent.Class.MonadSTM.Strict as Strict
 import qualified Control.Concurrent.Class.MonadMVar.StrictMVar as Strict
+import qualified Control.Concurrent.Class.MonadSTM.Strict as Strict
 
 {-------------------------------------------------------------------------------
   Wrappers that check for thunks

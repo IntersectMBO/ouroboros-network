@@ -18,6 +18,12 @@ fd -p ouroboros-consensus \
     -X stylish-haskell \
     -c .stylish-haskell.yaml -i
 
+fd -p strict-mvar \
+    -e hs \
+    -E Setup.hs \
+    -X stylish-haskell \
+    -c .stylish-haskell.yaml -i
+
 # We don't want these deprecation warnings to be removed accidentally
 grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/LedgerDB/InMemory.hs >/dev/null 2>&1
 grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/LedgerDB/OnDisk.hs   >/dev/null 2>&1
