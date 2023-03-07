@@ -76,7 +76,7 @@ jobReqPublicRootPeers :: forall m peeraddr peerconn.
                       -> Job () m (Completion m peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                                           }
-                   numExtraAllowed =
+                      numExtraAllowed =
     Job job (return . handler) () "reqPublicRootPeers"
   where
     handler :: SomeException -> Completion m peeraddr peerconn
