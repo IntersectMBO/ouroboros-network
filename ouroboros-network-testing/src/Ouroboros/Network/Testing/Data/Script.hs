@@ -37,6 +37,7 @@ import qualified Data.Set as Set
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 
@@ -146,6 +147,7 @@ playTimedScript tracer (Script ((x0,d0) :| script)) = do
     v <- newTVarIO x0
     traceWith tracer x0
     _ <- async $ do
+           labelThisThread "timed-script"
            threadDelay (interpretScriptDelay d0)
            sequence_ [ do atomically (writeTVar v x)
                           traceWith tracer x
