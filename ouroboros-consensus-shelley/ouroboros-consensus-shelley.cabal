@@ -1,7 +1,7 @@
 cabal-version: 3.0
 
 name:                   ouroboros-consensus-shelley
-version:                0.3.0.0
+version:                0.4.0.0
 synopsis:               Shelley ledger integration in the Ouroboros consensus layer
 description:            Shelley ledger integration in the Ouroboros consensus layer.
 license:                Apache-2.0

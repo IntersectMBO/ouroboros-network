@@ -1,7 +1,7 @@
 cabal-version:         3.0
 
 name:                   ouroboros-consensus-cardano-test
-version:                0.3.0.0
+version:                0.4.0.0
 synopsis:               Test of the instantation of the Ouroboros consensus layer used by Cardano
 description:            Test of the instantation of the Ouroboros consensus layer used by Cardano.
 license:                Apache-2.0
@@ -59,11 +59,11 @@ library
                      , ouroboros-consensus-protocol:ouroboros-consensus-protocol-test ^>=0.3
                      , ouroboros-consensus-diffusion                                  ^>=0.3
 
-                     , ouroboros-consensus-byron        ==0.3.0.0
-                     , ouroboros-consensus-byron-test   ==0.3.0.0
-                     , ouroboros-consensus-shelley      ==0.3.0.0
-                     , ouroboros-consensus-shelley-test ==0.3.0.0
-                     , ouroboros-consensus-cardano      ==0.3.0.0
+                     , ouroboros-consensus-byron        ==0.4.0.0
+                     , ouroboros-consensus-byron-test   ==0.4.0.0
+                     , ouroboros-consensus-shelley      ==0.4.0.0
+                     , ouroboros-consensus-shelley-test ==0.4.0.0
+                     , ouroboros-consensus-cardano      ==0.4.0.0
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -115,11 +115,11 @@ test-suite test
                      , ouroboros-consensus-test     ^>=0.3
                      , ouroboros-consensus-protocol ^>=0.3
 
-                     , ouroboros-consensus-byron        ==0.3.0.0
-                     , ouroboros-consensus-byron-test   ==0.3.0.0
-                     , ouroboros-consensus-shelley      ==0.3.0.0
-                     , ouroboros-consensus-shelley-test ==0.3.0.0
-                     , ouroboros-consensus-cardano      ==0.3.0.0
+                     , ouroboros-consensus-byron        ==0.4.0.0
+                     , ouroboros-consensus-byron-test   ==0.4.0.0
+                     , ouroboros-consensus-shelley      ==0.4.0.0
+                     , ouroboros-consensus-shelley-test ==0.4.0.0
+                     , ouroboros-consensus-cardano      ==0.4.0.0
 
                      , ouroboros-consensus-cardano-test
 
