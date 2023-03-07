@@ -128,6 +128,7 @@ belowTargetLocal actions
                    policyPickWarmPeersToPromote
                  }
                  st@PeerSelectionState {
+                   bigLedgerPeers,
                    localRootPeers,
                    establishedPeers,
                    activePeers,
@@ -200,7 +201,7 @@ belowTargetLocal actions
              Set.\\ activePeers
              Set.\\ EstablishedPeers.readyPeers establishedPeers
   , not (Set.null potentialToPromote)
-  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers)
+  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
@@ -271,7 +272,7 @@ belowTargetOther actions
     -- If we could promote except that there are no peers currently available
     -- then we return the next wakeup time (if any)
   | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
-  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers)
+  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing

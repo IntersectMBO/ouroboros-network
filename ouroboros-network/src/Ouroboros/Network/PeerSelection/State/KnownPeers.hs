@@ -351,13 +351,16 @@ setTepidFlag = setTepidFlag' True
 
 minConnectTime :: Ord peeraddr
                => KnownPeers peeraddr
+               -> (peeraddr -> Bool)
+               -- ^ a predicate which describes the peers to take into account
                -> Maybe Time
-minConnectTime KnownPeers { nextConnectTimes }
-  | Just (_k, t, _, _psq) <- PSQ.minView nextConnectTimes
-  = Just t
-
-  | otherwise
-  = Nothing
+minConnectTime KnownPeers { nextConnectTimes } fn =
+    go nextConnectTimes
+  where
+    go psq = case PSQ.minView psq of
+      Just (k, t, _, psq') | fn k      -> Just t
+                           | otherwise -> go psq'
+      Nothing                          -> Nothing
 
 
 setConnectTimes :: Ord peeraddr
