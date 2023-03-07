@@ -83,6 +83,7 @@ import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Random (mkQCGen)
 import qualified Test.StateMachine as QSM
 import           Test.StateMachine (Concrete, Symbolic)
+import qualified Test.StateMachine.Labelling as C
 import qualified Test.StateMachine.Sequential as QSM
 import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
@@ -96,7 +97,6 @@ import qualified Ouroboros.Consensus.Storage.IO as F
 
 import           Ouroboros.Consensus.Util.Condense
 
-import qualified Test.Util.Classify as C
 import           Test.Util.FS.Sim.FsTree (FsTree (..))
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)

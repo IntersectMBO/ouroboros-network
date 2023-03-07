@@ -40,7 +40,6 @@ library
                        Test.Util.ChainDB
                        Test.Util.ChainUpdates
                        Test.Util.ChunkInfo
-                       Test.Util.Classify
                        Test.Util.Corruption
                        Test.Util.FileLock
                        Test.Util.FS.Sim.Error
