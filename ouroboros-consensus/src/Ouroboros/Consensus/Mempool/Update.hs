@@ -4,16 +4,15 @@
 -- | Operations that update the mempool. They are internally divided in the pure
 -- and impure sides of the operation.
 module Ouroboros.Consensus.Mempool.Update (
-    implRemoveTxs
+    implAddTx
+  , implRemoveTxs
   , implSyncWithLedger
-  , implTryAddTxs
     -- * Exported for deprecated modules
   , pureRemoveTxs
   , pureSyncWithLedger
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad (join)
 import           Control.Tracer
 import           Data.Maybe (isJust, isNothing)
 import qualified Data.Set as Set
@@ -34,41 +33,9 @@ import           Ouroboros.Consensus.Util.IOLike
   Add transactions
 -------------------------------------------------------------------------------}
 
--- | Result of trying to add a transaction to the mempool.
-data TryAddTxs blk =
-    -- | No space is left in the mempool and no more transactions could be
-    -- added.
-    NoSpaceLeft
-    -- | A transaction was processed.
-  | TryAddTxs
-      (Maybe (InternalState blk))
-      -- ^ If the transaction was accepted, the new state that can be written to
-      -- the TVar.
-      (MempoolAddTxResult blk)
-      -- ^ The result of trying to add the transaction to the mempool.
-      (TraceEventMempool blk)
-      -- ^ The event emitted by the operation.
-
--- | Add a list of transactions (oldest to newest) by interpreting a 'TryAddTxs'
--- from 'pureTryAddTxs'.
+-- | Add a single transaction to the mempool, blocking if there is no space.
 --
--- This function returns two lists: the transactions that were added or
--- rejected, and the transactions that could not yet be added, because the
--- Mempool capacity was reached. See 'addTxs' for a function that blocks in
--- case the Mempool capacity is reached.
---
--- Transactions are added one by one, updating the Mempool each time one was
--- added successfully.
---
--- See the necessary invariants on the Haddock for 'API.tryAddTxs'.
---
--- This function does not sync the Mempool contents with the ledger state in
--- case the latter changes, it relies on the background thread to do that.
---
--- INVARIANT: The code needs that read and writes on the state are coupled
--- together or inconsistencies will arise. To ensure that STM transactions are
--- short, each iteration of the helper function is a separate STM transaction.
-implTryAddTxs ::
+implAddTx ::
      ( MonadSTM m
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
@@ -83,28 +50,81 @@ implTryAddTxs ::
   -> Tracer m (TraceEventMempool blk)
      -- ^ The tracer.
   -> WhetherToIntervene
-  -> [GenTx blk]
-     -- ^ The list of transactions to add to the mempool.
-  -> m ([MempoolAddTxResult blk], [GenTx blk])
-implTryAddTxs istate cfg txSize trcr wti =
-    go []
-  where
-    go acc = \case
-      []     -> pure (reverse acc, [])
-      tx:txs -> join $ atomically $ do
-        is <- readTVar istate
-        case pureTryAddTxs cfg txSize wti tx is of
-          NoSpaceLeft             -> pure $ pure (reverse acc, tx:txs)
-          TryAddTxs is' result ev -> do
-            whenJust is' (writeTVar istate)
-            pure $ do
-              traceWith trcr ev
-              go (result:acc) txs
+  -> GenTx blk
+     -- ^ The transaction to add to the mempool.
+  -> m (MempoolAddTxResult blk)
+implAddTx istate cfg txSize trcr wti tx = do
+    (result, ev) <- atomically $ do
+      outcome <- implTryAddTx istate cfg txSize wti tx
+      case outcome of
+        TryAddTx _ result ev -> do return (result, ev)
 
--- | Craft a 'TryAddTxs' value containing the resulting state if applicable, the
+        -- or block until space is available to fit the next transaction
+        NoSpaceLeft          -> retry
+
+    traceWith trcr ev
+    return result
+
+-- | Result of trying to add a transaction to the mempool.
+data TryAddTx blk =
+    -- | No space is left in the mempool and no more transactions could be
+    -- added.
+    NoSpaceLeft
+    -- | A transaction was processed.
+  | TryAddTx
+      (Maybe (InternalState blk))
+      -- ^ If the transaction was accepted, the new state that can be written to
+      -- the TVar.
+      (MempoolAddTxResult blk)
+      -- ^ The result of trying to add the transaction to the mempool.
+      (TraceEventMempool blk)
+      -- ^ The event emitted by the operation.
+
+-- | Add a single transaction by interpreting a 'TryAddTx' from 'pureTryAddTx'.
+--
+-- This function returns whether the transaction was added or rejected, or if
+-- the Mempool capacity is reached. See 'implAddTx' for a function that blocks
+-- in case the Mempool capacity is reached.
+--
+-- Transactions are added one by one, updating the Mempool each time one was
+-- added successfully.
+--
+-- See the necessary invariants on the Haddock for 'API.tryAddTxs'.
+--
+-- This function does not sync the Mempool contents with the ledger state in
+-- case the latter changes, it relies on the background thread to do that.
+--
+-- INVARIANT: The code needs that read and writes on the state are coupled
+-- together or inconsistencies will arise. To ensure that STM transactions are
+-- short, each iteration of the helper function is a separate STM transaction.
+implTryAddTx ::
+     ( MonadSTM m
+     , LedgerSupportsMempool blk
+     , HasTxId (GenTx blk)
+     )
+  => StrictTVar m (InternalState blk)
+     -- ^ The InternalState TVar.
+  -> LedgerConfig blk
+     -- ^ The configuration of the ledger.
+  -> (GenTx blk -> TxSizeInBytes)
+     -- ^ The function to calculate the size of a
+     -- transaction.
+  -> WhetherToIntervene
+  -> GenTx blk
+     -- ^ The transaction to add to the mempool.
+  -> STM m (TryAddTx blk)
+implTryAddTx istate cfg txSize wti tx = do
+        is <- readTVar istate
+        let outcome = pureTryAddTx cfg txSize wti tx is
+        case outcome of
+          TryAddTx (Just is') _ _ -> writeTVar istate is'
+          _                       -> return ()
+        return outcome
+
+-- | Craft a 'TryAddTx' value containing the resulting state if applicable, the
 -- tracing event and the result of adding this transaction. See the
--- documentation of 'implTryAddTxs' for some more context.
-pureTryAddTxs
+-- documentation of 'implTryAddTx' for some more context.
+pureTryAddTx
   :: ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      )
@@ -117,8 +137,8 @@ pureTryAddTxs
      -- ^ The transaction to add to the mempool.
   -> InternalState blk
      -- ^ The current internal state of the mempool.
-  -> TryAddTxs blk
-pureTryAddTxs cfg txSize wti tx is
+  -> TryAddTx blk
+pureTryAddTx cfg txSize wti tx is
   | let size    = txSize tx
         curSize = msNumBytes  $ isMempoolSize is
   , curSize + size > getMempoolCapacityBytes (isCapacity is)
@@ -129,7 +149,7 @@ pureTryAddTxs cfg txSize wti tx is
       -- ('tx'). So if it's not in 'vrInvalid', it must be in 'vrNewValid'.
       Right vtx ->
         assert (isJust (vrNewValid vr)) $
-          TryAddTxs
+          TryAddTx
             (Just is')
             (MempoolTxAdded vtx)
             (TraceMempoolAddedTx
@@ -140,7 +160,7 @@ pureTryAddTxs cfg txSize wti tx is
       Left err ->
         assert (isNothing (vrNewValid vr))  $
           assert (length (vrInvalid vr) == 1) $
-            TryAddTxs
+            TryAddTx
               Nothing
               (MempoolTxRejected tx err)
               (TraceMempoolRejectedTx

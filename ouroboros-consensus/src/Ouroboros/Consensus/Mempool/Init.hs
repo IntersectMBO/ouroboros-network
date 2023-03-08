@@ -107,7 +107,7 @@ mkMempool
      )
   => MempoolEnv m blk -> Mempool m blk
 mkMempool mpEnv = Mempool
-    { tryAddTxs      = implTryAddTxs istate cfg txSize trcr
+    { addTx          = implAddTx istate cfg txSize trcr
     , removeTxs      = implRemoveTxs mpEnv
     , syncWithLedger = implSyncWithLedger mpEnv
     , getSnapshot    = snapshotFromIS <$> readTVar istate

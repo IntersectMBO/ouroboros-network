@@ -71,24 +71,10 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 -- * It supports wallets that submit dependent transactions (where later
 --   transaction depends on outputs from earlier ones).
 --
--- When only one thread is operating on the mempool, operations that mutate the
--- state based on the input arguments (tryAddTxs and removeTxs) will produce the
--- same result whether they process transactions one by one or all in one go, so
--- this equality holds:
---
--- > void (tryAddTxs wti txs) === forM_ txs (tryAddTxs wti . (:[]))
--- > void (trAddTxs wti [x,y]) === tryAddTxs wti x >> void (tryAddTxs wti y)
---
--- This shows that @'tryAddTxs' wti@ is an homomorphism from '++' and '>>',
--- which informally makes these operations "distributive".
 data Mempool m blk = Mempool {
-      -- | Add a bunch of transactions (oldest to newest)
+      -- | Add a single transaction to the mempool.
       --
-      -- As long as we keep the mempool entirely in-memory this could live in
-      -- @STM m@; we keep it in @m@ instead to leave open the possibility of
-      -- persistence.
-      --
-      -- The new transactions provided will be validated, /in order/, against
+      -- The new transaction provided will be validated, /in order/, against
       -- the ledger state obtained by applying all the transactions already in
       -- the Mempool to it. Transactions which are found to be invalid, with
       -- respect to the ledger state, are dropped, whereas valid transactions
@@ -102,29 +88,28 @@ data Mempool m blk = Mempool {
       -- the mempool via a call to 'syncWithLedger' or by the background
       -- thread that watches the ledger for changes.
       --
-      -- This function will return two lists
+      -- This action returns one of two results
       --
-      -- 1. A list containing the following transactions:
+      --  * A 'MempoolTxAdded' value if the transaction provided was found to
+      --    be valid. This transactions is now in the Mempool.
       --
-      --    * Those transactions provided which were found to be valid, as a
-      --      'MempoolTxAdded' value. These transactions are now in the Mempool.
-      --    * Those transactions provided which were found to be invalid, along
-      --      with their accompanying validation errors, as a
-      --      'MempoolTxRejected' value. These transactions are not in the
-      --      Mempool.
+      --  * A 'MempoolTxRejected' value if the transaction provided was found
+      --    to be invalid, along with its accompanying validation errors. This
+      --    transactions is not in the Mempool.
       --
-      -- 2. A list containing the transactions that have not yet been added, as
-      --    the capacity of the Mempool has been reached. I.e., there is no
-      --    space in the Mempool to add the first transaction in this list. Note
-      --    that we won't try to add smaller transactions after that first
-      --    transaction because they might depend on the first transaction.
+      -- Note that this is a blocking action. It will block until the
+      -- transaction fits into the mempool. This includes transactions that
+      -- turn out to be invalid: the action waits for there to be space for
+      -- the transaction before it gets validated.
+      --
+      -- Note that it is safe to use this from multiple threads concurrently.
       --
       -- POSTCONDITION:
       -- > let prj = \case
       -- >       MempoolTxAdded vtx        -> txForgetValidated vtx
       -- >       MempoolTxRejected tx _err -> tx
-      -- > (processed, toProcess) <- tryAddTxs wti txs
-      -- > map prj processed ++ toProcess == txs
+      -- > processed <- addTx wti txs
+      -- > prj processed == tx
       --
       -- Note that previously valid transaction that are now invalid with
       -- respect to the current ledger state are dropped from the mempool, but
@@ -149,11 +134,13 @@ data Mempool m blk = Mempool {
       -- an index of transaction hashes that have been included on the
       -- blockchain.
       --
-      tryAddTxs      :: WhetherToIntervene
-                     -> [GenTx blk]
-                     -> m ( [MempoolAddTxResult blk]
-                          , [GenTx blk]
-                          )
+      -- As long as we keep the mempool entirely in-memory this could live in
+      -- @STM m@; we keep it in @m@ instead to leave open the possibility of
+      -- persistence.
+      --
+      addTx      :: WhetherToIntervene
+                 -> GenTx blk
+                 -> m (MempoolAddTxResult blk)
 
       -- | Manually remove the given transactions from the mempool.
     , removeTxs      :: [GenTxId blk] -> m ()
@@ -232,63 +219,35 @@ isMempoolTxRejected :: MempoolAddTxResult blk -> Bool
 isMempoolTxRejected MempoolTxRejected{} = True
 isMempoolTxRejected _                   = False
 
--- | Wrapper around 'implTryAddTxs' that blocks until all transaction have
--- either been added to the Mempool or rejected.
+-- | A wrapper around 'addTx' that adds a sequence of transactions on behalf of
+-- a remote peer.
 --
--- This function does not sync the Mempool contents with the ledger state in
--- case the latter changes, it relies on the background thread to do that.
+-- Note that transactions are added one by one, and can interleave with other
+-- concurrent threads using 'addTx'.
 --
--- See the necessary invariants on the Haddock for 'tryAddTxs'.
+--
+-- See 'addTx' for further details.
 addTxs
   :: forall m blk. MonadSTM m
   => Mempool m blk
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
-addTxs mempool = addTxsHelper mempool DoNotIntervene
+addTxs mempool = mapM (addTx mempool DoNotIntervene)
 
--- | Variation on 'addTxs' that is more forgiving when possible
+-- | A wrapper around 'addTx' that adds a sequence of transactions on behalf of
+-- a local client. This reports more errors for local clients, see 'Intervene'.
 --
--- See 'Intervene'.
+-- Note that transactions are added one by one, and can interleave with other
+-- concurrent threads using 'addTx'.
+--
+-- See 'addTx' for further details.
 addLocalTxs
   :: forall m blk. MonadSTM m
   => Mempool m blk
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
-addLocalTxs mempool = addTxsHelper mempool Intervene
+addLocalTxs mempool = mapM (addTx mempool Intervene)
 
--- | See 'addTxs'
-addTxsHelper
-  :: forall m blk. MonadSTM m
-  => Mempool m blk
-  -> WhetherToIntervene
-  -> [GenTx blk]
-  -> m [MempoolAddTxResult blk]
-addTxsHelper mempool wti = \txs -> do
-    (processed, toAdd) <- tryAddTxs mempool wti txs
-    case toAdd of
-      [] -> return processed
-      _  -> go [processed] toAdd
-  where
-    go
-      :: [[MempoolAddTxResult blk]]
-         -- ^ The outer list is in reverse order, but all the inner lists will
-         -- be in the right order.
-      -> [GenTx blk]
-      -> m [MempoolAddTxResult blk]
-    go acc []         = return (concat (reverse acc))
-    go acc txs@(tx:_) = do
-      let firstTxSize = getTxSize mempool tx
-      -- Wait until there's at least room for the first transaction we're
-      -- trying to add, otherwise there's no point in trying to add it.
-      atomically $ do
-        curSize <- msNumBytes . snapshotMempoolSize <$> getSnapshot mempool
-        Cap.MempoolCapacityBytes capacity <- getCapacity mempool
-        check (curSize + firstTxSize <= capacity)
-      -- It is possible that between the check above and the call below, other
-      -- transactions are added, stealing our spot, but that's fine, we'll
-      -- just recurse again without progress.
-      (added, toAdd) <- tryAddTxs mempool wti txs
-      go (added:acc) toAdd
 
 {-------------------------------------------------------------------------------
   Ledger state considered for forging
