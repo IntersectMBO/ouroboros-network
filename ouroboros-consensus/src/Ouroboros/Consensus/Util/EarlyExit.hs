@@ -30,6 +30,7 @@ import           NoThunks.Class (NoThunks (..))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadMVar
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Internal
 import           Control.Monad.Class.MonadThrow
@@ -146,6 +147,21 @@ instance MonadSTM m => MonadSTM (WithEarlyExit m) where
 
   newTMVarIO      = lift . newTMVarIO
   newEmptyTMVarIO = lift   newEmptyTMVarIO
+
+instance (MonadMVar m, MonadMask m, MonadEvaluate m)
+      => MonadMVar (WithEarlyExit m) where
+  type MVar (WithEarlyExit m) = MVar m
+
+  newEmptyMVar          = lift    newEmptyMVar
+  takeMVar              = lift .  takeMVar
+  putMVar               = lift .: putMVar
+  tryTakeMVar           = lift .  tryTakeMVar
+  tryPutMVar            = lift .: tryPutMVar
+  isEmptyMVar           = lift .  isEmptyMVar
+
+  newMVar               = lift .  newMVar
+  readMVar              = lift .  readMVar
+  swapMVar              = lift .: swapMVar
 
 instance MonadCatch m => MonadThrow (WithEarlyExit m) where
   throwIO = lift . throwIO

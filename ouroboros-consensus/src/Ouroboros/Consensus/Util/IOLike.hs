@@ -49,6 +49,7 @@ import qualified Cardano.Crypto.KES as KES
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
+import           Control.Monad.Class.MonadMVar
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime hiding (MonadTime (..))
@@ -64,6 +65,7 @@ import           Data.Functor (void)
 -------------------------------------------------------------------------------}
 
 class ( MonadAsync              m
+      , MonadMVar               m
       , MonadEventlog           m
       , MonadFork               m
       , MonadST                 m
