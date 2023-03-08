@@ -17,6 +17,20 @@ process](./docs/ReleaseProcess.md).
 
 # Changelog entries
 
+<a id='changelog-0.3.1.0'></a>
+## 0.3.1.0 — 2023-03-07
+
+### Non-Breaking
+
+- Add `mkCapacityBytesOverride`, a convenience function to create an override
+  for the mempool capacity using the provided number bytes.
+
+- Fix version bounds for the bundle.
+
+- Deprecate the `Test.Util.Classify` module from `ouroboros-consensus-test` in
+  favour of the `Test.StateMachine.Labelling` module from
+  `quickcheck-state-machine`.
+
 <a id='changelog-0.3.0.0'></a>
 ## 0.3.0.0 — 2023-02-27
 

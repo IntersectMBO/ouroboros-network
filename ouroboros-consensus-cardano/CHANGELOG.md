@@ -18,6 +18,21 @@ process](../ouroboros-consensus/docs/ReleaseProcess.md).
 
 # Changelog entries
 
+<a id='changelog-0.4.0.0'></a>
+## 0.4.0.0 — 2023-03-07
+
+### Non-Breaking
+
+- Fix the version bounds for the bundle and version sets the bounds for the
+  `ouroboros-consensus` bundle to `^>=0.3`.
+
+### Breaking
+
+- Return stake snapshots for stake pools that have the `Set` or `Go` ledger
+  snapshots. When querying `GetStakeSnapshots Nothing`, which means to query for
+  all stake pools, previously only stake snapshots for stake pools that have the
+  `Mark` ledger snapshot were returned.
+
 <a id='changelog-0.3.0.0'></a>
 ## 0.3.0.0 — 2023-02-09
 

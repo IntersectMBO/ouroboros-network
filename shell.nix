@@ -16,8 +16,19 @@ let
     name = "cabal-dev-shell";
 
     # These programs will be available inside the nix-shell.
-    nativeBuildInputs =
-      [ cabal entr fd niv pkgconfig nixfmt stylish-haskell scriv ];
+    nativeBuildInputs = [
+      cabal
+      entr
+      fd
+      niv
+      pkgconfig
+      nixfmt
+      stylish-haskell
+
+      # release management
+      scriv
+      (pkgs.python3.withPackages (p: [ p.beautifulsoup4 p.html5lib ]))
+    ];
 
     tools = {
       # IDE tools

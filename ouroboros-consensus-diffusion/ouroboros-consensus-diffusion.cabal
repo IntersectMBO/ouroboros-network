@@ -1,7 +1,7 @@
 cabal-version:       3.0
 
 name:                   ouroboros-consensus-diffusion
-version:                0.3.0.0
+version:                0.3.1.0
 synopsis:               Integration for the Ouroboros blockchain protocol
 description:            Top level integration for consensus & network layers of the Ouroboros blockchain protocol.
 license:                Apache-2.0
@@ -94,7 +94,7 @@ library
                      , ouroboros-network-protocols ^>=0.3
                      , ouroboros-network ^>=0.4.0.1
 
-                     , ouroboros-consensus ==0.3.0.0
+                     , ouroboros-consensus ==0.3.1.0
 
   ghc-options:         -Wall
                        -Wcompat

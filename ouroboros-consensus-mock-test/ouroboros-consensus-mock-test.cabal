@@ -1,7 +1,7 @@
 cabal-version: 3.0
 
 name:                   ouroboros-consensus-mock-test
-version:                0.3.0.0
+version:                0.3.1.0
 synopsis:               Tests of the mock ledger integration in the Ouroboros consensus layer
 description:            Tests of the mock ledger integration in the Ouroboros consensus layer.
 license:                Apache-2.0
@@ -35,9 +35,9 @@ library
                      , serialise         >=0.2   && <0.3
                      , QuickCheck
 
-                     , ouroboros-consensus      ==0.3.0.0
-                     , ouroboros-consensus-mock ==0.3.0.0
-                     , ouroboros-consensus-test ==0.3.0.0
+                     , ouroboros-consensus      ==0.3.1.0
+                     , ouroboros-consensus-mock ==0.3.1.0
+                     , ouroboros-consensus-test ==0.3.1.0
 
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -75,10 +75,10 @@ test-suite test
 
                      , ouroboros-network-mock
 
-                     , ouroboros-consensus           ==0.3.0.0
-                     , ouroboros-consensus-mock      ==0.3.0.0
+                     , ouroboros-consensus           ==0.3.1.0
+                     , ouroboros-consensus-mock      ==0.3.1.0
                      , ouroboros-consensus-mock-test
-                     , ouroboros-consensus-test      ==0.3.0.0
+                     , ouroboros-consensus-test      ==0.3.1.0
 
   default-language:    Haskell2010
   ghc-options:         -Wall
