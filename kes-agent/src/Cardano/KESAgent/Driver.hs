@@ -10,7 +10,7 @@
 module Cardano.KESAgent.Driver
 where
 
-import Foreign (Ptr, plusPtr)
+import Foreign (Ptr, plusPtr, castPtr)
 import Foreign.C.Types (CSize, CChar)
 import Foreign.Marshal.Alloc (mallocBytes, free)
 import Foreign.Marshal.Utils (copyBytes)
@@ -28,6 +28,7 @@ import Control.Tracer (Tracer, traceWith)
 import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
+import Ouroboros.Network.RawBearer
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.DirectSerialise
@@ -42,7 +43,6 @@ import Cardano.Binary
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.RefCounting
-import Cardano.KESAgent.DirectBearer
 
 -- | Logging messages that the Driver may send
 data DriverTrace
@@ -69,7 +69,7 @@ driver :: forall c m f t p
        => MonadUnmanagedMemory m
        => MonadByteStringMemory m
        => MonadST m
-       => DirectBearer m
+       => RawBearer m
        -> Tracer m DriverTrace
        -> Driver (KESProtocol m c) () m
 driver s tracer = Driver
@@ -82,7 +82,7 @@ driver s tracer = Driver
         traceWith tracer DriverSendingKey
         withCRefValue skpRef $ \(SignKeyWithPeriodKES sk t) -> do
           directSerialise (\buf bufSize -> do
-                n <- send s buf bufSize
+                n <- send s (castPtr buf) (fromIntegral bufSize)
                 when (fromIntegral n /= bufSize) (error "AAAAA")
               ) sk
           let serializedOC = serialize' oc
@@ -135,7 +135,7 @@ driver s tracer = Driver
   }
 
 receiveBS :: (MonadST m, MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
-          => DirectBearer m
+          => RawBearer m
           -> Int
           -> m BS.ByteString
 receiveBS s size =
@@ -146,17 +146,17 @@ receiveBS s size =
       n -> packByteStringCStringLen (buf, fromIntegral n)
 
 sendBS :: (MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
-       => DirectBearer m
+       => RawBearer m
        -> BS.ByteString
        -> m Int
 sendBS s bs =
   allocaBytes (BS.length bs) $ \buf -> do
     useByteStringAsCStringLen bs $ \(bsbuf, size) -> do
       copyMem buf bsbuf (fromIntegral size)
-    fromIntegral <$> send s buf (fromIntegral $ BS.length bs)
+    fromIntegral <$> send s (castPtr buf) (fromIntegral $ BS.length bs)
 
 receiveWord32 :: (MonadThrow m, MonadST m, MonadUnmanagedMemory m, MonadByteStringMemory m)
-              => DirectBearer m
+              => RawBearer m
               -> m (Maybe Word32)
 receiveWord32 s =
   receiveBS s 4 >>= \case
@@ -164,15 +164,15 @@ receiveWord32 s =
     xs -> (return . Just . fromIntegral) (decode @Word32 $ LBS.fromStrict xs)
 
 sendWord32 :: (MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
-           => DirectBearer m
+           => RawBearer m
            -> Word32
            -> m ()
 sendWord32 s val =
   void $ sendBS s (LBS.toStrict $ encode val)
 
-unsafeReceiveN :: Monad m => DirectBearer m -> Ptr CChar -> CSize -> m CSize
+unsafeReceiveN :: Monad m => RawBearer m -> Ptr CChar -> CSize -> m CSize
 unsafeReceiveN s buf bufSize = do
-  n <- recv s buf bufSize
+  n <- recv s (castPtr buf) (fromIntegral bufSize)
   if fromIntegral n == bufSize then
     return bufSize
   else if n == 0 then

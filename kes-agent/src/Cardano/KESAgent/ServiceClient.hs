@@ -11,12 +11,12 @@ import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.OCert (Crypto (..), OCert (..))
 import Cardano.KESAgent.RetrySocket (retrySocket)
 import Cardano.KESAgent.RefCounting (CRef)
-import Cardano.KESAgent.DirectBearer (toDirectBearer)
 import Cardano.KESAgent.Classes (MonadKES, MonadNetworking)
 
 import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..))
 
 import Ouroboros.Network.Snocket (Snocket (..))
+import Ouroboros.Network.RawBearer
 
 import Network.TypedProtocol.Driver (runPeerWithDriver)
 import Control.Tracer (Tracer, traceWith)
@@ -62,8 +62,9 @@ runServiceClient proxy options handleKey tracer = do
       retrySocket (\(e :: SomeException) n i -> traceWith tracer $ ServiceClientAttemptReconnect n i (show e)) $
         connect s fd (serviceClientAddress options)
       traceWith tracer ServiceClientConnected
+      bearer <- toRawBearer fd
       void $ runPeerWithDriver
-        (driver (toDirectBearer fd) $ ServiceClientDriverTrace >$< tracer)
+        (driver bearer $ ServiceClientDriverTrace >$< tracer)
         (kesReceiver $ \k o -> handleKey k o <* traceWith tracer ServiceClientReceivedKey)
         ()
     )

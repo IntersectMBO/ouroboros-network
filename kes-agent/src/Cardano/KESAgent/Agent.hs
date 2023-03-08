@@ -20,7 +20,6 @@ import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.OCert (KESPeriod (..), KES, OCert (..))
 import Cardano.KESAgent.RefCounting (CRef, withCRefValue, newCRef, acquireCRef, releaseCRef)
 import Cardano.KESAgent.Evolution (getCurrentKESPeriodWith, updateKESTo)
-import Cardano.KESAgent.DirectBearer (toDirectBearer)
 import Cardano.KESAgent.Classes (MonadKES, MonadNetworking)
 
 import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..), forgetSignKeyKES)
@@ -35,6 +34,7 @@ import Data.Time (NominalDiffTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (fromJust)
 import Ouroboros.Network.Snocket (Snocket (..), Accept (..), Accepted (..))
+import Ouroboros.Network.RawBearer
 
 import Control.Monad.Class.MonadTime (MonadTime (..))
 import Control.Monad.Class.MonadMVar (MVar, newEmptyMVar, newMVar, withMVar, tryTakeMVar, putMVar, readMVar)
@@ -242,8 +242,9 @@ runAgent proxy options tracer = do
                       throwIO e
                     (Accepted fd' addr', next) -> do
                       traceWith tracer AgentServiceClientConnected
+                      bearer <- toRawBearer fd'
                       void $ runPeerWithDriver
-                        (driver (toDirectBearer fd') $ AgentServiceDriverTrace >$< tracer)
+                        (driver bearer $ AgentServiceDriverTrace >$< tracer)
                         (kesPusher currentKey (Just <$> nextKey))
                         ()
                       close s fd'
@@ -275,8 +276,9 @@ runAgent proxy options tracer = do
                       throwIO e
                     (Accepted fd' addr', next) -> do
                       traceWith tracer AgentControlClientConnected
+                      bearer <- toRawBearer fd'
                       void $ runPeerWithDriver
-                        (driver (toDirectBearer fd') $ AgentControlDriverTrace >$< tracer)
+                        (driver bearer $ AgentControlDriverTrace >$< tracer)
                         (kesReceiver pushKey)
                         ()
                       close s fd'

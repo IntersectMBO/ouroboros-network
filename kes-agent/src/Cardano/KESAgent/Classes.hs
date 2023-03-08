@@ -26,6 +26,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime (MonadTime (..))
 import Control.Monad.Class.MonadTimer
 import Data.Typeable (Typeable)
+import Ouroboros.Network.RawBearer
 
 -- | Shorthand to group typeclasses relating to (cryptographic) memory
 -- management, including direct access to mlocked and bytestring memory, MVars,
@@ -86,9 +87,9 @@ deriving anyclass instance
 
 
 -- | Shorthand to group typeclasses relating to networking.
-class ( ToDirectBearer m fd
+class ( ToRawBearer m fd
       ) => MonadNetworking m fd
 
 deriving anyclass instance
-      ( ToDirectBearer m fd
+      ( ToRawBearer m fd
       ) => MonadNetworking m fd

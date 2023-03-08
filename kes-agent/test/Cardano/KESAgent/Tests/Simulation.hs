@@ -22,28 +22,7 @@ module Cardano.KESAgent.Tests.Simulation
 )
 where
 
-import Cardano.Crypto.DirectSerialise
-import qualified Cardano.Crypto.DSIGN.Class as DSIGN
-import Cardano.Crypto.DSIGN.Class
-import Cardano.Crypto.DSIGN.Ed25519ML
-import Cardano.Crypto.DSIGNM.Class
-import Cardano.Crypto.Hash.Blake2b
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.KES.Single
-import Cardano.Crypto.KES.Sum
-import Cardano.Crypto.Libsodium
-import Cardano.Crypto.MonadMLock
-import Cardano.Crypto.MLockedSeed
-import Cardano.Crypto.PinnedSizedBytes
-import Cardano.Crypto.Seed
-import Cardano.Binary (FromCBOR)
--- import Test.Crypto.Util
-import Test.Crypto.Instances
-import Ouroboros.Network.Snocket
-import Debug.Trace
-
-import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay, DiffTime)
-import Control.Monad.Class.MonadTime
+import Control.Monad (forever, void, forM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadMVar
   ( MonadMVar
@@ -59,41 +38,63 @@ import Control.Monad.Class.MonadMVar
   )
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadThrow, MonadCatch, bracket, catch, SomeException)
-import Control.Monad (forever, void, forM)
+import Control.Monad.Class.MonadTime
+import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay, DiffTime)
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Proxy
+import qualified Data.Text as Text
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
+import Data.Time (NominalDiffTime, picosecondsToDiffTime)
+import Data.Time.Clock.POSIX (getPOSIXTime, utcTimeToPOSIXSeconds)
+import Data.Typeable
+import Data.Word
+import Debug.Trace
+import Foreign.Ptr (castPtr)
+import GHC.Stack (HasCallStack)
 import GHC.TypeLits (KnownNat, natVal, type (*))
 import GHC.Types (Type)
-import GHC.Stack (HasCallStack)
-import System.Socket.Family.Unix
+import Network.Socket
 import System.IO
 import System.IO.Unsafe
+import System.IOManager
+import System.Socket.Family.Unix
+import Test.Crypto.Instances
 import Test.QuickCheck (Arbitrary (..), vectorOf)
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf (printf)
-import Data.Word
-import Data.Typeable
-import Data.Time (NominalDiffTime, picosecondsToDiffTime)
-import Data.Time.Clock.POSIX (getPOSIXTime, utcTimeToPOSIXSeconds)
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
-import qualified Data.Text as Text
-import Network.Socket
-import Foreign.Ptr (castPtr)
-import System.IOManager
+-- import Test.Crypto.Util
+
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.RawBearer
+
+import Cardano.Binary (FromCBOR)
+import Cardano.Crypto.DSIGN.Class
+import qualified Cardano.Crypto.DSIGN.Class as DSIGN
+import Cardano.Crypto.DSIGN.Ed25519ML
+import Cardano.Crypto.DSIGNM.Class
+import Cardano.Crypto.DirectSerialise
+import Cardano.Crypto.Hash.Blake2b
+import Cardano.Crypto.KES.Class
+import Cardano.Crypto.KES.Single
+import Cardano.Crypto.KES.Sum
+import Cardano.Crypto.Libsodium
+import Cardano.Crypto.MLockedSeed
+import Cardano.Crypto.MonadMLock
+import Cardano.Crypto.PinnedSizedBytes
+import Cardano.Crypto.Seed
 
 import Cardano.KESAgent.Agent
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.ServiceClient
+import Cardano.KESAgent.Classes
 import Cardano.KESAgent.ControlClient
 import Cardano.KESAgent.Driver (DriverTrace (..))
 import Cardano.KESAgent.Evolution
+import Cardano.KESAgent.OCert
+import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.RefCounting
-import Cardano.KESAgent.DirectBearer
-import Cardano.KESAgent.Classes
+import Cardano.KESAgent.ServiceClient
 
 tests :: Lock IO
       -> (forall a. (Show a, TracePretty a) => Tracer IO a)
@@ -114,15 +115,6 @@ traceShowTee prefix a = do
   result <- a
   traceShowM result
   return result
-
-instance ToDirectBearer IO Socket where
-  toDirectBearer socket =
-    DirectBearer
-      { send = \buf bufsize ->
-          fromIntegral <$> sendBuf socket (castPtr buf) (fromIntegral bufsize)
-      , recv = \buf bufsize ->
-          fromIntegral <$> recvBuf socket (castPtr buf) (fromIntegral bufsize)
-      }
 
 data Lock (m :: Type -> Type) =
   Lock
@@ -161,7 +153,7 @@ testCrypto :: forall c n
 testCrypto proxyC lock tracer ioManager =
   testGroup name
     [ testGroup "IO"
-      [ testProperty "one key through chain" (testOneKeyThroughChain proxyC (Proxy @IO) lock ioSnocket ioMkAddr)
+      [ testProperty "one key through chain" (testOneKeyThroughChainIO proxyC lock ioManager)
       , testProperty "concurrent pushes" (testConcurrentPushes proxyC (Proxy @IO) (Proxy @n) lock ioSnocket ioMkAddr)
       ]
     ]
@@ -339,6 +331,53 @@ runTestNetwork p tracer snocket controlAddress serviceAddress genesisTimestamp n
         Right (Right prop) -> return prop
 
 
+testOneKeyThroughChainIO :: forall c
+                          . MonadKES IO c
+                       => ContextDSIGN (DSIGN c) ~ ()
+                       => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                       => Show (SignKeyWithPeriodKES (KES c))
+                       => UnsoundKESSignAlgorithm IO (KES c)
+                       => Proxy c
+                       -> Lock IO
+                       -> IOManager
+                       -> Word32
+                       -> Word32
+                       -> PinnedSizedBytes (SeedSizeKES (KES c))
+                       -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+                       -> Integer
+                       -> Word64
+                       -> Word
+                       -> Word
+                       -> Property
+testOneKeyThroughChainIO p
+    lock
+    ioManager
+    controlAddressSeed
+    serviceAddressSeed
+    seedKESPSB
+    seedDSIGNPSB
+    genesisTimestamp
+    certN
+    nodeDelay
+    controlDelay =
+  controlAddressSeed /= serviceAddressSeed ==>
+  ioProperty . withLock lock $
+    testOneKeyThroughChain
+      p
+      ioSnocket
+      ioMkAddr
+      controlAddressSeed
+      serviceAddressSeed
+      seedKESPSB
+      seedDSIGNPSB
+    genesisTimestamp
+    certN
+    nodeDelay
+    controlDelay
+  where
+    ioSnocket = socketSnocket ioManager
+    ioMkAddr i = SockAddrUnix $ "./local" ++ show i
+
 testOneKeyThroughChain :: forall c m fd addr
                         . MonadKES m c
                        => MonadNetworking m fd
@@ -349,8 +388,6 @@ testOneKeyThroughChain :: forall c m fd addr
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESSignAlgorithm m (KES c)
                        => Proxy c
-                       -> Proxy m
-                       -> Lock m
                        -> Snocket m fd addr
                        -> (Word32 -> addr)
                        -> Word32
@@ -361,9 +398,8 @@ testOneKeyThroughChain :: forall c m fd addr
                        -> Word64
                        -> Word
                        -> Word
-                       -> Property
-testOneKeyThroughChain p _proxyM
-    lock
+                       -> m Property
+testOneKeyThroughChain p
     snocket
     mkAddress
     controlAddressSeed
@@ -374,8 +410,7 @@ testOneKeyThroughChain p _proxyM
     certN
     nodeDelay
     controlDelay =
-  controlAddressSeed /= serviceAddressSeed ==>
-  mProperty . withLock lock . withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
+  withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
     traceMVar <- newMVar []
     let controlAddress = mkAddress controlAddressSeed
     let serviceAddress = mkAddress serviceAddressSeed

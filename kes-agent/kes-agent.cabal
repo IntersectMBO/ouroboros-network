@@ -80,6 +80,12 @@ test-suite kes-agent-tests
                  , cardano-crypto-class
                  , cardano-crypto-tests
                  , contra-tracer
+                 , ghc-prim
+                 , io-classes
+                 , io-sim
+                 , network
+                 , ouroboros-network-framework
+                 , ouroboros-network-testing
                  , QuickCheck
                  , socket-unix >=0.2.0.0
                  , tasty
@@ -87,8 +93,4 @@ test-suite kes-agent-tests
                  , tasty-quickcheck
                  , text >=1.2.5
                  , time >=1.10
-                 , ouroboros-network-framework
-                 , io-classes
-                 , ghc-prim
                  , Win32-network
-                 , network
