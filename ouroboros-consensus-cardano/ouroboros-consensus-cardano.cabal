@@ -47,6 +47,7 @@ library
                      , cardano-data
                      , cardano-ledger-byron
                      , cardano-ledger-core
+                     , cardano-ledger-mary
                      , cardano-ledger-shelley
                      , cardano-prelude
                      , cardano-protocol-tpraos
