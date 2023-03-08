@@ -96,7 +96,7 @@ mkMempool
      )
   => MempoolEnv m blk -> Mempool m blk TicketNo
 mkMempool mpEnv = Mempool
-    { tryAddTxs      = implTryAddTxs istate cfg txSize trcr
+    { addTx          = implAddTx istate cfg txSize trcr
     , removeTxs      = \txs -> do
         mTrace <- atomically $ do
           is <- readTVar istate
