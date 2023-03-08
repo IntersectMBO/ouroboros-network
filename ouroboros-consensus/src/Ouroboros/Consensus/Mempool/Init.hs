@@ -107,7 +107,7 @@ mkMempool
      )
   => MempoolEnv m blk -> Mempool m blk
 mkMempool mpEnv = Mempool
-    { addTx          = implAddTx istate cfg txSize trcr
+    { addTx          = implAddTx istate remoteFifo allFifo cfg txSize trcr
     , removeTxs      = implRemoveTxs mpEnv
     , syncWithLedger = implSyncWithLedger mpEnv
     , getSnapshot    = snapshotFromIS <$> readTVar istate
@@ -116,6 +116,8 @@ mkMempool mpEnv = Mempool
     , getTxSize      = txSize
     }
    where MempoolEnv { mpEnvStateVar = istate
+                    , mpEnvAddTxsRemoteFifo = remoteFifo
+                    , mpEnvAddTxsAllFifo    = allFifo
                     , mpEnvLedgerCfg = cfg
                     , mpEnvTxSize = txSize
                     , mpEnvTracer = trcr

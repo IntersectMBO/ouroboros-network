@@ -16,6 +16,7 @@ module Ouroboros.Consensus.Mempool.API (
     Mempool (..)
     -- * Transaction adding
   , MempoolAddTxResult (..)
+  , AddTxOnBehalfOf(..)
   , addLocalTxs
   , addTxs
   , isMempoolTxAdded
@@ -138,7 +139,7 @@ data Mempool m blk = Mempool {
       -- @STM m@; we keep it in @m@ instead to leave open the possibility of
       -- persistence.
       --
-      addTx      :: WhetherToIntervene
+      addTx      :: AddTxOnBehalfOf
                  -> GenTx blk
                  -> m (MempoolAddTxResult blk)
 
@@ -225,14 +226,13 @@ isMempoolTxRejected _                   = False
 -- Note that transactions are added one by one, and can interleave with other
 -- concurrent threads using 'addTx'.
 --
---
 -- See 'addTx' for further details.
 addTxs
   :: forall m blk. MonadSTM m
   => Mempool m blk
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
-addTxs mempool = mapM (addTx mempool DoNotIntervene)
+addTxs mempool = mapM (addTx mempool AddTxForRemotePeer)
 
 -- | A wrapper around 'addTx' that adds a sequence of transactions on behalf of
 -- a local client. This reports more errors for local clients, see 'Intervene'.
@@ -246,7 +246,16 @@ addLocalTxs
   => Mempool m blk
   -> [GenTx blk]
   -> m [MempoolAddTxResult blk]
-addLocalTxs mempool = mapM (addTx mempool Intervene)
+addLocalTxs mempool = mapM (addTx mempool AddTxForLocalClient)
+
+-- | Who are we adding a tx on behalf of, a remote peer or a local client?
+--
+-- This affects two things:
+--
+-- 1. how certain errors are treated: we want to be helpful to local clients.
+-- 2. priority of service: local clients are prioritised over remote peers.
+--
+data AddTxOnBehalfOf = AddTxForRemotePeer | AddTxForLocalClient
 
 
 {-------------------------------------------------------------------------------

@@ -38,6 +38,7 @@ module Ouroboros.Consensus.Mempool.Impl.Common (
   ) where
 
 import           Control.Exception (assert)
+import           Control.Monad.Class.MonadMVar (MVar, newEmptyMVar)
 import           Control.Monad.Trans.Except (runExcept)
 import           Control.Tracer
 import           Data.Maybe (isNothing)
@@ -59,7 +60,7 @@ import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Util (repeatedly)
-import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.IOLike hiding (newEmptyMVar)
 {-------------------------------------------------------------------------------
   Internal State
 -------------------------------------------------------------------------------}
@@ -182,6 +183,8 @@ data MempoolEnv m blk = MempoolEnv {
       mpEnvLedger           :: LedgerInterface m blk
     , mpEnvLedgerCfg        :: LedgerConfig blk
     , mpEnvStateVar         :: StrictTVar m (InternalState blk)
+    , mpEnvAddTxsRemoteFifo :: MVar m ()
+    , mpEnvAddTxsAllFifo    :: MVar m ()
     , mpEnvTracer           :: Tracer m (TraceEventMempool blk)
     , mpEnvTxSize           :: GenTx blk -> TxSizeInBytes
     , mpEnvCapacityOverride :: MempoolCapacityBytesOverride
@@ -202,10 +205,14 @@ initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
     let (slot, st') = tickLedgerState cfg (ForgeInUnknownSlot st)
     isVar <- newTVarIO $ initInternalState capacityOverride TxSeq.zeroTicketNo slot st'
+    addTxRemoteFifo <- newEmptyMVar
+    addTxAllFifo    <- newEmptyMVar
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg
       , mpEnvStateVar         = isVar
+      , mpEnvAddTxsRemoteFifo = addTxRemoteFifo
+      , mpEnvAddTxsAllFifo    = addTxAllFifo
       , mpEnvTracer           = tracer
       , mpEnvTxSize           = txSize
       , mpEnvCapacityOverride = capacityOverride
