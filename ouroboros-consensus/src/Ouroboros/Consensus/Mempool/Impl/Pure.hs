@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Mempool.Impl.Pure (
   ) where
 
 import           Control.Exception (assert)
+import           Control.Monad.Class.MonadMVar (MVar, MonadMVar, withMVar)
 import           Control.Tracer
 import           Data.Maybe (isJust, isNothing)
 import qualified Data.Set as Set
@@ -47,11 +48,14 @@ import           Ouroboros.Consensus.Util.IOLike
 --
 implAddTx ::
      ( MonadSTM m
+     , MonadMVar m
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      )
   => StrictTVar m (InternalState blk)
      -- ^ The InternalState TVar.
+  -> MVar m () -- ^ The FIFO for remote peers
+  -> MVar m () -- ^ The FIFO for all remote peers and local clients
   -> LedgerConfig blk
      -- ^ The configuration of the ledger.
   -> (GenTx blk -> TxSizeInBytes)
@@ -59,21 +63,59 @@ implAddTx ::
      -- transaction.
   -> Tracer m (TraceEventMempool blk)
      -- ^ The tracer.
-  -> WhetherToIntervene
+  -> AddTxOnBehalfOf
   -> GenTx blk
      -- ^ The transaction to add to the mempool.
   -> m (MempoolAddTxResult blk)
-implAddTx istate cfg txSize trcr wti tx = do
-    (result, ev) <- atomically $ do
-      outcome <- implTryAddTx istate cfg txSize wti tx
-      case outcome of
-        TryAddTx _ result ev -> do return (result, ev)
+implAddTx istate remoteFifo allFifo cfg txSize trcr onbehalf tx =
+    -- To ensure fair behaviour between threads that are trying to add
+    -- transactions, we make them all queue in a fifo. Only the one at the head
+    -- of the queue gets to actually wait for space to get freed up in the
+    -- mempool. This avoids small transactions repeatedly squeezing in ahead of
+    -- larger transactions.
+    --
+    -- The fifo behaviour is implemented using a simple MVar. And take this
+    -- MVar lock on a transaction by transaction basis. So if several threads
+    -- are each trying to add several transactions, then they'll interleave at
+    -- transaction granularity, not batches of transactions.
+    --
+    -- To add back in a bit of deliberate unfairness, we want to prioritise
+    -- transactions being added on behalf of local clients, over ones being
+    -- added on behalf of remote peers. We do this by using a pair of mvar
+    -- fifos: remote peers must wait on both mvars, while local clients only
+    -- need to wait on the second.
+    case onbehalf of
+      AddTxForRemotePeer ->
+        withMVar remoteFifo $ \() ->
+        withMVar allFifo $ \() ->
+          -- This action can also block. Holding the MVars means
+          -- there is only a single such thread blocking at once.
+          implAddTx'
 
-        -- or block until space is available to fit the next transaction
-        NoSpaceLeft          -> retry
+      AddTxForLocalClient ->
+        withMVar allFifo $ \() ->
+          -- As above but skip the first MVar fifo so we will get
+          -- service sooner if there's lots of other remote
+          -- threads waiting.
+          implAddTx'
+  where
+    implAddTx' = do
+      (result, ev) <- atomically $ do
+        outcome <- implTryAddTx istate cfg txSize
+                                (whetherToIntervene onbehalf)
+                                tx
+        case outcome of
+          TryAddTx _ result ev -> do return (result, ev)
 
-    traceWith trcr ev
-    return result
+          -- or block until space is available to fit the next transaction
+          NoSpaceLeft          -> retry
+
+      traceWith trcr ev
+      return result
+
+    whetherToIntervene :: AddTxOnBehalfOf -> WhetherToIntervene
+    whetherToIntervene AddTxForRemotePeer  = DoNotIntervene
+    whetherToIntervene AddTxForLocalClient = Intervene
 
 -- | Result of trying to add a transaction to the mempool.
 data TryAddTx blk =
