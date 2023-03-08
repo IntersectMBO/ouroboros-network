@@ -34,6 +34,7 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
 import           Ouroboros.Consensus.Util.ResourceRegistry (closeRegistry,
                      unsafeNewRegistry)
+import           Test.Tasty.ExpectedFailure (expectFailBecause)
 import           Test.Util.ChainDB (MinimalChainDbArgs (..), emptyNodeDBs,
                      fromMinimalChainDbArgs, nodeDBsVol)
 
@@ -53,7 +54,8 @@ tests = testGroup "Unit tests"
     ]
   , testGroup "ouroboros-network-4183"
     [ testCase "model" $ runModelIO ouroboros_network_4183
-    , testCase "system" $ runSystemIO ouroboros_network_4183
+    , expectFailBecause "Issue 4183 is still not fixed"
+      $ testCase "system" $ runSystemIO ouroboros_network_4183
     ]
   ]
 
@@ -84,9 +86,7 @@ ouroboros_network_4183 =
     void $ addBlock $ mkNextBlock b3 3 $ fork 1
     followerInstruction f >>= \case
       Right (Just (RollBack _actual))
-        -> pure ()
-           -- TODO: Uncomment when issue 4183 is fixed
-           -- assertEqual (blockPoint b1) _actual "Rollback to wrong point"
+        -> assertEqual (blockPoint b1) _actual "Rollback to wrong point"
       _ -> failWith "Expecting a rollback"
 
 -- | Helper function to run the test against the model and translate to something
@@ -121,13 +121,14 @@ infixl 1 `orFailWith`
 failWith :: (MonadError TestFailure m) => String -> m ()
 failWith msg = throwError (TestFailure msg)
 
--- TODO: Uncomment when issue 4183 is fixed
--- assertEqual :: (MonadError TestFailure m, Eq a, Show a)
---             => a -> a -> String -> m ()
--- assertEqual expected actual description = expected == actual `orFailWith` msg
---   where
---     msg = description <> "\n\t Expected: " <> show expected
---                       <> "\n\t Actual: " <> show actual
+assertEqual :: (MonadError TestFailure m, Eq a, Show a)
+            => a -> a -> String -> m ()
+assertEqual expected actual description = expected == actual `orFailWith` msg
+  where
+    msg = description <> "\n\t Expected: " <> show expected
+                      <> "\n\t Actual: " <> show actual
+
+
 
 
 -- | SupportsUnitTests for the test expression need to instantiate this class.

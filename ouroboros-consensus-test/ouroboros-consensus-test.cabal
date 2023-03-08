@@ -278,6 +278,7 @@ test-suite test-storage
                      , random
                      , serialise
                      , tasty
+                     , tasty-expected-failure
                      , tasty-hunit
                      , tasty-quickcheck
                      , text
