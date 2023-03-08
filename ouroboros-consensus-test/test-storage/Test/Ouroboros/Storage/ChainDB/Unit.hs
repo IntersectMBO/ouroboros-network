@@ -48,22 +48,25 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks as ImmutableDB
 tests :: TestTree
 tests = testGroup "Unit tests"
   [ testGroup "First follower instruction isJust on empty ChainDB"
-    [ testCase "model" $ runModel' getFollowerInstruction
-    , testCase "system" $ runSystem' getFollowerInstruction
+    [ testCase "model" $ runModelIO followerInstructionOnEmptyChain
+    , testCase "system" $ runSystemIO followerInstructionOnEmptyChain
     ]
   , testGroup "ouroboros-network-4183"
-    [ testCase "model" $ runModel' ouroboros_network_4183
-    , testCase "system" $ runSystem' ouroboros_network_4183
+    [ testCase "model" $ runModelIO ouroboros_network_4183
+    , testCase "system" $ runSystemIO ouroboros_network_4183
     ]
   ]
 
 
-getFollowerInstruction :: (SupportsUnitTest m, MonadError TestFailure m) => m ()
-getFollowerInstruction = do
+followerInstructionOnEmptyChain :: (SupportsUnitTest m, MonadError TestFailure m) => m ()
+followerInstructionOnEmptyChain = do
   f <- newFollower
   followerInstruction f >>= \case
     Right instr -> isJust instr `orFailWith` "Expecting a follower instruction"
     Left _      -> failWith $ "ChainDbError"
+
+-- for tests named `ouroboros_network_xyz` the corresponding issue can be found
+-- in https://github.com/input-output-hk/ouroboros-network/issues/xyz
 
 ouroboros_network_4183 :: (Block m ~ TestBlock, SupportsUnitTest m, MonadError TestFailure m)
                        => m ()
@@ -88,19 +91,19 @@ ouroboros_network_4183 =
 
 -- | Helper function to run the test against the model and translate to something
 -- that HUnit likes.
-runModel' :: ModelM TestBlock a -> IO ()
-runModel' expr = toAssertion (runModel newModel topLevelConfig expr)
+runModelIO :: ModelM TestBlock a -> IO ()
+runModelIO expr = toAssertion (runModel newModel topLevelConfig expr)
   where
-    chunkInfo = ImmutableDB.simpleChunkInfo 100
-    newModel = Model.empty testInitExtLedger 0
+    chunkInfo      = ImmutableDB.simpleChunkInfo 100
+    newModel       = Model.empty testInitExtLedger 0
     topLevelConfig = mkTestCfg chunkInfo
 
 -- | Helper function to run the test against the actual chain database and
 -- translate to something that HUnit likes.
-runSystem' :: SystemM TestBlock IO a -> IO ()
-runSystem' expr = runSystem withChainDbEnv expr >>= toAssertion
+runSystemIO :: SystemM TestBlock IO a -> IO ()
+runSystemIO expr = runSystem withChainDbEnv expr >>= toAssertion
   where
-    chunkInfo = ImmutableDB.simpleChunkInfo 100
+    chunkInfo      = ImmutableDB.simpleChunkInfo 100
     topLevelConfig = mkTestCfg chunkInfo
     withChainDbEnv = withTestChainDbEnv topLevelConfig chunkInfo testInitExtLedger
 
@@ -153,7 +156,9 @@ class SupportsUnitTest m where
 
 
 
--- ==== Model =====
+{-------------------------------------------------------------------------------
+  Model
+-------------------------------------------------------------------------------}
 
 -- | Tests against the model run in this monad.
 newtype ModelM blk a = ModelM
@@ -216,7 +221,9 @@ instance (Model.ModelSupportsBlock blk, LedgerSupportsProtocol blk, Eq blk)
     put model'
 
 
--- ==== System ====
+{-------------------------------------------------------------------------------
+  System
+-------------------------------------------------------------------------------}
 
 -- | Tests against the actual chain database run in this monad.
 newtype SystemM blk m a = SystemM
