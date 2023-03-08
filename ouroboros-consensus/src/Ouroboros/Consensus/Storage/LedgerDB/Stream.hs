@@ -4,7 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.Stream (
-    NextItem (..)
+    NextBlock
+  , NextItem (..)
   , StreamAPI (..)
   , streamAll
   ) where
@@ -18,9 +19,11 @@ import           Ouroboros.Consensus.Block
   Abstraction over the streaming API provided by the Chain DB
 -------------------------------------------------------------------------------}
 
-{-# DEPRECATED NextBlock "Use Ouroboros.Consensus.Storage.LedgerDB (NextItem(NextItem))" #-}
+{-# DEPRECATED NextBlock ["Use Ouroboros.Consensus.Storage.LedgerDB (NextItem(NextItem))", "or Ouroboros.Consensus.Storage.LedgerDB (NextItem)"] #-}
 -- | Next block returned during streaming
 data NextItem blk = NoMoreItems | NextItem blk | NextBlock blk
+type NextBlock blk = NextItem blk
+
 
 -- | Stream blocks from the immutable DB
 --

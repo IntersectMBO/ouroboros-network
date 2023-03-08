@@ -190,9 +190,10 @@ data Mempool m blk = Mempool {
       --
       -- This does not update the state of the mempool.
     , getSnapshotFor ::
-           Point blk
-        -> SlotNo
+           Point blk -- ^ Point of the ledger state before ticking
+        -> SlotNo    -- ^ The current slot in which we want the snapshot
         -> TickedLedgerState blk DiffMK
+                     -- ^ The ledger state ticked to the given slot number
         -> m (Maybe (MempoolSnapshot blk))
 
       -- | Get the mempool's capacity in bytes.

@@ -18,7 +18,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (
   , LedgerDB'
   , LedgerDbCfg (..)
   , configLedgerDb
-  , new
+  , mkWithAnchor
     -- * Deprecations
   , ledgerDbWithAnchor
   ) where
@@ -71,12 +71,12 @@ instance IsLedger (ExtLedgerState blk) => GetTip (K (LedgerDB' blk)) where
          . unK
 
 -- | Ledger DB starting at the specified ledger state
-new ::
+mkWithAnchor ::
      ( HasLedgerTables l
      , GetTip l
      )
   => l EmptyMK -> LedgerDB l
-new = LedgerDB . empty
+mkWithAnchor = LedgerDB . empty
 
 {-------------------------------------------------------------------------------
   LedgerDB Config
@@ -103,10 +103,10 @@ configLedgerDb cfg = LedgerDbCfg {
   Deprecations
 -------------------------------------------------------------------------------}
 
-{-# DEPRECATED ledgerDbWithAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (new)" #-}
+{-# DEPRECATED ledgerDbWithAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (mkWithAnchor)" #-}
 ledgerDbWithAnchor ::
      ( HasLedgerTables l
      , GetTip l
      )
   => l EmptyMK -> LedgerDB l
-ledgerDbWithAnchor = new
+ledgerDbWithAnchor = mkWithAnchor

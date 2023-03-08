@@ -126,19 +126,18 @@ applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
            -> m (l DiffMK)
 applyBlock cfg ap ksReader db = case ap of
     ReapplyVal b ->
-       withValues b $ return . tickThenReapply cfg b
+      withValues b $ return . tickThenReapply cfg b
     ApplyVal b ->
-      withValues b $ \l' ->
-        either (throwLedgerError db (blockRealPoint b)) return $ runExcept $
-          tickThenApply cfg b l'
+      withValues b $
+          either (throwLedgerError db (blockRealPoint b)) return
+        . runExcept
+        . tickThenApply cfg b
     ReapplyRef r  -> do
       b <- doResolveBlock r
-      withValues b $ return . tickThenReapply cfg b
+      applyBlock cfg (ReapplyVal b) ksReader db
     ApplyRef r -> do
       b <- doResolveBlock r
-      withValues b $ \l' ->
-        either (throwLedgerError db r) return $ runExcept $
-          tickThenApply cfg b l'
+      applyBlock cfg (ApplyVal b) ksReader db
     Weaken ap' ->
       applyBlock cfg ap' ksReader db
   where
@@ -146,7 +145,8 @@ applyBlock cfg ap ksReader db = case ap of
     l = Query.current db
 
     withValues :: blk -> (l ValuesMK -> m (l DiffMK)) -> m (l DiffMK)
-    withValues b f = withKeysReadSets l ksReader (ledgerDbChangelog db) (getBlockKeySets b) f
+    withValues b f =
+      withKeysReadSets l ksReader (ledgerDbChangelog db) (getBlockKeySets b) f
 
 {-------------------------------------------------------------------------------
   Resolving blocks maybe from disk

@@ -478,7 +478,8 @@ handleQueryWithStowedKeySets dlv query f = do
     pure $ f (stowLedgerTables $ st `withLedgerTables` values)
 
 data TraversingQueryHandler blk result where
-  TraversingQueryHandler :: (ExtLedgerState blk EmptyMK -> st)
+  TraversingQueryHandler :: forall blk result st.
+                            (ExtLedgerState blk EmptyMK -> st)
                          -> st
                          -> (st -> st -> st)
                          -> (st -> result)

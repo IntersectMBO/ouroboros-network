@@ -68,7 +68,6 @@ import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
 import           Data.Functor ((<&>))
 import           Data.Kind (Type)
-import           Data.Map.Diff.Strict.Internal (unsafeApplyDiff)
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
@@ -338,6 +337,9 @@ instance Bridge m a => GetTip (LedgerState (DualBlock m a)) where
 instance Bridge m a => GetTip (Ticked1 (LedgerState (DualBlock m a))) where
   getTip = castPoint . getTip . tickedDualLedgerStateMain
 
+-- We only have tables on the main ledger state to be able to compare it to a
+-- reference spec implementation which doesn't use tables. The result should be
+-- the same.
 data instance Ticked1 (LedgerState (DualBlock m a)) mk = TickedDualLedgerState {
       tickedDualLedgerStateMain    :: Ticked1 (LedgerState m) mk
     , tickedDualLedgerStateAux     :: Ticked1 (LedgerState a) ValuesMK
@@ -369,15 +371,11 @@ instance Bridge m a => IsLedger (LedgerState (DualBlock m a)) where
                              DualLedgerState{..} =
       castLedgerResult ledgerResult <&> \main -> TickedDualLedgerState {
           tickedDualLedgerStateMain    = main
-        , tickedDualLedgerStateAux     =
-            zipOverLedgerTablesTicked f dualLedger (projectLedgerTables dualLedgerStateAux)
+        , tickedDualLedgerStateAux     = applyLedgerTablesDiffsTicked dualLedgerStateAux dualLedger
         , tickedDualLedgerStateAuxOrig = dualLedgerStateAux
         , tickedDualLedgerStateBridge  = dualLedgerStateBridge
         }
     where
-      f :: Ord k => DiffMK k v -> ValuesMK k v -> ValuesMK k v
-      f (DiffMK d) (ValuesMK v) = ValuesMK $ unsafeApplyDiff v d
-
       dualLedger = applyChainTick
                      dualLedgerConfigAux
                      slot
@@ -406,31 +404,23 @@ instance Bridge m a => ApplyBlock (LedgerState (DualBlock m a)) (DualBlock m a) 
           )
       return $ castLedgerResult ledgerResult <&> \main' -> DualLedgerState {
           dualLedgerStateMain   = main'
-        , dualLedgerStateAux    =
-           zipOverLedgerTables f aux' (projectLedgerTablesTicked tickedDualLedgerStateAux)
+        , dualLedgerStateAux    = applyLedgerTablesDiffsFromTicked tickedDualLedgerStateAux aux'
         , dualLedgerStateBridge = updateBridgeWithBlock
                                     block
                                     tickedDualLedgerStateBridge
         }
-   where
-      f :: Ord k => DiffMK k v -> ValuesMK k v -> ValuesMK k v
-      f (DiffMK d) (ValuesMK v) = ValuesMK $ unsafeApplyDiff v d
 
   reapplyBlockLedgerResult cfg
                            block@DualBlock{..}
                            TickedDualLedgerState{..} =
     castLedgerResult ledgerResult <&> \main' -> DualLedgerState {
         dualLedgerStateMain   = main'
-      , dualLedgerStateAux    =
-          zipOverLedgerTables f auxLedger (projectLedgerTablesTicked tickedDualLedgerStateAux)
+      , dualLedgerStateAux    = applyLedgerTablesDiffsFromTicked tickedDualLedgerStateAux auxLedger
       , dualLedgerStateBridge = updateBridgeWithBlock
                                   block
                                   tickedDualLedgerStateBridge
       }
    where
-      f :: Ord k => DiffMK k v -> ValuesMK k v -> ValuesMK k v
-      f (DiffMK d) (ValuesMK v) = ValuesMK $ unsafeApplyDiff v d
-
       auxLedger = reapplyMaybeBlock
                     (dualLedgerConfigAux cfg)
                     dualBlockAux

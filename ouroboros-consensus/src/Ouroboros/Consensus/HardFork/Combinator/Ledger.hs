@@ -886,18 +886,3 @@ instance LedgerTablesCanHardFork '[blk] where
                            , applyDistribLedgerTables = unOneEraLedgerTables
                            })
     :* Nil
-
-instance All SingleEraBlock xs
-      => CanStowLedgerTables (LedgerState (HardForkBlock xs)) where
-  stowLedgerTables =
-        HardForkLedgerState
-      . hcmap
-          proxySingle
-          (Flip . stowLedgerTables . unFlip)
-      . hardForkLedgerStatePerEra
-  unstowLedgerTables =
-        HardForkLedgerState
-      . hcmap
-          proxySingle
-          (Flip . unstowLedgerTables . unFlip)
-      . hardForkLedgerStatePerEra

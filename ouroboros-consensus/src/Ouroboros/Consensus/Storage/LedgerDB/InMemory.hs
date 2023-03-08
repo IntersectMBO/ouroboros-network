@@ -78,9 +78,9 @@ type LedgerDbCfg l        = LDB.LedgerDbCfg l
   Deprecated functions
 -------------------------------------------------------------------------------}
 
-{-# DEPRECATED ledgerDbWithAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (new)" #-}
+{-# DEPRECATED ledgerDbWithAnchor "Use Ouroboros.Consensus.Storage.LedgerDB (mkWithAnchor)" #-}
 ledgerDbWithAnchor :: (HasLedgerTables l, GetTip l) => l EmptyMK -> LedgerDB l
-ledgerDbWithAnchor = LDB.new
+ledgerDbWithAnchor = LDB.mkWithAnchor
 
 {-# DEPRECATED defaultResolveBlocks "Use Ouroboros.Consensus.Storage.LedgerDB (defaultResolveBlocks)" #-}
 defaultResolveBlocks :: ResolveBlock m blk

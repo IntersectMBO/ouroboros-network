@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -11,8 +12,10 @@
 -- unclear if it will keep the in-memory part of the first or the second one.
 module Ouroboros.Consensus.Ledger.Tables.Utils (
     applyLedgerTablesDiffs
+  , applyLedgerTablesDiffsFromTicked
   , applyLedgerTablesDiffsTicked
   , attachAndApplyDiffsTicked
+  , attachAndApplyDiffsTickedToTables
   , calculateAdditions
   , calculateDifference
   , calculateDifferenceTicked
@@ -31,10 +34,14 @@ module Ouroboros.Consensus.Ledger.Tables.Utils (
   , rawReapplyTracking
   , reapplyTrackingTicked
     -- * Testing
+  , mapOverLedgerTables
+  , mapOverLedgerTablesTicked
   , rawApplyDiffs
   , rawCalculateDifference
   , rawForgetValues
   , rawPrependTrackingDiffs
+  , zipOverLedgerTables
+  , zipOverLedgerTablesTicked
   ) where
 
 import           Data.Map.Diff.Strict
@@ -44,6 +51,83 @@ import           Ouroboros.Consensus.Ticked
 
 import           Ouroboros.Consensus.Ledger.Tables
 
+{-------------------------------------------------------------------------------
+  Util combinators
+-------------------------------------------------------------------------------}
+
+overLedgerTables ::
+     (HasLedgerTables l, IsMapKind mk1, IsMapKind mk2)
+  => (LedgerTables l mk1 -> LedgerTables l mk2)
+  -> l mk1
+  -> l mk2
+overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
+
+mapOverLedgerTables ::
+     (HasLedgerTables l, IsMapKind mk1, IsMapKind mk2)
+  => (forall k v.
+          (Ord k, Eq v)
+       => mk1 k v
+       -> mk2 k v
+     )
+  -> l mk1
+  -> l mk2
+mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
+
+zipOverLedgerTables ::
+     (HasLedgerTables l, IsMapKind mk1, IsMapKind mk3)
+  => (forall k v.
+          (Ord k, Eq v)
+       => mk1 k v
+       -> mk2 k v
+       -> mk3 k v
+     )
+  ->              l mk1
+  -> LedgerTables l mk2
+  ->              l mk3
+zipOverLedgerTables f l tables2 =
+    overLedgerTables
+      (\tables1 -> zipLedgerTables f tables1 tables2)
+      l
+
+overLedgerTablesTicked ::
+     (HasTickedLedgerTables l, IsMapKind mk1, IsMapKind mk2)
+  => (LedgerTables l mk1 -> LedgerTables l mk2)
+  -> Ticked1 l mk1
+  -> Ticked1 l mk2
+overLedgerTablesTicked f l =
+    withLedgerTablesTicked l $ f $ projectLedgerTablesTicked l
+
+mapOverLedgerTablesTicked ::
+     (HasTickedLedgerTables l, IsMapKind mk1, IsMapKind mk2)
+  => (forall k v.
+         (Ord k, Eq v)
+      => mk1 k v
+      -> mk2 k v
+     )
+  -> Ticked1 l mk1
+  -> Ticked1 l mk2
+mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
+
+zipOverLedgerTablesTicked ::
+     (HasTickedLedgerTables l, IsMapKind mk1, IsMapKind mk3)
+  => (forall k v.
+         (Ord k, Eq v)
+      => mk1 k v
+      -> mk2 k v
+      -> mk3 k v
+     )
+  -> Ticked1      l mk1
+  -> LedgerTables l mk2
+  -> Ticked1      l mk3
+zipOverLedgerTablesTicked f l tables2 =
+    overLedgerTablesTicked
+      (\tables1 -> zipLedgerTables f tables1 tables2)
+      l
+
+{-------------------------------------------------------------------------------
+  Utils aliases
+-------------------------------------------------------------------------------}
+
 -- | When applying a block that is not on an era transition, ticking won't
 -- generate new values, so this function can be used to wrap the call to the
 -- ledger rules that perform the tick.
@@ -51,10 +135,6 @@ noNewTickingDiffs :: HasTickedLedgerTables l
                    => l any
                    -> l DiffMK
 noNewTickingDiffs l = withLedgerTables l emptyLedgerTables
-
-{-------------------------------------------------------------------------------
-  Utils aliases
--------------------------------------------------------------------------------}
 
 -- | Empty values for every table
 emptyLedgerTables :: forall mk l. (HasLedgerTables l, IsMapKind mk) => LedgerTables l mk
@@ -113,10 +193,12 @@ rawApplyDiffs ::
   -> ValuesMK k v
 rawApplyDiffs (ValuesMK vals) (DiffMK diffs) = ValuesMK (unsafeApplyDiff vals diffs)
 
-applyLedgerTablesDiffs       ::       HasLedgerTables l => l ValuesMK ->         l DiffMK ->         l ValuesMK
-applyLedgerTablesDiffsTicked :: HasTickedLedgerTables l => l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
-applyLedgerTablesDiffs       = flip (zipOverLedgerTables       $ flip rawApplyDiffs) . projectLedgerTables
-applyLedgerTablesDiffsTicked = flip (zipOverLedgerTablesTicked $ flip rawApplyDiffs) . projectLedgerTables
+applyLedgerTablesDiffs           ::       HasLedgerTables l =>         l ValuesMK ->         l DiffMK ->         l ValuesMK
+applyLedgerTablesDiffsTicked     :: HasTickedLedgerTables l =>         l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
+applyLedgerTablesDiffsFromTicked :: HasTickedLedgerTables l => Ticked1 l ValuesMK ->         l DiffMK ->         l ValuesMK
+applyLedgerTablesDiffs           = flip (zipOverLedgerTables       $ flip rawApplyDiffs) . projectLedgerTables
+applyLedgerTablesDiffsTicked     = flip (zipOverLedgerTablesTicked $ flip rawApplyDiffs) . projectLedgerTables
+applyLedgerTablesDiffsFromTicked = flip (zipOverLedgerTables       $ flip rawApplyDiffs) . projectLedgerTablesTicked
 
 -- Calculate differences
 
@@ -151,6 +233,13 @@ attachAndApplyDiffsTicked ::
 attachAndApplyDiffsTicked after before =
     zipOverLedgerTablesTicked rawAttachAndApplyDiffs after
   $ projectLedgerTables before
+attachAndApplyDiffsTickedToTables ::
+     HasTickedLedgerTables l
+  => Ticked1 l DiffMK
+  -> LedgerTables l ValuesMK
+  -> Ticked1 l TrackingMK
+attachAndApplyDiffsTickedToTables =
+    zipOverLedgerTablesTicked rawAttachAndApplyDiffs
 
 rawPrependTrackingDiffs ::
       (Ord k, Eq v)

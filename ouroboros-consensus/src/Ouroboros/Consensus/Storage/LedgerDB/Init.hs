@@ -154,7 +154,7 @@ initialize replayTracer
       traceWith replayTracer ReplayFromGenesis
       genesisLedger <- getGenesisLedger
       let replayTracer' = decorateReplayTracerWithStart (Point Origin) replayTracer
-          initDb        = LedgerDB.new (forgetLedgerTables genesisLedger)
+          initDb        = LedgerDB.mkWithAnchor (forgetLedgerTables genesisLedger)
       (_, backingStore) <- allocate
                              reg
                              (\_ -> newBackingStore lbsi hasFS (projectLedgerTables genesisLedger))
@@ -205,7 +205,7 @@ initialize replayTracer
               traceWith replayTracer $
                 ReplayFromSnapshot s pt (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
-                  initDb  = LedgerDB.new extLedgerSt
+                  initDb  = LedgerDB.mkWithAnchor extLedgerSt
               eDB <- runExceptT $ replayStartingWith
                                     tracer'
                                     cfg

@@ -13,9 +13,9 @@ module Ouroboros.Consensus.Mempool.Impl.Pure {-# DEPRECATED "User Ouroboros.Cons
   , implSnapshotFromIS
   ) where
 
-import Ouroboros.Consensus.Ledger.Basics (LedgerState, GetTip)
-import           Ouroboros.Consensus.Ticked (Ticked1)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState, GetTip)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ticked (Ticked1)
 
 import           Ouroboros.Consensus.Mempool.Update
 import           Ouroboros.Consensus.Mempool.Query

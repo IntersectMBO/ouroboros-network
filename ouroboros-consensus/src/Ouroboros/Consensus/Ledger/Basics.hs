@@ -110,9 +110,9 @@ type family LedgerCfg l :: Type
 
 type IsLedger :: LedgerStateKind -> Constraint
 class ( -- Requirements on the ledger state itself
-        forall mk. IsMapKind mk => Eq (l mk)
+        forall mk. IsMapKind mk => Eq       (l mk)
       , forall mk. IsMapKind mk => NoThunks (l mk)
-      , forall mk. IsMapKind mk => Show (l mk)
+      , forall mk. IsMapKind mk => Show     (l mk)
         -- Requirements on 'LedgerCfg'
       , NoThunks (LedgerCfg l)
         -- Requirements on 'LedgerErr'
@@ -123,7 +123,7 @@ class ( -- Requirements on the ledger state itself
         --
         -- See comment for 'applyChainTickLedgerResult' about the tip of the
         -- ticked ledger.
-      , GetTip l
+      , GetTip          l
       , GetTip (Ticked1 l)
       ) => IsLedger l where
   -- | Errors that can arise when updating the ledger

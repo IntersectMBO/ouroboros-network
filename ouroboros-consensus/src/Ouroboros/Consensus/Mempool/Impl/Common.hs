@@ -41,7 +41,6 @@ import           Control.Exception (assert)
 import           Control.Monad.Trans.Except (runExcept)
 import           Data.Foldable
 import qualified Data.List.NonEmpty as NE
-import           Data.Map.Diff.Strict.Internal
 import           Data.Maybe (isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -427,14 +426,11 @@ validationResultFromIS values is = ValidationResult {
     , vrValid          = isTxs
     , vrValidTxIds     = isTxIds
     , vrNewValid       = Nothing
-    , vrAfter          = zipOverLedgerTablesTicked f isLedgerState values
+    , vrAfter          = attachAndApplyDiffsTickedToTables isLedgerState values
     , vrInvalid        = []
     , vrLastTicketNo   = isLastTicketNo
     }
   where
-
-    f :: Ord k => DiffMK k v -> ValuesMK k v -> TrackingMK k v
-    f (DiffMK d) (ValuesMK v) = TrackingMK (unsafeApplyDiff v d) d
 
     IS {
         isTxs

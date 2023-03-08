@@ -350,6 +350,9 @@ data ChainDB m blk = ChainDB {
       -- requested point and a function for releasing the value handle.
       --
       -- The value handle is allocated in the given registry.
+      --
+      -- This is intended to be used on queries, to get an ephemeral stable view
+      -- of the backing store.
     , getLedgerBackingStoreValueHandle ::
         forall b.
              ResourceRegistry m
@@ -369,8 +372,12 @@ data ChainDB m blk = ChainDB {
                  )
                )
 
-      -- | Read and forward the values up to the given point on the chain. Returns
-      -- Nothing if the anchor moved or if the state is not found on the ledger db.
+      -- | Read and forward the values up to the given point on the chain.
+      -- Returns Nothing if the anchor moved or if the state is not found on the
+      -- ledger db.
+      --
+      -- This is intended to be used by the mempool to hydrate a ledger state at
+      -- a specific point
     , getLedgerTablesAtFor ::
            Point blk
         -> LedgerTables (ExtLedgerState blk) KeysMK

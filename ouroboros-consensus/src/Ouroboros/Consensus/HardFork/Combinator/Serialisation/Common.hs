@@ -273,9 +273,8 @@ class ( CanHardFork xs
       , All (DecodeDiskDepIx (NestedCtxt Header)) xs
         -- Required for 'getHfcBinaryBlockInfo'
       , All HasBinaryBlockInfo xs
-        -- Tables on the HardForkCombinator are not compositionally defined,
-        -- therefore this constraint is needed and will have to be satisfied by
-        -- each instantiation of 'HardForkBlock'.
+        -- LedgerTables on the HardForkBlock might not be compositionally
+        -- defined, but we need to require this instances for any instantiation.
       , CanSerializeLedgerTables (LedgerState (HardForkBlock xs))
       ) => SerialiseHFC xs where
 

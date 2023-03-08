@@ -108,7 +108,9 @@ data TranslateLedgerState x y = TranslateLedgerState {
     -- | How to translate a Ledger State during the era transition
     --
     -- When translating between eras, it can be the case that values are
-    -- modified, thus requiring this to be a @DiffMK@ on the return type. There
+    -- modified, thus requiring this to be a @DiffMK@ on the return type.
+    --
+    -- To make a clear example, in the context of Cardano, there
     -- are currently two cases in which this is of vital importance:
     -- Byron->Shelley and Shelley->Allegra.
     --
