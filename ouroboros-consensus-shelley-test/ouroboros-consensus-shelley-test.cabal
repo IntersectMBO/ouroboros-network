@@ -1,129 +1,107 @@
-cabal-version:         3.0
-
-name:                   ouroboros-consensus-shelley-test
-version:                0.4.0.0
-synopsis:               Test infrastructure for Shelley
-description:            Test infrastructure for Shelley.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2020-2023 Input Output Global Inc (IOG)
-author:                 IOHK Engineering Team
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-source-files:     CHANGELOG.md
+cabal-version:      3.0
+name:               ouroboros-consensus-shelley-test
+version:            0.4.0.0
+license:            Apache-2.0
+license-file:       LICENSE NOTICE
+copyright:          2020-2023 Input Output Global Inc (IOG)
+maintainer:         operations@iohk.io
+author:             IOHK Engineering Team
+synopsis:           Test infrastructure for Shelley
+description:        Test infrastructure for Shelley.
+category:           Network
+build-type:         Simple
+extra-source-files: CHANGELOG.md
 
 source-repository head
-  type:     git
-  location: https://github.com/input-output-hk/ouroboros-network
+    type:     git
+    location: https://github.com/input-output-hk/ouroboros-network
 
 library
-  hs-source-dirs:      src
+    exposed-modules:
+        Test.Consensus.Shelley.Examples
+        Test.Consensus.Shelley.Generators
+        Test.Consensus.Shelley.MockCrypto
+        Test.ThreadNet.Infra.Alonzo
+        Test.ThreadNet.Infra.Shelley
+        Test.ThreadNet.TxGen.Shelley
 
-  exposed-modules:
-                       Test.Consensus.Shelley.Examples
-                       Test.Consensus.Shelley.Generators
-                       Test.Consensus.Shelley.MockCrypto
-                       Test.ThreadNet.Infra.Alonzo
-                       Test.ThreadNet.Infra.Shelley
-                       Test.ThreadNet.TxGen.Shelley
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    ghc-options:
+        -Wall -Wcompat -Wincomplete-uni-patterns
+        -Wincomplete-record-updates -Wpartial-fields -Widentities
+        -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+        -fno-ignore-asserts
 
-  build-depends:       base              >=4.14  && <4.17
-                     , bytestring        >=0.10  && <0.12
-                     , cardano-crypto-class
-                     , cardano-data
-                     , cardano-ledger-core:{cardano-ledger-core, testlib}
-                     , cardano-protocol-tpraos
-                     , containers        >=0.5   && <0.7
-                     , generic-random
-                     , quiet             >=0.2   && <0.3
-                     , mtl               >=2.2   && <2.3
-                     , microlens
-                     , QuickCheck
-                     , cardano-strict-containers
-
-                       -- cardano-ledger
-                     , cardano-ledger-allegra
-                     , cardano-ledger-alonzo
-                     , cardano-ledger-alonzo-test
-                     , cardano-ledger-babbage
-                     , cardano-ledger-babbage-test
-                     , cardano-ledger-conway-test
-                     , cardano-ledger-mary
-                     , cardano-ledger-shelley
-                     , cardano-ledger-shelley-ma-test
-                     , cardano-ledger-shelley-test
-                     , cardano-protocol-tpraos
-                     , small-steps
-
-                     , ouroboros-network-api
-
-                     , ouroboros-consensus                                            ^>=0.3
-                     , ouroboros-consensus-protocol                                   ^>=0.3
-                     , ouroboros-consensus-protocol:ouroboros-consensus-protocol-test ^>=0.3
-                     , ouroboros-consensus-test                                       ^>=0.3
-
-                     , ouroboros-consensus-shelley ==0.4.0.0
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
+    build-depends:
+        base >=4.14 && <4.17,
+        bytestring >=0.10 && <0.12,
+        cardano-crypto-class,
+        cardano-data,
+        cardano-ledger-core:{cardano-ledger-core, testlib},
+        cardano-protocol-tpraos,
+        containers >=0.5 && <0.7,
+        generic-random,
+        quiet >=0.2 && <0.3,
+        mtl >=2.2 && <2.3,
+        microlens,
+        QuickCheck,
+        cardano-strict-containers,
+        cardano-ledger-allegra,
+        cardano-ledger-alonzo,
+        cardano-ledger-alonzo-test,
+        cardano-ledger-babbage,
+        cardano-ledger-babbage-test,
+        cardano-ledger-conway-test,
+        cardano-ledger-mary,
+        cardano-ledger-shelley,
+        cardano-ledger-shelley-ma-test,
+        cardano-ledger-shelley-test,
+        cardano-protocol-tpraos,
+        small-steps,
+        ouroboros-network-api,
+        ouroboros-consensus ^>=0.3,
+        ouroboros-consensus-protocol ^>=0.3,
+        ouroboros-consensus-protocol:ouroboros-consensus-protocol-test ^>=0.3,
+        ouroboros-consensus-test ^>=0.3,
+        ouroboros-consensus-shelley ==0.4.0.0
 
 test-suite test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Main.hs
-  other-modules:
-                       Test.Consensus.Shelley.Coherence
-                       Test.Consensus.Shelley.Golden
-                       Test.Consensus.Shelley.Serialisation
-                       Test.ThreadNet.Shelley
+    type:             exitcode-stdio-1.0
+    main-is:          Main.hs
+    hs-source-dirs:   test
+    other-modules:
+        Test.Consensus.Shelley.Coherence
+        Test.Consensus.Shelley.Golden
+        Test.Consensus.Shelley.Serialisation
+        Test.ThreadNet.Shelley
 
-  build-depends:       base              >=4.14 && <4.17
-                     , bytestring
-                     , cardano-crypto-class
-                     , cardano-slotting
-                     , cborg
-                     , containers
-                     , filepath
-                     , QuickCheck
-                     , microlens
-                     , tasty
-                     , tasty-quickcheck
+    default-language: Haskell2010
+    ghc-options:
+        -Wall -Wcompat -Wincomplete-uni-patterns
+        -Wincomplete-record-updates -Wpartial-fields -Widentities
+        -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+        -fno-ignore-asserts -threaded -rtsopts
 
-                       -- cardano-ledger-specs
-                     , cardano-ledger-alonzo
-                     , cardano-ledger-alonzo-test
-                     , cardano-ledger-core
-                     , cardano-ledger-shelley
-                     , cardano-protocol-tpraos
-
-                     , ouroboros-consensus          ^>=0.3
-                     , ouroboros-consensus-protocol ^>=0.3
-                     , ouroboros-consensus-test     ^>=0.3
-
-                     , ouroboros-consensus-shelley ==0.4.0.0
-                     , ouroboros-consensus-shelley-test
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
-                       -threaded
-                       -rtsopts
+    build-depends:
+        base >=4.14 && <4.17,
+        bytestring,
+        cardano-crypto-class,
+        cardano-slotting,
+        cborg,
+        containers,
+        filepath,
+        QuickCheck,
+        microlens,
+        tasty,
+        tasty-quickcheck,
+        cardano-ledger-alonzo,
+        cardano-ledger-alonzo-test,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        cardano-protocol-tpraos,
+        ouroboros-consensus ^>=0.3,
+        ouroboros-consensus-protocol ^>=0.3,
+        ouroboros-consensus-test ^>=0.3,
+        ouroboros-consensus-shelley ==0.4.0.0,
+        ouroboros-consensus-shelley-test

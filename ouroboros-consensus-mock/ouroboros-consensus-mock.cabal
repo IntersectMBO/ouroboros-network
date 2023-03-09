@@ -1,83 +1,74 @@
-cabal-version: 3.0
-
-name:                   ouroboros-consensus-mock
-version:                0.3.1.0
-synopsis:               Mock ledger integration in the Ouroboros consensus layer
-description:            Mock ledger integration in the Ouroboros consensus layer.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG)
-author:                 IOHK Engineering Team
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-source-files:     CHANGELOG.md
+cabal-version:      3.0
+name:               ouroboros-consensus-mock
+version:            0.3.1.0
+license:            Apache-2.0
+license-file:       LICENSE NOTICE
+copyright:          2019-2023 Input Output Global Inc (IOG)
+maintainer:         operations@iohk.io
+author:             IOHK Engineering Team
+synopsis:           Mock ledger integration in the Ouroboros consensus layer
+description:        Mock ledger integration in the Ouroboros consensus layer.
+category:           Network
+build-type:         Simple
+extra-source-files: CHANGELOG.md
 
 source-repository head
-  type:     git
-  location: https://github.com/input-output-hk/ouroboros-network
+    type:     git
+    location: https://github.com/input-output-hk/ouroboros-network
 
 flag asserts
-  description: Enable assertions
-  manual:      False
-  default:     False
+    description: Enable assertions
+    default:     False
 
 library
-  hs-source-dirs:      src
+    exposed-modules:
+        Ouroboros.Consensus.Mock.Ledger
+        Ouroboros.Consensus.Mock.Ledger.Address
+        Ouroboros.Consensus.Mock.Ledger.Block
+        Ouroboros.Consensus.Mock.Ledger.Block.BFT
+        Ouroboros.Consensus.Mock.Ledger.Block.PBFT
+        Ouroboros.Consensus.Mock.Ledger.Block.Praos
+        Ouroboros.Consensus.Mock.Ledger.Block.PraosRule
+        Ouroboros.Consensus.Mock.Ledger.Forge
+        Ouroboros.Consensus.Mock.Ledger.Stake
+        Ouroboros.Consensus.Mock.Ledger.State
+        Ouroboros.Consensus.Mock.Ledger.UTxO
+        Ouroboros.Consensus.Mock.Node
+        Ouroboros.Consensus.Mock.Node.Abstract
+        Ouroboros.Consensus.Mock.Node.BFT
+        Ouroboros.Consensus.Mock.Node.PBFT
+        Ouroboros.Consensus.Mock.Node.Praos
+        Ouroboros.Consensus.Mock.Node.PraosRule
+        Ouroboros.Consensus.Mock.Node.Serialisation
+        Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
+        Ouroboros.Consensus.Mock.Protocol.Praos
 
-  exposed-modules:
-                       Ouroboros.Consensus.Mock.Ledger
-                       Ouroboros.Consensus.Mock.Ledger.Address
-                       Ouroboros.Consensus.Mock.Ledger.Block
-                       Ouroboros.Consensus.Mock.Ledger.Block.BFT
-                       Ouroboros.Consensus.Mock.Ledger.Block.PBFT
-                       Ouroboros.Consensus.Mock.Ledger.Block.Praos
-                       Ouroboros.Consensus.Mock.Ledger.Block.PraosRule
-                       Ouroboros.Consensus.Mock.Ledger.Forge
-                       Ouroboros.Consensus.Mock.Ledger.Stake
-                       Ouroboros.Consensus.Mock.Ledger.State
-                       Ouroboros.Consensus.Mock.Ledger.UTxO
-                       Ouroboros.Consensus.Mock.Node
-                       Ouroboros.Consensus.Mock.Node.Abstract
-                       Ouroboros.Consensus.Mock.Node.BFT
-                       Ouroboros.Consensus.Mock.Node.PBFT
-                       Ouroboros.Consensus.Mock.Node.Praos
-                       Ouroboros.Consensus.Mock.Node.PraosRule
-                       Ouroboros.Consensus.Mock.Node.Serialisation
-                       Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
-                       Ouroboros.Consensus.Mock.Protocol.Praos
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    ghc-options:
+        -Wall -Wcompat -Wincomplete-uni-patterns
+        -Wincomplete-record-updates -Wpartial-fields -Widentities
+        -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+        -Wno-unticked-promoted-constructors
 
-  build-depends:       base              >=4.14  && <4.17
-                     , bimap             >=0.4   && <0.5
-                     , bytestring        >=0.10  && <0.12
-                     , cardano-binary
-                     , cardano-crypto-class
-                     , cardano-slotting
-                     , cborg             >=0.2.2 && <0.3
-                     , containers        >=0.5   && <0.7
-                     , deepseq
-                     , hashable
-                     , mtl               >=2.2   && <2.3
-                     , nothunks
-                     , serialise         >=0.2   && <0.3
-                     , time
+    build-depends:
+        base >=4.14 && <4.17,
+        bimap >=0.4 && <0.5,
+        bytestring >=0.10 && <0.12,
+        cardano-binary,
+        cardano-crypto-class,
+        cardano-slotting,
+        cborg >=0.2.2 && <0.3,
+        containers >=0.5 && <0.7,
+        deepseq,
+        hashable,
+        mtl >=2.2 && <2.3,
+        nothunks,
+        serialise >=0.2 && <0.3,
+        time,
+        ouroboros-network-api,
+        ouroboros-network-mock,
+        ouroboros-consensus ==0.3.1.0
 
-                     , ouroboros-network-api
-                     , ouroboros-network-mock
-
-                     , ouroboros-consensus ==0.3.1.0
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -Wno-unticked-promoted-constructors
-  if flag(asserts)
-    ghc-options:       -fno-ignore-asserts
+    if flag(asserts)
+        ghc-options: -fno-ignore-asserts

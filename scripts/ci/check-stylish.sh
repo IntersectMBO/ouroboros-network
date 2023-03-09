@@ -26,3 +26,8 @@ grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types
 grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs              >/dev/null 2>&1
 grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs          >/dev/null 2>&1
 grep "DEPRECATED" ouroboros-consensus-test/src/Test/Util/Classify.hs                       >/dev/null 2>&1
+
+# cabal format works in a file-per-file basis
+for f in $(fd -p ouroboros-consensus -e cabal); do
+    cabal format "$f"
+done

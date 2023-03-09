@@ -1,357 +1,320 @@
-cabal-version: 3.0
-
-name:                   ouroboros-consensus
-version:                0.3.1.0
-synopsis:               Consensus layer for the Ouroboros blockchain protocol
-description:            Consensus layer for the Ouroboros blockchain protocol.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG)
-author:                 IOHK Engineering Team
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-source-files:     CHANGELOG.md
+cabal-version:      3.0
+name:               ouroboros-consensus
+version:            0.3.1.0
+license:            Apache-2.0
+license-file:       LICENSE NOTICE
+copyright:          2019-2023 Input Output Global Inc (IOG)
+maintainer:         operations@iohk.io
+author:             IOHK Engineering Team
+synopsis:           Consensus layer for the Ouroboros blockchain protocol
+description:        Consensus layer for the Ouroboros blockchain protocol.
+category:           Network
+build-type:         Simple
+extra-source-files: CHANGELOG.md
 
 source-repository head
-  type:     git
-  location: https://github.com/input-output-hk/ouroboros-network
+    type:     git
+    location: https://github.com/input-output-hk/ouroboros-network
 
 flag asserts
-  description: Enable assertions
-  manual:      False
-  default:     False
+    description: Enable assertions
+    default:     False
 
 library
-  hs-source-dirs:      src
+    exposed-modules:
+        Ouroboros.Consensus.Block
+        Ouroboros.Consensus.Block.Abstract
+        Ouroboros.Consensus.Block.EBB
+        Ouroboros.Consensus.Block.Forging
+        Ouroboros.Consensus.Block.NestedContent
+        Ouroboros.Consensus.Block.RealPoint
+        Ouroboros.Consensus.Block.SupportsMetrics
+        Ouroboros.Consensus.Block.SupportsProtocol
+        Ouroboros.Consensus.BlockchainTime
+        Ouroboros.Consensus.BlockchainTime.API
+        Ouroboros.Consensus.BlockchainTime.WallClock.Default
+        Ouroboros.Consensus.BlockchainTime.WallClock.HardFork
+        Ouroboros.Consensus.BlockchainTime.WallClock.Simple
+        Ouroboros.Consensus.BlockchainTime.WallClock.Types
+        Ouroboros.Consensus.BlockchainTime.WallClock.Util
+        Ouroboros.Consensus.Config
+        Ouroboros.Consensus.Config.SecurityParam
+        Ouroboros.Consensus.Config.SupportsNode
+        Ouroboros.Consensus.Forecast
+        Ouroboros.Consensus.Fragment.Diff
+        Ouroboros.Consensus.Fragment.InFuture
+        Ouroboros.Consensus.Fragment.Validated
+        Ouroboros.Consensus.Fragment.ValidatedDiff
+        Ouroboros.Consensus.HardFork.Abstract
+        Ouroboros.Consensus.HardFork.Combinator
+        Ouroboros.Consensus.HardFork.Combinator.Abstract
+        Ouroboros.Consensus.HardFork.Combinator.Abstract.CanHardFork
+        Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks
+        Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
+        Ouroboros.Consensus.HardFork.Combinator.AcrossEras
+        Ouroboros.Consensus.HardFork.Combinator.Basics
+        Ouroboros.Consensus.HardFork.Combinator.Block
+        Ouroboros.Consensus.HardFork.Combinator.Compat
+        Ouroboros.Consensus.HardFork.Combinator.Condense
+        Ouroboros.Consensus.HardFork.Combinator.Degenerate
+        Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
+        Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
+        Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
+        Ouroboros.Consensus.HardFork.Combinator.Forging
+        Ouroboros.Consensus.HardFork.Combinator.Info
+        Ouroboros.Consensus.HardFork.Combinator.InjectTxs
+        Ouroboros.Consensus.HardFork.Combinator.Ledger
+        Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams
+        Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection
+        Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
+        Ouroboros.Consensus.HardFork.Combinator.Mempool
+        Ouroboros.Consensus.HardFork.Combinator.Node
+        Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage
+        Ouroboros.Consensus.HardFork.Combinator.Node.Metrics
+        Ouroboros.Consensus.HardFork.Combinator.PartialConfig
+        Ouroboros.Consensus.HardFork.Combinator.Protocol
+        Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
+        Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
+        Ouroboros.Consensus.HardFork.Combinator.Serialisation
+        Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+        Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk
+        Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient
+        Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode
+        Ouroboros.Consensus.HardFork.Combinator.State
+        Ouroboros.Consensus.HardFork.Combinator.State.Infra
+        Ouroboros.Consensus.HardFork.Combinator.State.Instances
+        Ouroboros.Consensus.HardFork.Combinator.State.Lift
+        Ouroboros.Consensus.HardFork.Combinator.State.Types
+        Ouroboros.Consensus.HardFork.Combinator.Translation
+        Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
+        Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+        Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
+        Ouroboros.Consensus.HardFork.Combinator.Util.Match
+        Ouroboros.Consensus.HardFork.Combinator.Util.Tails
+        Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
+        Ouroboros.Consensus.HardFork.History
+        Ouroboros.Consensus.HardFork.History.Caching
+        Ouroboros.Consensus.HardFork.History.EpochInfo
+        Ouroboros.Consensus.HardFork.History.EraParams
+        Ouroboros.Consensus.HardFork.History.Qry
+        Ouroboros.Consensus.HardFork.History.Summary
+        Ouroboros.Consensus.HardFork.History.Util
+        Ouroboros.Consensus.HardFork.Simple
+        Ouroboros.Consensus.HeaderStateHistory
+        Ouroboros.Consensus.HeaderValidation
+        Ouroboros.Consensus.Ledger.Abstract
+        Ouroboros.Consensus.Ledger.Basics
+        Ouroboros.Consensus.Ledger.CommonProtocolParams
+        Ouroboros.Consensus.Ledger.Dual
+        Ouroboros.Consensus.Ledger.Extended
+        Ouroboros.Consensus.Ledger.Inspect
+        Ouroboros.Consensus.Ledger.Query
+        Ouroboros.Consensus.Ledger.Query.Version
+        Ouroboros.Consensus.Ledger.SupportsMempool
+        Ouroboros.Consensus.Ledger.SupportsPeerSelection
+        Ouroboros.Consensus.Ledger.SupportsProtocol
+        Ouroboros.Consensus.Mempool
+        Ouroboros.Consensus.Mempool.API
+        Ouroboros.Consensus.Mempool.Capacity
+        Ouroboros.Consensus.Mempool.Impl.Common
+        Ouroboros.Consensus.Mempool.Impl.Pure
+        Ouroboros.Consensus.Mempool.Impl.Types
+        Ouroboros.Consensus.Mempool.TxLimits
+        Ouroboros.Consensus.Mempool.Impl
+        Ouroboros.Consensus.Mempool.Init
+        Ouroboros.Consensus.Mempool.Query
+        Ouroboros.Consensus.Mempool.TxSeq
+        Ouroboros.Consensus.Mempool.Update
+        Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface
+        Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+        Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+        Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+        Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
+        Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
+        Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server
+        Ouroboros.Consensus.NodeId
+        Ouroboros.Consensus.Node.InitStorage
+        Ouroboros.Consensus.Node.NetworkProtocolVersion
+        Ouroboros.Consensus.Node.ProtocolInfo
+        Ouroboros.Consensus.Node.Run
+        Ouroboros.Consensus.Node.Serialisation
+        Ouroboros.Consensus.Protocol.Abstract
+        Ouroboros.Consensus.Protocol.BFT
+        Ouroboros.Consensus.Protocol.LeaderSchedule
+        Ouroboros.Consensus.Protocol.MockChainSel
+        Ouroboros.Consensus.Protocol.ModChainSel
+        Ouroboros.Consensus.Protocol.PBFT
+        Ouroboros.Consensus.Protocol.PBFT.Crypto
+        Ouroboros.Consensus.Protocol.PBFT.State
+        Ouroboros.Consensus.Protocol.Signed
+        Ouroboros.Consensus.Ticked
+        Ouroboros.Consensus.TypeFamilyWrappers
+        Ouroboros.Consensus.Util
+        Ouroboros.Consensus.Util.AnchoredFragment
+        Ouroboros.Consensus.Util.Args
+        Ouroboros.Consensus.Util.Assert
+        Ouroboros.Consensus.Util.CallStack
+        Ouroboros.Consensus.Util.CBOR
+        Ouroboros.Consensus.Util.Condense
+        Ouroboros.Consensus.Util.Counting
+        Ouroboros.Consensus.Util.DepPair
+        Ouroboros.Consensus.Util.EarlyExit
+        Ouroboros.Consensus.Util.FileLock
+        Ouroboros.Consensus.Util.Enclose
+        Ouroboros.Consensus.Util.HList
+        Ouroboros.Consensus.Util.IOLike
+        Ouroboros.Consensus.Util.MonadSTM.NormalForm
+        Ouroboros.Consensus.Util.MonadSTM.RAWLock
+        Ouroboros.Consensus.Util.MonadSTM.StrictMVar
+        Ouroboros.Consensus.Util.OptNP
+        Ouroboros.Consensus.Util.Orphans
+        Ouroboros.Consensus.Util.RedundantConstraints
+        Ouroboros.Consensus.Util.ResourceRegistry
+        Ouroboros.Consensus.Util.Singletons
+        Ouroboros.Consensus.Util.SOP
+        Ouroboros.Consensus.Util.STM
+        Ouroboros.Consensus.Util.TentativeState
+        Ouroboros.Consensus.Util.Time
+        Ouroboros.Consensus.Util.TraceSize
+        Ouroboros.Consensus.Util.Versioned
+        Ouroboros.Consensus.Storage.ChainDB
+        Ouroboros.Consensus.Storage.ChainDB.API
+        Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
+        Ouroboros.Consensus.Storage.ChainDB.Impl
+        Ouroboros.Consensus.Storage.ChainDB.Impl.Args
+        Ouroboros.Consensus.Storage.ChainDB.Impl.Background
+        Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
+        Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
+        Ouroboros.Consensus.Storage.ChainDB.Impl.Follower
+        Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
+        Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
+        Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
+        Ouroboros.Consensus.Storage.ChainDB.Impl.Query
+        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
+        Ouroboros.Consensus.Storage.ChainDB.Init
+        Ouroboros.Consensus.Storage.Common
+        Ouroboros.Consensus.Storage.FS.API
+        Ouroboros.Consensus.Storage.FS.API.Types
+        Ouroboros.Consensus.Storage.FS.CRC
+        Ouroboros.Consensus.Storage.FS.Handle
+        Ouroboros.Consensus.Storage.FS.IO
+        Ouroboros.Consensus.Storage.IO
+        Ouroboros.Consensus.Storage.ImmutableDB
+        Ouroboros.Consensus.Storage.ImmutableDB.API
+        Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+        Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
+        Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Parser
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
+        Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
+        Ouroboros.Consensus.Storage.LedgerDB
+        Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+        Ouroboros.Consensus.Storage.LedgerDB.Init
+        Ouroboros.Consensus.Storage.LedgerDB.InMemory
+        Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
+        Ouroboros.Consensus.Storage.LedgerDB.OnDisk
+        Ouroboros.Consensus.Storage.LedgerDB.Query
+        Ouroboros.Consensus.Storage.LedgerDB.Snapshots
+        Ouroboros.Consensus.Storage.LedgerDB.Stream
+        Ouroboros.Consensus.Storage.LedgerDB.Types
+        Ouroboros.Consensus.Storage.LedgerDB.Update
+        Ouroboros.Consensus.Storage.Serialisation
+        Ouroboros.Consensus.Storage.VolatileDB
+        Ouroboros.Consensus.Storage.VolatileDB.API
+        Ouroboros.Consensus.Storage.VolatileDB.Impl
+        Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo
+        Ouroboros.Consensus.Storage.VolatileDB.Impl.Index
+        Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser
+        Ouroboros.Consensus.Storage.VolatileDB.Impl.State
+        Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
+        Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
+        Data.SOP.Strict
 
-  if os(windows)
-     hs-source-dirs:   src-win32
-  else
-     hs-source-dirs:   src-unix
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    other-extensions:
+        BangPatterns ConstraintKinds DataKinds DeriveAnyClass DeriveFunctor
+        DeriveGeneric EmptyDataDecls FlexibleContexts FlexibleInstances
+        FunctionalDependencies GADTs GeneralizedNewtypeDeriving
+        KindSignatures LambdaCase MultiParamTypeClasses NamedFieldPuns
+        OverloadedStrings PackageImports PolyKinds RankNTypes
+        RecordWildCards ScopedTypeVariables StandaloneDeriving
+        TemplateHaskell TupleSections TypeApplications TypeFamilies
+        TypeFamilyDependencies TypeInType TypeOperators
+        UndecidableInstances UndecidableSuperClasses ViewPatterns
 
-  exposed-modules:
-                       Ouroboros.Consensus.Block
-                       Ouroboros.Consensus.Block.Abstract
-                       Ouroboros.Consensus.Block.EBB
-                       Ouroboros.Consensus.Block.Forging
-                       Ouroboros.Consensus.Block.NestedContent
-                       Ouroboros.Consensus.Block.RealPoint
-                       Ouroboros.Consensus.Block.SupportsMetrics
-                       Ouroboros.Consensus.Block.SupportsProtocol
-                       Ouroboros.Consensus.BlockchainTime
-                       Ouroboros.Consensus.BlockchainTime.API
-                       Ouroboros.Consensus.BlockchainTime.WallClock.Default
-                       Ouroboros.Consensus.BlockchainTime.WallClock.HardFork
-                       Ouroboros.Consensus.BlockchainTime.WallClock.Simple
-                       Ouroboros.Consensus.BlockchainTime.WallClock.Types
-                       Ouroboros.Consensus.BlockchainTime.WallClock.Util
-                       Ouroboros.Consensus.Config
-                       Ouroboros.Consensus.Config.SecurityParam
-                       Ouroboros.Consensus.Config.SupportsNode
-                       Ouroboros.Consensus.Forecast
-                       Ouroboros.Consensus.Fragment.Diff
-                       Ouroboros.Consensus.Fragment.InFuture
-                       Ouroboros.Consensus.Fragment.Validated
-                       Ouroboros.Consensus.Fragment.ValidatedDiff
-                       Ouroboros.Consensus.HardFork.Abstract
-                       Ouroboros.Consensus.HardFork.Combinator
-                       Ouroboros.Consensus.HardFork.Combinator.Abstract
-                       Ouroboros.Consensus.HardFork.Combinator.Abstract.CanHardFork
-                       Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks
-                       Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
-                       Ouroboros.Consensus.HardFork.Combinator.AcrossEras
-                       Ouroboros.Consensus.HardFork.Combinator.Basics
-                       Ouroboros.Consensus.HardFork.Combinator.Block
-                       Ouroboros.Consensus.HardFork.Combinator.Compat
-                       Ouroboros.Consensus.HardFork.Combinator.Condense
-                       Ouroboros.Consensus.HardFork.Combinator.Degenerate
-                       Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
-                       Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
-                       Ouroboros.Consensus.HardFork.Combinator.Embed.Unary
-                       Ouroboros.Consensus.HardFork.Combinator.Forging
-                       Ouroboros.Consensus.HardFork.Combinator.Info
-                       Ouroboros.Consensus.HardFork.Combinator.InjectTxs
-                       Ouroboros.Consensus.HardFork.Combinator.Ledger
-                       Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams
-                       Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection
-                       Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
-                       Ouroboros.Consensus.HardFork.Combinator.Mempool
-                       Ouroboros.Consensus.HardFork.Combinator.Node
-                       Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage
-                       Ouroboros.Consensus.HardFork.Combinator.Node.Metrics
-                       Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-                       Ouroboros.Consensus.HardFork.Combinator.Protocol
-                       Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
-                       Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView
-                       Ouroboros.Consensus.HardFork.Combinator.Serialisation
-                       Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
-                       Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk
-                       Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient
-                       Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode
-                       Ouroboros.Consensus.HardFork.Combinator.State
-                       Ouroboros.Consensus.HardFork.Combinator.State.Infra
-                       Ouroboros.Consensus.HardFork.Combinator.State.Instances
-                       Ouroboros.Consensus.HardFork.Combinator.State.Lift
-                       Ouroboros.Consensus.HardFork.Combinator.State.Types
-                       Ouroboros.Consensus.HardFork.Combinator.Translation
-                       Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
-                       Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                       Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                       Ouroboros.Consensus.HardFork.Combinator.Util.Match
-                       Ouroboros.Consensus.HardFork.Combinator.Util.Tails
-                       Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                       Ouroboros.Consensus.HardFork.History
-                       Ouroboros.Consensus.HardFork.History.Caching
-                       Ouroboros.Consensus.HardFork.History.EpochInfo
-                       Ouroboros.Consensus.HardFork.History.EraParams
-                       Ouroboros.Consensus.HardFork.History.Qry
-                       Ouroboros.Consensus.HardFork.History.Summary
-                       Ouroboros.Consensus.HardFork.History.Util
-                       Ouroboros.Consensus.HardFork.Simple
-                       Ouroboros.Consensus.HeaderStateHistory
-                       Ouroboros.Consensus.HeaderValidation
-                       Ouroboros.Consensus.Ledger.Abstract
-                       Ouroboros.Consensus.Ledger.Basics
-                       Ouroboros.Consensus.Ledger.CommonProtocolParams
-                       Ouroboros.Consensus.Ledger.Dual
-                       Ouroboros.Consensus.Ledger.Extended
-                       Ouroboros.Consensus.Ledger.Inspect
-                       Ouroboros.Consensus.Ledger.Query
-                       Ouroboros.Consensus.Ledger.Query.Version
-                       Ouroboros.Consensus.Ledger.SupportsMempool
-                       Ouroboros.Consensus.Ledger.SupportsPeerSelection
-                       Ouroboros.Consensus.Ledger.SupportsProtocol
-                       Ouroboros.Consensus.Mempool
-                       Ouroboros.Consensus.Mempool.API
-                       Ouroboros.Consensus.Mempool.Capacity
-                       Ouroboros.Consensus.Mempool.Impl.Common
-                       Ouroboros.Consensus.Mempool.Impl.Pure
-                       Ouroboros.Consensus.Mempool.Impl.Types
-                       Ouroboros.Consensus.Mempool.TxLimits
-                       Ouroboros.Consensus.Mempool.Impl
-                       Ouroboros.Consensus.Mempool.Init
-                       Ouroboros.Consensus.Mempool.Query
-                       Ouroboros.Consensus.Mempool.TxSeq
-                       Ouroboros.Consensus.Mempool.Update
-                       Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface
-                       Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
-                       Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-                       Ouroboros.Consensus.MiniProtocol.ChainSync.Server
-                       Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
-                       Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
-                       Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server
-                       Ouroboros.Consensus.NodeId
-                       Ouroboros.Consensus.Node.InitStorage
-                       Ouroboros.Consensus.Node.NetworkProtocolVersion
-                       Ouroboros.Consensus.Node.ProtocolInfo
-                       Ouroboros.Consensus.Node.Run
-                       Ouroboros.Consensus.Node.Serialisation
-                       Ouroboros.Consensus.Protocol.Abstract
-                       Ouroboros.Consensus.Protocol.BFT
-                       Ouroboros.Consensus.Protocol.LeaderSchedule
-                       Ouroboros.Consensus.Protocol.MockChainSel
-                       Ouroboros.Consensus.Protocol.ModChainSel
-                       Ouroboros.Consensus.Protocol.PBFT
-                       Ouroboros.Consensus.Protocol.PBFT.Crypto
-                       Ouroboros.Consensus.Protocol.PBFT.State
-                       Ouroboros.Consensus.Protocol.Signed
-                       Ouroboros.Consensus.Ticked
-                       Ouroboros.Consensus.TypeFamilyWrappers
-                       Ouroboros.Consensus.Util
-                       Ouroboros.Consensus.Util.AnchoredFragment
-                       Ouroboros.Consensus.Util.Args
-                       Ouroboros.Consensus.Util.Assert
-                       Ouroboros.Consensus.Util.CallStack
-                       Ouroboros.Consensus.Util.CBOR
-                       Ouroboros.Consensus.Util.Condense
-                       Ouroboros.Consensus.Util.Counting
-                       Ouroboros.Consensus.Util.DepPair
-                       Ouroboros.Consensus.Util.EarlyExit
-                       Ouroboros.Consensus.Util.FileLock
-                       Ouroboros.Consensus.Util.Enclose
-                       Ouroboros.Consensus.Util.HList
-                       Ouroboros.Consensus.Util.IOLike
-                       Ouroboros.Consensus.Util.MonadSTM.NormalForm
-                       Ouroboros.Consensus.Util.MonadSTM.RAWLock
-                       Ouroboros.Consensus.Util.MonadSTM.StrictMVar
-                       Ouroboros.Consensus.Util.OptNP
-                       Ouroboros.Consensus.Util.Orphans
-                       Ouroboros.Consensus.Util.RedundantConstraints
-                       Ouroboros.Consensus.Util.ResourceRegistry
-                       Ouroboros.Consensus.Util.Singletons
-                       Ouroboros.Consensus.Util.SOP
-                       Ouroboros.Consensus.Util.STM
-                       Ouroboros.Consensus.Util.TentativeState
-                       Ouroboros.Consensus.Util.Time
-                       Ouroboros.Consensus.Util.TraceSize
-                       Ouroboros.Consensus.Util.Versioned
+    ghc-options:
+        -Wall -Wcompat -Wincomplete-uni-patterns
+        -Wincomplete-record-updates -Wpartial-fields -Widentities
+        -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
 
-                       -- Storing things on disk
-                       Ouroboros.Consensus.Storage.ChainDB
-                       Ouroboros.Consensus.Storage.ChainDB.API
-                       Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
-                       Ouroboros.Consensus.Storage.ChainDB.Impl
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Args
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Background
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Follower
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Iterator
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Query
-                       Ouroboros.Consensus.Storage.ChainDB.Impl.Types
-                       Ouroboros.Consensus.Storage.ChainDB.Init
-                       Ouroboros.Consensus.Storage.Common
-                       Ouroboros.Consensus.Storage.FS.API
-                       Ouroboros.Consensus.Storage.FS.API.Types
-                       Ouroboros.Consensus.Storage.FS.CRC
-                       Ouroboros.Consensus.Storage.FS.Handle
-                       Ouroboros.Consensus.Storage.FS.IO
-                       Ouroboros.Consensus.Storage.IO
-                       Ouroboros.Consensus.Storage.ImmutableDB
-                       Ouroboros.Consensus.Storage.ImmutableDB.API
-                       Ouroboros.Consensus.Storage.ImmutableDB.Chunks
-                       Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
-                       Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Parser
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
-                       Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
-                       Ouroboros.Consensus.Storage.LedgerDB
-                       Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
-                       Ouroboros.Consensus.Storage.LedgerDB.Init
-                       Ouroboros.Consensus.Storage.LedgerDB.InMemory
-                       Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
-                       Ouroboros.Consensus.Storage.LedgerDB.OnDisk
-                       Ouroboros.Consensus.Storage.LedgerDB.Query
-                       Ouroboros.Consensus.Storage.LedgerDB.Snapshots
-                       Ouroboros.Consensus.Storage.LedgerDB.Stream
-                       Ouroboros.Consensus.Storage.LedgerDB.Types
-                       Ouroboros.Consensus.Storage.LedgerDB.Update
-                       Ouroboros.Consensus.Storage.Serialisation
-                       Ouroboros.Consensus.Storage.VolatileDB
-                       Ouroboros.Consensus.Storage.VolatileDB.API
-                       Ouroboros.Consensus.Storage.VolatileDB.Impl
-                       Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo
-                       Ouroboros.Consensus.Storage.VolatileDB.Impl.Index
-                       Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser
-                       Ouroboros.Consensus.Storage.VolatileDB.Impl.State
-                       Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
-                       Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
+    build-depends:
+        base >=4.14 && <4.17,
+        base16-bytestring,
+        bimap >=0.4 && <0.5,
+        binary >=0.8 && <0.11,
+        bytestring >=0.10 && <0.12,
+        cardano-binary,
+        cardano-ledger-binary,
+        cardano-crypto-class,
+        cardano-prelude,
+        cardano-slotting,
+        cborg >=0.2.2 && <0.3,
+        containers >=0.5 && <0.7,
+        contra-tracer,
+        deepseq,
+        digest,
+        directory >=1.3 && <1.4,
+        filelock,
+        filepath >=1.4 && <1.5,
+        hashable,
+        measures,
+        mtl >=2.2 && <2.3,
+        nothunks >=0.1.2 && <0.2,
+        psqueues >=0.2.3 && <0.3,
+        quiet >=0.2 && <0.3,
+        semialign >=1.1,
+        serialise >=0.2 && <0.3,
+        sop-core >=0.5 && <0.6,
+        streaming,
+        cardano-strict-containers,
+        text >=1.2 && <1.3,
+        these >=1.1 && <1.2,
+        time,
+        transformers,
+        vector >=0.12 && <0.13,
+        io-classes ^>=0.3,
+        typed-protocols,
+        ouroboros-network-api,
+        ouroboros-network-mock,
+        ouroboros-network-protocols >=0.2,
+        strict-stm ^>=0.2
 
-                       -- Strict wrapper around SOP
-                       Data.SOP.Strict
-  if os(windows)
-     exposed-modules:
-                       -- TODO Delete this module once all our projects have upgraded to at least
-                       -- ghc-8.10.7, but not before
-                       Ouroboros.Consensus.Storage.Seek
+    if os(windows)
+        hs-source-dirs: src-win32
 
-  default-language:    Haskell2010
-  other-extensions:
-                       BangPatterns
-                       ConstraintKinds
-                       DataKinds
-                       DeriveAnyClass
-                       DeriveFunctor
-                       DeriveGeneric
-                       EmptyDataDecls
-                       FlexibleContexts
-                       FlexibleInstances
-                       FunctionalDependencies
-                       GADTs
-                       GeneralizedNewtypeDeriving
-                       KindSignatures
-                       LambdaCase
-                       MultiParamTypeClasses
-                       NamedFieldPuns
-                       OverloadedStrings
-                       PackageImports
-                       PolyKinds
-                       RankNTypes
-                       RecordWildCards
-                       ScopedTypeVariables
-                       StandaloneDeriving
-                       TemplateHaskell
-                       TupleSections
-                       TypeApplications
-                       TypeFamilies
-                       TypeFamilyDependencies
-                       TypeInType
-                       TypeOperators
-                       UndecidableInstances
-                       UndecidableSuperClasses
-                       ViewPatterns
+    else
+        hs-source-dirs: src-unix
 
-  build-depends:       base              >=4.14 && <4.17
-                     , base16-bytestring
-                     , bimap             >=0.4   && <0.5
-                     , binary            >=0.8   && <0.11
-                     , bytestring        >=0.10  && <0.12
-                     , cardano-binary
-                     , cardano-ledger-binary
-                     , cardano-crypto-class
-                     , cardano-prelude
-                     , cardano-slotting
-                     , cborg             >=0.2.2 && <0.3
-                     , containers        >=0.5   && <0.7
-                     , contra-tracer
-                     , deepseq
-                     , digest
-                     , directory         >=1.3   && <1.4
-                     , filelock
-                     , filepath          >=1.4   && <1.5
-                     , hashable
-                     , measures
-                     , mtl               >=2.2   && <2.3
-                     , nothunks          >=0.1.2 && <0.2
-                     , psqueues          >=0.2.3 && <0.3
-                     , quiet             >=0.2   && <0.3
-                     , semialign         >=1.1
-                     , serialise         >=0.2   && <0.3
-                     , sop-core          >=0.5   && <0.6
-                     , streaming
-                     , cardano-strict-containers
-                     , text              >=1.2   && <1.3
-                     , these             >=1.1   && <1.2
-                     , time
-                     , transformers
-                     , vector            >=0.12  && <0.13
+    if os(windows)
+        exposed-modules: Ouroboros.Consensus.Storage.Seek
 
-                     , io-classes       ^>=0.3
-                     , typed-protocols
-                     , ouroboros-network-api
-                     , ouroboros-network-mock
-                     , ouroboros-network-protocols >=0.2
-                     , strict-stm       ^>=0.2
+    if os(windows)
+        build-depends: Win32 >=2.6.1.0
 
+    else
+        build-depends:
+            unix,
+            unix-bytestring
 
-  if os(windows)
-     build-depends:    Win32            >= 2.6.1.0
-  else
-     build-depends:    unix
-                     , unix-bytestring
-
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-
-  if flag(asserts)
-    ghc-options:       -fno-ignore-asserts
-    cpp-options:       -DENABLE_ASSERTIONS
+    if flag(asserts)
+        cpp-options: -DENABLE_ASSERTIONS
+        ghc-options: -fno-ignore-asserts

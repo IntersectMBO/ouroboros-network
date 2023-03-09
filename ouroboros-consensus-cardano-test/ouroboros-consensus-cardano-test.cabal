@@ -1,138 +1,119 @@
-cabal-version:         3.0
+cabal-version:      3.0
+name:               ouroboros-consensus-cardano-test
+version:            0.4.0.0
+license:            Apache-2.0
+license-file:       LICENSE NOTICE
+copyright:          2020-2023 Input Output Global Inc (IOG)
+maintainer:         operations@iohk.io
+author:             IOHK Engineering Team
+synopsis:
+    Test of the instantation of the Ouroboros consensus layer used by Cardano
 
-name:                   ouroboros-consensus-cardano-test
-version:                0.4.0.0
-synopsis:               Test of the instantation of the Ouroboros consensus layer used by Cardano
-description:            Test of the instantation of the Ouroboros consensus layer used by Cardano.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2020-2023 Input Output Global Inc (IOG)
-author:                 IOHK Engineering Team
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-source-files:     CHANGELOG.md
+description:
+    Test of the instantation of the Ouroboros consensus layer used by Cardano.
+
+category:           Network
+build-type:         Simple
+extra-source-files: CHANGELOG.md
 
 source-repository head
-  type:     git
-  location: https://github.com/input-output-hk/ouroboros-network
+    type:     git
+    location: https://github.com/input-output-hk/ouroboros-network
 
 library
-  hs-source-dirs:      src
-  exposed-modules:
-                       Test.Consensus.Cardano.Examples
-                       Test.Consensus.Cardano.Generators
-                       Test.Consensus.Cardano.MockCrypto
+    exposed-modules:
+        Test.Consensus.Cardano.Examples
+        Test.Consensus.Cardano.Generators
+        Test.Consensus.Cardano.MockCrypto
+        Test.ThreadNet.Infra.ShelleyBasedHardFork
+        Test.ThreadNet.Infra.TwoEras
+        Test.ThreadNet.TxGen.Allegra
+        Test.ThreadNet.TxGen.Alonzo
+        Test.ThreadNet.TxGen.Babbage
+        Test.ThreadNet.TxGen.Cardano
+        Test.ThreadNet.TxGen.Mary
 
-                       Test.ThreadNet.Infra.ShelleyBasedHardFork
-                       Test.ThreadNet.Infra.TwoEras
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    ghc-options:
+        -Wall -Wcompat -Wincomplete-uni-patterns
+        -Wincomplete-record-updates -Wpartial-fields -Widentities
+        -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+        -fno-ignore-asserts
 
-                       Test.ThreadNet.TxGen.Allegra
-                       Test.ThreadNet.TxGen.Alonzo
-                       Test.ThreadNet.TxGen.Babbage
-                       Test.ThreadNet.TxGen.Cardano
-                       Test.ThreadNet.TxGen.Mary
-
-  build-depends:       base >=4.14 && <4.17
-                     , cardano-crypto-class
-                     , cardano-crypto-wrapper
-                     , cardano-slotting
-                     , containers
-                     , mtl
-                     , microlens
-                     , QuickCheck
-                     , cardano-strict-containers
-
-                     , cardano-ledger-alonzo-test
-                     , cardano-ledger-conway-test
-                     , cardano-ledger-byron
-                     , cardano-ledger-core:{cardano-ledger-core, testlib}
-                     , cardano-ledger-shelley
-                     , cardano-protocol-tpraos
-
-                     , ouroboros-network-api
-
-                     , ouroboros-consensus                                            ^>=0.3
-                     , ouroboros-consensus-test                                       ^>=0.3
-                     , ouroboros-consensus-protocol                                   ^>=0.3
-                     , ouroboros-consensus-protocol:ouroboros-consensus-protocol-test ^>=0.3
-                     , ouroboros-consensus-diffusion                                  ^>=0.3
-
-                     , ouroboros-consensus-byron        ==0.4.0.0
-                     , ouroboros-consensus-byron-test   ==0.4.0.0
-                     , ouroboros-consensus-shelley      ==0.4.0.0
-                     , ouroboros-consensus-shelley-test ==0.4.0.0
-                     , ouroboros-consensus-cardano      ==0.4.0.0
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
+    build-depends:
+        base >=4.14 && <4.17,
+        cardano-crypto-class,
+        cardano-crypto-wrapper,
+        cardano-slotting,
+        containers,
+        mtl,
+        microlens,
+        QuickCheck,
+        cardano-strict-containers,
+        cardano-ledger-alonzo-test,
+        cardano-ledger-conway-test,
+        cardano-ledger-byron,
+        cardano-ledger-core:{cardano-ledger-core, testlib},
+        cardano-ledger-shelley,
+        cardano-protocol-tpraos,
+        ouroboros-network-api,
+        ouroboros-consensus ^>=0.3,
+        ouroboros-consensus-test ^>=0.3,
+        ouroboros-consensus-protocol ^>=0.3,
+        ouroboros-consensus-protocol:ouroboros-consensus-protocol-test ^>=0.3,
+        ouroboros-consensus-diffusion ^>=0.3,
+        ouroboros-consensus-byron ==0.4.0.0,
+        ouroboros-consensus-byron-test ==0.4.0.0,
+        ouroboros-consensus-shelley ==0.4.0.0,
+        ouroboros-consensus-shelley-test ==0.4.0.0,
+        ouroboros-consensus-cardano ==0.4.0.0
 
 test-suite test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Main.hs
-  other-modules:
-                       Test.Consensus.Cardano.ByronCompatibility
-                       Test.Consensus.Cardano.Golden
-                       Test.Consensus.Cardano.Serialisation
-                       Test.ThreadNet.AllegraMary
-                       Test.ThreadNet.Cardano
-                       Test.ThreadNet.MaryAlonzo
-                       Test.ThreadNet.ShelleyAllegra
+    type:             exitcode-stdio-1.0
+    main-is:          Main.hs
+    hs-source-dirs:   test
+    other-modules:
+        Test.Consensus.Cardano.ByronCompatibility
+        Test.Consensus.Cardano.Golden
+        Test.Consensus.Cardano.Serialisation
+        Test.ThreadNet.AllegraMary
+        Test.ThreadNet.Cardano
+        Test.ThreadNet.MaryAlonzo
+        Test.ThreadNet.ShelleyAllegra
 
-  build-depends:       base              >=4.14 && <4.17
-                     , bytestring
-                     , cardano-crypto-class
-                     , cardano-slotting
-                     , cborg
-                     , containers
-                     , filepath
-                     , microlens
-                     , QuickCheck
-                     , sop-core
-                     , tasty
-                     , tasty-quickcheck
+    default-language: Haskell2010
+    ghc-options:
+        -Wall -Wcompat -Wincomplete-uni-patterns
+        -Wincomplete-record-updates -Wpartial-fields -Widentities
+        -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+        -fno-ignore-asserts -threaded -rtsopts
 
-                     , cardano-ledger-alonzo
-                     , cardano-ledger-byron
-                     , cardano-ledger-core
-                     , cardano-ledger-shelley
-                     , cardano-protocol-tpraos
-
-                     , ouroboros-network-api
-
-                     , ouroboros-consensus          ^>=0.3
-                     , ouroboros-consensus-test     ^>=0.3
-                     , ouroboros-consensus-protocol ^>=0.3
-
-                     , ouroboros-consensus-byron        ==0.4.0.0
-                     , ouroboros-consensus-byron-test   ==0.4.0.0
-                     , ouroboros-consensus-shelley      ==0.4.0.0
-                     , ouroboros-consensus-shelley-test ==0.4.0.0
-                     , ouroboros-consensus-cardano      ==0.4.0.0
-
-                     , ouroboros-consensus-cardano-test
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
-                       -threaded
-                       -rtsopts
+    build-depends:
+        base >=4.14 && <4.17,
+        bytestring,
+        cardano-crypto-class,
+        cardano-slotting,
+        cborg,
+        containers,
+        filepath,
+        microlens,
+        QuickCheck,
+        sop-core,
+        tasty,
+        tasty-quickcheck,
+        cardano-ledger-alonzo,
+        cardano-ledger-byron,
+        cardano-ledger-core,
+        cardano-ledger-shelley,
+        cardano-protocol-tpraos,
+        ouroboros-network-api,
+        ouroboros-consensus ^>=0.3,
+        ouroboros-consensus-test ^>=0.3,
+        ouroboros-consensus-protocol ^>=0.3,
+        ouroboros-consensus-byron ==0.4.0.0,
+        ouroboros-consensus-byron-test ==0.4.0.0,
+        ouroboros-consensus-shelley ==0.4.0.0,
+        ouroboros-consensus-shelley-test ==0.4.0.0,
+        ouroboros-consensus-cardano ==0.4.0.0,
+        ouroboros-consensus-cardano-test
