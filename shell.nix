@@ -24,6 +24,7 @@ let
       pkgconfig
       nixfmt
       stylish-haskell
+      cabal-fmt
 
       # release management
       scriv

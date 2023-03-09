@@ -51,3 +51,5 @@ grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/MockFS.h
 grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/Pure.hs                    >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/STM.hs                     >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/Blob.hs                           >/dev/null 2>&1
+
+fd -p ouroboros-consensus -e cabal -x cabal-fmt -i
