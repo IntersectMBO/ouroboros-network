@@ -22,6 +22,14 @@ source-repository head
 library
   hs-source-dirs:   src
   exposed-modules:
+    Test.Ouroboros.Consensus.ChainGenerator.Adversarial
+    Test.Ouroboros.Consensus.ChainGenerator.BitVector
+    Test.Ouroboros.Consensus.ChainGenerator.Counting
+    Test.Ouroboros.Consensus.ChainGenerator.Honest
+    Test.Ouroboros.Consensus.ChainGenerator.Params
+    Test.Ouroboros.Consensus.ChainGenerator.RaceIterator
+    Test.Ouroboros.Consensus.ChainGenerator.Slot
+    Test.Ouroboros.Consensus.ChainGenerator.Some
     Test.ThreadNet.General
     Test.ThreadNet.Network
     Test.ThreadNet.Ref.PBFT
@@ -98,6 +106,7 @@ library
     , fs-sim
     , generics-sop
     , graphviz
+    , hmatrix
     , io-classes
     , io-sim
     , mtl                            >=2.2    && <2.3
@@ -125,6 +134,7 @@ library
     , tree-diff
     , typed-protocols
     , utf8-string
+    , vector
 
   default-language: Haskell2010
   ghc-options:
@@ -290,6 +300,11 @@ test-suite test-infra
   main-is:          Main.hs
   other-modules:
     Ouroboros.Consensus.Util.Tests
+    Test.Ouroboros.Consensus.ChainGenerator.Tests
+    Test.Ouroboros.Consensus.ChainGenerator.Tests.Adversarial
+    Test.Ouroboros.Consensus.ChainGenerator.Tests.BitVector
+    Test.Ouroboros.Consensus.ChainGenerator.Tests.Counting
+    Test.Ouroboros.Consensus.ChainGenerator.Tests.Honest
     Test.ThreadNet.Util.Tests
     Test.Util.ChainUpdates.Tests
     Test.Util.Schedule.Tests
@@ -297,11 +312,14 @@ test-suite test-infra
 
   build-depends:
     , base                      >=4.14    && <4.17
+    , mtl
     , ouroboros-consensus       ==0.3.1.0
     , ouroboros-consensus-test
     , QuickCheck
+    , random                    >=1.2 && <1.3
     , tasty
     , tasty-quickcheck
+    , vector
 
   default-language: Haskell2010
   ghc-options:

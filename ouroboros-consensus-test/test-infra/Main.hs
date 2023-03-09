@@ -13,7 +13,8 @@
 module Main (main) where
 
 import qualified Ouroboros.Consensus.Util.Tests (tests)
-import           Test.Tasty
+import qualified Test.Ouroboros.Consensus.ChainGenerator.Tests (tests)
+import           Test.Tasty (TestTree, testGroup)
 import qualified Test.ThreadNet.Util.Tests (tests)
 import qualified Test.Util.ChainUpdates.Tests (tests)
 import qualified Test.Util.Schedule.Tests (tests)
@@ -28,6 +29,7 @@ tests :: TestTree
 tests =
   testGroup "test-infra"
   [ Ouroboros.Consensus.Util.Tests.tests
+  , Test.Ouroboros.Consensus.ChainGenerator.Tests.tests
   , Test.ThreadNet.Util.Tests.tests
   , Test.Util.ChainUpdates.Tests.tests
   , Test.Util.Schedule.Tests.tests
