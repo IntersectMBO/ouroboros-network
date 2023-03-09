@@ -1,107 +1,106 @@
-cabal-version:       3.0
+cabal-version:      3.0
+name:               ouroboros-consensus-diffusion
+version:            0.3.1.0
+synopsis:           Integration for the Ouroboros blockchain protocol
+description:
+  Top level integration for consensus & network layers of the Ouroboros blockchain protocol.
 
-name:                   ouroboros-consensus-diffusion
-version:                0.3.1.0
-synopsis:               Integration for the Ouroboros blockchain protocol
-description:            Top level integration for consensus & network layers of the Ouroboros blockchain protocol.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2022-2023 Input Output Global Inc (IOG)
-author:                 IOHK Engineering Team
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-source-files:     CHANGELOG.md
+license:            Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+
+copyright:          2022-2023 Input Output Global Inc (IOG)
+author:             IOHK Engineering Team
+maintainer:         operations@iohk.io
+category:           Network
+build-type:         Simple
+extra-source-files: CHANGELOG.md
 
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
 library
-  hs-source-dirs:      src
+  hs-source-dirs:     src
   exposed-modules:
-                       Ouroboros.Consensus.Network.NodeToClient
-                       Ouroboros.Consensus.Network.NodeToNode
-                       Ouroboros.Consensus.Node
-                       Ouroboros.Consensus.Node.DbLock
-                       Ouroboros.Consensus.Node.DbMarker
-                       Ouroboros.Consensus.Node.ErrorPolicy
-                       Ouroboros.Consensus.Node.ExitPolicy
-                       Ouroboros.Consensus.Node.RethrowPolicy
-                       Ouroboros.Consensus.Node.Exit
-                       Ouroboros.Consensus.Node.Recovery
-                       Ouroboros.Consensus.Node.Tracers
-                       Ouroboros.Consensus.NodeKernel
+    Ouroboros.Consensus.Network.NodeToClient
+    Ouroboros.Consensus.Network.NodeToNode
+    Ouroboros.Consensus.Node
+    Ouroboros.Consensus.Node.DbLock
+    Ouroboros.Consensus.Node.DbMarker
+    Ouroboros.Consensus.Node.ErrorPolicy
+    Ouroboros.Consensus.Node.Exit
+    Ouroboros.Consensus.Node.ExitPolicy
+    Ouroboros.Consensus.Node.Recovery
+    Ouroboros.Consensus.Node.RethrowPolicy
+    Ouroboros.Consensus.Node.Tracers
+    Ouroboros.Consensus.NodeKernel
+
   reexported-modules:
-                       Ouroboros.Consensus.Block
-                     , Ouroboros.Consensus.Node.Run
-                     , Ouroboros.Consensus.Node.NetworkProtocolVersion
-  default-language:    Haskell2010
+    Ouroboros.Consensus.Block
+    , Ouroboros.Consensus.Node.Run
+    , Ouroboros.Consensus.Node.NetworkProtocolVersion
+
+  default-language:   Haskell2010
   other-extensions:
-                       BangPatterns
-                       ConstraintKinds
-                       DataKinds
-                       DeriveAnyClass
-                       DeriveFunctor
-                       DeriveGeneric
-                       EmptyDataDecls
-                       FlexibleContexts
-                       FlexibleInstances
-                       FunctionalDependencies
-                       GADTs
-                       GeneralizedNewtypeDeriving
-                       KindSignatures
-                       LambdaCase
-                       MultiParamTypeClasses
-                       NamedFieldPuns
-                       OverloadedStrings
-                       PackageImports
-                       PolyKinds
-                       RankNTypes
-                       RecordWildCards
-                       ScopedTypeVariables
-                       StandaloneDeriving
-                       TemplateHaskell
-                       TupleSections
-                       TypeApplications
-                       TypeFamilies
-                       TypeFamilyDependencies
-                       TypeInType
-                       TypeOperators
-                       UndecidableInstances
-                       UndecidableSuperClasses
-                       ViewPatterns
+    BangPatterns
+    ConstraintKinds
+    DataKinds
+    DeriveAnyClass
+    DeriveFunctor
+    DeriveGeneric
+    EmptyDataDecls
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTs
+    GeneralizedNewtypeDeriving
+    KindSignatures
+    LambdaCase
+    MultiParamTypeClasses
+    NamedFieldPuns
+    OverloadedStrings
+    PackageImports
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    StandaloneDeriving
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeFamilyDependencies
+    TypeInType
+    TypeOperators
+    UndecidableInstances
+    UndecidableSuperClasses
+    ViewPatterns
 
-  build-depends:       base              >=4.14  && <4.17
-                     , bytestring        >=0.10  && <0.12
-                     , cborg
-                     , containers
-                     , contra-tracer
-                     , deepseq
-                     , filepath
-                     , hashable
-                     , mtl
-                     , random
-                     , serialise         >=0.2   && <0.3
-                     , text
-                     , time
+  build-depends:
+    , base                         >=4.14     && <4.17
+    , bytestring                   >=0.10     && <0.12
+    , cborg
+    , containers
+    , contra-tracer
+    , deepseq
+    , filepath
+    , hashable
+    , io-classes                   ^>=0.3
+    , mtl
+    , ouroboros-consensus          ==0.3.1.0
+    , ouroboros-network            ^>=0.4.0.1
+    , ouroboros-network-api        ^>=0.1
+    , ouroboros-network-framework  ^>=0.3
+    , ouroboros-network-protocols  ^>=0.3
+    , random
+    , serialise                    >=0.2      && <0.3
+    , text
+    , time
+    , typed-protocols
 
-                     , io-classes       ^>=0.3
-                     , typed-protocols
-                     , ouroboros-network-api ^>=0.1
-                     , ouroboros-network-framework ^>=0.3
-                     , ouroboros-network-protocols ^>=0.3
-                     , ouroboros-network ^>=0.4.0.1
-
-                     , ouroboros-consensus ==0.3.1.0
-
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
