@@ -35,7 +35,6 @@ library
                        Test.ThreadNet.Util.NodeTopology
                        Test.ThreadNet.Util.Seed
 
-                       Test.Util.Blob
                        Test.Util.BoolProps
                        Test.Util.ChainDB
                        Test.Util.ChainUpdates
