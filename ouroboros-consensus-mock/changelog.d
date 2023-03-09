@@ -1,1 +1,1 @@
-../ouroboros-consensus/changelog.d
+../ouroboros-consensus-test/changelog.d

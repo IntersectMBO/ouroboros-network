@@ -1,6 +1,11 @@
-# CHANGELOG
+# Changelog for ouroboros-consensus-cardano-test
 
-This package is part of a bundle of packages. Please consult `CHANGELOG.md` in
-the package `ouroboros-consensus-cardano` at the same version as this package to
-see the current changelog that applies also to this package.
+Changelog for the following packages:
 
+- `ouroboros-consensus-byronspec`
+- `ouroboros-consensus-byron-test`
+- `ouroboros-consensus-shelley-test`
+- `ouroboros-consensus-cardano-test`
+- `ouroboros-consensus-cardano-tools`
+
+# Changelog entries
