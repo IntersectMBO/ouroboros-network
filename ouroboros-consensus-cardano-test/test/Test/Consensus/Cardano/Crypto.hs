@@ -70,12 +70,21 @@ tests =
 --    ]
 -- @@
 --
--- is it enough to test a single specialised crypto function? yes,
--- because that's a start, but also because using the high level
--- HFBlock even with a single function would be evidence we are doing
--- the dispatching right => we don't test the actual crypto functions,
--- only the "dispatching" logic that requires different instances for
--- different eras.
+-- Q: is it enough to test a single specialised crypto function?
+--
+-- A: yes, because that's a start, but also because using the high
+-- level HFBlock even with a single function would be evidence we are
+-- doing the dispatching right => we don't test the actual crypto
+-- functions, only the "dispatching" logic that requires different
+-- instances for different eras.
+--
+-- Q: Is it enough to test the length of the VRF proof?
+--
+-- A: Probably
+-- not, but it's good enough for now. Should there be a new kind of
+-- crypto with different proof/keys/whatever but same length, we would
+-- need to beef up the test but that's ok because we always want to
+-- have a /red test/ before writing any production code, right?
 --
 prop_VRFCryptoDependsOnBlockEra :: CardanoHeader StandardCrypto -> Property
 prop_VRFCryptoDependsOnBlockEra = \case
