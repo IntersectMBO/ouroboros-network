@@ -28,3 +28,5 @@ grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Im
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs              >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs          >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/Classify.hs                       >/dev/null 2>&1
+
+fd -p ouroboros-consensus -e cabal -x cabal-fmt -i

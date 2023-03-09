@@ -1,8 +1,8 @@
-{ runCommand, fd, lib, stylish-haskell, haskell-nix }:
+{ runCommand, fd, lib, stylish-haskell, cabal-fmt, haskell-nix }:
 
 runCommand "check-stylish" {
   meta.platforms = with lib.platforms; [ linux ];
-  buildInputs = [ fd stylish-haskell ];
+  buildInputs = [ fd stylish-haskell cabal-fmt ];
   src = haskell-nix.haskellLib.cleanGit {
     name = "ouroboros-network-src";
     src = ../.;

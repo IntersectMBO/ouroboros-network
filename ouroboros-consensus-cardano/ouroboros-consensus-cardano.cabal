@@ -1,18 +1,23 @@
-cabal-version:         3.0
+cabal-version:      3.0
+name:               ouroboros-consensus-cardano
+version:            0.4.0.0
+synopsis:
+  The instantation of the Ouroboros consensus layer used by Cardano
 
-name:                   ouroboros-consensus-cardano
-version:                0.4.0.0
-synopsis:               The instantation of the Ouroboros consensus layer used by Cardano
-description:            The instantation of the Ouroboros consensus layer used by Cardano.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG)
-author:                 IOHK Engineering Team
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-source-files:     CHANGELOG.md
+description:
+  The instantation of the Ouroboros consensus layer used by Cardano.
+
+license:            Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
+
+copyright:          2019-2023 Input Output Global Inc (IOG)
+author:             IOHK Engineering Team
+maintainer:         operations@iohk.io
+category:           Network
+build-type:         Simple
+extra-source-files: CHANGELOG.md
 
 source-repository head
   type:     git
@@ -24,49 +29,43 @@ flag asserts
   default:     False
 
 library
-  hs-source-dirs:      src
+  hs-source-dirs:   src
   exposed-modules:
-                       Ouroboros.Consensus.Cardano
-                       Ouroboros.Consensus.Cardano.Block
-                       Ouroboros.Consensus.Cardano.ByronHFC
-                       Ouroboros.Consensus.Cardano.Condense
-                       Ouroboros.Consensus.Cardano.CanHardFork
-                       Ouroboros.Consensus.Cardano.Node
-                       Ouroboros.Consensus.Cardano.ShelleyBased
+    Ouroboros.Consensus.Cardano
+    Ouroboros.Consensus.Cardano.Block
+    Ouroboros.Consensus.Cardano.ByronHFC
+    Ouroboros.Consensus.Cardano.CanHardFork
+    Ouroboros.Consensus.Cardano.Condense
+    Ouroboros.Consensus.Cardano.Node
+    Ouroboros.Consensus.Cardano.ShelleyBased
 
-  build-depends:       base              >=4.14  && <4.17
-                     , bytestring        >=0.10  && <0.12
-                     , cborg             >=0.2.2 && <0.3
-                     , containers        >=0.5   && <0.7
-                     , mtl               >=2.2   && <2.3
-                     , nothunks
-                     , these             >=1.1   && <1.2
+  build-depends:
+    , base                          >=4.14    && <4.17
+    , bytestring                    >=0.10    && <0.12
+    , cardano-binary
+    , cardano-crypto-class
+    , cardano-data
+    , cardano-ledger-byron
+    , cardano-ledger-core
+    , cardano-ledger-shelley
+    , cardano-prelude
+    , cardano-protocol-tpraos
+    , cardano-slotting
+    , cborg                         >=0.2.2   && <0.3
+    , containers                    >=0.5     && <0.7
+    , mtl                           >=2.2     && <2.3
+    , nothunks
+    , ouroboros-consensus           ^>=0.3
+    , ouroboros-consensus-byron     ==0.4.0.0
+    , ouroboros-consensus-protocol  ^>=0.3
+    , ouroboros-consensus-shelley   ==0.4.0.0
+    , these                         >=1.1     && <1.2
 
-                     , cardano-binary
-                     , cardano-crypto-class
-                     , cardano-data
-                     , cardano-ledger-byron
-                     , cardano-ledger-core
-                     , cardano-ledger-shelley
-                     , cardano-prelude
-                     , cardano-protocol-tpraos
-                     , cardano-slotting
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
 
-                     , ouroboros-consensus          ^>=0.3
-                     , ouroboros-consensus-protocol ^>=0.3
-
-                     , ouroboros-consensus-byron   ==0.4.0.0
-                     , ouroboros-consensus-shelley ==0.4.0.0
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
   if flag(asserts)
-    ghc-options:       -fno-ignore-asserts
+    ghc-options: -fno-ignore-asserts
