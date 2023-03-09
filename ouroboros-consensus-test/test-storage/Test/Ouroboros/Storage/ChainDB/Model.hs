@@ -600,9 +600,14 @@ iteratorNext itrId blockComponent m =
       Just []     -> ( IteratorExhausted
                      , m
                      )
-      Just (b:bs) -> ( IteratorResult $ getBlockComponent b blockComponent
-                     , m { iterators = Map.insert itrId bs (iterators m) }
-                     )
+      Just (b:bs) ->
+        if (blockHash b `Map.member` blocks m)
+        then ( IteratorResult $ getBlockComponent b blockComponent
+             , m { iterators = Map.insert itrId bs (iterators m) }
+             )
+        else ( IteratorBlockGCed $ blockRealPoint b
+             , m { iterators = Map.insert itrId bs (iterators m) }
+             )
       Nothing      -> error "iteratorNext: unknown iterator ID"
 
 getBlockComponent
@@ -1021,7 +1026,7 @@ garbageCollectableIteratorNext
 garbageCollectableIteratorNext secParam m itId =
     case fst (iteratorNext itId GetBlock m) of
       IteratorExhausted    -> True -- TODO
-      IteratorBlockGCed {} -> error "model doesn't return IteratorBlockGCed"
+      IteratorBlockGCed {} -> True
       IteratorResult blk   -> garbageCollectable secParam m blk
 
 -- | Delete blocks that are older than the security parameter from the volatile
