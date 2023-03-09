@@ -25,6 +25,7 @@ let
       nixfmt
       stylish-haskell
       cabal-fmt
+      lmdb
 
       # release management
       scriv
