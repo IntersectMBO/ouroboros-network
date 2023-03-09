@@ -29,18 +29,18 @@ withTestEnv :: TestEnvConfig -> TestTree -> TestTree
 withTestEnv TestEnvConfig{..} testTree = askOption $ \case
       Nightly -> localOption (QuickCheckTests nightly) testTree
       CI      -> localOption (QuickCheckTests ci) testTree
-      Dev     -> localOption (QuickCheckTests dev) testTree
+      Dev     -> testTree
 
 -- | Query and adjust options for `TestEnv`
 askTestEnv :: (TestEnv -> TestTree) -> TestTree
 askTestEnv = askOption
 
 -- | Test configurations for test environment
-data TestEnvConfig = TestEnvConfig { nightly :: Int, ci :: Int, dev :: Int }
+data TestEnvConfig = TestEnvConfig { nightly :: Int, ci :: Int }
 
 -- | Default set of tests for each environment
 defaultTestEnvConfig :: TestEnvConfig
-defaultTestEnvConfig = TestEnvConfig { nightly = 100000, ci = 10000, dev = 100 }
+defaultTestEnvConfig = TestEnvConfig { nightly = 100000, ci = 10000 }
 
 -- | An 'Option' that indicates the environment in which to run tests.
 data TestEnv = Nightly | CI | Dev
