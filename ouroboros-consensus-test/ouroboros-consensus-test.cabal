@@ -35,6 +35,7 @@ library
                        Test.ThreadNet.Util.NodeTopology
                        Test.ThreadNet.Util.Seed
 
+                       Test.Util.Blob
                        Test.Util.BoolProps
                        Test.Util.ChainDB
                        Test.Util.ChainUpdates
@@ -42,6 +43,11 @@ library
                        Test.Util.Classify
                        Test.Util.Corruption
                        Test.Util.FileLock
+                       Test.Util.FS.Sim.Error
+                       Test.Util.FS.Sim.FsTree
+                       Test.Util.FS.Sim.MockFS
+                       Test.Util.FS.Sim.Pure
+                       Test.Util.FS.Sim.STM
                        Test.Util.HardFork.Future
                        Test.Util.HardFork.OracularClock
                        Test.Util.InvertedMap
@@ -256,7 +262,6 @@ test-suite test-storage
                      , cborg
                      , containers
                      , contra-tracer
-                     , directory
                      , generics-sop
                      , hashable
                      , mtl
@@ -269,7 +274,6 @@ test-suite test-storage
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
-                     , temporary
                      , text
                      , time
                      , tree-diff

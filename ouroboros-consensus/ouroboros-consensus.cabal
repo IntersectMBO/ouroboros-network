@@ -200,6 +200,12 @@ library
                        Ouroboros.Consensus.Storage.ChainDB.Impl.Types
                        Ouroboros.Consensus.Storage.ChainDB.Init
                        Ouroboros.Consensus.Storage.Common
+                       Ouroboros.Consensus.Storage.FS.API
+                       Ouroboros.Consensus.Storage.FS.API.Types
+                       Ouroboros.Consensus.Storage.FS.CRC
+                       Ouroboros.Consensus.Storage.FS.Handle
+                       Ouroboros.Consensus.Storage.FS.IO
+                       Ouroboros.Consensus.Storage.IO
                        Ouroboros.Consensus.Storage.ImmutableDB
                        Ouroboros.Consensus.Storage.ImmutableDB.API
                        Ouroboros.Consensus.Storage.ImmutableDB.Chunks

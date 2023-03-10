@@ -14,6 +14,30 @@ fd -p ouroboros-consensus \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs \
     -E ouroboros-consensus-test/src/Test/Util/Classify.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/API.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/API/Types.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/CRC.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/Handle.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/IO.hs \
+    -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/IO.hs \
+    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/Error.hs \
+    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/FsTree.hs \
+    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/MockFS.hs \
+    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/Pure.hs \
+    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/STM.hs \
+    -E ouroboros-consensus-test/src/Test/Util/Blob.hs \
+    -X stylish-haskell \
+    -c .stylish-haskell.yaml -i
+
+fd -p fs-api \
+    -e hs \
+    -E Setup.hs \
+    -X stylish-haskell \
+    -c .stylish-haskell.yaml -i
+
+fd -p fs-sim \
+    -e hs \
+    -E Setup.hs \
     -X stylish-haskell \
     -c .stylish-haskell.yaml -i
 
@@ -26,3 +50,15 @@ grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl/Types
 grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs              >/dev/null 2>&1
 grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs          >/dev/null 2>&1
 grep "DEPRECATED" ouroboros-consensus-test/src/Test/Util/Classify.hs                       >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/API.hs            >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/API/Types.hs      >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/CRC.hs            >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/Handle.hs         >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/IO.hs             >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/IO.hs                >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/Error.hs                   >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/FsTree.hs                  >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/MockFS.hs                  >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/Pure.hs                    >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/STM.hs                     >/dev/null 2>&1
+grep "DEPRECATED" ouroboros-consensus-test/src/Test/Util/Blob.hs                           >/dev/null 2>&1

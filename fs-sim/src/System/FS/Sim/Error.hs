@@ -28,6 +28,10 @@ module System.FS.Sim.Error (
   , Partial (..)
   , hGetSomePartial
   , hPutSomePartial
+    -- * Blob
+  , Blob (..)
+  , blobFromBS
+  , blobToBS
     -- * Generating corruption for 'hPutSome'
   , PutCorruption (..)
   , corrupt
@@ -49,9 +53,9 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as LC8
-import Data.Foldable (for_)
-import qualified Data.List as List
+import           Data.Foldable (for_)
 import           Data.List (dropWhileEnd, intercalate)
+import qualified Data.List as List
 import           Data.Maybe (catMaybes, isNothing)
 import           Data.String (IsString (..))
 import           Data.Word (Word64)
@@ -201,8 +205,8 @@ instance Arbitrary Blob where
       , s' <- getASCIIString <$> shrink s
       , not (List.null s') ]
 
-_blobToBS :: Blob -> ByteString
-_blobToBS = getBlob
+blobToBS :: Blob -> ByteString
+blobToBS = getBlob
 
 blobFromBS :: ByteString -> Blob
 blobFromBS = MkBlob
