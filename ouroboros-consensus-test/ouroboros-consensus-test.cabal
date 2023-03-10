@@ -146,12 +146,15 @@ test-suite test-consensus
                        Test.Consensus.MiniProtocol.ChainSync.Client
                        Test.Consensus.MiniProtocol.LocalStateQuery.Server
                        Test.Consensus.Mempool
+                       Test.Consensus.Mempool.Fairness
+                       Test.Consensus.Mempool.Fairness.TestBlock
                        Test.Consensus.Node
                        Test.Consensus.ResourceRegistry
                        Test.Consensus.Util.MonadSTM.RAWLock
                        Test.Consensus.Util.Versioned
 
   build-depends:       base
+                     , async
                      , binary
                      , bytestring
                      , cardano-binary
@@ -160,6 +163,7 @@ test-suite test-consensus
                      , cborg
                      , containers
                      , contra-tracer
+                     , deepseq
                      , directory
                      , generics-sop
                      , mtl
@@ -167,6 +171,7 @@ test-suite test-consensus
                      , QuickCheck
                      , quickcheck-state-machine
                      , quiet
+                     , random
                      , serialise
                      , sop-core
                      , tasty

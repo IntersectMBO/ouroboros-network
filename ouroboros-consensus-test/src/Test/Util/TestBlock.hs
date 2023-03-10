@@ -464,6 +464,8 @@ testInitLedgerWithState = TestLedger GenesisPoint
 newtype instance Ticked (LedgerState (TestBlockWith ptype)) = TickedTestLedger {
       getTickedTestLedger :: LedgerState (TestBlockWith ptype)
     }
+  deriving stock Generic
+  deriving anyclass NoThunks
 
 testInitExtLedgerWithState :: PayloadDependentState ptype -> ExtLedgerState (TestBlockWith ptype)
 testInitExtLedgerWithState st = ExtLedgerState {
