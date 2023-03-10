@@ -2,19 +2,19 @@ module Main (main) where
 
 import           Test.Tasty
 
-import qualified Test.Consensus.BlockchainTime.Simple (tests)
-import qualified Test.Consensus.HardFork.Combinator (tests)
-import qualified Test.Consensus.HardFork.Forecast (tests)
-import qualified Test.Consensus.HardFork.History (tests)
-import qualified Test.Consensus.HardFork.Summary (tests)
-import qualified Test.Consensus.Mempool (tests)
-import qualified Test.Consensus.MiniProtocol.BlockFetch.Client (tests)
-import qualified Test.Consensus.MiniProtocol.ChainSync.Client (tests)
-import qualified Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests)
-import qualified Test.Consensus.Node (tests)
-import qualified Test.Consensus.ResourceRegistry (tests)
-import qualified Test.Consensus.Util.MonadSTM.RAWLock (tests)
-import qualified Test.Consensus.Util.Versioned (tests)
+import qualified Test.Consensus.BlockchainTime.Simple
+import qualified Test.Consensus.HardFork.Combinator
+import qualified Test.Consensus.HardFork.Forecast
+import qualified Test.Consensus.HardFork.History
+import qualified Test.Consensus.HardFork.Summary
+import qualified Test.Consensus.Mempool
+import qualified Test.Consensus.MiniProtocol.BlockFetch.Client
+import qualified Test.Consensus.MiniProtocol.ChainSync.Client
+import qualified Test.Consensus.MiniProtocol.LocalStateQuery.Server
+import qualified Test.Consensus.Node
+import qualified Test.Consensus.ResourceRegistry
+import qualified Test.Consensus.Util.MonadSTM.RAWLock
+import qualified Test.Consensus.Util.Versioned
 import           Test.Util.TestEnv (defaultMainWithTestEnv,
                      defaultTestEnvConfig)
 
