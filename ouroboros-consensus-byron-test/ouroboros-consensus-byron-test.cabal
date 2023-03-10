@@ -55,7 +55,8 @@ library
                      , ouroboros-consensus      ^>=0.3
                      , ouroboros-consensus-test ^>=0.3
 
-                     , ouroboros-consensus-byron     ==0.4.0.0
+                     , ouroboros-consensus-byron     ^>=0.4.0
+
                      , ouroboros-consensus-byronspec ==0.4.0.0
 
   default-language:    Haskell2010
@@ -107,9 +108,9 @@ test-suite test
                      , ouroboros-consensus      ^>=0.3
                      , ouroboros-consensus-test ^>=0.3
 
-                     , ouroboros-consensus-byron     ==0.4.0.0
-                     , ouroboros-consensus-byronspec ==0.4.0.0
+                     , ouroboros-consensus-byron     ^>=0.4.0
 
+                     , ouroboros-consensus-byronspec ==0.4.0.0
                      , ouroboros-consensus-byron-test
 
   default-language:    Haskell2010

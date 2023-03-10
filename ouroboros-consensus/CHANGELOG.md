@@ -3,7 +3,6 @@
 This Changelog describes changes on the ledger agnostic Consensus packages:
 - `ouroboros-consensus`
 - `ouroboros-consensus-diffusion`
-- `ouroboros-consensus-mock`
 - `ouroboros-consensus-protocol`
 
 If you don't see here the package you're interested in, see the top-level

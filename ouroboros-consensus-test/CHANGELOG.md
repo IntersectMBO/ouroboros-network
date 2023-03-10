@@ -3,6 +3,7 @@
 Changelog for the following packages:
 
 - `ouroboros-consensus-test`
+- `ouroboros-consensus-mock`
 - `ouroboros-consensus-mock-test`
 - `ouroboros-consensus-tutorials`
 
