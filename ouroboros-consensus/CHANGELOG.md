@@ -2,12 +2,9 @@
 
 This Changelog describes changes on the ledger agnostic Consensus packages:
 - `ouroboros-consensus`
-- `ouroboros-consensus-test`
 - `ouroboros-consensus-diffusion`
 - `ouroboros-consensus-mock`
-- `ouroboros-consensus-mock-test`
 - `ouroboros-consensus-protocol`
-- `ouroboros-consensus-tutorials`
 
 If you don't see here the package you're interested in, see the top-level
 [Consensus-CHANGELOG.md](../Consensus-CHANGELOG.md).
