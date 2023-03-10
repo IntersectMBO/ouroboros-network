@@ -6,62 +6,61 @@
 #     must be no remaining changelog files
 # otherwise exits with exit code 1
 
-# If $CI is set, then use `git show` as GHA does a sparse checkout. Otherwise,
-# do a normal cat of the cabal file
+function pkgs_in_bundle {
+  sed '/Changelog entries/q' $1/CHANGELOG.md | grep "\- \`ouroboros-" | cut -d\` -f2 | sort | uniq
+}
 
-cardano_packages=$(find . -maxdepth 1 -type d -name "ouroboros-consensus-cardano*" -or -name "ouroboros-consensus-shelley*" -or -name "ouroboros-consensus-byron*")
-cardano_last_version=$(grep "<a id=" ouroboros-consensus-cardano/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
-cardano_new_versions=$(if [[ -n "${CI}" ]]; then
-                           for f in $cardano_packages; do
-                               git show $(ls $f/*.cabal) | grep "+version" | rev | cut -d' ' -f1 | rev
-                           done
-                       else for f in $cardano_packages; do
-                               cat $f/*.cabal | grep "^version" | rev | cut -d' ' -f1 | rev
-                            done
-                       fi)
-
-consensus_packages=$(find . -maxdepth 1 -type d -name "ouroboros-consensus*" -not -name "*byron*" -not -name "*shelley*" -not -name "*cardano*")
-consensus_last_version=$(grep "<a id=" ouroboros-consensus/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
-consensus_new_versions=$(if [[ -n "${CI}" ]]; then
-                           for f in $consensus_packages; do
-                               git show $(ls $f/*.cabal) | grep "+version" | rev | cut -d' ' -f1 | rev
-                           done
-                       else for f in $consensus_packages; do
-                               cat $f/*.cabal | grep "^version" | rev | cut -d' ' -f1 | rev
-                            done
-                       fi)
-
-
-if [ $(echo "$consensus_new_versions" | sort | uniq | wc -l) != 1 ]; then  # See (1) above
-    echo "Inconsistent versioning of the ouroboros-consensus bundle, more than one version number: $consensus_new_versions"
-    exit 1
-else
-    if [ $(echo "$consensus_new_versions" | sort | uniq) == "$consensus_last_version" ]; then
-        echo "ouroboros-consensus version not updated, currently at $consensus_last_version"
-    else
-        if [ $(ls -l ouroboros-consensus/changelog.d | wc -l) != 2 ]; then # See (2) above
-            echo "Tried to release for ouroboros-consensus but there are remaining changelog files:"
-            ls -l ouroboros-consensus/changelog.d
-            exit 1
-        else
-            echo "ouroboros-consensus version succesfully updated"
-        fi
+function get_last_version {
+  ch_version=$(grep "<a id=" $1/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
+  if [[ -z $ch_version ]]; then
+    # this will only happen while there are no changelog entries on said bundles.
+    # once there are entries this is dead code.
+    if [[ $1 == "ouroboros-consensus-test" ]]; then
+      echo "0.3.1.0"
+    elif [[ $1 == "ouroboros-consensus-cardano-test" ]]; then
+      echo "0.4.0.0"
     fi
-fi
+  else
+    echo $ch_version
+  fi
+}
 
-if [ $(echo "$cardano_new_versions" | sort | uniq | wc -l) != 1 ]; then  # See (1) above
-    echo "Inconsistent versioning of the ouroboros-cardano bundle, more than one version number: $cardano_new_versions"
-    exit 1
-else
-    if [ $(echo "$cardano_new_versions" | sort | uniq) == "${cardano_last_version:-0.1.0.0}" ]; then
-        echo "ouroboros-cardano version not updated, currently at $cardano_last_version"
+function cabal_files_versions {
+    for f in $1; do
+        cat $f/$f.cabal | grep "^version" | rev | cut -d' ' -f1 | rev
+    done
+}
+
+function last_commit_updated_versions {
+    for f in $1; do
+        git show $f/$f.cabal | grep "^+version" | rev | cut -d' ' -f1 | rev
+    done
+}
+
+function check {
+    main=$1
+
+    echo "Checking consistency of $main"
+    versions=$(cabal_files_versions $(pkgs_in_bundle $main))
+    last_version=$(get_last_version $main)
+    this_commit_updated_versions=$(last_commit_updated_versions $(pkgs_in_bundle $main))
+
+    if [ $(echo "$versions" | sort | uniq | wc -l) != 1 ]; then
+        echo "ERROR: Inconsistent versioning, more than one version number mentioned in the cabal files: $versions"
+        exit 1
+    elif [ $(echo "$versions" | sort | uniq ) != $last_version ]; then
+        echo "ERROR: Last version in the changelog ($last_version) is not the same as in the bundle $(echo "$versions" | sort | uniq )"
+        exit 1
+    elif [[ -n "$this_commit_updated_versions" && $(ls -l $main/changelog.d | wc -l) != 2 ]]; then
+        echo "ERROR: Last commit updated the version but there are remaining changelog fragments"
+        exit 1
     else
-        if [ $(ls -l ouroboros-consensus-cardano/changelog.d | wc -l) != 2 ]; then # See (2) above
-            echo "Tried to release for ouroboros-cardano but there are remaining changelog files."
-            ls -l ouroboros-consensus-cardano/changelog.d
-            exit 1
-        else
-            echo "ouroboros-cardano version succesfully updated"
-        fi
+        printf "OK: %s\n\n" $last_version
     fi
-fi
+
+}
+
+check ouroboros-consensus
+check ouroboros-consensus-test
+check ouroboros-consensus-cardano
+check ouroboros-consensus-cardano-test
