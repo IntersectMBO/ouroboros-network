@@ -15,8 +15,8 @@
 --
 -- Intended for qualified import
 --
--- > import Test.Util.FS.Sim.MockFS (MockFS)
--- > import qualified Test.Util.FS.Sim.MockFS as Mock
+-- > import           System.FS.Sim.MockFS (MockFS)
+-- > import qualified System.FS.Sim.MockFS as Mock
 module System.FS.Sim.MockFS (
     empty
   , example

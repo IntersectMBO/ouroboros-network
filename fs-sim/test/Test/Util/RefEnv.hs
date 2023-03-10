@@ -5,8 +5,6 @@
 {-# LANGUAGE TupleSections       #-}
 
 -- | Environments of QSM references.
---
--- This module was copied from @ouroboros-consensus@.
 module Test.Util.RefEnv (
     RefEnv
     -- opaque

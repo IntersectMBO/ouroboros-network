@@ -5,8 +5,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Condensed but human-readable output (like 'Show').
---
--- This module was copied from @ouroboros-consensus@.
 module Util.Condense (
     Condense (..)
   , Condense1 (..)

@@ -49,6 +49,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as LC8
+import Data.Foldable (for_)
 import qualified Data.List as List
 import           Data.List (dropWhileEnd, intercalate)
 import           Data.Maybe (catMaybes, isNothing)
@@ -656,7 +657,7 @@ hPutSome' errorsVar hPutSomeWrapped handle bs =
     next errorsVar hPutSomeE (\e es -> es { hPutSomeE = e }) >>= \case
       Nothing                       -> hPutSomeWrapped handle bs
       Just (Left (errType, mbCorr)) -> do
-        whenJust mbCorr $ \corr ->
+        for_ mbCorr $ \corr ->
           void $ hPutSomeWrapped handle (corrupt bs corr)
         throwIO FsError
           { fsErrorType   = errType
@@ -670,7 +671,3 @@ hPutSome' errorsVar hPutSomeWrapped handle bs =
           }
       Just (Right partial)          ->
         hPutSomeWrapped handle (hPutSomePartial partial bs)
-  where
-    whenJust :: Applicative f => Maybe a -> (a -> f ()) -> f ()
-    whenJust (Just x) f = f x
-    whenJust Nothing _  = pure ()

@@ -13,10 +13,12 @@ maintainer:         operations@iohk.io
 category:           System
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md
+tested-with:        GHC == { 8.10.7, 9.2.5 }
 
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
+  subdir:   fs-api
 
 flag asserts
   description: Enable assertions

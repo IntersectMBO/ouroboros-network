@@ -3,8 +3,6 @@
 -- | CallStack with a nicer 'Show' instance
 --
 -- Use of this module is intended to /replace/ import of @GHC.Stack@
---
--- This module was copied from @ouroboros-consensus@.
 module Util.CallStack (
     prettyCallStack
     -- * opaque

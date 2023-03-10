@@ -10,8 +10,8 @@
 --
 -- Intended for qualified import
 --
--- > import Test.Util.FS.Sim.FsTree (FsTree)
--- > import Test.Util.FS.Sim.FsTree as FS
+-- > import           System.FS.Sim.FsTree (FsTree)
+-- > import qualified System.FS.Sim.FsTree as FS
 module System.FS.Sim.FsTree (
     -- * FsTree type and indexing functions
     FsTree (..)

@@ -11,8 +11,8 @@ import           Test.Tasty (TestTree, testGroup)
 -- The list of all tests
 --
 
-tests :: FilePath -> TestTree
-tests _tmpDir = testGroup "Storage"
+tests :: TestTree
+tests = testGroup "Storage"
     [ ImmutableDB.tests
     , VolatileDB.tests
     , LedgerDB.tests
