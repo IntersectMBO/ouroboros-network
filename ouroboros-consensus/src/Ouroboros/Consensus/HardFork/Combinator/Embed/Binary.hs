@@ -8,6 +8,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Embed.Binary (protocolInfoBinary)
 import           Control.Exception (assert)
 import           Data.Align (alignWith)
 import           Data.SOP.Counting (exactlyTwo)
+import           Data.SOP.Functors (Flip (..))
 import           Data.SOP.OptNP (OptNP (..))
 import           Data.SOP.Strict (NP (..))
 import           Data.These (These (..))
@@ -77,7 +78,7 @@ protocolInfoBinary protocolInfo1 eraParams1 toPartialConsensusConfig1 toPartialL
       , pInfoInitLedger = ExtLedgerState {
             ledgerState =
               HardForkLedgerState $
-                initHardForkState initLedgerState1
+                initHardForkState (Flip initLedgerState1)
           , headerState =
               genesisHeaderState $
                 initHardForkState $

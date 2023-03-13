@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -35,10 +36,11 @@ import           Data.Coerce (coerce)
 import           Data.Measure (BoundedMeasure, Measure)
 import qualified Data.Measure as Measure
 import           Data.Word (Word32)
+import           GHC.Generics
 import           NoThunks.Class
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ticked (Ticked (..))
+import           Ouroboros.Consensus.Ticked (Ticked1)
 import           Prelude hiding ((<=))
 
 {-------------------------------------------------------------------------------
@@ -71,7 +73,7 @@ mkCapacityBytesOverride = MempoolCapacityBytesOverride . MempoolCapacityBytes
 -- the current ledger's maximum transaction capacity of a block.
 computeMempoolCapacity
   :: LedgerSupportsMempool blk
-  => TickedLedgerState blk
+  => TickedLedgerState blk mk
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity st mc = case mc of
@@ -90,7 +92,7 @@ data MempoolSize = MempoolSize
     -- ^ The number of transactions in the mempool.
   , msNumBytes :: !Word32
     -- ^ The summed byte size of all the transactions in the mempool.
-  } deriving (Eq, Show)
+  } deriving (Eq, Show, Generic)
 
 instance Semigroup MempoolSize where
   MempoolSize xt xb <> MempoolSize yt yb = MempoolSize (xt + yt) (xb + yb)
@@ -123,7 +125,7 @@ class BoundedMeasure (TxMeasure blk) => TxLimits blk where
   txMeasure        :: Validated (GenTx blk)    -> TxMeasure blk
 
   -- | What is the allowed capacity for txs in an individual block?
-  txsBlockCapacity :: Ticked (LedgerState blk) -> TxMeasure blk
+  txsBlockCapacity :: Ticked1 (LedgerState blk) mk -> TxMeasure blk
 
 -- | Is every component of the first value less-than-or-equal-to the
 -- corresponding component of the second value?

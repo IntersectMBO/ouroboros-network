@@ -31,13 +31,13 @@ import           Ouroboros.Consensus.Util.Assert
 -- > getTip chainDiff == ledgerTipPoint ledger
 data ValidatedChainDiff b l = UnsafeValidatedChainDiff
     { getChainDiff :: ChainDiff b
-    , getLedger    :: l
+    , getLedger    :: l EmptyMK
     }
 
 -- | Allow for pattern matching on a 'ValidatedChainDiff' without exposing the
 -- (unsafe) constructor. Use 'new' to construct a 'ValidatedChainDiff'.
 pattern ValidatedChainDiff
-  :: ChainDiff b -> l -> ValidatedChainDiff b l
+  :: ChainDiff b -> l EmptyMK -> ValidatedChainDiff b l
 pattern ValidatedChainDiff d l <- UnsafeValidatedChainDiff d l
 {-# COMPLETE ValidatedChainDiff #-}
 
@@ -50,7 +50,7 @@ new ::
      forall b l.
      (GetTip l, HasHeader b, HeaderHash l ~ HeaderHash b, HasCallStack)
   => ChainDiff b
-  -> l
+  -> l EmptyMK
   -> ValidatedChainDiff b l
 new chainDiff ledger =
     assertWithMsg precondition $

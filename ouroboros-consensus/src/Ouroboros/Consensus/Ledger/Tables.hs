@@ -19,10 +19,6 @@ module Ouroboros.Consensus.Ledger.Tables (
   , CanStowLedgerTables (..)
   , HasLedgerTables (..)
   , HasTickedLedgerTables (..)
-  , mapOverLedgerTables
-  , mapOverLedgerTablesTicked
-  , zipOverLedgerTables
-  , zipOverLedgerTablesTicked
     -- * @MapKind@s
     -- ** Interface
   , IsMapKind (..)
@@ -311,40 +307,6 @@ class ( forall mk. IsMapKind mk => Eq       (LedgerTables l mk)
   default namesLedgerTables :: LedgerTablesAreTrivial l => LedgerTables l NameMK
   namesLedgerTables = trivialLedgerTables
 
-overLedgerTables ::
-     (HasLedgerTables l, IsMapKind mk1, IsMapKind mk2)
-  => (LedgerTables l mk1 -> LedgerTables l mk2)
-  -> l mk1
-  -> l mk2
-overLedgerTables f l = withLedgerTables l $ f $ projectLedgerTables l
-
-mapOverLedgerTables ::
-     (HasLedgerTables l, IsMapKind mk1, IsMapKind mk2)
-  => (forall k v.
-          (Ord k, Eq v)
-       => mk1 k v
-       -> mk2 k v
-     )
-  -> l mk1
-  -> l mk2
-mapOverLedgerTables f = overLedgerTables $ mapLedgerTables f
-
-zipOverLedgerTables ::
-     (HasLedgerTables l, IsMapKind mk1, IsMapKind mk3)
-  => (forall k v.
-          (Ord k, Eq v)
-       => mk1 k v
-       -> mk2 k v
-       -> mk3 k v
-     )
-  ->              l mk1
-  -> LedgerTables l mk2
-  ->              l mk3
-zipOverLedgerTables f l tables2 =
-    overLedgerTables
-      (\tables1 -> zipLedgerTables f tables1 tables2)
-      l
-
 type HasTickedLedgerTables :: LedgerStateKind -> Constraint
 class HasLedgerTables l => HasTickedLedgerTables l where
   -- The 'IsMapKind' constraint is here for the same reason it's on
@@ -360,46 +322,16 @@ class HasLedgerTables l => HasTickedLedgerTables l where
   -- 'withLedgerTables'
   withLedgerTablesTicked :: IsMapKind mk => Ticked1 l any -> LedgerTables l mk -> Ticked1 l mk
 
-overLedgerTablesTicked ::
-     (HasTickedLedgerTables l, IsMapKind mk1, IsMapKind mk2)
-  => (LedgerTables l mk1 -> LedgerTables l mk2)
-  -> Ticked1 l mk1
-  -> Ticked1 l mk2
-overLedgerTablesTicked f l =
-    withLedgerTablesTicked l $ f $ projectLedgerTablesTicked l
-
-mapOverLedgerTablesTicked ::
-     (HasTickedLedgerTables l, IsMapKind mk1, IsMapKind mk2)
-  => (forall k v.
-         (Ord k, Eq v)
-      => mk1 k v
-      -> mk2 k v
-     )
-  -> Ticked1 l mk1
-  -> Ticked1 l mk2
-mapOverLedgerTablesTicked f = overLedgerTablesTicked $ mapLedgerTables f
-
-zipOverLedgerTablesTicked ::
-     (HasTickedLedgerTables l, IsMapKind mk1, IsMapKind mk3)
-  => (forall k v.
-         (Ord k, Eq v)
-      => mk1 k v
-      -> mk2 k v
-      -> mk3 k v
-     )
-  -> Ticked1      l mk1
-  -> LedgerTables l mk2
-  -> Ticked1      l mk3
-zipOverLedgerTablesTicked f l tables2 =
-    overLedgerTablesTicked
-      (\tables1 -> zipLedgerTables f tables1 tables2)
-      l
-
 -- | LedgerTables are projections of data from a LedgerState and as such they
 -- can be injected back into a LedgerState. This is necessary because the Ledger
 -- rules are unaware of UTxO-HD changes. Thus, by stowing the ledger tables, we are
 -- able to provide a Ledger State with a restricted UTxO set that is enough to
 -- execute the Ledger rules.
+--
+-- In particular, HardForkBlocks are never given diretly to the ledger but
+-- rather unwrapped and then it is the inner ledger state the one we give to the
+-- ledger. This means that all the single era blocks must be an instance of this
+-- class, but HardForkBlocks might avoid doing so.
 type CanStowLedgerTables :: LedgerStateKind -> Constraint
 class CanStowLedgerTables l where
 
@@ -488,6 +420,14 @@ newtype ValuesMK   k v = ValuesMK    (Map k v)
 -- | A codec 'MapKind' that will be used to refer to @'LedgerTables' l CodecMK@
 -- as the codecs that can encode every key and value in the @'LedgerTables' l
 -- mk@.
+--
+-- It is important to note that in the context of the HardForkCombinator, the
+-- key @k@ has to be accessible from any era we are currently in, regardless of
+-- which era it was created in. Because of that, we need that the serialization
+-- of the key remains stable accross eras.
+--
+-- Ledger will provide more efficient encoders than CBOR, which will produce a
+-- @'ShortByteString'@ directly.
 data CodecMK k v = CodecMK
                      (k -> CBOR.Encoding)
                      (v -> CBOR.Encoding)
@@ -606,8 +546,6 @@ class LedgerTablesAreTrivial l where
   -- This function is useful to combine functions that operate on functions that
   -- transform the map kind on a ledger state (eg @applyChainTickLedgerResult@).
   convertMapKind :: IsMapKind mk' => l mk -> l mk'
-  default convertMapKind :: (IsMapKind mk', HasLedgerTables l) => l mk -> l mk'
-  convertMapKind st = st `withLedgerTables` trivialLedgerTables
 
   -- | As the ledger tables are trivial, this functions provides the only data
   -- constructor that is defined for them.

@@ -33,6 +33,8 @@ import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
 import qualified Ouroboros.Consensus.HeaderValidation as HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Tables.Utils
+                     (applyLedgerTablesDiffs)
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Network.AnchoredSeq (AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
@@ -151,7 +153,7 @@ validateHeader cfg ledgerView hdr history = do
 fromChain ::
      ApplyBlock (ExtLedgerState blk) blk
   => TopLevelConfig blk
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk
@@ -161,7 +163,7 @@ fromChain cfg initState chain =
     anchorSnapshot NE.:| snapshots =
           fmap headerState
         . NE.scanl
-            (flip (tickThenReapply (ExtLedgerCfg cfg)))
+            (\st blk -> applyLedgerTablesDiffs st $ tickThenReapply (ExtLedgerCfg cfg) blk st)
             initState
         . Chain.toOldestFirst
         $ chain

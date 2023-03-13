@@ -34,6 +34,7 @@ import           Data.Bifunctor (second)
 import           Data.Data (Typeable)
 import           Data.Hashable (Hashable)
 import           Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy
@@ -243,15 +244,39 @@ forkBlockForging
 forkBlockForging IS{..} blockForging =
       void
     $ forkLinkedWatcher registry threadLabel
-    $ knownSlotWatcher btime
-    $ withEarlyExit_ . go
+    $ knownSlotWatcher btime go
   where
     threadLabel :: String
     threadLabel =
         "NodeKernel.blockForging." <> Text.unpack (forgeLabel blockForging)
 
-    go :: SlotNo -> WithEarlyExit m ()
+    go :: SlotNo -> m ()
     go currentSlot = do
+      -- Once the forging logic is invoked, a block context is selected and
+      -- the logic then *MUST SUCCESFULLY PRODUCE* a block on top of the
+      -- selected context, i.e. it cannot fail even if the LedgerDB switches
+      -- to a different fork while the forging logic is executed. For this
+      -- reason, we need a complete view on the ledger state we are going to
+      -- forge on top of.
+      --
+      -- A complete view on the ledger state (like the one we need to forge on
+      -- top of it), includes the UTxO set. In order to arbitrarily query for
+      -- UTxO entries on that ledger state, we need to be able to
+      -- rewind-read-forward on a DbChangelog.
+      --
+      -- We need to hold the read lock so that the anchor of the DbChangelog
+      -- that we get when starting the forging logic doesn't get out of sync
+      -- with the Backing store by the time we ask the mempool for a set of
+      -- transactions. This is because we might need to revalidate said
+      -- transactions and therefore we cannot lose the consistency on the
+      -- DbChangelog that we have.
+      --
+      -- It is important to note that this cannot be held indefinitely as
+      -- adding the block to the ledger db might trigger storing a snapshot
+      -- which acquires the write lock which would result in a deadlock. For
+      -- this reason, we release the read lock just as we finish asking the
+      -- mempool for a snapshot.
+      res <- ChainDB.withLgrReadLock chainDB $ withEarlyExit $ do
         trace $ TraceStartLeadershipCheck currentSlot
 
         -- Figure out which block to connect to
@@ -345,7 +370,7 @@ forkBlockForging IS{..} blockForging =
         trace $ TraceNodeIsLeader currentSlot
 
         -- Tick the ledger state for the 'SlotNo' we're producing a block for
-        let tickedLedgerState :: Ticked (LedgerState blk)
+        let tickedLedgerState :: Ticked1 (LedgerState blk) DiffMK
             tickedLedgerState =
               applyChainTick
                 (configLedger cfg)
@@ -362,77 +387,99 @@ forkBlockForging IS{..} blockForging =
         -- produce a block that fits onto the ledger we got above; if the
         -- ledger in the meantime changes, the block we produce here may or
         -- may not be adopted, but it won't be invalid.
-        (mempoolHash, mempoolSlotNo, mempoolSnapshot) <- lift $ atomically $ do
-            (mempoolHash, mempoolSlotNo) <- do
+        (mempoolHash, mempoolSlotNo) <- lift $ atomically $ do
               snap <- getSnapshot mempool   -- only used for its tip-like information
               let h :: ChainHash blk
-                  h = castHash $ getTipHash $ snapshotLedgerState snap
+                  h = castHash $ snapshotTipHash snap
               pure (h, snapshotSlotNo snap)
 
-            snap <- getSnapshotFor
-                      mempool
-                      (ForgeInKnownSlot currentSlot tickedLedgerState)
-            pure (mempoolHash, mempoolSlotNo, snap)
+        mempoolSnapshot <- lift $ getSnapshotFor
+                             mempool
+                             (castPoint $ getTip unticked)
+                             currentSlot
+                             tickedLedgerState
 
-        let txs = map fst $ snapshotTxs mempoolSnapshot
+        let e = error "Mempool snapshot failed in forging loop. RAWLock violation"
 
-        -- force the mempool's computation before the tracer event
-        _ <- evaluate (length txs)
-        _ <- evaluate (snapshotLedgerState mempoolSnapshot)
-        trace $ TraceForgingMempoolSnapshot currentSlot bcPrevPoint mempoolHash mempoolSlotNo
+        pure ( maybe e id mempoolSnapshot -- OK because we are holding the read lock
+             , bcPrevPoint
+             , mempoolHash
+             , mempoolSlotNo
+             , bcBlockNo
+             , tickedLedgerState
+             , proof
+             , unticked)
 
-        -- Actually produce the block
-        newBlock <- lift $
-          Block.forgeBlock blockForging
-            cfg
-            bcBlockNo
-            currentSlot
-            tickedLedgerState
-            txs
-            proof
+      case res of
+          Nothing -> pure ()
+          Just ( mempoolSnapshot
+               , bcPrevPoint
+               , mempoolHash
+               , mempoolSlotNo
+               , bcBlockNo
+               , tickedLedgerState
+               , proof
+               , unticked
+               ) -> withEarlyExit_ $ do
+            let txs = map fst $ snapshotTxs mempoolSnapshot
 
-        trace $ TraceForgedBlock
-                  currentSlot
-                  (ledgerTipPoint (ledgerState unticked))
-                  newBlock
-                  (snapshotMempoolSize mempoolSnapshot)
+            -- force the mempool's computation before the tracer event
+            _ <- evaluate (length txs)
+            _ <- evaluate (snapshotTipHash mempoolSnapshot)
+            trace $ TraceForgingMempoolSnapshot currentSlot bcPrevPoint mempoolHash mempoolSlotNo
 
-        -- Add the block to the chain DB
-        let noPunish = InvalidBlockPunishment.noPunishment   -- no way to punish yourself
-        result <- lift $ ChainDB.addBlockAsync chainDB noPunish newBlock
-        -- Block until we have processed the block
-        curTip <- lift $ atomically $ ChainDB.blockProcessed result
+            -- Actually produce the block
+            newBlock <- lift $
+              Block.forgeBlock blockForging
+                cfg
+                bcBlockNo
+                currentSlot
+                tickedLedgerState
+                txs
+                proof
 
-        -- Check whether we adopted our block
-        when (curTip /= blockPoint newBlock) $ do
-          isInvalid <- lift $ atomically $
-            ($ blockHash newBlock) . forgetFingerprint <$>
-            ChainDB.getIsInvalidBlock chainDB
-          case isInvalid of
-            Nothing ->
-              trace $ TraceDidntAdoptBlock currentSlot newBlock
-            Just reason -> do
-              trace $ TraceForgedInvalidBlock currentSlot newBlock reason
-              -- We just produced a block that is invalid according to the
-              -- ledger in the ChainDB, while the mempool said it is valid.
-              -- There is an inconsistency between the two!
-              --
-              -- Remove all the transactions in that block, otherwise we'll
-              -- run the risk of forging the same invalid block again. This
-              -- means that we'll throw away some good transactions in the
-              -- process.
-              lift $ removeTxs mempool (map (txId . txForgetValidated) txs)
-          exitEarly
+            trace $ TraceForgedBlock
+                      currentSlot
+                      (ledgerTipPoint (ledgerState unticked))
+                      newBlock
+                      (snapshotMempoolSize mempoolSnapshot)
 
-        -- We successfully produced /and/ adopted a block
-        --
-        -- NOTE: we are tracing the transactions we retrieved from the Mempool,
-        -- not the transactions actually /in the block/. They should always
-        -- match, if they don't, that would be a bug. Unfortunately, we can't
-        -- assert this here because the ability to extract transactions from a
-        -- block, i.e., the @HasTxs@ class, is not implementable by all blocks,
-        -- e.g., @DualBlock@.
-        trace $ TraceAdoptedBlock currentSlot newBlock txs
+            -- Add the block to the chain DB
+            let noPunish = InvalidBlockPunishment.noPunishment   -- no way to punish yourself
+            result <- lift $ ChainDB.addBlockAsync chainDB noPunish newBlock
+            -- Block until we have processed the block
+            curTip <- lift $ atomically $ ChainDB.blockProcessed result
+
+            -- Check whether we adopted our block
+            when (curTip /= blockPoint newBlock) $ do
+              isInvalid <- lift $ atomically $
+                ($ blockHash newBlock) . forgetFingerprint <$>
+                ChainDB.getIsInvalidBlock chainDB
+              case isInvalid of
+                Nothing ->
+                  trace $ TraceDidntAdoptBlock currentSlot newBlock
+                Just reason -> do
+                  trace $ TraceForgedInvalidBlock currentSlot newBlock reason
+                  -- We just produced a block that is invalid according to the
+                  -- ledger in the ChainDB, while the mempool said it is valid.
+                  -- There is an inconsistency between the two!
+                  --
+                  -- Remove all the transactions in that block, otherwise we'll
+                  -- run the risk of forging the same invalid block again. This
+                  -- means that we'll throw away some good transactions in the
+                  -- process.
+                  lift $ removeTxs mempool $ NE.fromList (map (txId . txForgetValidated) txs)
+                  exitEarly
+
+            -- We successfully produced /and/ adopted a block
+            --
+            -- NOTE: we are tracing the transactions we retrieved from the Mempool,
+            -- not the transactions actually /in the block/. They should always
+            -- match, if they don't, that would be a bug. Unfortunately, we can't
+            -- assert this here because the ability to extract transactions from a
+            -- block, i.e., the @HasTxs@ class, is not implementable by all blocks,
+            -- e.g., @DualBlock@.
+            trace $ TraceAdoptedBlock currentSlot newBlock txs
 
     trace :: TraceForgeEvent blk -> WithEarlyExit m ()
     trace =
@@ -594,7 +641,7 @@ getMempoolWriter mempool = Inbound.TxSubmissionMempoolWriter
 getPeersFromCurrentLedger ::
      (IOLike m, LedgerSupportsPeerSelection blk)
   => NodeKernel m addrNTN addrNTC blk
-  -> (LedgerState blk -> Bool)
+  -> (LedgerState blk EmptyMK -> Bool)
   -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
 getPeersFromCurrentLedger kernel p = do
     immutableLedger <-
@@ -620,7 +667,7 @@ getPeersFromCurrentLedgerAfterSlot ::
 getPeersFromCurrentLedgerAfterSlot kernel slotNo =
     getPeersFromCurrentLedger kernel afterSlotNo
   where
-    afterSlotNo :: LedgerState blk -> Bool
+    afterSlotNo :: LedgerState blk mk -> Bool
     afterSlotNo st =
       case ledgerTipSlot st of
         Origin        -> False

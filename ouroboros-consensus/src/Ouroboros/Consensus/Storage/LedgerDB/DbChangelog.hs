@@ -39,7 +39,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (
   , rollbackToAnchor
   , rollbackToPoint
     -- * Flush
-  , DbChangelogFlushPolicy (..)
+  , FlushPolicy (..)
   , flush
   , flushIntoBackingStore
   ) where
@@ -53,7 +53,6 @@ import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingStore
@@ -138,7 +137,7 @@ deriving instance Eq       (l EmptyMK) => Eq       (DbChangelogState l)
 deriving instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
 deriving instance Show     (l EmptyMK) => Show     (DbChangelogState l)
 
-instance GetTip (l EmptyMK) => AS.Anchorable (WithOrigin SlotNo) (DbChangelogState l) (DbChangelogState l) where
+instance GetTip l => AS.Anchorable (WithOrigin SlotNo) (DbChangelogState l) (DbChangelogState l) where
   asAnchor = id
   getAnchorMeasure _ = getTipSlot . unDbChangelogState
 
@@ -147,7 +146,7 @@ instance GetTip (l EmptyMK) => AS.Anchorable (WithOrigin SlotNo) (DbChangelogSta
 -------------------------------------------------------------------------------}
 
 empty ::
-     (HasLedgerTables l, GetTip (l EmptyMK))
+     (HasLedgerTables l, GetTip l)
   => l EmptyMK -> DbChangelog l
 empty anchor =
     DbChangelog {
@@ -162,7 +161,7 @@ empty anchor =
 -------------------------------------------------------------------------------}
 
 extend ::
-     (HasLedgerTables l, GetTip (l EmptyMK))
+     (HasLedgerTables l, GetTip l)
   => DbChangelog l -> l DiffMK -> DbChangelog l
 extend dblog newState =
     DbChangelog {
@@ -197,7 +196,7 @@ extend dblog newState =
       SeqDiffMK $ DS.extend sq slot d
 
 pruneVolatilePart ::
-     (GetTip (l EmptyMK), StandardHash (l EmptyMK))
+     (GetTip l, StandardHash l)
   => SecurityParam -> DbChangelog l -> DbChangelog l
 pruneVolatilePart (SecurityParam k) dblog =
     Exn.assert (AS.length imm' + AS.length vol' == AS.length imm + AS.length vol) $
@@ -231,11 +230,11 @@ pruneVolatilePart (SecurityParam k) dblog =
 
 -- | Roll back the volatile states up to the specified point.
 rollbackToPoint ::
-     ( StandardHash (l EmptyMK)
-     , GetTip (l EmptyMK)
+     ( StandardHash l
+     , GetTip l
      , HasLedgerTables l
      )
-  => Point (l EmptyMK) -> DbChangelog l -> Maybe (DbChangelog l)
+  => Point l -> DbChangelog l -> Maybe (DbChangelog l)
 rollbackToPoint pt dblog = do
     let vol = changelogVolatileStates
     vol' <-
@@ -261,7 +260,7 @@ rollbackToPoint pt dblog = do
       } = dblog
 
 rollbackToAnchor ::
-     (GetTip (l EmptyMK), HasLedgerTables l)
+     (GetTip l, HasLedgerTables l)
   => DbChangelog l -> DbChangelog l
 rollbackToAnchor dblog =
     DbChangelog {
@@ -290,7 +289,7 @@ trunc n (SeqDiffMK sq) =
   SeqDiffMK $ fst $ splitAtFromEnd n sq
 
 rollbackN ::
-     (GetTip (l EmptyMK), HasLedgerTables l)
+     (GetTip l, HasLedgerTables l)
   => Int -> DbChangelog l -> DbChangelog l
 rollbackN n dblog =
     DbChangelog {
@@ -308,7 +307,7 @@ rollbackN n dblog =
       } = dblog
 
 immutableTipSlot ::
-     GetTip (l EmptyMK)
+     GetTip l
   => DbChangelog l -> WithOrigin SlotNo
 immutableTipSlot =
       getTipSlot
@@ -321,20 +320,20 @@ immutableTipSlot =
 -------------------------------------------------------------------------------}
 
 -- | The flush policy
-data DbChangelogFlushPolicy =
+data FlushPolicy =
     -- | Always flush everything older than the immutable tip
-    DbChangelogFlushAllImmutable
+    FlushAllImmutable
 
 -- | "Flush" the 'DbChangelog' by splitting it into two 'DbChangelogs', one that
 -- contains the diffs that should be flushed into the Backing store (see
 -- 'flushIntoBackingStore') and one to be considered as the new 'DbChangelog'.
 flush ::
      forall l.
-     (GetTip (l EmptyMK), HasLedgerTables l)
-  => DbChangelogFlushPolicy
+     (GetTip l, HasLedgerTables l)
+  => FlushPolicy
   -> DbChangelog l
   -> (DbChangelog l, DbChangelog l)
-flush DbChangelogFlushAllImmutable dblog =
+flush FlushAllImmutable dblog =
       (ldblog, rdblog)
   where
     DbChangelog {
@@ -391,7 +390,7 @@ flush DbChangelogFlushAllImmutable dblog =
 -- of the changelog. If not, the @slot@ that we flush to the backing store will
 -- not match the actual tip of the diffs that we flush to the backing store.
 flushIntoBackingStore ::
-     (Applicative m, HasLedgerTables l, GetTip (l EmptyMK))
+     (Applicative m, HasLedgerTables l, GetTip l)
   => LedgerBackingStore m l -> DbChangelog l -> m ()
 flushIntoBackingStore (LedgerBackingStore backingStore) dblog =
     case immutableTipSlot dblog of

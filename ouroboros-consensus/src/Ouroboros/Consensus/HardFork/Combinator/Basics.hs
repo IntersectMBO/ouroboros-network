@@ -7,6 +7,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -18,7 +19,9 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
     -- * Hard fork protocol, block, and ledger state
     HardForkBlock (..)
   , HardForkProtocol
+  , InjectLedgerTables (..)
   , LedgerState (..)
+  , LedgerTablesCanHardFork (..)
     -- * Config
   , BlockConfig (..)
   , CodecConfig (..)
@@ -39,6 +42,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
 
 import           Cardano.Slotting.EpochInfo
 import           Data.Kind (Type)
+import           Data.SOP.Functors
 import           Data.SOP.Strict
 import           Data.Typeable
 import           GHC.Generics (Generic)
@@ -72,13 +76,30 @@ instance Typeable xs => ShowProxy (HardForkBlock xs) where
 type instance BlockProtocol (HardForkBlock xs) = HardForkProtocol xs
 type instance HeaderHash    (HardForkBlock xs) = OneEraHash       xs
 
-newtype instance LedgerState (HardForkBlock xs) = HardForkLedgerState {
-      hardForkLedgerStatePerEra :: HardForkState LedgerState xs
+newtype instance LedgerState (HardForkBlock xs) mk = HardForkLedgerState {
+      hardForkLedgerStatePerEra :: HardForkState (Flip LedgerState mk) xs
     }
 
-deriving stock   instance CanHardFork xs => Show (LedgerState (HardForkBlock xs))
-deriving stock   instance CanHardFork xs => Eq   (LedgerState (HardForkBlock xs))
-deriving newtype instance CanHardFork xs => NoThunks (LedgerState (HardForkBlock xs))
+deriving stock   instance (IsMapKind mk, CanHardFork xs)
+              => Show     (LedgerState (HardForkBlock xs) mk)
+deriving stock   instance (IsMapKind mk, CanHardFork xs)
+              => Eq       (LedgerState (HardForkBlock xs) mk)
+deriving newtype instance (IsMapKind mk, CanHardFork xs)
+              => NoThunks (LedgerState (HardForkBlock xs) mk)
+
+-- | How to inject each era's ledger tables into their shared ledger tables
+class LedgerTablesCanHardFork xs where
+  hardForkInjectLedgerTables :: NP (InjectLedgerTables xs) xs
+
+data InjectLedgerTables xs x = InjectLedgerTables {
+      applyInjectLedgerTables :: forall mk. IsMapKind mk =>
+           LedgerTables (LedgerState                  x) mk
+        -> LedgerTables (LedgerState (HardForkBlock xs)) mk
+
+      , applyDistribLedgerTables :: forall mk. IsMapKind mk =>
+           LedgerTables (LedgerState (HardForkBlock xs)) mk
+        -> LedgerTables (LedgerState                  x) mk
+    }
 
 {-------------------------------------------------------------------------------
   Protocol config

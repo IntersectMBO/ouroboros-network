@@ -1,71 +1,78 @@
-{-# LANGUAGE ConstraintKinds          #-}
-{-# LANGUAGE DeriveAnyClass           #-}
-{-# LANGUAGE DeriveGeneric            #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE FunctionalDependencies   #-}
-{-# LANGUAGE GADTs                    #-}
-{-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE QuantifiedConstraints    #-}
-{-# LANGUAGE RankNTypes               #-}
-{-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE StandaloneDeriving       #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeApplications         #-}
-{-# LANGUAGE TypeFamilies             #-}
-{-# LANGUAGE UndecidableInstances     #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.Query (
-    ledgerDbAnchor
-  , ledgerDbCurrent
-  , ledgerDbIsSaturated
-  , ledgerDbMaxRollback
-  , ledgerDbPast
-  , ledgerDbSnapshots
-  , ledgerDbTip
+    anchor
+  , current
+  , getPastLedgerAt
+  , isSaturated
+  , lastFlushedState
+  , maxRollback
+  , rollback
+  , snapshots
+  , tip
   ) where
 
-import           Data.Foldable (find)
 import           Data.Word
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
 import qualified Ouroboros.Network.AnchoredSeq as AS
 
 -- | The ledger state at the tip of the chain
-ledgerDbCurrent :: GetTip l => LedgerDB l -> l
-ledgerDbCurrent = either unCheckpoint unCheckpoint . AS.head . ledgerDbCheckpoints
+current :: GetTip l => LedgerDB l -> l EmptyMK
+current =
+    either unDbChangelogState unDbChangelogState
+  . AS.head
+  . changelogVolatileStates
+  . ledgerDbChangelog
 
 -- | Information about the state of the ledger at the anchor
-ledgerDbAnchor :: LedgerDB l -> l
-ledgerDbAnchor = unCheckpoint . AS.anchor . ledgerDbCheckpoints
+anchor :: LedgerDB l -> l EmptyMK
+anchor =
+    unDbChangelogState
+  . AS.anchor
+  . changelogVolatileStates
+  . ledgerDbChangelog
+
+-- | Get the most recently flushed ledger state. This is what will be serialized
+-- when snapshotting.
+lastFlushedState :: LedgerDB l -> l EmptyMK
+lastFlushedState =
+    unDbChangelogState
+  . AS.anchor
+  . changelogImmutableStates
+  . ledgerDbChangelog
 
 -- | All snapshots currently stored by the ledger DB (new to old)
 --
 -- This also includes the snapshot at the anchor. For each snapshot we also
 -- return the distance from the tip.
-ledgerDbSnapshots :: LedgerDB l -> [(Word64, l)]
-ledgerDbSnapshots LedgerDB{..} =
-    zip
-      [0..]
-      (map unCheckpoint (AS.toNewestFirst ledgerDbCheckpoints)
-        <> [unCheckpoint (AS.anchor ledgerDbCheckpoints)])
+snapshots :: LedgerDB l -> [(Word64, l EmptyMK)]
+snapshots =
+      zip [0..]
+    . map unDbChangelogState
+    . AS.toNewestFirst
+    . changelogVolatileStates
+    . ledgerDbChangelog
 
 -- | How many blocks can we currently roll back?
-ledgerDbMaxRollback :: GetTip l => LedgerDB l -> Word64
-ledgerDbMaxRollback LedgerDB{..} = fromIntegral (AS.length ledgerDbCheckpoints)
+maxRollback :: GetTip l => LedgerDB l -> Word64
+maxRollback =
+    fromIntegral
+  . AS.length
+  . changelogVolatileStates
+  . ledgerDbChangelog
 
 -- | Reference to the block at the tip of the chain
-ledgerDbTip :: GetTip l => LedgerDB l -> Point l
-ledgerDbTip = castPoint . getTip . ledgerDbCurrent
+tip :: GetTip l => LedgerDB l -> Point l
+tip = castPoint . getTip . current
 
 -- | Have we seen at least @k@ blocks?
-ledgerDbIsSaturated :: GetTip l => SecurityParam -> LedgerDB l -> Bool
-ledgerDbIsSaturated (SecurityParam k) db =
-    ledgerDbMaxRollback db >= k
+isSaturated :: GetTip l => SecurityParam -> LedgerDB l -> Bool
+isSaturated (SecurityParam k) db =
+    maxRollback db >= k
 
 -- | Get a past ledger state
 --
@@ -73,15 +80,30 @@ ledgerDbIsSaturated (SecurityParam k) db =
 --
 -- When no ledger state (or anchor) has the given 'Point', 'Nothing' is
 -- returned.
-ledgerDbPast ::
-     (HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk)
+getPastLedgerAt ::
+     ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
+     , StandardHash l, HasTickedLedgerTables l
+     )
   => Point blk
   -> LedgerDB l
-  -> Maybe l
-ledgerDbPast pt db
-    | pt == castPoint (getTip (ledgerDbAnchor db))
-    = Just $ ledgerDbAnchor db
+  -> Maybe (l EmptyMK)
+getPastLedgerAt pt db = current <$> rollback pt db
+
+-- | Get a prefix of the LedgerDB that ends at the given point
+--
+--  \( O(\log(\min(i,n-i)) \)
+--
+-- When no ledger state (or anchor) has the given 'Point', 'Nothing' is
+-- returned.
+rollback ::
+     ( HasHeader blk, IsLedger l, HeaderHash l ~ HeaderHash blk
+     , StandardHash l, HasTickedLedgerTables l
+     )
+  => Point blk
+  -> LedgerDB l
+  -> Maybe (LedgerDB l)
+rollback pt db
+    | pt == castPoint (getTip (anchor db))
+    = Just . LedgerDB . rollbackToAnchor $ ledgerDbChangelog db
     | otherwise
-    = fmap unCheckpoint $
-        find ((== pt) . castPoint . getTip . unCheckpoint) $
-          AS.lookupByMeasure (pointSlot pt) (ledgerDbCheckpoints db)
+    = LedgerDB <$> rollbackToPoint (castPoint pt) (ledgerDbChangelog db)
