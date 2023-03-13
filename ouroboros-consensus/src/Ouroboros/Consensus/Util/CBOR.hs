@@ -59,7 +59,6 @@ import qualified Streaming as S
 import qualified Streaming.Prelude as S
 import           Streaming.Prelude (Of (..), Stream)
 
---import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------

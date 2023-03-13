@@ -10,7 +10,8 @@
 -- | Layout of individual chunks on disk
 --
 -- This module is not re-exported from the public Chunks API, since it's only
--- relevant internally in the immutable DB.
+-- relevant internally in the immutable DB. This module makes the layout
+-- decisions.
 module Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout (
     -- * Relative slots
     NextRelativeSlot (..)
@@ -54,9 +55,6 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.API (Tip (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
                      (BlockOrEBB (..))
 
--- Most types in the Chunks interface are opaque in the public API, since their
--- interpretation is subject to layout decisions. In this module we /make/ those
--- layout decisions, however, and so here we need access to the internal types.
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 
 {-------------------------------------------------------------------------------

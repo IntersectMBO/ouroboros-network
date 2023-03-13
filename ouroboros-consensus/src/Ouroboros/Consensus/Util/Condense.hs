@@ -42,7 +42,6 @@ import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES, SignedKES (..),
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
 
--- Imports from lower-level libs to avoid circular dependencies
 import           Cardano.Slotting.Block (BlockNo (..))
 import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..),
                      WithOrigin (..))
