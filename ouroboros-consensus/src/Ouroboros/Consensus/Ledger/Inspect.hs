@@ -65,8 +65,8 @@ class ( Show     (LedgerWarning blk)
   -- leaving it at this for now.
   inspectLedger ::
        TopLevelConfig blk
-    -> LedgerState    blk -- ^ Before
-    -> LedgerState    blk -- ^ After
+    -> LedgerState    blk mk1 -- ^ Before
+    -> LedgerState    blk mk2 -- ^ After
     -> [LedgerEvent   blk]
 
   -- Defaults
@@ -80,8 +80,8 @@ class ( Show     (LedgerWarning blk)
        , LedgerUpdate  blk ~ Void
        )
     => TopLevelConfig blk
-    -> LedgerState    blk -- ^ Before
-    -> LedgerState    blk -- ^ After
+    -> LedgerState    blk mk1 -- ^ Before
+    -> LedgerState    blk mk2 -- ^ After
     -> [LedgerEvent   blk]
   inspectLedger _ _ _ = []
     where

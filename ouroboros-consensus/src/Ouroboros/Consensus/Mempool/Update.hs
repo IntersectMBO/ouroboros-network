@@ -1,5 +1,6 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase       #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Operations that update the mempool. They are internally divided in the pure
 -- and impure sides of the operation.
@@ -12,11 +13,14 @@ module Ouroboros.Consensus.Mempool.Update (
   , pureSyncWithLedger
   ) where
 
+import           Cardano.Slotting.Slot
 import           Control.Exception (assert)
-import           Control.Monad (join)
 import           Control.Tracer
-import           Data.Maybe (isJust, isNothing)
+import qualified Data.List.NonEmpty as NE
+import           Data.Maybe (fromMaybe, isJust, isNothing)
 import qualified Data.Set as Set
+import           Ouroboros.Consensus.Block.Abstract (castHash, castPoint,
+                     pointHash)
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
@@ -27,6 +31,8 @@ import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
 import           Ouroboros.Consensus.Mempool.TxSeq (TxTicket (..))
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
+                     (PointNotFound (..))
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.IOLike
 
@@ -34,20 +40,17 @@ import           Ouroboros.Consensus.Util.IOLike
   Add transactions
 -------------------------------------------------------------------------------}
 
--- | Result of trying to add a transaction to the mempool.
-data TryAddTxs blk =
-    -- | No space is left in the mempool and no more transactions could be
-    -- added.
+-- | Result of processing a transaction to be added to the mempool.
+data TransactionResult blk =
     NoSpaceLeft
-    -- | A transaction was processed.
-  | TryAddTxs
-      (Maybe (InternalState blk))
-      -- ^ If the transaction was accepted, the new state that can be written to
-      -- the TVar.
-      (MempoolAddTxResult blk)
-      -- ^ The result of trying to add the transaction to the mempool.
-      (TraceEventMempool blk)
-      -- ^ The event emitted by the operation.
+  | TransactionProcessed
+    (Maybe (InternalState blk))
+    -- ^ If the transaction was accepted, the new state that can be written to
+    -- the TVar.
+    (MempoolAddTxResult blk)
+    -- ^ The result of trying to add the transaction to the mempool.
+    (TraceEventMempool blk)
+    -- ^ The event emitted by the operation.
 
 -- | Add a list of transactions (oldest to newest) by interpreting a 'TryAddTxs'
 -- from 'pureTryAddTxs'.
@@ -68,57 +71,75 @@ data TryAddTxs blk =
 -- INVARIANT: The code needs that read and writes on the state are coupled
 -- together or inconsistencies will arise. To ensure that STM transactions are
 -- short, each iteration of the helper function is a separate STM transaction.
-implTryAddTxs ::
-     ( MonadSTM m
+implTryAddTxs
+  :: forall m blk.
+     ( IOLike m
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
+     , ValidateEnvelope blk
      )
-  => StrictTVar m (InternalState blk)
-     -- ^ The InternalState TVar.
-  -> LedgerConfig blk
-     -- ^ The configuration of the ledger.
-  -> (GenTx blk -> TxSizeInBytes)
-     -- ^ The function to calculate the size of a
-     -- transaction.
-  -> Tracer m (TraceEventMempool blk)
-     -- ^ The tracer.
+  => MempoolEnv m blk
   -> WhetherToIntervene
   -> [GenTx blk]
-     -- ^ The list of transactions to add to the mempool.
   -> m ([MempoolAddTxResult blk], [GenTx blk])
-implTryAddTxs istate cfg txSize trcr wti =
+implTryAddTxs mpEnv wti =
     go []
   where
+    MempoolEnv {
+        mpEnvLedgerCfg = cfg
+      , mpEnvLedger    = ldgrInterface
+      , mpEnvStateVar  = istate
+      , mpEnvTracer    = trcr
+      , mpEnvTxSize    = txSize
+      } = mpEnv
+
+    -- MAYBE batch transaction keys queries
+    go :: [MempoolAddTxResult blk]
+       -> [GenTx blk]
+       -> m ([MempoolAddTxResult blk], [GenTx blk])
     go acc = \case
-      []     -> pure (reverse acc, [])
-      tx:txs -> join $ atomically $ do
-        is <- readTVar istate
-        case pureTryAddTxs cfg txSize wti tx is of
-          NoSpaceLeft             -> pure $ pure (reverse acc, tx:txs)
-          TryAddTxs is' result ev -> do
-            whenJust is' (writeTVar istate)
-            pure $ do
+      []            -> pure (reverse acc, [])
+      txs@(tx:next) -> do
+        is <- atomically $ takeTMVar istate
+        mTbs <- getLedgerTablesAtFor ldgrInterface (isTip is) [tx]
+        case mTbs of
+          Right tbs -> case pureTryAddTx cfg txSize wti tx is tbs of
+            NoSpaceLeft -> do
+              atomically $ putTMVar istate is
+              pure (reverse acc, txs)
+            TransactionProcessed is' result ev -> do
+              atomically $ putTMVar istate $ fromMaybe is is'
               traceWith trcr ev
-              go (result:acc) txs
+              go (result:acc) next
+          Left PointNotFound{} -> do
+            -- We couldn't retrieve the values because the state is no longer on
+            -- the db. We need to resync.
+            atomically $ putTMVar istate is
+            (_, mTrace) <- implSyncWithLedger mpEnv
+            whenJust mTrace (traceWith trcr)
+            go acc txs
+
 
 -- | Craft a 'TryAddTxs' value containing the resulting state if applicable, the
 -- tracing event and the result of adding this transaction. See the
 -- documentation of 'implTryAddTxs' for some more context.
-pureTryAddTxs
+pureTryAddTx
   :: ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      )
   => LedgerCfg (LedgerState blk)
      -- ^ The ledger configuration.
   -> (GenTx blk -> TxSizeInBytes)
-     -- ^ The function to claculate the size of a transaction.
+     -- ^ The function to calculate the size of a transaction.
   -> WhetherToIntervene
   -> GenTx blk
      -- ^ The transaction to add to the mempool.
   -> InternalState blk
      -- ^ The current internal state of the mempool.
-  -> TryAddTxs blk
-pureTryAddTxs cfg txSize wti tx is
+  -> LedgerTables (LedgerState blk) ValuesMK
+     -- ^ Values for this transaction
+  -> TransactionResult blk
+pureTryAddTx cfg txSize wti tx is values
   | let size    = txSize tx
         curSize = msNumBytes  $ isMempoolSize is
   , curSize + size > getMempoolCapacityBytes (isCapacity is)
@@ -129,7 +150,7 @@ pureTryAddTxs cfg txSize wti tx is
       -- ('tx'). So if it's not in 'vrInvalid', it must be in 'vrNewValid'.
       Right vtx ->
         assert (isJust (vrNewValid vr)) $
-          TryAddTxs
+          TransactionProcessed
             (Just is')
             (MempoolTxAdded vtx)
             (TraceMempoolAddedTx
@@ -140,7 +161,7 @@ pureTryAddTxs cfg txSize wti tx is
       Left err ->
         assert (isNothing (vrNewValid vr))  $
           assert (length (vrInvalid vr) == 1) $
-            TryAddTxs
+            TransactionProcessed
               Nothing
               (MempoolTxRejected tx err)
               (TraceMempoolRejectedTx
@@ -148,19 +169,13 @@ pureTryAddTxs cfg txSize wti tx is
                err
                (isMempoolSize is)
               )
-    where
-      (eVtx, vr) = extendVRNew cfg txSize wti tx $ validationResultFromIS is
-      is'        = internalStateFromVR vr
+  where
+    (eVtx, vr) = extendVRNew cfg txSize wti tx $ validationResultFromIS values is
+    is'        = internalStateFromVR vr
 
 {-------------------------------------------------------------------------------
   Remove transactions
 -------------------------------------------------------------------------------}
-
--- | A datatype containing the state resulting after removing the requested
--- transactions from the mempool and maybe a message to be traced while removing
--- them.
-data RemoveTxs blk =
-    WriteRemoveTxs (InternalState blk) (Maybe (TraceEventMempool blk))
 
 -- | See 'Ouroboros.Consensus.Mempool.API.removeTxs'.
 implRemoveTxs ::
@@ -169,131 +184,163 @@ implRemoveTxs ::
      , HasTxId (GenTx blk)
      , ValidateEnvelope blk
      )
-  => MempoolEnv m blk
-  -> [GenTxId blk]
-  -> m ()
-implRemoveTxs menv txs = do
-    tr <- atomically $ do
-        is <- readTVar istate
-        ls <- getCurrentLedgerState ldgrInterface
-        let WriteRemoveTxs is' t = pureRemoveTxs cfg co txs is ls
-        writeTVar istate is'
-        pure t
-    whenJust tr (traceWith trcr)
+   => MempoolEnv m blk
+   -> NE.NonEmpty (GenTxId blk)
+   -> m ()
+implRemoveTxs mpEnv toRemove = do
+    (is, ls) <- atomically $ do
+      is <- takeTMVar istate
+      ls <- getCurrentLedgerState ldgrInterface
+      pure (is, ls)
+    let toKeep = filter
+                 (   (`notElem` Set.fromList (NE.toList toRemove))
+                     . txId
+                     . txForgetValidated
+                     . txTicketTx
+                 )
+                 (TxSeq.toList $ isTxs is)
+        (slot, ticked) = tickLedgerState cfg (ForgeInUnknownSlot ls)
+        toKeep' = [ txForgetValidated . TxSeq.txTicketTx $ tx | tx <- toKeep ]
+    mTbs <- getLedgerTablesAtFor ldgrInterface (castPoint (getTip ls)) toKeep'
+    case mTbs of
+      Left PointNotFound{} -> do
+        atomically $ putTMVar istate is
+        implRemoveTxs mpEnv toRemove
+      Right tbs -> do
+        let (is', t) = pureRemoveTxs
+                         capacityOverride
+                         cfg
+                         slot
+                         ticked
+                         tbs
+                         (isLastTicketNo is)
+                         toKeep
+                         toRemove
+        atomically $ putTMVar istate is'
+        traceWith trcr t
   where
-    MempoolEnv { mpEnvStateVar = istate
-               , mpEnvLedger = ldgrInterface
-               , mpEnvTracer = trcr
-               , mpEnvLedgerCfg = cfg
-               , mpEnvCapacityOverride = co
-               } = menv
+    MempoolEnv { mpEnvStateVar         = istate
+               , mpEnvLedger           = ldgrInterface
+               , mpEnvTracer           = trcr
+               , mpEnvLedgerCfg        = cfg
+               , mpEnvCapacityOverride = capacityOverride
+               } = mpEnv
 
 -- | Craft a 'RemoveTxs' that manually removes the given transactions from the
 -- mempool, returning inside it an updated InternalState.
 pureRemoveTxs
   :: ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
-     , ValidateEnvelope blk
      )
-  => LedgerConfig blk
-  -> MempoolCapacityBytesOverride
-  -> [GenTxId blk]
-  -> InternalState blk
-  -> LedgerState blk
-  -> RemoveTxs blk
-pureRemoveTxs cfg capacityOverride txIds is lstate =
-    -- Filtering is O(n), but this function will rarely be used, as it is an
-    -- escape hatch when there's an inconsistency between the ledger and the
-    -- mempool.
-    let toRemove       = Set.fromList txIds
-        txTickets'     = filter
-                           (   (`notElem` toRemove)
-                             . txId
-                             . txForgetValidated
-                             . txTicketTx
-                           )
-                           (TxSeq.toList (isTxs is))
-        (slot, ticked) = tickLedgerState cfg (ForgeInUnknownSlot lstate)
-        vr             = revalidateTxsFor
+  => MempoolCapacityBytesOverride
+  -> LedgerConfig blk
+  -> SlotNo
+  -> TickedLedgerState blk DiffMK
+  -> LedgerTables (LedgerState blk) ValuesMK
+  -> TicketNo
+  -> [TxTicket (Validated (GenTx blk))] -- ^ Txs to keep
+  -> NE.NonEmpty (GenTxId blk) -- ^ IDs to remove
+  -> (InternalState blk, TraceEventMempool blk)
+pureRemoveTxs capacityOverride lcfg slot lstate values tkt txs txIds =
+    let (is', removed) = revalidateTxsFor
                            capacityOverride
-                           cfg
+                           lcfg
                            slot
-                           ticked
-                           (isLastTicketNo is)
-                           txTickets'
-        is'            = internalStateFromVR vr
-        needsTrace     = if null txIds
-                         then
-                           Nothing
-                         else
-                           Just $ TraceMempoolManuallyRemovedTxs
-                             txIds
-                             (map fst (vrInvalid vr))
-                             (isMempoolSize is')
-    in WriteRemoveTxs is' needsTrace
+                           lstate
+                           values
+                           tkt
+                           txs
+        trace = TraceMempoolManuallyRemovedTxs
+                  txIds
+                  removed
+                  (isMempoolSize is')
+    in (is', trace)
 
 {-------------------------------------------------------------------------------
   Sync with ledger
 -------------------------------------------------------------------------------}
 
--- | A datatype containing the new state produced by syncing with the Ledger, a
--- snapshot of that mempool state and, if needed, a tracing message.
-data SyncWithLedger blk =
-    NewSyncedState (InternalState blk)
-                   (MempoolSnapshot blk)
-                   (Maybe (TraceEventMempool blk))
-
 -- | See 'Ouroboros.Consensus.Mempool.API.syncWithLedger'.
 implSyncWithLedger ::
-     (
-       IOLike m
+     ( IOLike m
      , LedgerSupportsMempool blk
-     , HasTxId (GenTx blk)
      , ValidateEnvelope blk
+     , HasTxId (GenTx blk)
      )
   => MempoolEnv m blk
-  -> m (MempoolSnapshot blk)
-implSyncWithLedger menv = do
-    (mTrace, mp) <- atomically $ do
-      is <- readTVar istate
-      ls <- getCurrentLedgerState ldgrInterface
-      let NewSyncedState is' msp mTrace = pureSyncWithLedger is ls cfg co
-      writeTVar istate is'
-      return (mTrace, msp)
-    whenJust mTrace (traceWith trcr)
-    return mp
+  -> m (MempoolSnapshot blk, Maybe (TraceEventMempool blk))
+implSyncWithLedger mpEnv = do
+  (is, ls) <- atomically $ do
+    is <- takeTMVar istate
+    ls <- getCurrentLedgerState ldgrInterface
+    pure (is, ls)
+
+  let (slot, ls') = tickLedgerState cfg $ ForgeInUnknownSlot ls
+
+  if pointHash (isTip is) == castHash (getTipHash ls) &&
+     isSlotNo is == slot
+    then do
+    -- The tip didn't change, put the same state.
+    atomically $ putTMVar istate is
+    pure (snapshotFromIS is, Nothing)
+    else do
+    -- We need to revalidate
+    let pt = castPoint (getTip ls)
+        txs = [ txForgetValidated . TxSeq.txTicketTx $ tx
+              | tx <- TxSeq.toList $ isTxs is
+              ]
+    mTbs <- getLedgerTablesAtFor ldgrInterface pt txs
+    case mTbs of
+      Right tbs -> do
+        let (is', mTrace) = pureSyncWithLedger
+                              capacityOverride
+                              cfg
+                              slot
+                              ls'
+                              tbs
+                              is
+        atomically $ putTMVar istate is'
+        whenJust mTrace (traceWith trcr)
+        return (snapshotFromIS is', mTrace)
+      Left PointNotFound{} -> do
+        -- If the point is gone, resync
+        atomically $ putTMVar istate is
+        implSyncWithLedger mpEnv
   where
-    MempoolEnv { mpEnvStateVar = istate
-               , mpEnvLedger = ldgrInterface
-               , mpEnvTracer = trcr
-               , mpEnvLedgerCfg = cfg
-               , mpEnvCapacityOverride = co
-               } = menv
+    MempoolEnv { mpEnvStateVar         = istate
+               , mpEnvLedger           = ldgrInterface
+               , mpEnvTracer           = trcr
+               , mpEnvLedgerCfg        = cfg
+               , mpEnvCapacityOverride = capacityOverride
+               } = mpEnv
 
 -- | Create a 'SyncWithLedger' value representing the values that will need to
 -- be stored for committing this synchronization with the Ledger.
 --
 -- See the documentation of 'runSyncWithLedger' for more context.
 pureSyncWithLedger
-  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk), ValidateEnvelope blk)
-  => InternalState blk
-  -> LedgerState blk
+  :: (LedgerSupportsMempool blk, HasTxId (GenTx blk))
+  => MempoolCapacityBytesOverride
   -> LedgerConfig blk
-  -> MempoolCapacityBytesOverride
-  -> SyncWithLedger blk
-pureSyncWithLedger istate lstate lcfg capacityOverride =
-    let vr          = validateStateFor
-                        capacityOverride
-                        lcfg
-                        (ForgeInUnknownSlot lstate)
-                        istate
-        removed     = map fst (vrInvalid vr)
-        istate'     = internalStateFromVR vr
-        mTrace      = if null removed
-                      then
-                        Nothing
-                      else
-                        Just $ TraceMempoolRemoveTxs removed (isMempoolSize istate')
-        snapshot    = snapshotFromIS istate'
-    in
-      NewSyncedState istate' snapshot mTrace
+  -> SlotNo
+  -> TickedLedgerState blk DiffMK
+  -> LedgerTables (LedgerState blk) ValuesMK
+  -> InternalState blk
+  -> ( InternalState blk
+     , Maybe (TraceEventMempool blk)
+     )
+pureSyncWithLedger capacityOverride lcfg slot lstate values istate =
+  let (is', removed) = revalidateTxsFor
+                         capacityOverride
+                         lcfg
+                         slot
+                         lstate
+                         values
+                         (isLastTicketNo istate)
+                         (TxSeq.toList $ isTxs istate)
+      mTrace = if null removed
+               then
+                 Nothing
+               else
+                 Just $ TraceMempoolRemoveTxs removed (isMempoolSize is')
+  in (is', mTrace)

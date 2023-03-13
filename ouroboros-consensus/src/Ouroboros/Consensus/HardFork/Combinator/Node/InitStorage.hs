@@ -4,15 +4,16 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage () where
 
+import           Data.SOP.Functors (Flip (..))
 import           Data.SOP.Index
 import           Data.SOP.Strict
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.Ledger.Abstract (EmptyMK)
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
-
 instance CanHardFork xs => NodeInitStorage (HardForkBlock xs) where
   -- We use the chunk info from the first era
   nodeImmutableDbChunkInfo cfg =
@@ -56,9 +57,9 @@ instance CanHardFork xs => NodeInitStorage (HardForkBlock xs) where
            SingleEraBlock blk
         => Index xs blk
         -> StorageConfig blk
-        -> LedgerState blk
+        -> Flip LedgerState EmptyMK blk
         -> K (m ()) blk
-      aux index cfg' currentLedger = K $
+      aux index cfg' (Flip currentLedger) = K $
           nodeInitChainDB cfg' InitChainDB {
               addBlock         = addBlock initChainDB
                                . injectNS' (Proxy @I) index

@@ -1,28 +1,42 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 module Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server (localStateQueryServer) where
 
+
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.Query
+import           Ouroboros.Consensus.Ledger.Query (DiskLedgerView (..), Query,
+                     QueryLedger)
+import qualified Ouroboros.Consensus.Ledger.Query as Query
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Util (StaticEither (..), fromStaticLeft,
+                     fromStaticRight)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (AcquireFailure (..))
 
 localStateQueryServer ::
-     forall m blk. (IOLike m, QueryLedger blk, ConfigSupportsNode blk, HasAnnTip blk)
+     forall m blk.
+     ( IOLike m
+     , QueryLedger blk
+     , Query.ConfigSupportsNode blk
+     , LedgerSupportsProtocol blk
+     )
   => ExtLedgerCfg blk
-  -> STM m (Point blk)
-     -- ^ Get tip point
-  -> (Point blk -> STM m (Maybe (ExtLedgerState blk)))
-     -- ^ Get a past ledger
-  -> STM m (Point blk)
-     -- ^ Get the immutable point
+  -> (forall b.
+         StaticEither b () (Point blk)
+      -> m (StaticEither
+             b
+                                 (DiskLedgerView m (ExtLedgerState blk))
+             (Either (Point blk) (DiskLedgerView m (ExtLedgerState blk)))
+           )
+     )
   -> LocalStateQueryServer blk (Point blk) (Query blk) m ()
-localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
+localStateQueryServer cfg getDLV =
     LocalStateQueryServer $ return idle
   where
     idle :: ServerStIdle blk (Point blk) (Query blk) m ()
@@ -34,32 +48,34 @@ localStateQueryServer cfg getTipPoint getPastLedger getImmutablePoint =
     handleAcquire :: Maybe (Point blk)
                   -> m (ServerStAcquiring blk (Point blk) (Query blk) m ())
     handleAcquire mpt = do
-        (pt, mPastLedger, immutablePoint) <- atomically $ do
-          pt <- maybe getTipPoint pure mpt
-          (pt,,) <$> getPastLedger pt <*> getImmutablePoint
+        case mpt of
+          Nothing -> do
+            dlv <- fromStaticLeft <$> getDLV (StaticLeft ())
+            return $ SendMsgAcquired $ acquired dlv
+          Just pt -> do
+            ei <- fromStaticRight <$> getDLV (StaticRight pt)
+            case ei of
+              Left immP
+                | pointSlot pt < pointSlot immP
+                -> return $ SendMsgFailure AcquireFailurePointTooOld idle
+                | otherwise
+                -> return $ SendMsgFailure AcquireFailurePointNotOnChain idle
+              Right dlv -> return $ SendMsgAcquired $ acquired dlv
 
-        return $ case mPastLedger of
-          Just pastLedger
-            -> SendMsgAcquired $ acquired pastLedger
-          Nothing
-            | pointSlot pt < pointSlot immutablePoint
-            -> SendMsgFailure AcquireFailurePointTooOld idle
-            | otherwise
-            -> SendMsgFailure AcquireFailurePointNotOnChain idle
-
-    acquired :: ExtLedgerState blk
+    acquired :: DiskLedgerView m (ExtLedgerState blk)
              -> ServerStAcquired blk (Point blk) (Query blk) m ()
-    acquired ledgerState = ServerStAcquired {
-          recvMsgQuery     = handleQuery ledgerState
-        , recvMsgReAcquire = handleAcquire
-        , recvMsgRelease   = return idle
+    acquired dlv = ServerStAcquired {
+          recvMsgQuery     = handleQuery dlv
+        , recvMsgReAcquire = \mp -> do close; handleAcquire mp
+        , recvMsgRelease   =        do close; return idle
         }
+      where
+        DiskLedgerView _st _dbRead _dbReadRange close = dlv
 
     handleQuery ::
-         ExtLedgerState blk
+         DiskLedgerView m (ExtLedgerState blk)
       -> Query blk result
       -> m (ServerStQuerying blk (Point blk) (Query blk) m () result)
-    handleQuery ledgerState query = return $
-        SendMsgResult
-          (answerQuery cfg query ledgerState)
-          (acquired ledgerState)
+    handleQuery dlv query = do
+      result <- Query.answerQuery cfg dlv query
+      return $ SendMsgResult result (acquired dlv)

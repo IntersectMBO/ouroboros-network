@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Util.TraceSize (
@@ -16,8 +18,7 @@ import           Control.Tracer
 import           Data.Word
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Basics
-import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB,
-                     ledgerDbCurrent)
+import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB, current)
 
 {-------------------------------------------------------------------------------
   Generic
@@ -35,7 +36,7 @@ traceSize (Tracer f) = Tracer $ \a -> do
   Ledger DB specific
 -------------------------------------------------------------------------------}
 
-data LedgerDbSize l = LedgerDbSize {
+data LedgerDbSize (l :: LedgerStateKind) = LedgerDbSize {
       -- | The tip of the ledger DB
       ledgerDbTip       :: Point l
 
@@ -56,7 +57,7 @@ traceLedgerDbSize :: forall m l. (MonadIO m, GetTip l)
                   -> Tracer m (LedgerDbSize l)
                   -> Tracer m (LedgerDB l)
 traceLedgerDbSize p (Tracer f) = Tracer $ \(!db) -> do
-    let !ledger = ledgerDbCurrent db
+    let !ledger = current db
         !tip    = getTip ledger
 
     when (shouldTrace tip) $ do

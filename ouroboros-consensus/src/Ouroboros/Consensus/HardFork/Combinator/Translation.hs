@@ -17,7 +17,7 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 -------------------------------------------------------------------------------}
 
 data EraTranslation xs = EraTranslation {
-      translateLedgerState   :: InPairs (RequiringBoth WrapLedgerConfig    (Translate LedgerState))       xs
+      translateLedgerState   :: InPairs (RequiringBoth WrapLedgerConfig     TranslateLedgerState)         xs
     , translateChainDepState :: InPairs (RequiringBoth WrapConsensusConfig (Translate WrapChainDepState)) xs
     , translateLedgerView    :: InPairs (RequiringBoth WrapLedgerConfig    (TranslateForecast LedgerState WrapLedgerView)) xs
     }

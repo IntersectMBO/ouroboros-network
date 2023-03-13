@@ -79,8 +79,12 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
+                     (LedgerBackingStoreValueHandle)
+import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
+                     (PointNotFound)
 import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util ((..:))
+import           Ouroboros.Consensus.Util (StaticEither, (..:))
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -330,6 +334,52 @@ data ChainDB m blk = ChainDB {
       -- invalid block is detected. These blocks are likely to be valid.
     , getIsInvalidBlock :: STM m (WithFingerprint (HeaderHash blk -> Maybe (InvalidBlockReason blk)))
 
+      -- | Get a 'LedgerDB' and a handle to a value of the backing store
+      -- corresponding to the anchor of the 'LedgerDB'
+      --
+      -- In the 'StaticRight' case, 'Left pt' out means the requested point is
+      -- not on current chain, so that 'LedgerDB' is unavailable.
+      --
+      -- The return type in the end contains a value handle that can be used to
+      -- perform reads on the backing store, a LedgerDB truncated at the
+      -- requested point and a function for releasing the value handle.
+      --
+      -- The value handle is allocated in the given registry.
+      --
+      -- This is intended to be used on queries, to get an ephemeral stable view
+      -- of the backing store.
+    , getLedgerBackingStoreValueHandle ::
+        forall b.
+             ResourceRegistry m
+          -> StaticEither b () (Point blk)
+          -> m (StaticEither
+                 b
+                 ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+                 , LedgerDB' blk
+                 , m ()
+                 )
+                 (Either
+                    (Point blk)
+                    ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+                    , LedgerDB' blk
+                    , m ()
+                    )
+                 )
+               )
+
+      -- | Read and forward the values up to the given point on the chain.
+      -- Returns Nothing if the anchor moved or if the state is not found on the
+      -- ledger db.
+      --
+      -- This is intended to be used by the mempool to hydrate a ledger state at
+      -- a specific point
+    , getLedgerTablesAtFor ::
+           Point blk
+        -> LedgerTables (ExtLedgerState blk) KeysMK
+        -> m (Either
+                (PointNotFound blk)
+                (LedgerTables (ExtLedgerState blk) ValuesMK))
+
       -- | Close the ChainDB
       --
       -- Idempotent.
@@ -341,6 +391,10 @@ data ChainDB m blk = ChainDB {
       --
       -- 'False' when the database is closed.
     , isOpen             :: STM m Bool
+
+      -- | Perform a monadic operation holding the read lock on the DB
+      -- changelog. See the haddocks for 'lgrFlushLock' for more context.
+    , withLgrReadLock :: forall a. m a -> m a
     }
 
 getCurrentTip :: (Monad (STM m), HasHeader (Header blk))
@@ -354,14 +408,14 @@ getTipBlockNo = fmap Network.getTipBlockNo . getCurrentTip
 -- | Get current ledger
 getCurrentLedger ::
      (Monad (STM m), IsLedger (LedgerState blk))
-  => ChainDB m blk -> STM m (ExtLedgerState blk)
-getCurrentLedger = fmap LedgerDB.ledgerDbCurrent . getLedgerDB
+  => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
+getCurrentLedger = fmap LedgerDB.current . getLedgerDB
 
 -- | Get the immutable ledger, i.e., typically @k@ blocks back.
 getImmutableLedger ::
      Monad (STM m)
-  => ChainDB m blk -> STM m (ExtLedgerState blk)
-getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
+  => ChainDB m blk -> STM m (ExtLedgerState blk EmptyMK)
+getImmutableLedger = fmap LedgerDB.anchor . getLedgerDB
 
 -- | Get the ledger for the given point.
 --
@@ -369,9 +423,9 @@ getImmutableLedger = fmap LedgerDB.ledgerDbAnchor . getLedgerDB
 -- chain (i.e., older than @k@ or not on the current chain), 'Nothing' is
 -- returned.
 getPastLedger ::
-     (Monad (STM m), LedgerSupportsProtocol blk)
-  => ChainDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk))
-getPastLedger db pt = LedgerDB.ledgerDbPast pt <$> getLedgerDB db
+     (Monad (STM m), LedgerSupportsProtocol blk, StandardHash (ExtLedgerState blk))
+  => ChainDB m blk -> Point blk -> STM m (Maybe (ExtLedgerState blk EmptyMK))
+getPastLedger db pt = LedgerDB.getPastLedgerAt pt <$> getLedgerDB db
 
 -- | Get a 'HeaderStateHistory' populated with the 'HeaderState's of the
 -- last @k@ blocks of the current chain.
@@ -385,7 +439,7 @@ getHeaderStateHistory = fmap toHeaderStateHistory . getLedgerDB
       -> HeaderStateHistory blk
     toHeaderStateHistory =
           HeaderStateHistory
-        . LedgerDB.ledgerDbBimap headerState headerState
+        . LedgerDB.volatileStatesBimap headerState headerState
 
 {-------------------------------------------------------------------------------
   Adding a block
