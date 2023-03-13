@@ -4,7 +4,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Storage.LedgerDB.Stream (
-    NextBlock (..)
+    NextBlock
+  , NextItem (..)
   , StreamAPI (..)
   , streamAll
   ) where
@@ -18,8 +19,11 @@ import           Ouroboros.Consensus.Block
   Abstraction over the streaming API provided by the Chain DB
 -------------------------------------------------------------------------------}
 
+{-# DEPRECATED NextBlock ["Use Ouroboros.Consensus.Storage.LedgerDB (NextItem(NextItem))", "or Ouroboros.Consensus.Storage.LedgerDB (NextItem)"] #-}
 -- | Next block returned during streaming
-data NextBlock blk = NoMoreBlocks | NextBlock blk
+data NextItem blk = NoMoreItems | NextItem blk | NextBlock blk
+type NextBlock blk = NextItem blk
+
 
 -- | Stream blocks from the immutable DB
 --
@@ -28,14 +32,14 @@ data NextBlock blk = NoMoreBlocks | NextBlock blk
 -- tip to bring the ledger up to date with the tip of the immutable DB.
 --
 -- In CPS form to enable the use of 'withXYZ' style iterator init functions.
-data StreamAPI m blk = StreamAPI {
+newtype StreamAPI m blk a = StreamAPI {
       -- | Start streaming after the specified block
-      streamAfter :: forall a. HasCallStack
+      streamAfter :: forall b. HasCallStack
         => Point blk
         -- Reference to the block corresponding to the snapshot we found
         -- (or 'GenesisPoint' if we didn't find any)
 
-        -> (Either (RealPoint blk) (m (NextBlock blk)) -> m a)
+        -> (Either (RealPoint blk) (m (NextItem a)) -> m b)
         -- Get the next block (by value)
         --
         -- Should be @Left pt@ if the snapshot we found is more recent than the
@@ -44,17 +48,17 @@ data StreamAPI m blk = StreamAPI {
         -- got truncated due to disk corruption. The returned @pt@ is a
         -- 'RealPoint', not a 'Point', since it must always be possible to
         -- stream after genesis.
-        -> m a
+        -> m b
     }
 
 -- | Stream all blocks
 streamAll ::
-     forall m blk e a. (Monad m, HasCallStack)
-  => StreamAPI m blk
+     forall m blk e b a. (Monad m, HasCallStack)
+  => StreamAPI m blk b
   -> Point blk             -- ^ Starting point for streaming
   -> (RealPoint blk -> e)  -- ^ Error when tip not found
   -> a                     -- ^ Starting point when tip /is/ found
-  -> (blk -> a -> m a)     -- ^ Update function for each block
+  -> (b -> a -> m a)       -- ^ Update function for each block
   -> ExceptT e m a
 streamAll StreamAPI{..} tip notFound e f = ExceptT $
     streamAfter tip $ \case
@@ -64,6 +68,9 @@ streamAll StreamAPI{..} tip notFound e f = ExceptT $
         let go :: a -> m a
             go a = do mNext <- getNext
                       case mNext of
-                        NoMoreBlocks -> return a
-                        NextBlock b  -> go =<< f b a
+                        NoMoreItems -> return a
+                        NextItem b  -> go =<< f b a
+                        -- This is here only to silence the non-exhaustiveness
+                        -- check but it will never be matched
+                        NextBlock b -> go =<< f b a
         Right <$> go e

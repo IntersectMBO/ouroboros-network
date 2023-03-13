@@ -48,4 +48,4 @@ class LedgerSupportsPeerSelection blk where
   --
   -- Note: if the ledger state is old, the registered relays can also be old and
   -- may no longer be online.
-  getPeers :: LedgerState blk -> [(PoolStake, NonEmpty StakePoolRelay)]
+  getPeers :: LedgerState blk mk -> [(PoolStake, NonEmpty StakePoolRelay)]

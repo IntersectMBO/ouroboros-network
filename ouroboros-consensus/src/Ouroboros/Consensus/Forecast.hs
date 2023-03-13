@@ -37,7 +37,7 @@ mapForecast f (Forecast at for) = Forecast{
 -- 'GetTip'.
 --
 -- Specialization of 'constantForecast'.
-trivialForecast :: GetTip b => b -> Forecast ()
+trivialForecast :: GetTip b => b mk -> Forecast ()
 trivialForecast x = constantForecastOf TickedTrivial (getTipSlot x)
 
 -- | Forecast where the values are never changing

@@ -20,6 +20,7 @@ import           Control.Tracer (Tracer, contramap, nullTracer)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -63,7 +64,7 @@ data ChainDbArgs f m blk = ChainDbArgs {
     -- ^ Predicate to check for integrity of
     -- 'Ouroboros.Consensus.Storage.Common.GetVerifiedBlock' components when
     -- extracting them from both the VolatileDB and the ImmutableDB.
-    , cdbGenesis                :: HKD f (m (ExtLedgerState blk))
+    , cdbGenesis                :: HKD f (m (ExtLedgerState blk ValuesMK))
     , cdbCheckInFuture          :: HKD f (CheckInFuture m blk)
     , cdbImmutableDbCacheConfig :: ImmutableDB.CacheConfig
 
@@ -189,6 +190,7 @@ fromChainDbArgs ChainDbArgs{..} = (
         , lgrDiskPolicy       = cdbDiskPolicy
         , lgrGenesis          = cdbGenesis
         , lgrTracer           = contramap TraceSnapshotEvent cdbTracer
+        , lgrRegistry         = cdbRegistry
         , lgrTraceLedger      = cdbTraceLedger
         }
     , ChainDbSpecificArgs {

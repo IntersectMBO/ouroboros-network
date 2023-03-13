@@ -8,8 +8,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets (
   , rewindTableKeySets
     -- * Read
   , KeySetsReader
+  , PointNotFound (..)
+  , getLedgerTablesFor
   , readKeySets
   , readKeySetsWith
+  , trivialKeySetsReader
   , withKeysReadSets
     -- * Forward
   , UnforwardedReadSets (..)
@@ -21,12 +24,14 @@ import           Data.Map.Diff.Strict.Internal (unsafeApplyDiffForKeys)
 
 import           Cardano.Slotting.Slot
 
+import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Util.IOLike
 
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq
+import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB (..))
 
 {-------------------------------------------------------------------------------
   Rewind
@@ -70,15 +75,15 @@ readKeySetsWith readKeys (RewoundTableKeySets _seqNo rew) = do
     }
 
 withKeysReadSets ::
-  forall m l mk1 mk2.
+  forall m l mk1 a.
   ( HasLedgerTables l, Monad m
   )
   => l mk1
   -> KeySetsReader m l
   -> DbChangelog l
   -> LedgerTables l KeysMK
-  -> (l ValuesMK -> m (l mk2))
-  -> m (l mk2)
+  -> (l ValuesMK -> m a)
+  -> m a
 withKeysReadSets st ksReader dbch ks f = do
       let aks = rewindTableKeySets dbch ks :: RewoundTableKeySets l
       urs <- ksReader aks
@@ -108,6 +113,27 @@ withHydratedLedgerState st dbch urs f =
           f
       .   withLedgerTables st
       <$> forwardTableKeySets dbch urs
+
+-- | The requested point is not found on the ledger db
+data PointNotFound blk = PointNotFound !(Point blk) deriving (Eq, Show)
+
+-- | Read and forward the values up to the tip of the given ledger db. Returns
+-- Left if the anchor moved. If Left is returned, then the caller was just
+-- unlucky and scheduling of events happened to move the backing store. Reading
+-- again the LedgerDB and calling this function must eventually succeed.
+getLedgerTablesFor ::
+     (Monad m, HasLedgerTables l)
+  => LedgerDB l
+  -> LedgerTables l KeysMK
+  -> KeySetsReader m l
+  -> m (Either (WithOrigin SlotNo, WithOrigin SlotNo) (LedgerTables l ValuesMK))
+getLedgerTablesFor db keys ksRead = do
+  let aks = rewindTableKeySets (ledgerDbChangelog db) keys
+  urs <- ksRead aks
+  pure $ forwardTableKeySets (ledgerDbChangelog db) urs
+
+trivialKeySetsReader :: (Monad m, LedgerTablesAreTrivial l) => KeySetsReader m l
+trivialKeySetsReader (RewoundTableKeySets s _) = pure $ UnforwardedReadSets s trivialLedgerTables trivialLedgerTables
 
 {-------------------------------------------------------------------------------
   Forward

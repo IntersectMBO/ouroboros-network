@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE MonoLocalBinds       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
@@ -12,6 +13,7 @@ import           Data.SOP.Strict
 import           GHC.Stack
 
 import           Ouroboros.Consensus.Config.SupportsNode
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 
@@ -57,6 +59,8 @@ getSameConfigValue getValue blockConfig = getSameValue values
 
 instance ( CanHardFork xs
            -- Instances that must be defined for specific values of @b@:
+         , LedgerTablesCanHardFork xs
+         , LedgerSupportsMempool (HardForkBlock xs)
          , SupportedNetworkProtocolVersion (HardForkBlock xs)
          , SerialiseHFC xs
          ) => RunNode (HardForkBlock xs)

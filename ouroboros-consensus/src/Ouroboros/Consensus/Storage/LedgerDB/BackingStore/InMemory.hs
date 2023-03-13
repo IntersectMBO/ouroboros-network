@@ -11,6 +11,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.BackingStore.InMemory (
     newTVarBackingStoreInitialiser
     -- * Errors
   , StoreDirIsIncompatible (..)
+  , TVarBackingStoreExn (..)
   ) where
 
 import qualified Codec.CBOR.Read as CBOR

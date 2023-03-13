@@ -29,7 +29,9 @@ import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
@@ -38,6 +40,8 @@ import           Ouroboros.Consensus.Util.SOP
 
 import           Ouroboros.Consensus.HardFork.Combinator
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 {-------------------------------------------------------------------------------
@@ -46,7 +50,7 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 class Inject f where
   inject ::
-       forall x xs. CanHardFork xs
+       forall x xs. (CanHardFork xs, LedgerTablesCanHardFork xs)
     => Exactly xs History.Bound
        -- ^ Start bound of each era
     -> Index xs x
@@ -57,6 +61,7 @@ inject' ::
      forall f a b x xs.
      ( Inject f
      , CanHardFork xs
+     , LedgerTablesCanHardFork xs
      , Coercible a (f x)
      , Coercible b (f (HardForkBlock xs))
      )
@@ -79,7 +84,7 @@ injectNestedCtxt_ idx nc = case idx of
 injectQuery ::
      forall x xs result.
      Index xs x
-  -> BlockQuery x result
+  -> BlockQuery x      result
   -> QueryIfCurrent xs result
 injectQuery idx q = case idx of
     IZ      -> QZ q
@@ -149,9 +154,9 @@ instance Inject (SomeSecond BlockQuery) where
 instance Inject AnnTip where
   inject _ = undistribAnnTip .: injectNS' (Proxy @AnnTip)
 
-instance Inject LedgerState where
+instance Inject (Flip LedgerState mk) where
   inject startBounds idx =
-      HardForkLedgerState . injectHardForkState startBounds idx
+      Flip . HardForkLedgerState . injectHardForkState startBounds idx
 
 instance Inject WrapChainDepState where
   inject startBounds idx =
@@ -165,9 +170,9 @@ instance Inject HeaderState where
                             $ WrapChainDepState headerStateChainDep
       }
 
-instance Inject ExtLedgerState where
-  inject startBounds idx ExtLedgerState {..} = ExtLedgerState {
-        ledgerState = inject startBounds idx ledgerState
+instance Inject (Flip ExtLedgerState mk) where
+  inject startBounds idx (Flip ExtLedgerState {..}) = Flip $ ExtLedgerState {
+        ledgerState = unFlip $ inject startBounds idx (Flip ledgerState)
       , headerState = inject startBounds idx headerState
       }
 
@@ -186,10 +191,10 @@ instance Inject ExtLedgerState where
 -- problematic, but extending 'ledgerViewForecastAt' is a lot more subtle; see
 -- @forecastNotFinal@.
 injectInitialExtLedgerState ::
-     forall x xs. CanHardFork (x ': xs)
+     forall x xs. (CanHardFork (x ': xs), HasLedgerTables (LedgerState (HardForkBlock (x : xs))))
   => TopLevelConfig (HardForkBlock (x ': xs))
-  -> ExtLedgerState x
-  -> ExtLedgerState (HardForkBlock (x ': xs))
+  -> ExtLedgerState x ValuesMK
+  -> ExtLedgerState (HardForkBlock (x ': xs)) ValuesMK
 injectInitialExtLedgerState cfg extLedgerState0 =
     ExtLedgerState {
         ledgerState = targetEraLedgerState
@@ -204,15 +209,17 @@ injectInitialExtLedgerState cfg extLedgerState0 =
              (hardForkLedgerStatePerEra targetEraLedgerState))
           cfg
 
-    targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs))
+    targetEraLedgerState :: LedgerState (HardForkBlock (x ': xs)) ValuesMK
     targetEraLedgerState =
-        HardForkLedgerState $
-          -- We can immediately extend it to the right slot, executing any
-          -- scheduled hard forks in the first slot
-          State.extendToSlot
-            (configLedger cfg)
-            (SlotNo 0)
-            (initHardForkState (ledgerState extLedgerState0))
+       applyLedgerTablesDiffs
+         (HardForkLedgerState . initHardForkState . Flip . ledgerState $ extLedgerState0)
+         (HardForkLedgerState
+           -- We can immediately extend it to the right slot, executing any
+           -- scheduled hard forks in the first slot
+             (State.extendToSlot
+                (configLedger cfg)
+                (SlotNo 0)
+                (initHardForkState $ Flip $ forgetLedgerTables $ ledgerState extLedgerState0)))
 
     firstEraChainDepState :: HardForkChainDepState (x ': xs)
     firstEraChainDepState =

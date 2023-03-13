@@ -28,6 +28,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.BackingStore (
   , withBsValueHandle
     -- * Ledger DB wrappers
   , LedgerBackingStore (..)
+  , LedgerBackingStore'
   , LedgerBackingStoreInitialiser (..)
   , LedgerBackingStoreValueHandle (..)
   ) where
@@ -37,6 +38,7 @@ import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
 
 import           Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
 
+import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Tables
 import qualified Ouroboros.Consensus.Storage.FS.API as FS
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
@@ -196,3 +198,4 @@ data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
   deriving stock    (Generic)
   deriving anyclass (NoThunks)
 
+type LedgerBackingStore' m blk = LedgerBackingStore m (ExtLedgerState blk)

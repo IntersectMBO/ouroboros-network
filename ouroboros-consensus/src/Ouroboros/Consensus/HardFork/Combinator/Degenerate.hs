@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE PatternSynonyms      #-}
+{-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -52,6 +53,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode ()
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
+                     (Flip (..))
 
 {-------------------------------------------------------------------------------
   Simple patterns
@@ -169,11 +172,11 @@ pattern DegenBlockConfig x <- (project -> x)
 
 pattern DegenLedgerState ::
      NoHardForks b
-  => LedgerState b
-  -> LedgerState (HardForkBlock '[b])
-pattern DegenLedgerState x <- (project -> x)
+  => LedgerState b mk
+  -> LedgerState (HardForkBlock '[b]) mk
+pattern DegenLedgerState x <- (unFlip . project . Flip -> x)
   where
-    DegenLedgerState x = inject x
+    DegenLedgerState x = unFlip $ inject $ Flip x
 
 {-------------------------------------------------------------------------------
   Dealing with the config

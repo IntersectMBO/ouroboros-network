@@ -86,6 +86,7 @@ import           Cardano.Binary (enforceSize)
 import           Ouroboros.Network.Block (Serialised)
 
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
@@ -272,6 +273,9 @@ class ( CanHardFork xs
       , All (DecodeDiskDepIx (NestedCtxt Header)) xs
         -- Required for 'getHfcBinaryBlockInfo'
       , All HasBinaryBlockInfo xs
+        -- LedgerTables on the HardForkBlock might not be compositionally
+        -- defined, but we need to require this instances for any instantiation.
+      , CanSerializeLedgerTables (LedgerState (HardForkBlock xs))
       ) => SerialiseHFC xs where
 
   encodeDiskHfcBlock :: CodecConfig (HardForkBlock xs)

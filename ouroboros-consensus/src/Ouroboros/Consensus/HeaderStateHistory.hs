@@ -40,6 +40,8 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import qualified Data.List.NonEmpty as NE
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Tables.Utils
+                     (applyLedgerTablesDiffs)
 import           Ouroboros.Network.Mock.Chain (Chain)
 import qualified Ouroboros.Network.Mock.Chain as Chain
 
@@ -155,7 +157,7 @@ validateHeader cfg ledgerView hdr history = do
 fromChain ::
      ApplyBlock (ExtLedgerState blk) blk
   => TopLevelConfig blk
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger state
   -> Chain blk
   -> HeaderStateHistory blk
@@ -165,7 +167,7 @@ fromChain cfg initState chain =
     anchorSnapshot NE.:| snapshots =
           fmap headerState
         . NE.scanl
-            (flip (tickThenReapply (ExtLedgerCfg cfg)))
+            (\st blk -> applyLedgerTablesDiffs st $ tickThenReapply (ExtLedgerCfg cfg) blk st)
             initState
         . Chain.toOldestFirst
         $ chain

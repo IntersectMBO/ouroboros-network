@@ -35,16 +35,15 @@ data ValidatedFragment b l = UnsafeValidatedFragment {
       -- | Chain fragment
       validatedFragment :: !(AnchoredFragment b)
 
-      -- | Ledger after after validation
-    , validatedLedger   :: !l
+      -- | Ledger state after validation
+    , validatedLedger   :: !(l EmptyMK)
     }
-  deriving (Functor)
 
 {-# COMPLETE ValidatedFragment #-}
 
 pattern ValidatedFragment ::
      (GetTip l, HasHeader b, HeaderHash b ~ HeaderHash l, HasCallStack)
-  => AnchoredFragment b -> l -> ValidatedFragment b l
+  => AnchoredFragment b -> l EmptyMK -> ValidatedFragment b l
 pattern ValidatedFragment f l <- UnsafeValidatedFragment f l
   where
     ValidatedFragment f l = new f l
@@ -77,7 +76,7 @@ new ::
      forall l b.
      (GetTip l, HasHeader b, HeaderHash b ~ HeaderHash l, HasCallStack)
   => AnchoredFragment b
-  -> l
+  -> l EmptyMK
   -> ValidatedFragment b l
 new fragment ledger =
     assertWithMsg (invariant validated) $
