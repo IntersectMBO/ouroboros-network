@@ -111,6 +111,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
 
+import           Ouroboros.Consensus.Ledger.Basics (ValuesMK)
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
@@ -539,7 +540,7 @@ openChainDB
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger
   -> ChainDbArgs Defaults m blk
   -> (ChainDbArgs Identity m blk -> ChainDbArgs Identity m blk)
@@ -559,7 +560,7 @@ mkChainDbArgs
   => ResourceRegistry m
   -> CheckInFuture m blk
   -> TopLevelConfig blk
-  -> ExtLedgerState blk
+  -> ExtLedgerState blk ValuesMK
      -- ^ Initial ledger
   -> ChunkInfo
   -> ChainDbArgs Defaults m blk

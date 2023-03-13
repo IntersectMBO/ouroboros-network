@@ -125,7 +125,7 @@ initSlotForgeTimeOracle cfg chainDB = do
     pure slotForgeTime
   where
     toSummary ::
-         ExtLedgerState blk
+         ExtLedgerState blk EmptyMK
       -> History.Summary (History.HardForkIndices blk)
     toSummary = History.hardForkSummary (configLedger cfg) . ledgerState
 

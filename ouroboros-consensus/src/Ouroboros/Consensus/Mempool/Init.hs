@@ -110,17 +110,16 @@ mkMempool
      )
   => MempoolEnv m blk -> Mempool m blk
 mkMempool mpEnv = Mempool
-    { tryAddTxs      = implTryAddTxs istate cfg txSize trcr
+    { tryAddTxs      = implTryAddTxs mpEnv
     , removeTxs      = implRemoveTxs mpEnv
-    , syncWithLedger = implSyncWithLedger mpEnv
-    , getSnapshot    = snapshotFromIS <$> readTVar istate
-    , getSnapshotFor = \fls -> pureGetSnapshotFor cfg fls co <$> readTVar istate
-    , getCapacity    = isCapacity <$> readTVar istate
+    , syncWithLedger = fst <$> implSyncWithLedger mpEnv
+    , getSnapshot    = snapshotFromIS <$> readTMVar istate
+    , getSnapshotFor = implGetSnapshotFor mpEnv
+    , getCapacity    = isCapacity <$> readTMVar istate
     , getTxSize      = txSize
     }
-   where MempoolEnv { mpEnvStateVar = istate
-                    , mpEnvLedgerCfg = cfg
-                    , mpEnvTxSize = txSize
-                    , mpEnvTracer = trcr
-                    , mpEnvCapacityOverride = co
-                    } = mpEnv
+  where
+    MempoolEnv {
+        mpEnvStateVar         = istate
+      , mpEnvTxSize           = txSize
+      } = mpEnv

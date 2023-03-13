@@ -10,7 +10,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk {-# DEPRECATED "Use Ouroboros
   , LDB.AnnLedgerError'
   , LDB.LedgerDB'
     -- ** Abstraction over the stream API
-  , LDB.NextBlock (..)
+  , NextBlock
   , LDB.StreamAPI (..)
     -- * Read from disk
   , readSnapshot
@@ -47,10 +47,12 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LDB
 
@@ -74,6 +76,9 @@ type InitFailure blk = LDB.SnapshotFailure blk
 {-# DEPRECATED TraceEvent "Use Ouroboros.Consensus.Storage.LedgerDB (TraceSnapshotEvent)" #-}
 type TraceEvent blk = LDB.TraceSnapshotEvent blk
 
+{-# DEPRECATED NextBlock "Use Ouroboros.Consensus.Storage.LedgerDB (NextItem)" #-}
+type NextBlock blk = LDB.NextItem blk
+
 {-------------------------------------------------------------------------------
   Deprecated functions
 -------------------------------------------------------------------------------}
@@ -83,28 +88,32 @@ initLedgerDB ::
      forall m blk. (
          IOLike m
        , LedgerSupportsProtocol blk
+       , CanSerializeLedgerTables (LedgerState blk)
        , InspectLedger blk
        , HasCallStack
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk))
+  -> ResourceRegistry m
+  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LDB.LedgerDbCfg (ExtLedgerState blk)
-  -> m (ExtLedgerState blk) -- ^ Genesis ledger state
-  -> StreamAPI m blk
-  -> m (InitLog blk, LedgerDB' blk, Word64)
-initLedgerDB = LDB.initLedgerDB
+  -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
+  -> StreamAPI m blk blk
+  -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
+initLedgerDB = LDB.initialize
 
 {-# DEPRECATED takeSnapshot "Use Ouroboros.Consensus.Storage.LedgerDB (takeSnapshot)" #-}
 takeSnapshot ::
      (MonadThrow m, IsLedger (LedgerState blk))
   => Tracer m (TraceEvent blk)
   -> SomeHasFS m
-  -> (ExtLedgerState blk -> Encoding)
-  -> LedgerDB' blk -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot t fs e = LDB.takeSnapshot t fs e . LDB.ledgerDbAnchor
+  -> LedgerBackingStore' m blk
+  -> (ExtLedgerState blk EmptyMK -> Encoding)
+  -> LedgerDB' blk
+  -> m (Maybe (DiskSnapshot, RealPoint blk))
+takeSnapshot t fs bs e = LDB.takeSnapshot t fs bs e . LDB.anchor
 
 {-# DEPRECATED trimSnapshots "Use Ouroboros.Consensus.Storage.LedgerDB (trimSnapshots)" #-}
 trimSnapshots ::
@@ -118,31 +127,33 @@ trimSnapshots = LDB.trimSnapshots
 {-# DEPRECATED readSnapshot "Use Ouroboros.Consensus.Storage.LedgerDB (readSnapshot)" #-}
 readSnapshot ::
      IOLike m => SomeHasFS m
-  -> (forall s. Decoder s (ExtLedgerState blk))
+  -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> DiskSnapshot
-  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk)
+  -> ExceptT ReadIncrementalErr m (ExtLedgerState blk EmptyMK)
 readSnapshot = LDB.readSnapshot
 
 {-# DEPRECATED writeSnapshot "Use Ouroboros.Consensus.Storage.LedgerDB (writeSnapshot)" #-}
 writeSnapshot ::
-     MonadThrow m => SomeHasFS m
-  -> (ExtLedgerState blk -> Encoding)
+     MonadThrow m
+  => SomeHasFS m
+  -> LedgerBackingStore' m blk
+  -> (ExtLedgerState blk EmptyMK -> Encoding)
   -> DiskSnapshot
-  -> ExtLedgerState blk -> m ()
+  -> ExtLedgerState blk EmptyMK -> m ()
 writeSnapshot = LDB.writeSnapshot
 
 {-# DEPRECATED deleteSnapshot "Use Ouroboros.Consensus.Storage.LedgerDB (deleteSnapshot)" #-}
 deleteSnapshot :: SomeHasFS m -> DiskSnapshot -> m ()
 deleteSnapshot = LDB.deleteSnapshot
 
-{-# DEPRECATED snapshotToFileName "Use Ouroboros.Consensus.Storage.LedgerDB (snapshotToFileName)" #-}
+{-# DEPRECATED snapshotToFileName "Snapshots no longer have only one path. This function will error if called" #-}
 snapshotToFileName :: DiskSnapshot -> String
-snapshotToFileName = LDB.snapshotToFileName
+snapshotToFileName = error "Deprecated"
 
-{-# DEPRECATED snapshotToPath "Use Ouroboros.Consensus.Storage.LedgerDB (snapshotToPath)" #-}
+{-# DEPRECATED snapshotToPath "Snapshots no longer have only one path. This function will error if called" #-}
 snapshotToPath :: DiskSnapshot -> FsPath
-snapshotToPath = LDB.snapshotToPath
+snapshotToPath = error "Deprecated"
 
 {-# DEPRECATED decorateReplayTracerWithGoal "Use Ouroboros.Consensus.Storage.LedgerDB (decorateReplayTracerWithGoal)" #-}
 decorateReplayTracerWithGoal

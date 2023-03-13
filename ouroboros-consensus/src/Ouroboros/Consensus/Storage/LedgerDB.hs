@@ -1,30 +1,34 @@
 module Ouroboros.Consensus.Storage.LedgerDB (
     -- * LedgerDB
-    Checkpoint (..)
-  , LedgerDB (..)
+    LedgerDB (..)
   , LedgerDB'
   , LedgerDbCfg (..)
   , configLedgerDb
+  , new
     -- * Initialization
   , InitLog (..)
   , ReplayStart (..)
-  , initLedgerDB
+  , initialize
+  , newBackingStore
+  , newBackingStoreInitialiser
+  , restoreBackingStore
     -- * Trace
   , ReplayGoal (..)
   , TraceReplayEvent (..)
   , decorateReplayTracerWithGoal
   , decorateReplayTracerWithStart
     -- * Querying
-  , ledgerDbAnchor
-  , ledgerDbCurrent
-  , ledgerDbIsSaturated
-  , ledgerDbMaxRollback
-  , ledgerDbPast
-  , ledgerDbSnapshots
-  , ledgerDbTip
+  , anchor
+  , current
+  , getPastLedgerAt
+  , isSaturated
+  , lastFlushedState
+  , maxRollback
+  , rollback
+  , snapshots
+  , tip
     -- * Updates
     -- ** Construct
-  , ledgerDbWithAnchor
     -- ** Applying blocks
   , AnnLedgerError (..)
   , AnnLedgerError'
@@ -38,21 +42,22 @@ module Ouroboros.Consensus.Storage.LedgerDB (
   , defaultResolveBlocks
     -- ** Operations
   , defaultResolveWithErrors
-  , ledgerDbBimap
-  , ledgerDbPrune
-  , ledgerDbPush
-  , ledgerDbSwitch
+  , flush
+  , prune
+  , push
+  , switch
+  , volatileStatesBimap
     -- ** Pure API
-  , ledgerDbPush'
-  , ledgerDbPushMany'
-  , ledgerDbSwitch'
+  , push'
+  , pushMany'
+  , switch'
     -- ** Trace
   , PushGoal (..)
   , PushStart (..)
   , Pushing (..)
   , UpdateLedgerDbTraceEvent (..)
     -- * Streaming
-  , NextBlock (..)
+  , NextItem (..)
   , StreamAPI (..)
   , streamAll
     -- * Snapshots
@@ -66,12 +71,11 @@ module Ouroboros.Consensus.Storage.LedgerDB (
   , takeSnapshot
   , trimSnapshots
   , writeSnapshot
-    -- ** Low-level API (primarily exposed for testing)
-  , decodeSnapshotBackwardsCompatible
+    -- ** Delete
   , deleteSnapshot
-  , encodeSnapshot
-  , snapshotToFileName
-  , snapshotToPath
+    -- ** Paths
+  , snapshotToStatePath
+  , snapshotToTablesPath
     -- ** Trace
   , TraceSnapshotEvent (..)
     -- * Disk policy
@@ -79,6 +83,9 @@ module Ouroboros.Consensus.Storage.LedgerDB (
   , SnapshotInterval (..)
   , TimeSinceLast (..)
   , defaultDiskPolicy
+    -- * Test
+  , decodeSnapshotBackwardsCompatible
+  , encodeSnapshot
   ) where
 
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
@@ -87,19 +94,21 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Storage.LedgerDB.Init (InitLog (..),
                      ReplayGoal (..), ReplayStart (..), TraceReplayEvent (..),
                      decorateReplayTracerWithGoal,
-                     decorateReplayTracerWithStart, initLedgerDB)
-import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (Checkpoint (..),
-                     LedgerDB (..), LedgerDB', LedgerDbCfg (..), configLedgerDb)
-import           Ouroboros.Consensus.Storage.LedgerDB.Query (ledgerDbAnchor,
-                     ledgerDbCurrent, ledgerDbIsSaturated, ledgerDbMaxRollback,
-                     ledgerDbPast, ledgerDbSnapshots, ledgerDbTip)
+                     decorateReplayTracerWithStart, initialize, newBackingStore,
+                     newBackingStoreInitialiser, restoreBackingStore)
+import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB (..),
+                     LedgerDB', LedgerDbCfg (..), configLedgerDb, new)
+import           Ouroboros.Consensus.Storage.LedgerDB.Query (anchor, current,
+                     getPastLedgerAt, isSaturated, lastFlushedState,
+                     maxRollback, rollback, snapshots, tip)
 import           Ouroboros.Consensus.Storage.LedgerDB.Snapshots
                      (DiskSnapshot (..), SnapshotFailure (..),
                      TraceSnapshotEvent (..), decodeSnapshotBackwardsCompatible,
                      deleteSnapshot, diskSnapshotIsTemporary, encodeSnapshot,
-                     listSnapshots, readSnapshot, snapshotToFileName,
-                     snapshotToPath, takeSnapshot, trimSnapshots, writeSnapshot)
-import           Ouroboros.Consensus.Storage.LedgerDB.Stream (NextBlock (..),
+                     listSnapshots, readSnapshot, snapshotToStatePath,
+                     snapshotToTablesPath, takeSnapshot, trimSnapshots,
+                     writeSnapshot)
+import           Ouroboros.Consensus.Storage.LedgerDB.Stream (NextItem (..),
                      StreamAPI (..), streamAll)
 import           Ouroboros.Consensus.Storage.LedgerDB.Update
                      (AnnLedgerError (..), AnnLedgerError', Ap (..),
@@ -107,6 +116,5 @@ import           Ouroboros.Consensus.Storage.LedgerDB.Update
                      Pushing (..), ResolveBlock, ResolvesBlocks (..),
                      ThrowsLedgerError (..), UpdateLedgerDbTraceEvent (..),
                      defaultResolveBlocks, defaultResolveWithErrors,
-                     defaultThrowLedgerErrors, ledgerDbBimap, ledgerDbPrune,
-                     ledgerDbPush, ledgerDbPush', ledgerDbPushMany',
-                     ledgerDbSwitch, ledgerDbSwitch', ledgerDbWithAnchor)
+                     defaultThrowLedgerErrors, flush, prune, push, push',
+                     pushMany', switch, switch', volatileStatesBimap)

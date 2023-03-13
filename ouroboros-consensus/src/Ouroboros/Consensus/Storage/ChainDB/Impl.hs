@@ -42,6 +42,7 @@ import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe.Strict (StrictMaybe (..))
+import           Data.SOP (K (..))
 import           GHC.Stack (HasCallStack)
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -163,7 +164,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
       traceWith initChainSelTracer InitalChainSelected
 
       let chain  = VF.validatedFragment chainAndLedger
-          ledger = VF.validatedLedger   chainAndLedger
+          K ledger = VF.validatedLedger   chainAndLedger
           cfg    = Args.cdbTopLevelConfig args
 
       atomically $ LgrDB.setCurrent lgrDB ledger
@@ -220,6 +221,11 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
             , closeDB               = closeDB h
             , isOpen                = isOpen  h
+            , getLedgerBackingStoreValueHandle = \rreg p -> getEnv h $ \env' -> do
+                Query.getLedgerBackingStoreValueHandle env' rreg p
+            , getLedgerTablesAtFor  = \pt keys -> getEnv h (LgrDB.getLedgerTablesAtFor pt keys . cdbLgrDB)
+            , withLgrReadLock       = \m       -> getEnv h (flip LgrDB.withReadLock m    . cdbLgrDB)
+
             }
           testing = Internal
             { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB

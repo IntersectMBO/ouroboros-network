@@ -37,9 +37,11 @@ module Ouroboros.Consensus.Mempool.API (
   , computeMempoolCapacity
   ) where
 
+import qualified Data.List.NonEmpty as NE
+
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
-import           Ouroboros.Consensus.Block (SlotNo)
+import           Ouroboros.Consensus.Block (ChainHash, Point, SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Util.IOLike
@@ -158,7 +160,7 @@ data Mempool m blk = Mempool {
                           )
 
       -- | Manually remove the given transactions from the mempool.
-    , removeTxs      :: [GenTxId blk] -> m ()
+    , removeTxs      :: NE.NonEmpty (GenTxId blk) -> m ()
 
       -- | Sync the transactions in the mempool with the current ledger state
       --  of the 'ChainDB'.
@@ -187,7 +189,12 @@ data Mempool m blk = Mempool {
       -- the given ledger state
       --
       -- This does not update the state of the mempool.
-    , getSnapshotFor :: ForgeLedgerState blk -> STM m (MempoolSnapshot blk)
+    , getSnapshotFor ::
+           Point blk -- ^ Point of the ledger state before ticking
+        -> SlotNo    -- ^ The current slot in which we want the snapshot
+        -> TickedLedgerState blk DiffMK
+                     -- ^ The ledger state ticked to the given slot number
+        -> m (Maybe (MempoolSnapshot blk))
 
       -- | Get the mempool's capacity in bytes.
       --
@@ -311,7 +318,7 @@ data ForgeLedgerState blk =
     -- This will only be the case when we realized that we are the slot leader
     -- and we are actually producing a block. It is the caller's responsibility
     -- to call 'applyChainTick' and produce the ticked ledger state.
-    ForgeInKnownSlot SlotNo (TickedLedgerState blk)
+    ForgeInKnownSlot SlotNo (TickedLedgerState blk DiffMK)
 
     -- | The slot number of the block is not yet known
     --
@@ -319,8 +326,7 @@ data ForgeLedgerState blk =
     -- will end up, we have to make an assumption about which slot number to use
     -- for 'applyChainTick' to prepare the ledger state; we will assume that
     -- they will end up in the slot after the slot at the tip of the ledger.
-  | ForgeInUnknownSlot (LedgerState blk)
-
+  | ForgeInUnknownSlot (LedgerState blk EmptyMK)
 
 {-------------------------------------------------------------------------------
   Snapshot of the mempool
@@ -364,8 +370,13 @@ data MempoolSnapshot blk = MempoolSnapshot {
     -- | The block number of the "virtual block" under construction
   , snapshotSlotNo      :: SlotNo
 
-    -- | The ledger state after all transactions in the snapshot
-  , snapshotLedgerState :: TickedLedgerState blk
+    -- | The hash of the tip of the ledger state after all transactions in the
+    -- snapshot
+  , snapshotTipHash     :: ChainHash blk
+
+    -- | The resulting state currently in the mempool after applying the
+    -- transactions
+  , snapshotState       :: TickedLedgerState blk DiffMK
   }
 
 {-------------------------------------------------------------------------------
@@ -384,7 +395,7 @@ type MempoolCapacityBytesOverride = Cap.MempoolCapacityBytesOverride
 {-# DEPRECATED computeMempoolCapacity "Use Ouroboros.Consensus.Mempool (computeMempoolCapacity)" #-}
 computeMempoolCapacity
   :: LedgerSupportsMempool blk
-  => TickedLedgerState blk
+  => TickedLedgerState blk mk
   -> MempoolCapacityBytesOverride
   -> MempoolCapacityBytes
 computeMempoolCapacity = Cap.computeMempoolCapacity

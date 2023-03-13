@@ -66,6 +66,7 @@ class ( LedgerSupportsProtocol blk
       , ConfigSupportsNode blk
       , NodeInitStorage blk
       , BlockSupportsMetrics blk
+      , CanStowLedgerTables (LedgerState blk)
         -- Instances required to support testing
       , Eq   (GenTx blk)
       , Eq   (Validated (GenTx blk))
@@ -88,7 +89,7 @@ class ( LedgerSupportsProtocol blk
   singleEraTransition :: PartialLedgerConfig blk
                       -> EraParams -- ^ Current era parameters
                       -> Bound     -- ^ Start of this era
-                      -> LedgerState blk
+                      -> LedgerState blk mk
                       -> Maybe EpochNo
 
   -- | Era information (for use in error messages)
@@ -101,7 +102,7 @@ singleEraTransition' :: SingleEraBlock blk
                      => WrapPartialLedgerConfig blk
                      -> EraParams
                      -> Bound
-                     -> LedgerState blk -> Maybe EpochNo
+                     -> LedgerState blk mk -> Maybe EpochNo
 singleEraTransition' = singleEraTransition . unwrapPartialLedgerConfig
 
 {-------------------------------------------------------------------------------
