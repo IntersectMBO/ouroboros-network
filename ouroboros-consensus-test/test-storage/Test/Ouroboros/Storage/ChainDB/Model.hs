@@ -596,19 +596,20 @@ iteratorNext ::
   -> Model blk
   -> (IteratorResult blk b, Model blk)
 iteratorNext itrId blockComponent m =
-    case Map.lookup itrId (iterators m) of
-      Just []     -> ( IteratorExhausted
-                     , m
-                     )
-      Just (b:bs) ->
-        if (blockHash b `Map.member` blocks m)
-        then ( IteratorResult $ getBlockComponent b blockComponent
-             , m { iterators = Map.insert itrId bs (iterators m) }
-             )
-        else ( IteratorBlockGCed $ blockRealPoint b
-             , m { iterators = Map.insert itrId bs (iterators m) }
-             )
-      Nothing      -> error "iteratorNext: unknown iterator ID"
+  case Map.lookup itrId (iterators m) of
+    Just []                                         ->
+      ( IteratorExhausted, m )
+    Just (b:bs) | blockHash b `Map.member` blocks m ->
+      ( IteratorResult $ getBlockComponent b blockComponent, updateIter bs )
+      -- The next block `b` was part of a dead fork and has been garbage
+      -- collected.  The system-under-test then closes the iterator, and we set
+      -- the state of the iterator to the empty list to mimic that behaviour.
+    Just (b:_)                                     ->
+      ( IteratorBlockGCed $ blockRealPoint b, updateIter [] )
+    Nothing                                         ->
+      error "iteratorNext: unknown iterator ID"
+  where
+    updateIter bs = m { iterators = Map.insert itrId bs (iterators m) }
 
 getBlockComponent
   :: forall blk b. ModelSupportsBlock blk

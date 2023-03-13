@@ -16,7 +16,6 @@ import           Cardano.Slotting.Slot (WithOrigin (..))
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State
-import           Data.List (isPrefixOf)
 import           Data.Maybe (isJust)
 import           Ouroboros.Consensus.Block.Abstract (Point, blockPoint,
                      blockSlot)
@@ -64,7 +63,7 @@ tests = testGroup "Unit tests"
     ]
   , testGroup "ouroboros-network-4183"
     [ testCase "model" $ runModelIO ouroboros_network_4183
-    , expectFailBecause "Issue ouroboros-network-4183 is still not fixed"
+    , expectFailBecause ("Issue not fixed, see " <> ouroborosNetworkIssue 4183)
       $ testCase "system" $ runSystemIO ouroboros_network_4183
     ]
   , testGroup "ouroboros-network-3999"
@@ -82,8 +81,10 @@ followerInstructionOnEmptyChain = do
     Left _      -> failWith $ "ChainDbError"
 
 
--- for tests named `ouroboros_network_xyz` the corresponding issue can be found
--- in https://github.com/input-output-hk/ouroboros-network/issues/xyz
+ouroborosNetworkIssue :: Int -> String
+ouroborosNetworkIssue n
+  | n <= 0 = error "Issue number should be positive"
+  | otherwise = "https://github.com/input-output-hk/ouroboros-network/issues/" <> show n
 
 ouroboros_network_4183 :: (
     Block m ~ TestBlock
@@ -108,6 +109,13 @@ ouroboros_network_4183 =
       _ -> failWith "Expecting a rollback"
 
 
+-- | Test that iterators over dead forks that may have been garbage-collected
+-- either stream the blocks in the dead fork normally, report that the blocks
+-- have been garbage-collected, or return that the iterator is exhausted,
+-- depending on when garbage collection happened. The result is
+-- non-deterministic, since garbage collection happens in the background, and
+-- hence, may not yet have happened when the next item in the iterator is
+-- requested.
 ouroboros_network_3999 :: (
     Mock.HasHeader (Block m)
   , Block m ~ TestBlock
@@ -125,43 +133,30 @@ ouroboros_network_3999 = do
     void $ addBlock $ mkNextBlock b6 6 $ fork 2
     persistBlks GarbageCollect
 
-    -- b1 is part of the current chain, so should always be streamed
-    iteratorNext i >>= hasResult b1
+    -- The block b1 is part of the current chain, so should always be returned.
+    result <- iteratorNextBlock i
+    assertEqual (API.IteratorResult b1) result "Streaming first block"
 
-    -- the remainder of the range of the iterator consists of blocks that may
-    -- have been garbage collected.
-    let expected = [blockRealPoint b2, blockRealPoint b3]
-    remainder <- allResults (length expected + 1) i
-    remainder `isPrefixOf` expected
-      `orFailWith` "Iterator should return part of the prespecified interval"
+    -- The remainder of the elements in the iterator are part of the dead fork,
+    -- and may have been garbage-collected.
+    let options = [
+            -- The dead fork has been garbage-collected.
+            [API.IteratorBlockGCed $ blockRealPoint b2, API.IteratorExhausted]
+            -- The dead fork has not been garbage-collected yet.
+          , [API.IteratorResult b2, API.IteratorResult b3]]
+
+    actual <- replicateM 2 (iteratorNextBlock i)
+    assertOneOf options actual "Streaming over dead fork"
 
   where
     fork i = TestBody i True
 
     extractBlock (blk, _, _, _, _, _, _, _, _, _, _) = blk
-
-    hasResult expected (API.IteratorResult actual) =
-      assertEqual expected (extractBlock actual) "Wrong block"
-    hasResult _ _ = failWith "Expected IteratorResult"
-
-    -- Bound the number of iterations by `maxIter` to avoid test stalling
-    allResults maxIter it = go maxIter
-      where go n = do
-              if (n > 0) then
-                iteratorNext it >>= \case
-                  API.IteratorResult components -> do
-                    rest <- go (n - 1)
-                    pure (blockRealPoint (extractBlock components):rest)
-                  API.IteratorBlockGCed realPoint -> do
-                    rest <- go (n - 1)
-                    pure (realPoint:rest)
-                  _ -> pure []
-               else pure []
+    iteratorNextBlock it = fmap extractBlock <$> iteratorNext it
 
     inclusiveFrom      = StreamFromInclusive . blockRealPoint
-
     inclusiveTo        = StreamToInclusive . blockRealPoint
-
+    -- Do not call this function with `Genesis`
     blockRealPoint blk = case pointToWithOriginRealPoint $ blockPoint blk of
       At realPoint -> realPoint
       _            -> error "Should not happen"
@@ -172,10 +167,9 @@ streamAssertSuccess :: (MonadError TestFailure m, SupportsUnitTest m, Mock.HasHe
 streamAssertSuccess from to = stream from to >>= \case
     Left err -> throwError
       $ TestFailure $ "Should be able to create iterator: " <> show err
-    Right result -> case result of
-      Left err -> throwError
+    Right (Left err) -> throwError
         $ TestFailure $ "Range should be valid: " <> show err
-      Right iteratorId -> pure iteratorId
+    Right (Right iteratorId) -> pure iteratorId
 
 
 -- | Helper function to run the test against the model and translate to something
@@ -219,6 +213,12 @@ assertEqual expected actual description = expected == actual `orFailWith` msg
     msg = description <> "\n\t Expected: " <> show expected
                       <> "\n\t Actual: " <> show actual
 
+assertOneOf :: (MonadError TestFailure m, Eq a, Show a)
+           => [a] -> a -> String -> m ()
+assertOneOf options actual description = actual `elem` options `orFailWith` msg
+  where
+    msg = description <> "\n\t Options: " <> show options
+                      <> "\n\t Actual: " <> show actual
 
 -- | SupportsUnitTests for the test expression need to instantiate this class.
 class SupportsUnitTest m where
@@ -302,12 +302,8 @@ instance (Model.ModelSupportsBlock blk, LedgerSupportsProtocol blk, Eq blk)
       Right (mChainUpdate, model') -> (Right mChainUpdate, model')
 
   addBlock blk = do
-    model <- get
-    -- The new block should not be from the future
-    let model' = model { Model.currentSlot = blockSlot blk }
-    topLevelConfig <- ask
-    let model'' = Model.addBlock topLevelConfig blk model'
-    put model''
+    modify $ \model -> model { Model.currentSlot = blockSlot blk }
+    withModelContext $ \model cfg -> ((), Model.addBlock cfg blk model)
     pure blk
 
   followerForward followerId points = withModelContext $ \model _ ->
