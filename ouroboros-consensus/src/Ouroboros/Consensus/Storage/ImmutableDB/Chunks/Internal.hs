@@ -43,7 +43,6 @@ import           Control.Monad
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.RedundantConstraints

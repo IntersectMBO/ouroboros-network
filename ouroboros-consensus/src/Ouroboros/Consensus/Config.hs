@@ -25,7 +25,6 @@ module Ouroboros.Consensus.Config (
 import           Data.Coerce
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ledger.Basics

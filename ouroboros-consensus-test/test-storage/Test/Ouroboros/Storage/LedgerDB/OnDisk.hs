@@ -42,8 +42,7 @@ module Test.Ouroboros.Storage.LedgerDB.OnDisk (
   , tests
   ) where
 
-import           Prelude hiding (elem)
-
+import           Codec.Serialise (Serialise)
 import qualified Codec.Serialise as S
 import           Control.Monad.Except (Except, runExcept)
 import           Control.Monad.State (StateT (..))
@@ -60,12 +59,21 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word
 import           GHC.Generics (Generic)
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Storage.LedgerDB
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.IOLike
+import           Prelude hiding (elem)
 import           System.FS.API
 import           System.FS.API.Types
 import qualified System.FS.Sim.MockFS as MockFS
 import           System.FS.Sim.STM
 import           System.Random (getStdRandom, randomR)
-
+import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
+import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck.Monadic as QC
@@ -76,23 +84,9 @@ import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.IOLike
-
-import           Ouroboros.Consensus.Storage.LedgerDB
-
 import           Test.Util.Range
 import           Test.Util.TestBlock hiding (TestBlock, TestBlockCodecConfig,
                      TestBlockStorageConfig)
-
-import           Codec.Serialise (Serialise)
-import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
-import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
 {-------------------------------------------------------------------------------
   Top-level tests

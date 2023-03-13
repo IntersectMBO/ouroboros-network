@@ -6,7 +6,6 @@ module Test.ThreadNet.TxGen.Babbage () where
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
-
 import           Test.ThreadNet.TxGen (TxGen (..))
 
 -- | Dummy generator until CAD-2119 is done, i.e., the transaction generator in

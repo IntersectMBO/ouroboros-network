@@ -13,16 +13,12 @@ module Test.Util.ChainUpdates (
   ) where
 
 import           Control.Monad.State.Strict
-
-import           Test.QuickCheck
-
-import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
-
+import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Test.QuickCheck
 import           Test.Util.TestBlock
 
 data ChainUpdate =

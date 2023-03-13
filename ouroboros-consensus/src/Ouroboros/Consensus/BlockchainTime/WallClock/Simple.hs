@@ -14,7 +14,6 @@ import           Data.Bifunctor
 import           Data.Fixed (divMod')
 import           Data.Time (NominalDiffTime)
 import           Data.Void
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.API
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types

@@ -17,19 +17,16 @@ module Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (
   ) where
 
 import           GHC.Generics (Generic)
-
 import           NoThunks.Class (NoThunks)
-
-import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
-                     AnchoredSeq (..))
-import qualified Ouroboros.Network.AnchoredSeq as AS
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerCfg (..),
                      ExtLedgerState)
 import           Ouroboros.Consensus.Protocol.Abstract (ConsensusProtocol)
+import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
+                     AnchoredSeq (..))
+import qualified Ouroboros.Network.AnchoredSeq as AS
 
 {-------------------------------------------------------------------------------
   LedgerDB

@@ -14,6 +14,20 @@ module Cardano.Tools.DBAnalyser.Block.Shelley (
   , ShelleyBlockArgs
   ) where
 
+import           Cardano.Ledger.Allegra (AllegraEra)
+import           Cardano.Ledger.Alonzo (AlonzoEra)
+import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
+import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
+import           Cardano.Ledger.Babbage (BabbageEra)
+import qualified Cardano.Ledger.BaseTypes as CL (natVersion)
+import           Cardano.Ledger.Conway (ConwayEra)
+import qualified Cardano.Ledger.Core as Core
+import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Ledger.Mary (MaryEra)
+import           Cardano.Ledger.Shelley (ShelleyEra)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
+import           Cardano.Tools.DBAnalyser.HasAnalysis
 import qualified Data.Aeson as Aeson
 import           Data.Foldable (foldl', toList)
 import qualified Data.Map.Strict as Map
@@ -23,26 +37,8 @@ import           Data.Sequence.Strict (StrictSeq)
 import           Data.Word (Word64)
 import           Lens.Micro ((^.))
 import           Lens.Micro.Extras (view)
-import           Text.Builder (decimal)
-
-import qualified Cardano.Ledger.BaseTypes as CL (natVersion)
-import qualified Cardano.Ledger.Core as Core
-import           Cardano.Ledger.Crypto (Crypto)
-import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
-
-import           Cardano.Ledger.Allegra (AllegraEra)
-import           Cardano.Ledger.Alonzo (AlonzoEra)
-import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
-import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
-import           Cardano.Ledger.Babbage (BabbageEra)
-import           Cardano.Ledger.Conway (ConwayEra)
-import           Cardano.Ledger.Mary (MaryEra)
-import           Cardano.Ledger.Shelley (ShelleyEra)
-
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
-
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras (StandardCrypto,
                      StandardShelley)
@@ -55,8 +51,7 @@ import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
                      ProtocolParamsShelley (..),
                      ProtocolParamsShelleyBased (..), ShelleyGenesis,
                      protocolInfoShelley)
-
-import           Cardano.Tools.DBAnalyser.HasAnalysis
+import           Text.Builder (decimal)
 
 -- | Usable for each Shelley-based era
 instance ( ShelleyCompatible proto era

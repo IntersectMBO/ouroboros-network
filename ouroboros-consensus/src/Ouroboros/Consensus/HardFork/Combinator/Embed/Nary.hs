@@ -23,9 +23,11 @@ import           Data.Bifunctor (first)
 import           Data.Coerce (Coercible, coerce)
 import           Data.SOP.Dict (Dict (..))
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Combinator
+import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
@@ -35,10 +37,6 @@ import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Counting (Exactly (..))
 import           Ouroboros.Consensus.Util.SOP
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 {-------------------------------------------------------------------------------
   Injection for a single block into a HardForkBlock

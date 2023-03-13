@@ -20,17 +20,15 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Genesis (
   , toChainEnv
   ) where
 
-import           Data.Coerce (coerce)
-import           Data.Set (Set)
-import           NoThunks.Class (AllowThunk (..), NoThunks)
-import           Numeric.Natural (Natural)
-
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
 import qualified Control.State.Transition as Spec
-
+import           Data.Coerce (coerce)
+import           Data.Set (Set)
+import           NoThunks.Class (AllowThunk (..), NoThunks)
+import           Numeric.Natural (Natural)
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 
 {-------------------------------------------------------------------------------

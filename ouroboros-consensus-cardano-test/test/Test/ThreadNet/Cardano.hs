@@ -8,6 +8,17 @@
 
 module Test.ThreadNet.Cardano (tests) where
 
+import qualified Cardano.Chain.Common as CC.Common
+import qualified Cardano.Chain.Genesis as CC.Genesis
+import           Cardano.Chain.ProtocolConstants (kEpochSlots)
+import           Cardano.Chain.Slotting (unEpochSlots)
+import qualified Cardano.Chain.Update as CC.Update
+import qualified Cardano.Ledger.BaseTypes as SL
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Core as SL
+import qualified Cardano.Ledger.Shelley.Translation as SL
+import qualified Cardano.Protocol.TPraos.OCert as SL
+import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 import           Control.Exception (assert)
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
@@ -17,54 +28,37 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           Lens.Micro
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
-import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
-
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Node
+import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.Condense ()
+import           Ouroboros.Consensus.Cardano.Node
 import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+                     (isHardForkNodeToNodeEnabled)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
-import           Ouroboros.Consensus.Util.IOLike (IOLike)
-
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
-                     (isHardForkNodeToNodeEnabled)
-
-import qualified Cardano.Chain.Common as CC.Common
-import qualified Cardano.Chain.Genesis as CC.Genesis
-import           Cardano.Chain.ProtocolConstants (kEpochSlots)
-import           Cardano.Chain.Slotting (unEpochSlots)
-import qualified Cardano.Chain.Update as CC.Update
-import qualified Cardano.Protocol.TPraos.OCert as SL
-
-import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
-import           Ouroboros.Consensus.Byron.Ledger.Conversions
-import           Ouroboros.Consensus.Byron.Node
-
-import qualified Cardano.Ledger.BaseTypes as SL
-import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.Core as SL
-import qualified Cardano.Ledger.Shelley.Translation as SL
-
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node
-
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.Condense ()
-import           Ouroboros.Consensus.Cardano.Node
-
+import           Ouroboros.Consensus.Shelley.Node.Praos
+                     (ProtocolParamsBabbage (..), ProtocolParamsConway (..))
+import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Infra.Alonzo as Alonzo
 import qualified Test.ThreadNet.Infra.Byron as Byron
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
+import           Test.ThreadNet.Infra.TwoEras
 import           Test.ThreadNet.Network (NodeOutput (..),
                      TestNodeInitialization (..))
 import           Test.ThreadNet.TxGen.Cardano (CardanoTxGenExtra (..))
@@ -78,11 +72,6 @@ import           Test.Util.HardFork.Future
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.TestEnv
-
-import           Ouroboros.Consensus.Protocol.Praos.Translate ()
-import           Ouroboros.Consensus.Shelley.Node.Praos
-                     (ProtocolParamsBabbage (..), ProtocolParamsConway (..))
-import           Test.ThreadNet.Infra.TwoEras
 
 -- | Use 'MockCryptoCompatByron' so that bootstrap addresses and
 -- bootstrap witnesses are supported.

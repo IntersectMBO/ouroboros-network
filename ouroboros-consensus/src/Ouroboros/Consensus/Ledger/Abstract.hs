@@ -36,7 +36,6 @@ module Ouroboros.Consensus.Ledger.Abstract (
 import           Control.Monad.Except
 import           Data.Kind (Type)
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ticked

@@ -5,14 +5,11 @@ module Test.ThreadNet.Util.HasCreator.Mock () where
 
 import           Cardano.Crypto.DSIGN
 import           Data.Word (Word64)
-
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Protocol.Praos
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.PBFT
-
 import           Test.ThreadNet.Util.HasCreator
 
 

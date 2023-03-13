@@ -13,22 +13,17 @@ module Ouroboros.Consensus.Node.Exit (
 
 import           Control.Exception (AsyncException (..), SomeException,
                      fromException)
+import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 import           Data.Proxy (Proxy)
 import           Data.Typeable (Typeable)
-
-import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
-
-import           System.FS.API.Types (FsError (..), FsErrorType (..))
-
 import           Ouroboros.Consensus.Block (StandardHash)
-
+import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDBError)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDBError)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-
-import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
+import           System.FS.API.Types (FsError (..), FsErrorType (..))
 
 {-------------------------------------------------------------------------------
   ExitFailure

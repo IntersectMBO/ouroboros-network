@@ -14,21 +14,16 @@ import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
 import qualified Ouroboros.Consensus.Fragment.Diff as Diff
-
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (isReachable)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Test.Ouroboros.Storage.TestBlock
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
-import           Test.Ouroboros.Storage.TestBlock
 import           Test.Util.Orphans.Arbitrary ()
 
 {-------------------------------------------------------------------------------

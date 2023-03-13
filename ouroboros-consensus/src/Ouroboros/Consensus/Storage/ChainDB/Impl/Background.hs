@@ -50,10 +50,6 @@ import           Data.Void (Void)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredSeq (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -61,11 +57,6 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel
                      (addBlockSync)
@@ -76,7 +67,13 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB (TimeSinceLast (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Enclose (Enclosing' (..))
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Network.AnchoredFragment (AnchoredSeq (..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
 
 {-------------------------------------------------------------------------------
   Launch background tasks

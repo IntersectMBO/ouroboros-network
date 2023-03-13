@@ -15,26 +15,22 @@ module Ouroboros.Consensus.Byron.Ledger.PBFT (
   , toTickedPBftLedgerView
   ) where
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Delegation as Delegation
+import           Cardano.Crypto.DSIGN
+import           Cardano.Ledger.Binary (Annotated)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Data.ByteString (ByteString)
-
-import           Cardano.Crypto.DSIGN
-import           Cardano.Ledger.Binary (Annotated)
-
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Delegation as Delegation
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT
-import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
-
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation ()
 import           Ouroboros.Consensus.Byron.Protocol
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.PBFT
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 
 type instance BlockProtocol ByronBlock = PBft PBftByronCrypto
 

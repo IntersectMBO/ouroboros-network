@@ -47,22 +47,19 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Telescope (
   , scanl
   ) where
 
-import           Prelude hiding (scanl, sequence, zipWith)
-
 import           Data.Functor.Product
 import           Data.Kind
 import           Data.SOP.Strict
 import           GHC.Stack
 import           NoThunks.Class (NoThunks (..), allNoThunks)
-
-import           Ouroboros.Consensus.Util.Counting
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..), Requiring (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
+import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.SOP
+import           Prelude hiding (scanl, sequence, zipWith)
 
 {-------------------------------------------------------------------------------
   Telescope

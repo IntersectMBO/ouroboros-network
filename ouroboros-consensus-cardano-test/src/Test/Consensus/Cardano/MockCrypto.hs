@@ -8,9 +8,7 @@ import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash (Blake2b_224, Blake2b_256)
 import           Cardano.Crypto.KES (MockKES)
 import           Cardano.Crypto.VRF (MockVRF)
-
 import           Cardano.Ledger.Crypto (Crypto (..))
-
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 

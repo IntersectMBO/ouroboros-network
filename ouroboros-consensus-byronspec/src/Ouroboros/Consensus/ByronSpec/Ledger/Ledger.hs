@@ -16,27 +16,24 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Ledger (
   , Ticked (..)
   ) where
 
-import           Codec.Serialise
-import           Control.Monad.Except
-import           GHC.Generics (Generic)
-import           NoThunks.Class (AllowThunk (..), NoThunks)
-
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
+import           Codec.Serialise
+import           Control.Monad.Except
 import qualified Control.State.Transition as Spec
-
+import           GHC.Generics (Generic)
+import           NoThunks.Class (AllowThunk (..), NoThunks)
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.CommonProtocolParams
-import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util ((..:))
-
 import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
 import           Ouroboros.Consensus.ByronSpec.Ledger.Conversions
 import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis (ByronSpecGenesis)
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.CommonProtocolParams
+import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util ((..:))
 
 {-------------------------------------------------------------------------------
   State

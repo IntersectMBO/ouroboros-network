@@ -9,10 +9,9 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Conversions (
   , toByronSpecSlotNo
   ) where
 
-import           Ouroboros.Consensus.Block
-
 import qualified Byron.Spec.Chain.STS.Block as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
+import           Ouroboros.Consensus.Block
 
 {-------------------------------------------------------------------------------
   Spec to consensus

@@ -32,8 +32,6 @@ module Test.Ouroboros.Storage.VolatileDB.StateMachine (
   , tests
   ) where
 
-import           Prelude hiding (elem)
-
 import           Control.Monad (forM_, void)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
@@ -49,24 +47,23 @@ import           Data.Word
 import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.VolatileDB
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId)
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Network.Block (MaxSlotNo)
+import           Prelude hiding (elem)
 import           System.FS.API (SomeHasFS (..), hPutAll, withFile)
 import           System.FS.API.Types
 import           System.FS.Sim.Error hiding (null)
 import qualified System.FS.Sim.MockFS as Mock
 import           System.Random (getStdRandom, randomR)
-import           Text.Show.Pretty (ppShow)
-
-import           Ouroboros.Network.Block (MaxSlotNo)
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.VolatileDB
-import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId)
-import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
-
+import           Test.Ouroboros.Storage.Orphans ()
+import           Test.Ouroboros.Storage.TestBlock
+import           Test.Ouroboros.Storage.VolatileDB.Model
 import           Test.QuickCheck hiding (elements)
 import           Test.QuickCheck.Monadic
 import           Test.QuickCheck.Random (mkQCGen)
@@ -78,15 +75,11 @@ import           Test.StateMachine.Types
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
-
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
-
-import           Test.Ouroboros.Storage.Orphans ()
-import           Test.Ouroboros.Storage.TestBlock
-import           Test.Ouroboros.Storage.VolatileDB.Model
+import           Text.Show.Pretty (ppShow)
 
 
 type Block = TestBlock

@@ -11,30 +11,25 @@ module Cardano.Tools.DBAnalyser.Block.Byron (
   , openGenesisByron
   ) where
 
-import           Control.Monad.Except
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as BL
-import           Text.Builder (decimal)
-
-import           Cardano.Crypto (RequiresNetworkMagic (..))
-import qualified Cardano.Crypto as Crypto
-import           Cardano.Crypto.Raw (Raw)
-import           Cardano.Ledger.Binary (unAnnotated)
-
 import qualified Cardano.Chain.Block as Chain
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Chain.UTxO as Chain
-
-import qualified Ouroboros.Consensus.Mempool as Mempool
-import           Ouroboros.Consensus.Node.ProtocolInfo
-
+import           Cardano.Crypto (RequiresNetworkMagic (..))
+import qualified Cardano.Crypto as Crypto
+import           Cardano.Crypto.Raw (Raw)
+import           Cardano.Ledger.Binary (unAnnotated)
+import           Cardano.Tools.DBAnalyser.HasAnalysis
+import           Control.Monad.Except
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as BL
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..),
                      ProtocolParamsByron (..), protocolInfoByron)
-
-import           Cardano.Tools.DBAnalyser.HasAnalysis
+import qualified Ouroboros.Consensus.Mempool as Mempool
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Text.Builder (decimal)
 
 instance HasAnalysis ByronBlock where
     countTxOutputs = aBlockOrBoundary (const 0) countTxOutputsByron

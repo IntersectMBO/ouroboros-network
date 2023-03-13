@@ -1,14 +1,12 @@
 module Main (main) where
 
-import           Test.Tasty
-import           Test.Tasty.HUnit
-
-import qualified Cardano.Tools.DBSynthesizer.Run as DBSynthesizer
-import           Cardano.Tools.DBSynthesizer.Types
-
 import qualified Cardano.Tools.DBAnalyser.Block.Cardano as Cardano
 import qualified Cardano.Tools.DBAnalyser.Run as DBAnalyser
 import           Cardano.Tools.DBAnalyser.Types
+import qualified Cardano.Tools.DBSynthesizer.Run as DBSynthesizer
+import           Cardano.Tools.DBSynthesizer.Types
+import           Test.Tasty
+import           Test.Tasty.HUnit
 
 
 nodeConfig, chainDB :: FilePath

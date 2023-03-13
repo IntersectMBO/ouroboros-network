@@ -45,6 +45,14 @@ module Ouroboros.Consensus.Shelley.Ledger.Ledger (
   , encodeShelleyLedgerState
   ) where
 
+import qualified Cardano.Ledger.BaseTypes as SL (epochInfoPure)
+import qualified Cardano.Ledger.BHeaderView as SL (BHeaderView)
+import           Cardano.Ledger.Binary.Plain (FromCBOR (..), ToCBOR (..),
+                     enforceSize)
+import           Cardano.Ledger.Core (Era, ppMaxBHSizeL, ppMaxTxSizeL)
+import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Shelley.API as SL
+import           Cardano.Slotting.EpochInfo
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
@@ -53,6 +61,7 @@ import           Codec.Serialise (decode, encode)
 import           Control.Arrow (left)
 import qualified Control.Exception as Exception
 import           Control.Monad.Except
+import qualified Control.State.Transition.Extended as STS
 import           Data.Coerce (coerce)
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity
@@ -61,12 +70,6 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           Lens.Micro.Extras (view)
 import           NoThunks.Class (NoThunks (..))
-
-import           Cardano.Ledger.Binary.Plain (FromCBOR (..), ToCBOR (..),
-                     enforceSize)
-import           Cardano.Ledger.Core (Era, ppMaxBHSizeL, ppMaxTxSizeL)
-import           Cardano.Slotting.EpochInfo
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Config
@@ -77,17 +80,6 @@ import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Util ((..:))
-import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
-                     encodeWithOrigin)
-import           Ouroboros.Consensus.Util.Versioned
-
-import qualified Cardano.Ledger.BaseTypes as SL (epochInfoPure)
-import qualified Cardano.Ledger.BHeaderView as SL (BHeaderView)
-import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Control.State.Transition.Extended as STS
-
 import           Ouroboros.Consensus.Protocol.Ledger.Util (isNewEpoch)
 import           Ouroboros.Consensus.Protocol.TPraos (MaxMajorProtVer (..),
                      Ticked (TickedPraosLedgerView))
@@ -97,6 +89,10 @@ import           Ouroboros.Consensus.Shelley.Ledger.Config
 import           Ouroboros.Consensus.Shelley.Ledger.Protocol ()
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
                      (EnvelopeCheckError, envelopeChecks, mkHeaderView)
+import           Ouroboros.Consensus.Util ((..:))
+import           Ouroboros.Consensus.Util.CBOR (decodeWithOrigin,
+                     encodeWithOrigin)
+import           Ouroboros.Consensus.Util.Versioned
 
 {-------------------------------------------------------------------------------
   Ledger errors

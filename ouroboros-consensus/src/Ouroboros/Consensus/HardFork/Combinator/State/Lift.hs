@@ -8,7 +8,6 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Lift (
   ) where
 
 import           Data.Functor.Identity
-
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 
 {-------------------------------------------------------------------------------

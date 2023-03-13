@@ -1,8 +1,7 @@
 module Main (main) where
 
-import           Test.Tasty
-
 import qualified Test.Ouroboros.Storage
+import           Test.Tasty
 import           Test.Util.TestEnv
 
 main :: IO ()

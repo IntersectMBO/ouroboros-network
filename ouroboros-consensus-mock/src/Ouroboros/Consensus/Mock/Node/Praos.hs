@@ -9,14 +9,12 @@ module Ouroboros.Consensus.Mock.Node.Praos (
   , protocolInfoPraos
   ) where
 
+import           Cardano.Crypto.KES
+import           Cardano.Crypto.VRF
 import           Data.Bifunctor (second)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Numeric.Natural (Natural)
-
-import           Cardano.Crypto.KES
-import           Cardano.Crypto.VRF
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork

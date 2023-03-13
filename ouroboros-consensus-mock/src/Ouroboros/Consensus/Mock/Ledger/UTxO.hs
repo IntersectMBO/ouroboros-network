@@ -28,6 +28,8 @@ module Ouroboros.Consensus.Mock.Ledger.UTxO (
   , genesisUtxo
   ) where
 
+import           Cardano.Binary (ToCBOR (..))
+import           Cardano.Crypto.Hash
 import           Codec.Serialise (Serialise (..))
 import           Control.DeepSeq (NFData (..), force, rwhnf)
 import           Control.Monad.Except
@@ -39,18 +41,12 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           NoThunks.Class (InspectHeap (..), NoThunks)
-
-import           Cardano.Binary (ToCBOR (..))
-import           Cardano.Crypto.Hash
-
-import           Ouroboros.Network.Mock.Chain (Chain, toOldestFirst)
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Util (repeatedlyM)
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-
-import           Ouroboros.Consensus.Mock.Ledger.Address
+import           Ouroboros.Network.Mock.Chain (Chain, toOldestFirst)
 
 {-------------------------------------------------------------------------------
   Basic definitions

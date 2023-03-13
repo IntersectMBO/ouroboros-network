@@ -14,11 +14,6 @@ module Test.Util.ChainDB (
 
 import           Control.Tracer (nullTracer)
 import           Data.Functor.Identity (Identity)
-import           System.FS.API (SomeHasFS (..))
-import qualified System.FS.Sim.MockFS as Mock
-import           System.FS.Sim.MockFS
-import           System.FS.Sim.STM (simHasFS)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
                      (TopLevelConfig (topLevelConfigLedger),
@@ -39,6 +34,10 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.IOLike hiding (invariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import           System.FS.API (SomeHasFS (..))
+import qualified System.FS.Sim.MockFS as Mock
+import           System.FS.Sim.MockFS
+import           System.FS.Sim.STM (simHasFS)
 
 -- | A vector with an element for each database of a node
 --

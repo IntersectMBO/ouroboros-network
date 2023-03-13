@@ -108,19 +108,8 @@ import           Control.Monad.State.Strict (get, lift, modify, put)
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
 import           GHC.Stack (HasCallStack)
-import           System.FS.API
-import           System.FS.API.Types hiding (allowExisting)
-import           System.FS.CRC
-
 import           Ouroboros.Consensus.Block hiding (headerHash)
-import           Ouroboros.Consensus.Util (SomePair (..))
-import           Ouroboros.Consensus.Util.Args
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.Serialisation
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
@@ -135,6 +124,14 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util (SomePair (..))
+import           Ouroboros.Consensus.Util.Args
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           System.FS.API
+import           System.FS.API.Types hiding (allowExisting)
+import           System.FS.CRC
 
 {------------------------------------------------------------------------------
   Opening the database

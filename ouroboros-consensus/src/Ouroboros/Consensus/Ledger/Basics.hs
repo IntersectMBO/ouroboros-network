@@ -32,7 +32,6 @@ module Ouroboros.Consensus.Ledger.Basics (
 
 import           Data.Kind (Type)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util ((..:))

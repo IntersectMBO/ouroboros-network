@@ -29,13 +29,12 @@ import           Control.Tracer (Tracer, contramapM)
 import           Data.Time (NominalDiffTime)
 import           Data.Word
 import           GHC.Stack
-import           System.Random (Random)
-
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.Time
+import           System.Random (Random)
 
 {-------------------------------------------------------------------------------
   API

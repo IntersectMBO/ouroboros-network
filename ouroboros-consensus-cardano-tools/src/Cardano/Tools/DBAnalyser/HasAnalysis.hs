@@ -9,14 +9,13 @@ module Cardano.Tools.DBAnalyser.HasAnalysis (
   ) where
 
 import           Data.Map.Strict (Map)
-import           Text.Builder (Builder)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (HasAnnTip (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 import           Ouroboros.Consensus.Util.Condense (Condense)
+import           Text.Builder (Builder)
 
 {-------------------------------------------------------------------------------
   HasAnalysis

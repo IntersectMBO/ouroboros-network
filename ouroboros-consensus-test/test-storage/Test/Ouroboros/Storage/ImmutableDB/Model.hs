@@ -45,21 +45,17 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import           Data.Word (Word64)
-import           System.FS.API.Types (FsPath, fsPathSplit)
-
 import           GHC.Generics (Generic)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util (lastMaybe, takeUntil)
-import           Ouroboros.Consensus.Util.CallStack
-
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding
                      (throwApiMisuse)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util (parseDBFile)
 import           Ouroboros.Consensus.Storage.Serialisation
-
+import           Ouroboros.Consensus.Util (lastMaybe, takeUntil)
+import           Ouroboros.Consensus.Util.CallStack
+import           System.FS.API.Types (FsPath, fsPathSplit)
 import           Test.Ouroboros.Storage.TestBlock hiding (EBB)
 
 data InSlot blk =

@@ -29,17 +29,11 @@ module Cardano.Api.KeysByron (
   , toByronSigningKey
   ) where
 
-import           Cardano.Prelude (cborError, toCborError)
-
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
-import           Control.Monad
-import qualified Data.ByteString.Lazy as LB
-import           Data.String (IsString)
-import           Data.Text (Text)
-import qualified Data.Text as Text
-
+import           Cardano.Api.Any
+import           Cardano.Api.Key
+import           Cardano.Api.KeysShelley
+import           Cardano.Api.SerialiseTextEnvelope
+import           Cardano.Api.SerialiseUsing
 import qualified Cardano.Chain.Common as Byron
 import qualified Cardano.Crypto.DSIGN.Class as Crypto
 import qualified Cardano.Crypto.Hashing as Byron
@@ -49,12 +43,15 @@ import qualified Cardano.Crypto.Signing as Crypto
 import qualified Cardano.Crypto.Wallet as Crypto.HD
 import           Cardano.Ledger.Binary (byronProtVer, toPlainDecoder,
                      toPlainEncoding)
-
-import           Cardano.Api.Any
-import           Cardano.Api.Key
-import           Cardano.Api.KeysShelley
-import           Cardano.Api.SerialiseTextEnvelope
-import           Cardano.Api.SerialiseUsing
+import           Cardano.Prelude (cborError, toCborError)
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Read as CBOR
+import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
+import           Control.Monad
+import qualified Data.ByteString.Lazy as LB
+import           Data.String (IsString)
+import           Data.Text (Text)
+import qualified Data.Text as Text
 
 
 -- | Byron-era payment keys. Used for Byron addresses and witnessing

@@ -22,25 +22,17 @@ module Ouroboros.Consensus.Ledger.Query (
   , queryEncodeNodeToClient
   ) where
 
-import           Control.Exception (Exception, throw)
-import           Data.Kind (Type)
-import           Data.Maybe (isJust)
-import           Data.Typeable (Typeable)
-
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Slotting.Block (BlockNo (..))
 import           Cardano.Slotting.Slot (WithOrigin (..))
-
 import           Codec.CBOR.Decoding
 import           Codec.CBOR.Encoding
 import           Codec.Serialise (Serialise)
 import           Codec.Serialise.Class (decode, encode)
-
-import           Ouroboros.Network.Block (HeaderHash, Point (..), StandardHash,
-                     decodePoint, encodePoint)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (ShowQuery (..))
-
+import           Control.Exception (Exception, throw)
+import           Data.Kind (Type)
+import           Data.Maybe (isJust)
+import           Data.Typeable (Typeable)
 import           Ouroboros.Consensus.Block.Abstract (CodecConfig)
 import           Ouroboros.Consensus.BlockchainTime (SystemStart)
 import           Ouroboros.Consensus.Config
@@ -55,6 +47,10 @@ import           Ouroboros.Consensus.Node.Serialisation
                      (SerialiseNodeToClient (..), SerialiseResult (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..), SomeSecond (..))
 import           Ouroboros.Consensus.Util.DepPair
+import           Ouroboros.Network.Block (HeaderHash, Point (..), StandardHash,
+                     decodePoint, encodePoint)
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+                     (ShowQuery (..))
 
 {-------------------------------------------------------------------------------
   Queries

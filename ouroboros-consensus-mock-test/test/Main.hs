@@ -1,8 +1,7 @@
 module Main (main) where
 
-import           Test.Tasty
-
 import qualified Test.Consensus.Ledger.Mock (tests)
+import           Test.Tasty
 import qualified Test.ThreadNet.BFT (tests)
 import qualified Test.ThreadNet.LeaderSchedule (tests)
 import qualified Test.ThreadNet.PBFT (tests)

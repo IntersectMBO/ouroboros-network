@@ -17,6 +17,17 @@ module Test.ThreadNet.Byron (
   , noEBBs
   ) where
 
+import qualified Cardano.Chain.Block as Block
+import qualified Cardano.Chain.Common as Common
+import qualified Cardano.Chain.Delegation as Delegation
+import qualified Cardano.Chain.Genesis as Genesis
+import           Cardano.Chain.ProtocolConstants (kEpochSlots)
+import           Cardano.Chain.Slotting (EpochNumber (..), unEpochSlots)
+import qualified Cardano.Crypto as Crypto
+import qualified Cardano.Crypto.DSIGN as Crypto
+import           Cardano.Crypto.Seed (mkSeedFromBytes)
+import           Cardano.Ledger.Binary (byronProtVer, reAnnotate)
+import qualified Cardano.Ledger.Binary.Plain as Plain
 import           Control.Monad (join)
 import qualified Data.ByteString as BS
 import           Data.Coerce (coerce)
@@ -25,19 +36,16 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
-
 import           Numeric.Search.Range (searchFromTo)
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
-import           Cardano.Crypto.Seed (mkSeedFromBytes)
-
-import           Ouroboros.Network.Mock.Chain (Chain)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock,
+                     ByronNodeToNodeVersion (..))
+import qualified Ouroboros.Consensus.Byron.Ledger as Byron
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Node
+import           Ouroboros.Consensus.Byron.Protocol
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -47,27 +55,13 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.Crypto as Crypto
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
-
-import qualified Cardano.Chain.Block as Block
-import qualified Cardano.Chain.Common as Common
-import qualified Cardano.Chain.Delegation as Delegation
-import qualified Cardano.Chain.Genesis as Genesis
-import           Cardano.Chain.ProtocolConstants (kEpochSlots)
-import           Cardano.Chain.Slotting (EpochNumber (..), unEpochSlots)
-import qualified Cardano.Crypto as Crypto
-import qualified Cardano.Crypto.DSIGN as Crypto
-import           Cardano.Ledger.Binary (byronProtVer, reAnnotate)
-import qualified Cardano.Ledger.Binary.Plain as Plain
-
-import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock,
-                     ByronNodeToNodeVersion (..))
-import qualified Ouroboros.Consensus.Byron.Ledger as Byron
-import           Ouroboros.Consensus.Byron.Ledger.Conversions
-import           Ouroboros.Consensus.Byron.Node
-import           Ouroboros.Consensus.Byron.Protocol
-
+import           Ouroboros.Network.Mock.Chain (Chain)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.ThreadNet.General
+import           Test.ThreadNet.Infra.Byron
 import           Test.ThreadNet.Network (NodeOutput (..),
                      TestNodeInitialization (..))
 import qualified Test.ThreadNet.Ref.PBFT as Ref
@@ -79,13 +73,10 @@ import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
-
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import qualified Test.Util.Stream as Stream
-
-import           Test.ThreadNet.Infra.Byron
 
 data TestSetup = TestSetup
   { setupEBBs         :: ProduceEBBs

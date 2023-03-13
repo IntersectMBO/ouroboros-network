@@ -39,6 +39,19 @@ module Ouroboros.Consensus.Byron.Ledger.Mempool (
   , countByronGenTxs
   ) where
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Byron.API as CC
+import qualified Cardano.Chain.Delegation as Delegation
+import qualified Cardano.Chain.MempoolPayload as CC
+import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.UTxO as Utxo
+import qualified Cardano.Chain.ValidationMode as CC
+import           Cardano.Crypto (hashDecoded)
+import           Cardano.Ledger.Binary (ByteSpan, DecoderError (..),
+                     byronProtVer, fromByronCBOR, serialize, slice, toByronCBOR,
+                     unsafeDeserialize)
+import           Cardano.Ledger.Binary.Plain (enforceSize)
+import           Cardano.Prelude (cborError)
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
@@ -51,36 +64,18 @@ import           Data.Maybe (maybeToList)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (InspectHeapNamed (..), NoThunks (..))
-
-import           Cardano.Crypto (hashDecoded)
-import           Cardano.Ledger.Binary (ByteSpan, DecoderError (..),
-                     byronProtVer, fromByronCBOR, serialize, slice, toByronCBOR,
-                     unsafeDeserialize)
-import           Cardano.Ledger.Binary.Plain (enforceSize)
-import           Cardano.Prelude (cborError)
-
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Byron.API as CC
-import qualified Cardano.Chain.Delegation as Delegation
-import qualified Cardano.Chain.MempoolPayload as CC
-import qualified Cardano.Chain.Update as Update
-import qualified Cardano.Chain.UTxO as Utxo
-import qualified Cardano.Chain.ValidationMode as CC
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Util (ShowProxy (..))
-import           Ouroboros.Consensus.Util.Condense
-
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Conversions (toByronSlotNo)
 import           Ouroboros.Consensus.Byron.Ledger.Ledger
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 import           Ouroboros.Consensus.Byron.Ledger.Serialisation
                      (byronBlockEncodingOverhead)
-
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool
+import           Ouroboros.Consensus.Util (ShowProxy (..))
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   TxLimits

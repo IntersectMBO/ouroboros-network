@@ -21,15 +21,14 @@ module Test.Util.RefEnv (
   , (!)
   ) where
 
-import           Prelude hiding (filter, lookup, null)
-import qualified Prelude
-
 import           Data.Bifunctor
 import           Data.Functor.Classes
 import           Data.List (intercalate)
 import           Data.TreeDiff (ToExpr)
 import           GHC.Generics (Generic)
 import           GHC.Stack
+import           Prelude hiding (filter, lookup, null)
+import qualified Prelude
 import           Test.StateMachine (Reference)
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 

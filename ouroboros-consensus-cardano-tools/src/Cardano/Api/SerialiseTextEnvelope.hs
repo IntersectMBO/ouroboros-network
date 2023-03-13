@@ -28,6 +28,8 @@ module Cardano.Api.SerialiseTextEnvelope (
   , AsType (..)
   ) where
 
+import           Cardano.Api.Any
+import           Cardano.Ledger.Binary (DecoderError)
 import           Control.Monad (unless)
 import           Control.Monad.Trans.Except (ExceptT (..), runExceptT)
 import           Control.Monad.Trans.Except.Extra (firstExceptT,
@@ -42,10 +44,6 @@ import qualified Data.List as List
 import           Data.Maybe (fromMaybe)
 import           Data.String (IsString)
 import qualified Data.Text.Encoding as Text
-
-import           Cardano.Ledger.Binary (DecoderError)
-
-import           Cardano.Api.Any
 
 -- ----------------------------------------------------------------------------
 -- Text envelopes

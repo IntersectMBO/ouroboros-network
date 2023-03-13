@@ -33,6 +33,12 @@ module Ouroboros.Consensus.Byron.Ledger.Block (
   , splitSizeHint
   ) where
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Byron.API as CC
+import qualified Cardano.Chain.Slotting as CC
+import qualified Cardano.Crypto.Hashing as CC
+import           Cardano.Ledger.Binary
+import qualified Crypto.Hash as Crypto
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as Strict
 import           Data.Map.Strict (Map)
@@ -41,25 +47,13 @@ import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-
-import           Cardano.Ledger.Binary
-
-import qualified Crypto.Hash as Crypto
-
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Byron.API as CC
-import qualified Cardano.Chain.Slotting as CC
-import qualified Cardano.Crypto.Hashing as CC
-
-import           Ouroboros.Network.SizeInBytes (SizeInBytes)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util (ShowProxy (..))
-import           Ouroboros.Consensus.Util.Condense
-
 import qualified Ouroboros.Consensus.Byron.EBBs as EBBs
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
+import           Ouroboros.Consensus.Util (ShowProxy (..))
+import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 {-------------------------------------------------------------------------------
   Header hash

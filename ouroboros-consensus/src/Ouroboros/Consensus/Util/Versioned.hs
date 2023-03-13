@@ -19,14 +19,13 @@ module Ouroboros.Consensus.Util.Versioned (
   , VersionNumber
   ) where
 
+import           Cardano.Binary (enforceSize)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.Serialise (Serialise (..))
 import           Codec.Serialise.Decoding (Decoder, decodeWord8)
 import           Codec.Serialise.Encoding (Encoding, encodeListLen, encodeWord8)
 import           Control.Exception (Exception)
 import           Data.Word (Word8)
-
-import           Cardano.Binary (enforceSize)
 
 
 newtype VersionNumber = VersionNumber Word8

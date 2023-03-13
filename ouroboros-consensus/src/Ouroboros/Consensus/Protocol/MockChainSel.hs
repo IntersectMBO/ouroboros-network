@@ -9,11 +9,9 @@ module Ouroboros.Consensus.Protocol.MockChainSel (
 import           Data.List (sortOn)
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Ord (Down (..))
-
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Network.Mock.Chain (Chain)
 import qualified Ouroboros.Network.Mock.Chain as Chain
-
-import           Ouroboros.Consensus.Protocol.Abstract
 
 {-------------------------------------------------------------------------------
   Chain selection

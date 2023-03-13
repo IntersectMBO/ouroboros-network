@@ -1,15 +1,12 @@
 module Main (main) where
 
+import           Cardano.Crypto.Libsodium (sodiumInit)
 import           System.IO (BufferMode (LineBuffering), hSetBuffering,
                      hSetEncoding, stdout, utf8)
-
-import           Cardano.Crypto.Libsodium (sodiumInit)
-
-import           Test.Tasty
-
 import qualified Test.Consensus.Cardano.ByronCompatibility (tests)
 import qualified Test.Consensus.Cardano.Golden (tests)
 import qualified Test.Consensus.Cardano.Serialisation (tests)
+import           Test.Tasty
 import qualified Test.ThreadNet.AllegraMary (tests)
 import qualified Test.ThreadNet.Cardano (tests)
 import qualified Test.ThreadNet.MaryAlonzo (tests)

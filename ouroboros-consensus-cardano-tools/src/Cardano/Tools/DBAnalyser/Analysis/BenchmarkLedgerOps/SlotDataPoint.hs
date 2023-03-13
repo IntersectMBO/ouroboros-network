@@ -7,11 +7,10 @@ module Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint (
   , showHeaders
   ) where
 
+import           Cardano.Slotting.Slot (SlotNo (unSlotNo))
 import           Data.Int (Int64)
 import           Data.Word (Word32, Word64)
 import           Text.Builder (Builder, decimal, intercalate)
-
-import           Cardano.Slotting.Slot (SlotNo (unSlotNo))
 
 -- | Information about the time spent processing the block corresponding to
 -- 'slot', divided into the five major operations:

@@ -15,19 +15,17 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser (
 import           Data.Bifunctor (bimap)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word (Word64)
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Storage.VolatileDB.API (BlockInfo (..))
+import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
+import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..),
+                     withStreamIncrementalOffsets)
+import           Ouroboros.Consensus.Util.IOLike
 import qualified Streaming.Prelude as S
 import           Streaming.Prelude (Of (..), Stream)
 import           System.FS.API (HasFS)
 import           System.FS.API.Types (FsPath)
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..),
-                     withStreamIncrementalOffsets)
-import           Ouroboros.Consensus.Util.IOLike
-
-import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Storage.VolatileDB.API (BlockInfo (..))
-import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 
 -- | Information returned by the parser about a single block.
 --

@@ -4,25 +4,11 @@
 
 module Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy) where
 
+import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
 import           Data.Proxy (Proxy)
 import           Data.Time.Clock (DiffTime)
 import           Data.Typeable (Typeable)
-
-import           Control.Monad.Class.MonadAsync (ExceptionInLinkedThread (..))
-
-import           System.FS.API.Types (FsError)
-
-import           Ouroboros.Network.ErrorPolicy
-
 import           Ouroboros.Consensus.Block (StandardHash)
-
-import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
-                     ChainDbFailure)
-import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDBError)
-import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
-import           Ouroboros.Consensus.Storage.VolatileDB.API (VolatileDBError)
-import qualified Ouroboros.Consensus.Storage.VolatileDB.API as VolatileDB
-
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (BlockFetchServerException)
@@ -30,9 +16,17 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
                      (ChainSyncClientException)
 import           Ouroboros.Consensus.Node.DbLock
 import           Ouroboros.Consensus.Node.DbMarker (DbMarkerError)
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbError (..),
+                     ChainDbFailure)
+import           Ouroboros.Consensus.Storage.ImmutableDB.API (ImmutableDBError)
+import qualified Ouroboros.Consensus.Storage.ImmutableDB.API as ImmutableDB
+import           Ouroboros.Consensus.Storage.VolatileDB.API (VolatileDBError)
+import qualified Ouroboros.Consensus.Storage.VolatileDB.API as VolatileDB
 import           Ouroboros.Consensus.Util.ResourceRegistry
                      (RegistryClosedException, ResourceRegistryThreadException,
                      TempRegistryException)
+import           Ouroboros.Network.ErrorPolicy
+import           System.FS.API.Types (FsError)
 
 consensusErrorPolicy ::
      forall blk. (Typeable blk, StandardHash blk)

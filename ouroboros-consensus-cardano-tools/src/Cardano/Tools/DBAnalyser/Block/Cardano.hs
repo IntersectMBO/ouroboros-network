@@ -22,18 +22,6 @@ module Cardano.Tools.DBAnalyser.Block.Cardano (
   , CardanoBlockArgs
   ) where
 
-import           Control.Monad (when)
-import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.Types as Aeson
-import qualified Data.ByteString as BS
-import           Data.Kind (Type)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust)
-import           Data.SOP.Strict
-import           Data.Word (Word16)
-import           System.Directory (makeAbsolute)
-import           System.FilePath (takeDirectory, (</>))
-
 import qualified Cardano.Chain.Genesis as Byron.Genesis
 import qualified Cardano.Chain.Update as Byron.Update
 import           Cardano.Crypto (RequiresNetworkMagic (..))
@@ -48,9 +36,19 @@ import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto
 import qualified Cardano.Ledger.Shelley.Translation as SL
                      (toFromByronTranslationContext)
+import           Cardano.Node.Types (AdjustFilePaths (..))
 import qualified Cardano.Tools.DBAnalyser.Block.Byron as BlockByron
 import           Cardano.Tools.DBAnalyser.Block.Shelley ()
-
+import           Cardano.Tools.DBAnalyser.HasAnalysis
+import           Control.Monad (when)
+import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Types as Aeson
+import qualified Data.ByteString as BS
+import           Data.Kind (Type)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromJust)
+import           Data.SOP.Strict
+import           Data.Word (Word16)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Cardano
@@ -72,10 +70,8 @@ import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node.Praos
-
-import           Cardano.Node.Types (AdjustFilePaths (..))
-import           Cardano.Tools.DBAnalyser.Block.Shelley ()
-import           Cardano.Tools.DBAnalyser.HasAnalysis
+import           System.Directory (makeAbsolute)
+import           System.FilePath (takeDirectory, (</>))
 
 analyseBlock ::
      (forall blk. HasAnalysis blk => blk -> a)

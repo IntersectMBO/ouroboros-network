@@ -20,22 +20,12 @@ import           Control.Exception (SomeException)
 import           Control.Tracer (Tracer, nullTracer, showTracing)
 import           Data.Text (Text)
 import           Data.Time (UTCTime)
-
-import           Ouroboros.Network.BlockFetch (FetchDecision,
-                     TraceFetchClientState, TraceLabelPeer)
-import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient)
-import           Ouroboros.Network.TxSubmission.Inbound
-                     (TraceTxSubmissionInbound)
-import           Ouroboros.Network.TxSubmission.Outbound
-                     (TraceTxSubmissionOutbound)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Forecast (OutsideForecastRange)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Mempool (MempoolSize, TraceEventMempool)
-
 import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
                      (TraceBlockFetchServerEvent)
 import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
@@ -44,6 +34,13 @@ import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
                      (TraceChainSyncServerEvent)
 import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
                      (TraceLocalTxSubmissionServerEvent (..))
+import           Ouroboros.Network.BlockFetch (FetchDecision,
+                     TraceFetchClientState, TraceLabelPeer)
+import           Ouroboros.Network.KeepAlive (TraceKeepAliveClient)
+import           Ouroboros.Network.TxSubmission.Inbound
+                     (TraceTxSubmissionInbound)
+import           Ouroboros.Network.TxSubmission.Outbound
+                     (TraceTxSubmissionOutbound)
 
 {-------------------------------------------------------------------------------
   All tracers of a node bundled together

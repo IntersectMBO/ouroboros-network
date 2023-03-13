@@ -16,21 +16,18 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Types (
   , TranslateForecast (..)
   ) where
 
-import           Prelude
-
 import           Control.Monad.Except
 import           Data.SOP.Strict
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
-import           Ouroboros.Consensus.HardFork.History (Bound)
-import           Ouroboros.Consensus.Ticked
-
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+import           Ouroboros.Consensus.HardFork.History (Bound)
+import           Ouroboros.Consensus.Ticked
+import           Prelude
 
 {-------------------------------------------------------------------------------
   Types

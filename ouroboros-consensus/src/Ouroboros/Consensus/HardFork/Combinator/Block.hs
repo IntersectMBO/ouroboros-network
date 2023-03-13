@@ -31,17 +31,15 @@ import           Data.SOP.Strict
 import           Data.Typeable (Typeable)
 import           Data.Word
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util (ShowProxy, (.:))
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
+import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (ShowProxy, (.:))
+import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
   GetHeader

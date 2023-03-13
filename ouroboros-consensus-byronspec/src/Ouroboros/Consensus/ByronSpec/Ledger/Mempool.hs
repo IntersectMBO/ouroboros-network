@@ -15,15 +15,13 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Mempool (
 import           Codec.Serialise
 import           GHC.Generics (Generic)
 import           NoThunks.Class (AllowThunk (..), NoThunks)
-
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
 import           Ouroboros.Consensus.ByronSpec.Ledger.GenTx
                      (ByronSpecGenTx (..), ByronSpecGenTxErr (..))
 import qualified Ouroboros.Consensus.ByronSpec.Ledger.GenTx as GenTx
 import           Ouroboros.Consensus.ByronSpec.Ledger.Ledger
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 
 newtype instance GenTx ByronSpecBlock = ByronSpecGenTx {
       unByronSpecGenTx :: ByronSpecGenTx

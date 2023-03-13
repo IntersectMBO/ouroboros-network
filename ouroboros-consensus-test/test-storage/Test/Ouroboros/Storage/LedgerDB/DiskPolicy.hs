@@ -8,15 +8,13 @@ module Test.Ouroboros.Storage.LedgerDB.DiskPolicy (tests) where
 import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds,
                      picosecondsToDiffTime, secondsToDiffTime)
 import           Data.Word
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
 import           Ouroboros.Consensus.Config.SecurityParam (SecurityParam (..))
 import           Ouroboros.Consensus.Storage.LedgerDB (DiskPolicy (..),
                      SnapshotInterval (..), TimeSinceLast (..),
                      defaultDiskPolicy)
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 
 tests :: TestTree
 tests =

@@ -12,9 +12,8 @@
 --
 module Main (main) where
 
-import           Test.Tasty
-
 import qualified Ouroboros.Consensus.Util.Tests (tests)
+import           Test.Tasty
 import qualified Test.ThreadNet.Util.Tests (tests)
 import qualified Test.Util.ChainUpdates.Tests (tests)
 import qualified Test.Util.Schedule.Tests (tests)

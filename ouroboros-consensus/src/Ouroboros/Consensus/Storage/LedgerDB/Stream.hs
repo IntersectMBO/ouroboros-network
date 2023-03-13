@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Storage.LedgerDB.Stream (
 
 import           Control.Monad.Except
 import           GHC.Stack
-
 import           Ouroboros.Consensus.Block
 
 {-------------------------------------------------------------------------------

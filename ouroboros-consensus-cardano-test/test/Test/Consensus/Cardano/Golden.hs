@@ -5,22 +5,17 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Cardano.Golden (tests) where
 
-import           System.FilePath ((</>))
-
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
-import           Ouroboros.Consensus.Ledger.Query (QueryVersion)
-
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
+import           Ouroboros.Consensus.Ledger.Query (QueryVersion)
 import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-
+import           System.FilePath ((</>))
+import           Test.Consensus.Cardano.Examples
 import           Test.Tasty
-
 import           Test.Util.Paths
 import           Test.Util.Serialisation.Golden
-
-import           Test.Consensus.Cardano.Examples
 
 tests :: TestTree
 tests = goldenTest_all codecConfig $(getGoldenDir) examples

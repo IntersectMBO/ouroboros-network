@@ -36,7 +36,6 @@ import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation

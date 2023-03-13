@@ -7,6 +7,11 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.PeerSelection () where
 
+import           Cardano.Ledger.BaseTypes
+import qualified Cardano.Ledger.Keys as SL
+import qualified Cardano.Ledger.PoolDistr as SL
+import qualified Cardano.Ledger.Shelley.LedgerState as SL
+import qualified Cardano.Ledger.Shelley.TxBody as SL
 import           Control.DeepSeq (force)
 import           Data.Bifunctor (second)
 import           Data.Foldable (toList)
@@ -18,15 +23,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes, mapMaybe)
 import           Data.Ord (Down (..))
 import           Data.Text.Encoding (encodeUtf8)
-
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
-
-import           Cardano.Ledger.BaseTypes
-import qualified Cardano.Ledger.Keys as SL
-import qualified Cardano.Ledger.PoolDistr as SL
-import qualified Cardano.Ledger.Shelley.LedgerState as SL
-import qualified Cardano.Ledger.Shelley.TxBody as SL
-
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger

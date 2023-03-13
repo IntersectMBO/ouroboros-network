@@ -55,6 +55,7 @@ module Test.Util.Serialisation.Golden (
   , unlabelled
   ) where
 
+import           Cardano.Prelude (forceElemsToWHNF)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.FlatTerm (TermToken (..))
 import qualified Codec.CBOR.FlatTerm as CBOR
@@ -68,13 +69,6 @@ import           Data.List (nub)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy (Proxy (..))
 import           GHC.Stack (HasCallStack)
-import           System.Directory (createDirectoryIfMissing)
-import           System.FilePath (takeDirectory, (</>))
-
-import           Cardano.Prelude (forceElemsToWHNF)
-
-import           Ouroboros.Network.Block (Serialised)
-
 import           Ouroboros.Consensus.Block (BlockProtocol, CodecConfig, Header,
                      HeaderHash, SlotNo, SomeSecond)
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
@@ -99,11 +93,12 @@ import           Ouroboros.Consensus.Storage.Serialisation (EncodeDisk (..),
                      SerialisedHeader)
 import           Ouroboros.Consensus.Util.CBOR (decodeAsFlatTerm)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
-
+import           Ouroboros.Network.Block (Serialised)
+import           System.Directory (createDirectoryIfMissing)
+import           System.FilePath (takeDirectory, (</>))
+import           Test.Cardano.Ledger.Binary.TreeDiff (CBORBytes (..), diffExpr)
 import           Test.Tasty
 import           Test.Tasty.Golden.Advanced (goldenTest)
-
-import           Test.Cardano.Ledger.Binary.TreeDiff (CBORBytes (..), diffExpr)
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 {-------------------------------------------------------------------------------

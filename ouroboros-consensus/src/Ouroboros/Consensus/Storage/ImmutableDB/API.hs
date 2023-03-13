@@ -61,17 +61,14 @@ import           Data.List.NonEmpty (NonEmpty)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
-import           System.FS.API.Types (FsError, FsPath)
-import           System.FS.CRC (CRC)
-
-import qualified Ouroboros.Network.AnchoredFragment as AF
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-
-import           Ouroboros.Consensus.Storage.Common
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           System.FS.API.Types (FsError, FsPath)
+import           System.FS.CRC (CRC)
 
 {-------------------------------------------------------------------------------
   API

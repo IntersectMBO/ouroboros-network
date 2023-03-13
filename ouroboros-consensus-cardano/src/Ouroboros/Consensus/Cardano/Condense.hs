@@ -4,14 +4,11 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Cardano.Condense () where
 
-import           Ouroboros.Consensus.HardFork.Combinator.Condense
-
 import           Ouroboros.Consensus.Byron.Ledger
-
-import           Ouroboros.Consensus.Shelley.Ledger
-
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.CanHardFork
+import           Ouroboros.Consensus.HardFork.Combinator.Condense
+import           Ouroboros.Consensus.Shelley.Ledger
 
 {-------------------------------------------------------------------------------
   Condense

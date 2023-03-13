@@ -15,11 +15,8 @@ import           Data.List (intercalate, unfoldr)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
-
-import           Test.QuickCheck
-
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
-
+import           Test.QuickCheck
 import           Test.Util.LogicalClock (Tick (..))
 
 -- | A schedule plans actions on certain times.

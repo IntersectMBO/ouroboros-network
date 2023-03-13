@@ -23,8 +23,10 @@ module Cardano.Api.KeysPraos (
   , VerificationKey (..)
   ) where
 
-import           Data.String (IsString (..))
-
+import           Cardano.Api.Any
+import           Cardano.Api.Key
+import           Cardano.Api.SerialiseTextEnvelope
+import           Cardano.Api.SerialiseUsing
 import qualified Cardano.Crypto.DSIGN.Class as Crypto
 import qualified Cardano.Crypto.Hash.Class as Crypto
 import qualified Cardano.Crypto.KES.Class as Crypto
@@ -32,11 +34,7 @@ import qualified Cardano.Crypto.VRF.Class as Crypto
 import           Cardano.Ledger.Crypto (StandardCrypto)
 import qualified Cardano.Ledger.Crypto as Shelley (KES, VRF)
 import qualified Cardano.Ledger.Keys as Shelley
-
-import           Cardano.Api.Any
-import           Cardano.Api.Key
-import           Cardano.Api.SerialiseTextEnvelope
-import           Cardano.Api.SerialiseUsing
+import           Data.String (IsString (..))
 
 --
 -- KES keys

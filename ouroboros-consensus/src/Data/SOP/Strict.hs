@@ -38,12 +38,11 @@ module Data.SOP.Strict (
 
 import           Data.Coerce
 import           Data.Kind (Type)
-import           NoThunks.Class (NoThunks (..), allNoThunks)
-
 import           Data.SOP hiding (Injection, NP (..), NS (..), hd, injections,
                      shiftInjection, tl, unZ)
 import           Data.SOP.Classes (Same)
 import           Data.SOP.Constraint
+import           NoThunks.Class (NoThunks (..), allNoThunks)
 
 {-------------------------------------------------------------------------------
   NP

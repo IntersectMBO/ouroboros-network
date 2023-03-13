@@ -1,14 +1,11 @@
 module Test.ThreadNet.Util.Tests (tests) where
 
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
-
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 

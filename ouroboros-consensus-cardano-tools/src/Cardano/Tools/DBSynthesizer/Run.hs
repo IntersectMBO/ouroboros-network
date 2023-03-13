@@ -6,18 +6,21 @@ module Cardano.Tools.DBSynthesizer.Run (
   , synthesize
   ) where
 
+import           Cardano.Api.Any (displayError)
+import           Cardano.Api.Protocol.Types (protocolInfo)
+import           Cardano.Node.Protocol
+import           Cardano.Node.Types
+import           Cardano.Tools.DBSynthesizer.Forging
+import           Cardano.Tools.DBSynthesizer.Orphans ()
+import           Cardano.Tools.DBSynthesizer.Types
 import           Control.Monad.Trans.Except (ExceptT)
 import           Control.Monad.Trans.Except.Extra (firstExceptT,
                      handleIOExceptT, hoistEither, runExceptT)
+import           Control.Tracer (nullTracer)
 import           Data.Aeson as Aeson (FromJSON, Result (..), Value,
                      eitherDecodeFileStrict', eitherDecodeStrict', fromJSON)
 import           Data.Bool (bool)
 import           Data.ByteString as BS (ByteString, readFile)
-import           System.Directory
-import           System.FilePath (takeDirectory, (</>))
-
-import           Control.Tracer (nullTracer)
-
 import           Ouroboros.Consensus.Config (configSecurityParam, configStorage)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture (dontCheck)
 import qualified Ouroboros.Consensus.Node as Node (mkChainDbArgs,
@@ -37,14 +40,8 @@ import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Network.Block
 import           Ouroboros.Network.Point (WithOrigin (..))
-
-import           Cardano.Api.Any (displayError)
-import           Cardano.Api.Protocol.Types (protocolInfo)
-import           Cardano.Node.Protocol
-import           Cardano.Node.Types
-import           Cardano.Tools.DBSynthesizer.Forging
-import           Cardano.Tools.DBSynthesizer.Orphans ()
-import           Cardano.Tools.DBSynthesizer.Types
+import           System.Directory
+import           System.FilePath (takeDirectory, (</>))
 
 
 initialize

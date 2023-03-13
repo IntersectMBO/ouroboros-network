@@ -15,11 +15,6 @@ module Ouroboros.Consensus.Byron.Ledger.Forge (
   , forgeEBB
   ) where
 
-import           Control.Monad (void)
-import           Data.ByteString (ByteString)
-import           Data.Coerce (coerce)
-import           GHC.Stack
-
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Common as CC.Common
@@ -33,21 +28,23 @@ import qualified Cardano.Crypto as Crypto
 import           Cardano.Crypto.DSIGN
 import           Cardano.Ledger.Binary (Annotated (..), byronProtVer,
                      reAnnotate)
-
+import           Control.Monad (void)
+import           Data.ByteString (ByteString)
+import           Data.Coerce (coerce)
+import           GHC.Stack
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-                     (LedgerSupportsMempool (..), txForgetValidated)
-import qualified Ouroboros.Consensus.Mempool as Mempool
-import           Ouroboros.Consensus.Protocol.PBFT
-
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Mempool
 import           Ouroboros.Consensus.Byron.Ledger.PBFT
 import           Ouroboros.Consensus.Byron.Protocol
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+                     (LedgerSupportsMempool (..), txForgetValidated)
+import qualified Ouroboros.Consensus.Mempool as Mempool
+import           Ouroboros.Consensus.Protocol.PBFT
 
 forgeByronBlock
   :: HasCallStack

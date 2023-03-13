@@ -35,16 +35,14 @@ module Ouroboros.Consensus.Shelley.Node (
 
 
 
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Node.Run
-
 import qualified Cardano.Ledger.Shelley.API as SL
-
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger

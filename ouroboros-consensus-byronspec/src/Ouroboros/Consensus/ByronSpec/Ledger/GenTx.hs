@@ -15,16 +15,14 @@ module Ouroboros.Consensus.ByronSpec.Ledger.GenTx (
   , partition
   ) where
 
-import           Codec.Serialise
-import           Control.Monad.Trans.Except
-import           GHC.Generics (Generic)
-
 import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
 import qualified Byron.Spec.Ledger.Delegation as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
+import           Codec.Serialise
+import           Control.Monad.Trans.Except
 import qualified Control.State.Transition as Spec
-
+import           GHC.Generics (Generic)
 import           Ouroboros.Consensus.ByronSpec.Ledger.Genesis
                      (ByronSpecGenesis (..))
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()

@@ -15,14 +15,12 @@ import qualified Data.List as List
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
-import           Test.QuickCheck
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-
+import           Test.QuickCheck
 import           Test.Util.Slots (NumSlots (..))
 
 {-------------------------------------------------------------------------------

@@ -18,7 +18,6 @@ module Ouroboros.Consensus.Mock.Node (
 import           Codec.Serialise (Serialise)
 import qualified Data.Map.Strict as Map
 import           Data.Void (Void)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.SupportsMempool (txForgetValidated)
@@ -30,9 +29,8 @@ import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.RedundantConstraints
-
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
+import           Ouroboros.Consensus.Util.RedundantConstraints
 
 {-------------------------------------------------------------------------------
   RunNode instance for the mock ledger

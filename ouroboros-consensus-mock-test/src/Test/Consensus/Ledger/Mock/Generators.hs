@@ -12,28 +12,23 @@
 
 module Test.Consensus.Ledger.Mock.Generators () where
 
+import           Cardano.Crypto.DSIGN
+import           Cardano.Crypto.Hash
 import           Codec.Serialise (Serialise, encode, serialise)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Typeable
-
-import           Cardano.Crypto.DSIGN
-import           Cardano.Crypto.Hash
-
-import           Test.QuickCheck
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Protocol.BFT
-
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Mock.Ledger.Block.BFT
 import qualified Ouroboros.Consensus.Mock.Ledger.State as L
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as L
 import           Ouroboros.Consensus.Mock.Node.Serialisation ()
-
+import           Ouroboros.Consensus.Protocol.BFT
+import           Test.QuickCheck
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
 

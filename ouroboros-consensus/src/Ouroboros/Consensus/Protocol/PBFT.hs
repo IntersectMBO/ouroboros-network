@@ -45,6 +45,7 @@ module Ouroboros.Consensus.Protocol.PBFT (
   , PBftValidationErr (..)
   ) where
 
+import           Cardano.Crypto.DSIGN.Class
 import           Codec.Serialise (Serialise (..))
 import qualified Control.Exception as Exn
 import           Control.Monad.Except
@@ -57,9 +58,6 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Crypto.DSIGN.Class
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))

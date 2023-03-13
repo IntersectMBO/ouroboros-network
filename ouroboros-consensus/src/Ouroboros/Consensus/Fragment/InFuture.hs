@@ -23,16 +23,11 @@ module Ouroboros.Consensus.Fragment.InFuture (
   , miracle
   ) where
 
+import           Control.Monad.Class.MonadSTM
 import           Data.Bifunctor
 import           Data.Time (NominalDiffTime)
 import           Data.Word
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
-
-import           Control.Monad.Class.MonadSTM
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
-                     AnchoredSeq (Empty, (:>)))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
@@ -44,6 +39,8 @@ import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
                      (InvalidBlockPunishment)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Util.Time
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
+                     AnchoredSeq (Empty, (:>)))
 
 data CheckInFuture m blk = CheckInFuture {
        -- | POSTCONDITION:

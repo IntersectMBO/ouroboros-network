@@ -24,19 +24,15 @@ module Test.Consensus.HardFork.Summary (tests) where
 
 import           Data.Time
 import           Data.Word
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import qualified Ouroboros.Consensus.HardFork.History as HF
-
+import           Test.Consensus.HardFork.Infra
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
-
-import           Test.Consensus.HardFork.Infra
 
 tests :: TestTree
 tests = testGroup "Summary" [

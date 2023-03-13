@@ -31,14 +31,19 @@ import           Data.Hashable (Hashable)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Traversable (for)
-
 import           Network.TypedProtocol.Codec (AnyMessageAndAgency (..))
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-import           Test.Util.ChainDB
-
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
+import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface as BlockFetchClientInterface
+import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDBImpl
+import           Ouroboros.Consensus.Util.Condense (Condense (..))
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM (blockUntilJust,
+                     forkLinkedWatcher)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
@@ -61,20 +66,10 @@ import           Ouroboros.Network.Protocol.BlockFetch.Server
                      BlockFetchServer (..), blockFetchServerPeer)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..),
                      Message (MsgBlock))
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface as BlockFetchClientInterface
-import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
-import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl as ChainDBImpl
-import           Ouroboros.Consensus.Util.Condense (Condense (..))
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (blockUntilJust,
-                     forkLinkedWatcher)
-
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
+import           Test.Util.ChainDB
 import           Test.Util.ChainUpdates
 import qualified Test.Util.LogicalClock as LogicalClock
 import           Test.Util.LogicalClock (Tick (..))

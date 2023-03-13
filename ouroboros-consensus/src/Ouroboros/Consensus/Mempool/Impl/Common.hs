@@ -39,31 +39,27 @@ module Ouroboros.Consensus.Mempool.Impl.Common (
 
 import           Control.Exception (assert)
 import           Control.Monad.Trans.Except (runExcept)
+import           Control.Tracer
 import           Data.Maybe (isNothing)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable
 import           GHC.Generics (Generic)
-
-import           Control.Tracer
-
-import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
-import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended (ledgerState)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Util (repeatedly)
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Mempool.API hiding (MempoolCapacityBytes,
                      MempoolCapacityBytesOverride, MempoolSize,
                      TraceEventMempool, computeMempoolCapacity)
 import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.TxSeq (TxSeq (..), TxTicket (..))
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Util (repeatedly)
+import           Ouroboros.Consensus.Util.IOLike
 {-------------------------------------------------------------------------------
   Internal State
 -------------------------------------------------------------------------------}

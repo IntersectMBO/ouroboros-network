@@ -39,8 +39,6 @@ module Ouroboros.Consensus.Util.OptNP (
   , zipWith
   ) where
 
-import           Prelude hiding (zipWith)
-
 import           Control.Monad (guard)
 import           Data.Functor.These (These1 (..))
 import           Data.Kind (Type)
@@ -49,8 +47,8 @@ import           Data.SOP.Strict hiding (And)
 import           Data.Type.Bool (type (&&))
 import           Data.Type.Equality
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Util.SOP
+import           Prelude hiding (zipWith)
 
 type NonEmptyOptNP = OptNP 'False
 

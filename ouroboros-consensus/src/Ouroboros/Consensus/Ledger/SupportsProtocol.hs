@@ -5,7 +5,6 @@ module Ouroboros.Consensus.Ledger.SupportsProtocol (LedgerSupportsProtocol (..))
 
 import           Control.Monad.Except
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HeaderValidation

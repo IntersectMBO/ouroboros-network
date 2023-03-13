@@ -16,9 +16,8 @@ import           Data.Hashable
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-import           Quiet
-
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
+import           Quiet
 
 {-------------------------------------------------------------------------------
   Node IDs

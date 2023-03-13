@@ -15,13 +15,10 @@ import           Control.Concurrent.Class.MonadSTM.Strict (StrictTVar,
                      atomically, newTVarIO, readTVar, writeTVar)
 import           Control.DeepSeq (NFData (rnf))
 import           Control.Tracer (Tracer)
-
+import           Ouroboros.Consensus.HeaderValidation as Header
 import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
 import qualified Ouroboros.Consensus.Ledger.Basics as Ledger
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as Ledger
-
-import           Ouroboros.Consensus.HeaderValidation as Header
-
 import           Ouroboros.Consensus.Mempool (Mempool)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 

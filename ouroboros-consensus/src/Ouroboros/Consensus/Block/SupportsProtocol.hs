@@ -5,7 +5,6 @@
 module Ouroboros.Consensus.Block.SupportsProtocol (BlockSupportsProtocol (..)) where
 
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 

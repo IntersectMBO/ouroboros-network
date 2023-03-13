@@ -13,7 +13,6 @@ module Ouroboros.Consensus.Mock.Protocol.LeaderSchedule (
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.LeaderSchedule

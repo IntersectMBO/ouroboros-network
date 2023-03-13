@@ -18,22 +18,19 @@ module Ouroboros.Consensus.MiniProtocol.BlockFetch.Server (
 
 import           Control.Tracer (Tracer, traceWith)
 import           Data.Typeable (Typeable)
-
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
+                     IteratorResult (..), WithPoint (..),
+                     getSerialisedBlockWithPoint)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import           Ouroboros.Network.Block (Serialised (..))
 import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import           Ouroboros.Network.Protocol.BlockFetch.Server
                      (BlockFetchBlockSender (..), BlockFetchSendBlocks (..),
                      BlockFetchServer (..))
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-
-import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
-                     IteratorResult (..), WithPoint (..),
-                     getSerialisedBlockWithPoint)
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
 data BlockFetchServerException =
       -- | A block that was supposed to be included in a batch was garbage

@@ -1,7 +1,6 @@
 module Ouroboros.Consensus.Ledger.CommonProtocolParams (CommonProtocolParams (..)) where
 
 import           Data.Word (Word32)
-
 import           Ouroboros.Consensus.Ledger.Abstract
 
 -- | Ask the ledger for common protocol parameters.

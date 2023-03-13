@@ -5,17 +5,14 @@ module Ouroboros.Consensus.Byron.Ledger.Integrity (
   , verifyHeaderSignature
   ) where
 
-import           Data.Either (isRight)
-
 import qualified Cardano.Chain.Block as CC
 import qualified Cardano.Crypto.DSIGN.Class as CC.Crypto
-
+import           Data.Either (isRight)
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Protocol.PBFT
-
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.PBFT ()
+import           Ouroboros.Consensus.Protocol.PBFT
 
 -- | Verify whether a header matches its signature.
 --

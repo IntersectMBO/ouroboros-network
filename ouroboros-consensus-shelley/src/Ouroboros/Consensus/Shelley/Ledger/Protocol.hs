@@ -9,11 +9,9 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Ledger.Protocol () where
 
+import qualified Cardano.Ledger.Shelley.API as SL
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Signed
-
-import qualified Cardano.Ledger.Shelley.API as SL
-
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block

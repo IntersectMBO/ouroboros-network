@@ -5,17 +5,15 @@
 
 module Cardano.Tools.DBSynthesizer.Orphans () where
 
-import           Control.Monad (when)
-import           Data.Aeson as Aeson (FromJSON (..), withObject, (.!=), (.:),
-                     (.:?))
-
 import qualified Cardano.Chain.Update as Byron (ApplicationName (..))
 import           Cardano.Crypto (RequiresNetworkMagic (..))
-
 import           Cardano.Node.Types (AdjustFilePaths (..),
                      NodeByronProtocolConfiguration (..),
                      NodeHardForkProtocolConfiguration (..))
 import           Cardano.Tools.DBSynthesizer.Types
+import           Control.Monad (when)
+import           Data.Aeson as Aeson (FromJSON (..), withObject, (.!=), (.:),
+                     (.:?))
 
 
 instance FromJSON NodeConfigStub where

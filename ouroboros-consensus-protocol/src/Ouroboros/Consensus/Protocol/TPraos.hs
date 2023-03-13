@@ -38,30 +38,8 @@ module Ouroboros.Consensus.Protocol.TPraos (
   , Ticked (..)
   ) where
 
-import qualified Codec.CBOR.Encoding as CBOR
-import           Codec.Serialise (Serialise (..))
-import           Control.Monad.Except (Except, runExcept, throwError,
-                     withExceptT)
-import           Data.Coerce (coerce)
-import qualified Data.Map.Strict as Map
-import qualified Data.Text as T (pack)
-import           Data.Word (Word64)
-import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks (..))
-import           Numeric.Natural (Natural)
-
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), enforceSize)
 import qualified Cardano.Crypto.VRF as VRF
-import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Time (SystemStart (..))
-
-import           Ouroboros.Consensus.Block
-import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.Versioned
-
 import qualified Cardano.Ledger.BaseTypes as SL (ActiveSlotCoeff, Seed)
 import           Cardano.Ledger.Crypto (StandardCrypto)
 import qualified Cardano.Ledger.Keys as SL
@@ -73,11 +51,29 @@ import qualified Cardano.Protocol.TPraos.OCert as SL
 import qualified Cardano.Protocol.TPraos.Rules.Overlay as SL
 import qualified Cardano.Protocol.TPraos.Rules.Prtcl as SL
 import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL
-
+import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Time (SystemStart (..))
+import qualified Codec.CBOR.Encoding as CBOR
+import           Codec.Serialise (Serialise (..))
+import           Control.Monad.Except (Except, runExcept, throwError,
+                     withExceptT)
+import           Data.Coerce (coerce)
+import qualified Data.Map.Strict as Map
+import qualified Data.Text as T (pack)
+import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
+import           Numeric.Natural (Natural)
+import           Ouroboros.Consensus.Block
+import qualified Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Ledger.Util
 import           Ouroboros.Consensus.Protocol.Praos.Common
+import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Versioned
 
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header

@@ -43,21 +43,6 @@ module Ouroboros.Consensus.Mock.Protocol.Praos (
   ) where
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize')
-import           Codec.CBOR.Decoding (decodeListLenOf)
-import           Codec.CBOR.Encoding (encodeListLen)
-import           Codec.Serialise (Serialise (..))
-import           Control.Monad (unless)
-import           Control.Monad.Except (throwError)
-import           Data.Kind (Type)
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Typeable
-import           Data.Word (Word64)
-import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
-import           NoThunks.Class (NoThunks (..))
-import           Numeric.Natural
-
 import           Cardano.Crypto.DSIGN.Ed448 (Ed448DSIGN)
 import           Cardano.Crypto.Hash.Class (HashAlgorithm (..), hashToBytes,
                      hashWithSerialiser, sizeHash)
@@ -70,8 +55,21 @@ import           Cardano.Crypto.VRF.Class
 import           Cardano.Crypto.VRF.Mock (MockVRF)
 import           Cardano.Crypto.VRF.Simple (SimpleVRF)
 import           Cardano.Slotting.EpochInfo
-
+import           Codec.CBOR.Decoding (decodeListLenOf)
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.Serialise (Serialise (..))
+import           Control.Monad (unless)
+import           Control.Monad.Except (throwError)
+import           Data.Kind (Type)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
+import           Data.Typeable
+import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
+import           NoThunks.Class (NoThunks (..))
+import           Numeric.Natural
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Stake
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))

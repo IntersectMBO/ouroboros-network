@@ -11,17 +11,13 @@ import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
 import           Data.Proxy
 import           Data.Typeable
-
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Mock.Ledger.Block
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+import           Test.Consensus.Ledger.Mock.Generators ()
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Mock.Ledger.Block
-
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
-
-import           Test.Consensus.Ledger.Mock.Generators ()
 
 tests :: TestTree
 tests = testGroup "Mock"

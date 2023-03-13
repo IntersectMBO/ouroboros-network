@@ -2,9 +2,8 @@
 
 module Test.Util.ChunkInfo (SmallChunkInfo (..)) where
 
-import           Test.QuickCheck
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
+import           Test.QuickCheck
 
 {-------------------------------------------------------------------------------
   ChunkInfo

@@ -20,19 +20,17 @@ module Cardano.Api.OperationalCertificate (
   , AsType (..)
   ) where
 
-import           Data.Word
-
-import qualified Cardano.Ledger.Binary as CBOR (CBORGroup (..), shelleyProtVer,
-                     toPlainDecoder, toPlainEncoding)
-import           Cardano.Ledger.Crypto (StandardCrypto)
-import qualified Cardano.Protocol.TPraos.OCert as Shelley
-
 import           Cardano.Api.Any
 import           Cardano.Api.Key
 import           Cardano.Api.KeysByron
 import           Cardano.Api.KeysPraos
 import           Cardano.Api.KeysShelley
 import           Cardano.Api.SerialiseTextEnvelope
+import qualified Cardano.Ledger.Binary as CBOR (CBORGroup (..), shelleyProtVer,
+                     toPlainDecoder, toPlainEncoding)
+import           Cardano.Ledger.Crypto (StandardCrypto)
+import qualified Cardano.Protocol.TPraos.OCert as Shelley
+import           Data.Word
 
 
 -- ----------------------------------------------------------------------------

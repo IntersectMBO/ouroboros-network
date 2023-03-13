@@ -7,12 +7,9 @@ module Test.ThreadNet.TxGen.Mock () where
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger
-
 import           Test.QuickCheck hiding (elements)
-
 import           Test.ThreadNet.TxGen
 import           Test.Util.QuickCheck
 

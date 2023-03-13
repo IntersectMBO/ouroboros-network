@@ -10,11 +10,9 @@ module Ouroboros.Consensus.HardFork.History.Caching (
   ) where
 
 import           Data.Kind (Type)
-
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.HardFork.History.Qry
 import           Ouroboros.Consensus.HardFork.History.Summary
+import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
   Caching the summary

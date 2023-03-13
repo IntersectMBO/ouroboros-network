@@ -17,7 +17,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Condense (CondenseConstraints) wh
 
 import           Data.Coerce
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers

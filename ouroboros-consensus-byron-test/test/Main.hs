@@ -1,9 +1,8 @@
 module Main (main) where
 
-import           Test.Tasty
-
 import qualified Test.Consensus.Byron.Golden (tests)
 import qualified Test.Consensus.Byron.Serialisation (tests)
+import           Test.Tasty
 import qualified Test.ThreadNet.Byron (tests)
 import qualified Test.ThreadNet.DualByron (tests)
 import           Test.Util.TestEnv (defaultMainWithTestEnv,

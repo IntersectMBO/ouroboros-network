@@ -1,11 +1,9 @@
 module Test.Util.ChainUpdates.Tests (tests) where
 
+import           Ouroboros.Consensus.Config
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.ChainUpdates
-
-import           Ouroboros.Consensus.Config
 
 tests :: TestTree
 tests = testGroup "Test.Util.ChainUpdates"

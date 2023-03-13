@@ -4,12 +4,10 @@ module Ouroboros.Consensus.Mock.Node.PraosRule (
   , protocolInfoPraosRule
   ) where
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-
 import           Cardano.Crypto.KES
 import           Cardano.Crypto.VRF
-
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation

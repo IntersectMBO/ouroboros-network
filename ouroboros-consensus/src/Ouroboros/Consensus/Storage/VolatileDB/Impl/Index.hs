@@ -17,15 +17,13 @@ module Ouroboros.Consensus.Storage.VolatileDB.Impl.Index (
   , Index
   ) where
 
-import           Prelude hiding (lookup)
-
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (FileInfo)
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId)
+import           Prelude hiding (lookup)
 
 -- | Mapping from 'FileId' to 'FileInfo'
 newtype Index blk = Index { unIndex :: IntMap (FileInfo blk) }

@@ -14,7 +14,6 @@ module Ouroboros.Consensus.Util.TentativeState (
 
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)

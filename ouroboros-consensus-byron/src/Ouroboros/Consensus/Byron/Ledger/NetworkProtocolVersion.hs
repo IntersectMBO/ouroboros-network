@@ -8,10 +8,8 @@ module Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion (
   ) where
 
 import qualified Data.Map.Strict as Map
-
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-
 import           Ouroboros.Consensus.Byron.Ledger.Block
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 
 data ByronNodeToNodeVersion =
     -- | We send headers without a size hint

@@ -64,6 +64,9 @@ module Ouroboros.Consensus.Mock.Ledger.Block (
   , simpleBlockBinaryBlockInfo
   ) where
 
+import           Cardano.Binary (ToCBOR (..))
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
+import qualified Cardano.Crypto.Hash as Hash
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..), serialise)
@@ -75,11 +78,6 @@ import           Data.Typeable
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-
-import           Cardano.Binary (ToCBOR (..))
-import           Cardano.Crypto.Hash (Hash, HashAlgorithm, SHA256, ShortHash)
-import qualified Cardano.Crypto.Hash as Hash
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -95,12 +93,11 @@ import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.State
 import qualified Ouroboros.Consensus.Mock.Ledger.UTxO as Mock
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE,
                      (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 
 {-------------------------------------------------------------------------------
   Definition of a block

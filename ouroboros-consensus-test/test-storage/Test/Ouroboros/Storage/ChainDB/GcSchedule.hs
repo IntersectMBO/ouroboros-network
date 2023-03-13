@@ -22,27 +22,22 @@ module Test.Ouroboros.Storage.ChainDB.GcSchedule (
   ) where
 
 import           Control.Monad (forM)
+import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 import           Data.Fixed (div')
 import           Data.List (foldl', partition, sort)
 import           Data.Time.Clock
 import           Data.Void (Void)
-
-import           Control.Monad.IOSim (runSimOrThrow)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util (lastMaybe, safeMaximum)
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Background
                      (GcParams (..), ScheduledGc (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Background as Impl
-
+import           Ouroboros.Consensus.Util (lastMaybe, safeMaximum)
+import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.IOLike
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.QuickCheck
 

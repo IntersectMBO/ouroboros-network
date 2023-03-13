@@ -22,7 +22,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (mapMaybe)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.UTxO
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))

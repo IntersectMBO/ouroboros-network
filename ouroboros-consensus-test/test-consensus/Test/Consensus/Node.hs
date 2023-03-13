@@ -22,33 +22,27 @@
 --
 module Test.Consensus.Node (tests) where
 
+import           Control.Monad.Class.MonadTimer (MonadTimer)
+import           Control.Monad.IOSim (runSimOrThrow)
 import           Data.Bifunctor (second)
 import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
 import           Data.Time.Clock (secondsToDiffTime)
+import           Ouroboros.Consensus.Node.DbLock
+import           Ouroboros.Consensus.Node.DbMarker
+import           Ouroboros.Consensus.Util.FileLock (FileLock, ioFileLock)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 import           System.Directory (getTemporaryDirectory)
-import           System.IO.Temp (withTempDirectory)
-
-import           Control.Monad.Class.MonadTimer (MonadTimer)
-import           Control.Monad.IOSim (runSimOrThrow)
-
 import           System.FS.API.Types
 import           System.FS.Sim.FsTree (FsTree (..))
 import qualified System.FS.Sim.MockFS as Mock
 import           System.FS.Sim.MockFS (Files)
 import           System.FS.Sim.STM (runSimFS)
-
-import           Ouroboros.Network.Magic (NetworkMagic (..))
-
-import           Ouroboros.Consensus.Node.DbLock
-import           Ouroboros.Consensus.Node.DbMarker
-import           Ouroboros.Consensus.Util.FileLock (FileLock, ioFileLock)
-import           Ouroboros.Consensus.Util.IOLike
-
+import           System.IO.Temp (withTempDirectory)
 import           Test.Tasty
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.FileLock
 import           Test.Util.QuickCheck (ge)
 

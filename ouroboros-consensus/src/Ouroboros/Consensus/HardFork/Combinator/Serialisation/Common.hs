@@ -67,6 +67,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common (
   , SerialiseNS (..)
   ) where
 
+import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as Dec
 import           Codec.CBOR.Encoding (Encoding)
@@ -80,18 +81,7 @@ import qualified Data.ByteString.Short as Short
 import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Word
-
-import           Cardano.Binary (enforceSize)
-
-import           Ouroboros.Network.Block (Serialised)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation (Some (..))
-import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -104,6 +94,12 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (SimpleTelescope (..), Telescope (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation (Some (..))
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util.SOP
+import           Ouroboros.Network.Block (Serialised)
 
 {-------------------------------------------------------------------------------
   Distinguish between the first era and all others

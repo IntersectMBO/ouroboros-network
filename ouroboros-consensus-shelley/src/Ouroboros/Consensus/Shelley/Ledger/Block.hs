@@ -34,20 +34,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Block (
   , toShelleyPrevHash
   ) where
 
-import qualified Data.ByteString.Lazy as Lazy
-import           Data.Coerce (coerce)
-import           Data.Typeable (Typeable)
-import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks (..))
-
 import qualified Cardano.Crypto.Hash as Crypto
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
-import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE)
-import           Ouroboros.Consensus.Util.Condense
-
 import           Cardano.Ledger.Binary (Annotator (..), DecCBOR (..),
                      EncCBOR (..), FullByteString (..), serialize,
                      toPlainDecoder)
@@ -57,9 +44,15 @@ import           Cardano.Ledger.Crypto (HASH)
 import qualified Cardano.Ledger.Era as SL (hashTxSeq)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.BHeader as SL
-
+import qualified Data.ByteString.Lazy as Lazy
+import           Data.Coerce (coerce)
+import           Data.Typeable (Typeable)
+import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.Combinator
                      (HasPartialConsensusConfig)
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState,
                      SelectView)
 import           Ouroboros.Consensus.Protocol.Praos.Common
@@ -72,8 +65,11 @@ import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto,
                      ShelleyHash (ShelleyHash, unShelleyHash), ShelleyProtocol,
                      ShelleyProtocolHeader, pHeaderBlock, pHeaderBodyHash,
                      pHeaderHash, pHeaderSlot)
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk,
                      EncodeDisk)
+import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE)
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   ShelleyCompatible

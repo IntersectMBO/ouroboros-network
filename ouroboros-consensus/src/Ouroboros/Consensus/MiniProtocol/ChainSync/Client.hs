@@ -47,9 +47,27 @@ import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-import           NoThunks.Class (unsafeNoThunks)
-
 import           Network.TypedProtocol.Pipelined
+import           NoThunks.Class (unsafeNoThunks)
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HeaderStateHistory
+                     (HeaderStateHistory (..), validateHeader)
+import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
+import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
+                     InvalidBlockReason)
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.STM (Fingerprint, Watcher (..),
+                     WithFingerprint (..), withWatcher)
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -64,27 +82,6 @@ import           Ouroboros.Network.PeerSelection.PeerMetric.Type
                      (HeaderMetricsTracer)
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Forecast
-import           Ouroboros.Consensus.HeaderStateHistory
-                     (HeaderStateHistory (..), validateHeader)
-import qualified Ouroboros.Consensus.HeaderStateHistory as HeaderStateHistory
-import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
-import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (Fingerprint, Watcher (..),
-                     WithFingerprint (..), withWatcher)
-
-import           Ouroboros.Consensus.Storage.ChainDB (ChainDB,
-                     InvalidBlockReason)
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 
 type Consensus (client :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type) blk m =
    client (Header blk) (Point blk) (Tip blk) m ChainSyncClientResult

@@ -25,24 +25,19 @@
 module Test.Ouroboros.Storage.ChainDB.Model.Test (tests) where
 
 import           GHC.Stack
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Storage.ChainDB.API (StreamFrom (..),
+                     StreamTo (..))
+import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import qualified Test.Ouroboros.Storage.ChainDB.Model as M
+import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock)
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import qualified Ouroboros.Network.Mock.Chain as Chain
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import qualified Ouroboros.Consensus.Util.AnchoredFragment as AF
-
-import           Ouroboros.Consensus.Storage.ChainDB.API (StreamFrom (..),
-                     StreamTo (..))
-
 import           Test.Util.TestBlock
-
-import qualified Test.Ouroboros.Storage.ChainDB.Model as M
-import           Test.Ouroboros.Storage.ChainDB.Model (ModelSupportsBlock)
 
 tests :: TestTree
 tests = testGroup "Model" [

@@ -10,38 +10,28 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Shelley.Generators (SomeResult (..)) where
 
-import           Ouroboros.Network.Block (mkSerialised)
-
+import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Ledger.Era (toTxSeq)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Protocol.TPraos.API as SL
+import qualified Cardano.Protocol.TPraos.BHeader as SL
+import           Data.Coerce (coerce)
+import           Generic.Random (genericArbitraryU)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-
-import qualified Cardano.Ledger.Shelley.API as SL
-
+import           Ouroboros.Consensus.Protocol.Praos (Praos)
+import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import qualified Ouroboros.Consensus.Protocol.Praos.Header as Praos
 import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos,
                      TPraosState (..))
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
-
-import           Generic.Random (genericArbitraryU)
-import           Test.QuickCheck hiding (Result)
-
-import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Roundtrip (Coherent (..),
-                     SomeResult (..), WithVersion (..))
-
-import           Cardano.Ledger.Crypto (Crypto)
-import           Cardano.Ledger.Era (toTxSeq)
-import qualified Cardano.Protocol.TPraos.API as SL
-import qualified Cardano.Protocol.TPraos.BHeader as SL
-import           Data.Coerce (coerce)
-import           Ouroboros.Consensus.Protocol.Praos (Praos)
-import qualified Ouroboros.Consensus.Protocol.Praos as Praos
-import qualified Ouroboros.Consensus.Protocol.Praos.Header as Praos
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
+import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
+import           Ouroboros.Network.Block (mkSerialised)
 import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
@@ -53,6 +43,10 @@ import           Test.Cardano.Ledger.Shelley.Serialisation.Generators ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
+import           Test.QuickCheck hiding (Result)
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Serialisation.Roundtrip (Coherent (..),
+                     SomeResult (..), WithVersion (..))
 
 {-------------------------------------------------------------------------------
   Generators

@@ -14,9 +14,7 @@ import           Codec.CBOR.Read (deserialiseFromBytes)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (DeserialiseFailure (..), Serialise (..))
 import           GHC.Generics (Generic)
-
 import           Ouroboros.Consensus.Util.Versioned
-
 import           Test.Tasty
 import           Test.Tasty.HUnit
 

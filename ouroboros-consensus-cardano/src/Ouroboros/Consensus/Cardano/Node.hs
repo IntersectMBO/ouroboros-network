@@ -46,6 +46,15 @@ module Ouroboros.Consensus.Cardano.Node (
   , pattern CardanoNodeToNodeVersion7
   ) where
 
+import           Cardano.Binary (DecoderError (..), enforceSize)
+import           Cardano.Chain.Slotting (EpochSlots)
+import qualified Cardano.Ledger.BaseTypes as SL
+import qualified Cardano.Ledger.Era as Core
+import qualified Cardano.Ledger.Shelley.API as SL
+import           Cardano.Prelude (cborError)
+import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..),
+                     ocertKESPeriod)
+import           Cardano.Slotting.Time (SystemStart (SystemStart))
 import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
@@ -56,13 +65,19 @@ import qualified Data.ListMap as ListMap
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict hiding (shape, shift)
 import           Data.Word (Word16, Word64)
-
-import           Cardano.Binary (DecoderError (..), enforceSize)
-import           Cardano.Chain.Slotting (EpochSlots)
-import           Cardano.Prelude (cborError)
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
+import qualified Ouroboros.Consensus.Byron.Ledger as Byron
+import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
+import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
+import           Ouroboros.Consensus.Byron.Node
+import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.CanHardFork
+import           Ouroboros.Consensus.Cardano.ShelleyBased
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -71,30 +86,9 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
-import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util.Assert
-import           Ouroboros.Consensus.Util.Counting
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP (OptSkip))
-import qualified Ouroboros.Consensus.Util.OptNP as OptNP
-import           Ouroboros.Consensus.Util.SOP (Index (..))
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
-
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import qualified Ouroboros.Consensus.Byron.Ledger as Byron
-import qualified Ouroboros.Consensus.Byron.Ledger.Conversions as Byron
-import           Ouroboros.Consensus.Byron.Ledger.NetworkProtocolVersion
-import           Ouroboros.Consensus.Byron.Node
-
-import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..),
-                     ocertKESPeriod)
-
-import qualified Cardano.Ledger.Era as Core
-import qualified Cardano.Ledger.Shelley.API as SL
-
+import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
+import           Ouroboros.Consensus.Protocol.Praos.Common
+                     (praosCanBeLeaderOpCert)
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..))
 import qualified Ouroboros.Consensus.Protocol.TPraos as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
@@ -103,19 +97,17 @@ import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
 import           Ouroboros.Consensus.Shelley.Node
 import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto,
                      shelleyBlockIssuerVKey)
-
-import qualified Cardano.Ledger.BaseTypes as SL
-import           Cardano.Slotting.Time (SystemStart (SystemStart))
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.CanHardFork
-import           Ouroboros.Consensus.Cardano.ShelleyBased
-import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
-import           Ouroboros.Consensus.Protocol.Praos.Common
-                     (praosCanBeLeaderOpCert)
 import           Ouroboros.Consensus.Shelley.Node.Praos
                      (ProtocolParamsBabbage (..), ProtocolParamsConway (..))
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
 import qualified Ouroboros.Consensus.Shelley.Node.TPraos as TPraos
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util.Assert
+import           Ouroboros.Consensus.Util.Counting
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP (OptSkip))
+import qualified Ouroboros.Consensus.Util.OptNP as OptNP
+import           Ouroboros.Consensus.Util.SOP (Index (..))
 
 {-------------------------------------------------------------------------------
   SerialiseHFC

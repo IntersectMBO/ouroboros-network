@@ -67,26 +67,12 @@ module Ouroboros.Consensus.Storage.ChainDB.API (
 import           Control.Monad (void)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
-import           System.FS.API.Types (FsError)
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo,
-                     Serialised (..))
-import qualified Ouroboros.Network.Block as Network
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderStateHistory
                      (HeaderStateHistory (..))
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util ((..:))
-import           Ouroboros.Consensus.Util.CallStack
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (WithFingerprint)
-
 import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
                      (InvalidBlockPunishment)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
@@ -94,9 +80,19 @@ import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.Serialisation
-
+import           Ouroboros.Consensus.Util ((..:))
+import           Ouroboros.Consensus.Util.CallStack
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM (WithFingerprint)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo,
+                     Serialised (..))
+import qualified Ouroboros.Network.Block as Network
 import           Ouroboros.Network.Mock.Chain (Chain (..))
 import qualified Ouroboros.Network.Mock.Chain as Chain
+import           System.FS.API.Types (FsError)
 
 -- | The chain database
 --

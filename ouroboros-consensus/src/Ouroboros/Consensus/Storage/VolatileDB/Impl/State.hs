@@ -43,19 +43,7 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack
-import           System.FS.API
-import           System.FS.API.Types
-
-import           Ouroboros.Network.Block (MaxSlotNo (..))
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util (whenJust, (.:))
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.MonadSTM.RAWLock (RAWLock)
-import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
-import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
-                     allocateTemp, modifyWithTempRegistry)
-
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo as FileInfo
@@ -64,6 +52,15 @@ import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.Index as Index
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
+import           Ouroboros.Consensus.Util (whenJust, (.:))
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.MonadSTM.RAWLock (RAWLock)
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
+import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
+                     allocateTemp, modifyWithTempRegistry)
+import           Ouroboros.Network.Block (MaxSlotNo (..))
+import           System.FS.API
+import           System.FS.API.Types
 
 {------------------------------------------------------------------------------
   State types

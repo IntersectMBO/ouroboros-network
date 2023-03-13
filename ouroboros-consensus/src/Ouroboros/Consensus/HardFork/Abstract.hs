@@ -8,7 +8,6 @@ module Ouroboros.Consensus.HardFork.Abstract (
   ) where
 
 import           Data.Kind (Type)
-
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
 

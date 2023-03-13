@@ -59,6 +59,7 @@ module Ouroboros.Consensus.Storage.Serialisation (
   , encodeDepPair
   ) where
 
+import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.CBOR.Encoding as CBOR
@@ -66,13 +67,6 @@ import           Codec.Serialise
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.ByteString.Short (ShortByteString)
 import           Data.SOP.BasicFunctors
-
-import           Cardano.Binary (enforceSize)
-
-import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
-                     mkSerialised)
-import           Ouroboros.Network.SizeInBytes (SizeInBytes)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
@@ -80,6 +74,9 @@ import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..),
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.RedundantConstraints
+import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
+                     mkSerialised)
+import           Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 {-------------------------------------------------------------------------------
   Serialisation to/from disk storage
