@@ -64,12 +64,12 @@ tests = testGroup "Unit tests"
     [ testCase "model" $ runModelIO followerInstructionOnEmptyChain
     , testCase "system" $ runSystemIO followerInstructionOnEmptyChain
     ]
-  , testGroup "ouroboros-network-4183"
+  , testGroup (ouroborosNetworkIssue 4183)
     [ testCase "model" $ runModelIO ouroboros_network_4183
-    , expectFailBecause ("Issue not fixed, see " <> ouroborosNetworkIssue 4183)
+    , expectFailBecause "Issue not fixed"
       $ testCase "system" $ runSystemIO ouroboros_network_4183
     ]
-  , testGroup "ouroboros-network-3999"
+  , testGroup (ouroborosNetworkIssue 3999)
     [ testCase "model" $ runModelIO ouroboros_network_3999
     , testCase "system" $ runSystemIO ouroboros_network_3999
     ]
