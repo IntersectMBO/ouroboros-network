@@ -26,13 +26,11 @@ import           Data.SOP.Strict
 import           Data.Typeable
 import           GHC.TypeLits
 import           NoThunks.Class (NoThunks (..))
-
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope)
+import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
 
 {-------------------------------------------------------------------------------
   Auxiliary

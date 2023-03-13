@@ -16,7 +16,6 @@ import           Data.Kind (Type)
 import           Data.Typeable (Typeable)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Ticked

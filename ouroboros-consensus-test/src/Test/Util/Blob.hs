@@ -9,7 +9,6 @@ import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as LC8
 import           Data.String (IsString (..))
-
 import           Test.QuickCheck (ASCIIString (..), Arbitrary (..), suchThat)
 
 {------------------------------------------------------------------------------

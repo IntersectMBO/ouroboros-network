@@ -10,21 +10,18 @@ module Ouroboros.Consensus.Byron.Ledger.HeaderValidation (
   , TipInfoIsEBB (..)
   ) where
 
+import qualified Cardano.Chain.Slotting as CC
 import           Control.Monad.Except
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import qualified Cardano.Chain.Slotting as CC
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderValidation
-
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Config
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
 import           Ouroboros.Consensus.Byron.Ledger.PBFT ()
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HeaderValidation
 
 {-------------------------------------------------------------------------------
   Envelope

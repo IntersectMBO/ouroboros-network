@@ -19,15 +19,6 @@ import           Data.Map.Strict (Map)
 import           Data.Proxy
 import           Data.Time.Clock (UTCTime)
 import           GHC.Stack (HasCallStack)
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (MaxSlotNo)
-import           Ouroboros.Network.BlockFetch.ConsensusInterface
-                     (BlockFetchConsensusInterface (..), FetchMode (..),
-                     FromConsensus (..), WhetherReceivingTentativeBlocks (..))
-import           Ouroboros.Network.SizeInBytes
-
 import           Ouroboros.Consensus.Block hiding (blockMatchesHeader)
 import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -38,15 +29,21 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.AnchoredFragment
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Orphans ()
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
                      (InvalidBlockPunishment)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
+import           Ouroboros.Consensus.Util.AnchoredFragment
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (MaxSlotNo)
+import           Ouroboros.Network.BlockFetch.ConsensusInterface
+                     (BlockFetchConsensusInterface (..), FetchMode (..),
+                     FromConsensus (..), WhetherReceivingTentativeBlocks (..))
+import           Ouroboros.Network.SizeInBytes
 
 -- | Abstract over the ChainDB
 data ChainDbView m blk = ChainDbView {

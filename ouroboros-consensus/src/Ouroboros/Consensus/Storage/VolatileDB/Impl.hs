@@ -130,20 +130,11 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-
-import           Ouroboros.Network.Block (MaxSlotNo (..))
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.Args
-import           Ouroboros.Consensus.Util.IOLike
-import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.Serialisation
-
 import           Ouroboros.Consensus.Storage.VolatileDB.API
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo (FileInfo)
 import qualified Ouroboros.Consensus.Storage.VolatileDB.Impl.FileInfo as FileInfo
@@ -152,6 +143,11 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Parser
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.State
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
+import           Ouroboros.Consensus.Util.Args
+import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 {------------------------------------------------------------------------------
   Opening the database

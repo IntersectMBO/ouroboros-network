@@ -10,29 +10,27 @@
 --
 module Test.ThreadNet.DualByron (tests) where
 
+import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
+import qualified Byron.Spec.Ledger.Core as Spec
+import qualified Byron.Spec.Ledger.UTxO as Spec
+import qualified Cardano.Chain.ProtocolConstants as Impl
+import qualified Cardano.Chain.UTxO as Impl
 import           Control.Monad.Except
+import qualified Control.State.Transition.Extended as Spec
+import qualified Control.State.Transition.Generator as Spec.QC
 import           Data.ByteString (ByteString)
 import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import qualified Data.Set as Set
-import           Test.QuickCheck
-import           Test.QuickCheck.Hedgehog (hedgehog)
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
-import qualified Cardano.Chain.ProtocolConstants as Impl
-import qualified Cardano.Chain.UTxO as Impl
-
-import qualified Byron.Spec.Chain.STS.Rule.Chain as Spec
-import qualified Byron.Spec.Ledger.Core as Spec
-import qualified Byron.Spec.Ledger.UTxO as Spec
-import qualified Control.State.Transition.Extended as Spec
-import qualified Control.State.Transition.Generator as Spec.QC
-
-import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.ByronDual.Ledger
+import           Ouroboros.Consensus.ByronDual.Node
+import           Ouroboros.Consensus.ByronSpec.Ledger
+import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
+import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
@@ -41,17 +39,11 @@ import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.TypeFamilyWrappers
-
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Ledger.Conversions
-
-import           Ouroboros.Consensus.ByronSpec.Ledger
-import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
-import qualified Ouroboros.Consensus.ByronSpec.Ledger.Rules as Rules
-
-import           Ouroboros.Consensus.ByronDual.Ledger
-import           Ouroboros.Consensus.ByronDual.Node
-
+import qualified Test.Cardano.Chain.Elaboration.UTxO as Spec.Test
+import           Test.QuickCheck
+import           Test.QuickCheck.Hedgehog (hedgehog)
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import qualified Test.ThreadNet.Byron as Byron
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Ref.PBFT as Ref
@@ -59,7 +51,6 @@ import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 import           Test.ThreadNet.Util.NodeToNodeVersion (newestVersion)
-
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Slots (NumSlots (..))
 

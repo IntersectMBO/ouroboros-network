@@ -48,14 +48,11 @@ import           Control.Monad
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.API (Tip (..))
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
                      (BlockOrEBB (..))
-
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 
 {-------------------------------------------------------------------------------
   Relative slots

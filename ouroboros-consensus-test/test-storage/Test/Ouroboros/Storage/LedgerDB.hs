@@ -6,11 +6,10 @@
 --
 module Test.Ouroboros.Storage.LedgerDB (tests) where
 
-import           Test.Tasty
-
 import qualified Test.Ouroboros.Storage.LedgerDB.DiskPolicy as DiskPolicy
 import qualified Test.Ouroboros.Storage.LedgerDB.InMemory as InMemory
 import qualified Test.Ouroboros.Storage.LedgerDB.OnDisk as OnDisk
+import           Test.Tasty
 
 tests :: TestTree
 tests = testGroup "LedgerDB" [

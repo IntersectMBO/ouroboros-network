@@ -13,9 +13,14 @@ import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.Maybe
+import           Ouroboros.Consensus.Config (TopLevelConfig)
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args
+import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks as ImmutableDB
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (closeRegistry,
+                     unsafeNewRegistry)
 import           Ouroboros.Network.Block (ChainUpdate)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.Model (Model)
@@ -25,15 +30,8 @@ import           Test.Ouroboros.Storage.ChainDB.StateMachine (AllComponents,
 import           Test.Ouroboros.Storage.TestBlock
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit (Assertion, assertFailure, testCase)
-
-import           Ouroboros.Consensus.Util.ResourceRegistry (closeRegistry,
-                     unsafeNewRegistry)
 import           Test.Util.ChainDB (MinimalChainDbArgs (..), emptyNodeDBs,
                      fromMinimalChainDbArgs, nodeDBsVol)
-
-import           Ouroboros.Consensus.Config (TopLevelConfig)
-import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
-import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks as ImmutableDB
 
 tests :: TestTree
 tests = testGroup "First follower instruction isJust on empty ChainDB"

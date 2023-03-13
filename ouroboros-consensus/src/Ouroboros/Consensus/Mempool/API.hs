@@ -37,18 +37,16 @@ module Ouroboros.Consensus.Mempool.API (
   , computeMempoolCapacity
   ) where
 
-import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
-
 import           Ouroboros.Consensus.Block (SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Mempool.Capacity hiding
                      (MempoolCapacityBytes, MempoolCapacityBytesOverride,
                      MempoolSize, computeMempoolCapacity, (<=))
 import qualified Ouroboros.Consensus.Mempool.Capacity as Cap
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
 {-------------------------------------------------------------------------------
   Mempool API

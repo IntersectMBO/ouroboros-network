@@ -26,17 +26,9 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
   , reconstructSummary
   ) where
 
-import           Prelude hiding (sequence)
-
 import           Data.Functor.Product
 import           Data.SOP.Strict hiding (shape)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
-                     EraParams (..), EraSummary (..), SafeZone (..))
-import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Util.Counting
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.State.Lift
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
@@ -48,6 +40,11 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Extend (..), Telescope (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
+                     EraParams (..), EraSummary (..), SafeZone (..))
+import qualified Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.Util.Counting
+import           Prelude hiding (sequence)
 
 {-------------------------------------------------------------------------------
   Initialization

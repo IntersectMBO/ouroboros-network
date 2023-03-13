@@ -36,23 +36,10 @@ import           Data.Proxy
 import           Data.SOP.Strict hiding (shape)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
-import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
-                     SafeZone (..))
-import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Inspect
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.Counting (getExactly)
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -71,6 +58,17 @@ import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+import           Ouroboros.Consensus.HardFork.History (Bound (..), EraParams,
+                     SafeZone (..))
+import qualified Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Inspect
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Counting (getExactly)
+import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
   Errors

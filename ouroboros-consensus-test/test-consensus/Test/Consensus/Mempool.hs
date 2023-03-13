@@ -26,10 +26,14 @@
 --
 module Test.Consensus.Mempool (tests) where
 
+import           Cardano.Binary (Encoding, toCBOR)
+import           Cardano.Crypto.Hash
 import           Control.Exception (assert)
 import           Control.Monad (foldM, forM, forM_, void)
 import           Control.Monad.Except (Except, runExcept)
+import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Monad.State (State, evalState, get, modify)
+import           Control.Tracer (Tracer (..))
 import           Data.Bifunctor (first)
 import           Data.Either (isRight)
 import           Data.List (foldl', isSuffixOf, nub, partition, sort)
@@ -39,18 +43,6 @@ import           Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import           Data.Word
 import           GHC.Stack (HasCallStack)
-
-import           Test.QuickCheck hiding (elements)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-
-import           Cardano.Binary (Encoding, toCBOR)
-import           Cardano.Crypto.Hash
-
-import           Control.Monad.IOSim (runSimOrThrow)
-
-import           Control.Tracer (Tracer (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -66,7 +58,9 @@ import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM,
                      safeMaximumOn, (.:))
 import           Ouroboros.Consensus.Util.Condense (condense)
 import           Ouroboros.Consensus.Util.IOLike
-
+import           Test.QuickCheck hiding (elements)
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.QuickCheck (elements)
 

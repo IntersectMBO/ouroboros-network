@@ -17,13 +17,11 @@ import           Data.Function (on)
 import           Data.Maybe (isJust)
 import           Data.Word (Word64)
 import           GHC.Stack
-
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (Empty, (:>)))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.Assert
 
 {-------------------------------------------------------------------------------
   Utility functions on anchored fragments

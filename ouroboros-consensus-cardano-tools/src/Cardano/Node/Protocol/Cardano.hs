@@ -16,11 +16,21 @@ module Cardano.Node.Protocol.Cardano (
   , CardanoProtocolInstantiationError (..)
   ) where
 
+import           Cardano.Api.Any
+import           Cardano.Api.Protocol.Types
+import qualified Cardano.Chain.Update as Byron
+import           Cardano.Ledger.BaseTypes (natVersion)
+import           Cardano.Ledger.Conway.Genesis (cgGenDelegs)
+import           Cardano.Ledger.Shelley.Translation
+                     (toFromByronTranslationContext)
+import qualified Cardano.Node.Protocol.Alonzo as Alonzo
+import qualified Cardano.Node.Protocol.Byron as Byron
+import qualified Cardano.Node.Protocol.Conway as Conway
+import qualified Cardano.Node.Protocol.Shelley as Shelley
+import           Cardano.Node.Protocol.Types
+import           Cardano.Node.Types
 import           Control.Monad.Trans.Except (ExceptT)
 import           Control.Monad.Trans.Except.Extra (firstExceptT)
-
-import qualified Cardano.Chain.Update as Byron
-
 import           Ouroboros.Consensus.Cardano
 import qualified Ouroboros.Consensus.Cardano as Consensus
 import qualified Ouroboros.Consensus.Cardano.CanHardFork as Consensus
@@ -28,21 +38,6 @@ import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.HardFork.Combinator.Condense ()
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
-
-import           Cardano.Api.Any
-import           Cardano.Api.Protocol.Types
-
-import           Cardano.Ledger.BaseTypes (natVersion)
-import           Cardano.Ledger.Conway.Genesis (cgGenDelegs)
-import           Cardano.Ledger.Shelley.Translation
-                     (toFromByronTranslationContext)
-
-import qualified Cardano.Node.Protocol.Alonzo as Alonzo
-import qualified Cardano.Node.Protocol.Byron as Byron
-import qualified Cardano.Node.Protocol.Conway as Conway
-import qualified Cardano.Node.Protocol.Shelley as Shelley
-import           Cardano.Node.Protocol.Types
-import           Cardano.Node.Types
 
 
 ------------------------------------------------------------------------------

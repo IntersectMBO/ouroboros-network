@@ -41,11 +41,8 @@ module Ouroboros.Consensus.Util.IOLike (
   , NoThunks (..)
   ) where
 
-import           NoThunks.Class (NoThunks (..))
-
 import           Cardano.Crypto.KES (KESAlgorithm, SignKeyKES)
 import qualified Cardano.Crypto.KES as KES
-
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
@@ -53,11 +50,10 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime hiding (MonadTime (..))
 import           Control.Monad.Class.MonadTimer
-
+import           Data.Functor (void)
+import           NoThunks.Class (NoThunks (..))
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 import           Ouroboros.Consensus.Util.Orphans ()
-
-import           Data.Functor (void)
 
 {-------------------------------------------------------------------------------
   IOLike

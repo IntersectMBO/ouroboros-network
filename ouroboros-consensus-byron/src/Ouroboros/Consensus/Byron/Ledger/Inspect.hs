@@ -12,6 +12,15 @@ module Ouroboros.Consensus.Byron.Ledger.Inspect (
   , protocolUpdates
   ) where
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Common as CC
+import qualified Cardano.Chain.Genesis as CC.Genesis
+import qualified Cardano.Chain.ProtocolConstants as CC
+import qualified Cardano.Chain.Slotting as CC
+import qualified Cardano.Chain.Update as U
+import qualified Cardano.Chain.Update.Validation.Endorsement as U.E
+import qualified Cardano.Chain.Update.Validation.Interface as U.I
+import qualified Cardano.Chain.Update.Validation.Registration as U.R
 import           Control.Monad
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -19,28 +28,15 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void
 import           Data.Word
-
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Common as CC
-import qualified Cardano.Chain.Genesis as CC.Genesis
-import qualified Cardano.Chain.ProtocolConstants as CC
-import qualified Cardano.Chain.Slotting as CC
-
-import qualified Cardano.Chain.Update as U
-import qualified Cardano.Chain.Update.Validation.Endorsement as U.E
-import qualified Cardano.Chain.Update.Validation.Interface as U.I
-import qualified Cardano.Chain.Update.Validation.Registration as U.R
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger.Block
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Ledger.Ledger
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History.Util as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Util.Condense
-
-import           Ouroboros.Consensus.Byron.Ledger.Block
-import           Ouroboros.Consensus.Byron.Ledger.Conversions
-import           Ouroboros.Consensus.Byron.Ledger.Ledger
 
 {-------------------------------------------------------------------------------
   Protocol update

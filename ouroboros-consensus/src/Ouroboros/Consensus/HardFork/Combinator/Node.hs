@@ -10,11 +10,7 @@ module Ouroboros.Consensus.HardFork.Combinator.Node () where
 import           Data.Proxy
 import           Data.SOP.Strict
 import           GHC.Stack
-
 import           Ouroboros.Consensus.Config.SupportsNode
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -24,6 +20,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Run
 
 {-------------------------------------------------------------------------------
   ConfigSupportsNode

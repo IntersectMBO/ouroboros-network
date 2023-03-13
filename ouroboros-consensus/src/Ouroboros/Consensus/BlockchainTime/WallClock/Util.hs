@@ -11,7 +11,6 @@ module Ouroboros.Consensus.BlockchainTime.WallClock.Util (
 
 import           Control.Exception (Exception)
 import           Data.Time (NominalDiffTime)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
                      (SystemStart)

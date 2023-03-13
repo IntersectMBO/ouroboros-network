@@ -43,9 +43,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-
-import           Ouroboros.Network.Block (MaxSlotNo (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      extractHeader)
@@ -58,7 +55,7 @@ import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId,
                      unBlocksPerFile)
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util (filePath,
                      parseFd)
-
+import           Ouroboros.Network.Block (MaxSlotNo (..))
 import           Test.Ouroboros.Storage.TestBlock (Corruptions,
                      FileCorruption (..))
 

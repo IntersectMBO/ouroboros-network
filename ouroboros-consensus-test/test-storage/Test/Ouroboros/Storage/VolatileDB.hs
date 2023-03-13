@@ -1,8 +1,7 @@
 module Test.Ouroboros.Storage.VolatileDB (tests) where
 
-import           Test.Tasty (TestTree, testGroup)
-
 import qualified Test.Ouroboros.Storage.VolatileDB.StateMachine as StateMachine
+import           Test.Tasty (TestTree, testGroup)
 
 
 tests :: TestTree

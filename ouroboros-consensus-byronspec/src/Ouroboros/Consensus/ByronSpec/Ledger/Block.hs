@@ -14,15 +14,12 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Block (
   , ByronSpecHeader
   ) where
 
+import qualified Byron.Spec.Chain.STS.Block as Spec
+import qualified Byron.Spec.Ledger.Core as Spec
 import           Codec.Serialise
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import qualified Byron.Spec.Chain.STS.Block as Spec
-import qualified Byron.Spec.Ledger.Core as Spec
-
 import           Ouroboros.Consensus.Block
-
 import           Ouroboros.Consensus.ByronSpec.Ledger.Conversions
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 

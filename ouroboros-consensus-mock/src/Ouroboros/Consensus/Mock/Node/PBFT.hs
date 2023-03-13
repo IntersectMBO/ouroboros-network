@@ -9,10 +9,8 @@ module Ouroboros.Consensus.Mock.Node.PBFT (
   , protocolInfoMockPBFT
   ) where
 
-import qualified Data.Bimap as Bimap
-
 import           Cardano.Crypto.DSIGN
-
+import qualified Data.Bimap as Bimap
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork

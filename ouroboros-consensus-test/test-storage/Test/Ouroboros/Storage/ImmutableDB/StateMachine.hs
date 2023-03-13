@@ -46,8 +46,6 @@ module Test.Ouroboros.Storage.ImmutableDB.StateMachine (
   , tests
   ) where
 
-import           Prelude hiding (elem, notElem)
-
 import           Control.Monad (forM_, void)
 import           Data.Bifunctor (first)
 import           Data.ByteString.Lazy (ByteString)
@@ -68,25 +66,7 @@ import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (AllowThunk (..))
-import           System.Random (getStdRandom, randomR)
-import           Text.Show.Pretty (ppShow)
-
-import           Test.QuickCheck
-import qualified Test.QuickCheck.Monadic as QC
-import           Test.QuickCheck.Random (mkQCGen)
-import           Test.StateMachine hiding (showLabelledExamples,
-                     showLabelledExamples')
-import qualified Test.StateMachine.Labelling as C
-import qualified Test.StateMachine.Sequential as QSM
-import qualified Test.StateMachine.Types as QSM
-import qualified Test.StateMachine.Types.Rank2 as Rank2
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError (..), FsPath,
@@ -98,7 +78,24 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index as Index
                      (CacheConfig (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
-
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Prelude hiding (elem, notElem)
+import           System.Random (getStdRandom, randomR)
+import           Test.Ouroboros.Storage.ImmutableDB.Model
+import           Test.Ouroboros.Storage.Orphans ()
+import           Test.Ouroboros.Storage.TestBlock
+import           Test.QuickCheck
+import qualified Test.QuickCheck.Monadic as QC
+import           Test.QuickCheck.Random (mkQCGen)
+import           Test.StateMachine hiding (showLabelledExamples,
+                     showLabelledExamples')
+import qualified Test.StateMachine.Labelling as C
+import qualified Test.StateMachine.Sequential as QSM
+import qualified Test.StateMachine.Types as QSM
+import qualified Test.StateMachine.Types.Rank2 as Rank2
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 import           Test.Util.ChunkInfo
 import           Test.Util.FS.Sim.Error (Errors, mkSimErrorHasFS, withErrors)
 import qualified Test.Util.FS.Sim.MockFS as Mock
@@ -110,10 +107,7 @@ import           Test.Util.RefEnv (RefEnv)
 import           Test.Util.SOP
 import           Test.Util.Tracer (recordingTracerIORef)
 import           Test.Util.WithEq
-
-import           Test.Ouroboros.Storage.ImmutableDB.Model
-import           Test.Ouroboros.Storage.Orphans ()
-import           Test.Ouroboros.Storage.TestBlock
+import           Text.Show.Pretty (ppShow)
 
 {-------------------------------------------------------------------------------
   Abstract model

@@ -8,14 +8,11 @@ module Test.ThreadNet.Rekeying (
   ) where
 
 import           Data.Functor ((<&>))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.IOLike
-
 import           Test.ThreadNet.Network
-
 import           Test.Util.Stream
 
 -- | Functionality used by test node in order to update its operational key

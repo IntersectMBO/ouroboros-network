@@ -4,11 +4,9 @@ module Test.Util.Split.Tests (tests) where
 import           Data.Either (isLeft, isRight)
 import           Data.Maybe (mapMaybe)
 import           Data.Word (Word64)
-
-import           Test.Util.Split
-
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
+import           Test.Util.Split
 
 
 {-------------------------------------------------------------------------------

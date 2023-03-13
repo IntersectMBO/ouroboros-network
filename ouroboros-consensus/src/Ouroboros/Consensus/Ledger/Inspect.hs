@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Ledger.Inspect (
 import           Data.Either
 import           Data.Kind (Type)
 import           Data.Void
-
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.Condense

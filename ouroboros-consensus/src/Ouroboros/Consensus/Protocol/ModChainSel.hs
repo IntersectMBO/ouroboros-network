@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Protocol.ModChainSel (
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Protocol.Abstract
 
 data ModChainSel p s

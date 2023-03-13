@@ -18,25 +18,20 @@ module Ouroboros.Consensus.Shelley.Ledger.Config (
   , CompactGenesis
   ) where
 
+import           Cardano.Ledger.Binary (FromCBOR, ToCBOR)
+import           Cardano.Ledger.Crypto (Crypto)
+import qualified Cardano.Ledger.Shelley.API as SL
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-
-import           Cardano.Ledger.Binary (FromCBOR, ToCBOR)
-import           Cardano.Ledger.Crypto (Crypto)
-
-import           Ouroboros.Network.Magic (NetworkMagic (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
-
-import qualified Cardano.Ledger.Shelley.API as SL
-
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 {-------------------------------------------------------------------------------
   Additional node configuration

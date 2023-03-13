@@ -57,10 +57,12 @@ module Test.Ouroboros.Storage.TestBlock (
   , shrinkCorruptions
   ) where
 
+import           Cardano.Crypto.DSIGN
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import           Codec.Serialise (Serialise (decode, encode), serialise)
 import           Control.Monad (forM, when)
+import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Except (throwError)
 import           Data.Binary (Binary)
 import qualified Data.Binary as Binary
@@ -78,14 +80,6 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
-import           Test.QuickCheck
-
-import           Control.Monad.Class.MonadThrow
-
-import           Cardano.Crypto.DSIGN
-
-import qualified Ouroboros.Network.Mock.Chain as Chain
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -103,15 +97,15 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.ModChainSel
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.Orphans ()
-
 import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
                      hPutAll, hSeek, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.Serialisation
-
+import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Orphans ()
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Test.QuickCheck
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Orphans.SignableRepresentation ()
 

@@ -7,7 +7,6 @@ module Test.Util.Range (
 
 import qualified Data.List as L
 import           Data.Word
-
 import           Ouroboros.Consensus.Config.SecurityParam
 
 {-------------------------------------------------------------------------------

@@ -38,25 +38,19 @@ module Test.Util.FS.Sim.Error (
   , simpleErrors
   ) where
 
-import           Prelude hiding (null)
-
 import           Control.Monad (replicateM, void)
-
 import qualified Data.ByteString as BS
 import           Data.List (dropWhileEnd, intercalate)
 import           Data.Maybe (catMaybes, isNothing)
 import           Data.Word (Word64)
-
-import qualified Test.QuickCheck as QC
-import           Test.QuickCheck (Arbitrary (..), Gen)
-
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util (whenJust)
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike hiding (handle)
-
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
-
+import           Prelude hiding (null)
+import qualified Test.QuickCheck as QC
+import           Test.QuickCheck (Arbitrary (..), Gen)
 import           Test.Util.Blob
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import qualified Test.Util.FS.Sim.STM as Sim

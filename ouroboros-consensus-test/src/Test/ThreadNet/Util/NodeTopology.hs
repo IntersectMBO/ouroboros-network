@@ -22,13 +22,12 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-import           Quiet (Quiet (..))
-import           Test.QuickCheck
-
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Quiet (Quiet (..))
+import           Test.QuickCheck
 
 {-------------------------------------------------------------------------------
   Node Topologies

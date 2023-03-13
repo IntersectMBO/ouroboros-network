@@ -36,14 +36,10 @@ module Cardano.Api.KeysShelley (
   , VerificationKey (..)
   ) where
 
-import           Data.Aeson.Types (FromJSON (..), ToJSON (..), ToJSONKey (..),
-                     toJSONKeyText, withText)
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import           Data.Maybe
-import           Data.String (IsString (..))
-import qualified Data.Text as Text
-
+import           Cardano.Api.Any
+import           Cardano.Api.Key
+import           Cardano.Api.SerialiseTextEnvelope
+import           Cardano.Api.SerialiseUsing
 import qualified Cardano.Crypto.DSIGN.Class as Crypto
 import qualified Cardano.Crypto.Hash.Class as Crypto
 import qualified Cardano.Crypto.Seed as Crypto
@@ -51,11 +47,13 @@ import qualified Cardano.Crypto.Wallet as Crypto.HD
 import           Cardano.Ledger.Crypto (StandardCrypto)
 import qualified Cardano.Ledger.Crypto as Shelley (DSIGN)
 import qualified Cardano.Ledger.Keys as Shelley
-
-import           Cardano.Api.Any
-import           Cardano.Api.Key
-import           Cardano.Api.SerialiseTextEnvelope
-import           Cardano.Api.SerialiseUsing
+import           Data.Aeson.Types (FromJSON (..), ToJSON (..), ToJSONKey (..),
+                     toJSONKeyText, withText)
+import           Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import           Data.Maybe
+import           Data.String (IsString (..))
+import qualified Data.Text as Text
 
 --
 -- Shelley payment keys

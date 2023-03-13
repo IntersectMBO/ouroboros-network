@@ -27,18 +27,14 @@ import           Data.Maybe (fromMaybe, mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
 import qualified Ouroboros.Consensus.Fragment.Diff as Diff
-
-import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-
 import           Ouroboros.Consensus.Storage.ChainDB.API hiding (ChainDB (..),
                      closeDB, getMaxSlotNo)
+import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
 
 {-------------------------------------------------------------------------------
   LookupBlockInfo

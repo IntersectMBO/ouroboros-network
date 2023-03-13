@@ -23,11 +23,9 @@
 --   -a                       Append to an existing Chain DB
 module Main (main) where
 
-import           System.Exit
-
 import           Cardano.Tools.DBSynthesizer.Run
-
 import           DBSynthesizer.Parsers
+import           System.Exit
 
 
 main :: IO ()

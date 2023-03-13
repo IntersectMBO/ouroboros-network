@@ -25,15 +25,13 @@ module Ouroboros.Consensus.Util.MonadSTM.RAWLock (
   , unsafeReleaseWriteAccess
   ) where
 
-import           Prelude hiding (read)
-
 import           Control.Monad.Except
 import           Data.Functor (($>))
 import           GHC.Generics (Generic)
 import           GHC.Stack (CallStack, HasCallStack, callStack)
 import           NoThunks.Class (AllowThunk (..))
-
 import           Ouroboros.Consensus.Util.IOLike
+import           Prelude hiding (read)
 
 {-------------------------------------------------------------------------------
   Public API

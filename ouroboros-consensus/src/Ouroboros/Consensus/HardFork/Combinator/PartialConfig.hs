@@ -17,12 +17,10 @@ module Ouroboros.Consensus.HardFork.Combinator.PartialConfig (
   , PastHorizonException
   ) where
 
+import           Cardano.Slotting.EpochInfo
 import           Control.Monad.Except (Except)
 import           Data.Kind (Type)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Slotting.EpochInfo
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
 import           Ouroboros.Consensus.Ledger.Abstract

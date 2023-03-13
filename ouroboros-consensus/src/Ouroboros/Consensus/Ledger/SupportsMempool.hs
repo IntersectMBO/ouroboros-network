@@ -16,7 +16,6 @@ import           Control.Monad.Except
 import           Data.Kind (Type)
 import           Data.Word (Word32)
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ticked

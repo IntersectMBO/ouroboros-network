@@ -1,14 +1,12 @@
 
 module Cardano.Tools.DBSynthesizer.Types (module Cardano.Tools.DBSynthesizer.Types) where
 
-import           Data.Aeson as Aeson (Value)
-import           Data.Word (Word64)
-
-import           Ouroboros.Consensus.Block.Abstract (SlotNo)
-import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis)
-
 import           Cardano.Ledger.Crypto (StandardCrypto)
 import           Cardano.Node.Types (ProtocolFilepaths)
+import           Data.Aeson as Aeson (Value)
+import           Data.Word (Word64)
+import           Ouroboros.Consensus.Block.Abstract (SlotNo)
+import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis)
 
 
 data NodeConfigStub = NodeConfigStub {

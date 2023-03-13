@@ -19,17 +19,15 @@ module Ouroboros.Consensus.Mock.Ledger.Block.BFT (
   , forgeBftExt
   ) where
 
+import           Cardano.Binary (ToCBOR (..))
+import           Cardano.Crypto.DSIGN
+import           Cardano.Crypto.Util
 import           Codec.Serialise (Serialise (..), serialise)
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Binary (ToCBOR (..))
-import           Cardano.Crypto.DSIGN
-import           Cardano.Crypto.Util
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
@@ -39,9 +37,8 @@ import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Util.Condense
-
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit BFT

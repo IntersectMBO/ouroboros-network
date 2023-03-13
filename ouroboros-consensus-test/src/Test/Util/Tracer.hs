@@ -3,10 +3,8 @@ module Test.Util.Tracer (
   , recordingTracerTVar
   ) where
 
-import           Data.IORef
-
 import           Control.Tracer
-
+import           Data.IORef
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
 
 -- | Create a 'Tracer' that stores all events in an 'IORef' that is atomically

@@ -14,12 +14,10 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache (
   , BlockCache
   ) where
 
-import           Prelude hiding (lookup)
-
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-
 import           Ouroboros.Consensus.Block
+import           Prelude hiding (lookup)
 
 newtype BlockCache blk = BlockCache (Map (HeaderHash blk) blk)
 

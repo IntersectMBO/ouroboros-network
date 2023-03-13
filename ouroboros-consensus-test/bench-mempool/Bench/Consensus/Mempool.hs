@@ -17,17 +17,15 @@ module Bench.Consensus.Mempool (
   , run
   ) where
 
+import           Bench.Consensus.Mempool.TestBlock ()
+import           Bench.Consensus.MempoolWithMockedLedgerItf
+                     (MempoolWithMockedLedgerItf, getMempool)
 import           Control.DeepSeq (NFData)
 import           Control.Monad (void)
 import           Data.Foldable (traverse_)
 import           GHC.Generics (Generic)
-
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as Ledger
 import           Ouroboros.Consensus.Mempool (Mempool (..))
-
-import           Bench.Consensus.Mempool.TestBlock ()
-import           Bench.Consensus.MempoolWithMockedLedgerItf
-                     (MempoolWithMockedLedgerItf, getMempool)
 
 {-------------------------------------------------------------------------------
   Commands

@@ -1,5 +1,3 @@
-{-# LANGUAGE CPP #-}
-
 module Ouroboros.Consensus.Storage.IO (
     FHandle
   , close
@@ -13,26 +11,19 @@ module Ouroboros.Consensus.Storage.IO (
   , write
   ) where
 
-import           Prelude hiding (read, truncate)
-
 import           Control.Monad (void)
 import           Data.Bits ((.|.))
 import           Data.ByteString
 import           Data.ByteString.Internal as Internal
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Int64, Ptr)
-
-#if MIN_VERSION_Win32(2,6,2)
-import           System.Win32
-#else
-import           System.Win32 hiding (setFilePointerEx)
-#endif
-
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      FsError (..), FsErrorType (..), OpenMode (..),
                      SeekMode (..))
 import           Ouroboros.Consensus.Storage.FS.Handle
 import           Ouroboros.Consensus.Storage.Seek (setFilePointerEx)
+import           Prelude hiding (read, truncate)
+import           System.Win32 hiding (setFilePointerEx)
 
 type FHandle = HandleOS HANDLE
 

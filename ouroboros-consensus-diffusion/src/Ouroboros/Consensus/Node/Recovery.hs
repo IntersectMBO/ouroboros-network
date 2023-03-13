@@ -12,16 +12,14 @@ module Ouroboros.Consensus.Node.Recovery (
 import           Control.Monad (unless, when)
 import           Data.Proxy (Proxy)
 import           Data.Typeable (Typeable)
-
 import           Ouroboros.Consensus.Block (StandardHash)
 import           Ouroboros.Consensus.Node.Exit (ExitReason (..), toExitReason)
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.ChainDB
 import           Ouroboros.Consensus.Storage.FS.API (HasFS, doesFileExist,
                      removeFile, withFile)
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      FsPath, OpenMode (..), mkFsPath)
+import           Ouroboros.Consensus.Util.IOLike
 
 -- | The path to the /clean shutdown marker file/.
 cleanShutdownMarkerFile :: FsPath

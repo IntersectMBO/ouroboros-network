@@ -20,12 +20,10 @@ import qualified Data.Fixed
 import           Data.Time (NominalDiffTime)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-import           Quiet (Quiet (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SlotLength (..))
 import           Ouroboros.Consensus.Util (nTimes)
-
+import           Quiet (Quiet (..))
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.Stream (Stream (..))
 

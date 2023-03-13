@@ -5,7 +5,6 @@ module Test.Util.Schedule.Tests (tests) where
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.Schedule
 
 tests :: TestTree

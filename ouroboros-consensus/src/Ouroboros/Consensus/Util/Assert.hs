@@ -6,7 +6,6 @@ module Ouroboros.Consensus.Util.Assert (
   ) where
 
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Util.RedundantConstraints
 
 assertWithMsg :: HasCallStack => Either String () -> a -> a

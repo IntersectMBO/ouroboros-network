@@ -33,8 +33,7 @@
 --
 module Test.Consensus.ResourceRegistry (tests) where
 
-import           Prelude hiding (elem)
-
+import           Control.Monad.Class.MonadTimer
 import           Control.Monad.Except
 import           Data.Foldable (toList)
 import           Data.Function (on)
@@ -47,9 +46,9 @@ import           Data.TreeDiff (defaultExprViaShow)
 import           Data.Typeable
 import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic, Generic1)
-
-import           Control.Monad.Class.MonadTimer
-
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Prelude hiding (elem)
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck (Gen)
 import qualified Test.QuickCheck.Monadic as QC
@@ -58,10 +57,6 @@ import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty hiding (after)
 import           Test.Tasty.QuickCheck (testProperty)
-
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Test.Util.QSM
 import           Test.Util.SOP
 

@@ -8,10 +8,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.CanHardFork (CanHardFork
 
 import           Data.SOP.Strict
 import           Data.Typeable
-
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel
@@ -23,6 +19,8 @@ import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------
   CanHardFork

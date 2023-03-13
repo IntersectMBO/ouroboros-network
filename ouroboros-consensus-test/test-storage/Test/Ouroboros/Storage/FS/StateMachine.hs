@@ -73,11 +73,13 @@ import           Data.Word (Word64)
 import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
+import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO
+import qualified Ouroboros.Consensus.Storage.IO as F
+import           Ouroboros.Consensus.Util.Condense
 import           System.IO.Temp (withTempDirectory)
 import           System.Random (getStdRandom, randomR)
-import           Text.Read (readMaybe)
-import           Text.Show.Pretty (ppShow)
-
 import           Test.QuickCheck
 import qualified Test.QuickCheck.Monadic as QC
 import           Test.QuickCheck.Random (mkQCGen)
@@ -89,14 +91,6 @@ import qualified Test.StateMachine.Types as QSM
 import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck
-
-import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
-import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.FS.IO
-import qualified Ouroboros.Consensus.Storage.IO as F
-
-import           Ouroboros.Consensus.Util.Condense
-
 import           Test.Util.FS.Sim.FsTree (FsTree (..))
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
@@ -105,6 +99,8 @@ import           Test.Util.QuickCheck (collects)
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.RefEnv (RefEnv)
 import           Test.Util.SOP
+import           Text.Read (readMaybe)
+import           Text.Show.Pretty (ppShow)
 
 {-------------------------------------------------------------------------------
   Path expressions

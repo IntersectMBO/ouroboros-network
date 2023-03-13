@@ -94,24 +94,12 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as Fragment
-import           Ouroboros.Network.Block (MaxSlotNo (..))
-import           Ouroboros.Network.Mock.Chain (Chain (..), ChainUpdate)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import qualified Ouroboros.Network.Mock.ProducerState as CPS
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.MockChainSel
-import           Ouroboros.Consensus.Util (repeatedly)
-import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
-import           Ouroboros.Consensus.Util.IOLike (MonadSTM)
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      BlockComponent (..), ChainDbError (..),
                      InvalidBlockReason (..), IteratorResult (..),
@@ -119,6 +107,15 @@ import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      validBounds)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.ChainSel (olderThanK)
 import           Ouroboros.Consensus.Storage.LedgerDB
+import           Ouroboros.Consensus.Util (repeatedly)
+import qualified Ouroboros.Consensus.Util.AnchoredFragment as Fragment
+import           Ouroboros.Consensus.Util.IOLike (MonadSTM)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as Fragment
+import           Ouroboros.Network.Block (MaxSlotNo (..))
+import           Ouroboros.Network.Mock.Chain (Chain (..), ChainUpdate)
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import qualified Ouroboros.Network.Mock.ProducerState as CPS
 
 type IteratorId = Int
 

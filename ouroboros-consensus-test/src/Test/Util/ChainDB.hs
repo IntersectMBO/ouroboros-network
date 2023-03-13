@@ -14,7 +14,6 @@ module Test.Util.ChainDB (
 
 import           Control.Tracer (nullTracer)
 import           Data.Functor.Identity (Identity)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
                      (TopLevelConfig (topLevelConfigLedger),
@@ -36,7 +35,6 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.IOLike hiding (invariant)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS
 import           Test.Util.FS.Sim.STM (simHasFS)

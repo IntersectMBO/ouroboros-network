@@ -11,12 +11,11 @@ import qualified Data.ByteString.Unsafe as BS
 import qualified Data.Set as Set
 import           Foreign (castPtr)
 import           GHC.Stack
-import qualified System.Directory as Dir
-
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import qualified Ouroboros.Consensus.Storage.FS.Handle as H
 import qualified Ouroboros.Consensus.Storage.IO as F
+import qualified System.Directory as Dir
 
 {-------------------------------------------------------------------------------
   I/O implementation of HasFS

@@ -8,12 +8,10 @@ module Test.ThreadNet.Util.Expectations (
 import           Data.Foldable (foldl')
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
-
 import           Test.ThreadNet.Util.NodeJoinPlan
 
 newtype NumBlocks = NumBlocks Word64

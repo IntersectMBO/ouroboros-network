@@ -13,36 +13,28 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.Consensus.Byron.Serialisation (tests) where
 
-import           Codec.CBOR.Write (toLazyByteString)
-import qualified Data.ByteString.Lazy as Lazy
-import           Data.Functor.Identity
-
 import           Cardano.Chain.Block (ABlockOrBoundary (..))
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Update as CC.Update
-
+import           Codec.CBOR.Write (toLazyByteString)
+import qualified Data.ByteString.Lazy as Lazy
+import           Data.Functor.Identity
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Node
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Serialisation ()
-import           Ouroboros.Consensus.Util (Dict (..))
-
 import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
-
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node
-
+import           Ouroboros.Consensus.Util (Dict (..))
+import qualified Test.Cardano.Chain.Genesis.Dummy as CC
+import           Test.Consensus.Byron.Generators
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
-import qualified Test.Cardano.Chain.Genesis.Dummy as CC
-
 import           Test.Util.Corruption
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
-
-import           Test.Consensus.Byron.Generators
 
 tests :: TestTree
 tests = testGroup "Byron"

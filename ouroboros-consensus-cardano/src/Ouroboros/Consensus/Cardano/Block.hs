@@ -67,26 +67,22 @@ module Ouroboros.Consensus.Cardano.Block (
   ) where
 
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Block (BlockProtocol)
+import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
+import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HeaderValidation (OtherHeaderEnvelopeError,
                      TipInfo)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerError)
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr,
                      GenTxId)
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
-import           Ouroboros.Consensus.TypeFamilyWrappers
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
-import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-
-import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
-
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 {-------------------------------------------------------------------------------
   The eras of the Cardano blockchain

@@ -22,6 +22,8 @@ module Bench.Consensus.Mempool.TestBlock (
   , txSize
   ) where
 
+import           Bench.Consensus.MempoolWithMockedLedgerItf
+import qualified Cardano.Slotting.Time as Time
 import           Codec.Serialise (Serialise)
 import           Control.DeepSeq (NFData)
 import           Control.Monad.Trans.Except (except)
@@ -31,22 +33,16 @@ import           Data.TreeDiff (ToExpr)
 import           Data.Word (Word8)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import qualified Cardano.Slotting.Time as Time
-
 import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.Config.SecurityParam as Consensus
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import qualified Ouroboros.Consensus.Ledger.Basics as Ledger
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as Ledger
 import qualified Ouroboros.Consensus.Mempool as Mempool
-
 import           Test.Util.TestBlock (LedgerState (TestLedger),
                      PayloadSemantics (PayloadDependentError, PayloadDependentState, applyPayload),
                      TestBlockWith, applyDirectlyToPayloadDependentState,
                      lastAppliedPoint, payloadDependentState)
-
-import           Bench.Consensus.MempoolWithMockedLedgerItf
 
 {-------------------------------------------------------------------------------
   MempoolTestBlock

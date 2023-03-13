@@ -71,21 +71,19 @@ import           Data.Void
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util (allEqual)
-import           Ouroboros.Consensus.Util.Assert
-import           Ouroboros.Consensus.Util.Condense (Condense (..))
-import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP)
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Info
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (allEqual)
+import           Ouroboros.Consensus.Util.Assert
+import           Ouroboros.Consensus.Util.Condense (Condense (..))
+import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP)
 
 {-------------------------------------------------------------------------------
   Value for /each/ era

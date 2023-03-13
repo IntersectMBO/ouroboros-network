@@ -59,19 +59,16 @@ import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
 import           GHC.Generics
-
-import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
-                     AnchoredSeq (..))
-import qualified Ouroboros.Network.AnchoredSeq as AS
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Util
-
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.Query
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
+                     AnchoredSeq (..))
+import qualified Ouroboros.Network.AnchoredSeq as AS
 
 {-------------------------------------------------------------------------------
   Apply blocks

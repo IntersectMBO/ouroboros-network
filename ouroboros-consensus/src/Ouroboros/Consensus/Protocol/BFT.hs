@@ -27,6 +27,7 @@ module Ouroboros.Consensus.Protocol.BFT (
   , ConsensusConfig (..)
   ) where
 
+import           Cardano.Crypto.DSIGN
 import           Control.Monad.Except
 import           Data.Kind (Type)
 import           Data.Map.Strict (Map)
@@ -35,9 +36,6 @@ import           Data.Proxy
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks (..))
-
-import           Cardano.Crypto.DSIGN
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), NodeId (..))

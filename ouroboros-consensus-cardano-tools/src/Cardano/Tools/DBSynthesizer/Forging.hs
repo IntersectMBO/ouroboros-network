@@ -6,17 +6,17 @@
 
 module Cardano.Tools.DBSynthesizer.Forging (runForge) where
 
+import           Cardano.Tools.DBSynthesizer.Types (ForgeLimit (..),
+                     ForgeResult (..))
 import           Control.Monad (when)
 import           Control.Monad.Except (runExcept)
 import           Control.Monad.IO.Class (liftIO)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import           Control.Tracer as Trace (nullTracer)
 import           Data.Either (isRight)
 import           Data.Maybe (isJust)
 import           Data.Proxy
 import           Data.Word (Word64)
-
-import           Control.Tracer as Trace (nullTracer)
-
 import           Ouroboros.Consensus.Block.Abstract as Block
 import           Ouroboros.Consensus.Block.Forging as Block (BlockForging (..),
                      ShouldForge (..), checkShouldForge)
@@ -38,9 +38,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunis
 import           Ouroboros.Consensus.Util.IOLike (atomically)
 import           Ouroboros.Network.AnchoredFragment as AF (Anchor (..),
                      AnchoredFragment, AnchoredSeq (..), headPoint)
-
-import           Cardano.Tools.DBSynthesizer.Types (ForgeLimit (..),
-                     ForgeResult (..))
 
 
 data ForgeState =

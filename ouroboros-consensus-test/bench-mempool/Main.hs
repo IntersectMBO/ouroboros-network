@@ -7,30 +7,27 @@
 
 module Main (main) where
 
+import           Bench.Consensus.Mempool
+import           Bench.Consensus.Mempool.TestBlock (TestBlock)
+import qualified Bench.Consensus.Mempool.TestBlock as TestBlock
+import           Bench.Consensus.MempoolWithMockedLedgerItf
 import           Control.Arrow (first)
 import           Control.Monad (unless)
+import qualified Control.Tracer as Tracer
+import           Data.Aeson
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Csv as Csv
 import           Data.Maybe (fromMaybe)
 import           Data.Set ()
 import qualified Data.Text as Text
 import qualified Data.Text.Read as Text.Read
+import qualified Ouroboros.Consensus.Mempool.Capacity as Mempool
 import           System.Exit (die, exitFailure)
 import           Test.Tasty.Bench (CsvPath (CsvPath), bench, benchIngredients,
                      bgroup, env, nfIO)
 import           Test.Tasty.HUnit (testCase, (@?=))
 import           Test.Tasty.Options (changeOption)
 import           Test.Tasty.Runners (parseOptions, tryIngredients)
-
-import           Data.Aeson
-
-import qualified Control.Tracer as Tracer
-
-import           Bench.Consensus.Mempool
-import           Bench.Consensus.Mempool.TestBlock (TestBlock)
-import qualified Bench.Consensus.Mempool.TestBlock as TestBlock
-import           Bench.Consensus.MempoolWithMockedLedgerItf
-import qualified Ouroboros.Consensus.Mempool.Capacity as Mempool
 
 main :: IO ()
 main = do

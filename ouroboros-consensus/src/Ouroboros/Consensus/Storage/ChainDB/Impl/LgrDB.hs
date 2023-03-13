@@ -58,7 +58,6 @@ import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
@@ -67,25 +66,22 @@ import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Args
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
-                     createDirectoryIfMissing)
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
-
-import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
-import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDbFailure (..))
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache
                      (BlockCache)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
+import           Ouroboros.Consensus.Storage.Common
+import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..),
+                     createDirectoryIfMissing)
+import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, mkFsPath)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util.Args
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {

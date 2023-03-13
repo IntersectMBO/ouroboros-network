@@ -9,10 +9,8 @@ module Test.Util.FS.Sim.Pure (
 
 import           Control.Monad.Except
 import           Control.Monad.State
-
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (MockFS)
 

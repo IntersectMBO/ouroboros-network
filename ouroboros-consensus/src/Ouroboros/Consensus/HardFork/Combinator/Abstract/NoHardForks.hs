@@ -3,16 +3,13 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks (
   , noHardForksEpochInfo
   ) where
 
-import           Data.Functor.Identity (runIdentity)
-
 import           Cardano.Slotting.EpochInfo
-
+import           Data.Functor.Identity (runIdentity)
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Ledger.Abstract
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
+import           Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.Ledger.Abstract
 
 {-------------------------------------------------------------------------------
   Blocks that don't /have/ any transitions

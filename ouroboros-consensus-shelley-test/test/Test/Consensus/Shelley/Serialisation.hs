@@ -5,33 +5,27 @@
 {-# LANGUAGE TypeApplications    #-}
 module Test.Consensus.Shelley.Serialisation (tests) where
 
+import           Cardano.Crypto.Hash (ShortHash)
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
-
-import           Cardano.Crypto.Hash (ShortHash)
-
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
-import           Ouroboros.Consensus.Util (Dict (..))
-
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import           Ouroboros.Consensus.Shelley.Node ()
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
-
+import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+import           Ouroboros.Consensus.Util (Dict (..))
+import           Test.Consensus.Shelley.Generators ()
+import           Test.Consensus.Shelley.MockCrypto
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.Corruption
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
-
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
-import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
-import           Test.Consensus.Shelley.Generators ()
-import           Test.Consensus.Shelley.MockCrypto
 
 tests :: TestTree
 tests = testGroup "Shelley"

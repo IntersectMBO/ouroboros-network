@@ -72,7 +72,6 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (InspectHeapNamed (..), OnlyCheckWhnfNamed (..),
                      allNoThunks)
-
 import           Ouroboros.Consensus.Util (mustBeRight, whenJust)
 import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike

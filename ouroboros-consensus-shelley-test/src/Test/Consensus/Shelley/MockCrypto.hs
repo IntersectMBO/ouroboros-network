@@ -12,22 +12,16 @@ module Test.Consensus.Shelley.MockCrypto (
   , MockShelley
   ) where
 
-import           Test.QuickCheck (Arbitrary)
-
 import           Cardano.Crypto.DSIGN (MockDSIGN)
 import           Cardano.Crypto.Hash (HashAlgorithm)
 import           Cardano.Crypto.KES (MockKES)
 import           Cardano.Crypto.VRF (MockVRF)
-
 import           Cardano.Ledger.Crypto (Crypto (..))
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Core as Core
+import           Cardano.Ledger.Shelley.LedgerState (StashedAVVMAddresses)
 import qualified Cardano.Protocol.TPraos.API as SL
 import           Control.State.Transition.Extended (PredicateFailure)
-
-import qualified Test.Cardano.Ledger.Shelley.ConcreteCryptoTypes as SL (Mock)
-
-import           Cardano.Ledger.Shelley.LedgerState (StashedAVVMAddresses)
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
@@ -35,6 +29,8 @@ import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyCompatible)
+import qualified Test.Cardano.Ledger.Shelley.ConcreteCryptoTypes as SL (Mock)
+import           Test.QuickCheck (Arbitrary)
 
 -- | A mock replacement for 'StandardCrypto'
 --

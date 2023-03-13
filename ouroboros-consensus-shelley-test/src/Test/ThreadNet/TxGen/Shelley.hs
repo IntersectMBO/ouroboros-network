@@ -13,23 +13,16 @@ module Test.ThreadNet.TxGen.Shelley (
   , mkGenEnv
   ) where
 
-import           Control.Monad.Except (runExcept)
-
 import           Cardano.Crypto.Hash (HashAlgorithm)
-
+import qualified Cardano.Ledger.Shelley.API as SL
+import           Control.Monad.Except (runExcept)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-
-import qualified Cardano.Ledger.Shelley.API as SL
-
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger
-
-import           Test.QuickCheck
-
-import           Test.ThreadNet.TxGen (TxGen (..))
-
 import qualified Test.Cardano.Ledger.Shelley.Generator.Constants as Gen
 import qualified Test.Cardano.Ledger.Shelley.Generator.Core as Gen
 import           Test.Cardano.Ledger.Shelley.Generator.EraGen
@@ -37,11 +30,10 @@ import           Test.Cardano.Ledger.Shelley.Generator.EraGen
 import qualified Test.Cardano.Ledger.Shelley.Generator.Presets as Gen.Presets
 import           Test.Cardano.Ledger.Shelley.Generator.ShelleyEraGen ()
 import qualified Test.Cardano.Ledger.Shelley.Generator.Utxo as Gen
-
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
-import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Test.Consensus.Shelley.MockCrypto (MockCrypto, MockShelley)
+import           Test.QuickCheck
 import           Test.ThreadNet.Infra.Shelley
+import           Test.ThreadNet.TxGen (TxGen (..))
 
 data ShelleyTxGenExtra h = ShelleyTxGenExtra
   { -- | Generator environment.

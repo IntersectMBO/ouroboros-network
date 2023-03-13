@@ -15,6 +15,11 @@ module Ouroboros.Consensus.Shelley.Ledger.Inspect (
   , protocolUpdates
   ) where
 
+import           Cardano.Ledger.BaseTypes (strictMaybeToMaybe)
+import           Cardano.Ledger.Core (ppuProtocolVersionL)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.Core as Core
+import qualified Cardano.Ledger.Shelley.PParams as SL
 import           Control.Monad
 import           Data.List (sortBy)
 import           Data.Map.Strict (Map)
@@ -25,24 +30,15 @@ import           Data.Tuple (swap)
 import           Data.Void
 import           Data.Word (Word64)
 import           Lens.Micro ((^.))
-
-import           Cardano.Ledger.Core (ppuProtocolVersionL)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.Condense
-
-import           Cardano.Ledger.BaseTypes (strictMaybeToMaybe)
-import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.Core as Core
-import qualified Cardano.Ledger.Shelley.PParams as SL
-
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.Condense
 
 data ProtocolUpdate era = ProtocolUpdate {
       protocolUpdateProposal :: UpdateProposal era

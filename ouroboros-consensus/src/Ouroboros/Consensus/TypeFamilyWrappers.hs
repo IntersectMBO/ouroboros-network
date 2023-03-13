@@ -39,7 +39,6 @@ module Ouroboros.Consensus.TypeFamilyWrappers (
 
 import           Codec.Serialise (Serialise)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract

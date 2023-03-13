@@ -30,6 +30,8 @@ module Ouroboros.Consensus.Util.CBOR (
   ) where
 
 import           Cardano.Binary (decodeMaybe, encodeMaybe)
+import           Cardano.Slotting.Slot (WithOrigin (..), withOriginFromMaybe,
+                     withOriginToMaybe)
 import qualified Codec.CBOR.Decoding as CBOR.D
 import qualified Codec.CBOR.Encoding as CBOR.E
 import qualified Codec.CBOR.FlatTerm as CBOR.F
@@ -49,18 +51,12 @@ import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as Seq
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-
-import           Cardano.Slotting.Slot (WithOrigin (..), withOriginFromMaybe,
-                     withOriginToMaybe)
-
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Util.IOLike
 import qualified Streaming as S
 import qualified Streaming.Prelude as S
 import           Streaming.Prelude (Of (..), Stream)
-
-import           Ouroboros.Consensus.Util.IOLike
-
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
 
 {-------------------------------------------------------------------------------
   Incremental parsing in I/O

@@ -3,11 +3,10 @@
 
 module Ouroboros.Consensus.HardFork.Simple (TriggerHardFork (..)) where
 
+import           Cardano.Slotting.Slot (EpochNo)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Slotting.Slot (EpochNo)
 
 -- | The trigger condition that will cause the hard fork transition.
 data TriggerHardFork =

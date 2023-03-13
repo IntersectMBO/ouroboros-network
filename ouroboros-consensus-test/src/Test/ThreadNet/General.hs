@@ -34,18 +34,13 @@ module Test.ThreadNet.General (
 
 import           Control.Exception (assert)
 import           Control.Monad (guard)
+import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
 import           Control.Tracer (nullTracer)
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-import           Test.QuickCheck
-
-import           Control.Monad.IOSim (runSimOrThrow, setCurrentTime)
-
-import qualified Ouroboros.Network.Mock.Chain as MockChain
-
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Block.Abstract as BA
 import qualified Ouroboros.Consensus.BlockchainTime as BTime
@@ -59,13 +54,13 @@ import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.TypeFamilyWrappers
-
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.RedundantConstraints
-
+import qualified Ouroboros.Network.Mock.Chain as MockChain
+import           Test.QuickCheck
 import           Test.ThreadNet.Network
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util
@@ -73,7 +68,6 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
-
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (MockFS)
 import           Test.Util.HardFork.Future (Future)

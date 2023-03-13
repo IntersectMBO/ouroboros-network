@@ -1,10 +1,9 @@
 module Ouroboros.Consensus.Node.InitStorage (NodeInitStorage (..)) where
 
 import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
+import           Ouroboros.Consensus.Util.IOLike
 
 -- | Functionality needed to initialise the storage layer of the node.
 class NodeInitStorage blk where

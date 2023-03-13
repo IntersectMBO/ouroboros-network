@@ -27,18 +27,9 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util (eitherToMaybe)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      ChainDbFailure (..), InvalidBlockReason)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
@@ -47,6 +38,12 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util (eitherToMaybe)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (MaxSlotNo, maxSlotNoFromWithOrigin)
 
 -- | Return the last @k@ headers.
 --

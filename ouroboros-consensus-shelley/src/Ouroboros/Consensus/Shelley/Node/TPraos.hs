@@ -39,6 +39,21 @@ module Ouroboros.Consensus.Shelley.Node.TPraos (
   , validateGenesis
   ) where
 
+import qualified Cardano.Crypto.VRF as VRF
+import qualified Cardano.Ledger.Coin as SL
+import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.Shelley.LedgerState as SL
+                     (incrementalStakeDistr, updateStakeDistribution)
+import qualified Cardano.Ledger.Shelley.Translation as SL
+                     (emptyFromByronTranslationContext)
+import qualified Cardano.Ledger.UMapCompact as UM
+import           Cardano.Ledger.Val (coin, inject, (<->))
+import qualified Cardano.Protocol.TPraos.API as SL
+import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
+import qualified Cardano.Protocol.TPraos.OCert as SL
+import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Time (mkSlotLength)
 import           Control.Monad.Except (Except)
 import           Data.Bifunctor (first)
 import qualified Data.ListMap as ListMap
@@ -47,11 +62,6 @@ import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
 import qualified Data.Text as Text
 import           GHC.Stack (HasCallStack)
-
-import qualified Cardano.Crypto.VRF as VRF
-import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Time (mkSlotLength)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as History
@@ -62,22 +72,6 @@ import           Ouroboros.Consensus.Mempool (TxLimits)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.Assert
-import           Ouroboros.Consensus.Util.IOLike
-
-import qualified Cardano.Ledger.Coin as SL
-import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.Shelley.LedgerState as SL
-                     (incrementalStakeDistr, updateStakeDistribution)
-import qualified Cardano.Ledger.Shelley.Translation as SL
-                     (emptyFromByronTranslationContext)
-import           Cardano.Ledger.Val (coin, inject, (<->))
-import qualified Cardano.Protocol.TPraos.API as SL
-import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
-
-import qualified Cardano.Ledger.UMapCompact as UM
-import qualified Cardano.Protocol.TPraos.OCert as SL
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Praos.Common
@@ -91,6 +85,8 @@ import           Ouroboros.Consensus.Shelley.Node.Common
                      ShelleyLeaderCredentials (..), shelleyBlockIssuerVKey)
 import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
+import           Ouroboros.Consensus.Util.Assert
+import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
   BlockForging

@@ -1,7 +1,6 @@
 module Ouroboros.Consensus.Util.Tests (tests) where
 
 import           Ouroboros.Consensus.Util
-
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 

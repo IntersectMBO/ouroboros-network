@@ -15,6 +15,7 @@ module Ouroboros.Consensus.HardFork.History.EraParams (
   , defaultEraParams
   ) where
 
+import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (Decoder, decodeListLen, decodeWord8)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen, encodeWord8)
 import           Codec.Serialise (Serialise (..))
@@ -22,9 +23,6 @@ import           Control.Monad (void)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Binary (enforceSize)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.Config.SecurityParam

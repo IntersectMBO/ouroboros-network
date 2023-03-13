@@ -27,12 +27,6 @@ import           Data.Maybe (catMaybes, listToMaybe)
 import           Data.SOP.Strict
 import           Data.Word
 import           GHC.Stack
-import           Ouroboros.Consensus.Util.Counting
-
-import           Test.QuickCheck hiding (elements)
-import           Test.Tasty
-import           Test.Tasty.QuickCheck hiding (elements)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger
@@ -49,9 +43,12 @@ import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HardFork.History.Util
 import           Ouroboros.Consensus.Util (Some (..), repeatedly, splits)
+import           Ouroboros.Consensus.Util.Counting
 import           Ouroboros.Consensus.Util.SOP
-
 import           Test.Consensus.HardFork.Infra
+import           Test.QuickCheck hiding (elements)
+import           Test.Tasty
+import           Test.Tasty.QuickCheck hiding (elements)
 import           Test.Util.QuickCheck
 
 tests :: TestTree

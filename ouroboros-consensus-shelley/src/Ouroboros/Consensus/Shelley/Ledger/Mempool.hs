@@ -34,46 +34,41 @@ module Ouroboros.Consensus.Shelley.Ledger.Mempool (
   , fromExUnits
   ) where
 
+import           Cardano.Ledger.Alonzo.Core (Tx, TxSeq, bodyTxL, eraProtVerLow,
+                     fromTxSeq, ppMaxBBSizeL, ppMaxBlockExUnitsL, sizeTxF)
+import           Cardano.Ledger.Alonzo.Scripts (ExUnits, ExUnits',
+                     unWrapExUnits)
+import           Cardano.Ledger.Alonzo.Tx (totExUnits)
+import           Cardano.Ledger.Binary (Annotator (..), DecCBOR (..),
+                     EncCBOR (..), FromCBOR (..), FullByteString (..),
+                     ToCBOR (..), toPlainDecoder)
+import qualified Cardano.Ledger.Block as SL (txid)
+import           Cardano.Ledger.Crypto (Crypto)
+import qualified Cardano.Ledger.Shelley.API as SL
 import           Control.Monad.Except (Except)
 import           Control.Monad.Identity (Identity (..))
+import           Data.DerivingVia (InstantiatedAt (..))
 import           Data.Foldable (toList)
+import           Data.Measure (BoundedMeasure, Measure)
+import qualified Data.Measure as Measure
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Natural (Natural)
 import           Lens.Micro ((^.))
 import           NoThunks.Class (NoThunks (..))
-
-import           Cardano.Ledger.Binary (Annotator (..), DecCBOR (..),
-                     EncCBOR (..), FromCBOR (..), FullByteString (..),
-                     ToCBOR (..), toPlainDecoder)
-import           Data.DerivingVia (InstantiatedAt (..))
-import           Data.Measure (BoundedMeasure, Measure)
-import qualified Data.Measure as Measure
-
-import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
-
-import           Cardano.Ledger.Alonzo.Scripts (ExUnits, ExUnits',
-                     unWrapExUnits)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import qualified Ouroboros.Consensus.Mempool as Mempool
-import           Ouroboros.Consensus.Util (ShowProxy (..))
-import           Ouroboros.Consensus.Util.Condense
-
-import           Cardano.Ledger.Alonzo.Core (Tx, TxSeq, bodyTxL, eraProtVerLow,
-                     fromTxSeq, ppMaxBBSizeL, ppMaxBlockExUnitsL, sizeTxF)
-import           Cardano.Ledger.Alonzo.Tx (totExUnits)
-import qualified Cardano.Ledger.Block as SL (txid)
-import qualified Cardano.Ledger.Shelley.API as SL
-
-import           Cardano.Ledger.Crypto (Crypto)
 import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Ledger.Ledger
                      (ShelleyLedgerConfig (shelleyLedgerGlobals),
                      Ticked (TickedShelleyLedgerState, tickedShelleyLedgerState),
                      getPParams)
+import           Ouroboros.Consensus.Util (ShowProxy (..))
+import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Network.Block (unwrapCBORinCBOR, wrapCBORinCBOR)
 
 data instance GenTx (ShelleyBlock proto era) = ShelleyTx !(SL.TxId (EraCrypto era)) !(Tx era)
   deriving stock    (Generic)

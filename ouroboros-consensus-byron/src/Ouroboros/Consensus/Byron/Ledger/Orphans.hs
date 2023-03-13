@@ -7,6 +7,16 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Byron.Ledger.Orphans () where
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Common as CC
+import qualified Cardano.Chain.Delegation as CC
+import qualified Cardano.Chain.MempoolPayload as CC
+import qualified Cardano.Chain.Update as CC
+import qualified Cardano.Chain.UTxO as CC
+import           Cardano.Crypto (shortHashF)
+import qualified Cardano.Crypto
+import           Cardano.Ledger.Binary (Annotated (unAnnotated), fromByronCBOR,
+                     toByronCBOR)
 import           Codec.Serialise (Serialise, decode, encode)
 import           Control.Monad (void)
 import           Data.ByteString (ByteString)
@@ -14,20 +24,6 @@ import           Data.Coerce
 import           Data.Text (unpack)
 import           Formatting
 import           NoThunks.Class (InspectHeap (..), NoThunks)
-
-import           Cardano.Crypto (shortHashF)
-import qualified Cardano.Crypto
-
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Common as CC
-import qualified Cardano.Chain.Delegation as CC
-import qualified Cardano.Chain.MempoolPayload as CC
-import qualified Cardano.Chain.Update as CC
-import qualified Cardano.Chain.UTxO as CC
-
-import           Cardano.Ledger.Binary (Annotated (unAnnotated), fromByronCBOR,
-                     toByronCBOR)
-
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------

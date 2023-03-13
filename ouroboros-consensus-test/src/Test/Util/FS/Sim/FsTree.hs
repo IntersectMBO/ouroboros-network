@@ -44,7 +44,6 @@ import           Data.Tree
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util (repeatedlyM)
 

@@ -11,7 +11,6 @@ module Test.Util.QSM (
 import           Control.Monad
 import qualified Control.Monad.Fail as Fail
 import           Data.Typeable
-
 import qualified Test.StateMachine.Logic as Logic
 import           Test.StateMachine.Sequential
 import           Test.StateMachine.Types

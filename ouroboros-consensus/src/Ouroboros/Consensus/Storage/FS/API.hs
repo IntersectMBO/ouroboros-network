@@ -24,6 +24,7 @@ module Ouroboros.Consensus.Storage.FS.API (
   ) where
 
 import           Control.Monad (foldM)
+import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString as BS
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BS
@@ -32,9 +33,6 @@ import           Data.Int (Int64)
 import           Data.Set (Set)
 import           Data.Word
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
-
-import           Control.Monad.Class.MonadThrow
-
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util.CallStack
 

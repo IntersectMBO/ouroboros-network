@@ -34,7 +34,6 @@ import           Data.Proxy
 import           Data.Type.Equality
 import           Data.Typeable (Typeable)
 import           NoThunks.Class (InspectHeap (..), NoThunks)
-
 import           Ouroboros.Consensus.Util (SomeSecond (..))
 import           Ouroboros.Consensus.Util.DepPair
 

@@ -5,14 +5,12 @@
 module Test.Ouroboros.Storage.VolatileDB.Mock (openDBMock) where
 
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.Serialisation (EncodeDisk (..),
                      HasBinaryBlockInfo (..))
 import           Ouroboros.Consensus.Storage.VolatileDB hiding
                      (VolatileDbArgs (..))
-
+import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Consensus.Util.IOLike
 import           Test.Ouroboros.Storage.VolatileDB.Model
 
 openDBMock ::

@@ -37,28 +37,25 @@ module Ouroboros.Consensus.HardFork.Combinator.Basics (
   , Except
   ) where
 
+import           Cardano.Slotting.EpochInfo
 import           Data.Kind (Type)
 import           Data.SOP.Strict
 import           Data.Typeable
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Slotting.EpochInfo
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
+import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (ShowProxy)
 import           Ouroboros.Consensus.Util.SOP (fn_5)
-
-import           Ouroboros.Consensus.HardFork.Combinator.Abstract
-import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
-import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
-import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 
 {-------------------------------------------------------------------------------
   Hard fork protocol, block, and ledger state

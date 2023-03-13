@@ -11,12 +11,10 @@ module Ouroboros.Consensus.Mock.Ledger.Forge (
   ) where
 
 import           Cardano.Binary (toCBOR)
+import           Cardano.Crypto.Hash (hashWithSerialiser)
 import           Codec.Serialise (Serialise (..), serialise)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word
-
-import           Cardano.Crypto.Hash (hashWithSerialiser)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

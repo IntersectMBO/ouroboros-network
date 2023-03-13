@@ -10,7 +10,6 @@ module Ouroboros.Consensus.HardFork.History.Util (
 import           Control.Exception (assert)
 import           Data.Word
 import           GHC.Stack
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.RedundantConstraints
 

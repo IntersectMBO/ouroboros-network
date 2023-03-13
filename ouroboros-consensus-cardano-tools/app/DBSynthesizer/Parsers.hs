@@ -1,12 +1,10 @@
 
 module DBSynthesizer.Parsers (parseCommandLine) where
 
+import           Cardano.Tools.DBSynthesizer.Types
 import           Data.Word (Word64)
 import           Options.Applicative as Opt
-
 import           Ouroboros.Consensus.Block.Abstract (SlotNo (..))
-
-import           Cardano.Tools.DBSynthesizer.Types
 
 
 parseCommandLine :: IO (NodeFilePaths, NodeCredentials, DBSynthesizerOptions)

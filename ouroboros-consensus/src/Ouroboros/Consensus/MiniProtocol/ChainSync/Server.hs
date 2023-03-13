@@ -16,22 +16,19 @@ module Ouroboros.Consensus.MiniProtocol.ChainSync.Server (
   ) where
 
 import           Control.Tracer
-
-import           Ouroboros.Network.Block (ChainUpdate (..), Serialised,
-                     Tip (..))
-import           Ouroboros.Network.Protocol.ChainSync.Server
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Follower,
                      WithPoint (..), getSerialisedBlockWithPoint,
                      getSerialisedHeaderWithPoint)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Storage.Serialisation
-
-import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.Enclose (Enclosing, Enclosing' (..),
                      pattern FallingEdge)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import           Ouroboros.Network.Block (ChainUpdate (..), Serialised,
+                     Tip (..))
+import           Ouroboros.Network.Protocol.ChainSync.Server
 
 
 chainSyncHeaderServerFollower

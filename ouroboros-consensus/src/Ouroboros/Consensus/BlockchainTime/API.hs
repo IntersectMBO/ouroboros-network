@@ -14,7 +14,6 @@ module Ouroboros.Consensus.BlockchainTime.API (
 
 import           GHC.Generics (Generic)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.STM (Watcher (..))

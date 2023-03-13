@@ -35,10 +35,8 @@ import qualified Data.ByteString.Short as Short
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Ouroboros.Network.SizeInBytes (SizeInBytes)
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 {-------------------------------------------------------------------------------
   Indexing

@@ -36,8 +36,6 @@ module Ouroboros.Consensus.HardFork.Combinator.Util.Match (
   , bihmap
   ) where
 
-import           Prelude hiding (flip)
-
 import           Data.Bifunctor
 import           Data.Functor.Product
 import           Data.Kind (Type)
@@ -45,12 +43,11 @@ import           Data.SOP.Strict
 import           Data.Void
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks (..), allNoThunks)
-
-import           Ouroboros.Consensus.Util.SOP ()
-
 import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
                      (Telescope (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+import           Ouroboros.Consensus.Util.SOP ()
+import           Prelude hiding (flip)
 
 {-------------------------------------------------------------------------------
   Main API

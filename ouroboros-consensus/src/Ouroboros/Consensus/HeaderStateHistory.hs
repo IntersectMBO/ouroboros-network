@@ -24,21 +24,18 @@ module Ouroboros.Consensus.HeaderStateHistory (
 
 import           Control.Monad.Except (Except)
 import           Data.Coerce (Coercible)
+import qualified Data.List.NonEmpty as NE
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Ouroboros.Network.AnchoredSeq (AnchoredSeq (..))
-import qualified Ouroboros.Network.AnchoredSeq as AS
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation hiding (validateHeader)
 import qualified Ouroboros.Consensus.HeaderValidation as HeaderValidation
-import           Ouroboros.Consensus.Protocol.Abstract
-
-import qualified Data.List.NonEmpty as NE
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Network.AnchoredSeq (AnchoredSeq (..))
+import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Mock.Chain (Chain)
 import qualified Ouroboros.Network.Mock.Chain as Chain
 

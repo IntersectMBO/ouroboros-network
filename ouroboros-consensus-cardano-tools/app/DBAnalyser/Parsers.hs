@@ -3,22 +3,19 @@
 
 module DBAnalyser.Parsers (parseCmdLine) where
 
-#if __GLASGOW_HASKELL__ < 900
--- GHC 8.10 needs this, GHC 9.2 considers it a redundant import.
-import           Data.Foldable (asum)
-#endif
-import           Options.Applicative
-
 import           Cardano.Crypto (RequiresNetworkMagic (..))
-import           Ouroboros.Consensus.Block (SlotNo (..))
-import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..))
-import           Ouroboros.Consensus.Shelley.Node (Nonce (..))
-import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot (..))
-
 import           Cardano.Tools.DBAnalyser.Block.Byron
 import           Cardano.Tools.DBAnalyser.Block.Cardano
 import           Cardano.Tools.DBAnalyser.Block.Shelley
 import           Cardano.Tools.DBAnalyser.Types
+#if __GLASGOW_HASKELL__ < 900
+import           Data.Foldable (asum)
+#endif
+import           Options.Applicative
+import           Ouroboros.Consensus.Block (SlotNo (..))
+import           Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..))
+import           Ouroboros.Consensus.Shelley.Node (Nonce (..))
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot (..))
 
 
 {-------------------------------------------------------------------------------

@@ -55,6 +55,7 @@ module Ouroboros.Consensus.HeaderValidation (
   , Ticked (..)
   ) where
 
+import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise (decode, encode)
@@ -66,17 +67,13 @@ import           Data.Void (Void)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Binary (enforceSize)
-
-import           Ouroboros.Network.AnchoredSeq (Anchorable (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Assert
 import qualified Ouroboros.Consensus.Util.CBOR as Util.CBOR
+import           Ouroboros.Network.AnchoredSeq (Anchorable (..))
 
 {-------------------------------------------------------------------------------
   Preliminary: annotated tip

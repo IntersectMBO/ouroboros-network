@@ -1,7 +1,5 @@
 module Main (main) where
 
-import           Test.Tasty
-
 import qualified Test.Consensus.BlockchainTime.Simple (tests)
 import qualified Test.Consensus.HardFork.Combinator (tests)
 import qualified Test.Consensus.HardFork.Forecast (tests)
@@ -15,6 +13,7 @@ import qualified Test.Consensus.Node (tests)
 import qualified Test.Consensus.ResourceRegistry (tests)
 import qualified Test.Consensus.Util.MonadSTM.RAWLock (tests)
 import qualified Test.Consensus.Util.Versioned (tests)
+import           Test.Tasty
 import           Test.Util.TestEnv (defaultMainWithTestEnv,
                      defaultTestEnvConfig)
 

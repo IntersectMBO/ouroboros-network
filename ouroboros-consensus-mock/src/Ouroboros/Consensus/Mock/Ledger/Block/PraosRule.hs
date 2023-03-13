@@ -19,15 +19,13 @@ module Ouroboros.Consensus.Mock.Ledger.Block.PraosRule (
   , forgePraosRuleExt
   ) where
 
+import           Cardano.Crypto.Hash
+import           Cardano.Crypto.KES
+import           Cardano.Crypto.VRF
 import           Codec.Serialise (Serialise (..))
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Crypto.Hash
-import           Cardano.Crypto.KES
-import           Cardano.Crypto.VRF
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
@@ -38,9 +36,8 @@ import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.NodeId (CoreNodeId)
-import           Ouroboros.Consensus.Util.Condense
-
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   Instantiate @ext@

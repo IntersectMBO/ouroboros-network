@@ -19,45 +19,35 @@
 --  existing roundtrip test functions.
 module Test.Consensus.Cardano.ByronCompatibility (tests) where
 
+import qualified Cardano.Chain.Byron.API as CC
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Coerce (Coercible, coerce)
 import           Data.SOP.BasicFunctors
-
-import qualified Cardano.Chain.Byron.API as CC
-
-import           Ouroboros.Network.Block (Serialised (..))
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Node ()
+import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.Node
+import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))
 import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
+import           Ouroboros.Consensus.Shelley.Ledger.Config (CodecConfig (..))
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
-
-import           Ouroboros.Consensus.HardFork.Combinator (NestedCtxt_ (..))
-
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node ()
-
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.Node
-import           Ouroboros.Consensus.Shelley.Ledger.Config (CodecConfig (..))
-
+import           Ouroboros.Network.Block (Serialised (..))
+import           Test.Consensus.Byron.Generators ()
+import           Test.Consensus.Cardano.Generators (epochSlots)
+import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip
-
-import           Test.Consensus.Byron.Generators ()
-
-import           Test.Consensus.Cardano.Generators (epochSlots)
-import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
 
 tests :: TestTree
 tests = adjustOption reduceTests $

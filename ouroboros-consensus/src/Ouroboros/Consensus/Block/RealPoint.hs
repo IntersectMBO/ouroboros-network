@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Block.RealPoint (
   , withOriginRealPointToPoint
   ) where
 
+import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise (decode, encode)
@@ -29,9 +30,6 @@ import           Data.Proxy
 import           Data.Typeable (Typeable, typeRep)
 import           GHC.Generics
 import           NoThunks.Class (NoThunks (..))
-
-import           Cardano.Binary (enforceSize)
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.Condense
 

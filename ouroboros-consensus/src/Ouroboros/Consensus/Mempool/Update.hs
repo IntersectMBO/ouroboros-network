@@ -13,17 +13,13 @@ module Ouroboros.Consensus.Mempool.Update (
   ) where
 
 import           Control.Exception (assert)
-import           Data.Maybe (isJust, isNothing)
-import qualified Data.Set as Set
-
 import           Control.Monad (join)
 import           Control.Tracer
+import           Data.Maybe (isJust, isNothing)
+import qualified Data.Set as Set
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Util (whenJust)
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Mempool.API hiding (MempoolCapacityBytes,
                      MempoolCapacityBytesOverride, MempoolSize,
                      TraceEventMempool, computeMempoolCapacity)
@@ -31,6 +27,8 @@ import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
 import           Ouroboros.Consensus.Mempool.TxSeq (TxTicket (..))
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
   Add transactions

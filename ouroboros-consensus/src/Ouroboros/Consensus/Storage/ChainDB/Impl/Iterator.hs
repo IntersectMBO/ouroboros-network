@@ -31,16 +31,11 @@ import           Data.Maybe (isJust)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      ChainDbError (..), Iterator (..), IteratorResult (..),
                      StreamFrom (..), StreamTo (..), UnknownRange (..),
                      getPoint, validBounds)
-
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths (Path (..),
                      computePath)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
@@ -48,6 +43,8 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 
 -- | Stream blocks
 --

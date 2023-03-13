@@ -86,7 +86,6 @@ import qualified Data.Set as Set
 import           Data.Void
 import           Data.Word (Word64)
 import           GHC.Stack
-
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 {-------------------------------------------------------------------------------

@@ -12,7 +12,6 @@ module Ouroboros.Consensus.Node.ProtocolInfo (
 
 import           Data.Word
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Extended

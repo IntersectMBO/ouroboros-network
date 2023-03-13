@@ -62,21 +62,18 @@ import qualified Data.Vector.Unboxed as V
 import           Data.Word
 import           Foreign.Storable (sizeOf)
 import           GHC.Generics (Generic)
-
 import           Ouroboros.Consensus.Block (StandardHash)
-import           Ouroboros.Consensus.Util.CallStack
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..),
                      AllowExisting (..), OpenMode (..), SeekMode (..))
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
                      (ImmutableDBError (..), UnexpectedFailure (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                      (fsPathPrimaryIndexFile, runGet)
+import           Ouroboros.Consensus.Util.CallStack
+import           Ouroboros.Consensus.Util.IOLike
 
 {------------------------------------------------------------------------------
   SecondaryOffset

@@ -11,18 +11,6 @@ module Test.ThreadNet.Infra.Byron.TrackUpdates (
   , mkUpdateLabels
   ) where
 
-import           Control.Exception (assert)
-import           Control.Monad (guard)
-import           Data.ByteString (ByteString)
-import           Data.Coerce (coerce)
-import           Data.Functor.Identity
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Word (Word64)
-import           GHC.Stack (HasCallStack)
-
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Byron.API as ByronAPI
 import qualified Cardano.Chain.Genesis as Genesis
@@ -37,25 +25,31 @@ import           Cardano.Chain.Update.Vote (AVote)
 import qualified Cardano.Chain.Update.Vote as Vote
 import qualified Cardano.Crypto as Crypto
 import           Cardano.Ledger.Binary (ByteSpan, DecCBOR (..), EncCBOR (..))
-
+import           Control.Exception (assert)
+import           Control.Monad (guard)
+import           Data.ByteString (ByteString)
+import           Data.Coerce (coerce)
+import           Data.Functor.Identity
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.Word (Word64)
+import           GHC.Stack (HasCallStack)
 import           Ouroboros.Consensus.Block
+import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
+import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
-
-import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import qualified Ouroboros.Consensus.Byron.Ledger as Byron
-
+import           Test.ThreadNet.Infra.Byron.ProtocolInfo
 import           Test.ThreadNet.Network (TestNodeInitialization (..))
 import qualified Test.ThreadNet.Ref.PBFT as Ref
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeTopology
-
-import           Test.ThreadNet.Infra.Byron.ProtocolInfo
-
 import           Test.Util.Slots (NumSlots (..))
 
 -- | The expectation and observation regarding whether the hard-fork proposal

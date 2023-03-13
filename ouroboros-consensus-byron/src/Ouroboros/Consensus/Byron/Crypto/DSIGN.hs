@@ -23,13 +23,6 @@ module Ouroboros.Consensus.Byron.Crypto.DSIGN (
   ) where
 
 
-import           Control.Exception (throw)
-import           Data.ByteString (ByteString)
-import           Data.Coerce (coerce)
-import           Data.Proxy (Proxy (..))
-import           GHC.Generics (Generic)
-import           NoThunks.Class (InspectHeapNamed (..), NoThunks)
-
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId, SignTag (..), Signature (..),
@@ -40,7 +33,12 @@ import           Cardano.Crypto.Seed (SeedBytesExhausted (..), getBytesFromSeed)
 import qualified Cardano.Crypto.Signing as Crypto
 import qualified Cardano.Crypto.Wallet as CC
 import           Cardano.Ledger.Binary
-
+import           Control.Exception (throw)
+import           Data.ByteString (ByteString)
+import           Data.Coerce (coerce)
+import           Data.Proxy (Proxy (..))
+import           GHC.Generics (Generic)
+import           NoThunks.Class (InspectHeapNamed (..), NoThunks)
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.Condense
 

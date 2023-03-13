@@ -13,22 +13,19 @@ module Ouroboros.Consensus.Storage.IO (
   , write
   ) where
 
-import           Prelude hiding (read, truncate)
-
 import           Control.Monad (void)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as Internal
 import           Data.Int (Int64)
 import           Data.Word (Word32, Word64, Word8)
 import           Foreign (Ptr)
-import qualified System.Posix as Posix
-import           System.Posix (Fd)
-
-import           "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)
-
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
                      FsError, OpenMode (..), SeekMode (..), sameFsError)
 import           Ouroboros.Consensus.Storage.FS.Handle
+import           Prelude hiding (read, truncate)
+import qualified System.Posix as Posix
+import           System.Posix (Fd)
+import           "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)
 
 type FHandle = HandleOS Fd
 

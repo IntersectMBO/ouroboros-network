@@ -5,21 +5,17 @@ module Test.ThreadNet.Infra.Byron.Genesis (
   , generateGenesisConfig
   ) where
 
-import           Control.Monad.Except (runExceptT)
-
-import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Protocol.PBFT
-
 import qualified Cardano.Chain.Common as Common
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
-import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
-
+import           Control.Monad.Except (runExceptT)
+import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Byron.Ledger.Conversions
-
+import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Protocol.PBFT
+import qualified Test.Cardano.Chain.Genesis.Dummy as Dummy
 import           Test.Util.Time
 
 {-------------------------------------------------------------------------------

@@ -13,6 +13,9 @@ module Cardano.Api.Any (
   ) where
 
 
+import           Cardano.Ledger.Binary as Cbor (DecCBOR (..), EncCBOR (..),
+                     FromCBOR (..), ToCBOR (..))
+import qualified Cardano.Ledger.Binary.Plain as CBOR
 import           Control.Exception (Exception (..), IOException, throwIO)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Base16 as Base16 (decode, encode)
@@ -21,10 +24,6 @@ import           Data.Proxy as Proxy (Proxy (..))
 import           Data.Text as Text (Text)
 import qualified Data.Text.Encoding as Text (decodeUtf8)
 import           System.IO (Handle)
-
-import           Cardano.Ledger.Binary as Cbor (DecCBOR (..), EncCBOR (..),
-                     FromCBOR (..), ToCBOR (..))
-import qualified Cardano.Ledger.Binary.Plain as CBOR
 
 
 

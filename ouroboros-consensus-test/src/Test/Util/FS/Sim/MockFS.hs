@@ -72,10 +72,8 @@ import qualified Data.Text as Text
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util.CallStack
-
 import qualified Test.Util.FS.Sim.FsTree as FS
 import           Test.Util.FS.Sim.FsTree (FsTree (..), FsTreeError (..))
 

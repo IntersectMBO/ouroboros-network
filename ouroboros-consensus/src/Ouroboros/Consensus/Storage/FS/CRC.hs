@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Storage.FS.CRC (
   ) where
 
 import           Control.Monad (foldM)
+import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import           Data.Coerce
@@ -26,10 +27,6 @@ import           Foreign.Storable (Storable)
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
-
-import           Control.Monad.Class.MonadThrow
-
-
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types (AbsOffset (..))
 

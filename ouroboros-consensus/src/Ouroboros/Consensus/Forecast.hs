@@ -13,7 +13,6 @@ module Ouroboros.Consensus.Forecast (
 import           Control.Exception (Exception)
 import           Control.Monad.Except
 import           Data.Word (Word64)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History.Util (addSlots)
 import           Ouroboros.Consensus.Ledger.Basics (GetTip, getTipSlot)

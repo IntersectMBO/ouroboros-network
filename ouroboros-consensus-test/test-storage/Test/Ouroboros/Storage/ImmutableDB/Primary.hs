@@ -25,15 +25,7 @@ import           Data.Maybe (fromJust)
 import           Data.Proxy (Proxy (..))
 import           Data.Vector.Unboxed (Vector)
 import qualified Data.Vector.Unboxed as V
-
-import           Test.QuickCheck
-import           Test.QuickCheck.Monadic (monadicIO, run)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-
 import           Ouroboros.Consensus.Block (ConvertRawHash (..))
-import           Ouroboros.Consensus.Util.IOLike (try)
-
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
@@ -46,13 +38,16 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types (BlockOrEBB)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Validation
                      (ShouldBeFinalised (..), reconstructPrimaryIndex)
-
+import           Ouroboros.Consensus.Util.IOLike (try)
+import           Test.Ouroboros.Storage.TestBlock (TestBlock)
+import           Test.QuickCheck
+import           Test.QuickCheck.Monadic (monadicIO, run)
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.QuickCheck (testProperty)
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (HandleMock)
 import qualified Test.Util.FS.Sim.STM as Sim
 import           Test.Util.Orphans.Arbitrary ()
-
-import           Test.Ouroboros.Storage.TestBlock (TestBlock)
 
 {------------------------------------------------------------------------------
   The tests

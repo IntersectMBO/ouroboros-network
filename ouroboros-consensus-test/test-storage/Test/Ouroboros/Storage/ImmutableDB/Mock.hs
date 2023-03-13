@@ -4,16 +4,13 @@
 module Test.Ouroboros.Storage.ImmutableDB.Mock (openDBMock) where
 
 import           Data.Bifunctor (first)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util ((...:), (.:))
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.Common (BlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.Serialisation
-
+import           Ouroboros.Consensus.Util ((...:), (.:))
+import           Ouroboros.Consensus.Util.IOLike
 import           Test.Ouroboros.Storage.ImmutableDB.Model
 
 openDBMock ::

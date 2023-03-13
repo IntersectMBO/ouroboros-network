@@ -32,37 +32,30 @@ module Test.ThreadNet.Infra.TwoEras (
   , tabulatePartitionPosition
   ) where
 
+import qualified Cardano.Chain.Common as CC.Common
+import           Cardano.Chain.ProtocolConstants (kEpochSlots)
+import           Cardano.Chain.Slotting (unEpochSlots)
+import qualified Cardano.Ledger.BaseTypes as SL
+import qualified Cardano.Protocol.TPraos.Rules.Overlay as SL
+import           Cardano.Slotting.EpochInfo
+import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
+                     SlotNo (..))
 import           Control.Exception (assert)
 import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.SOP.Strict (NS (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
-
-import           Test.QuickCheck
-
-import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
-                     SlotNo (..))
-
 import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
+                     OneEraBlock (..))
 import qualified Ouroboros.Consensus.HardFork.History.Util as Util
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-
-import           Data.SOP.Strict (NS (..))
-import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock (..),
-                     OneEraBlock (..))
-
-import qualified Cardano.Chain.Common as CC.Common
-import           Cardano.Chain.ProtocolConstants (kEpochSlots)
-import           Cardano.Chain.Slotting (unEpochSlots)
-
-import qualified Cardano.Ledger.BaseTypes as SL
-import qualified Cardano.Protocol.TPraos.Rules.Overlay as SL
-
+import           Test.QuickCheck
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Network (CalcMessageDelay (..), NodeOutput (..))

@@ -12,14 +12,12 @@ module Ouroboros.Consensus.Ledger.SupportsPeerSelection (
 
 import           Control.DeepSeq (NFData (..))
 import           Data.List.NonEmpty (NonEmpty)
-
+import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (PoolStake (..))
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint (..), IP (..), PortNumber,
                      RelayAccessPoint (..))
-
-import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
 
 -- | A relay registered for a stake pool
 data StakePoolRelay =

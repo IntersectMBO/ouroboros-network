@@ -28,7 +28,6 @@ module Ouroboros.Consensus.HardFork.Combinator.InjectTxs (
 import           Data.Bifunctor
 import           Data.Functor.Product
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
 import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
                      (InPairs (..))

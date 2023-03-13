@@ -29,6 +29,7 @@ module Ouroboros.Consensus.NodeKernel (
 import           Control.DeepSeq (force)
 import           Control.Monad
 import           Control.Monad.Except
+import           Control.Tracer
 import           Data.Bifunctor (second)
 import           Data.Hashable (Hashable)
 import           Data.List.NonEmpty (NonEmpty)
@@ -36,22 +37,6 @@ import           Data.Map.Strict (Map)
 import           Data.Maybe (isJust, mapMaybe)
 import           Data.Proxy
 import qualified Data.Text as Text
-import           System.Random (StdGen)
-
-import           Control.Tracer
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
-                     AnchoredSeq (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
-import           Ouroboros.Network.TxSubmission.Inbound
-                     (TxSubmissionMempoolWriter)
-import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
-import           Ouroboros.Network.TxSubmission.Mempool.Reader
-                     (TxSubmissionMempoolReader)
-import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
-
 import           Ouroboros.Consensus.Block hiding (blockMatchesHeader)
 import qualified Ouroboros.Consensus.Block as Block
 import           Ouroboros.Consensus.BlockchainTime
@@ -68,17 +53,28 @@ import qualified Ouroboros.Consensus.MiniProtocol.BlockFetch.ClientInterface as 
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Util.EarlyExit
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Init as InitChainDB
+import           Ouroboros.Consensus.Util.EarlyExit
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
+                     AnchoredSeq (..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.BlockFetch
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.TxSubmission.Inbound
+                     (TxSubmissionMempoolWriter)
+import qualified Ouroboros.Network.TxSubmission.Inbound as Inbound
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+                     (TxSubmissionMempoolReader)
+import qualified Ouroboros.Network.TxSubmission.Mempool.Reader as MempoolReader
+import           System.Random (StdGen)
 
 {-------------------------------------------------------------------------------
   Relay node

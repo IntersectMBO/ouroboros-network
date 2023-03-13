@@ -13,8 +13,13 @@
 
 module Ouroboros.Consensus.Util.Orphans () where
 
+import           Cardano.Crypto.DSIGN.Class
+import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
+import           Cardano.Crypto.Hash (Hash)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (..))
+import           Control.Monad.Class.MonadTime (Time (..))
+import           Control.Tracer (Tracer)
 import           Data.Bimap (Bimap)
 import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
@@ -22,23 +27,12 @@ import qualified Data.IntPSQ as PSQ
 import           Data.SOP.Strict
 import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..),
                      allNoThunks, noThunksInKeysAndValues)
-
-import           Control.Tracer (Tracer)
-
-import           Control.Monad.Class.MonadTime (Time (..))
-
+import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
-
-import           Cardano.Crypto.DSIGN.Class
-import           Cardano.Crypto.DSIGN.Mock (MockDSIGN)
-import           Cardano.Crypto.Hash (Hash)
-
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Mock.Chain (Chain (..))
-
-import           Ouroboros.Consensus.Block.Abstract
-import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Network.Util.ShowProxy
 
 {-------------------------------------------------------------------------------

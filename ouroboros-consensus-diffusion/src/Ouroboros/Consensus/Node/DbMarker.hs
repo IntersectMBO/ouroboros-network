@@ -18,14 +18,11 @@ import           Data.ByteString.Lazy (fromStrict, toStrict)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import           Data.Word
-import           Text.Read (readMaybe)
-
-import           Ouroboros.Network.Magic (NetworkMagic (..))
-
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Text.Read (readMaybe)
 
 {-------------------------------------------------------------------------------
   Check proper

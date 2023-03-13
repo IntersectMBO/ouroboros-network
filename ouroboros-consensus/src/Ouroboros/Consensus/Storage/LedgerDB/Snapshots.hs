@@ -47,19 +47,17 @@ import qualified Data.Set as Set
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
-import           Text.Read (readMaybe)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Storage.FS.API
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr,
                      decodeWithOrigin, readIncremental)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Versioned
-
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+import           Text.Read (readMaybe)
 
 {-------------------------------------------------------------------------------
   Write to disk

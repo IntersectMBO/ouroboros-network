@@ -25,17 +25,14 @@ module Ouroboros.Consensus.Fragment.Diff (
   , truncate
   ) where
 
-import           Prelude hiding (mapM, truncate)
-import qualified Prelude
-
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-
+import           Ouroboros.Consensus.Block
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
-
-import           Ouroboros.Consensus.Block
+import           Prelude hiding (mapM, truncate)
+import qualified Prelude
 
 
 -- | A diff of a chain (fragment).

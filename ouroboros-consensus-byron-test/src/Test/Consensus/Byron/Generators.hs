@@ -12,10 +12,6 @@ module Test.Consensus.Byron.Generators (
   , protocolMagicId
   ) where
 
-import           Control.Monad (replicateM)
-import           Data.Coerce (coerce)
-import qualified Data.Map.Strict as Map
-
 import           Cardano.Chain.Block (ABlockOrBoundary (..),
                      ABlockOrBoundaryHdr (..))
 import qualified Cardano.Chain.Block as CC.Block
@@ -35,22 +31,18 @@ import qualified Cardano.Chain.UTxO as CC.UTxO
 import           Cardano.Crypto (ProtocolMagicId (..))
 import           Cardano.Crypto.Hashing (Hash)
 import           Cardano.Ledger.Binary (decCBOR, encCBOR)
-
-import           Ouroboros.Network.SizeInBytes
-
+import           Control.Monad (replicateM)
+import           Data.Coerce (coerce)
+import qualified Data.Map.Strict as Map
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Protocol
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.HeaderValidation (AnnTip (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
-
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Protocol
-
-import           Test.QuickCheck hiding (Result)
-import           Test.QuickCheck.Hedgehog (hedgehog)
-
+import           Ouroboros.Network.SizeInBytes
 import qualified Test.Cardano.Chain.Block.Gen as CC
 import qualified Test.Cardano.Chain.Common.Gen as CC
 import qualified Test.Cardano.Chain.Delegation.Gen as CC
@@ -60,7 +52,8 @@ import qualified Test.Cardano.Chain.Update.Gen as UG
 import qualified Test.Cardano.Chain.UTxO.Gen as CC
 import qualified Test.Cardano.Crypto.Gen as CC
 import           Test.Cardano.Ledger.Binary.Arbitrary ()
-
+import           Test.QuickCheck hiding (Result)
+import           Test.QuickCheck.Hedgehog (hedgehog)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Serialisation.Roundtrip (Coherent (..),
                      SomeResult (..), WithVersion (..))

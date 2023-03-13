@@ -3,12 +3,10 @@
 module Test.ThreadNet.Util.SimpleBlock (prop_validSimpleBlock) where
 
 import           Data.Typeable
-
-import           Test.QuickCheck
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Util.Condense (condense)
+import           Test.QuickCheck
 
 prop_validSimpleBlock
   :: (SimpleCrypto c, Typeable ext, Typeable ext')

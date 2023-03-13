@@ -27,23 +27,10 @@ import           Data.SOP.Dict (Dict (..), all_NP, mapAll)
 import           Data.SOP.Strict
 import           Data.Time
 import           Data.Word (Word64)
-import           Test.QuickCheck hiding (Fixed (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Fragment.InFuture (ClockSkew)
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
-import           Ouroboros.Consensus.HardFork.History (Bound (..))
-import           Ouroboros.Consensus.HeaderValidation (TipInfo)
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.Query
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.SOP (IsNonEmpty, ProofNonEmpty (..),
-                     checkIsNonEmpty, isNonEmpty)
-
 import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock,
                      HardForkChainDepState, HardForkState (..),
                      LedgerEraInfo (..), LedgerState (..), Mismatch (..),
@@ -51,12 +38,21 @@ import           Ouroboros.Consensus.HardFork.Combinator (HardForkBlock,
                      Telescope (..), proxySingle)
 import           Ouroboros.Consensus.HardFork.Combinator.State (Current (..),
                      Past (..))
-
+import           Ouroboros.Consensus.HardFork.History (Bound (..))
+import           Ouroboros.Consensus.HeaderValidation (TipInfo)
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Query
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo (..), ChunkSize (..), RelativeSlot (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Layout
-
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util.SOP (IsNonEmpty, ProofNonEmpty (..),
+                     checkIsNonEmpty, isNonEmpty)
 import           Test.Cardano.Ledger.Binary.Arbitrary ()
+import           Test.QuickCheck hiding (Fixed (..))
 import           Test.Util.Time (dawnOfTime)
 
 minNumCoreNodes :: Word64

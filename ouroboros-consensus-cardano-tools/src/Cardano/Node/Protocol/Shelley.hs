@@ -22,31 +22,6 @@ module Cardano.Node.Protocol.Shelley (
   , validateGenesis
   ) where
 
-import           Prelude (String, id)
-
-import           Control.Monad.Trans.Except.Extra (firstExceptT,
-                     handleIOExceptT, hoistEither, left, newExceptT)
-import qualified Data.Aeson as Aeson (FromJSON (..), eitherDecodeStrict')
-import qualified Data.ByteString as BS
-import qualified Data.Text as T
-
-import           Cardano.Prelude
-
-import qualified Cardano.Crypto.Hash.Class as Crypto
-import           Cardano.Ledger.BaseTypes (ProtVer (..), natVersion)
-import           Cardano.Ledger.Crypto (StandardCrypto)
-import           Cardano.Ledger.Keys (coerceKeyRole)
-import qualified Cardano.Ledger.Shelley.Genesis as Shelley
-
-import qualified Ouroboros.Consensus.Cardano as Consensus
-import qualified Ouroboros.Consensus.Mempool as Mempool
-import           Ouroboros.Consensus.Protocol.Praos.Common
-                     (PraosCanBeLeader (..))
-import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
-                     ProtocolParamsShelley (..),
-                     ProtocolParamsShelleyBased (..), ShelleyGenesis (..),
-                     ShelleyLeaderCredentials (..))
-
 import           Cardano.Api.Any hiding (FileError (..))
 import qualified Cardano.Api.Any as Api (FileError (..))
 import           Cardano.Api.Key
@@ -55,9 +30,28 @@ import           Cardano.Api.KeysShelley
 import           Cardano.Api.OperationalCertificate
 import qualified Cardano.Api.Protocol.Types as Protocol
 import           Cardano.Api.SerialiseTextEnvelope
-
+import qualified Cardano.Crypto.Hash.Class as Crypto
+import           Cardano.Ledger.BaseTypes (ProtVer (..), natVersion)
+import           Cardano.Ledger.Crypto (StandardCrypto)
+import           Cardano.Ledger.Keys (coerceKeyRole)
+import qualified Cardano.Ledger.Shelley.Genesis as Shelley
 import           Cardano.Node.Protocol.Types
 import           Cardano.Node.Types
+import           Cardano.Prelude
+import           Control.Monad.Trans.Except.Extra (firstExceptT,
+                     handleIOExceptT, hoistEither, left, newExceptT)
+import qualified Data.Aeson as Aeson (FromJSON (..), eitherDecodeStrict')
+import qualified Data.ByteString as BS
+import qualified Data.Text as T
+import qualified Ouroboros.Consensus.Cardano as Consensus
+import qualified Ouroboros.Consensus.Mempool as Mempool
+import           Ouroboros.Consensus.Protocol.Praos.Common
+                     (PraosCanBeLeader (..))
+import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
+                     ProtocolParamsShelley (..),
+                     ProtocolParamsShelleyBased (..), ShelleyGenesis (..),
+                     ShelleyLeaderCredentials (..))
+import           Prelude (String, id)
 
 
 ------------------------------------------------------------------------------

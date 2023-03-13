@@ -2,7 +2,6 @@
 module Test.ThreadNet.TxGen.Byron () where
 
 import           Ouroboros.Consensus.Byron.Ledger
-
 import           Test.ThreadNet.TxGen
 
 instance TxGen ByronBlock where

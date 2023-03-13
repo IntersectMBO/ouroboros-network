@@ -36,14 +36,10 @@ import           Data.Word
 import           Foreign.Storable (Storable (sizeOf))
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Block hiding (headerHash)
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.FS.CRC
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Primary
                      (SecondaryOffset)
@@ -51,6 +47,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
                      (BlockOrEBB (..), WithBlockSize (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                      (fsPathSecondaryIndexFile, runGet, runGetWithUnconsumed)
+import           Ouroboros.Consensus.Util.IOLike
 
 {------------------------------------------------------------------------------
   Types

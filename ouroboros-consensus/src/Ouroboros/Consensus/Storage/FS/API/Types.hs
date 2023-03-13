@@ -57,12 +57,11 @@ import           GHC.Generics (Generic)
 import qualified GHC.IO.Exception as GHC
 import           NoThunks.Class (InspectHeap (..), InspectHeapNamed (..),
                      NoThunks (..))
+import           Ouroboros.Consensus.Util.CallStack
+import           Ouroboros.Consensus.Util.Condense
 import           System.FilePath
 import           System.IO (SeekMode (..))
 import qualified System.IO.Error as IO
-
-import           Ouroboros.Consensus.Util.CallStack
-import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   Modes

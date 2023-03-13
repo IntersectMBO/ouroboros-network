@@ -22,9 +22,6 @@ import           Control.Tracer
 import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Ouroboros.Network.Block (Point (Point))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
                      (HeaderState (headerStateTip), annTipPoint)
@@ -32,15 +29,14 @@ import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.FS.API
-
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.Query
 import           Ouroboros.Consensus.Storage.LedgerDB.Snapshots
 import           Ouroboros.Consensus.Storage.LedgerDB.Stream
 import           Ouroboros.Consensus.Storage.LedgerDB.Update
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Block (Point (Point))
 
 {-------------------------------------------------------------------------------
   Initialize the DB

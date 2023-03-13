@@ -35,14 +35,11 @@ import           Data.Word (Word16)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
-
-import           Ouroboros.Network.Block (MaxSlotNo)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import           Ouroboros.Consensus.Storage.FS.API.Types (FsError, FsPath)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Block (MaxSlotNo)
 
 {-------------------------------------------------------------------------------
   API

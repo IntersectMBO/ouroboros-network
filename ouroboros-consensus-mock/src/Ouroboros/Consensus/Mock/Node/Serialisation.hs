@@ -17,9 +17,6 @@ module Ouroboros.Consensus.Mock.Node.Serialisation (
 import           Codec.Serialise (Serialise, decode, encode, serialise)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Typeable (Typeable)
-
-import           Ouroboros.Network.Block (Serialised)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip,
                      defaultDecodeAnnTip, defaultEncodeAnnTip)
@@ -29,8 +26,8 @@ import           Ouroboros.Consensus.Mock.Ledger
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
-
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Network.Block (Serialised)
 
 -- | Local shorthand to make the instances more readable
 type MockBlock ext = SimpleBlock SimpleMockCrypto ext

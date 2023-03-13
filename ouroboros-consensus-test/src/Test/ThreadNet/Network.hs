@@ -56,28 +56,9 @@ import qualified Data.Set as Set
 import qualified Data.Typeable as Typeable
 import           Data.Void (Void)
 import           GHC.Stack
-import           System.Random (mkStdGen)
-
 import           Network.TypedProtocol.Codec (AnyMessage (..), CodecFailure,
                      mapFailureCodec)
 import qualified Network.TypedProtocol.Codec as Codec
-
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
-                     TraceLabelPeer (..))
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
-import           Ouroboros.Network.Point (WithOrigin (..))
-import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
-
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
-import           Ouroboros.Network.Protocol.KeepAlive.Type
-import           Ouroboros.Network.Protocol.Limits (waitForever)
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -99,27 +80,39 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.NodeKernel as NodeKernel
 import           Ouroboros.Consensus.Protocol.Abstract
+import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
+import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
+import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense
+import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.Orphans ()
 import           Ouroboros.Consensus.Util.RedundantConstraints
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM
 import           Ouroboros.Consensus.Util.Time
-
-import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
-import           Ouroboros.Consensus.Storage.ChainDB.Impl (ChainDbArgs (..))
-import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Util.Enclose (pattern FallingEdge)
-
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
+                     TraceLabelPeer (..))
+import           Ouroboros.Network.Channel
+import           Ouroboros.Network.ControlMessage (ControlMessage (..),
+                     ControlMessageSTM)
+import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
+import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
+import           Ouroboros.Network.Point (WithOrigin (..))
+import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
+import           Ouroboros.Network.Protocol.KeepAlive.Type
+import           Ouroboros.Network.Protocol.Limits (waitForever)
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
+import           System.Random (mkStdGen)
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeTopology
 import           Test.ThreadNet.Util.Seed
-
 import           Test.Util.ChainDB
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (MockFS)

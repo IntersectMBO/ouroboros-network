@@ -7,12 +7,10 @@ module Test.Util.FS.Sim.STM (
   , simHasFS
   ) where
 
-import           Ouroboros.Consensus.Util
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Ouroboros.Consensus.Storage.FS.API
 import           Ouroboros.Consensus.Storage.FS.API.Types
-
+import           Ouroboros.Consensus.Util
+import           Ouroboros.Consensus.Util.IOLike
 import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
 import           Test.Util.FS.Sim.Pure (PureSimFS, runPureSimFS)

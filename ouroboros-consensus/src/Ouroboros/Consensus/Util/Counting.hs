@@ -57,7 +57,6 @@ import qualified Data.Foldable as Foldable
 import           Data.Kind (Type)
 import           Data.SOP.Dict
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Util.SOP
 
 {-------------------------------------------------------------------------------

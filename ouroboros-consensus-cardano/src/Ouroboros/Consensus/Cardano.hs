@@ -17,19 +17,16 @@ module Ouroboros.Consensus.Cardano (
   , module X
   ) where
 
-import           Ouroboros.Consensus.HardFork.Combinator
-
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node as X
-
+import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.Node
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.Protocol.Praos (Praos)
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node as X
 import           Ouroboros.Consensus.Shelley.ShelleyHFC
-
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.Node
-import           Ouroboros.Consensus.Protocol.Praos (Praos)
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 
 {-------------------------------------------------------------------------------
   Supported protocols
