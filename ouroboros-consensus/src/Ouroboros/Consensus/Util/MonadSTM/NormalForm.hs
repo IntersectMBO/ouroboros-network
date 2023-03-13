@@ -15,7 +15,6 @@ module Ouroboros.Consensus.Util.MonadSTM.NormalForm (
 import           GHC.Stack
 import           NoThunks.Class (NoThunks (..), unsafeNoThunks)
 
-
 import           Ouroboros.Consensus.Util.MonadSTM.StrictMVar hiding
                      (newEmptyMVar, newEmptyMVarWithInvariant, newMVar,
                      newMVarWithInvariant)
@@ -24,16 +23,17 @@ import           Control.Concurrent.Class.MonadSTM.Strict.TMVar as StrictSTM hid
                      (newTMVar, newTMVarIO)
 import           Control.Concurrent.Class.MonadSTM.Strict.TVar as StrictSTM hiding
                      (newTVar, newTVarIO, newTVarWithInvariantIO)
--- TODO: use strict versions of 'TQueue' and 'TBQueue'.  Previously the
--- 'Control.Monad.Class.MonadSTM.Strict' was imported which
--- exported lazy 'TQueue' and 'TBQueue',  I (@coot) think that the intention was
--- to use strict versions.
 import           Control.Concurrent.Class.MonadSTM.TBQueue as LazySTM
 import           Control.Concurrent.Class.MonadSTM.TQueue as LazySTM
 import           Control.Monad.Class.MonadSTM as StrictSTM
 
 import qualified Control.Concurrent.Class.MonadSTM.Strict as Strict
 import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
+
+-- TODO: use strict versions of 'TQueue' and 'TBQueue'.  Previously the
+-- 'Control.Monad.Class.MonadSTM.Strict' was imported which
+-- exported lazy 'TQueue' and 'TBQueue',  I (@coot) think that the intention was
+-- to use strict versions.
 
 {-------------------------------------------------------------------------------
   Wrappers that check for thunks

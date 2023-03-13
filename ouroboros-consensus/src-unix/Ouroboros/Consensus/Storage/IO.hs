@@ -24,7 +24,6 @@ import           Foreign (Ptr)
 import qualified System.Posix as Posix
 import           System.Posix (Fd)
 
--- Package 'unix' exports the same module.
 import           "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)
 
 import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
