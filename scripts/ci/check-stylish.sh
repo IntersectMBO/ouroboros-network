@@ -14,7 +14,6 @@ fd -p ouroboros-consensus \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/Impl.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Mempool/TxLimits.hs \
     -E ouroboros-consensus-test/src/Test/Util/Classify.hs \
-    -E ouroboros-consensus/src-win32/Ouroboros/Consensus/Storage/IO.hs \
     -E ouroboros-consensus-cardano-tools/app/DBAnalyser/Parsers.hs \
     -X stylish-haskell \
     -c .stylish-haskell.yaml -i
