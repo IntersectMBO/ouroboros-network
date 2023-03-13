@@ -168,10 +168,8 @@ ouroboros_network_3999 = do
 streamAssertSuccess :: (MonadError TestFailure m, SupportsUnitTest m, Mock.HasHeader (Block m))
                     => StreamFrom (Block m) -> StreamTo (Block m) -> m (IteratorId m)
 streamAssertSuccess from to = stream from to >>= \case
-    Left err -> throwError
-      $ TestFailure $ "Should be able to create iterator: " <> show err
-    Right (Left err) -> throwError
-        $ TestFailure $ "Range should be valid: " <> show err
+    Left err -> failWith $ "Should be able to create iterator: " <> show err
+    Right (Left err) -> failWith $ "Range should be valid: " <> show err
     Right (Right iteratorId) -> pure iteratorId
 
 
@@ -206,7 +204,7 @@ orFailWith :: (MonadError TestFailure m) => Bool -> String -> m ()
 orFailWith b msg = unless b $ failWith msg
 infixl 1 `orFailWith`
 
-failWith :: (MonadError TestFailure m) => String -> m ()
+failWith :: (MonadError TestFailure m) => String -> m a
 failWith msg = throwError (TestFailure msg)
 
 assertEqual :: (MonadError TestFailure m, Eq a, Show a)
@@ -217,7 +215,7 @@ assertEqual expected actual description = expected == actual `orFailWith` msg
                       <> "\n\t Actual: " <> show actual
 
 assertOneOf :: (MonadError TestFailure m, Eq a, Show a)
-           => [a] -> a -> String -> m ()
+            => [a] -> a -> String -> m ()
 assertOneOf options actual description = actual `elem` options `orFailWith` msg
   where
     msg = description <> "\n\t Options: " <> show options
@@ -305,6 +303,8 @@ instance (Model.ModelSupportsBlock blk, LedgerSupportsProtocol blk, Eq blk)
       Right (mChainUpdate, model') -> (Right mChainUpdate, model')
 
   addBlock blk = do
+    -- Ensure that blocks are not characterized as invalid because they are
+    -- from the future.
     modify $ \model -> model { Model.currentSlot = blockSlot blk }
     withModelContext $ \model cfg -> ((), Model.addBlock cfg blk model)
     pure blk
