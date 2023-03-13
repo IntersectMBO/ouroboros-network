@@ -107,35 +107,40 @@ tests =
     -- The no livelock property is needed to ensure other tests terminate
   , after AllSucceed "Ouroboros.Network.PeerSelection.basic" $
     testGroup "progress"
-    [ testProperty "progresses towards root peers target (from below)"
-                   prop_governor_target_root_below
+    [ testGroup "ledger peers"
+      [ testProperty "progresses towards known target (from below)"
+                     prop_governor_target_known_below
+      , testProperty "progresses towards known target (from above)"
+                     prop_governor_target_known_above
 
-    , testProperty "progresses towards established public root peers"
-                   prop_governor_target_established_public
-    , testProperty "progresses towards active public root peers"
-                   prop_governor_target_active_public
+      , testProperty "progresses towards established target (from below)"
+                     prop_governor_target_established_below
+      , testProperty "progresses towards established target (from above)"
+                     prop_governor_target_established_above
 
-    , testProperty "progresses towards known peers target (from below)"
-                   prop_governor_target_known_below
-    , testProperty "progresses towards known peers target (from above)"
-                   prop_governor_target_known_above
+      , testProperty "progresses towards active target (from below)"
+                     prop_governor_target_active_below
+      , testProperty "progresses towards active target (from above)"
+                     prop_governor_target_active_above
+      ]
 
-    , testProperty "progresses towards established peers target (from below)"
-                   prop_governor_target_established_below
-    , testProperty "progresses towards established peers target (from above)"
-                   prop_governor_target_established_above
+    , testGroup "public root peers"
+      [ testProperty "progresses towards target (from below)"
+                     prop_governor_target_root_below
+      , testProperty "progresses towards established peers"
+                     prop_governor_target_established_public
+      , testProperty "progresses towards active peers"
+                     prop_governor_target_active_public
+      ]
 
-    , testProperty "progresses towards active peers target (from below)"
-                   prop_governor_target_active_below
-    , testProperty "progresses towards active peers target (from above)"
-                   prop_governor_target_active_above
-
-    , testProperty "progresses towards established local root peers target"
-                   prop_governor_target_established_local
-    , testProperty "progresses towards active local root peers target (from below)"
-                   prop_governor_target_active_local_below
-    , testProperty "progresses towards active local root peers target (from above)"
-                   prop_governor_target_active_local_above
+    , testGroup "local roots"
+      [ testProperty "progresses towards established target"
+                     prop_governor_target_established_local
+      , testProperty "progresses towards active target (from below)"
+                     prop_governor_target_active_local_below
+      , testProperty "progresses towards active target (from above)"
+                     prop_governor_target_active_local_above
+      ]
     ]
   , testGroup "issues"
     [ testProperty "3233" prop_issue_3233
