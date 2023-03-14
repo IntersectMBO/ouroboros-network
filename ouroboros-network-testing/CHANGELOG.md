@@ -1,5 +1,13 @@
 # Revision history for ouroboros-network-testing
 
+## next version
+
+### Breaking changes
+
+### Non breaking changes
+
+* type signature of `prop_shrink_valid` is more admissible
+
 ## 0.3.0.0
 
 ### Breaking changes
