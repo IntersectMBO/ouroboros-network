@@ -24,8 +24,9 @@ import qualified Data.Bimap as Bimap
 import           Data.IntPSQ (IntPSQ)
 import qualified Data.IntPSQ as PSQ
 import           Data.SOP.Strict
-import           NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..),
-                     allNoThunks, noThunksInKeysAndValues)
+import           NoThunks.Class (InspectHeap (..), InspectHeapNamed (..),
+                     NoThunks (..), OnlyCheckWhnfNamed (..), allNoThunks,
+                     noThunksInKeysAndValues)
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.MonadSTM.NormalForm
@@ -33,6 +34,9 @@ import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Mock.Chain (Chain (..))
 import           Ouroboros.Network.Util.ShowProxy
+import           System.FS.API
+import           System.FS.API.Types
+import           System.FS.CRC
 
 {-------------------------------------------------------------------------------
   Condense
@@ -105,3 +109,15 @@ deriving newtype instance NoThunks Time
 instance NoThunks a => NoThunks (K a b) where
   showTypeOf _ = showTypeOf (Proxy @a)
   wNoThunks ctxt (K a) = wNoThunks ("K":ctxt) a
+
+--
+-- fs-api
+--
+
+deriving via InspectHeapNamed "Handle" (Handle h)
+    instance NoThunks (Handle h)
+deriving via InspectHeap FsPath instance NoThunks FsPath
+deriving via OnlyCheckWhnfNamed "SomeHasFS" (SomeHasFS m)
+    instance NoThunks (SomeHasFS m)
+deriving newtype instance NoThunks CRC
+-- deriving via OnlyCheckWhnfNamed "HasFS" (HasFS m h) instance NoThunks (HasFS m h)

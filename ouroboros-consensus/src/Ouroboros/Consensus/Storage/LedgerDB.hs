@@ -6,6 +6,7 @@ module Ouroboros.Consensus.Storage.LedgerDB (
   , configLedgerDb
   , mkWithAnchor
     -- * Initialization
+  , BackingStoreSelector (..)
   , InitLog (..)
   , ReplayStart (..)
   , initialize
@@ -14,6 +15,7 @@ module Ouroboros.Consensus.Storage.LedgerDB (
   , restoreBackingStore
     -- * Trace
   , ReplayGoal (..)
+  , TraceLedgerDBEvent (..)
   , TraceReplayEvent (..)
   , decorateReplayTracerWithGoal
   , decorateReplayTracerWithStart
@@ -91,9 +93,10 @@ module Ouroboros.Consensus.Storage.LedgerDB (
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (DiskPolicy (..), SnapshotInterval (..),
                      TimeSinceLast (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.Init (InitLog (..),
-                     ReplayGoal (..), ReplayStart (..), TraceReplayEvent (..),
-                     decorateReplayTracerWithGoal,
+import           Ouroboros.Consensus.Storage.LedgerDB.Init
+                     (BackingStoreSelector (..), InitLog (..), ReplayGoal (..),
+                     ReplayStart (..), TraceLedgerDBEvent (..),
+                     TraceReplayEvent (..), decorateReplayTracerWithGoal,
                      decorateReplayTracerWithStart, initialize, newBackingStore,
                      newBackingStoreInitialiser, restoreBackingStore)
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB (..),

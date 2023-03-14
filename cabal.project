@@ -18,7 +18,7 @@ index-state:
   -- Bump this if you need newer packages from Hackage
   , hackage.haskell.org 2023-03-22T00:00:00Z
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2023-02-23T15:33:46Z
+  , cardano-haskell-packages 2023-03-09T09:27:54Z
 
 packages: ./cardano-ping
           ./ouroboros-network-testing
@@ -153,8 +153,8 @@ allow-newer:
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/fs-sim
-  tag: ed36f48785aa9b2a9cfaa3d783c138180f3bfb9d
-  --sha256: 1svym9bynaq07wpd28qkwyixnsyxacb5s15lfnxi2v54kvmx4j43
+  tag: e2e923fee7c540b3a02de1627d73747122f47a53
+  --sha256: 18d4qw2i9qdfzx5ls78mr5hrglymd4rk603zrqic8sbp5gp352h8
   subdir:
     fs-api
     fs-sim
