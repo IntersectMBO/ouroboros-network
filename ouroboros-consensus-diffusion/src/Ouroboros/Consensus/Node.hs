@@ -88,9 +88,13 @@ import           Ouroboros.Consensus.Node.Tracers
 import           Ouroboros.Consensus.NodeKernel
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
+import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
+import           Ouroboros.Consensus.Storage.FS.API.Types
+import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
                      ValidationPolicy (..))
-import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
+import           Ouroboros.Consensus.Storage.LedgerDB
+                     (BackingStoreSelector (..), SnapshotInterval (..),
                      defaultDiskPolicy)
 import           Ouroboros.Consensus.Storage.VolatileDB
                      (BlockValidationPolicy (..))
@@ -177,8 +181,13 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
       -- | Network P2P Mode switch
     , rnEnableP2P :: NetworkP2PMode p2p
 
+<<<<<<< HEAD
       -- | Network PeerSharing miniprotocol willingness flag
     , rnPeerSharing :: PeerSharing
+=======
+      -- | Whether to use the LMDB or the in-memory backend for UTxO-HD.
+    , rnBackingStoreSelector :: !(BackingStoreSelector m)
+>>>>>>> 2e9b596342 (Introduce LMDB backing store implementation (#4366))
     }
 
 -- | Arguments that usually only tests /directly/ specify.
@@ -792,10 +801,14 @@ stdLowLevelRunNodeArgsIO ::
           NodeToClientVersionData
           blk
           p2p)
+<<<<<<< HEAD
 stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo
                                     , rnEnableP2P
                                     , rnPeerSharing
                                     }
+=======
+stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P, rnBackingStoreSelector }
+>>>>>>> 2e9b596342 (Introduce LMDB backing store implementation (#4366))
                          StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
@@ -805,7 +818,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo
       , llrnCustomiseHardForkBlockchainTimeArgs = id
       , llrnKeepAliveRng
       , llrnChainDbArgsDefaults =
-          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS diskPolicy
+          updateChainDbDefaults $ ChainDB.defaultArgs mkHasFS diskPolicy rnBackingStoreSelector
       , llrnCustomiseChainDbArgs = id
       , llrnCustomiseNodeKernelArgs
       , llrnRunDataDiffusion =

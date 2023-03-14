@@ -46,6 +46,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , LedgerDB.DiskPolicy (..)
   , LedgerDB.DiskSnapshot
   , LedgerDB.ExceededRollback (..)
+  , LedgerDB.TraceLedgerDBEvent (..)
   , LedgerDB.TraceReplayEvent (..)
   , LedgerDB.TraceSnapshotEvent (..)
   , LedgerDB.current
@@ -59,6 +60,7 @@ import           Codec.Serialise (Serialise (decode))
 import           Control.Monad.Trans.Class
 import           Control.Tracer
 import           Data.Foldable (foldl')
+import           Data.Functor.Contravariant ((>$<))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
@@ -133,7 +135,7 @@ data LgrDB m blk = LgrDB {
     , cfg             :: !(TopLevelConfig blk)
     , diskPolicy      :: !LedgerDB.DiskPolicy
     , hasFS           :: !(SomeHasFS m)
-    , tracer          :: !(Tracer m (LedgerDB.TraceSnapshotEvent blk))
+    , tracer          :: !(Tracer m (LedgerDB.TraceLedgerDBEvent blk))
     } deriving (Generic)
 
 deriving instance (IOLike m, LedgerSupportsProtocol blk)
@@ -157,13 +159,14 @@ type LgrDbSerialiseConstraints blk =
 -------------------------------------------------------------------------------}
 
 data LgrDbArgs f m blk = LgrDbArgs {
-      lgrDiskPolicy     :: LedgerDB.DiskPolicy
-    , lgrGenesis        :: HKD f (m (ExtLedgerState blk ValuesMK))
-    , lgrHasFS          :: SomeHasFS m
-    , lgrTopLevelConfig :: HKD f (TopLevelConfig blk)
-    , lgrTraceLedger    :: Tracer m (LedgerDB' blk)
-    , lgrTracer         :: Tracer m (LedgerDB.TraceSnapshotEvent blk)
-    , lgrRegistry       :: HKD f (ResourceRegistry m)
+      lgrDiskPolicy           :: LedgerDB.DiskPolicy
+    , lgrGenesis              :: HKD f (m (ExtLedgerState blk ValuesMK))
+    , lgrHasFS                :: SomeHasFS m
+    , lgrTopLevelConfig       :: HKD f (TopLevelConfig blk)
+    , lgrTraceLedger          :: Tracer m (LedgerDB' blk)
+    , lgrTracer               :: Tracer m (LedgerDB.TraceLedgerDBEvent blk)
+    , lgrRegistry             :: HKD f (ResourceRegistry m)
+    , lgrBackingStoreSelector :: !(LedgerDB.BackingStoreSelector m)
     }
 
 -- | Default arguments
@@ -171,15 +174,17 @@ defaultArgs ::
      Applicative m
   => SomeHasFS m
   -> LedgerDB.DiskPolicy
+  -> LedgerDB.BackingStoreSelector m
   -> LgrDbArgs Defaults m blk
-defaultArgs lgrHasFS diskPolicy = LgrDbArgs {
-      lgrDiskPolicy     = diskPolicy
-    , lgrGenesis        = NoDefault
+defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
+      lgrDiskPolicy           = diskPolicy
+    , lgrGenesis              = NoDefault
     , lgrHasFS
-    , lgrTopLevelConfig = NoDefault
-    , lgrTraceLedger    = nullTracer
-    , lgrTracer         = nullTracer
-    , lgrRegistry       = NoDefault
+    , lgrTopLevelConfig       = NoDefault
+    , lgrTraceLedger          = nullTracer
+    , lgrTracer               = nullTracer
+    , lgrRegistry             = NoDefault
+    , lgrBackingStoreSelector = bss
     }
 
 -- | Open the ledger DB
@@ -276,6 +281,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
         (LedgerDB.configLedgerDb lgrTopLevelConfig)
         lgrGenesis
         (streamAPI immutableDB)
+        lgrBackingStoreSelector
     return (db, replayed, backingStore)
   where
     ccfg = configCodec lgrTopLevelConfig
@@ -346,7 +352,7 @@ takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
       ledgerDB <- LedgerDB.lastFlushedState
                   <$> atomically (getCurrent lgrDB)
       LedgerDB.takeSnapshot
-        tracer
+        (LedgerDB.LedgerDBSnapshotEvent >$< tracer)
         hasFS
         lgrBackingStore
         encodeExtLedgerState'
@@ -367,7 +373,7 @@ trimSnapshots ::
   => LgrDB m blk
   -> m [LedgerDB.DiskSnapshot]
 trimSnapshots LgrDB { diskPolicy, tracer, hasFS } = wrapFailure (Proxy @blk) $
-    LedgerDB.trimSnapshots tracer hasFS diskPolicy
+    LedgerDB.trimSnapshots (LedgerDB.LedgerDBSnapshotEvent >$< tracer) hasFS diskPolicy
 
 getDiskPolicy :: LgrDB m blk -> LedgerDB.DiskPolicy
 getDiskPolicy = diskPolicy

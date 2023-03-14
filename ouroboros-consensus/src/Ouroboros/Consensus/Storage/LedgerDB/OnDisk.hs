@@ -37,6 +37,7 @@ import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Tracer
+import           Data.Functor.Contravariant ((>$<))
 import           Data.Word
 import           GHC.Stack
 import           System.FS.API
@@ -73,7 +74,7 @@ type TraceReplayEvent blk = LDB.TraceReplayEvent blk
 type InitFailure blk = LDB.SnapshotFailure blk
 
 {-# DEPRECATED TraceEvent "Use Ouroboros.Consensus.Storage.LedgerDB (TraceSnapshotEvent)" #-}
-type TraceEvent blk = LDB.TraceSnapshotEvent blk
+type TraceEvent blk = LDB.TraceLedgerDBEvent blk
 
 {-# DEPRECATED NextBlock "Use Ouroboros.Consensus.Storage.LedgerDB (NextItem)" #-}
 type NextBlock blk = LDB.NextItem blk
@@ -100,6 +101,7 @@ initLedgerDB ::
   -> LDB.LedgerDbCfg (ExtLedgerState blk)
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
+  -> LDB.BackingStoreSelector m
   -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
 initLedgerDB = LDB.initialize
 
@@ -112,7 +114,7 @@ takeSnapshot ::
   -> (ExtLedgerState blk EmptyMK -> Encoding)
   -> LedgerDB' blk
   -> m (Maybe (DiskSnapshot, RealPoint blk))
-takeSnapshot t fs bs e = LDB.takeSnapshot t fs bs e . LDB.anchor
+takeSnapshot t fs bs e = LDB.takeSnapshot (LDB.LedgerDBSnapshotEvent >$< t) fs bs e . LDB.anchor
 
 {-# DEPRECATED trimSnapshots "Use Ouroboros.Consensus.Storage.LedgerDB (trimSnapshots)" #-}
 trimSnapshots ::
@@ -121,7 +123,7 @@ trimSnapshots ::
   -> SomeHasFS m
   -> DiskPolicy
   -> m [DiskSnapshot]
-trimSnapshots = LDB.trimSnapshots
+trimSnapshots t = LDB.trimSnapshots (LDB.LedgerDBSnapshotEvent >$< t)
 
 {-# DEPRECATED readSnapshot "Use Ouroboros.Consensus.Storage.LedgerDB (readSnapshot)" #-}
 readSnapshot ::
