@@ -1,13 +1,15 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | LedgerDB initialization either from a LedgerState or from a DiskSnapshot
 module Ouroboros.Consensus.Storage.LedgerDB.Init (
     -- * Initialization
-    InitLog (..)
+    BackingStoreSelector (..)
+  , InitLog (..)
   , ReplayStart (..)
   , initialize
   , newBackingStore
@@ -15,6 +17,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.Init (
   , restoreBackingStore
     -- * Trace
   , ReplayGoal (..)
+  , TraceLedgerDBEvent (..)
   , TraceReplayEvent (..)
   , decorateReplayTracerWithGoal
   , decorateReplayTracerWithStart
@@ -45,12 +48,14 @@ import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.FS.API
 
+import           Data.Functor.Contravariant ((>$<))
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore.Impl
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.InMemory as BackingStore
+import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB as LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
-import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB',
-                     LedgerDbCfg)
+import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.Query
 import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
@@ -86,6 +91,11 @@ data InitLog blk =
   | InitFailure DiskSnapshot (SnapshotFailure blk) (InitLog blk)
   deriving (Show, Eq, Generic)
 
+data TraceLedgerDBEvent blk =
+    LedgerDBSnapshotEvent (TraceSnapshotEvent blk)
+  | BackingStoreEvent (BackingStoreTrace)
+  deriving (Show, Eq)
+
 -- | Initialize the ledger DB from the most recent snapshot on disk
 --
 -- If no such snapshot can be found, use the genesis ledger DB. Returns the
@@ -116,7 +126,7 @@ initialize ::
        , HasCallStack
        )
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
-  -> Tracer m (TraceSnapshotEvent blk)
+  -> Tracer m (TraceLedgerDBEvent blk)
   -> SomeHasFS m
   -> ResourceRegistry m
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
@@ -124,6 +134,7 @@ initialize ::
   -> LedgerDB.LedgerDbCfg (ExtLedgerState blk)
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
+  -> BackingStoreSelector m
   -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
 initialize replayTracer
            tracer
@@ -133,14 +144,15 @@ initialize replayTracer
            decHash
            cfg
            getGenesisLedger
-           streamAPI =
+           streamAPI
+           bss =
     listSnapshots hasFS >>= tryNewestFirst id
   where
     lbsi ::
          (HasLedgerTables l, NoThunks (LedgerTables l ValuesMK)
          , CanSerializeLedgerTables l)
-      => LedgerBackingStoreInitialiser m l
-    lbsi = newBackingStoreInitialiser
+      => BackingStoreInitializer m l
+    lbsi = newBackingStoreInitialiser (BackingStoreEvent >$< tracer) bss
 
     tryNewestFirst :: (InitLog blk -> InitLog blk)
                    -> [DiskSnapshot]
@@ -180,7 +192,7 @@ initialize replayTracer
         Left err -> do
           when (diskSnapshotIsTemporary s) $
             deleteSnapshot hasFS s
-          traceWith tracer . InvalidSnapshot s . InitFailureRead $ err
+          traceWith tracer . LedgerDBSnapshotEvent . InvalidSnapshot s . InitFailureRead $ err
           tryNewestFirst (acc . InitFailure s (InitFailureRead err)) ss
         Right extLedgerSt -> do
           let initialPoint =
@@ -193,7 +205,7 @@ initialize replayTracer
               -- Delete the snapshot of the Genesis ledger state. It should have
               -- never existed.
               deleteSnapshot hasFS s
-              traceWith tracer . InvalidSnapshot s $ InitFailureGenesis
+              traceWith tracer . LedgerDBSnapshotEvent . InvalidSnapshot s $ InitFailureGenesis
               tryNewestFirst (acc . InitFailure s InitFailureGenesis) []
 
             NotOrigin pt -> do
@@ -214,7 +226,7 @@ initialize replayTracer
                                     initDb
               case eDB of
                 Left err -> do
-                  traceWith tracer . InvalidSnapshot s $ err
+                  traceWith tracer . LedgerDBSnapshotEvent . InvalidSnapshot s $ err
                   when (diskSnapshotIsTemporary s) $ deleteSnapshot hasFS s
                   tryNewestFirst (acc . InitFailure s err) ss
                 Right (db, replayed) ->
@@ -281,31 +293,33 @@ replayStartingWith tracer cfg backingStore streamAPI initDb = do
   BackingStore utilities
 -------------------------------------------------------------------------------}
 
+type BackingStoreInitializer m l =
+     SomeHasFS m
+  -> InitFrom (LedgerTables l ValuesMK)
+  -> m (BackingStore m (LedgerTables l KeysMK) (LedgerTables l ValuesMK) (LedgerTables l DiffMK))
+
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore ::
      IOLike m
-  => LedgerBackingStoreInitialiser m l
+  => BackingStoreInitializer m l
   -> SomeHasFS m
   -> DiskSnapshot
   -> m (LedgerBackingStore m l)
-restoreBackingStore lbsi someHasFs snapshot = do
-    LedgerBackingStore <$>
-      BackingStore.initFromCopy bsi someHasFs (BackingStore.BackingStorePath loadPath)
+restoreBackingStore bsi someHasFs snapshot = do
+    LedgerBackingStore <$> bsi someHasFs (InitFromCopy (BackingStore.BackingStorePath loadPath))
   where
-    LedgerBackingStoreInitialiser bsi = lbsi
     loadPath = snapshotToTablesPath snapshot
 
 -- | Create a backing store from the given genesis ledger state
 newBackingStore ::
      IOLike m
-  => LedgerBackingStoreInitialiser m l
+  => BackingStoreInitializer m l
   -> SomeHasFS m
   -> LedgerTables l ValuesMK
   -> m (LedgerBackingStore m l)
-newBackingStore lbsi someHasFS tables = do
-    LedgerBackingStore <$> BackingStore.initFromValues bsi someHasFS Origin tables
+newBackingStore bsi someHasFS tables = do
+    LedgerBackingStore <$> bsi someHasFS (InitFromValues Origin tables)
   where
-    LedgerBackingStoreInitialiser bsi = lbsi
 
 newBackingStoreInitialiser ::
      ( IOLike m
@@ -313,9 +327,17 @@ newBackingStoreInitialiser ::
      , HasLedgerTables l
      , CanSerializeLedgerTables l
      )
-  => LedgerBackingStoreInitialiser m l
-newBackingStoreInitialiser = LedgerBackingStoreInitialiser $
-    BackingStore.newTVarBackingStoreInitialiser
+  => Tracer m BackingStoreTrace
+  -> BackingStoreSelector m
+  -> BackingStoreInitializer m l
+newBackingStoreInitialiser tracer bss =
+  case bss of
+    LMDBBackingStore limits ->
+      LMDB.newLMDBBackingStoreInitialiser
+        (LMDBTrace >$< tracer)
+        limits
+    InMemoryBackingStore -> BackingStore.newTVarBackingStoreInitialiser
+      (InMemoryTrace >$< tracer)
       (zipLedgerTables lookup_)
       (\rq values -> case BackingStore.rqPrev rq of
           Nothing   ->
@@ -360,6 +382,11 @@ newBackingStoreInitialiser = LedgerBackingStoreInitialiser $
       -> ValuesMK k v
     applyDiff_ (ValuesMK values) (DiffMK diff) =
       ValuesMK (Diff.Internal.unsafeApplyDiff values diff)
+
+-- | The backing store selector
+data BackingStoreSelector m where
+  LMDBBackingStore     :: MonadIO m => !LMDB.LMDBLimits -> BackingStoreSelector m
+  InMemoryBackingStore ::                                  BackingStoreSelector m
 
 {-------------------------------------------------------------------------------
   Trace events

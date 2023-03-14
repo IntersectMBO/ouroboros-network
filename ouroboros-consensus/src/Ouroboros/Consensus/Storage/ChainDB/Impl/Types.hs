@@ -495,7 +495,7 @@ getBlockToAdd (BlocksToAdd queue) = atomically $ readTBQueue queue
   Trace types
 -------------------------------------------------------------------------------}
 
-{-# DEPRECATED TraceLedgerEvent "Use TraceSnapshotEvent"#-}
+{-# DEPRECATED TraceLedgerEvent "Use TraceLedgerDBEvent"#-}
 -- | Trace type for the various events of the ChainDB.
 data TraceEvent blk
   = TraceAddBlockEvent          (TraceAddBlockEvent           blk)
@@ -505,8 +505,8 @@ data TraceEvent blk
   | TraceInitChainSelEvent      (TraceInitChainSelEvent       blk)
   | TraceOpenEvent              (TraceOpenEvent               blk)
   | TraceIteratorEvent          (TraceIteratorEvent           blk)
-  | TraceSnapshotEvent          (LgrDB.TraceSnapshotEvent     blk)
-  | TraceLedgerEvent            (LgrDB.TraceSnapshotEvent     blk)
+  | TraceLedgerDBEvent          (LgrDB.TraceLedgerDBEvent     blk)
+  | TraceLedgerEvent            (LgrDB.TraceLedgerDBEvent     blk)
   | TraceLedgerReplayEvent      (LgrDB.TraceReplayEvent       blk)
   | TraceImmutableDBEvent       (ImmutableDB.TraceEvent       blk)
   | TraceVolatileDBEvent        (VolatileDB.TraceEvent        blk)

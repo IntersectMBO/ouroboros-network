@@ -9,6 +9,8 @@
 module Ouroboros.Consensus.Storage.LedgerDB.BackingStore.InMemory (
     -- * Constructor
     newTVarBackingStoreInitialiser
+    -- * Traces
+  , TVarTraceEvent (..)
     -- * Errors
   , StoreDirIsIncompatible (..)
   , TVarBackingStoreExn (..)
@@ -36,6 +38,8 @@ import           Ouroboros.Consensus.Util.IOLike (Exception, IOLike,
                      StrictTVar, newTVarIO, readTVar, throwSTM, writeTVar)
 
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
+import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
+import Control.Tracer (Tracer, traceWith)
 
 {-------------------------------------------------------------------------------
   An in-memory backing store
@@ -58,20 +62,36 @@ data TVarBackingStoreExn =
   deriving anyclass (Exception)
   deriving stock    (Show)
 
+data TVarTraceEvent = TVarTraceOpening
+                    | TVarTraceOpened
+                    | TVarTraceClosing
+                    | TVarTraceClosed
+                    | TVarTraceCopying     !FS.FsPath -- ^ To
+                    | TVarTraceCopied      !FS.FsPath -- ^ To
+                    | TVarTraceWrite       !(WithOrigin SlotNo) !SlotNo
+                    | TVarTraceInitialisingFromSnapshot !FS.FsPath
+                    | TVarTraceInitialisedFromSnapshot !FS.FsPath
+                    | TVarTraceInitialisingFromValues !(WithOrigin SlotNo)
+  deriving (Show, Eq)
+
 -- | Use a 'TVar' as a trivial backing store
 newTVarBackingStoreInitialiser ::
      (IOLike m, NoThunks values)
-  => (keys -> values -> values)
+  => Tracer m TVarTraceEvent
+  -> (keys -> values -> values)
   -> (RangeQuery keys -> values -> values)
   -> (values -> diff -> values)
   -> (values -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s values)
-  -> BackingStoreInitialiser m keys values diff
-newTVarBackingStoreInitialiser lookup_ rangeRead_ forwardValues_ enc dec =
-  BackingStoreInitialiser $ \(SomeHasFS fs0) initialization -> do
+  -> SomeHasFS m
+  -> InitFrom values
+  -> m (BackingStore m keys values diff)
+newTVarBackingStoreInitialiser tracer lookup_ rangeRead_ forwardValues_ enc dec (SomeHasFS fs0) initialization = do
+    traceWith tracer TVarTraceOpening
     ref <- do
       (slot, values) <- case initialization of
         InitFromCopy (BackingStorePath path) -> do
+          traceWith tracer $ TVarTraceInitialisingFromSnapshot path
           tvarFileExists <- doesFileExist fs0 (extendPath path)
           unless tvarFileExists $
             throwIO . StoreDirIsIncompatible $ mkFsErrorPath fs0 path
@@ -81,14 +101,22 @@ newTVarBackingStoreInitialiser lookup_ rangeRead_ forwardValues_ enc dec =
               Left  err        -> throwIO $ TVarBackingStoreDeserialiseExn err
               Right (extra, x) -> do
                 unless (BSL.null extra) $ throwIO TVarIncompleteDeserialiseExn
+                traceWith tracer $ TVarTraceInitialisedFromSnapshot path
                 pure x
-        InitFromValues slot values -> pure (slot, values)
+        InitFromValues slot values -> do
+          traceWith tracer $ TVarTraceInitialisingFromValues slot
+          pure (slot, values)
       newTVarIO $ TVarBackingStoreContents slot values
+    traceWith tracer TVarTraceOpened
     pure BackingStore {
-        bsClose    = atomically $ do
-          guardClosed ref
-          writeTVar ref TVarBackingStoreContentsClosed
-      , bsCopy = \(SomeHasFS fs) (BackingStorePath path) ->
+        bsClose    = do
+            traceWith tracer TVarTraceClosing
+            atomically $ do
+              guardClosed ref
+              writeTVar ref TVarBackingStoreContentsClosed
+            traceWith tracer TVarTraceClosed
+      , bsCopy = \(SomeHasFS fs) (BackingStorePath path) -> do
+          traceWith tracer $ TVarTraceCopying path
           join $ atomically $ do
             readTVar ref >>= \case
               TVarBackingStoreContentsClosed                ->
@@ -99,6 +127,7 @@ newTVarBackingStoreInitialiser lookup_ rangeRead_ forwardValues_ enc dec =
                 createDirectory fs path
                 withFile fs (extendPath path) (WriteMode MustBeNew) $ \h -> do
                   void $ hPutAll fs h $ CBOR.toLazyByteString $ CBOR.toCBOR slot <> enc values
+          traceWith tracer $ TVarTraceCopied path
       , bsValueHandle = join $ atomically $ do
           readTVar ref >>= \case
             TVarBackingStoreContentsClosed                ->
@@ -119,7 +148,8 @@ newTVarBackingStoreInitialiser lookup_ rangeRead_ forwardValues_ enc dec =
                     guardHandleClosed refHandleClosed
                     pure $ lookup_ keys values
                 }
-      , bsWrite    = \slot2 diff -> atomically $ do
+      , bsWrite    = \slot2 diff -> do
+         slot1 <- atomically $ do
           readTVar ref >>= \case
             TVarBackingStoreContentsClosed        ->
               throwSTM TVarBackingStoreClosedExn
@@ -130,6 +160,8 @@ newTVarBackingStoreInitialiser lookup_ rangeRead_ forwardValues_ enc dec =
                 TVarBackingStoreContents
                   (At slot2)
                   (forwardValues_ values diff)
+              pure slot1
+         traceWith tracer $ TVarTraceWrite slot1 slot2
       }
   where
     extendPath path =

@@ -17,19 +17,15 @@
 module Ouroboros.Consensus.Storage.LedgerDB.BackingStore (
     -- * Backing store interface
     BackingStore (..)
-  , BackingStoreInitialiser (..)
   , BackingStorePath (..)
   , BackingStoreValueHandle (..)
   , InitFrom (..)
   , RangeQuery (..)
   , bsRead
-  , initFromCopy
-  , initFromValues
   , withBsValueHandle
     -- * Ledger DB wrappers
   , LedgerBackingStore (..)
   , LedgerBackingStore'
-  , LedgerBackingStoreInitialiser (..)
   , LedgerBackingStoreValueHandle (..)
   ) where
 
@@ -48,31 +44,6 @@ import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 {-------------------------------------------------------------------------------
   Backing store interface
 -------------------------------------------------------------------------------}
-
-data InitFrom values =
-    InitFromValues !(WithOrigin SlotNo) !values
-  | InitFromCopy !BackingStorePath
-
--- | Initialisation for a backing store
-newtype BackingStoreInitialiser m keys values diff = BackingStoreInitialiser {
-    bsiInit :: FS.SomeHasFS m -> InitFrom values -> m (BackingStore m keys values diff)
-  }
-  deriving newtype NoThunks
-
-initFromValues ::
-     BackingStoreInitialiser m keys values diff
-  -> FS.SomeHasFS m
-  -> WithOrigin SlotNo
-  -> values
-  -> m (BackingStore m keys values diff)
-initFromValues bsi shfs sl vs = bsiInit bsi shfs (InitFromValues sl vs)
-
-initFromCopy ::
-     BackingStoreInitialiser m keys values diff
-  -> FS.SomeHasFS m
-  -> BackingStorePath
-  -> m (BackingStore m keys values diff)
-initFromCopy bsi shfs bsp = bsiInit bsi shfs (InitFromCopy bsp)
 
 -- | A backing store for a map
 data BackingStore m keys values diff = BackingStore {
@@ -97,6 +68,10 @@ data BackingStore m keys values diff = BackingStore {
 
 deriving via OnlyCheckWhnfNamed "BackingStore" (BackingStore m keys values diff)
   instance NoThunks (BackingStore m keys values diff)
+
+data InitFrom values =
+    InitFromValues !(WithOrigin SlotNo) !values
+  | InitFromCopy !BackingStorePath
 
 newtype BackingStorePath = BackingStorePath FS.FsPath
   deriving stock (Show, Eq, Ord)
@@ -170,14 +145,6 @@ withBsValueHandle store kont =
 {-------------------------------------------------------------------------------
   Ledger DB wrappers
 -------------------------------------------------------------------------------}
-
-newtype LedgerBackingStoreInitialiser m l = LedgerBackingStoreInitialiser
-  (BackingStoreInitialiser m
-    (LedgerTables l KeysMK)
-    (LedgerTables l ValuesMK)
-    (LedgerTables l DiffMK)
-  )
-  deriving newtype (NoThunks)
 
 -- | A handle to the backing store for the ledger tables
 newtype LedgerBackingStore m l = LedgerBackingStore
