@@ -32,14 +32,13 @@ import           Control.Tracer (Tracer)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
+import           System.FS.API
+import           System.FS.API.Types
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util (SomePair (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks

@@ -28,11 +28,11 @@ import           Data.Set (Set)
 import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
+import           System.FS.API.Types (FsPath)
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr (..))
 
-import           Ouroboros.Consensus.Storage.FS.API.Types (FsPath)
 import           Ouroboros.Consensus.Storage.VolatileDB.API (BlockInfo)
 
 {------------------------------------------------------------------------------

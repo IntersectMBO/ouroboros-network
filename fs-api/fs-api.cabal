@@ -1,0 +1,81 @@
+cabal-version:      3.0
+
+name:               fs-api
+version:            0.1.0.0
+synopsis:           API for file systems
+description:        API for file systems.
+license:            Apache-2.0
+license-files:      LICENSE
+                    NOTICE
+copyright:          2019-2023 Input Output Global Inc (IOG)
+author:             IOHK Engineering Team
+maintainer:         operations@iohk.io
+category:           System
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+tested-with:        GHC == { 8.10.7, 9.2.5 }
+
+source-repository head
+  type:     git
+  location: https://github.com/input-output-hk/ouroboros-network
+  subdir:   fs-api
+
+flag asserts
+  description: Enable assertions
+  manual:      False
+  default:     False
+
+library
+  hs-source-dirs:     src
+
+  if os(windows)
+    hs-source-dirs:   src-win32
+  else
+    hs-source-dirs:   src-unix
+
+  exposed-modules:    System.FS.API
+                    , System.FS.API.Types
+                    , System.FS.CRC
+                    , System.FS.Handle
+                    , System.FS.IO
+                    , System.IO.FS
+                    , Util.CallStack
+                    , Util.Condense
+
+  if os(windows)
+    exposed-modules:
+                      -- TODO Delete this module once all our projects have upgraded to at least
+                      -- ghc-8.10.7, but not before
+                      System.IO.Seek
+
+  default-language:   Haskell2010
+
+  build-depends:      base        >=4.14  && <4.17
+                    , bytestring  >=0.10  && <0.12
+                    , containers  >=0.5   && <0.7
+                    , deepseq
+                    , digest
+                    , directory   >=1.3   && <1.4
+                    , filepath    >=1.4   && <1.5
+                    , io-classes ^>=0.3
+                    , nothunks    >=0.1.2 && <0.2
+                    , text        >=1.2   && <1.3
+
+  if os(windows)
+    build-depends:    Win32            >= 2.6.1.0
+  else
+    build-depends:    unix
+                    , unix-bytestring
+
+  ghc-options:        -Wall
+                      -Wcompat
+                      -Wincomplete-uni-patterns
+                      -Wincomplete-record-updates
+                      -Wpartial-fields
+                      -Widentities
+                      -Wredundant-constraints
+                      -Wmissing-export-lists
+                      -Wunused-packages
+
+  if flag(asserts)
+    ghc-options:      -fno-ignore-asserts

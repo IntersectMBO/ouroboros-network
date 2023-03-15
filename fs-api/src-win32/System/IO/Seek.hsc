@@ -4,7 +4,7 @@
 -- setFilePointerEx was introduced in Win32 in version 2.6.2.0, but katip
 -- does not allow us to use it.
 
-module Ouroboros.Consensus.Storage.Seek
+module System.IO.Seek
   ( setFilePointerEx
   ) where
 

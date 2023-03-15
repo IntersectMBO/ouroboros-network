@@ -53,6 +53,9 @@ import           Data.Void (Void)
 import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (unsafeNoThunks)
+import           System.FS.API (HasFS (..), withFile)
+import           System.FS.API.Types (AllowExisting (..), Handle,
+                     OpenMode (ReadMode))
 
 import           Cardano.Prelude (forceElemsToWHNF)
 
@@ -63,10 +66,6 @@ import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.IOLike
 import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
 import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), withFile)
-import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
-                     Handle, OpenMode (ReadMode))
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
                      (UnexpectedFailure (..), throwUnexpectedFailure)

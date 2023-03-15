@@ -32,6 +32,12 @@ import           System.IO.Temp (withTempDirectory)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Monad.IOSim (runSimOrThrow)
 
+import           System.FS.API.Types
+import           System.FS.Sim.FsTree (FsTree (..))
+import qualified System.FS.Sim.MockFS as Mock
+import           System.FS.Sim.MockFS (Files)
+import           System.FS.Sim.STM (runSimFS)
+
 import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 import           Ouroboros.Consensus.Node.DbLock
@@ -39,17 +45,11 @@ import           Ouroboros.Consensus.Node.DbMarker
 import           Ouroboros.Consensus.Util.FileLock (FileLock, ioFileLock)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.FS.API.Types
-
 import           Test.Tasty
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck
 
 import           Test.Util.FileLock
-import           Test.Util.FS.Sim.FsTree (FsTree (..))
-import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.FS.Sim.MockFS (Files)
-import           Test.Util.FS.Sim.STM (runSimFS)
 import           Test.Util.QuickCheck (ge)
 
 tests :: TestTree

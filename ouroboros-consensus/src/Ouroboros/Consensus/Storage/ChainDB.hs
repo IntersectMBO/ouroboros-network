@@ -1,7 +1,7 @@
 -- | The storage layer is a highly specialized database for storing the blockchain.
 --   It consists of five subcomponents:
 --
--- * An abstract file system API, 'Ouroboros.Consensus.Storage.FS.API.HasFS',
+-- * An abstract file system API, 'System.FS.API.HasFS',
 --   that smooths out over some differences between the file systems of
 --   different operating systems and, more importantly, allows us to simulate
 --   all kinds of failures. This is then used for stress-testing the other

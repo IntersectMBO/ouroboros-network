@@ -23,14 +23,12 @@ import           Data.Typeable (Typeable)
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
+import           System.FS.API (HasFS)
+import           System.FS.API.Types (AllowExisting, Handle)
 
 import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB, StandardHash)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import           Ouroboros.Consensus.Storage.FS.API (HasFS)
-import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting,
-                     Handle)
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache

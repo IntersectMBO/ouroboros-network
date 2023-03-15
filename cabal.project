@@ -47,6 +47,8 @@ packages: ./cardano-ping
           ./ouroboros-consensus-diffusion
           ./ntp-client
           ./cardano-client
+          ./fs-api
+          ./fs-sim
 
 tests: True
 

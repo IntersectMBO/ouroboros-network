@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wno-dodgy-imports #-}
-module Ouroboros.Consensus.Storage.IO (
+module System.IO.FS (
     FHandle
   , close
   , getSize
@@ -24,11 +24,10 @@ import           Foreign (Int64, Ptr)
 -- Dodgy import when Win32 >= 2.6.2.0
 import           System.Win32 hiding (setFilePointerEx)
 
-import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
-                     FsError (..), FsErrorType (..), OpenMode (..),
-                     SeekMode (..))
-import           Ouroboros.Consensus.Storage.FS.Handle
-import           Ouroboros.Consensus.Storage.Seek (setFilePointerEx)
+import           System.FS.API.Types (AllowExisting (..), FsError (..),
+                     FsErrorType (..), OpenMode (..), SeekMode (..))
+import           System.FS.Handle
+import           System.IO.Seek (setFilePointerEx)
 
 type FHandle = HandleOS HANDLE
 

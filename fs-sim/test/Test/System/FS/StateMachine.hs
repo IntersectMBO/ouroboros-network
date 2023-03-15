@@ -1,19 +1,20 @@
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveFoldable       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE DeriveTraversable    #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveAnyClass           #-}
+{-# LANGUAGE DeriveFoldable           #-}
+{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DeriveTraversable        #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TemplateHaskell          #-}
+{-# LANGUAGE TupleSections            #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -46,7 +47,7 @@
 -- tests serve to make sure that we got the model right, which we can then use
 -- in the tests of the rest of the consensus layer.
 --
-module Test.Ouroboros.Storage.FS.StateMachine (
+module Test.System.FS.StateMachine (
     showLabelledExamples
   , tests
   ) where
@@ -61,6 +62,7 @@ import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Functor.Classes
 import           Data.Int (Int64)
+import           Data.List (foldl')
 import qualified Data.List as L
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -90,21 +92,20 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck
 
-import           Ouroboros.Consensus.Storage.FS.API (HasFS (..))
-import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.FS.IO
-import qualified Ouroboros.Consensus.Storage.IO as F
+import           System.FS.API (HasFS (..))
+import           System.FS.API.Types
+import           System.FS.IO
+import qualified System.IO.FS as F
 
-import           Ouroboros.Consensus.Util.Condense
+import           Util.Condense
 
-import           Test.Util.FS.Sim.FsTree (FsTree (..))
-import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.FS.Sim.MockFS (HandleMock, MockFS)
-import           Test.Util.FS.Sim.Pure
-import           Test.Util.QuickCheck (collects)
+import           System.FS.Sim.FsTree (FsTree (..))
+import qualified System.FS.Sim.MockFS as Mock
+import           System.FS.Sim.MockFS (HandleMock, MockFS)
+import           System.FS.Sim.Pure
+
 import qualified Test.Util.RefEnv as RE
 import           Test.Util.RefEnv (RefEnv)
-import           Test.Util.SOP
 
 {-------------------------------------------------------------------------------
   Path expressions
@@ -1330,6 +1331,28 @@ execCmds = \(QSM.Commands cs) -> go initModel cs
   The 'ToExpr' constraints come from "Data.TreeDiff".
 -------------------------------------------------------------------------------}
 
+constrInfo :: SOP.HasDatatypeInfo a
+           => proxy a
+           -> SOP.NP SOP.ConstructorInfo (SOP.Code a)
+constrInfo = SOP.constructorInfo . SOP.datatypeInfo
+
+constrName :: forall a. SOP.HasDatatypeInfo a => a -> String
+constrName a =
+    SOP.hcollapse $ SOP.hliftA2 go (constrInfo p) (SOP.unSOP (SOP.from a))
+  where
+    go :: SOP.ConstructorInfo b -> SOP.NP SOP.I b -> SOP.K String b
+    go nfo _ = SOP.K $ SOP.constructorName nfo
+
+    p = Proxy @a
+
+constrNames :: SOP.HasDatatypeInfo a => proxy a -> [String]
+constrNames p =
+    SOP.hcollapse $ SOP.hmap go (constrInfo p)
+  where
+    go :: SOP.ConstructorInfo a -> SOP.K String a
+    go nfo = SOP.K $ SOP.constructorName nfo
+
+
 instance QSM.CommandNames (At Cmd) where
   cmdName  (At cmd) = constrName cmd
   cmdNames _        = constrNames (Proxy @(Cmd () ()))
@@ -1382,6 +1405,12 @@ showLabelledExamples' mReplay numTests focus = do
   where
     sm' = sm mountUnused
     pp  = \x -> ppShow x ++ "\n" ++ condense x
+
+    collects :: Show a => [a] -> Property -> Property
+    collects = repeatedly collect
+      where
+        repeatedly :: (a -> b -> b) -> ([a] -> b -> b)
+        repeatedly = flip . foldl' . flip
 
 showLabelledExamples :: IO ()
 showLabelledExamples = showLabelledExamples' Nothing 1000 (const True)

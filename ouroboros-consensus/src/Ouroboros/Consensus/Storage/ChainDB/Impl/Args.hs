@@ -17,14 +17,14 @@ import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 
 import           Control.Tracer (Tracer, contramap, nullTracer)
 
+import           System.FS.API
+
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-
-import           Ouroboros.Consensus.Storage.FS.API
 
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB

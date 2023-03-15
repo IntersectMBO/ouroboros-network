@@ -1,6 +1,6 @@
 {-# LANGUAGE PackageImports #-}
 
-module Ouroboros.Consensus.Storage.IO (
+module System.IO.FS (
     FHandle
   , close
   , getSize
@@ -27,9 +27,9 @@ import           System.Posix (Fd)
 -- Package 'unix' exports the same module.
 import           "unix-bytestring" System.Posix.IO.ByteString (fdPreadBuf)
 
-import           Ouroboros.Consensus.Storage.FS.API.Types (AllowExisting (..),
-                     FsError, OpenMode (..), SeekMode (..), sameFsError)
-import           Ouroboros.Consensus.Storage.FS.Handle
+import           System.FS.API.Types (AllowExisting (..), FsError,
+                     OpenMode (..), SeekMode (..), sameFsError)
+import           System.FS.Handle
 
 type FHandle = HandleOS Fd
 

@@ -82,6 +82,10 @@ import           Test.QuickCheck
 
 import           Control.Monad.Class.MonadThrow
 
+import           System.FS.API (HasFS (..), hGetExactly, hPutAll, hSeek,
+                     withFile)
+import           System.FS.API.Types
+
 import           Cardano.Crypto.DSIGN
 
 import qualified Ouroboros.Network.Mock.Chain as Chain
@@ -106,9 +110,6 @@ import           Ouroboros.Consensus.Protocol.Signed
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
 
-import           Ouroboros.Consensus.Storage.FS.API (HasFS (..), hGetExactly,
-                     hPutAll, hSeek, withFile)
-import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.Serialisation
 

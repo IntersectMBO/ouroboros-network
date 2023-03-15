@@ -27,6 +27,7 @@ import           Data.Word (Word16, Word64)
 import qualified Debug.Trace as Debug
 import qualified GHC.Stats as GC
 import           NoThunks.Class (noThunks)
+import           System.FS.API (SomeHasFS (..))
 import qualified System.IO as IO
 import qualified Text.Builder as Builder
 
@@ -52,7 +53,6 @@ import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
 import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
                      StreamFrom (..))
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
 import qualified Ouroboros.Consensus.Util.IOLike as IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 

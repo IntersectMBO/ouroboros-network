@@ -3,8 +3,8 @@
 module Ouroboros.Consensus.Storage.LedgerDB.OnDisk {-# DEPRECATED "Use Ouroboros.Consensus.Storage.LedgerDB instead" #-} (
     -- * Opening the database
     InitFailure
-  , LDB.SnapshotFailure (..)
   , LDB.InitLog (..)
+  , LDB.SnapshotFailure (..)
   , initLedgerDB
     -- ** Instantiate in-memory to @blk@
   , LDB.AnnLedgerError'
@@ -27,9 +27,9 @@ module Ouroboros.Consensus.Storage.LedgerDB.OnDisk {-# DEPRECATED "Use Ouroboros
     -- * Trace events
   , LDB.ReplayGoal (..)
   , LDB.ReplayStart (..)
-  , TraceEvent
-  , LDB.TraceSnapshotEvent (..)
   , LDB.TraceReplayEvent (..)
+  , LDB.TraceSnapshotEvent (..)
+  , TraceEvent
   , decorateReplayTracerWithGoal
   ) where
 
@@ -39,6 +39,8 @@ import           Control.Monad.Except
 import           Control.Tracer
 import           Data.Word
 import           GHC.Stack
+import           System.FS.API
+import           System.FS.API.Types
 
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Basics
@@ -48,11 +50,8 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 import           Ouroboros.Consensus.Util.IOLike
 
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
-
-import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LDB
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
 
 {-------------------------------------------------------------------------------
   Non-exported local aliases

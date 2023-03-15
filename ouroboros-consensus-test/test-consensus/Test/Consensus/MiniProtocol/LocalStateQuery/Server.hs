@@ -24,6 +24,8 @@ import qualified Data.Map.Strict as Map
 
 import           Control.Monad.IOSim (runSimOrThrow)
 
+import           System.FS.API (HasFS, SomeHasFS (..))
+
 import           Cardano.Crypto.DSIGN.Mock
 
 import           Network.TypedProtocol.Proofs (connect)
@@ -52,7 +54,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCac
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
                      LgrDbArgs (..), mkLgrDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
-import           Ouroboros.Consensus.Storage.FS.API (HasFS, SomeHasFS (..))
 import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
                      defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LgrDB (ledgerDbPast,

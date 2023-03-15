@@ -108,6 +108,9 @@ import           Control.Monad.State.Strict (get, lift, modify, put)
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy
 import           GHC.Stack (HasCallStack)
+import           System.FS.API
+import           System.FS.API.Types hiding (allowExisting)
+import           System.FS.CRC
 
 import           Ouroboros.Consensus.Block hiding (headerHash)
 import           Ouroboros.Consensus.Util (SomePair (..))
@@ -116,9 +119,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types hiding (allowExisting)
-import           Ouroboros.Consensus.Storage.FS.CRC
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API

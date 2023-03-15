@@ -49,6 +49,10 @@ import           Data.Word
 import qualified Generics.SOP as SOP
 import           GHC.Generics
 import           GHC.Stack
+import           System.FS.API (SomeHasFS (..), hPutAll, withFile)
+import           System.FS.API.Types
+import           System.FS.Sim.Error hiding (null)
+import qualified System.FS.Sim.MockFS as Mock
 import           System.Random (getStdRandom, randomR)
 import           Text.Show.Pretty (ppShow)
 
@@ -59,9 +63,6 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..), hPutAll,
-                     withFile)
-import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Storage.VolatileDB
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Types (FileId)
 import           Ouroboros.Consensus.Storage.VolatileDB.Impl.Util
@@ -78,8 +79,6 @@ import qualified Test.StateMachine.Types.Rank2 as Rank2
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Test.Util.FS.Sim.Error hiding (null)
-import qualified Test.Util.FS.Sim.MockFS as Mock
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.QuickCheck
 import           Test.Util.SOP

@@ -14,8 +14,8 @@ module Ouroboros.Consensus.Node.DbLock (
 
 import           Control.Monad.Class.MonadTimer
 import qualified Data.Time.Clock as Time
+import           System.FS.API.Types
 
-import           Ouroboros.Consensus.Storage.FS.API.Types
 import           Ouroboros.Consensus.Util.FileLock
 import           Ouroboros.Consensus.Util.IOLike
 

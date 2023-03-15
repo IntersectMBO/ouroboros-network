@@ -99,6 +99,8 @@ import           Data.Void (Void)
 import           Data.Word (Word16, Word32, Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (AllowThunk (..))
+import qualified System.FS.Sim.MockFS as Mock
+import           System.FS.Sim.MockFS (MockFS)
 
 import qualified Generics.SOP as SOP
 
@@ -162,8 +164,6 @@ import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
 
 import           Test.Util.ChunkInfo
-import qualified Test.Util.FS.Sim.MockFS as Mock
-import           Test.Util.FS.Sim.MockFS (MockFS)
 import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.QuickCheck
 import qualified Test.Util.RefEnv as RE

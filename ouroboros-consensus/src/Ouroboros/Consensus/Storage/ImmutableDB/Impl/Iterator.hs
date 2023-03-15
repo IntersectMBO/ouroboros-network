@@ -23,6 +23,9 @@ import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           GHC.Generics (Generic)
+import           System.FS.API
+import           System.FS.API.Types
+import           System.FS.CRC
 
 import           Cardano.Prelude (forceElemsToWHNF)
 
@@ -36,9 +39,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceKey,
                      ResourceRegistry, allocate, release, unsafeRelease)
 
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.FS.API
-import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.FS.CRC
 import           Ouroboros.Consensus.Storage.Serialisation
 
 import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding

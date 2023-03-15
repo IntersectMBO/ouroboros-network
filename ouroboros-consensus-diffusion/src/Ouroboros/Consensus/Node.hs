@@ -59,6 +59,9 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Typeable (Typeable)
 import           System.FilePath ((</>))
+import           System.FS.API (SomeHasFS (..))
+import           System.FS.API.Types
+import           System.FS.IO (ioHasFS)
 import           System.Random (StdGen, newStdGen, randomIO, randomRIO)
 
 import           Control.Monad.Class.MonadTime (MonadTime)
@@ -113,9 +116,6 @@ import           Ouroboros.Consensus.Util.Time (secondsToNominalDiffTime)
 
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB, ChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
-import           Ouroboros.Consensus.Storage.FS.API (SomeHasFS (..))
-import           Ouroboros.Consensus.Storage.FS.API.Types
-import           Ouroboros.Consensus.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo,
                      ValidationPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
