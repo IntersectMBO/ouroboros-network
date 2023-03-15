@@ -73,15 +73,6 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
 
 
 
-
--- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
--- @Channel -> m a@ action.
---
-newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
-        OuroborosApplication
-          (ConnectionId addr -> ControlMessageSTM m -> [MiniProtocol mode bytes m a b])
-
-
 -- |  There are three kinds of applications: warm, hot and established (ones
 -- that run in both warm and hot peers).
 --
@@ -279,6 +270,16 @@ data MuxPeer bytes m a where
     MuxPeerRaw
            :: (Channel m bytes -> m (a, Maybe bytes))
            -> MuxPeer bytes m a
+
+
+-- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
+-- @Channel -> m a@ action.
+--
+-- Note: Only used in some non-P2P contexts.
+newtype OuroborosApplication (mode :: MuxMode) addr bytes m a b =
+        OuroborosApplication
+          (ConnectionContext addr m -> [MiniProtocol mode bytes m a b])
+
 
 -- | Create non p2p mux application.
 --
