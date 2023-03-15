@@ -40,9 +40,9 @@ module Ouroboros.Consensus.Ledger.Tables.Utils (
   , rawCalculateDifference
   , rawForgetValues
   , rawPrependTrackingDiffs
+  , restrictValues
   , zipOverLedgerTables
   , zipOverLedgerTablesTicked
-  , restrictValues
   ) where
 
 import           Data.Map.Diff.Strict
@@ -50,8 +50,8 @@ import           Data.Map.Diff.Strict.Internal
 
 import           Ouroboros.Consensus.Ticked
 
-import           Ouroboros.Consensus.Ledger.Tables
 import qualified Data.Map.Strict as Map
+import           Ouroboros.Consensus.Ledger.Tables
 
 {-------------------------------------------------------------------------------
   Util combinators

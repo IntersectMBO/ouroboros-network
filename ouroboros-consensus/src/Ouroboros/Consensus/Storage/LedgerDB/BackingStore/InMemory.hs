@@ -37,9 +37,9 @@ import           Ouroboros.Consensus.Util.IOLike (Exception, IOLike,
                      MonadSTM (STM, atomically), MonadThrow (throwIO), NoThunks,
                      StrictTVar, newTVarIO, readTVar, throwSTM, writeTVar)
 
-import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
+import           Control.Tracer (Tracer, traceWith)
 import qualified Ouroboros.Consensus.Storage.FS.API.Types as FS
-import Control.Tracer (Tracer, traceWith)
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 
 {-------------------------------------------------------------------------------
   An in-memory backing store
