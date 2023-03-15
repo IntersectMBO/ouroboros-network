@@ -22,6 +22,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , withLedgerPeers
   , UseLedgerAfter (..)
   , IsLedgerPeer (..)
+  , IsBigLedgerPeer (..)
   , Socket.PortNumber
     -- Re-exports for testing purposes
   , bigLedgerPeerQuota
@@ -52,7 +53,7 @@ import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (AccPoolStake (..), PoolStake (..))
+                     (AccPoolStake (..), IsBigLedgerPeer (..), PoolStake (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), RelayAccessPoint (..))
 import           Text.Printf

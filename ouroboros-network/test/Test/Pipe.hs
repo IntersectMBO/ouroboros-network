@@ -164,7 +164,7 @@ demo chain0 updates = do
             consumerApp = demoProtocols chainSyncInitator
 
             chainSyncInitator =
-              InitiatorProtocolOnly $
+              InitiatorProtocolOnly $ const $
                 MuxPeer nullTracer
                         (ChainSync.codecChainSync encode             decode
                                                   encode             decode

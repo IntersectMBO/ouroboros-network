@@ -116,7 +116,7 @@ demo chain0 updates delay = do
         consumerApp = testProtocols chainSyncInitator
 
         chainSyncInitator =
-          InitiatorProtocolOnly $
+          InitiatorProtocolOnly $ const $
           MuxPeer
             nullTracer
             (ChainSync.codecChainSync

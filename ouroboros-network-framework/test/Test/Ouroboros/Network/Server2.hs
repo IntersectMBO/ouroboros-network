@@ -93,6 +93,8 @@ import           Ouroboros.Network.InboundGovernor.State
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (IsBigLedgerPeer (..))
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec, noTimeLimitsHandshake,
@@ -417,7 +419,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
                      -> RunMiniProtocol InitiatorMode ByteString m [resp] Void
     reqRespInitiator protocolNum nextRequest =
       InitiatorProtocolOnly
-        (MuxPeerRaw $ \channel ->
+        (const $ MuxPeerRaw $ \channel ->
           runPeerWithLimits
             (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
             -- TraceSendRecv
@@ -625,7 +627,7 @@ withBidirectionalConnectionManager name timeouts
       -> RunMiniProtocol InitiatorResponderMode ByteString m [resp] acc
     reqRespInitiatorAndResponder protocolNum accInit nextRequest =
       InitiatorAndResponderProtocol
-        (MuxPeerRaw $ \channel ->
+        (const $ MuxPeerRaw $ \channel ->
           runPeerWithLimits
             (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
             -- TraceSendRecv
@@ -724,8 +726,8 @@ runInitiatorProtocols
         Mux.StartEagerly
         (runMuxPeer
           (case miniProtocolRun ptcl of
-            InitiatorProtocolOnly initiator           -> initiator
-            InitiatorAndResponderProtocol initiator _ -> initiator)
+            InitiatorProtocolOnly initiator           -> initiator IsNotBigLedgerPeer
+            InitiatorAndResponderProtocol initiator _ -> initiator IsNotBigLedgerPeer)
           . fromChannel)
 
 --

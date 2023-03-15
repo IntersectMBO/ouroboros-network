@@ -123,14 +123,14 @@ clientPingPong pipelined =
     app = demoProtocol0 pingPongInitiator
 
     pingPongInitiator | pipelined =
-      InitiatorProtocolOnly $
+      InitiatorProtocolOnly $ const $
       MuxPeerPipelined
         (contramap show stdoutTracer)
         codecPingPong
         (pingPongClientPeerPipelined (pingPongClientPipelinedMax 5))
 
       | otherwise =
-      InitiatorProtocolOnly $
+      InitiatorProtocolOnly $ const $
       MuxPeer
         (contramap show stdoutTracer)
         codecPingPong
@@ -225,14 +225,14 @@ clientPingPong2 =
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
-      InitiatorProtocolOnly $
+      InitiatorProtocolOnly $ const $
       MuxPeer
         (contramap (show . (,) (1 :: Int)) stdoutTracer)
         codecPingPong
         (pingPongClientPeer (pingPongClientCount 5))
 
     pingpong'=
-      InitiatorProtocolOnly $
+      InitiatorProtocolOnly $ const $
       MuxPeer
         (contramap (show . (,) (2 :: Int)) stdoutTracer)
         codecPingPong

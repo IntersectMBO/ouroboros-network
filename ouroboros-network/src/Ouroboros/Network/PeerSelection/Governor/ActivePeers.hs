@@ -23,6 +23,8 @@ import           Control.Monad.Class.MonadTimer.SI
 import           System.Random (randomR)
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (IsBigLedgerPeer (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
@@ -104,7 +106,7 @@ belowTargetBigLedgerPeers actions
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsBigLedgerPeer peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
@@ -185,7 +187,7 @@ belowTargetLocal actions
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsNotBigLedgerPeer peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
@@ -265,7 +267,7 @@ belowTargetOther actions
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsNotBigLedgerPeer peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
@@ -288,11 +290,12 @@ jobPromoteWarmPeer :: forall peeraddr peerconn m.
                    => PeerSelectionActions peeraddr peerconn m
                    -> PeerSelectionPolicy peeraddr m
                    -> peeraddr
+                   -> IsBigLedgerPeer
                    -> peerconn
                    -> Job () m (Completion m peeraddr peerconn)
 jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {activatePeerConnection}}
                    PeerSelectionPolicy { policyErrorDelay }
-                   peeraddr peerconn =
+                   peeraddr isBigLedgerPeer peerconn =
     Job job handler () "promoteWarmPeer"
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
@@ -385,7 +388,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
 
     job :: m (Completion m peeraddr peerconn)
     job = do
-      activatePeerConnection peerconn
+      activatePeerConnection isBigLedgerPeer peerconn
       return $ Completion $ \st@PeerSelectionState {
                                bigLedgerPeers,
                                activePeers,

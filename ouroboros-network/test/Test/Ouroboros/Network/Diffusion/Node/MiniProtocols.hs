@@ -78,8 +78,8 @@ import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Network.Mock.ProducerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface)
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
+                     LedgerPeersConsensusInterface)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Mock.ConcreteBlock
@@ -334,7 +334,7 @@ applications debugTracer nodeKernel
               , miniProtocolLimits = keepAliveLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
-                    (keepAliveInitiator connId controlMessageSTM)
+                    (const $ keepAliveInitiator connId controlMessageSTM)
                     keepAliveResponder
               }
           ] ++ if aaOwnPeerSharing /= PSTypes.NoPeerSharing
@@ -357,9 +357,11 @@ applications debugTracer nodeKernel
     chainSyncInitiator
       :: ConnectionId NtNAddr
       -> ControlMessageSTM m
+      -> IsBigLedgerPeer
       -> MuxPeer ByteString m ()
     chainSyncInitiator ConnectionId { remoteAddress }
-                       controlMessageSTM =
+                       controlMessageSTM
+                       _isBigLedgerPeer =
         MuxPeerRaw $ \channel -> do
           bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
                                      remoteAddress $
@@ -420,9 +422,11 @@ applications debugTracer nodeKernel
     blockFetchInitiator
       :: ConnectionId NtNAddr
       -> ControlMessageSTM m
+      -> IsBigLedgerPeer
       -> MuxPeer ByteString m ()
     blockFetchInitiator ConnectionId { remoteAddress }
-                        controlMessageSTM =
+                        controlMessageSTM
+                        _isBigLedgerPeer =
       MuxPeerRaw $ \channel -> do
         labelThisThread "BlockFetchClient"
         bracketFetchClient (nkFetchClientRegistry nodeKernel)
@@ -505,15 +509,19 @@ applications debugTracer nodeKernel
     pingPongInitiator
       :: ConnectionId NtNAddr
       -> ControlMessageSTM m
+      -> IsBigLedgerPeer
       -> MuxPeer ByteString m ()
-    pingPongInitiator connId controlMessageSTM = MuxPeerRaw $ \channel ->
-        runPeerWithLimits
-          ((show . (connId,)) `contramap` debugTracer)
-          pingPongCodec
-          (pingPongSizeLimits limits)
-          (pingPongTimeLimits limits)
-          channel
-          (pingPongClientPeer pingPongClient)
+    pingPongInitiator connId
+                      controlMessageSTM
+                      _isBigLedgerPeer =
+        MuxPeerRaw $ \channel ->
+          runPeerWithLimits
+            ((show . (connId,)) `contramap` debugTracer)
+            pingPongCodec
+            (pingPongSizeLimits limits)
+            (pingPongTimeLimits limits)
+            channel
+            (pingPongClientPeer pingPongClient)
       where
         continueSTM :: STM m Bool
         continueSTM = do
@@ -558,19 +566,21 @@ applications debugTracer nodeKernel
     peerSharingInitiator
       :: ControlMessageSTM m
       -> NtNAddr
+      -> IsBigLedgerPeer
       -> MuxPeer ByteString m ()
-    peerSharingInitiator controlMessageSTM them = MuxPeerRaw $ \channel -> do
-      labelThisThread "PeerSharingClient"
-      bracketPeerSharingClient (nkPeerSharingRegistry nodeKernel) them
-        $ \controller -> do
-          psClient <- peerSharingClient controlMessageSTM controller
-          runPeerWithLimits
-            nullTracer
-            peerSharingCodec
-            (peerSharingSizeLimits limits)
-            (peerSharingTimeLimits limits)
-            channel
-            (peerSharingClientPeer psClient)
+    peerSharingInitiator controlMessageSTM them _isBigLedgerPee4r =
+      MuxPeerRaw $ \channel -> do
+        labelThisThread "PeerSharingClient"
+        bracketPeerSharingClient (nkPeerSharingRegistry nodeKernel) them
+          $ \controller -> do
+            psClient <- peerSharingClient controlMessageSTM controller
+            runPeerWithLimits
+              nullTracer
+              peerSharingCodec
+              (peerSharingSizeLimits limits)
+              (peerSharingTimeLimits limits)
+              channel
+              (peerSharingClientPeer psClient)
 
     peerSharingResponder
       :: (PeerSharingAmount -> m [NtNAddr])

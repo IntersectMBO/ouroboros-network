@@ -71,7 +71,8 @@ import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRoo
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Test.Ouroboros.Network.ShrinkCarefully
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer)
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
+                     IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
@@ -375,8 +376,8 @@ mockPeerSelectionActions' tracer
           traceWith tracer (TraceEnvPeerShareResult addr peeraddrs)
           return (PeerSharingResult peeraddrs)
 
-    establishPeerConnection :: PeerAddr -> m (PeerConn m)
-    establishPeerConnection peeraddr = do
+    establishPeerConnection :: IsBigLedgerPeer -> PeerAddr -> m (PeerConn m)
+    establishPeerConnection _ peeraddr = do
       --TODO: add support for variable delays and synchronous failure
       traceWith tracer (TraceEnvEstablishConn peeraddr)
       threadDelay 1
@@ -429,8 +430,8 @@ mockPeerSelectionActions' tracer
         in loop
       return conn
 
-    activatePeerConnection :: PeerConn m -> m ()
-    activatePeerConnection (PeerConn peeraddr _ conn) = do
+    activatePeerConnection :: IsBigLedgerPeer -> PeerConn m -> m ()
+    activatePeerConnection _ (PeerConn peeraddr _ conn) = do
       traceWith tracer (TraceEnvActivatePeer peeraddr)
       threadDelay 1
       atomically $ do

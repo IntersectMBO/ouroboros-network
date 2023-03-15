@@ -577,7 +577,7 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
-          InitiatorProtocolOnly $
+          InitiatorProtocolOnly $ const $
           MuxPeerRaw $ \channel -> do
             (r, trailing) <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
@@ -715,7 +715,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
     reqResp ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} =
       InitiatorAndResponderProtocol
             -- Initiator
-            (MuxPeerRaw $ \channel -> do
+            (const $ MuxPeerRaw $ \channel -> do
              (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -904,7 +904,7 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
 
     appReq =
       testProtocols1 $
-        InitiatorProtocolOnly $
+        InitiatorProtocolOnly $ const $
         MuxPeerRaw $ \_ -> error "req fail"
 
     appRsp =

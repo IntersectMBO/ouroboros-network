@@ -68,6 +68,9 @@ import           Ouroboros.Network.ControlMessage
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (IsBigLedgerPeer (..))
+
 
 
 
@@ -206,6 +209,11 @@ instance Applicative TemperatureBundle where
 -- Useful type synonyms
 --
 
+-- | 'MuxProtocolBundle' type alias captures context which is passed when
+-- a connection was created: `ConnectionId` and `ControlMessageSTM`.  Note that
+-- `ControlMessageSTM` is shared between all mini-protocols of the same
+-- temperature.
+--
 type MuxProtocolBundle (mode :: MuxMode) addr bytes m a b
        = ConnectionId addr
       -> ControlMessageSTM m
@@ -225,9 +233,12 @@ type MuxBundle (mode :: MuxMode) bytes m a b =
     TemperatureBundle [MiniProtocol mode bytes m a b]
 
 
+-- | 'RunMiniProtocol'.  It also capture context (the `IsBigLedgerPeer`) which
+-- is passed to the mini-protocol when a mini-protocol is started.
+--
 data RunMiniProtocol (mode :: MuxMode) bytes m a b where
      InitiatorProtocolOnly
-       :: MuxPeer bytes m a
+       :: (IsBigLedgerPeer -> MuxPeer bytes m a)
        -> RunMiniProtocol InitiatorMode bytes m a Void
 
      ResponderProtocolOnly
@@ -235,10 +246,12 @@ data RunMiniProtocol (mode :: MuxMode) bytes m a b where
        -> RunMiniProtocol ResponderMode bytes m Void b
 
      InitiatorAndResponderProtocol
-       :: MuxPeer bytes m a
+       :: (IsBigLedgerPeer -> MuxPeer bytes m a)
        -> MuxPeer bytes m b
        -> RunMiniProtocol InitiatorResponderMode bytes m a b
 
+-- TODO: do we need this type? Don't we only use 'MuxPeerRaw'.
+--
 data MuxPeer bytes m a where
     MuxPeer :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
                ( Show failure
@@ -267,19 +280,37 @@ data MuxPeer bytes m a where
            :: (Channel m bytes -> m (a, Maybe bytes))
            -> MuxPeer bytes m a
 
+-- | Create non p2p mux application.
+--
+-- Note that callbacks will always receive `IsNotBigLedgerPeer`.
 toApplication :: (MonadCatch m, MonadAsync m)
               => ConnectionId addr
               -> ControlMessageSTM m
               -> OuroborosApplication mode addr LBS.ByteString m a b
               -> Mux.Compat.MuxApplication mode m a b
 toApplication connectionId controlMessageSTM (OuroborosApplication ptcls) =
-  Mux.Compat.MuxApplication
-    [ Mux.Compat.MuxMiniProtocol {
-        Mux.Compat.miniProtocolNum    = miniProtocolNum ptcl,
-        Mux.Compat.miniProtocolLimits = miniProtocolLimits ptcl,
-        Mux.Compat.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
-      }
-    | ptcl <- ptcls connectionId controlMessageSTM ]
+    Mux.Compat.MuxApplication
+      [ Mux.Compat.MuxMiniProtocol {
+          Mux.Compat.miniProtocolNum    = miniProtocolNum ptcl,
+          Mux.Compat.miniProtocolLimits = miniProtocolLimits ptcl,
+          Mux.Compat.miniProtocolRun    = toMuxRunMiniProtocol (miniProtocolRun ptcl)
+        }
+      | ptcl <- ptcls connectionId controlMessageSTM ]
+  where
+    toMuxRunMiniProtocol :: forall mode m a b.
+                            (MonadCatch m, MonadAsync m)
+                         => RunMiniProtocol mode LBS.ByteString m a b
+                         -> Mux.Compat.RunMiniProtocol mode m a b
+    toMuxRunMiniProtocol (InitiatorProtocolOnly i) =
+      Mux.Compat.InitiatorProtocolOnly
+        (runMuxPeer (i IsNotBigLedgerPeer) . fromChannel)
+    toMuxRunMiniProtocol (ResponderProtocolOnly r) =
+      Mux.Compat.ResponderProtocolOnly
+        (runMuxPeer r . fromChannel)
+    toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
+      Mux.Compat.InitiatorAndResponderProtocol
+        (runMuxPeer (i IsNotBigLedgerPeer) . fromChannel)
+        (runMuxPeer  r                     . fromChannel)
 
 
 mkMuxApplicationBundle
@@ -322,20 +353,7 @@ mkMiniProtocolBundle = MiniProtocolBundle . foldMap fn
                                                       , Mux.ResponderDirection ]
                ]
 
-toMuxRunMiniProtocol :: forall mode m a b.
-                        (MonadCatch m, MonadAsync m)
-                     => RunMiniProtocol mode LBS.ByteString m a b
-                     -> Mux.Compat.RunMiniProtocol mode m a b
-toMuxRunMiniProtocol (InitiatorProtocolOnly i) =
-  Mux.Compat.InitiatorProtocolOnly (runMuxPeer i . fromChannel)
-toMuxRunMiniProtocol (ResponderProtocolOnly r) =
-  Mux.Compat.ResponderProtocolOnly (runMuxPeer r . fromChannel)
-toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
-  Mux.Compat.InitiatorAndResponderProtocol (runMuxPeer i . fromChannel)
-                                           (runMuxPeer r . fromChannel)
-
--- |
--- Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
+-- | Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
 --
 runMuxPeer
   :: ( MonadCatch m

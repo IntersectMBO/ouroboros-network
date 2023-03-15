@@ -62,6 +62,7 @@ import           Ouroboros.Network.Protocol.Handshake (HandshakeException)
 import           Ouroboros.Network.ConnectionHandler (Handle (..),
                      HandleError (..), MuxConnectionManager)
 import           Ouroboros.Network.ConnectionManager.Types
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 
@@ -671,9 +672,10 @@ withPeerStateActions PeerStateActionsArguments {
 
 
     establishPeerConnection :: JobPool () m (Maybe SomeException)
+                            -> IsBigLedgerPeer
                             -> peerAddr
                             -> m (PeerConnectionHandle muxMode peerAddr versionData ByteString m a b)
-    establishPeerConnection jobPool remotePeerAddr =
+    establishPeerConnection jobPool isBigLedgerPeer remotePeerAddr =
       -- Protect consistency of the peer state with 'bracketOnError' if
       -- opening a connection fails.
       bracketOnError
@@ -705,8 +707,8 @@ withPeerStateActions PeerStateActionsArguments {
                         pchVersionData  = versionData
                       }
 
-              startProtocols SingWarm connHandle
-              startProtocols SingEstablished connHandle
+              startProtocols SingWarm isBigLedgerPeer connHandle
+              startProtocols SingEstablished isBigLedgerPeer connHandle
               atomically $ writeTVar peerStateVar PeerWarm
               traceWith spsTracer (PeerStatusChanged
                                     (ColdToWarm
@@ -815,9 +817,11 @@ withPeerStateActions PeerStateActionsArguments {
     -- NB when adding any operations that can block for an extended period of
     -- of time timeouts should be implemented here in the same way it is in
     -- establishPeerConnection and deactivatePeerConnection.
-    activatePeerConnection :: PeerConnectionHandle muxMode peerAddr versionData ByteString m a b
+    activatePeerConnection :: IsBigLedgerPeer
+                           -> PeerConnectionHandle muxMode peerAddr versionData ByteString m a b
                            -> m ()
     activatePeerConnection
+        isBigLedgerPeer
         connHandle@PeerConnectionHandle {
             pchConnectionId,
             pchPeerStatus,
@@ -837,7 +841,7 @@ withPeerStateActions PeerStateActionsArguments {
         throwIO $ ColdActivationException pchConnectionId
 
       -- start hot peer protocols
-      startProtocols SingHot connHandle
+      startProtocols SingHot isBigLedgerPeer connHandle
 
       -- Only set the status to PeerHot if the peer isn't PeerCold.
       -- This can happen asynchronously between the check above and now.
@@ -1027,9 +1031,10 @@ startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature) peerAd
                   , HasInitiator muxMode ~ True
                   )
                => SingProtocolTemperature pt
+               -> IsBigLedgerPeer
                -> PeerConnectionHandle muxMode peerAddr versionData ByteString m a b
                -> m ()
-startProtocols tok PeerConnectionHandle { pchMux, pchAppHandles } = do
+startProtocols tok isBigLedgerPeer PeerConnectionHandle { pchMux, pchAppHandles } = do
     let ptcls = getProtocols tok pchAppHandles
     as <- traverse runInitiator ptcls
     atomically $ writeTVar (getMiniProtocolsVar tok pchAppHandles)
@@ -1053,13 +1058,13 @@ startProtocols tok PeerConnectionHandle { pchMux, pchAppHandles } = do
               pchMux miniProtocolNum
               Mux.InitiatorDirectionOnly
               Mux.StartEagerly
-              (runMuxPeer initiator . fromChannel)
+              (runMuxPeer (initiator isBigLedgerPeer) . fromChannel)
         InitiatorAndResponderProtocol initiator _ ->
             Mux.runMiniProtocol
               pchMux miniProtocolNum
               Mux.InitiatorDirection
               Mux.StartEagerly
-              (runMuxPeer initiator . fromChannel)
+              (runMuxPeer (initiator isBigLedgerPeer) . fromChannel)
 
 --
 -- Trace

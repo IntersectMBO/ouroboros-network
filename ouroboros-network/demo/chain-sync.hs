@@ -176,7 +176,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
     app = demoProtocol2 chainSync
 
     chainSync =
-      InitiatorProtocolOnly $
+      InitiatorProtocolOnly $ const $
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
@@ -271,7 +271,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
         chainSync :: LocalConnectionId
                   -> RunMiniProtocol InitiatorMode LBS.ByteString IO () Void
         chainSync connectionId =
-          InitiatorProtocolOnly $
+          InitiatorProtocolOnly $ const $
           -- TODO: this currently needs MuxPeerRaw because of the resource
           -- bracket
           MuxPeerRaw $ \channel ->
@@ -295,7 +295,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
         blockFetch :: LocalConnectionId
                    -> RunMiniProtocol InitiatorMode LBS.ByteString IO () Void
         blockFetch connectionId =
-          InitiatorProtocolOnly $
+          InitiatorProtocolOnly $ const $
           -- TODO: this currently needs MuxPeerRaw because of the resource
           -- bracket
           MuxPeerRaw $ \channel ->

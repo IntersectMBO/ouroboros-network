@@ -60,7 +60,8 @@ import           Control.Monad.Class.MonadTime.SI
 import           System.Random (StdGen)
 
 import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer)
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
+                     IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSelection.State.EstablishedPeers
@@ -304,11 +305,19 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
 
     -- | Establish new connection: cold to warm.
     --
-    establishPeerConnection  :: peeraddr -> m peerconn,
+    -- 'IsBigLedgerPeer' is passed from the outbound governor to the
+    -- mini-protocol callbacks.
+    --
+    establishPeerConnection  :: IsBigLedgerPeer
+                             -> peeraddr -> m peerconn,
 
     -- | Activate a connection: warm to hot promotion.
     --
-    activatePeerConnection   :: peerconn -> m (),
+    -- 'IsBigLedgerPeer' is passed from the outbound governor to the
+    -- mini-protocol callbacks.
+    --
+    activatePeerConnection   :: IsBigLedgerPeer
+                             -> peerconn -> m (),
 
     -- | Deactive a peer: hot to warm demotion.
     --
