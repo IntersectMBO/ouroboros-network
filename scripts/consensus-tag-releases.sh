@@ -12,25 +12,40 @@ fi
 git pull
 
 consensus_last_version=$(grep "<a id=" ouroboros-consensus/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
+consensus_test_last_version=$(grep "<a id=" ouroboros-consensus-test/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
 cardano_last_version=$(grep "<a id=" ouroboros-consensus-cardano/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
+cardano_test_last_version=$(grep "<a id=" ouroboros-consensus-cardano-test/CHANGELOG.md  | cut -d\' -f2 | cut -d- -f2 | head -n1)
 
-if [[ $(git branch --remove | grep "release-consensus-$consensus_last_version") || $(git branch --remote | grep "release.*cardano-$cardano_last_version") ]]; then
-    echo "Release branches were not deleted on the repository. Did you merge with bors?"
-    exit 1
+if [[ -z $consensus_last_version || -z $consensus_test_last_version || -z $cardano_last_version || -z $cardano_test_last_version ]]; then
+    echo "Some package has no version at all in the changelog. This is a critical error!"
 fi
 
-./scripts/ci/check-consensus-changelog.sh || (echo "Inconsistent versioning!" && exit 1)
+./scripts/ci/check-consensus-release.sh || (echo "Inconsistent versioning!" && exit 1)
+
+tags=()
 
 if [[ ! $(git tag -l "release-consensus-$consensus_last_version") ]]; then
-    git tag release-consensus-$consensus_last_version HEAD
-    # this will only succeed if bors deleted the branch because it reuses the
-    # same name! (this is intentional)
-    git push origin release-consensus-$consensus_last_version
+    t="release-consensus-$consensus_last_version"
+    git tag $t HEAD
+    tags+=($t)
+fi
+
+if [[ ! $(git tag -l "release-consensus-test-$consensus_test_last_version") ]]; then
+    t="release-consensus-test-$consensus_test_last_version"
+    git tag $t HEAD
+    tags+=($t)
 fi
 
 if [[ ! $(git tag -l "release-consensus-cardano-$cardano_last_version") ]]; then
-    git tag release-consensus-cardano-$cardano_last_version HEAD
-    # this will only succeed if bors deleted the branch because it reuses the
-    # same name! (this is intentional)
-    git push origin release-consensus-cardano-$cardano_last_version
+    t="release-consensus-cardano-$cardano_last_version"
+    git tag $t HEAD
+    tags+=($t)
 fi
+
+if [[ ! $(git tag -l "release-consensus-cardano-$cardano_last_version") ]]; then
+    t="release-consensus-cardano-test-$cardano_test_last_version"
+    git tag $t HEAD
+    tags+=($t)
+fi
+
+printf "Tagged the release. Please push the following tags to origin:\n%s" "$tags"

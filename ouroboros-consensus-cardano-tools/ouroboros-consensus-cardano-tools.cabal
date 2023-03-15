@@ -84,9 +84,9 @@ library
                      , ouroboros-consensus-diffusion ^>=0.3
                      , ouroboros-consensus-protocol  ^>=0.3
 
-                     , ouroboros-consensus-byron   ==0.4.0.0
-                     , ouroboros-consensus-shelley ==0.4.0.0
-                     , ouroboros-consensus-cardano ==0.4.0.0
+                     , ouroboros-consensus-byron   ^>=0.4.0
+                     , ouroboros-consensus-shelley ^>=0.4.0
+                     , ouroboros-consensus-cardano ^>=0.4.0
 
   other-modules:       Cardano.Api.Key
                      , Cardano.Api.KeysByron
@@ -125,8 +125,8 @@ executable db-analyser
 
                      , ouroboros-consensus ^>=0.3
 
-                     , ouroboros-consensus-byron         ==0.4.0.0
-                     , ouroboros-consensus-shelley       ==0.4.0.0
+                     , ouroboros-consensus-byron         ^>=0.4.0
+                     , ouroboros-consensus-shelley       ^>=0.4.0
                      , ouroboros-consensus-cardano-tools
 
   other-modules:     DBAnalyser.Parsers

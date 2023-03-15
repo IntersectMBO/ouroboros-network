@@ -45,5 +45,12 @@ jobs:
     steps:
 
     - uses: actions/checkout@v3
+      # if we don't fetch more than one commit, the last commit is an
+      # aggregation of all the commits into one. Using this we can check if the
+      # last commit was indeed the one that changed the released version.
+      #
+      # See https://github.com/actions/checkout#checkout-head
+      with:
+        fetch-depth: 2
 
-    - run: CI=1 ./scripts/ci/check-consensus-release.sh
+    - run: ./scripts/ci/check-consensus-release.sh

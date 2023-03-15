@@ -1,5 +1,10 @@
-# CHANGELOG
+# Changelog for ouroboros-consensus-test
 
-This package is part of a bundle of packages. Please consult `CHANGELOG.md` in
-the package `ouroboros-consensus` at the same version as this package to see the
-current changelog that applies also to this package.
+Changelog for the following packages:
+
+- `ouroboros-consensus-test`
+- `ouroboros-consensus-mock`
+- `ouroboros-consensus-mock-test`
+- `ouroboros-consensus-tutorials`
+
+# Changelog entries

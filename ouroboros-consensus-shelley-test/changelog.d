@@ -1,1 +1,1 @@
-../ouroboros-consensus-cardano/changelog.d
+../ouroboros-consensus-cardano-test/changelog.d
