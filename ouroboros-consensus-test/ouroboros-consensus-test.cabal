@@ -232,6 +232,7 @@ test-suite test-storage
                        Test.Ouroboros.Storage.ChainDB.StateMachine.Utils.RunOnRepl
                        Test.Ouroboros.Storage.FS
                        Test.Ouroboros.Storage.FS.StateMachine
+                       Test.Ouroboros.Storage.FsTree
                        Test.Ouroboros.Storage.ImmutableDB
                        Test.Ouroboros.Storage.ImmutableDB.Mock
                        Test.Ouroboros.Storage.ImmutableDB.Model
