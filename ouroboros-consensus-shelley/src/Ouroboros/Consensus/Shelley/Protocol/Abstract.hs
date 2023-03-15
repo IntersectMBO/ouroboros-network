@@ -27,14 +27,14 @@ module Ouroboros.Consensus.Shelley.Protocol.Abstract (
   ) where
 
 import           Cardano.Binary (FromCBOR (fromCBOR), ToCBOR (toCBOR))
+import           Cardano.Crypto.Hash (Hash)
 import           Cardano.Crypto.VRF (OutputVRF)
-import           Cardano.Ledger.BaseTypes (ProtVer)
 import           Cardano.Ledger.BHeaderView (BHeaderView)
-import           Cardano.Ledger.Crypto (Crypto, VRF)
+import           Cardano.Ledger.BaseTypes (ProtVer)
+import           Cardano.Ledger.Crypto (Crypto, HASH, VRF)
 import           Cardano.Ledger.Hashes (EraIndependentBlockBody,
                      EraIndependentBlockHeader)
-import           Cardano.Ledger.Keys (Hash, KeyRole (BlockIssuer), VKey)
-import qualified Cardano.Ledger.Keys as SL (Hash)
+import           Cardano.Ledger.Keys (KeyRole (BlockIssuer), VKey)
 import           Cardano.Protocol.TPraos.BHeader (PrevHash)
 import           Cardano.Slotting.Block (BlockNo)
 import           Cardano.Slotting.Slot (SlotNo)
@@ -65,7 +65,7 @@ type family ProtoCrypto proto :: Type
 -------------------------------------------------------------------------------}
 
 newtype ShelleyHash crypto = ShelleyHash
-  { unShelleyHash :: SL.Hash crypto EraIndependentBlockHeader
+  { unShelleyHash :: Hash (HASH crypto) EraIndependentBlockHeader
   }
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (NoThunks)
@@ -105,7 +105,7 @@ class
   where
   pHeaderHash :: ShelleyProtocolHeader proto -> ShelleyHash (ProtoCrypto proto)
   pHeaderPrevHash :: ShelleyProtocolHeader proto -> PrevHash (ProtoCrypto proto)
-  pHeaderBodyHash :: ShelleyProtocolHeader proto -> Hash (ProtoCrypto proto) EraIndependentBlockBody
+  pHeaderBodyHash :: ShelleyProtocolHeader proto -> Hash (HASH (ProtoCrypto proto)) EraIndependentBlockBody
   pHeaderSlot :: ShelleyProtocolHeader proto -> SlotNo
   pHeaderBlock :: ShelleyProtocolHeader proto -> BlockNo
   pHeaderSize :: ShelleyProtocolHeader proto -> Natural
@@ -154,7 +154,7 @@ class ProtocolHeaderSupportsKES proto where
     -- | Hash of the previous block
     PrevHash crypto ->
     -- | Hash of the block body to include in the header
-    Hash crypto EraIndependentBlockBody ->
+    Hash (HASH crypto) EraIndependentBlockBody ->
     -- | Size of the block body
     Int ->
     -- | Protocol version

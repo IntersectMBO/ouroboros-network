@@ -190,7 +190,7 @@ castShelleyTip ::
 castShelleyTip (ShelleyTip sn bn hh) = ShelleyTip {
       shelleyTipSlotNo  = sn
     , shelleyTipBlockNo = bn
-    , shelleyTipHash    = coerce hh
+    , shelleyTipHash    = hh
     }
 
 data instance LedgerState (ShelleyBlock proto era) = ShelleyLedgerState {
