@@ -47,8 +47,6 @@ packages: ./cardano-ping
           ./ouroboros-consensus-diffusion
           ./ntp-client
           ./cardano-client
-          ./fs-api
-          ./fs-sim
 
 tests: True
 
@@ -150,3 +148,13 @@ constraints:
 
 allow-newer:
     Unique:hashable
+
+-- TODO: remove this once fs-api and fs-sim are published to CHaP.
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/fs-sim
+  tag: 13a1cfa5a82740c5723fb0a279b3f32f98c8b494
+  --sha256: 1q783gsb0hh4i0slvfwp5nppi8h425pkvj0kqr2lpl06y7y2gq41
+  subdir:
+    fs-api
+    fs-sim
