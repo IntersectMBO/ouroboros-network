@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE FlexibleContexts                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -21,7 +22,7 @@ import           Ouroboros.Consensus.Protocol.Praos (ConsensusConfig (..),
                      Praos, PraosParams (..), PraosState (..),
                      Ticked (TickedPraosLedgerView))
 import           Ouroboros.Consensus.Protocol.Praos.Views
-                     (LedgerView (lvMaxBodySize, lvMaxHeaderSize, lvProtocolVersion))
+                     (LedgerView (..))
 import qualified Ouroboros.Consensus.Protocol.Praos.Views as Views
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..),
                      TPraosState (tpraosStateChainDepState, tpraosStateLastSlot))
@@ -99,3 +100,34 @@ instance
         tpraosStateChainDepState tpState
       SL.PrtclState certCounters evolvingNonce candidateNonce =
         csProtocol
+
+
+{-------------------------------------------------------------------------------
+  Translation between Praos using different cryptos
+-------------------------------------------------------------------------------}
+
+instance
+  ( HASH c1 ~ HASH c2,
+    ADDRHASH c1 ~ ADDRHASH c2,
+    VerKeyDSIGN c1 ~ VerKeyDSIGN c2
+  ) =>
+  TranslateProto (Praos c1) (Praos c2)
+  where
+  translateConsensusConfig = id
+
+  translateTickedLedgerView (TickedPraosLedgerView LedgerView{lvPoolDistr, lvMaxHeaderSize, lvMaxBodySize, lvProtocolVersion }) =
+      TickedPraosLedgerView LedgerView { lvPoolDistr = translatedPoolDistr, lvMaxBodySize, lvMaxHeaderSize, lvProtocolVersion}
+    where
+      translatedPoolDistr = coercePoolDistr lvPoolDistr
+
+      coercePoolDistr :: SL.PoolDistr c1 -> SL.PoolDistr c2
+      coercePoolDistr (SL.PoolDistr m) =
+            SL.PoolDistr
+              . Map.mapKeysMonotonic coerce
+              . Map.map coerceIndividualPoolStake
+              $ m
+      coerceIndividualPoolStake :: SL.IndividualPoolStake c1 -> SL.IndividualPoolStake c2
+      coerceIndividualPoolStake (SL.IndividualPoolStake stake vrf) =
+            SL.IndividualPoolStake stake $ coerce vrf
+
+  translateChainDepState = id
