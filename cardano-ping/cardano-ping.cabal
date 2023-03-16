@@ -7,9 +7,9 @@ description:            Utility for pinging cardano nodes.
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
-copyright:              2019-2022 Input Output (Hong Kong) Ltd.
-author:                 Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies, John Ky
-maintainer:             duncan@well-typed.com, marcin.szamotulski@iohk.io, marc.fontaine@iohk.io, karl.knutsson@iohk.io, alex@well-typed.com, neil.davies@pnsol.com, john.ky@iohk.io
+copyright:              2019-2023 Input Output Global Inc (IOG)
+author:                 Karl Knutsson
+maintainer:             karl.knutsson-ext@cardanofoundation.org marcin.szamotulski@iohk.io
 category:               Network
 build-type:             Simple
 extra-source-files:     CHANGELOG.md
