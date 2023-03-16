@@ -21,6 +21,7 @@
       bulk.text = ''
         nix eval .#hydraJobs --apply __attrNames --json |
         nix-systems -i |
+        jq 'with_entries(select(.key != "x86_64-darwin"))' | # temporarily don't build on darwin
         jq 'with_entries(select(.value))' # filter out systems that we cannot build for
       '';
       each.text =
