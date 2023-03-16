@@ -1,7 +1,7 @@
 status = [
   "ci",
   "ci (x86_64-linux)",
-  "ci (x86_64-darwin)",
+  # "ci (x86_64-darwin)", Temporarily disabled due to space problems on MacOS runners
   "check-cabal-files",
   "build (9.2.5, windows-latest)",
   "Consensus changelog sanity check",
