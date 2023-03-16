@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
@@ -29,6 +30,55 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
+import           Control.Monad
+import           Control.Monad.Except (runExcept, throwError)
+import           Data.Coerce (coerce)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (listToMaybe, mapMaybe)
+import           Data.Proxy
+import           Data.SOP.Strict (NP (..), hpure, unComp, (:.:) (..))
+import           Data.Word
+import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks)
+
+import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
+import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
+
+import qualified Cardano.Chain.Common as CC
+import qualified Cardano.Chain.Genesis as CC.Genesis
+import qualified Cardano.Chain.Update as CC.Update
+
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Forecast
+import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
+                     addSlots)
+import           Ouroboros.Consensus.HardFork.Simple
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (eitherToMaybe)
+import           Ouroboros.Consensus.Util.RedundantConstraints
+
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
+                     (RequiringBoth (..), ignoringBoth)
+import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..),
+                     hcpure)
+import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
+
+import           Ouroboros.Consensus.Byron.Ledger
+import qualified Ouroboros.Consensus.Byron.Ledger.Inspect as Byron.Inspect
+import           Ouroboros.Consensus.Byron.Node ()
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.Protocol.PBFT (PBft, PBftCrypto)
+import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
+import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
+import           Ouroboros.Consensus.Protocol.TPraos
+
+import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Node ()
+import           Ouroboros.Consensus.Shelley.ShelleyHFC
+
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
 import           Cardano.Ledger.Mary.Translation ()
@@ -243,32 +293,38 @@ instance HasPartialLedgerConfig ByronBlock where
   CanHardFork
 -------------------------------------------------------------------------------}
 
-type CardanoHardForkConstraints c =
-  ( TPraos.PraosCrypto c
-  , Praos.PraosCrypto c
-  , TranslateProto (TPraos c) (Praos c)
-  , ShelleyCompatible (TPraos c) (ShelleyEra c)
-  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (ShelleyEra c))
-  , ShelleyCompatible (TPraos c) (AllegraEra c)
-  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (AllegraEra c))
-  , ShelleyCompatible (TPraos c) (MaryEra    c)
-  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (MaryEra c))
-  , ShelleyCompatible (TPraos c) (AlonzoEra  c)
-  , LedgerSupportsProtocol (ShelleyBlock (TPraos c) (AlonzoEra c))
-  , ShelleyCompatible (Praos c) (BabbageEra  c)
-  , LedgerSupportsProtocol (ShelleyBlock (Praos c) (BabbageEra c))
-  , ShelleyCompatible (Praos c) (ConwayEra  c)
-  , LedgerSupportsProtocol (ShelleyBlock (Praos c) (ConwayEra c))
+type CardanoHardForkConstraints c1 c2 =
+  ( TPraos.PraosCrypto c1
+  , Praos.PraosCrypto c1
+  , TPraos.PraosCrypto c2
+  , Praos.PraosCrypto c2
+  , TranslateProto (TPraos  c1) (Praos  c1)
+  , ShelleyCompatible (TPraos  c1) (ShelleyEra  c1)
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos  c1) (ShelleyEra  c1))
+  , ShelleyCompatible (TPraos  c1) (AllegraEra  c1)
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos  c1) (AllegraEra  c1))
+  , ShelleyCompatible (TPraos  c1) (MaryEra     c1)
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos  c1) (MaryEra  c1))
+  , ShelleyCompatible (TPraos  c1) (AlonzoEra   c1)
+  , LedgerSupportsProtocol (ShelleyBlock (TPraos  c1) (AlonzoEra  c1))
+  , ShelleyCompatible (Praos  c1) (BabbageEra   c1)
+  , LedgerSupportsProtocol (ShelleyBlock (Praos  c1) (BabbageEra  c1))
+  , TranslateProto (Praos c1) (Praos c2)
+  , ShelleyCompatible (Praos  c2) (ConwayEra   c2)
+  , LedgerSupportsProtocol (ShelleyBlock (Praos  c2) (ConwayEra  c2))
     -- These equalities allow the transition from Byron to Shelley, since
     -- @cardano-ledger-shelley@ requires Ed25519 for Byron bootstrap addresses and
     -- the current Byron-to-Shelley translation requires a 224-bit hash for
     -- address and a 256-bit hash for header hashes.
-  , HASH     c ~ Blake2b_256
-  , ADDRHASH c ~ Blake2b_224
-  , DSIGN    c ~ Ed25519DSIGN
+  , HASH     c1 ~ Blake2b_256
+  , ADDRHASH c1 ~ Blake2b_224
+  , DSIGN    c1 ~ Ed25519DSIGN
+  , HASH     c2 ~ Blake2b_256
+  , ADDRHASH c2 ~ Blake2b_224
+  , DSIGN    c2 ~ Ed25519DSIGN
   )
 
-instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
+instance (CardanoHardForkConstraints c1 c2) => CanHardFork (CardanoEras c1 c2) where
   hardForkEraTranslation = EraTranslation {
       translateLedgerState   =
           PCons translateLedgerStateByronToShelleyWrapper
@@ -296,10 +352,25 @@ instance CardanoHardForkConstraints c => CanHardFork (CardanoEras c) where
         $ PNil
     }
   hardForkChainSel =
-        -- Byron <-> Shelley, ...
-        TCons (hpure CompareBlockNo)
-        -- Inter-Shelley-based
-      $ Tails.hcpure (Proxy @(HasPraosSelectView c)) CompareSameSelectView
+      --   -- Byron <-> Shelley, ...
+        TCons (CompareBlockNo
+               :* CompareBlockNo
+               :* CompareBlockNo
+               :* CompareBlockNo
+               :* CompareBlockNo
+               :* CompareBlockNo
+               :* Nil)
+       $ TCons (CompareSameSelectView :* CompareSameSelectView :* CompareSameSelectView :* CompareSameSelectView :* CompareBlockNo :* Nil)
+         -- Allegra <-> Mary, ...
+       $ TCons (CompareSameSelectView :* CompareSameSelectView :* CompareSameSelectView :* CompareBlockNo :* Nil)
+         -- Mary <-> Alonzo, ...
+       $ TCons (CompareSameSelectView :* CompareSameSelectView :* CompareBlockNo :* Nil)
+         -- Alonzo <-> Babbage, ...
+       $ TCons (CompareSameSelectView :* CompareBlockNo :* Nil)
+         -- Babbage <-> Conway
+       $ TCons (CompareBlockNo :* Nil)
+       $ TCons Nil
+       $ TNil
   hardForkInjectTxs =
         PCons (ignoringBoth $ Pair2 cannotInjectTx cannotInjectValidatedTx)
       $ PCons (   ignoringBoth
@@ -348,7 +419,7 @@ translateHeaderHashByronToShelley ::
      , HASH c ~ Blake2b_256
      )
   => HeaderHash ByronBlock
-  -> HeaderHash (ShelleyBlock (TPraos c) (ShelleyEra c))
+  -> ShelleyHash c
 translateHeaderHashByronToShelley =
       fromShortRawHash (Proxy @(ShelleyBlock (TPraos c) (ShelleyEra c)))
     . toShortRawHash   (Proxy @ByronBlock)
@@ -357,6 +428,7 @@ translateHeaderHashByronToShelley =
     _ = keepRedundantConstraint (Proxy @(HASH c ~ Blake2b_256))
 
 translatePointByronToShelley ::
+     forall c.
      ( ShelleyCompatible (TPraos c) (ShelleyEra c)
      , HASH c ~ Blake2b_256
      )
@@ -675,16 +747,28 @@ translateValidatedTxAlonzoToBabbageWrapper ctxt = InjectValidatedTx $
 -------------------------------------------------------------------------------}
 
 translateLedgerStateBabbageToConwayWrapper ::
-     PraosCrypto c
+     forall c1 c2.
+     (PraosCrypto c1, PraosCrypto c2, HASH c1 ~ HASH c2)
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
-       (ShelleyBlock (Praos c) (BabbageEra c))
-       (ShelleyBlock (Praos c) (ConwayEra c))
+       (ShelleyBlock (Praos c1) (BabbageEra c1))
+       (ShelleyBlock (Praos c2) (ConwayEra c2))
 translateLedgerStateBabbageToConwayWrapper =
     RequireBoth $ \_cfgBabbage cfgConway ->
       Translate $ \_epochNo ->
-        unComp . SL.translateEra' (getConwayTranslationContext cfgConway) . Comp
+        unComp . SL.translateEra' (getConwayTranslationContext cfgConway) . Comp . transPraosLS
+  where
+    transPraosLS ::
+      (HASH c1 ~ HASH c2)
+      => LedgerState (ShelleyBlock (Praos c1) (BabbageEra c1)) ->
+         LedgerState (ShelleyBlock (Praos c2)  (BabbageEra c2))
+    transPraosLS (ShelleyLedgerState wo nes st) =
+      ShelleyLedgerState
+        { shelleyLedgerTip        = fmap castShelleyTip wo
+        , shelleyLedgerState      = nes
+        , shelleyLedgerTransition = st
+        }
 
 getConwayTranslationContext ::
      WrapLedgerConfig (ShelleyBlock (Praos c) (ConwayEra c))
@@ -693,19 +777,33 @@ getConwayTranslationContext =
     shelleyLedgerTranslationContext . unwrapLedgerConfig
 
 translateTxBabbageToConwayWrapper ::
-     Praos.PraosCrypto c
-  => SL.TranslationContext (ConwayEra c)
+     forall c1 c2.
+     (PraosCrypto c1, PraosCrypto c2)
+  => SL.TranslationContext (ConwayEra c2)
   -> InjectTx
-       (ShelleyBlock (Praos c) (BabbageEra c))
-       (ShelleyBlock (Praos c) (ConwayEra c))
+       (ShelleyBlock (Praos c1) (BabbageEra c1))
+       (ShelleyBlock (Praos c2) (ConwayEra c2))
 translateTxBabbageToConwayWrapper ctxt = InjectTx $
-    fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp . transPraosTx
+  where
+    transPraosTx
+      :: GenTx (ShelleyBlock (Praos c1) (BabbageEra c1))
+      -> GenTx (ShelleyBlock (Praos c2) (BabbageEra c2))
+    transPraosTx (ShelleyTx ti tx) = ShelleyTx (_bar ti) (_foo tx)
 
 translateValidatedTxBabbageToConwayWrapper ::
-     PraosCrypto c
-  => SL.TranslationContext (ConwayEra c)
+     forall c1 c2 .
+     (PraosCrypto c1, PraosCrypto c2)
+  => SL.TranslationContext (ConwayEra c2)
   -> InjectValidatedTx
-       (ShelleyBlock (Praos c) (BabbageEra c))
-       (ShelleyBlock (Praos c) (ConwayEra c))
+       (ShelleyBlock (Praos c1) (BabbageEra c1))
+       (ShelleyBlock (Praos c2) (ConwayEra c2))
 translateValidatedTxBabbageToConwayWrapper ctxt = InjectValidatedTx $
-    fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp
+    fmap unComp . eitherToMaybe . runExcept . SL.translateEra ctxt . Comp  . transPraosValidatedTx
+ where
+  transPraosValidatedTx
+    :: WrapValidatedGenTx (ShelleyBlock (Praos c1) (BabbageEra c1))
+    -> WrapValidatedGenTx (ShelleyBlock (Praos c2) (BabbageEra c2))
+  transPraosValidatedTx (WrapValidatedGenTx x) = case x of
+    ShelleyValidatedTx txid vtx -> WrapValidatedGenTx $
+      ShelleyValidatedTx (_bar txid) (_foo vtx)
