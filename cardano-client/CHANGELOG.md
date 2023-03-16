@@ -1,5 +1,11 @@
 # Revision history for cardano-client
 
+## next version
+
+### Breaking changes
+
+- Updated to `ouroboros-network-0.5.0.0`.
+
 ## 0.2.0.0 -- 2023-04-25
 
 ### Breaking changes

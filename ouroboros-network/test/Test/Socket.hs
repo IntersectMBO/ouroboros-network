@@ -73,10 +73,10 @@ defaultMiniProtocolLimit = 3000000
 
 -- | The bundle of mini-protocols in our test protocol: only chain sync
 --
-testProtocols1 :: RunMiniProtocol appType bytes m a b
-               -> OuroborosApplication appType addr bytes m a b
+testProtocols1 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+               -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 testProtocols1 chainSync =
-    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
+    OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -91,7 +91,7 @@ testProtocols1 chainSync =
 -- Properties
 --
 
--- | Test chainsync over a socket bearer
+-- | Test chain-sync over a socket bearer
 prop_socket_demo :: TestBlockChainAndUpdates -> Property
 prop_socket_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo chain updates
@@ -122,8 +122,8 @@ demo chain0 updates = withIOManager $ \iocp -> do
         target = Chain.headPoint expectedChain
 
         initiatorApp
-          :: OuroborosApplication InitiatorMode Socket.SockAddr
-                                  BL.ByteString IO () Void
+          :: OuroborosApplicationWithMinimalCtx InitiatorMode Socket.SockAddr
+                                                BL.ByteString IO () Void
         initiatorApp = testProtocols1 chainSyncInitator
 
         chainSyncInitator =
@@ -138,12 +138,12 @@ demo chain0 updates = withIOManager $ \iocp -> do
         server = ChainSync.chainSyncServerExample () producerVar id
 
         responderApp
-          :: OuroborosApplication ResponderMode Socket.SockAddr
-                                  BL.ByteString IO Void ()
+          :: OuroborosApplicationWithMinimalCtx ResponderMode Socket.SockAddr
+                                                BL.ByteString IO Void ()
         responderApp = testProtocols1 chainSyncResponder
 
         chainSyncResponder =
-          ResponderProtocolOnly $
+          ResponderProtocolOnly $ \_ctx ->
             MuxPeer nullTracer
                     codecChainSync
                     (ChainSync.chainSyncServerPeer server)

@@ -72,6 +72,8 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.Context (ExpandedInitiatorContext,
+                     ResponderContext)
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -354,7 +356,9 @@ data ConnectionManagerDataInMode peerAddr versionData m a (mode :: MuxMode) wher
       :: ConnectionManagerDataInMode peerAddr versionData m a InitiatorMode
 
     CMDInInitiatorResponderMode
-      :: InboundGovernorInfoChannel InitiatorResponderMode peerAddr versionData ByteString  m a ()
+      :: InboundGovernorInfoChannel InitiatorResponderMode
+                                    (ExpandedInitiatorContext peerAddr m)
+                                    peerAddr versionData ByteString  m a ()
       -> OutboundGovernorInfoChannel peerAddr m
       -> StrictTVar m Server.InboundGovernorObservableState
       -> ConnectionManagerDataInMode peerAddr versionData m a InitiatorResponderMode
@@ -367,7 +371,7 @@ data ConnectionManagerDataInMode peerAddr versionData m a (mode :: MuxMode) wher
 --
 
 type NodeToClientHandle ntcAddr versionData m =
-    Handle ResponderMode ntcAddr versionData ByteString m Void ()
+    HandleWithMinimalCtx ResponderMode ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
     HandleError ResponderMode ntcVersion
@@ -415,7 +419,7 @@ type NodeToClientConnectionManager
 type NodeToNodeHandle
        (mode :: MuxMode)
        ntnAddr ntnVersionData m a b =
-    Handle mode ntnAddr ntnVersionData ByteString m a b
+    HandleWithExpandedCtx mode ntnAddr ntnVersionData ByteString m a b
 
 type NodeToNodeConnectionHandler
        (mode :: MuxMode)
@@ -461,6 +465,7 @@ type NodeToNodeConnectionManager
 type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a b =
     PeerConnectionHandle
       mode
+      (ResponderContext ntnAddr)
       ntnAddr
       ntnVersionData
       ByteString
@@ -761,8 +766,8 @@ runM Interfaces
                         ( ( \ (OuroborosApplication apps)
                            -> TemperatureBundle
                                 (WithHot apps)
-                                (WithWarm (\_ _ -> []))
-                                (WithEstablished (\_ _ -> []))
+                                (WithWarm [])
+                                (WithEstablished [])
                           ) <$> daLocalResponderApplication )
                         (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
 

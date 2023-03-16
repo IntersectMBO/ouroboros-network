@@ -8,6 +8,7 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Data.Functor (($>))
 import           GHC.Natural (Natural)
 import           Ouroboros.Network.ConnectionHandler (Handle)
+import           Ouroboros.Network.Context (ResponderContext)
 import           Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo)
 import           Ouroboros.Network.Mux (MuxMode)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -31,8 +32,8 @@ data InformationChannel a m =
 -- Server's monitoring thread is the consumer of these messages; there are two
 -- producers: accept loop and connection handler for outbound connections.
 --
-type InboundGovernorInfoChannel (muxMode :: MuxMode) peerAddr versionData bytes m a b =
-    InformationChannel (NewConnectionInfo peerAddr (Handle muxMode peerAddr versionData bytes m a b)) m
+type InboundGovernorInfoChannel (muxMode :: MuxMode) initiatorCtx peerAddr versionData bytes m a b =
+    InformationChannel (NewConnectionInfo peerAddr (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b)) m
 
 -- | Control Channel between Server and Outbound Governor.
 --

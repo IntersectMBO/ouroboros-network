@@ -6,6 +6,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -57,17 +58,14 @@ import           Network.TypedProtocol.ReqResp.Type (ReqResp)
 
 import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.InformationChannel
                      (newInformationChannel)
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
+import           Ouroboros.Network.Context
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (IsBigLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
@@ -199,7 +197,7 @@ withBidirectionalConnectionManager
     -> ClientAndServerData
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
-    -> (MuxConnectionManager
+    -> (ConnectionManagerWithExpandedCtx
           InitiatorResponderMode socket peerAddr UnversionedProtocolData
           UnversionedProtocol ByteString m () ()
        -> peerAddr
@@ -297,14 +295,13 @@ withBidirectionalConnectionManager snocket makeBearer socket
                       -> LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
                       -> TemperatureBundle
-                          (ConnectionId peerAddr
-                      -> ControlMessageSTM m
-                      -> [MiniProtocol InitiatorResponderMode ByteString m () ()])
+                          ([MiniProtocolWithExpandedCtx
+                              InitiatorResponderMode peerAddr ByteString m () ()])
     serverApplication hotRequestsVar
                       warmRequestsVar
                       establishedRequestsVar
                       = TemperatureBundle {
-        withHot = WithHot $ \_ _ ->
+        withHot = WithHot
           [ let miniProtocolNum = Mux.MiniProtocolNum 1
             in MiniProtocol {
                 miniProtocolNum,
@@ -315,7 +312,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                     hotRequestsVar
                }
           ],
-        withWarm = WithWarm $ \_ _ ->
+        withWarm = WithWarm
           [ let miniProtocolNum = Mux.MiniProtocolNum 2
             in MiniProtocol {
                 miniProtocolNum,
@@ -326,7 +323,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                     warmRequestsVar
               }
           ],
-        withEstablished = WithEstablished $ \_ _ ->
+        withEstablished = WithEstablished
           [ let miniProtocolNum = Mux.MiniProtocolNum 3
             in MiniProtocol {
                 miniProtocolNum,
@@ -342,7 +339,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
     reqRespInitiatorAndResponder
       :: Mux.MiniProtocolNum
       -> LazySTM.TVar m [[Int]]
-      -> RunMiniProtocol InitiatorResponderMode ByteString m () ()
+      -> RunMiniProtocolWithExpandedCtx
+           InitiatorResponderMode peerAddr ByteString m () ()
     reqRespInitiatorAndResponder protocolNum requestsVar =
       InitiatorAndResponderProtocol
         (const $ MuxPeer
@@ -357,7 +355,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                     LazySTM.writeTVar requestsVar rest $> reqs
                   [] -> pure []
             pure $ reqRespClientPeer (reqRespClient reqs)))
-        (MuxPeer
+        (const $ MuxPeer
           (("Responder",protocolNum,) `contramap` debugTracer) -- TraceSendRecv
           (codecReqResp @Int @Int)
           (Effect $ reqRespServerPeer <$> reqRespServerId))
@@ -377,7 +375,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
 -- | Run all initiator mini-protocols and collect results.
 --
 runInitiatorProtocols
-    :: forall muxMode m a b.
+    :: forall muxMode addr m a b.
        ( Alternative (STM m)
        , MonadAsync      m
        , MonadCatch      m
@@ -388,17 +386,18 @@ runInitiatorProtocols
        )
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m
-    -> MuxBundle muxMode ByteString m a b
+    -> (forall pt. SingProtocolTemperature pt -> ExpandedInitiatorContext addr m)
+    -> OuroborosBundleWithExpandedCtx muxMode addr ByteString m a b
     -> m (Maybe (TemperatureBundle [a]))
 runInitiatorProtocols
-    singMuxMode mux
+    singMuxMode mux getContext
     (TemperatureBundle (WithHot hotPtcls)
                        (WithWarm warmPtcls)
                        (WithEstablished establishedPtcls)) = do
       -- start all protocols
-      hotSTMs <- traverse runInitiator hotPtcls
-      warmSTMs <- traverse runInitiator warmPtcls
-      establishedSTMs <- traverse runInitiator establishedPtcls
+      hotSTMs <- traverse (runInitiator SingHot) hotPtcls
+      warmSTMs <- traverse (runInitiator SingWarm) warmPtcls
+      establishedSTMs <- traverse (runInitiator SingEstablished) establishedPtcls
 
       -- await for their termination
       hotRes <- traverse atomically hotSTMs
@@ -418,21 +417,24 @@ runInitiatorProtocols
                 (WithWarm warm)
                 (WithEstablished established)
   where
-    runInitiator :: MiniProtocol muxMode ByteString m a b
+    runInitiator :: SingProtocolTemperature pt
+                 -> MiniProtocolWithExpandedCtx muxMode addr ByteString m a b
                  -> m (STM m (Either SomeException a))
-    runInitiator ptcl =
-      Mux.runMiniProtocol
-        mux
-        (miniProtocolNum ptcl)
-        (case singMuxMode of
-          SingInitiatorMode          -> Mux.InitiatorDirectionOnly
-          SingInitiatorResponderMode -> Mux.InitiatorDirection)
-        Mux.StartEagerly
-        (runMuxPeer
-          (case miniProtocolRun ptcl of
-            InitiatorProtocolOnly initiator           -> initiator IsNotBigLedgerPeer
-            InitiatorAndResponderProtocol initiator _ -> initiator IsNotBigLedgerPeer)
-          . fromChannel)
+    runInitiator sing ptcl =
+        Mux.runMiniProtocol
+          mux
+          (miniProtocolNum ptcl)
+          (case singMuxMode of
+            SingInitiatorMode          -> Mux.InitiatorDirectionOnly
+            SingInitiatorResponderMode -> Mux.InitiatorDirection)
+          Mux.StartEagerly
+          (runMuxPeer
+            (case miniProtocolRun ptcl of
+              InitiatorProtocolOnly initiator           -> initiator ctx
+              InitiatorAndResponderProtocol initiator _ -> initiator ctx)
+            . fromChannel)
+      where
+        ctx = getContext sing
 
 
 -- | Bidirectional send and receive.
@@ -464,21 +466,28 @@ bidirectionalExperiment
         protocolIdleTimeout timeWaitTimeout
         (Just localAddr) clientAndServerData $
         \connectionManager _serverAddr -> forever' $ do
-          -- runInitiatorProtcols returns a list of results per each
-          -- protocol in each bucket (warm \/ hot \/ established); but
-          -- we run only one mini-protocol. We can use `concat` to
-          -- flatten the results.
+          -- runInitiatorProtocols returns a list of results per each protocol
+          -- in each bucket (warm \/ hot \/ established); but we run only one
+          -- mini-protocol. We can use `concat` to flatten the results.
           connHandle <-
                 connect 10 connectionManager
           case connHandle of
-            Connected _ _ (Handle mux muxBundle _ _) -> do
+            Connected connId _ (Handle mux muxBundle controlMessageBundle _) -> do
               traceWith debugTracer ( "initiator-loop"
                                     , "connected"
                                     )
               _ <-
                 runInitiatorProtocols
                   SingInitiatorResponderMode
-                  mux muxBundle
+                  mux
+                  (\tok -> ExpandedInitiatorContext {
+                             eicConnectionId    = connId,
+                             eicControlMessage  = readTVar
+                                                . projectBundle tok
+                                                $ controlMessageBundle,
+                             eicIsBigLedgerPeer = IsNotBigLedgerPeer
+                           })
+                  muxBundle
               res <-
                 unregisterOutboundConnection
                   connectionManager remoteAddr
@@ -524,13 +533,18 @@ bidirectionalExperiment
           threadDelay (realToFrac x / 1_000)
   where
     connect :: Int
-            -> MuxConnectionManager InitiatorResponderMode
-                                    socket peerAddr UnversionedProtocolData
-                                    UnversionedProtocol ByteString
-                                    IO () ()
+            -> ConnectionManagerWithExpandedCtx
+                 InitiatorResponderMode
+                 socket peerAddr UnversionedProtocolData
+                 UnversionedProtocol ByteString
+                 IO () ()
             -> IO (Connected peerAddr
-                            (Handle InitiatorResponderMode peerAddr UnversionedProtocolData ByteString IO () ())
-                            (HandleError InitiatorResponderMode UnversionedProtocol))
+                            (HandleWithExpandedCtx
+                              InitiatorResponderMode peerAddr
+                              UnversionedProtocolData ByteString IO () ())
+                            (HandleError
+                              InitiatorResponderMode
+                              UnversionedProtocol))
     connect n cm | n <= 1 =
       requestOutboundConnection cm remoteAddr
     connect n cm =

@@ -65,11 +65,15 @@ module Ouroboros.Network.NodeToNode
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
     -- * Re-exports
+  , ExpandedInitiatorContext (..)
+  , MinimalInitiatorContext (..)
+  , ResponderContext (..)
   , ConnectionId (..)
   , ControlMessage (..)
   , ControlMessageSTM
   , RemoteAddress
   , RemoteConnectionId
+  , IsBigLedgerPeer (..)
   , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
@@ -103,7 +107,6 @@ module Ouroboros.Network.NodeToNode
 
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
-import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI (DiffTime)
 
 import qualified Codec.CBOR.Read as CBOR
@@ -119,8 +122,8 @@ import qualified Network.Socket as Socket
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
 import           Ouroboros.Network.ConnectionManager.Types
                      (ExceptionInHandler (..))
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
+import           Ouroboros.Network.Context
+import           Ouroboros.Network.ControlMessage (ControlMessage (..))
 import           Ouroboros.Network.Driver (TraceSendRecv (..))
 import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import           Ouroboros.Network.Driver.Simple (DecoderFailure)
@@ -162,26 +165,26 @@ type HandshakeTr ntnAddr ntnVersion =
                   (TraceSendRecv (Handshake ntnVersion CBOR.Term))
 
 
-data NodeToNodeProtocols appType bytes m a b = NodeToNodeProtocols {
+data NodeToNodeProtocols appType ntnAddr bytes m a b = NodeToNodeProtocols {
     -- | chain-sync mini-protocol
     --
-    chainSyncProtocol    :: RunMiniProtocol appType bytes m a b,
+    chainSyncProtocol    :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b,
 
     -- | block-fetch mini-protocol
     --
-    blockFetchProtocol   :: RunMiniProtocol appType bytes m a b,
+    blockFetchProtocol   :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b,
 
     -- | tx-submission mini-protocol
     --
-    txSubmissionProtocol :: RunMiniProtocol appType bytes m a b,
+    txSubmissionProtocol :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b,
 
     -- | keep-alive mini-protocol
     --
-    keepAliveProtocol    :: RunMiniProtocol appType bytes m a b,
+    keepAliveProtocol    :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b,
 
     -- | peer sharing mini-protocol
     --
-    peerSharingProtocol  :: RunMiniProtocol appType bytes m a b
+    peerSharingProtocol  :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b
 
   }
 
@@ -237,15 +240,15 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 --
 nodeToNodeProtocols
   :: MiniProtocolParameters
-  -> (ConnectionId addr -> STM m ControlMessage -> NodeToNodeProtocols muxMode bytes m a b)
+  -> NodeToNodeProtocols muxMode addr bytes m a b
   -> NodeToNodeVersion
   -> PeerSharing -- ^ Node's own PeerSharing value
-  -> OuroborosBundle muxMode addr bytes m a b
+  -> OuroborosBundleWithExpandedCtx muxMode addr bytes m a b
 nodeToNodeProtocols miniProtocolParameters protocols version ownPeerSharing =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
-      (WithHot $ \connectionId controlMessageSTM ->
-        case protocols connectionId controlMessageSTM of
+      (WithHot $
+        case protocols of
           NodeToNodeProtocols { chainSyncProtocol,
                                 blockFetchProtocol,
                                 txSubmissionProtocol
@@ -268,11 +271,11 @@ nodeToNodeProtocols miniProtocolParameters protocols version ownPeerSharing =
             ])
 
       -- Warm protocols: reserved for 'tip-sample'.
-      (WithWarm $ \_connectionId _controlMessageSTM -> [])
+      (WithWarm [])
 
       -- Established protocols: 'keep-alive'.
-      (WithEstablished $ \connectionId controlMessageSTM ->
-        case protocols connectionId controlMessageSTM of
+      (WithEstablished $
+        case protocols of
           -- Only register PeerSharing Protocol if version >= NodeToNodeV_11 and if peer
           -- has PeerSharing enabled
           NodeToNodeProtocols { keepAliveProtocol, peerSharingProtocol }
@@ -443,7 +446,8 @@ connectTo
   -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData
-              (OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO a b)
+              (OuroborosApplicationWithMinimalCtx
+                 InitiatorMode Socket.SockAddr BL.ByteString IO a b)
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO ()
@@ -472,7 +476,8 @@ withServer
   -- on it.
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData
-              (OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO a b)
+              (OuroborosApplicationWithMinimalCtx
+                 ResponderMode Socket.SockAddr BL.ByteString IO a b)
   -> ErrorPolicies
   -> IO Void
 withServer sn tracers networkState acceptedConnectionsLimit sd versions errPolicies =
@@ -505,7 +510,8 @@ ipSubscriptionWorker
     -> Versions
         NodeToNodeVersion
         NodeToNodeVersionData
-        (OuroborosApplication mode Socket.SockAddr BL.ByteString IO x y)
+        (OuroborosApplicationWithMinimalCtx
+           mode Socket.SockAddr BL.ByteString IO x y)
     -> IO Void
 ipSubscriptionWorker
   sn
@@ -548,7 +554,8 @@ dnsSubscriptionWorker
     -> Versions
         NodeToNodeVersion
         NodeToNodeVersionData
-        (OuroborosApplication mode Socket.SockAddr BL.ByteString IO x y)
+        (OuroborosApplicationWithMinimalCtx
+           mode Socket.SockAddr BL.ByteString IO x y)
     -> IO Void
 dnsSubscriptionWorker
   sn

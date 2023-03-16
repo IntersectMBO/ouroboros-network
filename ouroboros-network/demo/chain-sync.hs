@@ -139,10 +139,10 @@ maximumMiniProtocolLimits =
 --
 
 demoProtocol2
-  :: RunMiniProtocol appType bytes m a b -- ^ chainSync
-  -> OuroborosApplication appType addr bytes m a b
+  :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b -- ^ chainSync
+  -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 demoProtocol2 chainSync =
-    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
+    OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
@@ -172,7 +172,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
         (localAddressFromPath sockPath)
 
   where
-    app :: OuroborosApplication InitiatorMode addr LBS.ByteString IO () Void
+    app :: OuroborosApplicationWithMinimalCtx InitiatorMode addr LBS.ByteString IO () Void
     app = demoProtocol2 chainSync
 
     chainSync =
@@ -209,11 +209,11 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
   where
     prng = mkStdGen 0
 
-    app :: OuroborosApplication ResponderMode addr LBS.ByteString IO Void ()
+    app :: OuroborosApplicationWithMinimalCtx ResponderMode addr LBS.ByteString IO Void ()
     app = demoProtocol2 chainSync
 
     chainSync =
-      ResponderProtocolOnly $
+      ResponderProtocolOnly $ \_ctx ->
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
@@ -239,20 +239,20 @@ codecChainSync =
 --
 
 demoProtocol3
-  :: (ConnectionId addr -> RunMiniProtocol appType bytes m a b) -- ^ chainSync
-  -> (ConnectionId addr -> RunMiniProtocol appType bytes m a b) -- ^ blockFetch
-  -> OuroborosApplication appType addr bytes m a b
+  :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b -- ^ chainSync
+  -> RunMiniProtocolWithMinimalCtx appType addr bytes m a b -- ^ blockFetch
+  -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 demoProtocol3 chainSync blockFetch =
-    OuroborosApplication $ \connectionId _shouldStopSTM -> [
+    OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = chainSync connectionId
+        miniProtocolRun    = chainSync
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = blockFetch connectionId
+        miniProtocolRun    = blockFetch
       }
     ]
 
@@ -265,47 +265,49 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     candidateChainsVar <- newTVarIO Map.empty
     currentChainVar    <- newTVarIO genesisAnchoredFragment
 
-    let app :: OuroborosApplication InitiatorMode LocalAddress LBS.ByteString IO () Void
+    let app :: OuroborosApplicationWithMinimalCtx
+                 InitiatorMode LocalAddress LBS.ByteString IO () Void
         app = demoProtocol3 chainSync blockFetch
 
-        chainSync :: LocalConnectionId
-                  -> RunMiniProtocol InitiatorMode LBS.ByteString IO () Void
-        chainSync connectionId =
-          InitiatorProtocolOnly $ const $
-          -- TODO: this currently needs MuxPeerRaw because of the resource
-          -- bracket
-          MuxPeerRaw $ \channel ->
-          bracket register unregister $ \chainVar ->
-          runPeer
-            nullTracer -- (contramap (show . TraceLabelPeer connectionId) stdoutTracer)
-            codecChainSync
-            channel
-            (ChainSync.chainSyncClientPeer
-              (chainSyncClient' syncTracer currentChainVar chainVar))
-          where
-            register     = atomically $ do
+        chainSync :: RunMiniProtocolWithMinimalCtx
+                       InitiatorMode LocalAddress LBS.ByteString IO () Void
+        chainSync =
+          InitiatorProtocolOnly $
+            \MinimalInitiatorContext { micConnectionId = connId } ->
+              let register = atomically $ do
                              chainvar <- newTVar genesisAnchoredFragment
                              modifyTVar' candidateChainsVar
-                                         (Map.insert connectionId chainvar)
+                                         (Map.insert connId chainvar)
                              return chainvar
-            unregister _ = atomically $
-                             modifyTVar' candidateChainsVar
-                                         (Map.delete connectionId)
+                  unregister _ = atomically $
+                                 modifyTVar' candidateChainsVar
+                                             (Map.delete connId)
+              in -- TODO: this currently needs MuxPeerRaw because of the resource
+                 -- bracket
+                 MuxPeerRaw $ \channel ->
+                 bracket register unregister $ \chainVar ->
+                 runPeer
+                   nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
+                   codecChainSync
+                   channel
+                   (ChainSync.chainSyncClientPeer
+                     (chainSyncClient' syncTracer currentChainVar chainVar))
 
-        blockFetch :: LocalConnectionId
-                   -> RunMiniProtocol InitiatorMode LBS.ByteString IO () Void
-        blockFetch connectionId =
-          InitiatorProtocolOnly $ const $
-          -- TODO: this currently needs MuxPeerRaw because of the resource
-          -- bracket
-          MuxPeerRaw $ \channel ->
-          bracketFetchClient registry maxBound isPipeliningEnabled connectionId $ \clientCtx ->
-            runPipelinedPeer
-              nullTracer -- (contramap (show . TraceLabelPeer connectionId) stdoutTracer)
-              codecBlockFetch
-              channel
-              (blockFetchClient NodeToNodeV_7 (continueForever (Proxy :: Proxy IO))
-                nullTracer clientCtx)
+        blockFetch :: RunMiniProtocolWithMinimalCtx
+                        InitiatorMode LocalAddress LBS.ByteString IO () Void
+        blockFetch =
+          InitiatorProtocolOnly $
+            \MinimalInitiatorContext { micConnectionId = connId } ->
+              -- TODO: this currently needs MuxPeerRaw because of the resource
+              -- bracket
+              MuxPeerRaw $ \channel ->
+              bracketFetchClient registry maxBound isPipeliningEnabled connId $ \clientCtx ->
+                runPipelinedPeer
+                  nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
+                  codecBlockFetch
+                  channel
+                  (blockFetchClient NodeToNodeV_7 (continueForever (Proxy :: Proxy IO))
+                    nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO
@@ -450,22 +452,23 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
   where
     prng = mkStdGen 0
 
-    app :: OuroborosApplication ResponderMode LocalAddress LBS.ByteString IO Void ()
+    app :: OuroborosApplicationWithMinimalCtx
+             ResponderMode LocalAddress LBS.ByteString IO Void ()
     app = demoProtocol3 chainSync blockFetch
 
-    chainSync :: LocalConnectionId
-              -> RunMiniProtocol ResponderMode LBS.ByteString IO Void ()
-    chainSync _connectionId =
-      ResponderProtocolOnly $
+    chainSync :: RunMiniProtocolWithMinimalCtx
+                   ResponderMode LocalAddress LBS.ByteString IO Void ()
+    chainSync =
+      ResponderProtocolOnly $ \_ctx ->
       MuxPeer
         (contramap show stdoutTracer)
          codecChainSync
         (ChainSync.chainSyncServerPeer (chainSyncServer prng))
 
-    blockFetch :: LocalConnectionId
-               -> RunMiniProtocol ResponderMode LBS.ByteString IO Void ()
-    blockFetch _connectionId =
-      ResponderProtocolOnly $
+    blockFetch :: RunMiniProtocolWithMinimalCtx
+                    ResponderMode LocalAddress LBS.ByteString IO Void ()
+    blockFetch =
+      ResponderProtocolOnly $ \_ctx ->
       MuxPeer
         (contramap show stdoutTracer)
          codecBlockFetch

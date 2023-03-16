@@ -14,7 +14,6 @@ module Test.Ouroboros.Network.Socket (tests) where
 import           Data.Bifoldable (bitraverse_)
 import qualified Data.ByteString.Lazy as BL
 import           Data.List (mapAccumL)
-import           Data.Proxy (Proxy (..))
 import           Data.Time.Clock (UTCTime, getCurrentTime)
 import           Data.Void (Void)
 #ifndef mingw32_HOST_OS
@@ -46,7 +45,7 @@ import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
 import qualified Network.TypedProtocol.ReqResp.Type as ReqResp
 
-import           Ouroboros.Network.ControlMessage
+import           Ouroboros.Network.Context
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
@@ -111,10 +110,10 @@ defaultMiniProtocolLimit = 3000000
 -- |
 -- Allow to run a singly req-resp protocol.
 --
-testProtocols2 :: RunMiniProtocol appType bytes m a b
-               -> OuroborosApplication appType addr bytes m a b
+testProtocols2 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+               -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 testProtocols2 reqResp =
-    OuroborosApplication $ \_connectionId _controlMessageSTM -> [
+    OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolLimits = MiniProtocolLimits {
@@ -206,11 +205,12 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
     siblingVar <- newTVarIO 2
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+        responderApp :: OuroborosApplicationWithMinimalCtx
+                          ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
-          ResponderProtocolOnly $
+          ResponderProtocolOnly $ \_ctx ->
           -- TODO: For the moment this needs MuxPeerRaw because it has to
           -- do something with the result after the protocol is run.
           -- This should be replaced with use of the handles.
@@ -224,7 +224,8 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
             pure ((), trailing)
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+        initiatorApp :: OuroborosApplicationWithMinimalCtx
+                          InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
@@ -307,11 +308,12 @@ prop_socket_recv_error f rerr =
 
     sv   <- newEmptyTMVarIO
 
-    let app :: OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+    let app :: OuroborosApplicationWithMinimalCtx
+                 ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         app = testProtocols2 reqRespResponder
 
         reqRespResponder =
-          ResponderProtocolOnly $
+          ResponderProtocolOnly $ \_ctx ->
           -- TODO: For the moment this needs MuxPeerRaw because it has to
           -- do something with the result after the protocol is run.
           -- This should be replaced with use of the handles.
@@ -358,7 +360,10 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    Mx.muxStart nullTracer (toApplication connectionId (continueForever (Proxy :: Proxy IO)) app) bearer
+                    Mx.muxStart nullTracer (toApplication MinimalInitiatorContext { micConnectionId = connectionId }
+                                                          ResponderContext { rcConnectionId = connectionId }
+                                                          app)
+                                           bearer
           )
           $ \muxAsync -> do
 
@@ -485,7 +490,8 @@ prop_socket_client_connect_error _ xs =
 
     cv <- newEmptyTMVarIO
 
-    let app :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+    let app :: OuroborosApplicationWithMinimalCtx
+                 InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         app = testProtocols2 reqRespInitiator
 
         reqRespInitiator =

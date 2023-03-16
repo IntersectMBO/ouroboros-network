@@ -84,7 +84,8 @@ import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
-import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
+import           Ouroboros.Network.Context
+import           Ouroboros.Network.ControlMessage
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import qualified Ouroboros.Network.InboundGovernor as IG
@@ -93,8 +94,6 @@ import           Ouroboros.Network.InboundGovernor.State
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (IsBigLedgerPeer (..))
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec, noTimeLimitsHandshake,
@@ -344,7 +343,7 @@ withInitiatorOnlyConnectionManager
     -> ProtocolTimeLimits (Handshake UnversionedProtocol Term)
     -- ^ Handshake time limits
     -> AcceptedConnectionsLimit
-    -> (MuxConnectionManager
+    -> (ConnectionManagerWithExpandedCtx
           InitiatorMode socket peerAddr
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] Void
        -> m a)
@@ -399,37 +398,42 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
         k cm `catch` \(e :: SomeException) -> throwIO e)
   where
     clientApplication :: TemperatureBundle
-                          (ConnectionId peerAddr
-                            -> ControlMessageSTM m
-                            -> [MiniProtocol InitiatorMode ByteString m [resp] Void])
+                           [MiniProtocol InitiatorMode
+                                         (ExpandedInitiatorContext peerAddr m)
+                                         (ResponderContext peerAddr)
+                                         ByteString m [resp] Void]
     clientApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums)
                                 <*> nextRequests
 
       where nums = TemperatureBundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
-            mkProto miniProtocolNum nextRequest connId _ =
+            mkProto miniProtocolNum nextRequest =
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
                   miniProtocolRun = reqRespInitiator miniProtocolNum
-                                                     (nextRequest connId)
+                                                     nextRequest
                 }]
 
     reqRespInitiator :: Mux.MiniProtocolNum
-                     -> STM m [req]
-                     -> RunMiniProtocol InitiatorMode ByteString m [resp] Void
+                     -> (ConnectionId peerAddr -> STM m [req])
+                     -> RunMiniProtocol InitiatorMode
+                                        (ExpandedInitiatorContext peerAddr m)
+                                        (ResponderContext peerAddr)
+                                        ByteString m [resp] Void
     reqRespInitiator protocolNum nextRequest =
       InitiatorProtocolOnly
-        (const $ MuxPeerRaw $ \channel ->
-          runPeerWithLimits
-            (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
-            -- TraceSendRecv
-            codecReqResp
-            reqRespSizeLimits
-            reqRespTimeLimits
-            channel
-            (Effect $ do
-              reqs <- atomically nextRequest
-              pure $ reqRespClientPeer (reqRespClientMap reqs)))
+        (\ExpandedInitiatorContext { eicConnectionId = connId } ->
+          MuxPeerRaw $ \channel ->
+            runPeerWithLimits
+              (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
+              -- TraceSendRecv
+              codecReqResp
+              reqRespSizeLimits
+              reqRespTimeLimits
+              channel
+              (Effect $ do
+                reqs <- atomically (nextRequest connId)
+                pure $ reqRespClientPeer (reqRespClientMap reqs)))
 
 
 --
@@ -514,7 +518,7 @@ withBidirectionalConnectionManager
     -> ProtocolTimeLimits (Handshake UnversionedProtocol Term)
     -- ^ Handshake time limits
     -> AcceptedConnectionsLimit
-    -> (MuxConnectionManager
+    -> (ConnectionManagerWithExpandedCtx
           InitiatorResponderMode socket peerAddr
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] acc
        -> peerAddr
@@ -605,40 +609,45 @@ withBidirectionalConnectionManager name timeouts
             throwIO e
   where
     serverApplication :: TemperatureBundle
-                          (ConnectionId peerAddr
-                            -> ControlMessageSTM m
-                            -> [MiniProtocol InitiatorResponderMode ByteString m [resp] acc])
+                          [MiniProtocol InitiatorResponderMode
+                                        (ExpandedInitiatorContext peerAddr m)
+                                        (ResponderContext peerAddr)
+                                        ByteString m [resp] acc]
     serverApplication = mkProto <$> (Mux.MiniProtocolNum <$> nums) <*> nextRequests
       where nums = TemperatureBundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
-            mkProto miniProtocolNum nextRequest connId _ =
+            mkProto miniProtocolNum nextRequest =
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolLimits = Mux.MiniProtocolLimits maxBound,
                   miniProtocolRun = reqRespInitiatorAndResponder
                                         miniProtocolNum
                                         accumulatorInit
-                                        (nextRequest connId)
+                                        nextRequest
               }]
 
     reqRespInitiatorAndResponder
       :: Mux.MiniProtocolNum
       -> acc
-      -> STM m [req]
-      -> RunMiniProtocol InitiatorResponderMode ByteString m [resp] acc
+      -> (ConnectionId peerAddr -> STM m [req])
+      -> RunMiniProtocol InitiatorResponderMode
+                         (ExpandedInitiatorContext peerAddr m)
+                         (ResponderContext peerAddr)
+                         ByteString m [resp] acc
     reqRespInitiatorAndResponder protocolNum accInit nextRequest =
       InitiatorAndResponderProtocol
-        (const $ MuxPeerRaw $ \channel ->
-          runPeerWithLimits
-            (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
-            -- TraceSendRecv
-            codecReqResp
-            reqRespSizeLimits
-            reqRespTimeLimits
-            channel
-            (Effect $ do
-              reqs <- atomically nextRequest
-              pure $ reqRespClientPeer (reqRespClientMap reqs)))
-        (MuxPeerRaw $ \channel ->
+        (\ExpandedInitiatorContext { eicConnectionId = connId } ->
+          MuxPeerRaw $ \channel ->
+            runPeerWithLimits
+              (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
+              -- TraceSendRecv
+              codecReqResp
+              reqRespSizeLimits
+              reqRespTimeLimits
+              channel
+              (Effect $ do
+                reqs <- atomically (nextRequest connId)
+                pure $ reqRespClientPeer (reqRespClientMap reqs)))
+        (\_ctx -> MuxPeerRaw $ \channel ->
           runPeerWithLimits
             (WithName (name,"Responder",protocolNum) `contramap` nullTracer)
             -- TraceSendRecv
@@ -692,7 +701,7 @@ reqRespTimeLimits = ProtocolTimeLimits { timeLimitForState }
 -- * 'withBidirectionalConnectionManager'.
 --
 runInitiatorProtocols
-    :: forall muxMode m a b.
+    :: forall muxMode addr m a b.
        ( Alternative (STM m)
        , MonadAsync      m
        , MonadCatch      m
@@ -703,32 +712,42 @@ runInitiatorProtocols
        )
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m
-    -> MuxBundle muxMode ByteString m a b
+    -> OuroborosBundle muxMode (ExpandedInitiatorContext addr m)
+                               (ResponderContext addr)
+                               ByteString m a b
+    -> TemperatureBundle (StrictTVar m ControlMessage)
+    -> ConnectionId addr
     -> m (TemperatureBundle a)
-runInitiatorProtocols
-    singMuxMode mux
-    bundle
-     = do -- start all mini-protocols
-          bundle' <- traverse runInitiator (head <$> bundle)
-          -- await for their termination
-          traverse (atomically >=> either throwIO return)
-                   bundle'
+runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
+    -- start all mini-protocols
+    bundle' <- traverse (uncurry runInitiator) ((,) <$> (head <$> bundle)
+                                                    <*> (readTVar <$> controlBundle))
+    -- await for their termination
+    traverse (atomically >=> either throwIO return)
+             bundle'
   where
-    runInitiator :: MiniProtocol muxMode ByteString m a b
+    runInitiator :: MiniProtocolWithExpandedCtx muxMode addr ByteString m a b
+                 -> ControlMessageSTM m
                  -> m (STM m (Either SomeException a))
-    runInitiator ptcl =
-      Mux.runMiniProtocol
-        mux
-        (miniProtocolNum ptcl)
-        (case singMuxMode of
-          SingInitiatorMode          -> Mux.InitiatorDirectionOnly
-          SingInitiatorResponderMode -> Mux.InitiatorDirection)
-        Mux.StartEagerly
-        (runMuxPeer
-          (case miniProtocolRun ptcl of
-            InitiatorProtocolOnly initiator           -> initiator IsNotBigLedgerPeer
-            InitiatorAndResponderProtocol initiator _ -> initiator IsNotBigLedgerPeer)
-          . fromChannel)
+    runInitiator ptcl controlMessage =
+        Mux.runMiniProtocol
+          mux
+          (miniProtocolNum ptcl)
+          (case singMuxMode of
+            SingInitiatorMode          -> Mux.InitiatorDirectionOnly
+            SingInitiatorResponderMode -> Mux.InitiatorDirection)
+          Mux.StartEagerly
+          (runMuxPeer
+            (case miniProtocolRun ptcl of
+              InitiatorProtocolOnly initiator           -> initiator initiatorCtx
+              InitiatorAndResponderProtocol initiator _ -> initiator initiatorCtx)
+            . fromChannel)
+      where
+        initiatorCtx = ExpandedInitiatorContext {
+            eicConnectionId    = connId,
+            eicControlMessage  = controlMessage,
+            eicIsBigLedgerPeer = IsNotBigLedgerPeer
+          }
 
 --
 -- Experiments \/ Demos & Properties
@@ -791,11 +810,12 @@ unidirectionalExperiment timeouts snocket makeBearer confSock socket clientAndSe
                      (\_ -> unregisterOutboundConnection connectionManager serverAddr)
                      (\connHandle -> do
                       case connHandle of
-                        Connected _ _ (Handle mux muxBundle _ _
-                                        :: Handle InitiatorMode peerAddr DataFlowProtocolData ByteString m [resp] Void) ->
+                        Connected connId _ (Handle mux muxBundle controlBundle _
+                                        :: HandleWithExpandedCtx InitiatorMode peerAddr
+                                              DataFlowProtocolData ByteString m [resp] Void) ->
                           try @_ @SomeException $
                             (runInitiatorProtocols
-                              SingInitiatorMode mux muxBundle
+                              SingInitiatorMode mux muxBundle controlBundle connId
                               :: m (TemperatureBundle [resp])
                             )
                         Disconnected _ err ->
@@ -929,11 +949,11 @@ bidirectionalExperiment
                         localAddr1)
                     (\connHandle ->
                       case connHandle of
-                        Connected _ _ (Handle mux muxBundle _ _) -> do
+                        Connected connId _ (Handle mux muxBundle controlBundle _) -> do
                           try @_ @SomeException $
                             runInitiatorProtocols
                               SingInitiatorResponderMode
-                              mux muxBundle
+                              mux muxBundle controlBundle connId
                         Disconnected _ err ->
                           throwIO (userError $ "bidirectionalExperiment: " ++ show err)
                   ))
@@ -951,11 +971,11 @@ bidirectionalExperiment
                         localAddr0)
                     (\connHandle ->
                       case connHandle of
-                        Connected _ _ (Handle mux muxBundle _ _) -> do
+                        Connected connId _ (Handle mux muxBundle controlBundle _) -> do
                           try @_ @SomeException $
                             runInitiatorProtocols
                               SingInitiatorResponderMode
-                              mux muxBundle
+                              mux muxBundle controlBundle connId
                         Disconnected _ err ->
                           throwIO (userError $ "bidirectionalExperiment: " ++ show err)
                   ))
@@ -1670,8 +1690,8 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
          -> peerAddr
          -> StrictTQueue m (ConnectionHandlerMessage peerAddr req)
          -- ^ control channel
-         -> MuxConnectionManager muxMode socket peerAddr DataFlowProtocolData UnversionedProtocol ByteString m [resp] a
-         -> Map.Map peerAddr (Handle muxMode peerAddr DataFlowProtocolData ByteString m [resp] a)
+         -> ConnectionManagerWithExpandedCtx muxMode socket peerAddr DataFlowProtocolData UnversionedProtocol ByteString m [resp] a
+         -> Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr DataFlowProtocolData ByteString m [resp] a)
          -- ^ active connections
          -> StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (StrictTQueue m [req])))
          -- ^ mini protocol queues
@@ -1679,7 +1699,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
     connectionLoop muxMode localAddr cc cm connMap0 connVar = go True connMap0
       where
         go :: Bool -- if false do not run 'unregisterOutboundConnection'
-           -> Map.Map peerAddr (Handle muxMode peerAddr DataFlowProtocolData ByteString m [resp] a) -- active connections
+           -> Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr DataFlowProtocolData ByteString m [resp] a) -- active connections
            -> m ()
         go !unregister !connMap = atomically (readTQueue cc) >>= \ case
           NewConnection remoteAddr -> do
@@ -1725,14 +1745,20 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
               -- We want to throw because the generator invariant should never put us in
               -- this case
               Nothing -> throwIO (NoActiveConnection localAddr remoteAddr)
-              Just (Handle mux muxBundle _ _) -> do
+              Just (Handle mux muxBundle controlBundle _) -> do
                 -- TODO:
                 -- At times this throws 'ProtocolAlreadyRunning'.
                 r <- tryJust (\(e :: SomeException) ->
                                   case fromException e of
                                     Just SomeAsyncException {} -> Nothing -- rethrown
                                     _                          -> Just e)
-                     $ runInitiatorProtocols muxMode mux muxBundle
+                     $ runInitiatorProtocols
+                          muxMode mux
+                          muxBundle
+                          controlBundle
+                          ConnectionId { localAddress  = localAddr,
+                                         remoteAddress = remoteAddr
+                                       }
                 case r of
                   -- Lost connection to peer
                   Left  {} -> do

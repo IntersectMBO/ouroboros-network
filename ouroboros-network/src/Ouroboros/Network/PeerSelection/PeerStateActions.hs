@@ -51,7 +51,7 @@ import           Data.Typeable (Typeable, cast)
 import qualified Network.Mux as Mux
 
 import           Ouroboros.Network.Channel (fromChannel)
-import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.Context
 import           Ouroboros.Network.ControlMessage (ControlMessage (..))
 import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.Mux
@@ -62,7 +62,6 @@ import           Ouroboros.Network.Protocol.Handshake (HandshakeException)
 import           Ouroboros.Network.ConnectionHandler (Handle (..),
                      HandleError (..), MuxConnectionManager)
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 
@@ -285,10 +284,11 @@ instance Exception MiniProtocolExceptions
 --
 -- TODO: only for hot applications we need 'ahApplication', we never restart
 -- / stop the other ones!
-data ApplicationHandle muxMode bytes m a b = ApplicationHandle {
+data ApplicationHandle muxMode responderCtx peerAddr bytes m a b = ApplicationHandle {
     -- | List of applications for the given peer temperature.
     --
-    ahApplication         :: [MiniProtocol muxMode bytes m a b],
+    ahApplication         :: [MiniProtocol muxMode (ExpandedInitiatorContext peerAddr m)
+                                                   responderCtx bytes m a b],
 
     -- | 'ControlMessage' 'TVar' for the given peer temperature.
     --
@@ -307,17 +307,17 @@ data ApplicationHandle muxMode bytes m a b = ApplicationHandle {
 --
 
 getControlVar :: SingProtocolTemperature pt
-              -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
+              -> TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)
               -> StrictTVar m ControlMessage
 getControlVar tok = ahControlVar . projectBundle tok
 
 getProtocols :: SingProtocolTemperature pt
-             -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
-             -> [MiniProtocol muxMode bytes m a b]
+             -> TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)
+             -> [MiniProtocol muxMode (ExpandedInitiatorContext peerAddr m) responderCtx bytes m a b]
 getProtocols tok bundle = ahApplication (projectBundle tok bundle)
 
 getMiniProtocolsVar :: SingProtocolTemperature pt
-                    -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
+                    -> TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)
                     -> StrictTVar m (Map MiniProtocolNum (STM m (HasReturned a)))
 getMiniProtocolsVar tok = ahMiniProtocolResults . projectBundle tok
 
@@ -353,7 +353,7 @@ instance Semigroup FirstToFinishResult where
 --
 awaitFirstResult :: MonadSTM m
                  => SingProtocolTemperature pt
-                 -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
+                 -> TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)
                  -> STM m FirstToFinishResult
 awaitFirstResult tok bundle = do
     d <- readTVar (getMiniProtocolsVar tok bundle)
@@ -401,7 +401,7 @@ instance Monoid (LastToFinishResult a) where
 --
 awaitAllResults :: MonadSTM m
                 => SingProtocolTemperature pt
-                -> TemperatureBundle (ApplicationHandle muxMude bytes m a b)
+                -> TemperatureBundle (ApplicationHandle muxMude responderCtx peerAddr bytes m a b)
                 -> STM m (LastToFinishResult a)
 awaitAllResults tok bundle = do
     results <-  readTVar (getMiniProtocolsVar tok bundle)
@@ -425,21 +425,39 @@ awaitAllResults tok bundle = do
 -- 'Mux', three bundles of miniprotocols: for hot, warm and established peers
 -- together with their state 'StrictTVar's.
 --
-data PeerConnectionHandle (muxMode :: MuxMode) peerAddr versionData bytes m a b = PeerConnectionHandle {
+data PeerConnectionHandle (muxMode :: MuxMode) responderCtx peerAddr versionData bytes m a b = PeerConnectionHandle {
     pchConnectionId :: ConnectionId peerAddr,
     pchPeerStatus   :: StrictTVar m PeerStatus,
     pchMux          :: Mux.Mux muxMode m,
-    pchAppHandles   :: TemperatureBundle (ApplicationHandle muxMode bytes m a b),
+    pchAppHandles   :: TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b),
     pchVersionData  :: !versionData
   }
 
+mkInitiatorContext :: MonadSTM m
+                   => SingProtocolTemperature pt
+                   -> IsBigLedgerPeer
+                   -> PeerConnectionHandle muxMode responderCtx peerAddr versionDat bytes m a b
+                   -> ExpandedInitiatorContext peerAddr m
+mkInitiatorContext tok isBigLedgerPeer
+                   PeerConnectionHandle {
+                       pchConnectionId = connectionId,
+                       pchAppHandles   = appHandles
+                    }
+                   =
+                   ExpandedInitiatorContext {
+                       eicConnectionId    = connectionId,
+                       eicControlMessage  = readTVar (getControlVar tok appHandles),
+                       eicIsBigLedgerPeer = isBigLedgerPeer
+                     }
+
+
 instance (Show peerAddr, Show versionData)
-      => Show (PeerConnectionHandle muxMode peerAddr versionData bytes m a b) where
+      => Show (PeerConnectionHandle muxMode responderCtx peerAddr versionData bytes m a b) where
     show PeerConnectionHandle { pchConnectionId, pchVersionData } =
       "PeerConnectionHandle " ++ show pchConnectionId ++ " " ++ show pchVersionData
 
 pchPeerSharing :: (versionData -> PeerSharing)
-               -> PeerConnectionHandle muxMode peerAddr versionData bytes m a b
+               -> PeerConnectionHandle muxMode responderCtx peerAddr versionData bytes m a b
                -> PeerSharing
 pchPeerSharing f = f . pchVersionData
 
@@ -518,7 +536,7 @@ instance ( Show peerAddr
 
 -- | Record of arguments of 'peerSelectionActions'.
 --
-data PeerStateActionsArguments muxMode socket peerAddr versionData versionNumber m a b =
+data PeerStateActionsArguments muxMode socket responderCtx peerAddr versionData versionNumber m a b =
     PeerStateActionsArguments {
 
       spsTracer                 :: Tracer m (PeerSelectionActionsTrace peerAddr versionNumber),
@@ -532,16 +550,18 @@ data PeerStateActionsArguments muxMode socket peerAddr versionData versionNumber
       --
       spsCloseConnectionTimeout :: DiffTime,
 
-      spsConnectionManager      :: MuxConnectionManager muxMode socket peerAddr
-                                                      versionData versionNumber
-                                                      ByteString m a b,
+      spsConnectionManager      :: MuxConnectionManager muxMode socket
+                                                        (ExpandedInitiatorContext peerAddr m)
+                                                        responderCtx peerAddr
+                                                        versionData versionNumber
+                                                        ByteString m a b,
 
       spsExitPolicy             :: ExitPolicy a
     }
 
 
 withPeerStateActions
-    :: forall (muxMode :: MuxMode) socket peerAddr versionData versionNumber m a b x.
+    :: forall (muxMode :: MuxMode) socket responderCtx peerAddr versionData versionNumber m a b x.
        ( Alternative (STM m)
        , MonadAsync         m
        , MonadCatch         m
@@ -556,10 +576,10 @@ withPeerStateActions
        , Typeable peerAddr
        , Show     peerAddr
        )
-    => PeerStateActionsArguments muxMode socket peerAddr versionData versionNumber m a b
+    => PeerStateActionsArguments muxMode socket responderCtx peerAddr versionData versionNumber m a b
     -> (PeerStateActions
           peerAddr
-          (PeerConnectionHandle muxMode peerAddr versionData ByteString m a b)
+          (PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b)
           m
           -> m x)
     -> m x
@@ -598,7 +618,7 @@ withPeerStateActions PeerStateActionsArguments {
 
 
     peerMonitoringLoop
-      :: PeerConnectionHandle muxMode peerAddr versionData ByteString m a b
+      :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
       -> m ()
     peerMonitoringLoop pch@PeerConnectionHandle { pchConnectionId, pchPeerStatus, pchAppHandles } = do
         -- A first-to-finish synchronisation on all the bundles; As a result
@@ -674,7 +694,7 @@ withPeerStateActions PeerStateActionsArguments {
     establishPeerConnection :: JobPool () m (Maybe SomeException)
                             -> IsBigLedgerPeer
                             -> peerAddr
-                            -> m (PeerConnectionHandle muxMode peerAddr versionData ByteString m a b)
+                            -> m (PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b)
     establishPeerConnection jobPool isBigLedgerPeer remotePeerAddr =
       -- Protect consistency of the peer state with 'bracketOnError' if
       -- opening a connection fails.
@@ -753,14 +773,16 @@ withPeerStateActions PeerStateActionsArguments {
                                         (HandleFailure err))
                   throwIO err
       where
-        mkAwaitVars :: MuxBundle muxMode ByteString m a b
+        mkAwaitVars :: OuroborosBundle muxMode (ExpandedInitiatorContext peerAddr m)
+                                               responderCtx ByteString m a b
                     -> STM m (TemperatureBundle
                                (StrictTVar m
                                  (Map MiniProtocolNum
                                    (STM m (HasReturned a)))))
         mkAwaitVars = traverse f
           where
-            f :: [MiniProtocol muxMode ByteString m a b]
+            f :: [MiniProtocol muxMode (ExpandedInitiatorContext peerAddr m)
+                                       responderCtx ByteString m a b]
               -> STM m (StrictTVar m
                          (Map MiniProtocolNum
                            (STM m (HasReturned a))))
@@ -781,14 +803,14 @@ withPeerStateActions PeerStateActionsArguments {
     -- It returns 'Nothing' only if all mini-protocols are either not running
     -- or still executing.
     --
-    monitorPeerConnection :: PeerConnectionHandle muxMode peerAddr versionData ByteString m a b
+    monitorPeerConnection :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
                           -> STM m (PeerStatus, Maybe ReconnectDelay)
     monitorPeerConnection PeerConnectionHandle { pchPeerStatus, pchAppHandles } =
         (,) <$> readTVar pchPeerStatus
             <*> (g <$> traverse f pchAppHandles)
         `orElse` throwSTM MonitorPeerConnectionBlocked
       where
-        f :: ApplicationHandle muxMode ByteString m a b
+        f :: ApplicationHandle muxMode responderCtx peerAddr ByteString m a b
           -> STM m (Map MiniProtocolNum (Maybe (HasReturned a)))
              -- do not block when a mini-protocol is still running, otherwise
              -- outbound governor
@@ -818,7 +840,7 @@ withPeerStateActions PeerStateActionsArguments {
     -- of time timeouts should be implemented here in the same way it is in
     -- establishPeerConnection and deactivatePeerConnection.
     activatePeerConnection :: IsBigLedgerPeer
-                           -> PeerConnectionHandle muxMode peerAddr versionData ByteString m a b
+                           -> PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
                            -> m ()
     activatePeerConnection
         isBigLedgerPeer
@@ -856,7 +878,7 @@ withPeerStateActions PeerStateActionsArguments {
 
 
     -- Take a hot peer and demote it to a warm one.
-    deactivatePeerConnection :: PeerConnectionHandle muxMode peerAddr versionData ByteString m a b -> m ()
+    deactivatePeerConnection :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b -> m ()
     deactivatePeerConnection
         PeerConnectionHandle {
             pchConnectionId,
@@ -927,7 +949,7 @@ withPeerStateActions PeerStateActionsArguments {
                  throwIO $ ColdDeactivationException pchConnectionId
 
 
-    closePeerConnection :: PeerConnectionHandle muxMode peerAddr versionData ByteString m a b
+    closePeerConnection :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
                         -> m ()
     closePeerConnection
         PeerConnectionHandle {
@@ -991,14 +1013,15 @@ withPeerStateActions PeerStateActionsArguments {
 -- | Smart constructor for 'ApplicationHandle'.
 --
 mkApplicationHandleBundle
-    :: forall (muxMode :: MuxMode) bytes m a b.
-       MuxBundle muxMode bytes m a b
+    :: forall (muxMode :: MuxMode) responderCtx peerAddr bytes m a b.
+       OuroborosBundle muxMode (ExpandedInitiatorContext peerAddr m)
+                               responderCtx bytes m a b
     -- ^ mux application
     -> TemperatureBundle (StrictTVar m ControlMessage)
     -- ^ 'ControlMessage' bundle
     -> TemperatureBundle (StrictTVar m (Map MiniProtocolNum (STM m (HasReturned a))))
     -- ^ await for application termination
-    -> TemperatureBundle (ApplicationHandle muxMode bytes m a b)
+    -> TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)
 mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
     TemperatureBundle
       (mkApplication SingHot)
@@ -1006,7 +1029,7 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
       (mkApplication SingEstablished)
   where
     mkApplication :: SingProtocolTemperature pt
-                  -> WithProtocolTemperature pt (ApplicationHandle muxMode bytes m a b)
+                  -> WithProtocolTemperature pt (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)
     mkApplication tok =
       let app =
             ApplicationHandle {
@@ -1023,7 +1046,8 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
 -- | Given a singleton 'SingProtocolTemperature' and 'PeerConnectionHandle' start the mux
 -- protocol bundle indicated by the type of the first argument.
 --
-startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature) peerAddr versionData m a b.
+startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature)
+                         responderCtx peerAddr versionData m a b.
                   ( Alternative (STM m)
                   , MonadAsync m
                   , MonadCatch m
@@ -1032,39 +1056,44 @@ startProtocols :: forall (muxMode :: MuxMode) (pt :: ProtocolTemperature) peerAd
                   )
                => SingProtocolTemperature pt
                -> IsBigLedgerPeer
-               -> PeerConnectionHandle muxMode peerAddr versionData ByteString m a b
+               -> PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
                -> m ()
-startProtocols tok isBigLedgerPeer PeerConnectionHandle { pchMux, pchAppHandles } = do
+startProtocols tok isBigLedgerPeer connHandle@PeerConnectionHandle { pchMux, pchAppHandles } = do
     let ptcls = getProtocols tok pchAppHandles
     as <- traverse runInitiator ptcls
     atomically $ writeTVar (getMiniProtocolsVar tok pchAppHandles)
                            (miniProtocolResults $ zip (miniProtocolNum `map` ptcls) as)
   where
+
     miniProtocolResults :: [(MiniProtocolNum, STM m (Either SomeException a))]
                         -> Map MiniProtocolNum (STM m (HasReturned a))
     miniProtocolResults = Map.map (fmap hasReturnedFromEither)
                         . Map.fromList
 
-    runInitiator :: MiniProtocol muxMode ByteString m a b
+    runInitiator :: MiniProtocol muxMode (ExpandedInitiatorContext peerAddr m)
+                                         responderCtx ByteString m a b
                  -> m (STM m (Either SomeException a))
     runInitiator MiniProtocol {
                       miniProtocolNum,
                       miniProtocolRun
-                    } = do
+                    } =
+        case miniProtocolRun of
+          InitiatorProtocolOnly initiator ->
+              Mux.runMiniProtocol
+                pchMux miniProtocolNum
+                Mux.InitiatorDirectionOnly
+                Mux.StartEagerly
+                (runMuxPeer (initiator context) . fromChannel)
+          InitiatorAndResponderProtocol initiator _ ->
+              Mux.runMiniProtocol
+                pchMux miniProtocolNum
+                Mux.InitiatorDirection
+                Mux.StartEagerly
+                (runMuxPeer (initiator context) . fromChannel)
+      where
+        context :: ExpandedInitiatorContext peerAddr m
+        context = mkInitiatorContext tok isBigLedgerPeer connHandle
 
-      case miniProtocolRun of
-        InitiatorProtocolOnly initiator ->
-            Mux.runMiniProtocol
-              pchMux miniProtocolNum
-              Mux.InitiatorDirectionOnly
-              Mux.StartEagerly
-              (runMuxPeer (initiator isBigLedgerPeer) . fromChannel)
-        InitiatorAndResponderProtocol initiator _ ->
-            Mux.runMiniProtocol
-              pchMux miniProtocolNum
-              Mux.InitiatorDirection
-              Mux.StartEagerly
-              (runMuxPeer (initiator isBigLedgerPeer) . fromChannel)
 
 --
 -- Trace
