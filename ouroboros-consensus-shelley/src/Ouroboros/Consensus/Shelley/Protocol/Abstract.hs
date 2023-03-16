@@ -3,12 +3,15 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 -- | Commonality between multiple protocols.
 --
@@ -21,13 +24,15 @@ module Ouroboros.Consensus.Shelley.Protocol.Abstract (
   , ProtocolHeaderSupportsKES (..)
   , ProtocolHeaderSupportsLedger (..)
   , ProtocolHeaderSupportsProtocol (..)
-  , ShelleyHash (..)
+  , ShelleyHash
+  , pattern ShelleyHash
+  , unShelleyHash
   , ShelleyProtocol
   , ShelleyProtocolHeader
   ) where
 
 import           Cardano.Binary (FromCBOR (fromCBOR), ToCBOR (toCBOR))
-import           Cardano.Crypto.Hash (Hash)
+import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 import           Cardano.Crypto.VRF (OutputVRF)
 import           Cardano.Ledger.BHeaderView (BHeaderView)
 import           Cardano.Ledger.BaseTypes (ProtVer)
@@ -64,25 +69,31 @@ type family ProtoCrypto proto :: Type
   Header hash
 -------------------------------------------------------------------------------}
 
-newtype ShelleyHash crypto = ShelleyHash
-  { unShelleyHash :: Hash (HASH crypto) EraIndependentBlockHeader
-  }
+newtype ShelleyHash' hash = ShelleyHash' (Hash hash EraIndependentBlockHeader)
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass (NoThunks)
 
-deriving newtype instance Crypto crypto => ToCBOR (ShelleyHash crypto)
+type ShelleyHash crypto = ShelleyHash' (HASH crypto)
 
-deriving newtype instance Crypto crypto => FromCBOR (ShelleyHash crypto)
+pattern ShelleyHash ::
+  Hash hash EraIndependentBlockHeader -> ShelleyHash' hash
+pattern ShelleyHash h = ShelleyHash' h
 
-instance
-  Crypto crypto =>
-  Serialise (ShelleyHash crypto)
-  where
+{-# COMPLETE ShelleyHash #-}
+
+unShelleyHash :: ShelleyHash' hash -> Hash hash EraIndependentBlockHeader
+unShelleyHash (ShelleyHash h) = h
+
+deriving newtype instance (HashAlgorithm hash) => ToCBOR (ShelleyHash' hash)
+
+deriving newtype instance (HashAlgorithm hash) => FromCBOR (ShelleyHash' hash)
+
+instance HashAlgorithm hash => Serialise (ShelleyHash' hash) where
   encode = toCBOR
   decode = fromCBOR
 
 
-instance Condense (ShelleyHash crypto) where
+instance Condense (ShelleyHash' hash) where
   condense = show . unShelleyHash
 
 {-------------------------------------------------------------------------------

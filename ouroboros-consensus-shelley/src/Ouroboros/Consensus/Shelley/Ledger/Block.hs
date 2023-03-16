@@ -7,18 +7,21 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
 {-# LANGUAGE UndecidableSuperClasses    #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Ouroboros.Consensus.Shelley.Ledger.Block (
     GetHeader (..)
   , Header (..)
   , NestedCtxt_ (..)
   , ShelleyBasedEra
   , ShelleyBlock (..)
-  , ShelleyHash (..)
+  , ShelleyHash
+  , pattern ShelleyHash
     -- * Shelley Compatibility
   , ShelleyCompatible
   , mkShelleyBlock
@@ -62,12 +65,11 @@ import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto,
                      ProtocolHeaderSupportsEnvelope (pHeaderPrevHash),
                      ProtocolHeaderSupportsProtocol (CannotForgeError),
-                     ShelleyHash (ShelleyHash, unShelleyHash), ShelleyProtocol,
-                     ShelleyProtocolHeader, pHeaderBlock, pHeaderBodyHash,
-                     pHeaderHash, pHeaderSlot)
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+                     ShelleyHash, ShelleyProtocol, ShelleyProtocolHeader,
+                     pHeaderBlock, pHeaderBodyHash, pHeaderHash, pHeaderSlot,
+                     pattern ShelleyHash, unShelleyHash)
 import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk,
-                     EncodeDisk)
+                     EncodeDisk, BinaryBlockInfo (..))
 import           Ouroboros.Consensus.Util (ShowProxy (..), hashFromBytesShortE)
 import           Ouroboros.Consensus.Util.Condense
 

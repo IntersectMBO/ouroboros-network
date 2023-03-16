@@ -1,6 +1,7 @@
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeFamilies   #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- See https://gitlab.haskell.org/ghc/ghc/-/issues/14630. GHC currently warns
 -- (erroneously) about name shadowing for record field selectors defined by
@@ -11,8 +12,8 @@ module Ouroboros.Consensus.Shelley.Protocol.Praos (PraosEnvelopeError (..)) wher
 
 import qualified Cardano.Crypto.KES as KES
 import           Cardano.Crypto.VRF (certifiedOutput)
-import           Cardano.Ledger.BaseTypes (ProtVer (ProtVer), Version)
 import           Cardano.Ledger.BHeaderView
+import           Cardano.Ledger.BaseTypes (ProtVer (ProtVer), Version)
 import           Cardano.Ledger.Keys (hashKey)
 import           Cardano.Ledger.Slot (SlotNo (unSlotNo))
 import           Cardano.Protocol.TPraos.OCert
@@ -36,8 +37,8 @@ import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto,
                      ProtocolHeaderSupportsKES (..),
                      ProtocolHeaderSupportsLedger (..),
                      ProtocolHeaderSupportsProtocol (..),
-                     ShelleyHash (ShelleyHash), ShelleyProtocol,
-                     ShelleyProtocolHeader)
+                     ShelleyProtocol, ShelleyProtocolHeader,
+                     pattern ShelleyHash)
 
 
 type instance ProtoCrypto (Praos c) = c

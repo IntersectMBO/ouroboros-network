@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -27,8 +28,9 @@ import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto,
                      ProtocolHeaderSupportsEnvelope (..),
                      ProtocolHeaderSupportsKES (..),
                      ProtocolHeaderSupportsLedger (..),
-                     ProtocolHeaderSupportsProtocol (..), ShelleyHash (..),
-                     ShelleyProtocol, ShelleyProtocolHeader, protocolHeaderView)
+                     ProtocolHeaderSupportsProtocol (..),
+                     ShelleyProtocol, ShelleyProtocolHeader,
+                     pattern ShelleyHash, protocolHeaderView)
 
 type instance ProtoCrypto (TPraos c) = c
 
