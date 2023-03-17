@@ -115,14 +115,15 @@ demo chain0 updates delay = do
         consumerApp = testProtocols chainSyncInitator
 
         chainSyncInitator =
-          InitiatorProtocolOnly $ const $
-          MuxPeer
-            nullTracer
-            (ChainSync.codecChainSync
-               encode             decode
-               encode             decode
-               (encodeTip encode) (decodeTip decode))
-            consumerPeer
+          InitiatorProtocolOnly $
+          mkMiniProtocolCbFromPeer $ \_ctx ->
+            ( nullTracer
+            , ChainSync.codecChainSync
+                 encode             decode
+                 encode             decode
+                (encodeTip encode) (decodeTip decode)
+            , consumerPeer
+            )
 
         consumerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
                              AsClient ChainSync.StIdle m ()
@@ -133,14 +134,14 @@ demo chain0 updates delay = do
         producerApp = testProtocols chainSyncResponder
 
         chainSyncResponder =
-          ResponderProtocolOnly $ \_ctx ->
-          MuxPeer
-            nullTracer
-            (ChainSync.codecChainSync
-               encode             decode
-               encode             decode
-               (encodeTip encode) (decodeTip decode))
-            producerPeer
+          ResponderProtocolOnly $ mkMiniProtocolCbFromPeer $ \_ctx ->
+            ( nullTracer
+            , ChainSync.codecChainSync
+                 encode             decode
+                 encode             decode
+                (encodeTip encode) (decodeTip decode)
+            , producerPeer
+            )
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
                         AsServer ChainSync.StIdle m ()

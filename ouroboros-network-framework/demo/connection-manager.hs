@@ -56,7 +56,6 @@ import           Network.TypedProtocol.ReqResp.Examples
 import           Network.TypedProtocol.ReqResp.Server
 import           Network.TypedProtocol.ReqResp.Type (ReqResp)
 
-import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.InformationChannel
@@ -343,22 +342,26 @@ withBidirectionalConnectionManager snocket makeBearer socket
            InitiatorResponderMode peerAddr ByteString m () ()
     reqRespInitiatorAndResponder protocolNum requestsVar =
       InitiatorAndResponderProtocol
-        (const $ MuxPeer
-          (("Initiator",protocolNum,) `contramap` debugTracer) -- TraceSendRecv
-          (codecReqResp @Int @Int)
-          (Effect $ do
-            reqs <-
-              atomically $ do
-                requests <- LazySTM.readTVar requestsVar
-                case requests of
-                  (reqs : rest) -> do
-                    LazySTM.writeTVar requestsVar rest $> reqs
-                  [] -> pure []
-            pure $ reqRespClientPeer (reqRespClient reqs)))
-        (const $ MuxPeer
-          (("Responder",protocolNum,) `contramap` debugTracer) -- TraceSendRecv
-          (codecReqResp @Int @Int)
-          (Effect $ reqRespServerPeer <$> reqRespServerId))
+        (mkMiniProtocolCbFromPeer
+          (\_ctx -> ( ("Initiator",protocolNum,) `contramap` debugTracer -- TraceSendRecv
+                    , codecReqResp @Int @Int
+                    , Effect $ do
+                        reqs <-
+                          atomically $ do
+                            requests <- LazySTM.readTVar requestsVar
+                            case requests of
+                              (reqs : rest) -> do
+                                LazySTM.writeTVar requestsVar rest $> reqs
+                              [] -> pure []
+                        pure $ reqRespClientPeer (reqRespClient reqs)
+                    )
+          ))
+        (mkMiniProtocolCbFromPeer
+          (\_ctx -> ( ("Responder",protocolNum,) `contramap` debugTracer -- TraceSendRecv
+                    , codecReqResp @Int @Int
+                    , Effect $ reqRespServerPeer <$> reqRespServerId
+                    )
+          ))
 
     reqRespServerId :: m (ReqRespServer Int Int m ())
     reqRespServerId = pure go
@@ -428,13 +431,11 @@ runInitiatorProtocols
             SingInitiatorMode          -> Mux.InitiatorDirectionOnly
             SingInitiatorResponderMode -> Mux.InitiatorDirection)
           Mux.StartEagerly
-          (runMuxPeer
+          (runMiniProtocolCb
             (case miniProtocolRun ptcl of
-              InitiatorProtocolOnly initiator           -> initiator ctx
-              InitiatorAndResponderProtocol initiator _ -> initiator ctx)
-            . fromChannel)
-      where
-        ctx = getContext sing
+              InitiatorProtocolOnly initiator           -> initiator
+              InitiatorAndResponderProtocol initiator _ -> initiator)
+            (getContext sing))
 
 
 -- | Bidirectional send and receive.

@@ -52,7 +52,6 @@ import           Data.Void (Void)
 
 import qualified Network.Mux as Mux
 
-import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.InformationChannel
                      (InboundGovernorInfoChannel)
@@ -493,15 +492,14 @@ runResponder mux
             mux (miniProtocolNum miniProtocol)
             Mux.ResponderDirectionOnly
             startStrategy
-            -- TODO: eliminate 'fromChannel'
-            (runMuxPeer (responder responderContext) . fromChannel)
+            (runMiniProtocolCb responder responderContext)
 
         InitiatorAndResponderProtocol _ responder ->
           Mux.runMiniProtocol
             mux (miniProtocolNum miniProtocol)
             Mux.ResponderDirection
             startStrategy
-            (runMuxPeer (responder responderContext) . fromChannel)
+            (runMiniProtocolCb responder responderContext)
 
 --
 -- Trace

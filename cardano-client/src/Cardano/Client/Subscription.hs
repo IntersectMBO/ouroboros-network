@@ -9,7 +9,7 @@ module Cardano.Client.Subscription
   , ConnectionId
   , LocalAddress
   , NodeToClientProtocols (..)
-  , MuxPeer (..)
+  , MiniProtocolCb (..)
   , MuxTrace
   , RunMiniProtocol (..)
   , WithMuxBearer
@@ -25,7 +25,7 @@ import           Network.Mux.Trace (MuxTrace, WithMuxBearer)
 
 import           Ouroboros.Network.ControlMessage (ControlMessage (..))
 import           Ouroboros.Network.Magic (NetworkMagic)
-import           Ouroboros.Network.Mux (MuxMode (..), MuxPeer (..),
+import           Ouroboros.Network.Mux (MiniProtocolCb (..), MuxMode (..),
                      OuroborosApplicationWithMinimalCtx, RunMiniProtocol (..))
 import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
                      ConnectionId, LocalAddress,

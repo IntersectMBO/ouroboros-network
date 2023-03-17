@@ -124,18 +124,20 @@ clientPingPong pipelined =
     app = demoProtocol0 pingPongInitiator
 
     pingPongInitiator | pipelined =
-      InitiatorProtocolOnly $ const $
-      MuxPeerPipelined
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongClientPeerPipelined (pingPongClientPipelinedMax 5))
+      InitiatorProtocolOnly $
+      mkMiniProtocolCbFromPeerPipelined $ \_ctx ->
+        (contramap show stdoutTracer
+        , codecPingPong
+        , pingPongClientPeerPipelined (pingPongClientPipelinedMax 5)
+        )
 
       | otherwise =
-      InitiatorProtocolOnly $ const $
-      MuxPeer
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
+      InitiatorProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap show stdoutTracer
+        , codecPingPong
+        , pingPongClientPeer (pingPongClientCount 5)
+        )
 
 
 pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
@@ -169,11 +171,12 @@ serverPingPong =
     app = demoProtocol0 pingPongResponder
 
     pingPongResponder =
-      ResponderProtocolOnly $ \_ctx ->
-      MuxPeer
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
+      ResponderProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap show stdoutTracer
+        , codecPingPong
+        , pingPongServerPeer pingPongServerStandard
+        )
 
 pingPongServerStandard
   :: Applicative m
@@ -228,18 +231,20 @@ clientPingPong2 =
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
-      InitiatorProtocolOnly $ const $
-      MuxPeer
-        (contramap (show . (,) (1 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
+      InitiatorProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap (show . (,) (1 :: Int)) stdoutTracer
+        , codecPingPong
+        , pingPongClientPeer (pingPongClientCount 5)
+        )
 
     pingpong'=
-      InitiatorProtocolOnly $ const $
-      MuxPeer
-        (contramap (show . (,) (2 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
+      InitiatorProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap (show . (,) (2 :: Int)) stdoutTracer
+        , codecPingPong
+        , pingPongClientPeer (pingPongClientCount 5)
+        )
 
 pingPongClientPipelinedMax
   :: forall m. Monad m
@@ -286,16 +291,19 @@ serverPingPong2 =
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
-      ResponderProtocolOnly $ \_ctx ->
-      MuxPeer
-        (contramap (show . (,) (1 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
+      ResponderProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap (show . (,) (1 :: Int)) stdoutTracer
+        , codecPingPong
+        , pingPongServerPeer pingPongServerStandard
+        )
 
     pingpong' =
-      ResponderProtocolOnly $ \_ctx ->
-      MuxPeer
-        (contramap (show . (,) (2 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
+      ResponderProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap (show . (,) (2 :: Int)) stdoutTracer
+        , codecPingPong
+        , pingPongServerPeer pingPongServerStandard
+        )
+
 

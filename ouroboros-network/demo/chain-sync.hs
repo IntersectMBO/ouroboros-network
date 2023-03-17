@@ -176,11 +176,12 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
     app = demoProtocol2 chainSync
 
     chainSync =
-      InitiatorProtocolOnly $ const $
-      MuxPeer
-        (contramap show stdoutTracer)
-         codecChainSync
-        (ChainSync.chainSyncClientPeer chainSyncClient)
+      InitiatorProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        (contramap show stdoutTracer
+        , codecChainSync
+        , ChainSync.chainSyncClientPeer chainSyncClient
+        )
 
 
 serverChainSync :: FilePath -> IO Void
@@ -213,11 +214,12 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
     app = demoProtocol2 chainSync
 
     chainSync =
-      ResponderProtocolOnly $ \_ctx ->
-      MuxPeer
-        (contramap show stdoutTracer)
-         codecChainSync
-        (ChainSync.chainSyncServerPeer (chainSyncServer prng))
+      ResponderProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap show stdoutTracer
+        , codecChainSync
+        , ChainSync.chainSyncServerPeer (chainSyncServer prng)
+        )
 
 
 codecChainSync :: ( CBOR.Serialise block
@@ -273,7 +275,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                        InitiatorMode LocalAddress LBS.ByteString IO () Void
         chainSync =
           InitiatorProtocolOnly $
-            \MinimalInitiatorContext { micConnectionId = connId } ->
+            MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
               let register = atomically $ do
                              chainvar <- newTVar genesisAnchoredFragment
                              modifyTVar' candidateChainsVar
@@ -282,10 +284,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                   unregister _ = atomically $
                                  modifyTVar' candidateChainsVar
                                              (Map.delete connId)
-              in -- TODO: this currently needs MuxPeerRaw because of the resource
-                 -- bracket
-                 MuxPeerRaw $ \channel ->
-                 bracket register unregister $ \chainVar ->
+              in bracket register unregister $ \chainVar ->
                  runPeer
                    nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
                    codecChainSync
@@ -297,10 +296,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                         InitiatorMode LocalAddress LBS.ByteString IO () Void
         blockFetch =
           InitiatorProtocolOnly $
-            \MinimalInitiatorContext { micConnectionId = connId } ->
-              -- TODO: this currently needs MuxPeerRaw because of the resource
-              -- bracket
-              MuxPeerRaw $ \channel ->
+            MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
               bracketFetchClient registry maxBound isPipeliningEnabled connId $ \clientCtx ->
                 runPipelinedPeer
                   nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
@@ -459,20 +455,22 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
     chainSync :: RunMiniProtocolWithMinimalCtx
                    ResponderMode LocalAddress LBS.ByteString IO Void ()
     chainSync =
-      ResponderProtocolOnly $ \_ctx ->
-      MuxPeer
-        (contramap show stdoutTracer)
-         codecChainSync
-        (ChainSync.chainSyncServerPeer (chainSyncServer prng))
+      ResponderProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap show stdoutTracer
+        , codecChainSync
+        , ChainSync.chainSyncServerPeer (chainSyncServer prng)
+        )
 
     blockFetch :: RunMiniProtocolWithMinimalCtx
                     ResponderMode LocalAddress LBS.ByteString IO Void ()
     blockFetch =
-      ResponderProtocolOnly $ \_ctx ->
-      MuxPeer
-        (contramap show stdoutTracer)
-         codecBlockFetch
-        (BlockFetch.blockFetchServerPeer (blockFetchServer prng))
+      ResponderProtocolOnly $
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap show stdoutTracer
+        , codecBlockFetch
+        , BlockFetch.blockFetchServerPeer (blockFetchServer prng)
+        )
 
 codecBlockFetch :: Codec (BlockFetch.BlockFetch Block (Point Block))
                          CBOR.DeserialiseFailure

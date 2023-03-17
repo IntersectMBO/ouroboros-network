@@ -2,18 +2,21 @@
 {-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE ExplicitNamespaces    #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 
 module Ouroboros.Network.Mux
-  ( MuxMode (..)
+  ( -- * Basic notions
+    MuxMode (..)
   , ProtocolTemperature (..)
   , SingProtocolTemperature (..)
   , SomeTokProtocolTemperature (..)
@@ -23,23 +26,29 @@ module Ouroboros.Network.Mux
   , withoutSomeProtocolTemperature
   , TemperatureBundle (..)
   , projectBundle
-  , OuroborosBundle
-  , OuroborosBundleWithExpandedCtx
+    -- * Mux mini-protocol callback
+  , MiniProtocolCb (.., MuxPeerRaw)
+  , runMiniProtocolCb
+  , mkMiniProtocolCbFromPeer
+  , mkMiniProtocolCbFromPeerPipelined
+    -- * Mux mini-protocol callback in MuxMode
+  , RunMiniProtocol (..)
+  , RunMiniProtocolWithExpandedCtx
+  , RunMiniProtocolWithMinimalCtx
+    -- * MiniProtocol description
   , MiniProtocol (..)
   , MiniProtocolWithExpandedCtx
   , MiniProtocolWithMinimalCtx
   , MiniProtocolNum (..)
   , MiniProtocolLimits (..)
-  , RunMiniProtocol (..)
-  , RunMiniProtocolWithExpandedCtx
-  , RunMiniProtocolWithMinimalCtx
-  , MuxPeer (..)
-  , runMuxPeer
-  , toApplication
-  , mkMiniProtocolBundle
+    -- * MiniProtocol bundle
+  , OuroborosBundle
+  , OuroborosBundleWithExpandedCtx
     -- * Non-P2P API
   , OuroborosApplication (..)
   , OuroborosApplicationWithMinimalCtx
+  , toApplication
+  , mkMiniProtocolBundle
   , fromOuroborosBundle
   , contramapInitiatorCtx
     -- * Re-exports
@@ -48,6 +57,9 @@ module Ouroboros.Network.Mux
   , MuxErrorType (..)
   , HasInitiator
   , HasResponder
+    -- * Deprecated APIs
+  , type MuxPeer
+  , runMuxPeer
   ) where
 
 import           Control.Monad.Class.MonadAsync
@@ -66,6 +78,7 @@ import           Network.Mux (HasInitiator, HasResponder,
                      MiniProtocolBundle (..), MiniProtocolInfo,
                      MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
                      MuxErrorType (..), MuxMode (..))
+import qualified Network.Mux.Channel as Mux
 import qualified Network.Mux.Compat as Mux.Compat
 import qualified Network.Mux.Types as Mux
 
@@ -79,7 +92,7 @@ import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
 -- |  There are three kinds of applications: warm, hot and established (ones
--- that run in both warm and hot peers).
+-- that run in both warm and hot states).
 --
 data ProtocolTemperature = Established | Warm | Hot
   deriving (Eq, Ord, Show)
@@ -251,16 +264,16 @@ type MiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
 --
 data RunMiniProtocol (mode :: MuxMode) initiatorCtx responderCtx bytes m a b where
      InitiatorProtocolOnly
-       :: (initiatorCtx -> MuxPeer bytes m a)
+       :: (MiniProtocolCb initiatorCtx bytes m a)
        -> RunMiniProtocol InitiatorMode initiatorCtx responderCtx bytes m a Void
 
      ResponderProtocolOnly
-       :: (responderCtx -> MuxPeer bytes m b)
+       :: (MiniProtocolCb responderCtx bytes m b)
        -> RunMiniProtocol ResponderMode initiatorCtx responderCtx bytes m Void b
 
      InitiatorAndResponderProtocol
-       :: (initiatorCtx -> MuxPeer bytes m a)
-       -> (responderCtx -> MuxPeer bytes m b)
+       :: (MiniProtocolCb initiatorCtx bytes m a)
+       -> (MiniProtocolCb responderCtx bytes m b)
        -> RunMiniProtocol InitiatorResponderMode initiatorCtx responderCtx bytes m a b
 
 
@@ -285,35 +298,130 @@ type RunMiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
                      (ResponderContext peerAddr)
                      bytes m a b
 
--- TODO: do we need this type? Don't we only use 'MuxPeerRaw'.
+
 --
-data MuxPeer bytes m a where
-    MuxPeer :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
-               ( Show failure
-               , forall (st' :: ps). Show (ClientHasAgency st')
-               , forall (st' :: ps). Show (ServerHasAgency st')
-               , ShowProxy ps
-               )
-            => Tracer m (TraceSendRecv ps)
-            -> Codec ps failure m bytes
-            -> Peer ps pr st m a
-            -> MuxPeer bytes m a
+-- MiniProtocol callback
+--
+
+-- | A callback executed by each muxed mini-protocol.
+--
+data MiniProtocolCb ctx bytes m a where
+    MiniProtocolCb
+      :: (ctx -> Channel m bytes -> m (a, Maybe bytes))
+      -> MiniProtocolCb ctx bytes m a
+
+    MuxPeer
+      :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
+         ( Show failure
+         , forall (st' :: ps). Show (ClientHasAgency st')
+         , forall (st' :: ps). Show (ServerHasAgency st')
+         , ShowProxy ps
+         )
+      => (ctx -> ( Tracer m (TraceSendRecv ps)
+                 , Codec ps failure m bytes
+                 , Peer ps pr st m a
+                 ))
+      -> MiniProtocolCb ctx bytes m a
 
     MuxPeerPipelined
-             :: forall (pr :: PeerRole) ps (st :: ps) failure bytes m a.
-               ( Show failure
-               , forall (st' :: ps). Show (ClientHasAgency st')
-               , forall (st' :: ps). Show (ServerHasAgency st')
-               , ShowProxy ps
-               )
-            => Tracer m (TraceSendRecv ps)
-            -> Codec ps failure m bytes
-            -> PeerPipelined ps pr st m a
-            -> MuxPeer bytes m a
+      :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
+         ( Show failure
+         , forall (st' :: ps). Show (ClientHasAgency st')
+         , forall (st' :: ps). Show (ServerHasAgency st')
+         , ShowProxy ps
+         )
+      => (ctx -> ( Tracer m (TraceSendRecv ps)
+                 , Codec ps failure m bytes
+                 , PeerPipelined ps pr st m a
+                 ))
+      -> MiniProtocolCb ctx bytes m a
 
-    MuxPeerRaw
-           :: (Channel m bytes -> m (a, Maybe bytes))
-           -> MuxPeer bytes m a
+type MuxPeer = MiniProtocolCb
+{-# DEPRECATED MuxPeer
+    [ "Use either `MiniProtocolCb` type instead of `MuxPeer` type, or"
+    , "`mkMiniProtocolCbFromPeer` instead the `MuxPeer` constructor."
+    ]
+#-}
+{-# DEPRECATED MuxPeerPipelined "Use mkMiniProtocolCbFromPeer instead" #-}
+
+pattern MuxPeerRaw :: forall ctx bytes m a.
+                      (ctx -> Channel m bytes -> m (a, Maybe bytes))
+                   -> MiniProtocolCb ctx bytes m a
+pattern MuxPeerRaw { runMuxPeer } = MiniProtocolCb runMuxPeer
+{-# DEPRECATED MuxPeerRaw "Use MiniProtocolCb instead" #-}
+{-# DEPRECATED runMuxPeer
+    [ "Use runMiniProtocolCb instead"
+    , "Note that with runMiniProtocolCb there's no need to use Ouroboros.Network.Channel.fromChannel"
+    ]
+#-}
+
+
+-- | Create a 'MuxPeer' from a tracer, codec and 'Peer'.
+--
+mkMiniProtocolCbFromPeer
+  :: forall (pr :: PeerRole) ps (st :: ps) failure bytes ctx m a.
+     ( MonadThrow m
+     , Show failure
+     , forall (st' :: ps). Show (ClientHasAgency st')
+     , forall (st' :: ps). Show (ServerHasAgency st')
+     , ShowProxy ps
+     )
+  => (ctx -> ( Tracer m (TraceSendRecv ps)
+             , Codec ps failure m bytes
+             , Peer ps pr st m a
+             )
+     )
+  -> MiniProtocolCb ctx bytes m a
+mkMiniProtocolCbFromPeer fn =
+    MiniProtocolCb $ \ctx channel ->
+      case fn ctx of
+        (tracer, codec, peer) ->
+          runPeer tracer codec channel peer
+
+
+-- | Create a 'MuxPeer' from a tracer, codec and 'PeerPipelined'.
+--
+mkMiniProtocolCbFromPeerPipelined
+  :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
+     ( MonadAsync m
+     , MonadThrow m
+     , Show failure
+     , forall (st' :: ps). Show (ClientHasAgency st')
+     , forall (st' :: ps). Show (ServerHasAgency st')
+     , ShowProxy ps
+     )
+  => (ctx -> ( Tracer m (TraceSendRecv ps)
+             , Codec ps failure m bytes
+             , PeerPipelined ps pr st m a
+             )
+     )
+  -> MiniProtocolCb ctx bytes m a
+mkMiniProtocolCbFromPeerPipelined fn =
+    MiniProtocolCb $ \ctx channel ->
+      case fn ctx of
+        (tracer, codec, peer) ->
+          runPipelinedPeer tracer codec channel peer
+
+
+-- | Run a 'MuxPeer' using supplied 'ctx' and 'Mux.Channel'
+--
+runMiniProtocolCb :: ( MonadAsync m
+                     , MonadThrow m
+                     )
+                  => MiniProtocolCb ctx LBS.ByteString m a
+                  -> ctx
+                  -> Mux.Channel m
+                  -> m (a, Maybe LBS.ByteString)
+runMiniProtocolCb (MiniProtocolCb run)  ctx = run ctx . fromChannel
+runMiniProtocolCb (MuxPeer fn)          ctx = runMiniProtocolCb (mkMiniProtocolCbFromPeer fn) ctx
+runMiniProtocolCb (MuxPeerPipelined fn) ctx = runMiniProtocolCb (mkMiniProtocolCbFromPeerPipelined fn) ctx
+
+contramapMiniProtocolCbCtx :: (ctx -> ctx')
+                           -> MiniProtocolCb ctx' bytes m a
+                           -> MiniProtocolCb ctx  bytes m a
+contramapMiniProtocolCbCtx f (MiniProtocolCb cb)   = MiniProtocolCb (cb . f)
+contramapMiniProtocolCbCtx f (MuxPeer cb)          = MuxPeer (cb . f)
+contramapMiniProtocolCbCtx f (MuxPeerPipelined cb) = MuxPeerPipelined (cb . f)
 
 
 -- |  Like 'MuxApplication' but using a 'MuxPeer' rather than a raw
@@ -343,11 +451,11 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
   [ ptcl { miniProtocolRun =
              case miniProtocolRun ptcl of
                InitiatorProtocolOnly initiator ->
-                 InitiatorProtocolOnly (initiator . f)
+                 InitiatorProtocolOnly (contramapMiniProtocolCbCtx f initiator)
                ResponderProtocolOnly responder ->
                  ResponderProtocolOnly responder
                InitiatorAndResponderProtocol initiator responder ->
-                 InitiatorAndResponderProtocol (initiator . f) responder
+                 InitiatorAndResponderProtocol (contramapMiniProtocolCbCtx f initiator) responder
          }
   | ptcl <- ptcls
   ]
@@ -357,7 +465,7 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
 --
 -- Note that callbacks will always receive `IsNotBigLedgerPeer`.
 toApplication :: forall mode initiatorCtx responderCtx m a b.
-                 (MonadCatch m, MonadAsync m)
+                 (MonadAsync m, MonadThrow m)
               => initiatorCtx
               -> responderCtx
               -> OuroborosApplication mode initiatorCtx responderCtx LBS.ByteString m a b
@@ -375,14 +483,14 @@ toApplication initiatorContext responderContext (OuroborosApplication ptcls) =
                          -> Mux.Compat.RunMiniProtocol mode m a b
     toMuxRunMiniProtocol (InitiatorProtocolOnly i) =
       Mux.Compat.InitiatorProtocolOnly
-        (runMuxPeer (i initiatorContext) . fromChannel)
+        (runMiniProtocolCb i initiatorContext)
     toMuxRunMiniProtocol (ResponderProtocolOnly r) =
       Mux.Compat.ResponderProtocolOnly
-        (runMuxPeer (r responderContext) . fromChannel)
+        (runMiniProtocolCb r responderContext)
     toMuxRunMiniProtocol (InitiatorAndResponderProtocol i r) =
       Mux.Compat.InitiatorAndResponderProtocol
-        (runMuxPeer (i initiatorContext) . fromChannel)
-        (runMuxPeer (r responderContext)  . fromChannel)
+        (runMiniProtocolCb i initiatorContext)
+        (runMiniProtocolCb r responderContext)
 
 
 -- | Make 'MiniProtocolBundle', which is used to create a mux interface with
@@ -409,21 +517,3 @@ mkMiniProtocolBundle = MiniProtocolBundle . foldMap fn
                    InitiatorAndResponderProtocol{} -> [ Mux.InitiatorDirection
                                                       , Mux.ResponderDirection ]
                ]
-
--- | Run a @'MuxPeer'@ using either @'runPeer'@ or @'runPipelinedPeer'@.
---
-runMuxPeer
-  :: ( MonadCatch m
-     , MonadAsync m
-     )
-  => MuxPeer bytes m a
-  -> Channel m bytes
-  -> m (a, Maybe bytes)
-runMuxPeer (MuxPeer tracer codec peer) channel =
-    runPeer tracer codec channel peer
-
-runMuxPeer (MuxPeerPipelined tracer codec peer) channel =
-    runPipelinedPeer tracer codec channel peer
-
-runMuxPeer (MuxPeerRaw action) channel =
-    action channel

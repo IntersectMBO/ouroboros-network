@@ -563,8 +563,8 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
-          ResponderProtocolOnly $ \_ctx ->
-          MuxPeerRaw $ \channel -> do
+          ResponderProtocolOnly $
+          MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -579,8 +579,8 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
-          InitiatorProtocolOnly $ const $
-          MuxPeerRaw $ \channel -> do
+          InitiatorProtocolOnly $
+          MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -719,7 +719,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
     reqResp ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} =
       InitiatorAndResponderProtocol
             -- Initiator
-            (const $ MuxPeerRaw $ \channel -> do
+            (MiniProtocolCb $ \_ctx channel -> do
              (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -730,7 +730,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
                 <$ waitSiblingSub rrcSiblingVar
             )
             -- Responder
-            (const $ MuxPeerRaw $ \channel -> do
+            (MiniProtocolCb $ \_ctx channel -> do
              (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -908,13 +908,13 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
 
     appReq =
       testProtocols1 $
-        InitiatorProtocolOnly $ const $
-        MuxPeerRaw $ \_ -> error "req fail"
+        InitiatorProtocolOnly $
+        MiniProtocolCb $ \_ _ -> error "req fail"
 
     appRsp =
       testProtocols1 $
-        ResponderProtocolOnly $ \_ ->
-        MuxPeerRaw $ \_ -> error "rsp fail"
+        ResponderProtocolOnly $
+        MiniProtocolCb $ \_ _ -> error "rsp fail"
 
 data WithThreadAndTime a = WithThreadAndTime {
       wtatOccuredAt    :: !UTCTime
