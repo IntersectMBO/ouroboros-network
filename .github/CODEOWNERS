@@ -24,7 +24,7 @@ cardano-client                     @coot                                        
 cardano-ping                       @coot                                                                                               @input-output-hk/network-superowners
 
 scripts/haddocs.sh                 @coot                                                                                               @input-output-hk/network-superowners
-scripts/install.ps1                @coot                                                                                               @input-output-hk/network-superowners
+scripts/install.ps1                @coot @karknu                                                                                       @input-output-hk/network-superowners
 
 # Consensus Team
 
