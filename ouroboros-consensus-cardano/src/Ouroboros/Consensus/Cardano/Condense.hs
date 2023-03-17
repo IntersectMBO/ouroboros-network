@@ -20,4 +20,4 @@ instance CondenseConstraints ByronBlock
 
 instance ShelleyCompatible proto era => CondenseConstraints (ShelleyBlock proto era)
 
-instance CardanoHardForkConstraints c => CondenseConstraints (CardanoBlock c)
+instance CardanoHardForkConstraints c1 c2 => CondenseConstraints (CardanoBlock c1 c2)

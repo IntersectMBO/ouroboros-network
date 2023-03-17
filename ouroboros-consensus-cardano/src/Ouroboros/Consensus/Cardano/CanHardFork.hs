@@ -1,5 +1,4 @@
 {-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
@@ -81,8 +80,10 @@ import           Ouroboros.Consensus.Shelley.ShelleyHFC
 
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
+import Cardano.Ledger.Alonzo.Core(Tx)
 import           Cardano.Ledger.Mary.Translation ()
 import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Ledger.BaseTypes as BaseTypes
 import           Cardano.Ledger.Shelley.Translation
                      (toFromByronTranslationContext)
 import qualified Cardano.Protocol.TPraos.API as SL
@@ -418,9 +419,10 @@ translateHeaderHashByronToShelley ::
      ( ShelleyCompatible (TPraos c) (ShelleyEra c)
      , HASH c ~ Blake2b_256
      )
-  => HeaderHash ByronBlock
+  => Proxy c
+  -> HeaderHash ByronBlock
   -> ShelleyHash c
-translateHeaderHashByronToShelley =
+translateHeaderHashByronToShelley _ =
       fromShortRawHash (Proxy @(ShelleyBlock (TPraos c) (ShelleyEra c)))
     . toShortRawHash   (Proxy @ByronBlock)
   where
@@ -442,7 +444,7 @@ translatePointByronToShelley point bNo =
       (BlockPoint s h, NotOrigin n) -> NotOrigin ShelleyTip {
           shelleyTipSlotNo  = s
         , shelleyTipBlockNo = n
-        , shelleyTipHash    = translateHeaderHashByronToShelley h
+        , shelleyTipHash    = translateHeaderHashByronToShelley (Proxy @c) h
         }
       _otherwise ->
         error "translatePointByronToShelley: invalid Byron state"
@@ -748,7 +750,7 @@ translateValidatedTxAlonzoToBabbageWrapper ctxt = InjectValidatedTx $
 
 translateLedgerStateBabbageToConwayWrapper ::
      forall c1 c2.
-     (PraosCrypto c1, PraosCrypto c2, HASH c1 ~ HASH c2)
+     (PraosCrypto c1, PraosCrypto c2, HASH c1 ~ HASH c2, ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2)
   => RequiringBoth
        WrapLedgerConfig
        (Translate LedgerState)
@@ -759,16 +761,31 @@ translateLedgerStateBabbageToConwayWrapper =
       Translate $ \_epochNo ->
         unComp . SL.translateEra' (getConwayTranslationContext cfgConway) . Comp . transPraosLS
   where
-    transPraosLS ::
-      (HASH c1 ~ HASH c2)
-      => LedgerState (ShelleyBlock (Praos c1) (BabbageEra c1)) ->
+    transPraosLS ::        LedgerState (ShelleyBlock (Praos c1) (BabbageEra c1)) ->
          LedgerState (ShelleyBlock (Praos c2)  (BabbageEra c2))
     transPraosLS (ShelleyLedgerState wo nes st) =
       ShelleyLedgerState
         { shelleyLedgerTip        = fmap castShelleyTip wo
-        , shelleyLedgerState      = nes
+        , shelleyLedgerState      = translateNewEpochState nes
         , shelleyLedgerTransition = st
         }
+
+translateNewEpochState :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => SL.NewEpochState (BabbageEra c1) -> SL.NewEpochState (BabbageEra c2)
+translateNewEpochState
+  SL.NewEpochState {nesEL, nesBprev, nesBcur, nesEs, nesRu, nesPd,
+                 stashedAVVMAddresses}
+  = SL.NewEpochState {nesEL, nesBprev = translateBlocksMade nesBprev, nesBcur = translateBlocksMade nesBcur, nesEs = translateEpochState nesEs, nesRu = undefined , nesPd=undefined ,
+                 stashedAVVMAddresses}
+
+translateBlocksMade :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => BaseTypes.BlocksMade c1 -> BaseTypes.BlocksMade c2
+translateBlocksMade BaseTypes.BlocksMade {unBlocksMade} =
+  BaseTypes.BlocksMade $ Map.mapKeysMonotonic translateKeyHash unBlocksMade
+
+translateKeyHash :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => SL.KeyHash 'SL.StakePool c1 -> SL.KeyHash 'SL.StakePool c2
+translateKeyHash (SL.KeyHash hash) = SL.KeyHash hash
+
+translateEpochState :: SL.EpochState (BabbageEra c1) -> SL.EpochState (BabbageEra c2)
+translateEpochState = undefined
 
 getConwayTranslationContext ::
      WrapLedgerConfig (ShelleyBlock (Praos c) (ConwayEra c))
@@ -789,7 +806,7 @@ translateTxBabbageToConwayWrapper ctxt = InjectTx $
     transPraosTx
       :: GenTx (ShelleyBlock (Praos c1) (BabbageEra c1))
       -> GenTx (ShelleyBlock (Praos c2) (BabbageEra c2))
-    transPraosTx (ShelleyTx ti tx) = ShelleyTx (_bar ti) (_foo tx)
+    transPraosTx (ShelleyTx ti tx) = ShelleyTx (translateTxId ti) (translateTx tx)
 
 translateValidatedTxBabbageToConwayWrapper ::
      forall c1 c2 .
@@ -806,4 +823,13 @@ translateValidatedTxBabbageToConwayWrapper ctxt = InjectValidatedTx $
     -> WrapValidatedGenTx (ShelleyBlock (Praos c2) (BabbageEra c2))
   transPraosValidatedTx (WrapValidatedGenTx x) = case x of
     ShelleyValidatedTx txid vtx -> WrapValidatedGenTx $
-      ShelleyValidatedTx (_bar txid) (_foo vtx)
+      ShelleyValidatedTx (translateTxId txid) (translateValidatedTx vtx)
+
+translateTx :: Tx (BabbageEra c1) -> Tx (BabbageEra c2)
+translateTx = undefined
+
+translateValidatedTx :: SL.Validated (Tx (BabbageEra c1)) -> SL.Validated (Tx (BabbageEra c2))
+translateValidatedTx = undefined
+
+translateTxId :: SL.TxId c1 -> SL.TxId c2
+translateTxId = undefined

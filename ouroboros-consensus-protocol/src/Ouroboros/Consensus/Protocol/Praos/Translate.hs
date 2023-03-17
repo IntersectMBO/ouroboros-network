@@ -1,5 +1,5 @@
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE FlexibleContexts                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
@@ -21,8 +21,7 @@ import qualified Data.Map.Strict as Map
 import           Ouroboros.Consensus.Protocol.Praos (ConsensusConfig (..),
                      Praos, PraosParams (..), PraosState (..),
                      Ticked (TickedPraosLedgerView))
-import           Ouroboros.Consensus.Protocol.Praos.Views
-                     (LedgerView (..))
+import           Ouroboros.Consensus.Protocol.Praos.Views (LedgerView (..))
 import qualified Ouroboros.Consensus.Protocol.Praos.Views as Views
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..),
                      TPraosState (tpraosStateChainDepState, tpraosStateLastSlot))
@@ -116,10 +115,13 @@ instance
   translateConsensusConfig = id
 
   translateTickedLedgerView (TickedPraosLedgerView LedgerView{lvPoolDistr, lvMaxHeaderSize, lvMaxBodySize, lvProtocolVersion }) =
-      TickedPraosLedgerView LedgerView { lvPoolDistr = translatedPoolDistr, lvMaxBodySize, lvMaxHeaderSize, lvProtocolVersion}
-    where
-      translatedPoolDistr = coercePoolDistr lvPoolDistr
+      TickedPraosLedgerView LedgerView { lvPoolDistr = translatedPoolDistr lvPoolDistr, lvMaxBodySize, lvMaxHeaderSize, lvProtocolVersion}
 
+  translateChainDepState = id
+
+translatedPoolDistr ::   forall c1 c2.  (VerKeyVRF c1 ~ VerKeyVRF c2  ) => SL.PoolDistr c1 -> SL.PoolDistr c2
+translatedPoolDistr poolDistr = coercePoolDistr poolDistr
+  where
       coercePoolDistr :: SL.PoolDistr c1 -> SL.PoolDistr c2
       coercePoolDistr (SL.PoolDistr m) =
             SL.PoolDistr
@@ -129,5 +131,3 @@ instance
       coerceIndividualPoolStake :: SL.IndividualPoolStake c1 -> SL.IndividualPoolStake c2
       coerceIndividualPoolStake (SL.IndividualPoolStake stake vrf) =
             SL.IndividualPoolStake stake $ coerce vrf
-
-  translateChainDepState = id
