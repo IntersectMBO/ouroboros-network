@@ -156,6 +156,7 @@ import           Ouroboros.Consensus.Shelley.Node (MaxMajorProtVer (..),
                      registerInitialFunds, validateGenesis)
 import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto,
                      shelleyBlockIssuerVKey, translateShelleyLeaderCredentials)
+import Ouroboros.Consensus.Shelley.HFEras()
 
 import           Cardano.Ledger.Address (BootstrapAddress (..), RewardAcnt (..))
 import qualified Cardano.Ledger.BaseTypes as SL
