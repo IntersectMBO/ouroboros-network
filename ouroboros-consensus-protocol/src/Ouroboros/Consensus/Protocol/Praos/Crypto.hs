@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Ouroboros.Consensus.Protocol.Praos.Crypto (
     HASH
@@ -51,6 +52,10 @@ class (VRF.VRFAlgorithm vrf1, VRF.VRFAlgorithm vrf2) => CanConvertVRF vrf1 vrf2 
   convertSKey :: SignKeyVRF vrf1 -> SignKeyVRF vrf2
   convertOutput :: OutputVRF vrf1 -> OutputVRF vrf2
 
+instance VRF.VRFAlgorithm vrf => CanConvertVRF vrf vrf where
+  convertVKey = id
+  convertSKey = id
+  convertOutput = id
 
 translateOCert ::
   (DSIGN c1 ~ DSIGN c2, KES c1 ~ KES c2)

@@ -9,6 +9,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE InstanceSigs #-}
 
 -- | Transitional Praos.
 --
@@ -75,6 +77,7 @@ import           Ouroboros.Consensus.Ticked
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Versioned
 import           Ouroboros.Consensus.Protocol.Praos.Crypto (PraosCrypto)
+import Ouroboros.Consensus.Protocol.Translate (TranslateProto (..))
 
 {-------------------------------------------------------------------------------
   Fields required by TPraos in the header
@@ -548,3 +551,12 @@ instance SL.PraosCrypto c => PraosProtocolSupportsNode (TPraos c) where
 
 instance (Condense toSign, SL.PraosCrypto c) => Condense (TPraosFields c toSign) where
   condense = condense . tpraosToSign
+
+{-------------------------------------------------------------------------------
+  Translate
+-------------------------------------------------------------------------------}
+
+instance TranslateProto (TPraos c) (TPraos c) where
+  translateConsensusConfig = id
+  translateTickedLedgerView = id
+  translateChainDepState = id

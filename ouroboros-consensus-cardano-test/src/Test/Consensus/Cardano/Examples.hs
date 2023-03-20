@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
-{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans -fprint-potential-instances #-}
 module Test.Consensus.Cardano.Examples (
     -- * Setup
     codecConfig
@@ -54,7 +54,7 @@ import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 type Crypto = StandardCrypto
 
-eraExamples :: NP Examples (CardanoEras Crypto)
+eraExamples :: NP Examples (CardanoEras Crypto Crypto)
 eraExamples =
        Byron.examples
     :* Shelley.examplesShelley
@@ -68,12 +68,12 @@ eraExamples =
 -- | By using this function, we can't forget to update this test when adding a
 -- new era to 'CardanoEras'.
 combineEras ::
-     NP Examples (CardanoEras Crypto)
-  -> Examples (CardanoBlock Crypto)
+     NP Examples (CardanoEras Crypto Crypto)
+  -> Examples (CardanoBlock Crypto Crypto)
 combineEras = mconcat . hcollapse . hap eraInjections
   where
-    eraInjections :: NP (Examples -.-> K (Examples (CardanoBlock Crypto)))
-                        (CardanoEras Crypto)
+    eraInjections :: NP (Examples -.-> K (Examples (CardanoBlock Crypto Crypto)))
+                        (CardanoEras Crypto Crypto)
     eraInjections =
            fn (K . injExamples "Byron"   IZ)
         :* fn (K . injExamples "Shelley" (IS IZ))
@@ -86,9 +86,9 @@ combineEras = mconcat . hcollapse . hap eraInjections
 
     injExamples ::
          String
-      -> Index (CardanoEras Crypto) blk
+      -> Index (CardanoEras Crypto Crypto) blk
       -> Examples blk
-      -> Examples (CardanoBlock Crypto)
+      -> Examples (CardanoBlock Crypto Crypto)
     injExamples eraName idx =
           Golden.prefixExamples eraName
         . inject exampleStartBounds idx
@@ -208,7 +208,7 @@ conwayStartBound =
       alonzoStartBound
       60
 
-exampleStartBounds :: Exactly (CardanoEras Crypto) History.Bound
+exampleStartBounds :: Exactly (CardanoEras Crypto Crypto) History.Bound
 exampleStartBounds = Exactly $
     (  K byronStartBound
     :* K shelleyStartBound
@@ -220,7 +220,7 @@ exampleStartBounds = Exactly $
     :* Nil
     )
 
-cardanoShape :: History.Shape (CardanoEras Crypto)
+cardanoShape :: History.Shape (CardanoEras Crypto Crypto)
 cardanoShape = History.Shape $ Exactly $
     (  K byronEraParams
     :* K shelleyEraParams
@@ -232,7 +232,7 @@ cardanoShape = History.Shape $ Exactly $
     :* Nil
     )
 
-summary :: History.Summary (CardanoEras Crypto)
+summary :: History.Summary (CardanoEras Crypto Crypto)
 summary =
     State.reconstructSummary
       cardanoShape
@@ -247,7 +247,7 @@ eraInfoByron = singleEraInfo (Proxy @ByronBlock)
 eraInfoShelley :: SingleEraInfo (ShelleyBlock (TPraos StandardCrypto) StandardShelley)
 eraInfoShelley = singleEraInfo (Proxy @(ShelleyBlock (TPraos StandardCrypto) StandardShelley))
 
-codecConfig :: CardanoCodecConfig Crypto
+codecConfig :: CardanoCodecConfig Crypto Crypto
 codecConfig =
     CardanoCodecConfig
       Byron.codecConfig
@@ -260,7 +260,7 @@ codecConfig =
 
 ledgerStateByron ::
      LedgerState ByronBlock
-  -> LedgerState (CardanoBlock Crypto)
+  -> LedgerState (CardanoBlock Crypto Crypto)
 ledgerStateByron stByron =
     HardForkLedgerState $ HardForkState $ TZ cur
   where
@@ -274,7 +274,7 @@ ledgerStateByron stByron =
 -------------------------------------------------------------------------------}
 
 -- | Multi-era examples, e.g., applying a transaction to the wrong era.
-multiEraExamples :: Examples (CardanoBlock Crypto)
+multiEraExamples :: Examples (CardanoBlock Crypto Crypto)
 multiEraExamples = mempty {
       Golden.exampleApplyTxErr = labelled [
           ("WrongEraByron",   exampleApplyTxErrWrongEraByron)
@@ -296,67 +296,67 @@ multiEraExamples = mempty {
 
 -- | The examples: the examples from each individual era lifted in to
 -- 'CardanoBlock' /and/ the multi-era examples.
-examples :: Examples (CardanoBlock Crypto)
+examples :: Examples (CardanoBlock Crypto Crypto)
 examples = combineEras eraExamples <> multiEraExamples
 
 -- | Applying a Shelley thing to a Byron ledger
-exampleEraMismatchByron :: MismatchEraInfo (CardanoEras Crypto)
+exampleEraMismatchByron :: MismatchEraInfo (CardanoEras Crypto Crypto)
 exampleEraMismatchByron =
     MismatchEraInfo $ MR (Z eraInfoShelley) (LedgerEraInfo eraInfoByron)
 
 -- | Applying a Byron thing to a Shelley ledger
-exampleEraMismatchShelley :: MismatchEraInfo (CardanoEras Crypto)
+exampleEraMismatchShelley :: MismatchEraInfo (CardanoEras Crypto Crypto)
 exampleEraMismatchShelley =
     MismatchEraInfo $ ML eraInfoByron (Z (LedgerEraInfo eraInfoShelley))
 
-exampleApplyTxErrWrongEraByron :: ApplyTxErr (CardanoBlock Crypto)
+exampleApplyTxErrWrongEraByron :: ApplyTxErr (CardanoBlock Crypto Crypto)
 exampleApplyTxErrWrongEraByron =
       HardForkApplyTxErrWrongEra exampleEraMismatchByron
 
-exampleApplyTxErrWrongEraShelley :: ApplyTxErr (CardanoBlock Crypto)
+exampleApplyTxErrWrongEraShelley :: ApplyTxErr (CardanoBlock Crypto Crypto)
 exampleApplyTxErrWrongEraShelley =
       HardForkApplyTxErrWrongEra exampleEraMismatchShelley
 
-exampleQueryEraMismatchByron :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryEraMismatchByron :: SomeSecond BlockQuery (CardanoBlock Crypto Crypto)
 exampleQueryEraMismatchByron =
     SomeSecond (QueryIfCurrentShelley Shelley.GetLedgerTip)
 
-exampleQueryEraMismatchShelley :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryEraMismatchShelley :: SomeSecond BlockQuery (CardanoBlock Crypto Crypto)
 exampleQueryEraMismatchShelley =
     SomeSecond (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
 
-exampleQueryAnytimeByron :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryAnytimeByron :: SomeSecond BlockQuery (CardanoBlock Crypto Crypto)
 exampleQueryAnytimeByron =
     SomeSecond (QueryAnytimeByron GetEraStart)
 
-exampleQueryAnytimeShelley :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryAnytimeShelley :: SomeSecond BlockQuery (CardanoBlock Crypto Crypto)
 exampleQueryAnytimeShelley =
     SomeSecond (QueryAnytimeShelley GetEraStart)
 
-exampleQueryHardFork :: SomeSecond BlockQuery (CardanoBlock Crypto)
+exampleQueryHardFork :: SomeSecond BlockQuery (CardanoBlock Crypto Crypto)
 exampleQueryHardFork =
     SomeSecond (QueryHardFork GetInterpreter)
 
-exampleResultEraMismatchByron :: SomeResult (CardanoBlock Crypto)
+exampleResultEraMismatchByron :: SomeResult (CardanoBlock Crypto Crypto)
 exampleResultEraMismatchByron =
     SomeResult
       (QueryIfCurrentShelley Shelley.GetLedgerTip)
       (Left exampleEraMismatchByron)
 
-exampleResultEraMismatchShelley :: SomeResult (CardanoBlock Crypto)
+exampleResultEraMismatchShelley :: SomeResult (CardanoBlock Crypto Crypto)
 exampleResultEraMismatchShelley =
     SomeResult
       (QueryIfCurrentByron Byron.GetUpdateInterfaceState)
       (Left exampleEraMismatchShelley)
 
-exampleResultAnytimeByron :: SomeResult (CardanoBlock Crypto)
+exampleResultAnytimeByron :: SomeResult (CardanoBlock Crypto Crypto)
 exampleResultAnytimeByron =
     SomeResult (QueryAnytimeByron GetEraStart) (Just byronStartBound)
 
-exampleResultAnytimeShelley :: SomeResult (CardanoBlock Crypto)
+exampleResultAnytimeShelley :: SomeResult (CardanoBlock Crypto Crypto)
 exampleResultAnytimeShelley =
     SomeResult (QueryAnytimeShelley GetEraStart) (Just shelleyStartBound)
 
-exampleResultHardFork :: SomeResult (CardanoBlock Crypto)
+exampleResultHardFork :: SomeResult (CardanoBlock Crypto Crypto)
 exampleResultHardFork =
     SomeResult (QueryHardFork GetInterpreter) (History.mkInterpreter summary)

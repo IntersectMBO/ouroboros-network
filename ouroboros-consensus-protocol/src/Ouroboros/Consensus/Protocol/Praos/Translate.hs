@@ -105,6 +105,7 @@ instance
   Translation between Praos using different cryptos
 -------------------------------------------------------------------------------}
 
+-- FIXME this instance overlaps with the "degenerate instance" defined in Translate module
 instance
   ( HASH c1 ~ HASH c2,
     ADDRHASH c1 ~ ADDRHASH c2,

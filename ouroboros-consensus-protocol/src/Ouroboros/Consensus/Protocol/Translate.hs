@@ -18,9 +18,9 @@ class TranslateProto protoFrom protoTo
   translateChainDepState ::
     ChainDepState protoFrom -> ChainDepState protoTo
 
--- | Degenerate instance - we may always translate from a protocol to itself.
-instance TranslateProto singleProto singleProto
-  where
-  translateConsensusConfig = id
-  translateTickedLedgerView = id
-  translateChainDepState = id
+-- -- | Degenerate instance - we may always translate from a protocol to itself.
+-- instance TranslateProto singleProto singleProto
+--   where
+--   translateConsensusConfig = id
+--   translateTickedLedgerView = id
+--   translateChainDepState = id
