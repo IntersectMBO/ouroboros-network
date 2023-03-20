@@ -53,7 +53,7 @@ import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
 import qualified Cardano.Protocol.TPraos.OCert as SL
 import           Cardano.Slotting.EpochInfo
-import           Cardano.Slotting.Time (mkSlotLength)
+import           Cardano.Slotting.Time (SystemStart (..), mkSlotLength)
 import           Control.Monad.Except (Except)
 import           Data.Bifunctor (first)
 import qualified Data.ListMap as ListMap
@@ -87,6 +87,7 @@ import           Ouroboros.Consensus.Shelley.Node.Serialisation ()
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 {-------------------------------------------------------------------------------
   BlockForging
@@ -295,11 +296,18 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
     tpraosParams :: TPraosParams
     tpraosParams = mkTPraosParams maxMajorProtVer initialNonce genesis
 
+    systemStart :: SystemStart
+    systemStart = SystemStart $ SL.sgSystemStart genesis
+
+    networkMagic :: NetworkMagic
+    networkMagic = NetworkMagic $ SL.sgNetworkMagic genesis
+
     blockConfig :: BlockConfig (ShelleyBlock (TPraos c) era)
     blockConfig =
         mkShelleyBlockConfig
           protVer
-          genesis
+          systemStart
+          networkMagic
           (shelleyBlockIssuerVKey <$> credentialss)
 
     storageConfig :: StorageConfig (ShelleyBlock (TPraos c) era)

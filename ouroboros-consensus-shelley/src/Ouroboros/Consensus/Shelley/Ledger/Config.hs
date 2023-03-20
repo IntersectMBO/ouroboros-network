@@ -57,13 +57,14 @@ deriving instance ShelleyBasedEra era => NoThunks (BlockConfig (ShelleyBlock pro
 mkShelleyBlockConfig ::
      ShelleyBasedEra era
   => SL.ProtVer
-  -> SL.ShelleyGenesis (EraCrypto era)
+  -> SystemStart
+  -> NetworkMagic
   -> [SL.VKey 'SL.BlockIssuer (EraCrypto era)]
   -> BlockConfig (ShelleyBlock proto era)
-mkShelleyBlockConfig protVer genesis blockIssuerVKeys = ShelleyConfig {
+mkShelleyBlockConfig protVer systemStart networkMagic blockIssuerVKeys = ShelleyConfig {
       shelleyProtocolVersion  = protVer
-    , shelleySystemStart      = SystemStart  $ SL.sgSystemStart  genesis
-    , shelleyNetworkMagic     = NetworkMagic $ SL.sgNetworkMagic genesis
+    , shelleySystemStart      = systemStart
+    , shelleyNetworkMagic     = networkMagic
     , shelleyBlockIssuerVKeys = Map.fromList
         [ (SL.hashKey k, k)
         | k <- blockIssuerVKeys

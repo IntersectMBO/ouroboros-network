@@ -156,7 +156,7 @@ import           Ouroboros.Consensus.Shelley.Node (MaxMajorProtVer (..),
                      protocolClientInfoShelley, registerGenesisStaking,
                      registerInitialFunds, validateGenesis)
 import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto,
-                     shelleyBlockIssuerVKey)
+                     shelleyBlockIssuerVKey, translateShelleyLeaderCredentials)
 
 import           Cardano.Ledger.Address (BootstrapAddress (..), RewardAcnt (..))
 import           Cardano.Ledger.CompactAddress (Addr (..))
@@ -189,6 +189,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import Data.Coerce (coerce)
+import Ouroboros.Network.Magic (NetworkMagic(..))
 
 {-------------------------------------------------------------------------------
   SerialiseHFC
@@ -770,6 +771,10 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
     TPraosParams { tpraosSlotsPerKESPeriod, tpraosMaxKESEvo } = tpraosParams
 
+    systemStart = SystemStart $ SL.sgSystemStart genesisShelley
+
+    networkMagic = NetworkMagic $ SL.sgNetworkMagic genesisShelley
+
     praosParams :: PraosParams
     praosParams = PraosParams
       { praosSlotsPerKESPeriod = SL.sgSlotsPerKESPeriod genesisShelley,
@@ -780,7 +785,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
         praosMaxMajorPV = maxMajorProtVer,
         praosMaxLovelaceSupply = SL.sgMaxLovelaceSupply genesisShelley,
         praosNetworkId = SL.sgNetworkId genesisShelley,
-        praosSystemStart = SystemStart $ SL.sgSystemStart genesisShelley
+        praosSystemStart = systemStart
       }
 
     PraosParams { praosSlotsPerKESPeriod, praosMaxKESEvo } = praosParams
@@ -789,7 +794,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockConfigShelley =
         Shelley.mkShelleyBlockConfig
           protVerShelley
-          genesisShelley
+          systemStart
+          networkMagic
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigShelley ::
@@ -813,7 +819,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockConfigAllegra =
         Shelley.mkShelleyBlockConfig
           protVerAllegra
-          genesisShelley
+          systemStart
+          networkMagic
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigAllegra ::
@@ -834,7 +841,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockConfigMary =
         Shelley.mkShelleyBlockConfig
           protVerMary
-          genesisShelley
+          systemStart
+          networkMagic
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigMary ::
@@ -855,7 +863,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockConfigAlonzo =
         Shelley.mkShelleyBlockConfig
           protVerAlonzo
-          genesisShelley
+          systemStart
+          networkMagic
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigAlonzo ::
@@ -876,7 +885,8 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     blockConfigBabbage =
         Shelley.mkShelleyBlockConfig
           protVerBabbage
-          genesisShelley
+          systemStart
+          networkMagic
           (shelleyBlockIssuerVKey <$> credssShelleyBased)
 
     partialConsensusConfigBabbage ::
@@ -893,12 +903,16 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
 
     -- Conway
 
+    genesisShelleyConway :: ShelleyGenesis c2
+    genesisShelleyConway = translateShelleyGenesis genesisShelley
+
     blockConfigConway :: BlockConfig (ShelleyBlock (Praos c2) (ConwayEra c2))
     blockConfigConway =
         Shelley.mkShelleyBlockConfig
           protVerConway
-          genesisShelley
-          (shelleyBlockIssuerVKey <$> credssShelleyBased)
+          systemStart
+          networkMagic
+          (shelleyBlockIssuerVKey . translateShelleyLeaderCredentials <$> credssShelleyBased)
 
     partialConsensusConfigConway ::
          PartialConsensusConfig (BlockProtocol (ShelleyBlock (Praos c2) (ConwayEra c2)))
@@ -907,7 +921,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     partialLedgerConfigConway :: PartialLedgerConfig (ShelleyBlock (Praos c2) (ConwayEra c2))
     partialLedgerConfigConway =
         mkPartialLedgerConfigShelley
-          genesisShelley
+          genesisShelleyConway
           transCtxtConway
           maxMajorProtVer
           TriggerHardForkNever
