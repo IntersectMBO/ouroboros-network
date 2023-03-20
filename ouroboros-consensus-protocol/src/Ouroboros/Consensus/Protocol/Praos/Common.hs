@@ -4,6 +4,8 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- | Various things common to iterations of the Praos protocol.
 module Ouroboros.Consensus.Protocol.Praos.Common (
@@ -13,11 +15,12 @@ module Ouroboros.Consensus.Protocol.Praos.Common (
     -- * node support
   , PraosNonces (..)
   , PraosProtocolSupportsNode (..)
+  , translateCanBeLeader
   ) where
 
 import qualified Cardano.Crypto.VRF as VRF
 import           Cardano.Ledger.BaseTypes (Nonce, Version)
-import           Cardano.Ledger.Crypto (Crypto, VRF)
+import           Cardano.Ledger.Crypto (Crypto, VRF, DSIGN, KES)
 import           Cardano.Ledger.Keys (KeyHash, KeyRole (BlockIssuer))
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Protocol.TPraos.OCert as OCert
@@ -30,6 +33,9 @@ import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Protocol.Abstract
+import Cardano.Protocol.TPraos.OCert (OCert(..), OCertSignable)
+import Ouroboros.Consensus.Protocol.Praos.Crypto (CanConvertVRF(convertSKey), translateOCert, translateColdKey)
+import Data.Coerce (coerce)
 
 -- | The maximum major protocol version.
 --
@@ -89,6 +95,14 @@ data PraosCanBeLeader c = PraosCanBeLeader
     praosCanBeLeaderSignKeyVRF :: !(SL.SignKeyVRF c)
   }
   deriving (Generic)
+
+
+translateCanBeLeader :: (DSIGN c1 ~ DSIGN c2, KES c1 ~ KES c2, CanConvertVRF (VRF c1) (VRF c2)) => PraosCanBeLeader c1 -> PraosCanBeLeader c2
+translateCanBeLeader
+  PraosCanBeLeader {praosCanBeLeaderOpCert, praosCanBeLeaderColdVerKey, praosCanBeLeaderSignKeyVRF}
+  = PraosCanBeLeader { praosCanBeLeaderOpCert = translateOCert praosCanBeLeaderOpCert
+                     , praosCanBeLeaderColdVerKey = translateColdKey praosCanBeLeaderColdVerKey
+                     , praosCanBeLeaderSignKeyVRF = convertSKey praosCanBeLeaderSignKeyVRF }
 
 instance Crypto c => NoThunks (PraosCanBeLeader c)
 

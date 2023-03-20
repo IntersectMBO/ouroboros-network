@@ -132,6 +132,7 @@ import           Ouroboros.Consensus.Shelley.ShelleyHFC
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.RedundantConstraints
+import Ouroboros.Consensus.Protocol.Praos.Crypto (VRF, CanConvertVRF)
 
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
@@ -300,6 +301,7 @@ type CardanoHardForkConstraints c1 c2 =
   , TPraos.PraosCrypto c2
   , Praos.PraosCrypto c2
   , TranslateProto (TPraos  c1) (Praos  c1)
+  , CanConvertVRF (VRF c1) (VRF c2)
   , ShelleyCompatible (TPraos  c1) (ShelleyEra  c1)
   , LedgerSupportsProtocol (ShelleyBlock (TPraos  c1) (ShelleyEra  c1))
   , ShelleyCompatible (TPraos  c1) (AllegraEra  c1)
@@ -317,6 +319,8 @@ type CardanoHardForkConstraints c1 c2 =
     -- @cardano-ledger-shelley@ requires Ed25519 for Byron bootstrap addresses and
     -- the current Byron-to-Shelley translation requires a 224-bit hash for
     -- address and a 256-bit hash for header hashes.
+  , HASH     c1 ~ HASH c2
+  , ADDRHASH c2 ~ ADDRHASH c2
   , HASH     c1 ~ Blake2b_256
   , ADDRHASH c1 ~ Blake2b_224
   , DSIGN    c1 ~ Ed25519DSIGN

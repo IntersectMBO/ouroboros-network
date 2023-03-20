@@ -9,6 +9,7 @@
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -- | Node configuration common to all (era, protocol) combinations deriving from
 -- Shelley.
@@ -17,6 +18,7 @@ module Ouroboros.Consensus.Shelley.Node.Common (
   , ShelleyEraWithCrypto
   , ShelleyLeaderCredentials (..)
   , shelleyBlockIssuerVKey
+  , translateShelleyLeaderCredentials
   ) where
 
 import qualified Cardano.Ledger.Keys as SL
@@ -31,7 +33,7 @@ import           Ouroboros.Consensus.Mempool (TxLimits)
 import           Ouroboros.Consensus.Node.InitStorage
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
 import           Ouroboros.Consensus.Protocol.Praos.Common
-                     (PraosCanBeLeader (praosCanBeLeaderColdVerKey))
+                     (PraosCanBeLeader (praosCanBeLeaderColdVerKey), translateCanBeLeader)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
                      ShelleyCompatible, shelleyNetworkMagic,
@@ -41,6 +43,8 @@ import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock,
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
                      (ProtocolHeaderSupportsProtocol (CannotForgeError))
 import           Ouroboros.Consensus.Storage.ImmutableDB
+import Ouroboros.Consensus.Protocol.Praos.Crypto (CanConvertVRF, VRF, KES)
+import Cardano.Ledger.Crypto (DSIGN)
 
 {-------------------------------------------------------------------------------
   Credentials
@@ -58,6 +62,20 @@ data ShelleyLeaderCredentials c = ShelleyLeaderCredentials
     -- Useful when the node is running with multiple sets of credentials.
     shelleyLeaderCredentialsLabel       :: Text
   }
+
+translateShelleyLeaderCredentials ::
+  (CanConvertVRF (VRF c1) (VRF c2), DSIGN c1 ~ DSIGN c2, KES c1 ~ KES c2)
+  => ShelleyLeaderCredentials c1 -> ShelleyLeaderCredentials c2
+translateShelleyLeaderCredentials
+   ShelleyLeaderCredentials
+        { shelleyLeaderCredentialsInitSignKey
+        , shelleyLeaderCredentialsCanBeLeader
+        , shelleyLeaderCredentialsLabel
+        } =  ShelleyLeaderCredentials
+            { shelleyLeaderCredentialsInitSignKey
+            , shelleyLeaderCredentialsCanBeLeader = translateCanBeLeader shelleyLeaderCredentialsCanBeLeader
+            , shelleyLeaderCredentialsLabel
+            }
 
 shelleyBlockIssuerVKey ::
   ShelleyLeaderCredentials c -> SL.VKey 'SL.BlockIssuer c
