@@ -67,11 +67,11 @@ import           Test.Util.Serialisation.Roundtrip (Coherent (..),
 
 instance ( DSIGN.Signable (DSIGN c1) ~ SignableRepresentation
          , KES.Signable (KES c1) ~ SignableRepresentation
-         , VRF.Signable (VRF c1) SL.Seed
+         , VRF.Signable (VRF c1) ~ SignableRepresentation
          , PraosCrypto c1
          , DSIGN.Signable (DSIGN c2) ~ SignableRepresentation
          , KES.Signable (KES c2) ~ SignableRepresentation
-         , VRF.Signable (VRF c2) SL.Seed
+         , VRF.Signable (VRF c2) ~ SignableRepresentation
          , PraosCrypto c2
          ) => Arbitrary (CardanoBlock c1 c2) where
   arbitrary =
@@ -99,11 +99,11 @@ instance ( DSIGN.Signable (DSIGN c1) ~ SignableRepresentation
 
 instance ( DSIGN.Signable (DSIGN c1) ~ SignableRepresentation
          , KES.Signable (KES c1) ~ SignableRepresentation
-         , VRF.Signable (VRF c1) SL.Seed
+         , VRF.Signable (VRF c1)  ~ SignableRepresentation
          , PraosCrypto c1
          , DSIGN.Signable (DSIGN c2) ~ SignableRepresentation
          , KES.Signable (KES c2) ~ SignableRepresentation
-         , VRF.Signable (VRF c2) SL.Seed
+         , VRF.Signable (VRF c2) ~ SignableRepresentation
          , PraosCrypto c2
          ) => Arbitrary (Coherent (CardanoBlock c1 c2)) where
   arbitrary =
@@ -131,14 +131,14 @@ instance ( DSIGN.Signable (DSIGN c1) ~ SignableRepresentation
 
 instance ( DSIGN.Signable (DSIGN c1) ~ SignableRepresentation
          , KES.Signable (KES c1) ~ SignableRepresentation
-         , VRF.Signable (VRF c1) SL.Seed
+         , VRF.Signable (VRF c1) ~ SignableRepresentation
          , HASH c1 ~ Blake2b_256
          , ADDRHASH c1 ~ Blake2b_224
          , DSIGN c1 ~ DSIGN.Ed25519DSIGN
          , PraosCrypto c1
          , DSIGN.Signable (DSIGN c2) ~ SignableRepresentation
          , KES.Signable (KES c2) ~ SignableRepresentation
-         , VRF.Signable (VRF c2) SL.Seed
+         , VRF.Signable (VRF c2) ~ SignableRepresentation
          , HASH c2 ~ Blake2b_256
          , ADDRHASH c2 ~ Blake2b_224
          , DSIGN c2 ~ DSIGN.Ed25519DSIGN
