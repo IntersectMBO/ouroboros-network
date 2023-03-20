@@ -32,7 +32,7 @@ tests = testGroup "Cardano"
     , testProperty "BinaryBlockInfo sanity check" prop_CardanoBinaryBlockInfo
     ]
 
-testCodecCfg :: CardanoCodecConfig MockCryptoCompatByron
+testCodecCfg :: CardanoCodecConfig MockCryptoCompatByron MockCryptoCompatByron
 testCodecCfg =
   CardanoCodecConfig
     (ByronCodecConfig epochSlots)
@@ -45,7 +45,7 @@ testCodecCfg =
 
 dictNestedHdr
   :: forall a.
-     NestedCtxt_ (CardanoBlock MockCryptoCompatByron) Header a
+     NestedCtxt_ (CardanoBlock MockCryptoCompatByron MockCryptoCompatByron) Header a
   -> Dict (Eq a, Show a)
 dictNestedHdr = \case
     NCZ (CtxtByronBoundary {})                          -> Dict
@@ -61,7 +61,7 @@ dictNestedHdr = \case
   BinaryBlockInfo
 -------------------------------------------------------------------------------}
 
-prop_CardanoBinaryBlockInfo :: CardanoBlock MockCryptoCompatByron -> Property
+prop_CardanoBinaryBlockInfo :: CardanoBlock MockCryptoCompatByron MockCryptoCompatByron -> Property
 prop_CardanoBinaryBlockInfo blk =
     encodedNestedHeader === extractedHeader
   where

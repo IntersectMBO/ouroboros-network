@@ -95,7 +95,7 @@ data TestSetup = TestSetup
   , setupSlotLengthByron   :: SlotLength
   , setupSlotLengthShelley :: SlotLength
   , setupTestConfig        :: TestConfig
-  , setupVersion           :: (NodeToNodeVersion, BlockNodeToNodeVersion (CardanoBlock Crypto))
+  , setupVersion           :: (NodeToNodeVersion, BlockNodeToNodeVersion (CardanoBlock Crypto Crypto))
   }
   deriving (Show)
 
@@ -129,7 +129,7 @@ instance Arbitrary TestSetup where
 
     setupVersion         <- genVersionFiltered
                               isHardForkNodeToNodeEnabled
-                              (Proxy @(CardanoBlock Crypto))
+                              (Proxy @(CardanoBlock Crypto Crypto))
 
     pure TestSetup
       { setupD
@@ -246,7 +246,7 @@ prop_simple_cardano_convergence TestSetup
       , version      = setupVersion
       }
 
-    testOutput :: TestOutput (CardanoBlock Crypto)
+    testOutput :: TestOutput (CardanoBlock Crypto Crypto)
     testOutput =
         runTestNetwork setupTestConfig testConfigB TestConfigMB
             { nodeInfo = \coreNodeId@(CoreNodeId nid) ->
@@ -446,7 +446,7 @@ prop_simple_cardano_convergence TestSetup
         property $ maxRollbacks setupK >= finalIntersectionDepth
 
 mkProtocolCardanoAndHardForkTxs
-  :: forall c m. (IOLike m, CardanoHardForkConstraints c)
+  :: forall c m. (IOLike m, CardanoHardForkConstraints c c)
      -- Byron
   => PBftParams
   -> CoreNodeId
@@ -459,7 +459,7 @@ mkProtocolCardanoAndHardForkTxs
   -> Shelley.CoreNode c
      -- HardForks
   -> ProtocolTransitionParamsShelleyBased (ShelleyEra c)
-  -> TestNodeInitialization m (CardanoBlock c)
+  -> TestNodeInitialization m (CardanoBlock c c)
 mkProtocolCardanoAndHardForkTxs
     pbftParams coreNodeId genesisByron generatedSecretsByron propPV
     genesisShelley initialNonce coreNodeShelley
@@ -469,7 +469,7 @@ mkProtocolCardanoAndHardForkTxs
       , tniProtocolInfo = pInfo
       }
   where
-    crucialTxs :: [GenTx (CardanoBlock c)]
+    crucialTxs :: [GenTx (CardanoBlock c c)]
     crucialTxs =
         GenTxByron <$> tniCrucialTxs tniByron
       where
@@ -484,7 +484,7 @@ mkProtocolCardanoAndHardForkTxs
               generatedSecretsByron
               propPV
 
-    pInfo :: ProtocolInfo m (CardanoBlock c)
+    pInfo :: ProtocolInfo m (CardanoBlock c c)
     pInfo = protocolInfoCardano
         ProtocolParamsByron {
             byronGenesis                = genesisByron

@@ -5,6 +5,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Test.ThreadNet.TxGen.Cardano (CardanoTxGenExtra (..)) where
@@ -56,9 +57,9 @@ data CardanoTxGenExtra c = CardanoTxGenExtra
   , ctgeShelleyCoreNodes :: [Shelley.CoreNode c]
   }
 
-instance CardanoHardForkConstraints c => TxGen (CardanoBlock c) where
+instance CardanoHardForkConstraints c c => TxGen (CardanoBlock c c) where
 
-  type TxGenExtra (CardanoBlock c) = CardanoTxGenExtra c
+  type TxGenExtra (CardanoBlock c c) = CardanoTxGenExtra c
 
   -- TODO also generate " typical " Byron and Shelley transactions
   testGenTxs (CoreNodeId i) _ncn curSlot cfg extra ls =
@@ -122,12 +123,12 @@ data MigrationInfo c = MigrationInfo
 -- It returns 'Nothing' if the core node does not have any utxo in its
 -- 'byronAddr' (eg if this transaction has already been applied).
 migrateUTxO ::
-     forall c. CardanoHardForkConstraints c
+     forall c. CardanoHardForkConstraints c c
   => MigrationInfo c
   -> SlotNo
-  -> LedgerConfig (CardanoBlock c)
-  -> LedgerState (CardanoBlock c)
-  -> Maybe (GenTx (CardanoBlock c))
+  -> LedgerConfig (CardanoBlock c c)
+  -> LedgerState (CardanoBlock c c)
+  -> Maybe (GenTx (CardanoBlock c c))
 migrateUTxO migrationInfo curSlot lcfg lst
     | Just utxo <- mbUTxO =
 
@@ -253,7 +254,7 @@ migrateUTxO migrationInfo curSlot lcfg lst
 -----
 
 ejectShelleyNS ::
-     NS f (CardanoEras c)
+     NS f (CardanoEras c c)
   -> Maybe (f (ShelleyBlock (TPraos c) (ShelleyEra c)))
 ejectShelleyNS = \case
     S (Z x) -> Just x
@@ -269,7 +270,7 @@ getUTxOShelley tls =
     tickedShelleyLedgerState tls
 
 ejectShelleyTickedLedgerState ::
-     Ticked (LedgerState (CardanoBlock c))
+     Ticked (LedgerState (CardanoBlock c c))
   -> Maybe (Ticked (LedgerState (ShelleyBlock (TPraos c) (ShelleyEra c))))
 ejectShelleyTickedLedgerState ls =
     fmap (unComp . currentState) $

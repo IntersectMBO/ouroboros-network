@@ -102,10 +102,10 @@ byronNodeToNodeVersion = ByronNodeToNodeVersion1
 byronNodeToClientVersion :: BlockNodeToClientVersion ByronBlock
 byronNodeToClientVersion = ByronNodeToClientVersion1
 
-cardanoNodeToNodeVersion :: BlockNodeToNodeVersion (CardanoBlock Crypto)
+cardanoNodeToNodeVersion :: BlockNodeToNodeVersion (CardanoBlock Crypto Crypto)
 cardanoNodeToNodeVersion = CardanoNodeToNodeVersion1
 
-cardanoNodeToClientVersion :: BlockNodeToClientVersion (CardanoBlock Crypto)
+cardanoNodeToClientVersion :: BlockNodeToClientVersion (CardanoBlock Crypto Crypto)
 cardanoNodeToClientVersion = CardanoNodeToClientVersion1
 
 pb :: Proxy ByronBlock
@@ -113,7 +113,7 @@ pb = Proxy
 
 toCardanoCodecConfig ::
      CodecConfig ByronBlock
-  -> CodecConfig (CardanoBlock Crypto)
+  -> CodecConfig (CardanoBlock Crypto Crypto)
 toCardanoCodecConfig codecConfigByron =
     CardanoCodecConfig
       codecConfigByron
@@ -201,8 +201,8 @@ encodeDiskB2C _ toByron (CodecConfigB2C ccfg) x =
 
 decodeDiskB2C ::
      forall f cardano b2c.
-     ( DecodeDisk (CardanoBlock Crypto) (f (CardanoBlock Crypto))
-     , Coercible cardano (f (CardanoBlock Crypto))
+     ( DecodeDisk (CardanoBlock Crypto Crypto) (f (CardanoBlock Crypto Crypto))
+     , Coercible cardano (f (CardanoBlock Crypto Crypto))
      )
   => Proxy f
   -> (cardano -> b2c)
@@ -211,7 +211,7 @@ decodeDiskB2C ::
 decodeDiskB2C _ fromCardano (CodecConfigB2C ccfg) =
     fromCardano' <$> decodeDisk (toCardanoCodecConfig ccfg)
   where
-    fromCardano' :: f (CardanoBlock Crypto) -> b2c
+    fromCardano' :: f (CardanoBlock Crypto Crypto) -> b2c
     fromCardano' = fromCardano . coerce
 
 instance EncodeDisk ByronToCardano ByronToCardano where
@@ -253,8 +253,8 @@ encodeNodeToNodeB2C _ toByron (CodecConfigB2C ccfg) () x =
 
 decodeNodeToNodeB2C ::
      forall f cardano b2c.
-     ( SerialiseNodeToNode (CardanoBlock Crypto) (f (CardanoBlock Crypto))
-     , Coercible cardano (f (CardanoBlock Crypto))
+     ( SerialiseNodeToNode (CardanoBlock Crypto Crypto) (f (CardanoBlock Crypto Crypto))
+     , Coercible cardano (f (CardanoBlock Crypto Crypto))
      )
   => Proxy f
   -> (cardano -> b2c)
@@ -265,7 +265,7 @@ decodeNodeToNodeB2C _ fromCardano (CodecConfigB2C ccfg) () =
     fromCardano' <$>
       decodeNodeToNode (toCardanoCodecConfig ccfg) cardanoNodeToNodeVersion
   where
-    fromCardano' :: f (CardanoBlock Crypto) -> b2c
+    fromCardano' :: f (CardanoBlock Crypto Crypto) -> b2c
     fromCardano' = fromCardano . coerce
 
 instance SerialiseNodeToNode ByronToCardano ByronToCardano where
@@ -336,8 +336,8 @@ encodeNodeToClientB2C _ toByron (CodecConfigB2C ccfg) () x =
 -- compatibility type.
 decodeNodeToClientB2C ::
      forall f cardano b2c.
-     ( SerialiseNodeToClient (CardanoBlock Crypto) (f (CardanoBlock Crypto))
-     , Coercible cardano (f (CardanoBlock Crypto))
+     ( SerialiseNodeToClient (CardanoBlock Crypto Crypto) (f (CardanoBlock Crypto Crypto))
+     , Coercible cardano (f (CardanoBlock Crypto Crypto))
      )
   => Proxy f
   -- ^ @f@ is an intermediate type, used for its @SerialiseNodeToClient@
@@ -349,11 +349,11 @@ decodeNodeToClientB2C ::
 decodeNodeToClientB2C _ fromCardano (CodecConfigB2C ccfg) () =
     fromCardano' <$>
       decodeNodeToClient
-        @(CardanoBlock Crypto)
+        @(CardanoBlock Crypto Crypto)
         (toCardanoCodecConfig ccfg)
         cardanoNodeToClientVersion
   where
-    fromCardano' :: f (CardanoBlock Crypto) -> b2c
+    fromCardano' :: f (CardanoBlock Crypto Crypto) -> b2c
     fromCardano' = fromCardano . coerce
 
 instance SerialiseNodeToClient ByronToCardano ByronToCardano where
@@ -396,8 +396,8 @@ instance SerialiseResult ByronToCardano (BlockQuery ByronToCardano) where
           (toCardanoCodecConfig ccfg)
           cardanoNodeToClientVersion
           (QueryIfCurrentByron q :: CardanoQuery
-                                      Crypto
-                                      (CardanoQueryResult Crypto result))
+                                      Crypto Crypto
+                                      (CardanoQueryResult Crypto Crypto result))
 
 instance SerialiseNodeToClientConstraints ByronToCardano
 
@@ -491,8 +491,8 @@ instance SameDepIndex (BlockQuery CardanoToByron) where
 
 encodeDiskC2B ::
      forall f cardano c2b.
-     ( EncodeDisk (CardanoBlock Crypto) (f (CardanoBlock Crypto))
-     , Coercible cardano (f (CardanoBlock Crypto))
+     ( EncodeDisk (CardanoBlock Crypto Crypto) (f (CardanoBlock Crypto Crypto))
+     , Coercible cardano (f (CardanoBlock Crypto Crypto))
      )
   => Proxy f
   -> (c2b -> cardano)
@@ -502,7 +502,7 @@ encodeDiskC2B ::
 encodeDiskC2B _ toCardano (CodecConfigC2B ccfg) x =
     encodeDisk (toCardanoCodecConfig ccfg) (toCardano' x)
   where
-    toCardano' :: c2b -> f (CardanoBlock Crypto)
+    toCardano' :: c2b -> f (CardanoBlock Crypto Crypto)
     toCardano' = coerce . toCardano
 
 decodeDiskC2B ::
@@ -540,8 +540,8 @@ instance DecodeDiskDep (NestedCtxt Header) CardanoToByron where
 
 encodeNodeToNodeC2B ::
      forall f cardano c2b.
-     ( SerialiseNodeToNode (CardanoBlock Crypto) (f (CardanoBlock Crypto))
-     , Coercible cardano (f (CardanoBlock Crypto))
+     ( SerialiseNodeToNode (CardanoBlock Crypto Crypto) (f (CardanoBlock Crypto Crypto))
+     , Coercible cardano (f (CardanoBlock Crypto Crypto))
      )
   => Proxy f
   -> (c2b -> cardano)
@@ -555,7 +555,7 @@ encodeNodeToNodeC2B _ toCardano (CodecConfigC2B ccfg) () x =
       cardanoNodeToNodeVersion
       (toCardano' x)
   where
-    toCardano' :: c2b -> f (CardanoBlock Crypto)
+    toCardano' :: c2b -> f (CardanoBlock Crypto Crypto)
     toCardano' = coerce . toCardano
 
 decodeNodeToNodeC2B ::
@@ -611,8 +611,8 @@ instance SerialiseNodeToNodeConstraints CardanoToByron where
 
 encodeNodeToClientC2B ::
      forall f cardano c2b.
-     ( SerialiseNodeToClient (CardanoBlock Crypto) (f (CardanoBlock Crypto))
-     , Coercible cardano (f (CardanoBlock Crypto))
+     ( SerialiseNodeToClient (CardanoBlock Crypto Crypto) (f (CardanoBlock Crypto Crypto))
+     , Coercible cardano (f (CardanoBlock Crypto Crypto))
      )
   => Proxy f
   -> (c2b -> cardano)
@@ -622,12 +622,12 @@ encodeNodeToClientC2B ::
   -> Encoding
 encodeNodeToClientC2B _ toCardano (CodecConfigC2B ccfg) () x =
     encodeNodeToClient
-      @(CardanoBlock Crypto)
+      @(CardanoBlock Crypto Crypto)
       (toCardanoCodecConfig ccfg)
       cardanoNodeToClientVersion
       (toCardano' x)
   where
-    toCardano' :: c2b -> f (CardanoBlock Crypto)
+    toCardano' :: c2b -> f (CardanoBlock Crypto Crypto)
     toCardano' = coerce . toCardano
 
 decodeNodeToClientC2B ::
@@ -685,7 +685,7 @@ instance SerialiseResult CardanoToByron (BlockQuery CardanoToByron) where
         (toCardanoCodecConfig ccfg)
         cardanoNodeToClientVersion
         (QueryIfCurrentByron q)
-        (QueryResultSuccess r :: CardanoQueryResult Crypto result)
+        (QueryResultSuccess r :: CardanoQueryResult Crypto Crypto result)
   decodeResult (CodecConfigC2B ccfg) () (QueryC2B q) =
       decodeResult ccfg byronNodeToClientVersion q
 
