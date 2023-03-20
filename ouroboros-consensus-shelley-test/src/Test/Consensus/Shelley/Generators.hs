@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -28,8 +29,8 @@ import qualified Ouroboros.Consensus.Protocol.Praos.Header as Praos
 import           Ouroboros.Consensus.Protocol.TPraos (PraosCrypto, TPraos,
                      TPraosState (..))
 import           Ouroboros.Consensus.Shelley.Eras
-import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Protocol.Abstract (pHeaderHash)
+import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock, NonMyopicMemberRewards (..), ShelleyTip (..), ShelleyTransition (..), ShelleyNodeToNodeVersion, ShelleyNodeToClientVersion, Header (..), mkShelleyTx, TxId (..), BlockQuery (..), encodeShelleyResult, compactGenesis, LedgerState (..), querySupportedVersion, mkShelleyBlock)
+import           Ouroboros.Consensus.Shelley.Protocol.Abstract (pHeaderHash, ShelleyHash', pattern ShelleyHash)
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 
 import           Test.QuickCheck hiding (Result)
@@ -44,7 +45,6 @@ import           Ouroboros.Network.Block (mkSerialised)
 import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
-import           Test.Cardano.Ledger.Shelley.ConcreteCryptoTypes as SL
 import           Test.Cardano.Ledger.Shelley.Generator.ShelleyEraGen ()
 import           Test.Cardano.Ledger.Shelley.Serialisation.EraIndepGenerators
                      (genCoherentBlock)
@@ -53,6 +53,7 @@ import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
 import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
 import           Test.Util.Orphans.Arbitrary ()
+import Cardano.Crypto.Hash (HashAlgorithm)
 
 {-------------------------------------------------------------------------------
   Generators
@@ -119,7 +120,7 @@ instance (CanMock (Praos crypto) era, crypto ~ EraCrypto era)
     hdr <- arbitrary
     pure $ ShelleyHeader hdr (ShelleyHash $ Praos.headerHash hdr)
 
-instance SL.Mock c => Arbitrary (ShelleyHash c) where
+instance HashAlgorithm c => Arbitrary (ShelleyHash' c) where
   arbitrary = ShelleyHash <$> arbitrary
 
 instance CanMock proto era => Arbitrary (GenTx (ShelleyBlock proto era)) where

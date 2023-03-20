@@ -25,6 +25,7 @@ module Ouroboros.Consensus.Shelley.Protocol.Abstract (
   , ProtocolHeaderSupportsLedger (..)
   , ProtocolHeaderSupportsProtocol (..)
   , ShelleyHash
+  , ShelleyHash'
   , pattern ShelleyHash
   , unShelleyHash
   , ShelleyProtocol
