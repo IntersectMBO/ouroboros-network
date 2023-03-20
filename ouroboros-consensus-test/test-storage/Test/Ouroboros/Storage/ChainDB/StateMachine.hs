@@ -74,6 +74,8 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine (
   , allComponents
     -- * Constraints
   , TestConstraints
+    -- * Tracing
+  , traceEventName
     -- * Entry point to the tests
   , tests
   ) where
