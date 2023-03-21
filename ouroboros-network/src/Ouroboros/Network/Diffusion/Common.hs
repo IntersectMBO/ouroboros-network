@@ -128,7 +128,7 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
       --
       daIPv4Address              :: Maybe (Either ntnFd ntnAddr)
 
-      -- | an @IPV4@ socket ready to accept connections or an @IPv6@ addresses
+      -- | an @IPv6@ socket ready to accept connections or an @IPv6@ addresses
       --
     , daIPv6Address              :: Maybe (Either ntnFd ntnAddr)
 
