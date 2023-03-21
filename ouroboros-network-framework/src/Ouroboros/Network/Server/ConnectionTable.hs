@@ -8,6 +8,7 @@
 module Ouroboros.Network.Server.ConnectionTable
   ( ConnectionTable
   , ConnectionTableRef (..)
+  , ConnectionDirection(..)
   , ValencyCounter
   , newConnectionTableSTM
   , newConnectionTable
@@ -26,6 +27,7 @@ module Ouroboros.Network.Server.ConnectionTable
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
 --import           Control.Tracer XXX Not Yet
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import           Data.Set (Set)
 import qualified Data.Set as S
@@ -85,7 +87,7 @@ data ConnectionTableEntry m addr = ConnectionTableEntry {
     -- | Set of ValencyCounter's for subscriptions interested in this peer.
       cteRefs           :: !(Set (ValencyCounter m))
     -- | Set of local SockAddr connected to this peer.
-    , cteLocalAddresses :: !(Set addr)
+    , cteLocalAddresses :: !(Map addr ConnectionDirection)
     }
 
 data ConnectionTableRef =
@@ -97,6 +99,9 @@ data ConnectionTableRef =
   | ConnectionTableDuplicate
   -- ^ This subscriber already has counted a connection to this peer. It must try another target.
   deriving Show
+
+data ConnectionDirection = ConnectionInbound | ConnectionOutbound
+  deriving (Eq, Show)
 
 -- | Add a connection.
 addValencyCounter :: MonadSTM m => ValencyCounter m -> STM m ()
@@ -136,8 +141,9 @@ addConnection
     -> Maybe (ValencyCounter m)
     -- ^ Optional ValencyCounter, used by subscription worker and set to Nothing when
     -- called by a local server.
+    -> ConnectionDirection
     -> STM m ()
-addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m = do
+addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m dir = do
     readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
   where
     fn :: Maybe (ConnectionTableEntry m addr) -> STM m (Maybe (ConnectionTableEntry m addr))
@@ -147,7 +153,7 @@ addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m = do
                          addValencyCounter ref
                          return $ S.singleton ref
                      Nothing -> return S.empty
-        return $ Just $ ConnectionTableEntry refs (S.singleton localAddr)
+        return $ Just $ ConnectionTableEntry refs (M.singleton localAddr dir)
     fn (Just cte) = do
           let refs' = case ref_m of
                            Just ref -> S.insert ref (cteRefs cte)
@@ -157,7 +163,7 @@ addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m = do
           mapM_ addValencyCounter refs'
           return $ Just $ cte {
                 cteRefs = refs'
-              , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
+              , cteLocalAddresses = M.insert localAddr dir (cteLocalAddresses cte)
               }
 
 -- TODO This should use Control.Tracer
@@ -196,7 +202,7 @@ removeConnectionSTM ConnectionTable{ctTable} remoteAddr localAddr =
     fn Nothing = return Nothing -- XXX removing non existent address
     fn (Just ConnectionTableEntry{cteRefs, cteLocalAddresses}) = do
         mapM_ remValencyCounter cteRefs
-        let localAddresses' = S.delete localAddr cteLocalAddresses
+        let localAddresses' = M.delete localAddr cteLocalAddresses
         if null localAddresses'
             then return Nothing
             else return $ Just $ ConnectionTableEntry cteRefs localAddresses'

@@ -522,7 +522,8 @@ fromSnocket tblVar sn sd = go <$> Snocket.accept sn sd
         Snocket.Accepted sd' remoteAddr -> do
           -- TOOD: we don't need to that on each accept
           localAddr <- Snocket.getLocalAddr sn sd'
-          atomically $ addConnection tblVar remoteAddr localAddr Nothing
+          atomically $ addConnection tblVar remoteAddr localAddr
+                                     Nothing ConnectionInbound
           pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
         Snocket.AcceptFailure err ->
           -- the is no way to construct 'Server.Socket'; This will be removed in a later commit!

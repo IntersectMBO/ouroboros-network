@@ -423,7 +423,8 @@ subscriptionLoop
             v <- readValencyCounter valencyVar
             if v > 0
               then do
-                addConnection tbl remoteAddr localAddr (Just valencyVar)
+                addConnection tbl remoteAddr localAddr
+                              (Just valencyVar) ConnectionOutbound
                 CompleteApplicationResult
                   { carState
                   , carThreads
