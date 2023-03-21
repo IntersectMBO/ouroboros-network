@@ -218,8 +218,8 @@ removeConnection
     -> m ()
 removeConnection tbl remoteAddr localAddr = atomically $ removeConnectionSTM tbl remoteAddr localAddr
 
--- | Try to see if it is possible to reference an existing connection rather
--- than creating a new one to the provied peer.
+-- | Try to see if it is possible to reference an existing /outbound/
+-- connection rather than creating a new one to the provied peer.
 --
 refConnectionSTM
     :: ( MonadSTM m
@@ -233,19 +233,28 @@ refConnectionSTM ConnectionTable{ctTable} remoteAddr refVar = do
     tbl <- readTVar ctTable
     case M.lookup remoteAddr tbl of
          Nothing -> return ConnectionTableCreate
-         Just cte ->
-             if S.member refVar $ cteRefs cte
-                 then return ConnectionTableDuplicate
-                 else do
-                     -- TODO We look up remoteAddr twice, is it possible
-                     -- to use M.alterF given that we need to be able to return
-                     -- ConnectionTableCreate or ConnectionTableExist?
-                     let refs' = S.insert refVar (cteRefs cte)
-                     mapM_ addValencyCounter $ S.toList refs'
+         Just cte
+             -- If all the existing connections are inbound we still
+             -- want to create an outbound connection.
+           | all (==ConnectionInbound) (cteLocalAddresses cte) ->
+               return ConnectionTableCreate
 
-                     writeTVar ctTable $ M.insert remoteAddr
-                         (cte { cteRefs = refs'}) tbl
-                     return ConnectionTableExist
+             -- Otherwise we know there's at least one outbound connection
+             -- but we distinguish the case of an exact duplicate.
+           | S.member refVar (cteRefs cte) ->
+               return ConnectionTableDuplicate
+
+           | otherwise -> do
+               -- TODO We look up remoteAddr twice, is it possible
+               -- to use M.alterF given that we need to be able to return
+               -- ConnectionTableCreate or ConnectionTableExist?
+               let refs' = S.insert refVar (cteRefs cte)
+               mapM_ addValencyCounter $ S.toList refs'
+
+               writeTVar ctTable $
+                 M.insert remoteAddr (cte { cteRefs = refs'}) tbl
+
+               return ConnectionTableExist
 
 refConnection
     :: ( MonadSTM m
