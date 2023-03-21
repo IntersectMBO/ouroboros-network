@@ -828,14 +828,14 @@ instance HasLedgerTables (LedgerState blk)
   pureLedgerTables  f = coerce $ pureLedgerTables  @(LedgerState blk) f
   mapLedgerTables   f = coerce $ mapLedgerTables   @(LedgerState blk) f
   zipLedgerTables   f = coerce $ zipLedgerTables   @(LedgerState blk) f
-  zipLedgerTables2  f = coerce $ zipLedgerTables2  @(LedgerState blk) f
+  zipLedgerTables3  f = coerce $ zipLedgerTables3  @(LedgerState blk) f
   foldLedgerTables  f = coerce $ foldLedgerTables  @(LedgerState blk) f
   foldLedgerTables2 f = coerce $ foldLedgerTables2 @(LedgerState blk) f
   namesLedgerTables   = coerce $ namesLedgerTables @(LedgerState blk)
   zipLedgerTablesA  f (OneEraLedgerTables l) (OneEraLedgerTables r) =
     OneEraLedgerTables <$> zipLedgerTablesA f l r
-  zipLedgerTables2A  f tl tc tr =
-     OneEraLedgerTables <$> zipLedgerTables2A f l c r
+  zipLedgerTables3A  f tl tc tr =
+     OneEraLedgerTables <$> zipLedgerTables3A f l c r
    where
      OneEraLedgerTables l = tl
      OneEraLedgerTables c = tc

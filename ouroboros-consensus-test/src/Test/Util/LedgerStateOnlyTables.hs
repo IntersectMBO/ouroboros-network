@@ -85,11 +85,11 @@ instance (Ord k, Eq v, Show k, Show v, NoThunks k, NoThunks v)
   zipLedgerTablesA f l r =
     OTLedgerTables <$> f (otltLedgerTables l) (otltLedgerTables r)
 
-  zipLedgerTables2 f l m r =
+  zipLedgerTables3 f l m r =
     OTLedgerTables $
       f (otltLedgerTables l) (otltLedgerTables m) (otltLedgerTables r)
 
-  zipLedgerTables2A f l c r =
+  zipLedgerTables3A f l c r =
     OTLedgerTables <$>
       f (otltLedgerTables l) (otltLedgerTables c) (otltLedgerTables r)
 

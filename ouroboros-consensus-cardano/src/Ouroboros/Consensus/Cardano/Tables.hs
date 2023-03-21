@@ -147,9 +147,9 @@ instance CardanoHardForkConstraints c => HasLedgerTables (LedgerState (CardanoBl
   mapLedgerTables      f                                                 (CardanoLedgerTables x) = CardanoLedgerTables (f x)
   traverseLedgerTables f                                                 (CardanoLedgerTables x) = CardanoLedgerTables <$> f x
   zipLedgerTables      f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables (f l r)
-  zipLedgerTables2     f (CardanoLedgerTables l) (CardanoLedgerTables c) (CardanoLedgerTables r) = CardanoLedgerTables (f l c r)
+  zipLedgerTables3     f (CardanoLedgerTables l) (CardanoLedgerTables c) (CardanoLedgerTables r) = CardanoLedgerTables (f l c r)
   zipLedgerTablesA     f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables <$> f l r
-  zipLedgerTables2A    f (CardanoLedgerTables l) (CardanoLedgerTables c) (CardanoLedgerTables r) = CardanoLedgerTables <$> f l c r
+  zipLedgerTables3A    f (CardanoLedgerTables l) (CardanoLedgerTables c) (CardanoLedgerTables r) = CardanoLedgerTables <$> f l c r
   foldLedgerTables     f                                                 (CardanoLedgerTables x) = f x
   foldLedgerTables2    f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = f l r
 

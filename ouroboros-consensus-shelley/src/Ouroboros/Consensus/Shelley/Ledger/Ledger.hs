@@ -274,7 +274,7 @@ instance ShelleyBasedEra era => HasLedgerTables (LedgerState (ShelleyBlock proto
   zipLedgerTables f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) =
       ShelleyLedgerTables (f utxoL utxoR)
 
-  zipLedgerTables2
+  zipLedgerTables3
     f
     (ShelleyLedgerTables utxoL)
     (ShelleyLedgerTables utxoC)
@@ -284,7 +284,7 @@ instance ShelleyBasedEra era => HasLedgerTables (LedgerState (ShelleyBlock proto
   zipLedgerTablesA f (ShelleyLedgerTables utxoL) (ShelleyLedgerTables utxoR) =
       ShelleyLedgerTables <$> f utxoL utxoR
 
-  zipLedgerTables2A
+  zipLedgerTables3A
     f
     (ShelleyLedgerTables utxoL)
     (ShelleyLedgerTables utxoC)

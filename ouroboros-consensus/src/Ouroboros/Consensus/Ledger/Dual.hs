@@ -969,21 +969,21 @@ instance Bridge m a => HasLedgerTables (LedgerState (DualBlock m a)) where
           DualBlockLedgerTables
       <$> (zipLedgerTablesA f mainL mainR)
 
-  zipLedgerTables2A
+  zipLedgerTables3A
     f
     (DualBlockLedgerTables main0)
     (DualBlockLedgerTables main1)
     (DualBlockLedgerTables main2) =
           DualBlockLedgerTables
-      <$> (zipLedgerTables2A f main0 main1 main2)
+      <$> (zipLedgerTables3A f main0 main1 main2)
 
-  zipLedgerTables2
+  zipLedgerTables3
     f
     (DualBlockLedgerTables mainL)
     (DualBlockLedgerTables mainM)
     (DualBlockLedgerTables mainR) =
       DualBlockLedgerTables
-        (zipLedgerTables2 f mainL mainM mainR)
+        (zipLedgerTables3 f mainL mainM mainR)
 
   foldLedgerTables f (DualBlockLedgerTables main) =
        foldLedgerTables f main
