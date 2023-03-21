@@ -372,19 +372,19 @@ instance ( ShelleyCompatible proto era
     _other           -> emptyLedgerTables
 
   tableTraversingQuery = \case
-    GetUTxOByAddress addrs ->
-      Just (TraversingQueryHandler
-            (\st -> SL.getFilteredUTxO (shelleyLedgerState $ ledgerState st) addrs)
-            emptyUtxo
-            combUtxo
-            id)
-    GetUTxOWhole           ->
-      Just (TraversingQueryHandler
-            (SL.getUTxO . shelleyLedgerState . ledgerState)
-            emptyUtxo
-            combUtxo
-            id)
-    _other -> Nothing
+      GetUTxOByAddress addrs ->
+        Just (TraversingQueryHandler
+              (\st -> SL.getFilteredUTxO (shelleyLedgerState $ ledgerState st) addrs)
+              emptyUtxo
+              combUtxo
+              id)
+      GetUTxOWhole           ->
+        Just (TraversingQueryHandler
+              (SL.getUTxO . shelleyLedgerState . ledgerState)
+              emptyUtxo
+              combUtxo
+              id)
+      _other -> Nothing
     where
       emptyUtxo                        = SL.UTxO Map.empty
       combUtxo (SL.UTxO l) (SL.UTxO r) = SL.UTxO $ Map.union l r

@@ -310,16 +310,15 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
         }
 
     initLedgerState :: LedgerState (ShelleyBlock (TPraos c) era) ValuesMK
-    initLedgerState =
-      let st = registerGenesisStaking (SL.sgStaking genesis) $
-                 SL.initialState genesis additionalGenesisConfig
-      in
-      ShelleyLedgerState {
-        shelleyLedgerTip        = Origin
-      , shelleyLedgerState      = st `withUtxoSL` shelleyUTxOTable emptyLedgerTables
-      , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
-      , shelleyLedgerTables     = ShelleyLedgerTables $ projectUtxoSL st
-      }
+    initLedgerState = ShelleyLedgerState {
+          shelleyLedgerTip        = Origin
+        , shelleyLedgerState      = st `withUtxoSL` shelleyUTxOTable emptyLedgerTables
+        , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+        , shelleyLedgerTables     = ShelleyLedgerTables $ projectUtxoSL st
+        }
+      where
+        st = registerGenesisStaking (SL.sgStaking genesis) $
+               SL.initialState genesis additionalGenesisConfig
 
     initChainDepState :: TPraosState c
     initChainDepState = TPraosState Origin $

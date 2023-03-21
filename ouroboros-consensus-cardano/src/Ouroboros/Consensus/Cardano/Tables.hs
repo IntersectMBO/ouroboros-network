@@ -65,7 +65,7 @@ import           Ouroboros.Consensus.Shelley.ShelleyHFC
   Ledger Tables
 -------------------------------------------------------------------------------}
 
--- We reuse this for both HasLedgerTables and HasTickedLedgerTables instances,
+-- | We reuse this for both HasLedgerTables and HasTickedLedgerTables instances,
 -- so the @HasTickedLedgerTables x@ constraint here is excessive in the
 -- HasLedgerTables case. However, since x is always a Cardano era, we do know we
 -- have HasTickedLedgerTables for every x, so hardcoding the stronger constraint
@@ -125,7 +125,8 @@ withLedgerTablesHelper withLT (HardForkState st) tbs =
 -- Note that this is a HardForkBlock instance, but it's not compositional. This
 -- is because the LedgerTables relies on knowledge specific to Cardano and we
 -- have so far not found a pleasant way to express that compositionally.
-instance CardanoHardForkConstraints c => HasLedgerTables (LedgerState (CardanoBlock c)) where
+instance CardanoHardForkConstraints c
+      => HasLedgerTables (LedgerState (CardanoBlock c)) where
   newtype LedgerTables (LedgerState (CardanoBlock c)) mk = CardanoLedgerTables {
         cardanoUTxOTable :: mk (SL.TxIn c) (ShelleyTxOut (ShelleyBasedEras c))
       }
@@ -211,7 +212,8 @@ instance CardanoHardForkConstraints c
   LedgerTablesCanHardFork
 -------------------------------------------------------------------------------}
 
-instance CardanoHardForkConstraints c => LedgerTablesCanHardFork (CardanoEras c) where
+instance CardanoHardForkConstraints c
+      => LedgerTablesCanHardFork (CardanoEras c) where
   hardForkInjectLedgerTables =
          byron
       :* shelley IZ

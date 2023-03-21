@@ -404,15 +404,18 @@ deriving instance Eq       (Core.TxOut era) => Eq       (TxOutWrapper era)
 deriving instance NoThunks (Core.TxOut era) => NoThunks (TxOutWrapper era)
 deriving instance Show     (Core.TxOut era) => Show     (TxOutWrapper era)
 
-instance ShelleyBasedEra (AllegraEra c) => Core.TranslateEra (AllegraEra c) TxOutWrapper where
+instance ShelleyBasedEra (AllegraEra c)
+      => Core.TranslateEra (AllegraEra c) TxOutWrapper where
   type TranslationError (AllegraEra c) TxOutWrapper = Void
   translateEra ctxt = fmap TxOutWrapper . Core.translateEra ctxt . unTxOutWrapper
 
-instance ShelleyBasedEra (MaryEra c) => Core.TranslateEra (MaryEra c) TxOutWrapper where
+instance ShelleyBasedEra (MaryEra c)
+      => Core.TranslateEra (MaryEra c) TxOutWrapper where
   type TranslationError (MaryEra c) TxOutWrapper = Void
   translateEra ctxt = fmap TxOutWrapper . Core.translateEra ctxt . unTxOutWrapper
 
-instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) TxOutWrapper where
+instance ShelleyBasedEra (AlonzoEra c)
+      => Core.TranslateEra (AlonzoEra c) TxOutWrapper where
   type TranslationError (AlonzoEra c) TxOutWrapper = Void
   translateEra _ctxt =
         pure
@@ -420,7 +423,8 @@ instance ShelleyBasedEra (AlonzoEra c) => Core.TranslateEra (AlonzoEra c) TxOutW
       . Alonzo.translateTxOut
       . unTxOutWrapper
 
-instance ShelleyBasedEra (BabbageEra c) => Core.TranslateEra (BabbageEra c) TxOutWrapper where
+instance ShelleyBasedEra (BabbageEra c)
+      => Core.TranslateEra (BabbageEra c) TxOutWrapper where
   type TranslationError (BabbageEra c) TxOutWrapper = Void
   translateEra _ctxt =
         pure
@@ -428,7 +432,8 @@ instance ShelleyBasedEra (BabbageEra c) => Core.TranslateEra (BabbageEra c) TxOu
       . Babbage.translateTxOut
       . unTxOutWrapper
 
-instance ShelleyBasedEra (ConwayEra c) => Core.TranslateEra (ConwayEra c) TxOutWrapper where
+instance ShelleyBasedEra (ConwayEra c)
+      => Core.TranslateEra (ConwayEra c) TxOutWrapper where
   type TranslationError (ConwayEra c) TxOutWrapper = Void
   translateEra _ctxt =
         pure

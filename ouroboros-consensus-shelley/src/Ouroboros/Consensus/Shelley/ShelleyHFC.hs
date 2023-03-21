@@ -391,7 +391,7 @@ instance ( ShelleyBasedEra era
     <$> SL.translateValidated @era @WrapTx ctxt (SL.coerceValidated vtx)
 
 {-------------------------------------------------------------------------------
-  A wrapper helpful for Ledger HD
+  A wrapper helpful for UTxO HD
 -------------------------------------------------------------------------------}
 
 -- | We use this type for clarity, and because we don't want to declare
@@ -426,13 +426,14 @@ instance SOP.All ShelleyBasedEra eras => Show (ShelleyTxOut eras) where
         Z l -> showString "Z " . shows l
         S r -> showString "S " . go r
 
--- unline SOP.nsToIndex, this is not restricted to the interval [0, 24)
+-- unlike SOP.nsToIndex, this is not restricted to the interval [0, 24)
 idxLength :: SOP.Index xs x -> Int
 idxLength = \case
     SOP.IZ     -> 0
     SOP.IS idx -> 1 + idxLength idx
 
-instance (SOP.All ShelleyBasedEra eras, Typeable eras) => ToCBOR (ShelleyTxOut eras) where
+instance (SOP.All ShelleyBasedEra eras, Typeable eras)
+      => ToCBOR (ShelleyTxOut eras) where
   toCBOR (ShelleyTxOut x) =
         SOP.hcollapse
       $ SOP.hcimap (Proxy @ShelleyBasedEra) each x
@@ -447,7 +448,8 @@ instance (SOP.All ShelleyBasedEra eras, Typeable eras) => ToCBOR (ShelleyTxOut e
         <> CBOR.encodeWord (toEnum (idxLength idx))
         <> toCBOR txout
 
-instance (SOP.All ShelleyBasedEra eras, Typeable eras) => FromCBOR (ShelleyTxOut eras) where
+instance (SOP.All ShelleyBasedEra eras, Typeable eras)
+      => FromCBOR (ShelleyTxOut eras) where
   fromCBOR = do
       CBOR.decodeListLenOf 2
       tag <- CBOR.decodeWord
@@ -470,7 +472,7 @@ instance (SOP.All ShelleyBasedEra eras, Typeable eras) => FromCBOR (ShelleyTxOut
         if w /= toEnum (idxLength idx) then Nothing else
         Just
           $ ADecoder
-          $ (ShelleyTxOut . SOP.injectNS idx . TxOutWrapper) <$> fromCBOR
+          $ ShelleyTxOut . SOP.injectNS idx . TxOutWrapper <$> fromCBOR
 
 newtype ADecoder eras =
   ADecoder {unADecoder :: forall s. CBOR.Decoder s (ShelleyTxOut eras)}

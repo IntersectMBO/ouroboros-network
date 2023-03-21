@@ -426,7 +426,7 @@ translateLedgerStateByronToShelleyWrapper =
                   , shelleyLedgerTransition =
                       ShelleyTransitionInfo{shelleyAfterVoting = 0}
                   , shelleyLedgerTables = emptyLedgerTables
-                }
+                  }
           , translateLedgerTablesWith = \NoByronLedgerTables -> emptyLedgerTables
           }
 
@@ -609,7 +609,7 @@ translateValidatedTxShelleyToAllegraWrapper = InjectValidatedTx $
     fmap unComp . eitherToMaybe . runExcept . SL.translateEra () . Comp
 
 {-------------------------------------------------------------------------------
-  Translation from Shelley to Allegra
+  Translation from Allegra to Mary
 -------------------------------------------------------------------------------}
 
 translateLedgerStateAllegraToMaryWrapper ::
@@ -634,10 +634,6 @@ translateLedgerStateAllegraToMaryWrapper =
              ShelleyLedgerTables { shelleyUTxOTable = fmap (SL.translateEra' ()) diffMK
                                  }
         }
-
-{-------------------------------------------------------------------------------
-  Translation from Allegra to Mary
--------------------------------------------------------------------------------}
 
 translateTxAllegraToMaryWrapper ::
      (PraosCrypto c, DSignable c (Hash c EraIndependentTxBody))
