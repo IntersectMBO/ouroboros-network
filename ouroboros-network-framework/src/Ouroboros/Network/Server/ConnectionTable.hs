@@ -8,6 +8,7 @@
 module Ouroboros.Network.Server.ConnectionTable
   ( ConnectionTable
   , ConnectionTableRef (..)
+  , ConnectionDirection (..)
   , ValencyCounter
   , newConnectionTableSTM
   , newConnectionTable
@@ -40,7 +41,7 @@ import           Text.Printf
 -- through this structure.
 --
 data ConnectionTable m addr = ConnectionTable {
-    ctTable     :: StrictTVar m (M.Map addr (ConnectionTableEntry m addr))
+    ctTable     :: StrictTVar m (M.Map (addr,ConnectionDirection) (ConnectionTableEntry m addr))
   , ctLastRefId :: StrictTVar m Int
   }
 
@@ -54,6 +55,11 @@ data ValencyCounter m = ValencyCounter {
     vcId  :: Int
   , vcRef :: StrictTVar m Int
   }
+
+-- | Tracks connection direction. Used to differentiate between outbound connections we are
+-- required to create and inbound connections from the same peer.
+data ConnectionDirection = ConnectionInbound | ConnectionOutbound
+  deriving (Eq, Ord, Show)
 
 -- | Create a new ValencyCounter
 newValencyCounter
@@ -133,12 +139,13 @@ addConnection
     => ConnectionTable m addr
     -> addr
     -> addr
+    -> ConnectionDirection
     -> Maybe (ValencyCounter m)
     -- ^ Optional ValencyCounter, used by subscription worker and set to Nothing when
     -- called by a local server.
     -> STM m ()
-addConnection ConnectionTable{ctTable} remoteAddr localAddr ref_m = do
-    readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
+addConnection ConnectionTable{ctTable} remoteAddr localAddr dir ref_m = do
+    readTVar ctTable >>= M.alterF fn (remoteAddr,dir) >>= writeTVar ctTable
   where
     fn :: Maybe (ConnectionTableEntry m addr) -> STM m (Maybe (ConnectionTableEntry m addr))
     fn Nothing = do
@@ -170,13 +177,13 @@ _dumpConnectionTable ConnectionTable{ctTable} = do
     printf "Dumping Table:\n"
     mapM_ dumpTableEntry (M.toList tbl)
   where
-    dumpTableEntry :: (Socket.SockAddr, ConnectionTableEntry IO Socket.SockAddr) -> IO ()
-    dumpTableEntry (remoteAddr, ce) = do
+    dumpTableEntry :: ((Socket.SockAddr, ConnectionDirection), ConnectionTableEntry IO Socket.SockAddr) -> IO ()
+    dumpTableEntry ((remoteAddr, dir), ce) = do
         refs <- mapM (atomically . readTVar . vcRef) (S.elems $ cteRefs ce)
         let rids = map vcId $ S.elems $ cteRefs ce
             refids = zip rids refs
-        printf "Remote Address: %s\nLocal Addresses %s\nReferenses %s\n"
-            (show remoteAddr) (show $ cteLocalAddresses ce) (show refids)
+        printf "Remote Address: %s\nLocal Addresses %s\nDirection %s\nReferenses %s\n"
+            (show remoteAddr) (show $ cteLocalAddresses ce) (show dir) (show refids)
 
 -- | Remove a Connection.
 removeConnectionSTM
@@ -187,9 +194,10 @@ removeConnectionSTM
     => ConnectionTable m addr
     -> addr
     -> addr
+    -> ConnectionDirection
     -> STM m ()
-removeConnectionSTM ConnectionTable{ctTable} remoteAddr localAddr =
-    readTVar ctTable >>= M.alterF fn remoteAddr >>= writeTVar ctTable
+removeConnectionSTM ConnectionTable{ctTable} remoteAddr localAddr dir =
+    readTVar ctTable >>= M.alterF fn (remoteAddr, dir) >>= writeTVar ctTable
   where
     fn :: Maybe (ConnectionTableEntry m addr)
        -> STM m (Maybe (ConnectionTableEntry m addr))
@@ -209,8 +217,9 @@ removeConnection
     => ConnectionTable m addr
     -> addr
     -> addr
+    -> ConnectionDirection
     -> m ()
-removeConnection tbl remoteAddr localAddr = atomically $ removeConnectionSTM tbl remoteAddr localAddr
+removeConnection tbl remoteAddr localAddr dir = atomically $ removeConnectionSTM tbl remoteAddr localAddr dir
 
 -- | Try to see if it is possible to reference an existing connection rather
 -- than creating a new one to the provied peer.
@@ -221,11 +230,12 @@ refConnectionSTM
        )
     => ConnectionTable m addr
     -> addr
+    -> ConnectionDirection
     -> ValencyCounter m
     -> STM m ConnectionTableRef
-refConnectionSTM ConnectionTable{ctTable} remoteAddr refVar = do
+refConnectionSTM ConnectionTable{ctTable} remoteAddr dir refVar = do
     tbl <- readTVar ctTable
-    case M.lookup remoteAddr tbl of
+    case M.lookup (remoteAddr, dir) tbl of
          Nothing -> return ConnectionTableCreate
          Just cte ->
              if S.member refVar $ cteRefs cte
@@ -237,7 +247,7 @@ refConnectionSTM ConnectionTable{ctTable} remoteAddr refVar = do
                      let refs' = S.insert refVar (cteRefs cte)
                      mapM_ addValencyCounter $ S.toList refs'
 
-                     writeTVar ctTable $ M.insert remoteAddr
+                     writeTVar ctTable $ M.insert (remoteAddr, dir)
                          (cte { cteRefs = refs'}) tbl
                      return ConnectionTableExist
 
@@ -247,7 +257,8 @@ refConnection
        )
     => ConnectionTable m addr
     -> addr
+    -> ConnectionDirection
     -> ValencyCounter m
     -> m ConnectionTableRef
-refConnection tbl remoteAddr refVar =
-    atomically $ refConnectionSTM  tbl remoteAddr refVar
+refConnection tbl remoteAddr dir refVar =
+    atomically $ refConnectionSTM  tbl remoteAddr dir refVar
