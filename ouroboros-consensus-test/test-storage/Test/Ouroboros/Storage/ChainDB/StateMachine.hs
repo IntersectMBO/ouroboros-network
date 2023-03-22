@@ -61,6 +61,7 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine (
     -- * Model
   , MaxClockSkew (..)
   , Model
+  , ShouldGarbageCollect (..)
     -- * Running the model
   , runCmdsLockstep
     -- * System under test
@@ -69,6 +70,7 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine (
   , close
   , mkTestCfg
   , open
+  , persistBlks
     -- * Specifying block components
   , AllComponents
   , allComponents
