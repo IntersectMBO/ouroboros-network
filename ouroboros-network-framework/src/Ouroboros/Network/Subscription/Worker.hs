@@ -324,7 +324,7 @@ subscriptionLoop
               -> SubscriptionTarget m addr
               -> m ()
     innerStep conThreads valencyVar !remoteAddr sTargetNext = do
-      r <- refConnection tbl remoteAddr valencyVar
+      r <- refConnection tbl remoteAddr ConnectionOutbound valencyVar
       case r of
         ConnectionTableCreate ->
           case wpSelectAddress remoteAddr localAddresses of
@@ -423,7 +423,7 @@ subscriptionLoop
             v <- readValencyCounter valencyVar
             if v > 0
               then do
-                addConnection tbl remoteAddr localAddr (Just valencyVar)
+                addConnection tbl remoteAddr localAddr ConnectionOutbound (Just valencyVar)
                 CompleteApplicationResult
                   { carState
                   , carThreads
@@ -470,7 +470,7 @@ subscriptionLoop
                     writeTQueue resQ (Res (ApplicationResult t' remoteAddr a))
                   Left (SomeException e) ->
                     writeTQueue resQ (Res (ApplicationError t' remoteAddr e))
-                removeConnectionSTM tbl remoteAddr localAddr
+                removeConnectionSTM tbl remoteAddr localAddr ConnectionOutbound
 
 -- | Almost the same as 'Ouroboros.Network.Server.Socket.mainLoop'.
 -- 'mainLoop' reads from the result queue and runs the 'CompleteApplication'
