@@ -587,12 +587,12 @@ remoteNetworkErrorPolicy = ErrorPolicies {
                         -- 'responder'.  If a 'responder' throws 'MuxError' we
                         -- might not want to shutdown the consumer (which is
                         -- using different connection), as we do below:
-                        MuxBearerClosed              -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxIOException{}             -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxSDUReadTimeout            -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxSDUWriteTimeout           -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxShutdown {}               -> Just (SuspendPeer shortDelay shortDelay)
-                        MuxCleanShutdown             -> Just (SuspendPeer shortDelay shortDelay)
+                        MuxBearerClosed              -> Just (SuspendPeer veryShortDelay shortDelay)
+                        MuxIOException{}             -> Just (SuspendPeer veryShortDelay shortDelay)
+                        MuxSDUReadTimeout            -> Just (SuspendPeer veryShortDelay shortDelay)
+                        MuxSDUWriteTimeout           -> Just (SuspendPeer veryShortDelay shortDelay)
+                        MuxShutdown {}               -> Just (SuspendPeer veryShortDelay shortDelay)
+                        MuxCleanShutdown             -> Just (SuspendPeer veryShortDelay shortDelay)
 
         , ErrorPolicy
             $ \(e :: MuxRuntimeError)
