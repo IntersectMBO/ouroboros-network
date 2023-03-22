@@ -704,6 +704,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
       d <- beforeConnectTx t connAddr st
       case d of
         AllowConnection st'    -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr) versions
+        OnlyAccept st'         -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr) versions
         DisallowConnection st' -> pure $ RejectConnection st' (ConnectionId sockAddr connAddr)
 
 -- | Run a server application. It will listen on the given address for incoming
