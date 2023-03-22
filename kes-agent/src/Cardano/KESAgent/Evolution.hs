@@ -24,7 +24,7 @@ getCurrentKESPeriodWith now genesisTimestamp =
   KESPeriod
     . floor
     .  (/ (36 * 3600))
-    . (subtract (realToFrac genesisTimestamp))
+    . subtract (realToFrac genesisTimestamp)
     . nominalDiffTimeToSeconds
     <$> now
 

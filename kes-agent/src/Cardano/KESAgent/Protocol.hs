@@ -20,7 +20,6 @@ import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Mock
 import Cardano.Crypto.DSIGN.Class
-import Cardano.Crypto.DSIGN.Ed25519ML
 import Cardano.Crypto.DSIGN.Ed25519
 import Cardano.Crypto.Hash.Blake2b
 import Cardano.Crypto.Util (SignableRepresentation (..))
@@ -55,11 +54,11 @@ data SingleCrypto
 data MockCrypto
 
 instance Crypto StandardCrypto where
-  type KES StandardCrypto = Sum6KES Ed25519DSIGNM Blake2b_256
+  type KES StandardCrypto = Sum6KES Ed25519DSIGN Blake2b_256
   type DSIGN StandardCrypto = Ed25519DSIGN
 
 instance Crypto SingleCrypto where
-  type KES SingleCrypto = SingleKES Ed25519DSIGNM
+  type KES SingleCrypto = SingleKES Ed25519DSIGN
   type DSIGN SingleCrypto = Ed25519DSIGN
 
 instance Crypto MockCrypto where

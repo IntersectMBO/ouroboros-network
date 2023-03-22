@@ -1,19 +1,22 @@
 -- TODO: replace psbFromBytes with something non-deprecated and remove this pragma
 {-#OPTIONS_GHC -Wno-deprecations#-}
 
-{-#LANGUAGE OverloadedStrings #-}
+{-#LANGUAGE DataKinds #-}
+{-#LANGUAGE DerivingStrategies #-}
 {-#LANGUAGE FlexibleContexts #-}
 {-#LANGUAGE FlexibleInstances #-}
-{-#LANGUAGE TypeApplications #-}
-{-#LANGUAGE MultiParamTypeClasses #-}
-{-#LANGUAGE ScopedTypeVariables #-}
-{-#LANGUAGE TypeFamilies #-}
-{-#LANGUAGE RankNTypes #-}
-{-#LANGUAGE DerivingStrategies #-}
 {-#LANGUAGE GeneralizedNewtypeDeriving #-}
+{-#LANGUAGE ImpredicativeTypes #-}
+{-#LANGUAGE LambdaCase #-}
+{-#LANGUAGE MultiParamTypeClasses #-}
 {-#LANGUAGE NoStarIsType #-}
+{-#LANGUAGE OverloadedStrings #-}
+{-#LANGUAGE QuantifiedConstraints #-}
+{-#LANGUAGE ScopedTypeVariables #-}
+{-#LANGUAGE TypeApplications #-}
+{-#LANGUAGE TypeFamilies #-}
 {-#LANGUAGE TypeOperators #-}
-{-#LANGUAGE DataKinds #-}
+
 module Cardano.KESAgent.Tests.Simulation
 ( tests
 , Lock, withLock, mkLock
@@ -33,13 +36,19 @@ import Control.Monad.Class.MonadMVar
   , putMVar
   , swapMVar
   , takeMVar
+  , tryTakeMVar
   , withMVar
   , modifyMVar_
   )
-import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadThrow, MonadCatch, bracket, catch, SomeException)
+import Control.Monad.Class.MonadST (MonadST, withLiftST)
+import Control.Monad.Class.MonadThrow (MonadThrow, MonadCatch, bracket, catch, SomeException, catchJust)
 import Control.Monad.Class.MonadTime
+import Control.Monad.Class.MonadSay (say)
 import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay, DiffTime)
+import Control.Monad.IOSim
+import Control.Monad.Primitive (PrimState)
+import Control.Monad.ST (ST)
+import Control.Monad.ST.Unsafe (unsafeIOToST)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -51,7 +60,11 @@ import Data.Time.Clock.POSIX (getPOSIXTime, utcTimeToPOSIXSeconds)
 import Data.Typeable
 import Data.Word
 import Debug.Trace
-import Foreign.Ptr (castPtr)
+import Foreign.Ptr (castPtr, Ptr)
+import Foreign (mallocBytes, free)
+import Foreign.ForeignPtr (mallocForeignPtrBytes, finalizeForeignPtr, touchForeignPtr)
+import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
+import Foreign.C (CSize)
 import GHC.Stack (HasCallStack)
 import GHC.TypeLits (KnownNat, natVal, type (*))
 import GHC.Types (Type)
@@ -65,25 +78,32 @@ import Test.QuickCheck (Arbitrary (..), vectorOf)
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf (printf)
+import Simulation.Network.Snocket as SimSnocket
+import System.Directory (removeFile)
+import System.IO.Error (isDoesNotExistErrorType, ioeGetErrorType)
 -- import Test.Crypto.Util
+import Data.Primitive
 
-import Ouroboros.Network.Snocket
 import Ouroboros.Network.RawBearer
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
+import qualified Ouroboros.Network.Testing.Data.AbsBearerInfo as ABI (delay)
 
 import Cardano.Binary (FromCBOR)
 import Cardano.Crypto.DSIGN.Class
+import Cardano.Crypto.DSIGN.Ed25519
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
-import Cardano.Crypto.DSIGN.Ed25519ML
-import Cardano.Crypto.DSIGNM.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.Hash.Blake2b
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Libsodium
+import Cardano.Crypto.Libsodium.MLockedBytes.Internal (MLockedSizedBytes (..))
+import Cardano.Crypto.Libsodium.Memory.Internal (MLockedForeignPtr (..))
 import Cardano.Crypto.MLockedSeed
 import Cardano.Crypto.MonadMLock
-import Cardano.Crypto.PinnedSizedBytes
+import Cardano.Crypto.PinnedSizedBytes (psbFromByteString)
 import Cardano.Crypto.Seed
 
 import Cardano.KESAgent.Agent
@@ -137,9 +157,12 @@ hoistLock :: forall m n. (forall a. m a -> n a) -> Lock m -> Lock n
 hoistLock hoist (Lock acquire release) =
   Lock (hoist acquire) (\() -> hoist (release ()))
 
-testCrypto :: forall c n
-            . MonadKES IO c
-           => UnsoundKESSignAlgorithm IO (KES c)
+testCrypto :: forall c n kes
+            . kes ~ KES c
+           => MonadKES IO c
+           => (forall s. MonadKES (IOSim s) c)
+           => UnsoundKESSignAlgorithm IO kes
+           => (forall s. UnsoundKESSignAlgorithm (IOSim s) kes)
            => DSIGN.Signable (DSIGN c) (OCertSignable c)
            => ContextDSIGN (DSIGN c) ~ ()
            => n ~ 10
@@ -155,6 +178,10 @@ testCrypto proxyC lock tracer ioManager =
     [ testGroup "IO"
       [ testProperty "one key through chain" (testOneKeyThroughChainIO proxyC lock ioManager)
       , testProperty "concurrent pushes" (testConcurrentPushes proxyC (Proxy @IO) (Proxy @n) lock ioSnocket ioMkAddr)
+      ]
+    , testGroup "IOSim"
+      [ testProperty "one key through chain" (testOneKeyThroughChainIOSim proxyC)
+      -- , testProperty "concurrent pushes" (testConcurrentPushes proxyC (Proxy @IO) (Proxy @n) lock ioSnocket ioMkAddr)
       ]
     ]
   where
@@ -233,7 +260,6 @@ instance Show PrettyBS where
 runTestNetwork :: forall c m fd addr
                 . MonadKES m c
                => MonadNetworking m fd
-               => MonadProperty m
                => MonadTimer m
                => DSIGN.Signable (DSIGN c) (OCertSignable c)
                => ContextDSIGN (DSIGN c) ~ ()
@@ -376,12 +402,63 @@ testOneKeyThroughChainIO p
     controlDelay
   where
     ioSnocket = socketSnocket ioManager
-    ioMkAddr i = SockAddrUnix $ "./local" ++ show i
+    ioMkAddrName i = "./local" ++ show i
+    ioMkAddr i = SockAddrUnix $ ioMkAddrName i
+
+    cleanUp seed = do
+        catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
+                  (removeFile $ ioMkAddrName seed)
+                  (\_ -> return ())
+
+testOneKeyThroughChainIOSim :: forall c kes
+                             . KES c ~ kes
+                            => (forall s. MonadKES (IOSim s) c)
+                            => (forall s. UnsoundKESSignAlgorithm (IOSim s) kes)
+                            => ContextDSIGN (DSIGN c) ~ ()
+                            => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                            => Show (SignKeyWithPeriodKES  kes)
+                            => (forall s. VersionedProtocol (KESProtocol (IOSim s) c))
+                            => Proxy c
+                            -> Word32
+                            -> Word32
+                            -> PinnedSizedBytes (SeedSizeKES (KES c))
+                            -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+                            -> Integer
+                            -> Word64
+                            -> Word
+                            -> Word
+                            -> Property
+testOneKeyThroughChainIOSim p
+    controlAddressSeed
+    serviceAddressSeed
+    seedKESPSB
+    seedDSIGNPSB
+    genesisTimestamp
+    certN
+    nodeDelay
+    controlDelay =
+  controlAddressSeed /= serviceAddressSeed ==>
+  iosimProperty $
+    SimSnocket.withSnocket
+      nullTracer
+      (toBearerInfo absNoAttenuation)
+      mempty $ \snocket _observe -> do
+        testOneKeyThroughChain
+          p
+          snocket
+          (TestAddress . (fromIntegral :: Word32 -> Int))
+          controlAddressSeed
+          serviceAddressSeed
+          seedKESPSB
+          seedDSIGNPSB
+          genesisTimestamp
+          certN
+          nodeDelay
+          controlDelay
 
 testOneKeyThroughChain :: forall c m fd addr
                         . MonadKES m c
                        => MonadNetworking m fd
-                       => MonadProperty m
                        => MonadTimer m
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => ContextDSIGN (DSIGN c) ~ ()
@@ -526,9 +603,9 @@ testConcurrentPushes proxyCrypto proxyM proxyN
 -- Show instances for signing keys violate mlocking guarantees, but for testing
 -- purposes, this is fine, so we'll declare orphan instances here.
 --
-instance Show (SignKeyKES (SingleKES Ed25519DSIGNM)) where
+instance Show (SignKeyKES (SingleKES Ed25519DSIGN)) where
   show (SignKeySingleKES (SignKeyEd25519DSIGNM mlsb)) =
-    let hexstr = hexShowBS $ mlsbAsByteString mlsb
+    let hexstr = hexShowBS $ unsafePerformIO (mlsbToByteString mlsb)
     in "SignKeySingleKES (SignKeyEd25519DSIGNM " ++ hexstr ++ ")"
 
 instance Show (SignKeyKES d) => Show (SignKeyKES (SumKES h d)) where
@@ -551,3 +628,100 @@ class MonadProperty m where
 
 instance MonadProperty IO where
   mProperty = ioProperty
+
+iosimProperty :: (forall s . IOSim s Property)
+              -> Property
+iosimProperty sim =
+  let tr = runSimTrace sim
+   in case traceResult True tr of
+     Left e -> counterexample
+                (unlines
+                  [ "=== Say Events ==="
+                  , unlines (selectTraceEventsSay' tr)
+                  , "=== Trace Events ==="
+                  , unlines (show `map` traceEvents tr)
+                  , "=== Error ==="
+                  , show e ++ "\n"
+                  ])
+                False
+     Right prop -> prop
+
+-- TODO: should be defined where 'AbsBearerInfo' is defined, but it also
+-- requires access to 'ouroboros-network-framework' where 'BearerInfo' is
+-- defined.  This can be fixed by moving `ouroboros-network-testing` to
+-- `ouroboros-network-framework:testlib`.
+--
+toBearerInfo :: AbsBearerInfo -> BearerInfo
+toBearerInfo abi =
+    BearerInfo {
+        biConnectionDelay      = ABI.delay (abiConnectionDelay abi),
+        biInboundAttenuation   = attenuation (abiInboundAttenuation abi),
+        biOutboundAttenuation  = attenuation (abiOutboundAttenuation abi),
+        biInboundWriteFailure  = abiInboundWriteFailure abi,
+        biOutboundWriteFailure = abiOutboundWriteFailure abi,
+        biAcceptFailures       = (\(errDelay, errType) ->
+                                   ( ABI.delay errDelay
+                                   , case errType of
+                                      AbsIOErrConnectionAborted -> IOErrConnectionAborted
+                                      AbsIOErrResourceExhausted -> IOErrResourceExhausted
+                                   )
+                                 ) <$> abiAcceptFailure abi,
+        biSDUSize              = toSduSize (abiSDUSize abi)
+      }
+
+instance MonadUnmanagedMemory (IOSim s) where
+  zeroMem ptr size = unsafeIOToIOSim $ zeroMem ptr size
+  copyMem dst src size = unsafeIOToIOSim $ copyMem dst src size
+  allocaBytes size action =
+    bracket
+      (unsafeIOToIOSim $ mallocBytes size)
+      (unsafeIOToIOSim . free)
+      action
+
+unsafeIOToIOSim :: IO a -> IOSim s a
+unsafeIOToIOSim ioAction = liftST (unsafeIOToST ioAction)
+
+instance MonadPSB (IOSim s) where
+  psbUseAsCPtrLen psb action =
+    allocaBytes (fromInteger size) $ \ptr -> do
+      unsafeIOToIOSim $ do
+        psbUseAsCPtrLen psb $ \src _ -> copyMem (castPtr ptr) (castPtr src) (fromInteger size)
+      r <- action (castPtr ptr) (fromInteger size)
+      unsafeIOToIOSim $ do
+        psbUseAsCPtrLen psb $ \src _ -> copyMem (castPtr src) (castPtr ptr) (fromInteger size)
+      return r
+    where
+      size = natVal psb
+  psbCreateResultLen initialize = do
+    psb <- unsafeIOToIOSim $ psbCreate (\_ -> return ())
+    r <- psbUseAsCPtrLen psb initialize
+    return (psb, r)
+
+instance MonadByteStringMemory (IOSim s) where
+  useByteStringAsCStringLen bs action =
+    allocaBytes (fromIntegral size) $ \ptr -> do
+      unsafeIOToIOSim $ do
+        useByteStringAsCStringLen bs $ \(src, _) -> copyMem (castPtr ptr) (castPtr src) (fromIntegral size)
+      r <- action (castPtr ptr, fromIntegral size)
+      unsafeIOToIOSim $ do
+        useByteStringAsCStringLen bs $ \(src, _) -> copyMem (castPtr src) (castPtr ptr) (fromIntegral size)
+      return r
+    where
+      size = BS.length bs
+
+instance MonadMLock (IOSim s) where
+  mlockedMalloc size = do
+    say $ "Allocating " ++ show size ++ " mlocked byte(s)"
+    liftST . unsafeIOToST . fmap SFP $ mallocForeignPtrBytes (fromIntegral size)
+  finalizeMLockedForeignPtr (SFP fp) = do
+    say "Finalize"
+    liftST . unsafeIOToST $ finalizeForeignPtr fp
+
+  withMLockedForeignPtr (SFP fp) action = do
+    result <- action $ unsafeForeignPtrToPtr fp
+    liftST . unsafeIOToST $ touchForeignPtr fp
+    return result
+
+  traceMLockedForeignPtr mlp =
+    withMLockedForeignPtr mlp $ \ptr ->
+      say (show ptr)
