@@ -4,16 +4,13 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage () where
 
+import           Data.SOP.Index
 import           Data.SOP.Strict
-
-import           Ouroboros.Consensus.Node.InitStorage
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-
+import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 
 instance CanHardFork xs => NodeInitStorage (HardForkBlock xs) where

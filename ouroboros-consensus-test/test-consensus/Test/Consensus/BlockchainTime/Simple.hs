@@ -37,27 +37,24 @@
 module Test.Consensus.BlockchainTime.Simple (tests) where
 
 import           Control.Applicative (Alternative (..))
+import qualified Control.Monad.Class.MonadSTM.Internal as LazySTM
+import           Control.Monad.Class.MonadTime
 import           Control.Monad.Except
+import           Control.Monad.IOSim
 import           Control.Monad.Reader
 import           Control.Tracer
 import           Data.Fixed
 import qualified Data.Time.Clock as Time
 import           NoThunks.Class (AllowThunk (..))
-import           Test.QuickCheck hiding (Fixed)
-import           Test.Tasty hiding (after)
-import           Test.Tasty.QuickCheck hiding (Fixed)
-
-import qualified Control.Monad.Class.MonadSTM.Internal as LazySTM
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.IOSim
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (withWatcher)
 import           Ouroboros.Consensus.Util.Time
-
+import           Test.QuickCheck hiding (Fixed)
+import           Test.Tasty hiding (after)
+import           Test.Tasty.QuickCheck hiding (Fixed)
 import           Test.Util.Orphans.Arbitrary (genNominalDiffTime50Years)
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.Range

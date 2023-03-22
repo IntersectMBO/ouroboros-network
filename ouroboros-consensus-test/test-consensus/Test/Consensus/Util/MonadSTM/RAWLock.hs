@@ -26,22 +26,18 @@ module Test.Consensus.Util.MonadSTM.RAWLock (tests) where
 
 import           Control.Exception (throw)
 import           Control.Monad.Except
+import           Control.Monad.IOSim (IOSim, SimEventType (..), SimTrace,
+                     runSimTrace, selectTraceEvents, traceResult)
 import           Data.Time.Clock (picosecondsToDiffTime)
-
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.MonadSTM.RAWLock (RAWLock)
 import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import           Control.Monad.IOSim (IOSim, SimEventType (..), SimTrace,
-                     runSimTrace, selectTraceEvents, traceResult)
-
 import           Test.QuickCheck
 import           Test.QuickCheck.Gen.Unsafe (Capture (..), capture)
 import           Test.QuickCheck.Monadic
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.Orphans.IOLike ()
 
 tests :: TestTree

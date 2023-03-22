@@ -21,14 +21,11 @@ module Test.Consensus.Shelley.Examples (
   , examplesShelley
   ) where
 
-import qualified Data.Set as Set
-
-import           Ouroboros.Network.Block (Serialised (..))
-
 import qualified Cardano.Ledger.Block as SL
 import           Cardano.Ledger.Crypto (Crypto)
 import qualified Cardano.Protocol.TPraos.BHeader as SL
 import           Data.Coerce (coerce)
+import qualified Data.Set as Set
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
@@ -47,6 +44,7 @@ import           Ouroboros.Consensus.Shelley.HFEras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Protocol.TPraos ()
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Network.Block (Serialised (..))
 import           Test.Cardano.Ledger.Allegra.Examples.Consensus
                      (ledgerExamplesAllegra)
 import           Test.Cardano.Ledger.Alonzo.Examples.Consensus

@@ -9,6 +9,7 @@ module Cardano.Api.SerialiseUsing (
   , UsingRawBytesHex (..)
   ) where
 
+import           Cardano.Api.Any
 import           Data.Aeson.Types (FromJSON, FromJSONKey, ToJSON (..),
                      ToJSONKey)
 import qualified Data.Aeson.Types as Aeson
@@ -18,8 +19,6 @@ import qualified Data.ByteString.Char8 as BSC
 import           Data.String (IsString (..))
 import qualified Data.Text.Encoding as Text
 import           Data.Typeable (Typeable, tyConName, typeRep, typeRepTyCon)
-
-import           Cardano.Api.Any
 
 
 -- | For use with @deriving via@, to provide 'ToCBOR' and 'FromCBOR' instances,

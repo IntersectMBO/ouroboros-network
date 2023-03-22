@@ -17,13 +17,11 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol.LedgerView (
 
 import           Data.SOP.Dict
 import           Data.SOP.Strict
-
-import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.TypeFamilyWrappers
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.State.Instances ()
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
+import           Ouroboros.Consensus.Ticked
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 {-------------------------------------------------------------------------------
   HardForkLedgerView

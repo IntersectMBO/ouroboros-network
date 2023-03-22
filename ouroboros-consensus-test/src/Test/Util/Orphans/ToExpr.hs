@@ -7,15 +7,12 @@
 module Test.Util.Orphans.ToExpr () where
 
 import           Data.TreeDiff (ToExpr (..))
-
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Network.Point
 
 {-------------------------------------------------------------------------------
   ouroboros-network

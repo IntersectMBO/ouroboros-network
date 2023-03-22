@@ -2,15 +2,12 @@
 module Test.Util.FileLock (mockFileLock) where
 
 import           Control.Monad (join, void)
+import           Control.Monad.IOSim
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Stack (HasCallStack)
-
-import           Control.Monad.IOSim
-
 import           Ouroboros.Consensus.Util.FileLock
 import           Ouroboros.Consensus.Util.IOLike
-
 import           Test.Util.Orphans.IOLike ()
 
 {-------------------------------------------------------------------------------

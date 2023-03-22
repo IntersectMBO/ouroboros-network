@@ -3,10 +3,7 @@ module Ouroboros.Consensus.ByronSpec.Ledger.Forge (forgeByronSpecBlock) where
 import qualified Byron.Spec.Chain.STS.Block as Spec
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Abstract
-
 import           Ouroboros.Consensus.ByronSpec.Ledger.Accessors
 import           Ouroboros.Consensus.ByronSpec.Ledger.Block
 import           Ouroboros.Consensus.ByronSpec.Ledger.Conversions

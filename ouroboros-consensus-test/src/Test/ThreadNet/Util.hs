@@ -31,11 +31,6 @@ import qualified Data.Set as Set
 import qualified Data.Text.Lazy as Text
 import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
-import           Test.QuickCheck
-
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
@@ -43,15 +38,16 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-
-import qualified Test.Util.MockChain as Chain
-import           Test.Util.Slots (NumSlots (..))
-
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Test.QuickCheck
 import           Test.ThreadNet.Network (NodeOutput (..))
 import           Test.ThreadNet.Util.Expectations (NumBlocks (..),
                      determineForkLength)
 import           Test.ThreadNet.Util.HasCreator
 import           Test.ThreadNet.Util.NodeJoinPlan (NodeJoinPlan)
+import qualified Test.Util.MockChain as Chain
+import           Test.Util.Slots (NumSlots (..))
 
 {-------------------------------------------------------------------------------
   Chain properties

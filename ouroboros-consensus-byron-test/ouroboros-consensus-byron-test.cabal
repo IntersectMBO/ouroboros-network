@@ -1,128 +1,107 @@
-cabal-version: 3.0
+cabal-version:      3.0
+name:               ouroboros-consensus-byron-test
+version:            0.4.0.0
+synopsis:           Test infrastructure for Byron
+description:        Test infrastructure for Byron.
+license:            Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 
-name:                   ouroboros-consensus-byron-test
-version:                0.4.0.0
-synopsis:               Test infrastructure for Byron
-description:            Test infrastructure for Byron.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2020-2023 Input Output Global Inc (IOG)
-author:                 IOHK Engineering Team
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-source-files:     CHANGELOG.md
+copyright:          2020-2023 Input Output Global Inc (IOG)
+author:             IOHK Engineering Team
+maintainer:         operations@iohk.io
+category:           Network
+build-type:         Simple
+extra-source-files: CHANGELOG.md
 
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
 library
-  hs-source-dirs:      src
-
+  hs-source-dirs:   src
   exposed-modules:
-                       Ouroboros.Consensus.ByronDual.Ledger
-                       Ouroboros.Consensus.ByronDual.Node
-                       Ouroboros.Consensus.ByronDual.Node.Serialisation
+    Ouroboros.Consensus.ByronDual.Ledger
+    Ouroboros.Consensus.ByronDual.Node
+    Ouroboros.Consensus.ByronDual.Node.Serialisation
+    Test.Consensus.Byron.Examples
+    Test.Consensus.Byron.Generators
+    Test.ThreadNet.Infra.Byron
+    Test.ThreadNet.Infra.Byron.Genesis
+    Test.ThreadNet.Infra.Byron.ProtocolInfo
+    Test.ThreadNet.Infra.Byron.TrackUpdates
+    Test.ThreadNet.TxGen.Byron
 
-                       Test.Consensus.Byron.Examples
-                       Test.Consensus.Byron.Generators
-                       Test.ThreadNet.Infra.Byron
-                       Test.ThreadNet.Infra.Byron.Genesis
-                       Test.ThreadNet.Infra.Byron.ProtocolInfo
-                       Test.ThreadNet.Infra.Byron.TrackUpdates
-                       Test.ThreadNet.TxGen.Byron
+  build-depends:
+    , base                                                    >=4.14    && <4.17
+    , byron-spec-ledger
+    , bytestring                                              >=0.10    && <0.12
+    , cardano-crypto-class
+    , cardano-crypto-test
+    , cardano-crypto-wrapper
+    , cardano-ledger-binary:{cardano-ledger-binary, testlib}
+    , cardano-ledger-byron
+    , cardano-ledger-byron-test
+    , containers                                              >=0.5     && <0.7
+    , hedgehog-quickcheck
+    , mtl                                                     >=2.2     && <2.3
+    , ouroboros-consensus                                     ^>=0.3
+    , ouroboros-consensus-byron                               ^>=0.4.0
+    , ouroboros-consensus-byronspec                           ==0.4.0.0
+    , ouroboros-consensus-test                                ^>=0.3
+    , ouroboros-network-api
+    , QuickCheck
+    , serialise                                               >=0.2     && <0.3
 
-  build-depends:       base              >=4.14  && <4.17
-                     , bytestring        >=0.10  && <0.12
-                     , cardano-crypto-class
-                     , cardano-crypto-test
-                     , cardano-crypto-wrapper
-                     , cardano-ledger-binary:{cardano-ledger-binary, testlib}
-                     , cardano-ledger-byron
-                     , cardano-ledger-byron-test
-                     , containers        >=0.5   && <0.7
-                     , hedgehog-quickcheck
-                     , mtl               >=2.2   && <2.3
-                     , QuickCheck
-                     , serialise         >=0.2   && <0.3
-
-                     , byron-spec-ledger
-
-                     , ouroboros-network-api
-
-                     , ouroboros-consensus      ^>=0.3
-                     , ouroboros-consensus-test ^>=0.3
-
-                     , ouroboros-consensus-byron     ^>=0.4.0
-
-                     , ouroboros-consensus-byronspec ==0.4.0.0
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -fno-ignore-asserts
 
 test-suite test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Main.hs
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Main.hs
   other-modules:
-                       Test.Consensus.Byron.Golden
-                       Test.Consensus.Byron.Serialisation
-                       Test.ThreadNet.Byron
-                       Test.ThreadNet.DualByron
+    Test.Consensus.Byron.Golden
+    Test.Consensus.Byron.Serialisation
+    Test.ThreadNet.Byron
+    Test.ThreadNet.DualByron
 
-  build-depends:       base              >=4.14 && <4.17
-                     , binary-search
-                     , bytestring
-                     , cardano-crypto-class
-                     , cardano-crypto-wrapper
-                     , cardano-ledger-binary
-                     , cardano-ledger-byron
-                     , cardano-ledger-byron-test
-                     , cborg
-                     , containers
-                     , filepath
-                     , hedgehog-quickcheck
-                     , mtl
-                     , QuickCheck
-                     , tasty
-                     , tasty-quickcheck
+  build-depends:
+    , base                            >=4.14    && <4.17
+    , binary-search
+    , byron-spec-chain
+    , byron-spec-ledger
+    , bytestring
+    , cardano-crypto-class
+    , cardano-crypto-wrapper
+    , cardano-ledger-binary
+    , cardano-ledger-byron
+    , cardano-ledger-byron-test
+    , cborg
+    , containers
+    , filepath
+    , hedgehog-quickcheck
+    , mtl
+    , ouroboros-consensus             ^>=0.3
+    , ouroboros-consensus-byron       ^>=0.4.0
+    , ouroboros-consensus-byron-test
+    , ouroboros-consensus-byronspec   ==0.4.0.0
+    , ouroboros-consensus-test        ^>=0.3
+    , ouroboros-network-mock
+    , QuickCheck
+    , small-steps
+    , small-steps-test
+    , tasty
+    , tasty-quickcheck
 
-                     , byron-spec-chain
-                     , byron-spec-ledger
-                     , small-steps
-                     , small-steps-test
-
-                     , ouroboros-network-mock
-
-                     , ouroboros-consensus      ^>=0.3
-                     , ouroboros-consensus-test ^>=0.3
-
-                     , ouroboros-consensus-byron     ^>=0.4.0
-
-                     , ouroboros-consensus-byronspec ==0.4.0.0
-                     , ouroboros-consensus-byron-test
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
-                       -threaded
-                       -rtsopts
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -fno-ignore-asserts -threaded -rtsopts

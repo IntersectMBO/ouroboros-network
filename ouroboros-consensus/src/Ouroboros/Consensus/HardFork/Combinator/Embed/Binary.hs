@@ -7,22 +7,20 @@ module Ouroboros.Consensus.HardFork.Combinator.Embed.Binary (protocolInfoBinary)
 
 import           Control.Exception (assert)
 import           Data.Align (alignWith)
+import           Data.SOP.Counting (exactlyTwo)
+import           Data.SOP.OptNP (OptNP (..))
 import           Data.SOP.Strict (NP (..))
 import           Data.These (These (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Combinator
+import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.Abstract (protocolSecurityParam)
 import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Counting (exactlyTwo)
-import           Ouroboros.Consensus.Util.OptNP (OptNP (..))
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import qualified Ouroboros.Consensus.HardFork.History as History
 
 {-------------------------------------------------------------------------------
   ProtocolInfo

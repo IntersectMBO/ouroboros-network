@@ -13,19 +13,12 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Args (
   , fromChainDbArgs
   ) where
 
-import           Data.Time.Clock (DiffTime, secondsToDiffTime)
-
 import           Control.Tracer (Tracer, contramap, nullTracer)
-
-import           System.FS.API
-
+import           Data.Time.Clock (DiffTime, secondsToDiffTime)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Util.Args
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LedgerDB')
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
@@ -34,6 +27,9 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ChunkInfo)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB (DiskPolicy (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.Args
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import           System.FS.API
 
 {-------------------------------------------------------------------------------
   Arguments

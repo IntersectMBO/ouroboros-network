@@ -4,31 +4,7 @@
 
 module Test.ThreadNet.Shelley (tests) where
 
-import           Control.Monad (replicateM)
-import qualified Data.Map.Strict as Map
-import           Data.Word (Word64)
-import           Lens.Micro ((^.))
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
 import           Cardano.Crypto.Hash (ShortHash)
-import           Cardano.Slotting.EpochInfo (fixedEpochInfo)
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId
-
-import           Test.ThreadNet.General
-import           Test.ThreadNet.Infra.Shelley
-import           Test.ThreadNet.Network (TestNodeInitialization (..),
-                     nodeOutputFinalLedger)
-
 import qualified Cardano.Ledger.BaseTypes as SL (UnitInterval,
                      mkNonceFromNumber, shelleyProtVer, unboundRational)
 import qualified Cardano.Ledger.Shelley.API as SL
@@ -36,24 +12,41 @@ import qualified Cardano.Ledger.Shelley.Core as SL
 import qualified Cardano.Ledger.Shelley.Translation as SL
                      (toFromByronTranslationContext)
 import qualified Cardano.Protocol.TPraos.OCert as SL
-import           Test.Util.HardFork.Future (singleEraFuture)
-import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Slots (NumSlots (..))
-import           Test.Util.TestEnv
-
+import           Cardano.Slotting.EpochInfo (fixedEpochInfo)
+import           Control.Monad (replicateM)
+import qualified Data.Map.Strict as Map
+import           Data.Word (Word64)
+import           Lens.Micro ((^.))
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.NodeId
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
-import           Ouroboros.Consensus.Shelley.Node
-
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import           Ouroboros.Consensus.Shelley.Node
 import           Test.Consensus.Shelley.MockCrypto (MockCrypto, MockShelley)
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
+import           Test.ThreadNet.General
+import           Test.ThreadNet.Infra.Shelley
+import           Test.ThreadNet.Network (TestNodeInitialization (..),
+                     nodeOutputFinalLedger)
 import           Test.ThreadNet.TxGen.Shelley
 import           Test.ThreadNet.Util.NodeJoinPlan (trivialNodeJoinPlan)
 import           Test.ThreadNet.Util.NodeRestarts (noRestarts)
 import           Test.ThreadNet.Util.NodeToNodeVersion (genVersion)
 import           Test.ThreadNet.Util.Seed (runGen)
+import           Test.Util.HardFork.Future (singleEraFuture)
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Slots (NumSlots (..))
+import           Test.Util.TestEnv
 
 type Era   = MockShelley ShortHash
 type Proto = TPraos (MockCrypto ShortHash)

@@ -34,6 +34,9 @@ with pkgs; {
     inherit (ouroborosNetworkHaskellPackages) index-state;
   }).stylish-haskell.components.exes.stylish-haskell;
 
+  cabal-fmt =
+    haskell-nix.tool localConfig.ghcVersion "cabal-fmt" { version = "latest"; };
+
   scriv = pkgs.callPackage ./scriv.nix { };
 
   trace = builtins.trace;

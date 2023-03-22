@@ -68,9 +68,6 @@ import           Data.Void (Void)
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (OnlyCheckWhnfNamed (..))
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Fragment.Diff (ChainDiff)
@@ -78,30 +75,29 @@ import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture)
 import           Ouroboros.Consensus.Ledger.Extended (ExtValidationError)
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Storage.LedgerDB (UpdateLedgerDbTraceEvent)
-import           Ouroboros.Consensus.Util.CallStack
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (WithFingerprint)
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      ChainDbError (..), ChainType, InvalidBlockReason,
                      StreamFrom, StreamTo, UnknownRange)
 import           Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment
                      (InvalidBlockPunishment)
-import           Ouroboros.Consensus.Storage.Serialisation
-
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LedgerDB',
                      LgrDB, LgrDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB,
                      ImmutableDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB (UpdateLedgerDbTraceEvent)
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB,
                      VolatileDbSerialiseConstraints)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util.CallStack
 import           Ouroboros.Consensus.Util.Enclose (Enclosing, Enclosing' (..))
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM (WithFingerprint)
 import           Ouroboros.Consensus.Util.TentativeState (TentativeState (..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 
 -- | All the serialisation related constraints needed by the ChainDB.
 class ( ImmutableDbSerialiseConstraints blk

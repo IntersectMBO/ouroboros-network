@@ -5,13 +5,12 @@
 
 module Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server (localTxMonitorServer) where
 
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool
 import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
+import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 -- | Local transaction monitoring server, for inspecting the mempool.
 --

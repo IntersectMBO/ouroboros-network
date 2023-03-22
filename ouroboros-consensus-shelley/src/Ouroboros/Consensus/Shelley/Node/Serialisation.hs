@@ -7,27 +7,19 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.Shelley.Node.Serialisation () where
 
+import           Cardano.Ledger.Binary (fromCBOR, toCBOR)
+import           Cardano.Ledger.Core (fromEraCBOR, toEraCBOR)
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Protocol.TPraos.API as SL
+import           Codec.Serialise (decode, encode)
 import           Control.Exception (Exception, throw)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Typeable (Typeable)
-
-import           Cardano.Ledger.Binary (fromCBOR, toCBOR)
-import           Cardano.Ledger.Core (fromEraCBOR, toEraCBOR)
-import           Codec.Serialise (decode, encode)
-
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
-import           Ouroboros.Consensus.Storage.Serialisation
-
-import qualified Cardano.Ledger.Shelley.API as SL
-
-import qualified Cardano.Protocol.TPraos.API as SL
 import           Ouroboros.Consensus.Protocol.Praos (PraosState)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import           Ouroboros.Consensus.Protocol.TPraos
@@ -36,6 +28,9 @@ import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
                      (pHeaderBlockSize, pHeaderSize)
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk

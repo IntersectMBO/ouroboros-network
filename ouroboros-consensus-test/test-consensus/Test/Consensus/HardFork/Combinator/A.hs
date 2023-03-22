@@ -38,6 +38,7 @@ module Test.Consensus.HardFork.Combinator.A (
   , TxId (..)
   ) where
 
+import           Cardano.Slotting.EpochInfo
 import           Codec.Serialise
 import           Control.Monad.Except
 import qualified Data.Binary as B
@@ -52,15 +53,6 @@ import           Data.Void
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
-
-import           Cardano.Slotting.EpochInfo
-
-import           Test.Util.Time (dawnOfTime)
-
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
-import           Ouroboros.Network.Magic
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -90,6 +82,10 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (repeatedlyM, (..:), (.:))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
+import           Ouroboros.Network.Magic
+import           Test.Util.Time (dawnOfTime)
 
 {-------------------------------------------------------------------------------
   BlockA

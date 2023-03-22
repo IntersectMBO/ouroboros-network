@@ -36,7 +36,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Word (Word64)
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SecurityParam
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -44,9 +43,7 @@ import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT (PBftParams (..),
                      PBftSignatureThreshold (..))
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
-
 import           Test.ThreadNet.Util.NodeJoinPlan
-
 import qualified Test.Util.InvertedMap as InvertedMap
 import           Test.Util.InvertedMap (InvertedMap)
 import           Test.Util.Slots (NumSlots (..))

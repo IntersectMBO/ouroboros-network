@@ -15,15 +15,13 @@ module Ouroboros.Consensus.Byron.Ledger.Conversions (
   , genesisSlotLength
   ) where
 
-import           Data.Coerce
-import qualified Data.Set as Set
-import           Numeric.Natural (Natural)
-
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Slotting as CC
 import qualified Cardano.Chain.Update as CC
-
+import           Data.Coerce
+import qualified Data.Set as Set
+import           Numeric.Natural (Natural)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()

@@ -41,11 +41,6 @@ import qualified Data.ByteString.Short as Short
 import           Data.Function (on)
 import           Data.Typeable
 import           GHC.Generics (Generic)
-import           Quiet (Quiet (..))
-
-import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
-                     mkSerialised)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Abstract (LedgerState)
@@ -62,11 +57,12 @@ import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Storage.ChainDB (SerialiseDiskConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (Dict (..))
-
-import           Test.Util.Orphans.Arbitrary ()
-
+import           Ouroboros.Network.Block (Serialised (..), fromSerialised,
+                     mkSerialised)
+import           Quiet (Quiet (..))
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
+import           Test.Util.Orphans.Arbitrary ()
 
 {------------------------------------------------------------------------------
   Basic test helpers

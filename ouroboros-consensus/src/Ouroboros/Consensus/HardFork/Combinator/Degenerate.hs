@@ -31,14 +31,8 @@ module Ouroboros.Consensus.HardFork.Combinator.Degenerate (
   ) where
 
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.TypeFamilyWrappers
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.NoHardForks
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -52,6 +46,10 @@ import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToClient ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseNodeToNode ()
+import           Ouroboros.Consensus.HeaderValidation
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 {-------------------------------------------------------------------------------
   Simple patterns

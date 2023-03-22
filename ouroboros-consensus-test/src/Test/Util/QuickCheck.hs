@@ -35,11 +35,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Proxy
 import           Data.SOP.Strict
 import           GHC.Stack (HasCallStack)
-
 import           Ouroboros.Consensus.Util (repeatedly)
 import           Ouroboros.Consensus.Util.Condense (Condense, condense)
-import           Ouroboros.Consensus.Util.SOP
-
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck hiding (elements)
 

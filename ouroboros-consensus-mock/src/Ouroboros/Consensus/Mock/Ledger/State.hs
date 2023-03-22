@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Mock.Ledger.State (
   ) where
 
 import           Cardano.Binary (toCBOR)
+import           Cardano.Crypto.Hash
 import           Codec.Serialise (Serialise)
 import           Control.Monad.Except
 import           Data.Set (Set)
@@ -24,9 +25,6 @@ import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Crypto.Hash
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Mock.Ledger.Address
 import           Ouroboros.Consensus.Mock.Ledger.UTxO

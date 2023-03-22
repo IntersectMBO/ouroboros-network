@@ -4,13 +4,12 @@ module Cardano.Tools.DBAnalyser.Types (
   , module Cardano.Tools.DBAnalyser.Types
   ) where
 
-import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot)
-
 import           Cardano.Tools.DBAnalyser.Analysis as AnalysisTypes
                      (AnalysisName (..), AnalysisResult (..), Limit (..))
 import           Cardano.Tools.DBAnalyser.Block.Byron (ByronBlockArgs)
 import           Cardano.Tools.DBAnalyser.Block.Cardano (CardanoBlockArgs)
 import           Cardano.Tools.DBAnalyser.Block.Shelley (ShelleyBlockArgs)
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot)
 
 
 data SelectDB =

@@ -9,7 +9,6 @@ module Ouroboros.Consensus.Protocol.Ledger.Util (
 
 import           Cardano.Slotting.EpochInfo
 import           Data.Functor.Identity (Identity (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HardFork.History.Util (addEpochs,
                      countSlots)

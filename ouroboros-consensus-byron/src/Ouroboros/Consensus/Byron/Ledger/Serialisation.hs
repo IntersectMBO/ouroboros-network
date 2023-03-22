@@ -38,29 +38,22 @@ module Ouroboros.Consensus.Byron.Ledger.Serialisation (
   , fakeByronBlockSizeHint
   ) where
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Slotting as CC
+import           Cardano.Ledger.Binary (ByteSpan, annotationBytes, byronProtVer,
+                     fromByronCBOR, slice, toByronCBOR, toPlainDecoder)
+import           Cardano.Ledger.Binary.Plain (Decoder, Encoding)
+import qualified Codec.CBOR.Encoding as CBOR
+import           Codec.Serialise (Serialise (..))
 import           Control.Monad.Except
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Word (Word32)
-
-import qualified Codec.CBOR.Encoding as CBOR
-import           Codec.Serialise (Serialise (..))
-
-import           Cardano.Ledger.Binary (ByteSpan, annotationBytes, byronProtVer,
-                     fromByronCBOR, slice, toByronCBOR, toPlainDecoder)
-import           Cardano.Ledger.Binary.Plain (Decoder, Encoding)
-
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Slotting as CC
-
-import           Ouroboros.Network.SizeInBytes (SizeInBytes)
-
 import           Ouroboros.Consensus.Block
-
-import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
-
 import           Ouroboros.Consensus.Byron.Ledger.Block
 import           Ouroboros.Consensus.Byron.Ledger.Orphans ()
+import           Ouroboros.Consensus.Storage.Common (BinaryBlockInfo (..))
+import           Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 {-------------------------------------------------------------------------------
   Serialise instances

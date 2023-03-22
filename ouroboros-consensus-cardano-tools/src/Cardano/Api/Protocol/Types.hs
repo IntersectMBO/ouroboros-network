@@ -18,7 +18,6 @@ module Cardano.Api.Protocol.Types (
   ) where
 
 import           Cardano.Chain.Slotting (EpochSlots)
-
 import           Ouroboros.Consensus.Cardano
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.ByronHFC (ByronBlockHFC)

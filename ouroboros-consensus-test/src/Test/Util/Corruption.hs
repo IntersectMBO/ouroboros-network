@@ -15,7 +15,6 @@ import           Codec.CBOR.Term (Term)
 import           Codec.CBOR.Write (toLazyByteString)
 import           Codec.Serialise (deserialise)
 import qualified Data.ByteString.Lazy as Lazy
-
 import           Test.QuickCheck
 
 

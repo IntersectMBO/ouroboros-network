@@ -5,14 +5,14 @@
 
 module Cardano.Tools.DBAnalyser.Run (analyse) where
 
+import           Cardano.Tools.DBAnalyser.Analysis
+import           Cardano.Tools.DBAnalyser.HasAnalysis
+import           Cardano.Tools.DBAnalyser.Types
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (decode))
 import           Control.Monad.Except (runExceptT)
-import qualified Debug.Trace as Debug
-import           System.IO
-
 import           Control.Tracer (Tracer (..), nullTracer)
-
+import qualified Debug.Trace as Debug
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
@@ -22,21 +22,17 @@ import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMem
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
-import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..))
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
                      defaultDiskPolicy, readSnapshot)
+import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-
-import           Cardano.Tools.DBAnalyser.Analysis
-import           Cardano.Tools.DBAnalyser.HasAnalysis
-import           Cardano.Tools.DBAnalyser.Types
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           System.IO
 
 
 {-------------------------------------------------------------------------------

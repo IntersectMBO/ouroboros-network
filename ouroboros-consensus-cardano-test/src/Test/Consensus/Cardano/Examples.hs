@@ -23,43 +23,34 @@ module Test.Consensus.Cardano.Examples (
   ) where
 
 import           Data.Coerce (Coercible)
+import           Data.SOP.Counting (Exactly (..))
+import           Data.SOP.Index (Index (..))
 import           Data.SOP.Strict
-
-import           Ouroboros.Network.Block (Serialised (..))
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
+import qualified Ouroboros.Consensus.Byron.Ledger as Byron
+import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.CanHardFork ()
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
+import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip)
 import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool (ApplyTxErr)
-import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util.Counting (Exactly (..))
-import           Ouroboros.Consensus.Util.SOP (Index (..))
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Embed.Nary
-import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-
-import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import qualified Ouroboros.Consensus.Byron.Ledger as Byron
-
+import           Ouroboros.Consensus.Protocol.Praos.Translate ()
+import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
-
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.CanHardFork ()
-
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Network.Block (Serialised (..))
+import qualified Test.Consensus.Byron.Examples as Byron
+import qualified Test.Consensus.Shelley.Examples as Shelley
 import qualified Test.Util.Serialisation.Golden as Golden
 import           Test.Util.Serialisation.Golden (Examples, Labelled, labelled)
 import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
-
-import qualified Test.Consensus.Byron.Examples as Byron
-
-import           Ouroboros.Consensus.Protocol.Praos.Translate ()
-import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
-import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-import qualified Test.Consensus.Shelley.Examples as Shelley
 
 type Crypto = StandardCrypto
 

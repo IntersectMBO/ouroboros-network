@@ -11,7 +11,6 @@ module Ouroboros.Consensus.Block.EBB (
 import           Codec.Serialise (Serialise (..))
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------

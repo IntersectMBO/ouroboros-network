@@ -9,14 +9,12 @@ module Cardano.Node.Protocol.Conway (
   , validateGenesis
   ) where
 
-import           Cardano.Prelude
-
 import qualified Cardano.Ledger.Conway.Genesis as Conway
 import qualified Cardano.Ledger.Crypto as Crypto
-
 import           Cardano.Node.Protocol.Shelley (GenesisReadError,
                      readGenesisAny)
 import           Cardano.Node.Types
+import           Cardano.Prelude
 
 --
 -- Conway genesis

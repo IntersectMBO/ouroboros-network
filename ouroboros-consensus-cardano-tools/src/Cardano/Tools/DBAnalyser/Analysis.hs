@@ -17,6 +17,10 @@ module Cardano.Tools.DBAnalyser.Analysis (
   , runAnalysis
   ) where
 
+import qualified Cardano.Slotting.Slot as Slotting
+import qualified Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint as DP
+import           Cardano.Tools.DBAnalyser.HasAnalysis (HasAnalysis)
+import qualified Cardano.Tools.DBAnalyser.HasAnalysis as HasAnalysis
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
@@ -27,11 +31,6 @@ import           Data.Word (Word16, Word64)
 import qualified Debug.Trace as Debug
 import qualified GHC.Stats as GC
 import           NoThunks.Class (noThunks)
-import           System.FS.API (SomeHasFS (..))
-import qualified System.IO as IO
-import qualified Text.Builder as Builder
-
-import qualified Cardano.Slotting.Slot as Slotting
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast (forecastFor)
@@ -51,25 +50,23 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol (..))
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.Abstract (LedgerView)
-import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
-                     StreamFrom (..))
-import qualified Ouroboros.Consensus.Util.IOLike as IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB
                      (LgrDbSerialiseConstraints)
+import           Ouroboros.Consensus.Storage.Common (BlockComponent (..),
+                     StreamFrom (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot (..),
                      writeSnapshot)
 import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes,
                      encodeDisk)
-
-import qualified Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint as DP
-import           Cardano.Tools.DBAnalyser.HasAnalysis (HasAnalysis)
-import qualified Cardano.Tools.DBAnalyser.HasAnalysis as HasAnalysis
+import qualified Ouroboros.Consensus.Util.IOLike as IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           System.FS.API (SomeHasFS (..))
+import qualified System.IO as IO
+import qualified Text.Builder as Builder
 
 {-------------------------------------------------------------------------------
   Run the requested analysis

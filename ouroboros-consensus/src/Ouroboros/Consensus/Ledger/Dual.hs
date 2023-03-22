@@ -58,6 +58,7 @@ module Ouroboros.Consensus.Ledger.Dual (
   , encodeDualLedgerState
   ) where
 
+import           Cardano.Binary (enforceSize)
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding, encodeListLen)
 import           Codec.Serialise
@@ -70,9 +71,6 @@ import           Data.Typeable
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (AllowThunk (..), NoThunks (..))
-
-import           Cardano.Binary (enforceSize)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
@@ -86,10 +84,9 @@ import           Ouroboros.Consensus.Ledger.Query
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
-
-import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
   Block

@@ -74,29 +74,18 @@ module Test.Ouroboros.Storage.ChainDB.StateMachine.Utils.RunOnRepl (
   , SlotNo (..)
   ) where
 
-import           Test.QuickCheck (quickCheck)
-import qualified Test.StateMachine.Types as StateMachine.Types
-import           Test.StateMachine.Types (Commands (Commands),
-                     Reference (Reference), Symbolic (Symbolic), Var (Var))
-
-import           Test.Util.ChunkInfo (SmallChunkInfo (SmallChunkInfo))
-import           Test.Util.Orphans.ToExpr ()
-
 import           Ouroboros.Consensus.Block (BlockNo (BlockNo),
                      ChainHash (BlockHash, GenesisHash), EpochNo (EpochNo),
                      SlotNo (SlotNo))
+import           Ouroboros.Consensus.Storage.ChainDB
+                     (ChainType (TentativeChain))
 import           Ouroboros.Consensus.Storage.ImmutableDB
                      (ChunkInfo (UniformChunkSize),
                      ChunkSize (ChunkSize, chunkCanContainEBB, numRegularBlocks))
-
-import           Ouroboros.Consensus.Storage.ChainDB
-                     (ChainType (TentativeChain))
-
 import           Ouroboros.Network.Block (ChainUpdate (RollBack))
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.Point (Block (..))
 import qualified Ouroboros.Network.Point as Point
-
 import qualified Test.Ouroboros.Storage.ChainDB.StateMachine as StateMachine
 import           Test.Ouroboros.Storage.ChainDB.StateMachine (Cmd (..),
                      FollowerRef, IterRef, MaxClockSkew (MaxClockSkew),
@@ -105,6 +94,12 @@ import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock (ChainLength (ChainLength),
                      EBB (EBB, RegularBlock), TestBlock (..), TestBody (..),
                      TestBodyHash (..), TestHeader (..), TestHeaderHash (..))
+import           Test.QuickCheck (quickCheck)
+import qualified Test.StateMachine.Types as StateMachine.Types
+import           Test.StateMachine.Types (Commands (Commands),
+                     Reference (Reference), Symbolic (Symbolic), Var (Var))
+import           Test.Util.ChunkInfo (SmallChunkInfo (SmallChunkInfo))
+import           Test.Util.Orphans.ToExpr ()
 
 pattern At :: Block SlotNo (Block.HeaderHash blk) -> Block.Point blk
 pattern At x = Block.Point (Point.At x)

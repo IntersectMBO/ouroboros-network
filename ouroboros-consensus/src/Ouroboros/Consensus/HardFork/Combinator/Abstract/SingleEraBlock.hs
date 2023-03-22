@@ -24,12 +24,15 @@ module Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock (
 import           Codec.Serialise
 import           Data.Either (isRight)
 import           Data.Proxy
+import           Data.SOP.Index
+import           Data.SOP.Match
 import           Data.SOP.Strict
 import qualified Data.Text as Text
 import           Data.Void
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SupportsNode
+import           Ouroboros.Consensus.HardFork.Combinator.Info
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.HardFork.History (Bound, EraParams)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.CommonProtocolParams
@@ -41,11 +44,6 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Condense
-import           Ouroboros.Consensus.Util.SOP
-
-import           Ouroboros.Consensus.HardFork.Combinator.Info
-import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Match
 
 {-------------------------------------------------------------------------------
   SingleEraBlock

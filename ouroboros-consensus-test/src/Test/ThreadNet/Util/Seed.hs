@@ -8,7 +8,6 @@ module Test.ThreadNet.Util.Seed (
 
 import           Data.Bits (xor)
 import           Data.Coerce (coerce)
-
 import           Test.QuickCheck
 import           Test.QuickCheck.Gen
 import           Test.QuickCheck.Random (mkQCGen)

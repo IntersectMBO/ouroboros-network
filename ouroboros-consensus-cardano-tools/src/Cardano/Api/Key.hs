@@ -12,13 +12,11 @@ module Cardano.Api.Key (
   , generateSigningKey
   ) where
 
-import           Data.Kind (Type)
-
-import qualified Cardano.Crypto.DSIGN.Class as Crypto
-import qualified Cardano.Crypto.Seed as Crypto
-
 import           Cardano.Api.Any
 import           Cardano.Api.SerialiseTextEnvelope
+import qualified Cardano.Crypto.DSIGN.Class as Crypto
+import qualified Cardano.Crypto.Seed as Crypto
+import           Data.Kind (Type)
 
 
 -- | An interface for cryptographic keys used for signatures with a 'SigningKey'

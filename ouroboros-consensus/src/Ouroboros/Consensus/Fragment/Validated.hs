@@ -18,13 +18,11 @@ module Ouroboros.Consensus.Fragment.Validated (
   ) where
 
 import           GHC.Stack
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Util.Assert
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
 
 -- | Validated chain fragment along with the ledger state after validation
 --

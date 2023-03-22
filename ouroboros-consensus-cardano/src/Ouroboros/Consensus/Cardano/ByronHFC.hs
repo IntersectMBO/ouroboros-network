@@ -6,21 +6,17 @@ module Ouroboros.Consensus.Cardano.ByronHFC (ByronBlockHFC) where
 
 import qualified Data.Map.Strict as Map
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Node ()
+import           Ouroboros.Consensus.Cardano.CanHardFork
+import           Ouroboros.Consensus.Cardano.Node ()
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Storage.Serialisation
-
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Degenerate
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
-
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node ()
-
-import           Ouroboros.Consensus.Cardano.CanHardFork
-import           Ouroboros.Consensus.Cardano.Node ()
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Storage.Serialisation
 
 {-------------------------------------------------------------------------------
   Synonym for convenience

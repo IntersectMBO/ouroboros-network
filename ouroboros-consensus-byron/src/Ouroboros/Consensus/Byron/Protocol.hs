@@ -6,18 +6,15 @@ module Ouroboros.Consensus.Byron.Protocol (
   , nodeIdToGenesisKey
   ) where
 
-import           Control.Monad (guard)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-
 import qualified Cardano.Chain.Common as CC.Common
 import qualified Cardano.Chain.Delegation as CC.Delegation
 import qualified Cardano.Chain.Genesis as CC.Genesis
-
+import           Control.Monad (guard)
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
 import           Ouroboros.Consensus.Protocol.PBFT
-
-import           Ouroboros.Consensus.Byron.Crypto.DSIGN
 
 {-------------------------------------------------------------------------------
   Crypto

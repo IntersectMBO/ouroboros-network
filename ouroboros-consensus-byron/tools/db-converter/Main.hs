@@ -9,6 +9,9 @@
 -- | Database conversion tool.
 module Main (main) where
 
+import qualified Cardano.Binary as CB
+import qualified Cardano.Chain.Epoch.File as CC
+import           Cardano.Chain.Slotting (EpochSlots (..))
 import           Control.Monad.Except (liftIO, runExceptT)
 import           Control.Monad.Trans.Resource (runResourceT)
 import qualified Data.ByteString as BS
@@ -17,23 +20,16 @@ import           Data.List (sort)
 import qualified Data.Text as T
 import           Data.Word (Word32, Word64)
 import           Options.Generic
+import qualified Ouroboros.Consensus.Byron.Ledger as Byron
+import           Ouroboros.Consensus.Node.DbMarker (dbMarkerContents,
+                     dbMarkerFile)
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Network.Magic
 import qualified Streaming.Prelude as S
 import           System.Directory (canonicalizePath, createDirectoryIfMissing,
                      listDirectory)
 import           System.FilePath (takeExtension, takeFileName, (-<.>), (</>))
 import qualified System.IO as IO
-
-import qualified Cardano.Binary as CB
-import qualified Cardano.Chain.Epoch.File as CC
-import           Cardano.Chain.Slotting (EpochSlots (..))
-
-import           Ouroboros.Network.Magic
-
-import           Ouroboros.Consensus.Node.DbMarker (dbMarkerContents,
-                     dbMarkerFile)
-import           Ouroboros.Consensus.Util.Orphans ()
-
-import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 
 data Args w = Args
     { epochDir        :: w ::: FilePath     <?> "Path to the directory containing old epoch files"

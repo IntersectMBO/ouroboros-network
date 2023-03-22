@@ -43,13 +43,6 @@ import qualified Data.Set as Set
 import           Data.Void
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks, OnlyCheckWhnfNamed (..))
-
-import           Test.Util.Time (dawnOfTime)
-
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
-import           Ouroboros.Network.Magic
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -76,6 +69,10 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
+import           Ouroboros.Network.Magic
+import           Test.Util.Time (dawnOfTime)
 
 {-------------------------------------------------------------------------------
   BlockB

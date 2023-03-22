@@ -1,11 +1,9 @@
 module Ouroboros.Consensus.BlockchainTime.WallClock.Default (defaultSystemTime) where
 
 import           Control.Monad
+import           Control.Monad.Class.MonadTime (MonadTime (..))
 import           Control.Tracer
 import           Data.Time (UTCTime, diffUTCTime)
-
-import           Control.Monad.Class.MonadTime (MonadTime (..))
-
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Util
 import           Ouroboros.Consensus.Util.IOLike

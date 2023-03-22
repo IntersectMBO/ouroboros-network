@@ -1,12 +1,10 @@
 module Main (main) where
 
 import           Cardano.Crypto.Libsodium (sodiumInit)
-
-import           Test.Tasty
-
 import qualified Test.Consensus.Shelley.Coherence (tests)
 import qualified Test.Consensus.Shelley.Golden (tests)
 import qualified Test.Consensus.Shelley.Serialisation (tests)
+import           Test.Tasty
 import qualified Test.ThreadNet.Shelley (tests)
 import           Test.Util.TestEnv (defaultMainWithTestEnv,
                      defaultTestEnvConfig)

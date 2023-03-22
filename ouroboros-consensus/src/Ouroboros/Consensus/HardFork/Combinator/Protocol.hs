@@ -30,18 +30,16 @@ module Ouroboros.Consensus.HardFork.Combinator.Protocol (
 
 import           Control.Monad.Except
 import           Data.Functor.Product
+import           Data.SOP.Index
+import           Data.SOP.InPairs (InPairs (..))
+import qualified Data.SOP.InPairs as InPairs
+import qualified Data.SOP.Match as Match
+import qualified Data.SOP.OptNP as OptNP
 import           Data.SOP.Strict
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util ((.:))
-import qualified Ouroboros.Consensus.Util.OptNP as OptNP
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -55,10 +53,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.State (HardForkState,
                      Translate (..))
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import           Ouroboros.Consensus.HardFork.Combinator.Translation
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (InPairs (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
+import           Ouroboros.Consensus.Protocol.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util ((.:))
 
 {-------------------------------------------------------------------------------
   ChainSelection

@@ -14,6 +14,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Iterator (
   , streamImpl
   ) where
 
+import           Cardano.Prelude (forceElemsToWHNF)
 import qualified Codec.CBOR.Read as CBOR
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
@@ -23,24 +24,9 @@ import           Data.Functor ((<&>))
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import           GHC.Generics (Generic)
-import           System.FS.API
-import           System.FS.API.Types
-import           System.FS.CRC
-
-import           Cardano.Prelude (forceElemsToWHNF)
-
 import           GHC.Stack (HasCallStack)
-
-import           Ouroboros.Network.SizeInBytes
-
 import           Ouroboros.Consensus.Block hiding (headerHash)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceKey,
-                     ResourceRegistry, allocate, release, unsafeRelease)
-
 import           Ouroboros.Consensus.Storage.Common
-import           Ouroboros.Consensus.Storage.Serialisation
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.API hiding
                      (getBlockComponent)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
@@ -54,6 +40,14 @@ import qualified Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary as
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.State
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceKey,
+                     ResourceRegistry, allocate, release, unsafeRelease)
+import           Ouroboros.Network.SizeInBytes
+import           System.FS.API
+import           System.FS.API.Types
+import           System.FS.CRC
 
 {------------------------------------------------------------------------------
   ImmutableDB Iterator Implementation

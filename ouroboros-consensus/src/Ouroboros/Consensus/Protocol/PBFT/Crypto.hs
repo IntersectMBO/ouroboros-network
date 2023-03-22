@@ -18,16 +18,14 @@ module Ouroboros.Consensus.Protocol.PBFT.Crypto (
   , PBftMockVerKeyHash (..)
   ) where
 
+import           Cardano.Crypto.DSIGN.Class
+import           Cardano.Crypto.DSIGN.Mock (MockDSIGN, VerKeyDSIGN (..))
 import           Codec.Serialise (Serialise)
 import           Data.Kind (Type)
 import           Data.Typeable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Crypto.DSIGN.Class
-import           Cardano.Crypto.DSIGN.Mock (MockDSIGN, VerKeyDSIGN (..))
-
 import           Ouroboros.Consensus.Util.Condense
 
 -- | Crypto primitives required by BFT

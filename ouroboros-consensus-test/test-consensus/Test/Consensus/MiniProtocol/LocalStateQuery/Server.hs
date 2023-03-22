@@ -18,26 +18,12 @@
 --
 module Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests) where
 
+import           Cardano.Crypto.DSIGN.Mock
+import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer (nullTracer)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-
-import           Control.Monad.IOSim (runSimOrThrow)
-
-import           System.FS.API (HasFS, SomeHasFS (..))
-
-import           Cardano.Crypto.DSIGN.Mock
-
 import           Network.TypedProtocol.Proofs (connect)
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Protocol.LocalStateQuery.Client
-import           Ouroboros.Network.Protocol.LocalStateQuery.Examples
-                     (localStateQueryClient)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Server
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (AcquireFailure (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -48,8 +34,6 @@ import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..))
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util.IOLike
-
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCache
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
                      LgrDbArgs (..), mkLgrDB)
@@ -58,11 +42,19 @@ import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
                      defaultDiskPolicy)
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LgrDB (ledgerDbPast,
                      ledgerDbTip, ledgerDbWithAnchor)
-
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Protocol.LocalStateQuery.Client
+import           Ouroboros.Network.Protocol.LocalStateQuery.Examples
+                     (localStateQueryClient)
+import           Ouroboros.Network.Protocol.LocalStateQuery.Server
+import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+                     (AcquireFailure (..))
+import           System.FS.API (HasFS, SomeHasFS (..))
 import           Test.QuickCheck hiding (Result)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
-
 import           Test.Util.Orphans.IOLike ()
 import           Test.Util.TestBlock
 

@@ -26,11 +26,9 @@ module Ouroboros.Consensus.Block.Forging (
 
 import           Control.Tracer (Tracer, traceWith)
 import           Data.Kind (Type)
+import qualified Data.Measure as Measure
 import           Data.Text (Text)
 import           GHC.Stack
-
-import qualified Data.Measure as Measure
-
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract

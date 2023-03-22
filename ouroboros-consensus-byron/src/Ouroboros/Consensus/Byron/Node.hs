@@ -21,23 +21,25 @@ module Ouroboros.Consensus.Byron.Node (
   , mkPBftCanBeLeader
   ) where
 
-import           Control.Monad.Except
-import           Data.Coerce (coerce)
-import           Data.Maybe
-import           Data.Text (Text)
-import           Data.Void (Void)
-
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
-
-import           Ouroboros.Network.Magic (NetworkMagic (..))
-
+import           Control.Monad.Except
+import           Data.Coerce (coerce)
+import           Data.Maybe
+import           Data.Text (Text)
+import           Data.Void (Void)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
+import           Ouroboros.Consensus.Byron.Crypto.DSIGN
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Ledger.Inspect ()
+import           Ouroboros.Consensus.Byron.Node.Serialisation ()
+import           Ouroboros.Consensus.Byron.Protocol
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HeaderValidation
@@ -54,13 +56,7 @@ import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB (simpleChunkInfo)
 import           Ouroboros.Consensus.Util ((....:))
-
-import           Ouroboros.Consensus.Byron.Crypto.DSIGN
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Ledger.Conversions
-import           Ouroboros.Consensus.Byron.Ledger.Inspect ()
-import           Ouroboros.Consensus.Byron.Node.Serialisation ()
-import           Ouroboros.Consensus.Byron.Protocol
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 {-------------------------------------------------------------------------------
   Credentials

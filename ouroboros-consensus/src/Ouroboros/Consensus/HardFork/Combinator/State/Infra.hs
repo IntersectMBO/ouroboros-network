@@ -26,28 +26,23 @@ module Ouroboros.Consensus.HardFork.Combinator.State.Infra (
   , reconstructSummary
   ) where
 
-import           Prelude hiding (sequence)
-
 import           Data.Functor.Product
+import           Data.SOP.Counting
+import           Data.SOP.InPairs (InPairs, Requiring (..))
+import qualified Data.SOP.InPairs as InPairs
+import           Data.SOP.Match (Mismatch)
+import qualified Data.SOP.Match as Match
 import           Data.SOP.Strict hiding (shape)
-
+import           Data.SOP.Telescope (Extend (..), Telescope (..))
+import qualified Data.SOP.Telescope as Telescope
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
-                     EraParams (..), EraSummary (..), SafeZone (..))
-import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Util.Counting
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.State.Lift
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs,
-                     Requiring (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope
-                     (Extend (..), Telescope (..))
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as Telescope
+import           Ouroboros.Consensus.HardFork.History (Bound (..), EraEnd (..),
+                     EraParams (..), EraSummary (..), SafeZone (..))
+import qualified Ouroboros.Consensus.HardFork.History as History
+import           Prelude hiding (sequence)
 
 {-------------------------------------------------------------------------------
   Initialization

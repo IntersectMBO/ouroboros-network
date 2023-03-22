@@ -18,9 +18,6 @@ module Ouroboros.Consensus.Node.Run (
   ) where
 
 import           Data.Typeable (Typeable)
-
-import           Ouroboros.Network.Block (Serialised)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -33,13 +30,13 @@ import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation
-import           Ouroboros.Consensus.Util (ShowProxy)
-
 import           Ouroboros.Consensus.Storage.ChainDB
                      (ImmutableDbSerialiseConstraints,
                      LgrDbSerialiseConstraints, SerialiseDiskConstraints,
                      VolatileDbSerialiseConstraints)
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util (ShowProxy)
+import           Ouroboros.Network.Block (Serialised)
 
 {-------------------------------------------------------------------------------
   RunNode proper

@@ -32,24 +32,20 @@ import           Codec.CBOR.FlatTerm (FlatTerm, TermToken (..), fromFlatTerm,
 import           Codec.Serialise (decode, encode)
 import           Data.Maybe (fromJust)
 import           Data.Word
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.HUnit
-import           Test.Tasty.QuickCheck
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Util
-
 import           Ouroboros.Consensus.Storage.LedgerDB
-
+import           Ouroboros.Consensus.Util
+import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.HUnit
+import           Test.Tasty.QuickCheck
 import           Test.Util.QuickCheck
 import           Test.Util.TestBlock
-
-import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
 
 tests :: TestTree
 tests = testGroup "InMemory" [

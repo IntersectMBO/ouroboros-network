@@ -20,13 +20,6 @@ module Ouroboros.Consensus.Util.EarlyExit (
 
 import           Control.Applicative
 import           Control.Monad
-import           Control.Monad.ST (ST)
-import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Maybe
-import           Data.Function (on)
-import           Data.Proxy
-import           NoThunks.Class (NoThunks (..))
-
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadEventlog
 import           Control.Monad.Class.MonadFork
@@ -34,7 +27,12 @@ import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadSTM.Internal
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTimer
-
+import           Control.Monad.ST (ST)
+import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Maybe
+import           Data.Function (on)
+import           Data.Proxy
+import           NoThunks.Class (NoThunks (..))
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.IOLike (IOLike (..),
                      MonadMonotonicTime (..), StrictMVar, StrictTVar)

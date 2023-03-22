@@ -7,23 +7,19 @@
 
 module Ouroboros.Consensus.Shelley.Ledger.Forge (forgeShelleyBlock) where
 
-import           Control.Exception
-import           Control.Monad.Except
-import           Data.List (foldl')
-import qualified Data.Sequence.Strict as Seq
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Util.Assert
-
 import qualified Cardano.Ledger.Core as Core (Tx)
 import qualified Cardano.Ledger.Era as SL (hashTxSeq, toTxSeq)
 import qualified Cardano.Ledger.Shelley.API as SL (Block (..), extractTx)
 import qualified Cardano.Ledger.Shelley.BlockChain as SL (bBodySize)
 import qualified Cardano.Protocol.TPraos.BHeader as SL
-
+import           Control.Exception
+import           Control.Monad.Except
+import           Data.List (foldl')
+import qualified Data.Sequence.Strict as Seq
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool (TxLimits)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.Abstract (CanBeLeader, IsLeader)
@@ -37,6 +33,7 @@ import           Ouroboros.Consensus.Shelley.Ledger.Mempool
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto,
                      ProtocolHeaderSupportsKES (configSlotsPerKESPeriod),
                      mkHeader)
+import           Ouroboros.Consensus.Util.Assert
 
 {-------------------------------------------------------------------------------
   Forging

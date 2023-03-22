@@ -31,18 +31,15 @@ module Ouroboros.Consensus.Mempool.Capacity (
   , noOverridesMeasure
   ) where
 
-import           Prelude hiding ((<=))
-
 import           Data.Coerce (coerce)
-import           Data.Word (Word32)
-import           NoThunks.Class
-
 import           Data.Measure (BoundedMeasure, Measure)
 import qualified Data.Measure as Measure
-
+import           Data.Word (Word32)
+import           NoThunks.Class
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Ticked (Ticked (..))
+import           Prelude hiding ((<=))
 
 {-------------------------------------------------------------------------------
   Mempool capacity in bytes

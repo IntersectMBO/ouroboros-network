@@ -21,10 +21,8 @@ import qualified Control.Exception as Exn
 import           Control.Monad (join, unless)
 import           Data.Functor ((<&>))
 import           NoThunks.Class
-
 import           Ouroboros.Consensus.Block.Abstract (BlockProtocol)
 import           Ouroboros.Consensus.Protocol.Abstract (SelectView)
-
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.TentativeState
 

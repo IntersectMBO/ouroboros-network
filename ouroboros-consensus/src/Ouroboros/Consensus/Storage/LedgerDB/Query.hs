@@ -29,14 +29,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.Query (
 
 import           Data.Foldable (find)
 import           Data.Word
-
-import qualified Ouroboros.Network.AnchoredSeq as AS
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
-
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
+import qualified Ouroboros.Network.AnchoredSeq as AS
 
 -- | The ledger state at the tip of the chain
 ledgerDbCurrent :: GetTip l => LedgerDB l -> l

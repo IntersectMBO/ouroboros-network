@@ -9,27 +9,24 @@ module Test.ThreadNet.Infra.Byron.ProtocolInfo (
   , theProposedSoftwareVersion
   ) where
 
-import           Data.Foldable (find)
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
-import           GHC.Stack (HasCallStack)
-
 import qualified Cardano.Chain.Common as Common
 import qualified Cardano.Chain.Delegation as Delegation
 import qualified Cardano.Chain.Genesis as Genesis
 import qualified Cardano.Chain.Update as Update
 import qualified Cardano.Crypto as Crypto
-
-import qualified Ouroboros.Consensus.Mempool as Mempool
-import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
-import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
-import           Ouroboros.Consensus.Protocol.PBFT
-
+import           Data.Foldable (find)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
+import           GHC.Stack (HasCallStack)
 import           Ouroboros.Consensus.Byron.Crypto.DSIGN (ByronDSIGN,
                      SignKeyDSIGN (..))
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import           Ouroboros.Consensus.Byron.Node
+import qualified Ouroboros.Consensus.Mempool as Mempool
+import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
+import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
+import           Ouroboros.Consensus.Protocol.PBFT
 
 mkProtocolByron ::
      forall m. (Monad m, HasCallStack)

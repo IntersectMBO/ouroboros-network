@@ -10,24 +10,12 @@
 --
 module Test.Ouroboros.Storage.ChainDB.Iterator (tests) where
 
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
 import           Control.Monad.Except
+import           Control.Monad.IOSim (runSimOrThrow)
 import           Control.Tracer
 import           Data.List (intercalate)
 import qualified Data.Map.Strict as Map
-
-import           Control.Monad.IOSim (runSimOrThrow)
-
-import           Ouroboros.Network.Mock.Chain (Chain)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
                      Iterator (..), IteratorResult (..), StreamFrom (..),
                      StreamTo (..), UnknownRange (..))
@@ -39,15 +27,20 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-
-import           Test.Util.Orphans.IOLike ()
-import           Test.Util.Tracer (recordingTracerTVar)
-
+import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Network.Mock.Chain (Chain)
+import qualified Ouroboros.Network.Mock.Chain as Chain
 import qualified Test.Ouroboros.Storage.ImmutableDB.Mock as ImmutableDB
                      (openDBMock)
 import           Test.Ouroboros.Storage.TestBlock
 import qualified Test.Ouroboros.Storage.VolatileDB.Mock as VolatileDB
                      (openDBMock)
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
+import           Test.Util.Orphans.IOLike ()
+import           Test.Util.Tracer (recordingTracerTVar)
 
 {-------------------------------------------------------------------------------
   Top-level tests

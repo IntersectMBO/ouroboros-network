@@ -15,7 +15,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..), fromCoreNodeId)
 import           Ouroboros.Consensus.Util.Condense (Condense (..))

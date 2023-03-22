@@ -41,6 +41,16 @@ module Ouroboros.Consensus.Byron.Ledger.Ledger (
   , validationErrorImpossible
   ) where
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Byron.API as CC
+import qualified Cardano.Chain.Genesis as Gen
+import qualified Cardano.Chain.Update as Update
+import qualified Cardano.Chain.Update.Validation.Endorsement as UPE
+import qualified Cardano.Chain.Update.Validation.Interface as UPI
+import qualified Cardano.Chain.UTxO as CC
+import qualified Cardano.Chain.ValidationMode as CC
+import           Cardano.Ledger.Binary (fromByronCBOR, toByronCBOR)
+import           Cardano.Ledger.Binary.Plain (encodeListLen, enforceSize)
 import           Codec.CBOR.Decoding (Decoder)
 import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
@@ -53,20 +63,12 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Ledger.Binary (fromByronCBOR, toByronCBOR)
-import           Cardano.Ledger.Binary.Plain (encodeListLen, enforceSize)
-
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Byron.API as CC
-import qualified Cardano.Chain.Genesis as Gen
-import qualified Cardano.Chain.Update as Update
-import qualified Cardano.Chain.Update.Validation.Endorsement as UPE
-import qualified Cardano.Chain.Update.Validation.Interface as UPI
-import qualified Cardano.Chain.UTxO as CC
-import qualified Cardano.Chain.ValidationMode as CC
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger.Block
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
+import           Ouroboros.Consensus.Byron.Ledger.PBFT
+import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Abstract
@@ -80,12 +82,6 @@ import           Ouroboros.Consensus.Ledger.SupportsPeerSelection
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.Util (ShowProxy (..), (..:))
-
-import           Ouroboros.Consensus.Byron.Ledger.Block
-import           Ouroboros.Consensus.Byron.Ledger.Conversions
-import           Ouroboros.Consensus.Byron.Ledger.HeaderValidation ()
-import           Ouroboros.Consensus.Byron.Ledger.PBFT
-import           Ouroboros.Consensus.Byron.Ledger.Serialisation
 
 {-------------------------------------------------------------------------------
   LedgerState

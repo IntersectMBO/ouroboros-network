@@ -6,17 +6,16 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Consensus.ByronDual.Node.Serialisation () where
 
+import           Cardano.Chain.Slotting (EpochSlots)
 import qualified Data.ByteString.Lazy as Lazy
 import           Data.Proxy
-
-import           Cardano.Chain.Slotting (EpochSlots)
-
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Node.Serialisation ()
+import           Ouroboros.Consensus.Byron.Protocol
+import           Ouroboros.Consensus.ByronDual.Ledger
+import           Ouroboros.Consensus.ByronSpec.Ledger
 import           Ouroboros.Consensus.HeaderValidation
-import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -24,14 +23,8 @@ import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import           Ouroboros.Consensus.Storage.Serialisation
-
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node.Serialisation ()
-import           Ouroboros.Consensus.Byron.Protocol
-
-import           Ouroboros.Consensus.ByronSpec.Ledger
-
-import           Ouroboros.Consensus.ByronDual.Ledger
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 
 {-------------------------------------------------------------------------------
   HasNetworkProtocolVersion

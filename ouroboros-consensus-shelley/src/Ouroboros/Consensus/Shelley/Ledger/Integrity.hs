@@ -4,10 +4,7 @@ module Ouroboros.Consensus.Shelley.Ledger.Integrity (
   ) where
 
 import           Data.Word (Word64)
-
 import           Ouroboros.Consensus.Block
-
-
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
                      (verifyHeaderIntegrity)

@@ -21,11 +21,15 @@ module Ouroboros.Consensus.HardFork.Combinator.Embed.Nary (
 
 import           Data.Bifunctor (first)
 import           Data.Coerce (Coercible, coerce)
+import           Data.SOP.Counting (Exactly (..))
 import           Data.SOP.Dict (Dict (..))
+import           Data.SOP.Index
+import qualified Data.SOP.InPairs as InPairs
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HardFork.Combinator
+import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation (AnnTip, HeaderState (..),
                      genesisHeaderState)
@@ -33,12 +37,6 @@ import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState (..))
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.Counting (Exactly (..))
-import           Ouroboros.Consensus.Util.SOP
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
 
 {-------------------------------------------------------------------------------
   Injection for a single block into a HardForkBlock

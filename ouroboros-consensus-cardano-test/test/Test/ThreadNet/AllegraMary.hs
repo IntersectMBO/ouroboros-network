@@ -17,6 +17,11 @@
 
 module Test.ThreadNet.AllegraMary (tests) where
 
+import           Cardano.Crypto.Hash (ShortHash)
+import qualified Cardano.Ledger.BaseTypes as SL
+import qualified Cardano.Ledger.Shelley.Core as SL
+import qualified Cardano.Protocol.TPraos.OCert as SL
+import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
 import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (maybeToList)
@@ -26,40 +31,27 @@ import qualified Data.Set as Set
 import           Data.SOP.Strict (NP (..))
 import           Data.Word (Word64)
 import           Lens.Micro ((^.))
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
-import           Cardano.Crypto.Hash (ShortHash)
-import           Cardano.Slotting.Slot (EpochSize (..), SlotNo (..))
-
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Config.SecurityParam
-import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.NodeId
-
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
-                     (isHardForkNodeToNodeEnabled)
-
-import qualified Cardano.Ledger.BaseTypes as SL
-import qualified Cardano.Ledger.Shelley.Core as SL
-import qualified Cardano.Protocol.TPraos.OCert as SL
-
-import           Ouroboros.Consensus.Shelley.Eras
-import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-import           Ouroboros.Consensus.Shelley.Node
-                     (ProtocolParamsShelleyBased (..), ShelleyGenesis (..))
-
 import           Ouroboros.Consensus.Cardano.Condense ()
 import           Ouroboros.Consensus.Cardano.Node
                      (ProtocolTransitionParamsShelleyBased (..),
                      TriggerHardFork (..))
+import           Ouroboros.Consensus.Config.SecurityParam
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
+                     (isHardForkNodeToNodeEnabled)
+import           Ouroboros.Consensus.Ledger.SupportsMempool (extractTxs)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
-
+import           Ouroboros.Consensus.Shelley.Eras
+import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
+import           Ouroboros.Consensus.Shelley.Node
+                     (ProtocolParamsShelleyBased (..), ShelleyGenesis (..))
 import           Test.Consensus.Shelley.MockCrypto (MockCrypto)
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.ThreadNet.General
 import qualified Test.ThreadNet.Infra.Shelley as Shelley
 import           Test.ThreadNet.Infra.ShelleyBasedHardFork

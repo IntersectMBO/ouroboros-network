@@ -10,36 +10,32 @@
 
 module Ouroboros.Consensus.ByronDual.Node (protocolInfoDualByron) where
 
-import           Data.Either (fromRight)
-import           Data.Map.Strict (Map)
-import           Data.Maybe (fromMaybe)
-
 import qualified Byron.Spec.Ledger.Core as Spec
 import qualified Byron.Spec.Ledger.Delegation as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
-
-import qualified Test.Cardano.Chain.Elaboration.Block as Spec.Test
-import qualified Test.Cardano.Chain.Elaboration.Delegation as Spec.Test
-import qualified Test.Cardano.Chain.Elaboration.Keys as Spec.Test
-import qualified Test.Cardano.Chain.Elaboration.Update as Spec.Test
-import qualified Test.Cardano.Chain.UTxO.Model as Spec.Test
-
 import qualified Cardano.Chain.Block as Impl
 import qualified Cardano.Chain.Genesis as Impl
 import qualified Cardano.Chain.Update as Impl
 import qualified Cardano.Chain.Update.Validation.Interface as Impl
 import qualified Cardano.Chain.UTxO as Impl
-
-import           Ouroboros.Consensus.HeaderValidation
-
+import           Data.Either (fromRight)
+import           Data.Map.Strict (Map)
+import           Data.Maybe (fromMaybe)
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Node
+import           Ouroboros.Consensus.Byron.Protocol
+import           Ouroboros.Consensus.ByronDual.Ledger
+import           Ouroboros.Consensus.ByronDual.Node.Serialisation ()
+import           Ouroboros.Consensus.ByronSpec.Ledger
+import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import           Ouroboros.Consensus.Ledger.Extended
 import qualified Ouroboros.Consensus.Mempool as Mempool
-
 import           Ouroboros.Consensus.Node.InitStorage
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Node.Run
@@ -48,16 +44,11 @@ import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Storage.ChainDB.Init (InitChainDB (..))
 import           Ouroboros.Consensus.Util ((.....:), (.:))
-
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node
-import           Ouroboros.Consensus.Byron.Protocol
-
-import           Ouroboros.Consensus.ByronSpec.Ledger
-import qualified Ouroboros.Consensus.ByronSpec.Ledger.Genesis as Genesis
-
-import           Ouroboros.Consensus.ByronDual.Ledger
-import           Ouroboros.Consensus.ByronDual.Node.Serialisation ()
+import qualified Test.Cardano.Chain.Elaboration.Block as Spec.Test
+import qualified Test.Cardano.Chain.Elaboration.Delegation as Spec.Test
+import qualified Test.Cardano.Chain.Elaboration.Keys as Spec.Test
+import qualified Test.Cardano.Chain.Elaboration.Update as Spec.Test
+import qualified Test.Cardano.Chain.UTxO.Model as Spec.Test
 
 {-------------------------------------------------------------------------------
   BlockForging

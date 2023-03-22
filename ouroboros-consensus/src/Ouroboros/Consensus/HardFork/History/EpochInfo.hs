@@ -10,13 +10,11 @@ module Ouroboros.Consensus.HardFork.History.EpochInfo (
   , toPureEpochInfo
   ) where
 
+import           Cardano.Slotting.EpochInfo.API
 import           Control.Exception (throw)
 import           Control.Monad.Except (Except, runExcept, throwError)
 import           Data.Functor.Identity
 import           GHC.Stack
-
-import           Cardano.Slotting.EpochInfo.API
-
 import           Ouroboros.Consensus.HardFork.History.Qry
 import           Ouroboros.Consensus.HardFork.History.Summary
 

@@ -19,20 +19,9 @@ import           Codec.CBOR.Encoding (Encoding)
 import qualified Codec.Serialise as Serialise
 import           Control.Exception (throw)
 import           Data.Proxy
+import           Data.SOP.NonEmpty (ProofNonEmpty (..), isNonEmpty)
 import           Data.SOP.Strict
-
-import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation
-import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.SOP (ProofNonEmpty (..), isNonEmpty)
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -40,6 +29,14 @@ import           Ouroboros.Consensus.HardFork.Combinator.Block
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.SerialiseDisk ()
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util ((.:))
+import           Ouroboros.Network.Block (Serialised, unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
 
 instance SerialiseHFC xs => SerialiseNodeToNodeConstraints (HardForkBlock xs) where
   estimateBlockSize = estimateHfcBlockSize

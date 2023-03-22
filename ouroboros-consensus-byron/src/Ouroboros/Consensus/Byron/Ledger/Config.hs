@@ -22,17 +22,14 @@ module Ouroboros.Consensus.Byron.Ledger.Config (
   , compactGenesisConfig
   ) where
 
-import qualified Data.Map.Strict as Map
-import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks (..))
-
 import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Slotting as CC.Slot
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Crypto as Crypto
-
+import qualified Data.Map.Strict as Map
+import           GHC.Generics (Generic)
+import           NoThunks.Class (NoThunks (..))
 import           Ouroboros.Consensus.Block
-
 import           Ouroboros.Consensus.Byron.Ledger.Block
 
 {-------------------------------------------------------------------------------

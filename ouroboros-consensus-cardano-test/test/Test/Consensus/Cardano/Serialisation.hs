@@ -8,31 +8,23 @@ module Test.Consensus.Cardano.Serialisation (tests) where
 
 import qualified Codec.CBOR.Write as CBOR
 import qualified Data.ByteString.Lazy as Lazy
-
-import           Ouroboros.Network.Block (Serialised (..))
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.HardFork.Combinator.Block
-import           Ouroboros.Consensus.Storage.Serialisation
-import           Ouroboros.Consensus.Util (Dict (..))
-
 import           Ouroboros.Consensus.Byron.Ledger
 import           Ouroboros.Consensus.Byron.Node ()
-
-import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Node ()
-
 import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Node ()
-
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
-import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Serialisation.Roundtrip
-
+import           Ouroboros.Consensus.HardFork.Combinator.Block
+import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Node ()
+import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util (Dict (..))
+import           Ouroboros.Network.Block (Serialised (..))
 import           Test.Consensus.Cardano.Generators (epochSlots)
 import           Test.Consensus.Cardano.MockCrypto (MockCryptoCompatByron)
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Serialisation.Roundtrip
 
 tests :: TestTree
 tests = testGroup "Cardano"

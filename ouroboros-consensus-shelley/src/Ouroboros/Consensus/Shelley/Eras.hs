@@ -37,12 +37,6 @@ module Ouroboros.Consensus.Shelley.Eras (
   , UnexpectedAlonzoLedgerErrors
   ) where
 
-import           Control.Exception (Exception, throw)
-import           Control.Monad.Except
-import qualified Data.Set as Set
-import           Data.Text (Text)
-import           NoThunks.Class (NoThunks)
-
 import           Cardano.Ledger.Allegra (AllegraEra)
 import           Cardano.Ledger.Allegra.Translation ()
 import           Cardano.Ledger.Alonzo (AlonzoEra)
@@ -69,8 +63,13 @@ import           Cardano.Ledger.Shelley.Core as Core
 import qualified Cardano.Ledger.Shelley.LedgerState as SL
 import qualified Cardano.Ledger.Shelley.Rules as SL
 import qualified Cardano.Protocol.TPraos.API as SL
+import           Control.Exception (Exception, throw)
+import           Control.Monad.Except
 import           Control.State.Transition (PredicateFailure)
 import           Data.Data (Proxy (Proxy))
+import qualified Data.Set as Set
+import           Data.Text (Text)
+import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos

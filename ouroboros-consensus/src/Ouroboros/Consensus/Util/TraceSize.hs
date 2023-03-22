@@ -14,10 +14,8 @@ import           Control.Monad (when)
 import           Control.Monad.IO.Class
 import           Control.Tracer
 import           Data.Word
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Basics
-
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB,
                      ledgerDbCurrent)
 

@@ -14,7 +14,6 @@ import           Control.Tracer
 import           Data.Time (NominalDiffTime)
 import           Data.Void
 import           GHC.Stack
-
 import           Ouroboros.Consensus.BlockchainTime.API
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Util

@@ -43,24 +43,13 @@ import           Data.Functor.Identity (Identity)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe.Strict (StrictMaybe (..))
 import           GHC.Stack (HasCallStack)
-
-import qualified Ouroboros.Network.AnchoredFragment as AF
-
 import           Ouroboros.Consensus.Block
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util (whenJust)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
-                     WithFingerprint (..))
-
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
-import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
-                     allocate, runInnerWithTempRegistry, runWithTempRegistry)
-
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs,
                      defaultArgs)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Args as Args
@@ -73,8 +62,15 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry (WithTempRegistry,
+                     allocate, runInnerWithTempRegistry, runWithTempRegistry)
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
+                     WithFingerprint (..))
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
+import qualified Ouroboros.Network.AnchoredFragment as AF
 
 {-------------------------------------------------------------------------------
   Initialization

@@ -9,14 +9,13 @@ module Ouroboros.Consensus.Storage.ChainDB.Init (
   , map
   ) where
 
-import           Prelude hiding (map)
-
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as InvalidBlockPunishment
 import           Ouroboros.Consensus.Util.IOLike
+import           Prelude hiding (map)
 
 -- | Restricted interface to the 'ChainDB' used on node initialization
 data InitChainDB m blk = InitChainDB {

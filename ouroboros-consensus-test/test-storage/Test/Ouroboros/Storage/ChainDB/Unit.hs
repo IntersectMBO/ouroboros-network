@@ -12,17 +12,11 @@
 module Test.Ouroboros.Storage.ChainDB.Unit (tests) where
 
 
+import           Cardano.Slotting.Slot (WithOrigin (..))
 import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.Maybe (isJust)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.ExpectedFailure (expectFailBecause)
-import           Test.Tasty.HUnit (Assertion, assertFailure, testCase)
-import           Test.Util.Tracer (recordingTracerTVar)
-
-import           Cardano.Slotting.Slot (WithOrigin (..))
-
 import           Ouroboros.Consensus.Block.Abstract (Point, blockPoint,
                      blockSlot)
 import           Ouroboros.Consensus.Block.RealPoint
@@ -36,7 +30,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as API
 import           Ouroboros.Consensus.Storage.ChainDB.Impl (TraceEvent)
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args
-                     (ChainDbArgs (..))
 import           Ouroboros.Consensus.Storage.Common (StreamFrom (..),
                      StreamTo (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks as ImmutableDB
@@ -45,7 +38,6 @@ import           Ouroboros.Consensus.Util.ResourceRegistry (closeRegistry,
                      unsafeNewRegistry)
 import           Ouroboros.Network.Block (ChainUpdate (..))
 import qualified Ouroboros.Network.Mock.Chain as Mock
-
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.Model (Model)
 import qualified Test.Ouroboros.Storage.ChainDB.StateMachine as SM
@@ -54,9 +46,12 @@ import           Test.Ouroboros.Storage.ChainDB.StateMachine (AllComponents,
                      ShouldGarbageCollect (..), TestConstraints, allComponents,
                      close, mkTestCfg, open)
 import           Test.Ouroboros.Storage.TestBlock
+import           Test.Tasty (TestTree, testGroup)
+import           Test.Tasty.ExpectedFailure (expectFailBecause)
+import           Test.Tasty.HUnit (Assertion, assertFailure, testCase)
 import           Test.Util.ChainDB (MinimalChainDbArgs (..), emptyNodeDBs,
                      fromMinimalChainDbArgs, nodeDBsVol)
-
+import           Test.Util.Tracer (recordingTracerTVar)
 
 tests :: TestTree
 tests = testGroup "Unit tests"

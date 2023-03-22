@@ -26,16 +26,7 @@ import           Data.Functor (($>))
 import           Data.Maybe (fromMaybe, mapMaybe)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
-import           Streaming (Of (..))
-import qualified Streaming.Prelude as S
-import           System.FS.API
-import           System.FS.API.Types
-
 import           Ouroboros.Consensus.Block hiding (hashSize)
-import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
@@ -54,6 +45,13 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
 import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..),
                      HasBinaryBlockInfo (..))
+import           Ouroboros.Consensus.Util (lastMaybe, whenJust)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Streaming (Of (..))
+import qualified Streaming.Prelude as S
+import           System.FS.API
+import           System.FS.API.Types
 
 -- | Bundle of arguments used most validation functions.
 --

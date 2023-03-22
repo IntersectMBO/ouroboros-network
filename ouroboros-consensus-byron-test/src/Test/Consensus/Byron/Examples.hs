@@ -21,18 +21,17 @@ module Test.Consensus.Byron.Examples (
   , examples
   ) where
 
-import           Control.Monad.Except (runExcept)
-import qualified Data.Map.Strict as Map
-
 import qualified Cardano.Chain.Block as CC.Block
 import qualified Cardano.Chain.Byron.API as CC
 import qualified Cardano.Chain.Common as CC
 import qualified Cardano.Chain.Update.Validation.Interface as CC.UPI
 import qualified Cardano.Chain.UTxO as CC
-
-import           Ouroboros.Network.Block (Serialised (..))
-
+import           Control.Monad.Except (runExcept)
+import qualified Data.Map.Strict as Map
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Crypto.DSIGN (SignKeyDSIGN (..))
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Node (ByronLeaderCredentials (..))
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -43,21 +42,15 @@ import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.PBFT
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as S
 import           Ouroboros.Consensus.Storage.Serialisation
-
-import           Ouroboros.Consensus.Byron.Crypto.DSIGN (SignKeyDSIGN (..))
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Node (ByronLeaderCredentials (..))
-
-import qualified Test.Util.Serialisation.Golden as Golden
-import           Test.Util.Serialisation.Golden (Labelled, labelled, unlabelled)
-import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
-
+import           Ouroboros.Network.Block (Serialised (..))
 import qualified Test.Cardano.Chain.Common.Example as CC
 import qualified Test.Cardano.Chain.Genesis.Dummy as CC
 import qualified Test.Cardano.Chain.Update.Example as CC
 import qualified Test.Cardano.Chain.UTxO.Example as CC
-
 import           Test.ThreadNet.Infra.Byron.ProtocolInfo (mkLeaderCredentials)
+import qualified Test.Util.Serialisation.Golden as Golden
+import           Test.Util.Serialisation.Golden (Labelled, labelled, unlabelled)
+import           Test.Util.Serialisation.Roundtrip (SomeResult (..))
 
 {-------------------------------------------------------------------------------
   Setup

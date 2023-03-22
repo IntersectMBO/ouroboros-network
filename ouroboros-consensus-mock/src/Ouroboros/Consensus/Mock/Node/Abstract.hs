@@ -13,16 +13,13 @@ import           Data.Hashable (hash)
 import           Data.Time.Calendar (fromGregorian)
 import           Data.Time.Clock (UTCTime (..))
 import           GHC.Stack
-
-import           Ouroboros.Network.Magic (NetworkMagic (..))
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import           Ouroboros.Consensus.Config.SupportsNode
 import           Ouroboros.Consensus.Mock.Ledger.Block
 import           Ouroboros.Consensus.Protocol.Abstract
-
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 -- | Protocol specific functionality required to run consensus with mock blocks
 class ( MockProtocolSpecific c ext

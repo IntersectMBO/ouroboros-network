@@ -6,13 +6,6 @@ module Test.ThreadNet.PBFT (tests) where
 
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
-import           Ouroboros.Network.Mock.Chain (foldChain)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -27,7 +20,10 @@ import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Protocol.PBFT
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util.Condense (condense)
-
+import           Ouroboros.Network.Mock.Chain (foldChain)
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.ThreadNet.General
 import           Test.ThreadNet.Network
 import qualified Test.ThreadNet.Ref.PBFT as Ref
@@ -38,7 +34,6 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.SimpleBlock
-
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 

@@ -15,14 +15,12 @@
 --                    [--num-blocks-to-process INT]
 module Main (main) where
 
-import           DBAnalyser.Parsers
-
-import           Control.Monad (void)
-import           Options.Applicative (execParser, fullDesc, helper, info,
-                     progDesc, (<**>))
-
 import           Cardano.Tools.DBAnalyser.Run
 import           Cardano.Tools.DBAnalyser.Types
+import           Control.Monad (void)
+import           DBAnalyser.Parsers
+import           Options.Applicative (execParser, fullDesc, helper, info,
+                     progDesc, (<**>))
 
 
 main :: IO ()

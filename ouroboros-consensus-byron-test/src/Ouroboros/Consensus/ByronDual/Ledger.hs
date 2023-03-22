@@ -24,6 +24,10 @@ module Ouroboros.Consensus.ByronDual.Ledger (
   , forgeDualByronBlock
   ) where
 
+import qualified Byron.Spec.Ledger.Core as Spec
+import qualified Byron.Spec.Ledger.UTxO as Spec
+import qualified Cardano.Chain.UTxO as Impl
+import           Cardano.Crypto.DSIGN.Class
 import           Codec.Serialise
 import           Data.ByteString (ByteString)
 import           Data.Map.Strict (Map)
@@ -31,29 +35,18 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           GHC.Generics (Generic)
 import           GHC.Stack
-
-import           Cardano.Crypto.DSIGN.Class
-
-import qualified Byron.Spec.Ledger.Core as Spec
-import qualified Byron.Spec.Ledger.UTxO as Spec
-
-import qualified Test.Cardano.Chain.Elaboration.Block as Spec.Test
-import qualified Test.Cardano.Chain.Elaboration.Keys as Spec.Test
-
-import qualified Cardano.Chain.UTxO as Impl
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Crypto.DSIGN
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Protocol
+import           Ouroboros.Consensus.ByronSpec.Ledger
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Dual
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Protocol.PBFT
-
-import           Ouroboros.Consensus.Byron.Crypto.DSIGN
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Protocol
-
-import           Ouroboros.Consensus.ByronSpec.Ledger
+import qualified Test.Cardano.Chain.Elaboration.Block as Spec.Test
+import qualified Test.Cardano.Chain.Elaboration.Keys as Spec.Test
 
 {-------------------------------------------------------------------------------
   Shorthand

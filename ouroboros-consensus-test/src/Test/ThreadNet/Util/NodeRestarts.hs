@@ -10,12 +10,10 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import           Data.Traversable (forM)
-import           Test.QuickCheck
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.NodeId
 import           Ouroboros.Consensus.Util.Condense
-
+import           Test.QuickCheck
 import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.Util.Slots (NumSlots (..))
 

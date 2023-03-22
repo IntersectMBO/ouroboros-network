@@ -7,11 +7,6 @@ module Test.ThreadNet.LeaderSchedule (tests) where
 import           Control.Monad (replicateM)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -23,7 +18,9 @@ import           Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.NodeId
-
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.ThreadNet.General
 import           Test.ThreadNet.TxGen.Mock ()
 import           Test.ThreadNet.Util
@@ -32,7 +29,6 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.SimpleBlock
-
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))

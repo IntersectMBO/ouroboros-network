@@ -8,9 +8,7 @@ module Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion (
   ) where
 
 import qualified Data.Map.Strict as Map
-
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-
 import           Ouroboros.Consensus.Shelley.Ledger.Block
 
 data ShelleyNodeToNodeVersion = ShelleyNodeToNodeVersion1

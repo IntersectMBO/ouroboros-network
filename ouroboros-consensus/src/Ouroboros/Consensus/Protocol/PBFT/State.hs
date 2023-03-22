@@ -50,7 +50,6 @@ import           Data.Word
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Protocol.PBFT.Crypto
 import           Ouroboros.Consensus.Ticked

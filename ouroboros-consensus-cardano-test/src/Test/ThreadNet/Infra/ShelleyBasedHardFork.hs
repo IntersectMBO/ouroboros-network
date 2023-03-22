@@ -24,45 +24,39 @@ module Test.ThreadNet.Infra.ShelleyBasedHardFork (
   , protocolInfoShelleyBasedHardFork
   ) where
 
-import           Control.Monad.Except (runExcept)
-import qualified Data.Map.Strict as Map
-import           Data.SOP.Strict
-import           Data.Void (Void)
-
-import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
-import           Ouroboros.Consensus.Node
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util (eitherToMaybe)
-import           Ouroboros.Consensus.Util.IOLike (IOLike)
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
-import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
-import qualified Ouroboros.Consensus.HardFork.Combinator.State.Types as HFC
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
-import qualified Ouroboros.Consensus.HardFork.History as History
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-                     (LedgerSupportsProtocol)
-
 import qualified Cardano.Ledger.Era as SL
 import qualified Cardano.Ledger.Shelley.API as SL
-
-import           Ouroboros.Consensus.Mempool (TxLimits)
-import qualified Ouroboros.Consensus.Mempool as Mempool
-import           Ouroboros.Consensus.Protocol.TPraos
-import           Ouroboros.Consensus.Shelley.Eras
-import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Node
-
+import           Control.Monad.Except (runExcept)
+import qualified Data.Map.Strict as Map
+import qualified Data.SOP.InPairs as InPairs
+import           Data.SOP.Strict
+import qualified Data.SOP.Tails as Tails
+import           Data.Void (Void)
 import           Ouroboros.Consensus.Cardano.CanHardFork
                      (ShelleyPartialLedgerConfig (..), forecastAcrossShelley,
                      translateChainDepStateAcrossShelley)
 import           Ouroboros.Consensus.Cardano.Node
                      (ProtocolTransitionParamsShelleyBased (..),
                      TriggerHardFork (..))
-
+import           Ouroboros.Consensus.HardFork.Combinator
+import           Ouroboros.Consensus.HardFork.Combinator.Embed.Binary
+import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
+import qualified Ouroboros.Consensus.HardFork.Combinator.State.Types as HFC
+import qualified Ouroboros.Consensus.HardFork.History as History
+import           Ouroboros.Consensus.Ledger.Basics (LedgerConfig)
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+                     (LedgerSupportsProtocol)
+import           Ouroboros.Consensus.Mempool (TxLimits)
+import qualified Ouroboros.Consensus.Mempool as Mempool
+import           Ouroboros.Consensus.Node
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Protocol.TPraos
+import           Ouroboros.Consensus.Shelley.Eras
+import           Ouroboros.Consensus.Shelley.Ledger
+import           Ouroboros.Consensus.Shelley.Node
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util (eitherToMaybe)
+import           Ouroboros.Consensus.Util.IOLike (IOLike)
 import           Test.ThreadNet.TxGen
 import           Test.ThreadNet.TxGen.Shelley ()
 

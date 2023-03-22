@@ -3,10 +3,8 @@ module Ouroboros.Consensus.Mock.Node.BFT (
   , protocolInfoBft
   ) where
 
-import qualified Data.Map.Strict as Map
-
 import           Cardano.Crypto.DSIGN
-
+import qualified Data.Map.Strict as Map
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.HardFork.History as HardFork
 import           Ouroboros.Consensus.HeaderValidation

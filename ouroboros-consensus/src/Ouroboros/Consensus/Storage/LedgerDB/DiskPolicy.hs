@@ -13,13 +13,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy (
   , defaultDiskPolicy
   ) where
 
+import           Control.Monad.Class.MonadTime
 import           Data.Time.Clock (secondsToDiffTime)
 import           Data.Word
 import           GHC.Generics
 import           NoThunks.Class (NoThunks, OnlyCheckWhnf (..))
-
-import           Control.Monad.Class.MonadTime
-
 import           Ouroboros.Consensus.Config.SecurityParam
 
 -- | Length of time, requested by the user, that has to pass after which

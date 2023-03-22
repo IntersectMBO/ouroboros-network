@@ -48,9 +48,25 @@ import qualified Data.ByteString.Lazy as BSL
 import           Data.Int (Int64)
 import           Data.Map.Strict (Map)
 import           Data.Void (Void)
-
 import           Network.TypedProtocol.Codec
-
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+import           Ouroboros.Consensus.Node.ExitPolicy
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
+import qualified Ouroboros.Consensus.Node.Tracers as Node
+import           Ouroboros.Consensus.NodeKernel
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
+import           Ouroboros.Consensus.Util (ShowProxy)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import           Ouroboros.Network.Block (Serialised (..), decodePoint,
                      decodeTip, encodePoint, encodeTip)
@@ -89,26 +105,6 @@ import           Ouroboros.Network.TxSubmission.Inbound
 import           Ouroboros.Network.TxSubmission.Mempool.Reader
                      (mapTxSubmissionMempoolReader)
 import           Ouroboros.Network.TxSubmission.Outbound
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.MiniProtocol.BlockFetch.Server
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Client
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
-import           Ouroboros.Consensus.Node.ExitPolicy
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation
-import qualified Ouroboros.Consensus.Node.Tracers as Node
-import           Ouroboros.Consensus.NodeKernel
-import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Consensus.Util (ShowProxy)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import           Ouroboros.Consensus.Storage.Serialisation (SerialisedHeader)
 
 {-------------------------------------------------------------------------------
   Handlers

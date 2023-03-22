@@ -9,17 +9,11 @@ module Ouroboros.Consensus.Mempool.Init (
   ) where
 
 import           Control.Monad (void)
-
 import           Control.Tracer
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
-
 import           Ouroboros.Consensus.Mempool.API hiding (MempoolCapacityBytes,
                      MempoolCapacityBytesOverride, MempoolSize,
                      TraceEventMempool, computeMempoolCapacity)
@@ -27,6 +21,9 @@ import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
 import           Ouroboros.Consensus.Mempool.Query
 import           Ouroboros.Consensus.Mempool.Update
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
 
 {-------------------------------------------------------------------------------
   Opening the mempool

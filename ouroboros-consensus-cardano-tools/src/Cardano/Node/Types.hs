@@ -29,15 +29,13 @@ module Cardano.Node.Types (
   , renderVRFPrivateKeyFilePermissionError
   ) where
 
+import qualified Cardano.Chain.Update as Byron
+import           Cardano.Crypto (RequiresNetworkMagic)
+import qualified Cardano.Crypto.Hash as Crypto
 import           Data.Aeson
 import           Data.String (IsString)
 import           Data.Text as Text (Text, pack, unpack)
 import           Data.Word (Word16, Word8)
-
-import qualified Cardano.Chain.Update as Byron
-import           Cardano.Crypto (RequiresNetworkMagic)
-import qualified Cardano.Crypto.Hash as Crypto
-
 import           Ouroboros.Consensus.Block.Abstract (EpochNo)
 
 

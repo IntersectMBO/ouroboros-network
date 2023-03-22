@@ -37,13 +37,29 @@ import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.CBOR.Read (DeserialiseFailure)
 import           Codec.Serialise (Serialise)
-
 import           Control.Tracer
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Void (Void)
-
 import           Network.TypedProtocol.Codec
-
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Query
+import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
+import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
+import           Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server
+import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
+import           Ouroboros.Consensus.Node.Run
+import           Ouroboros.Consensus.Node.Serialisation
+import qualified Ouroboros.Consensus.Node.Tracers as Node
+import           Ouroboros.Consensus.NodeKernel
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Util (ShowProxy)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.Orphans ()
+import           Ouroboros.Consensus.Util.ResourceRegistry
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import           Ouroboros.Network.Block (Serialised, decodePoint, decodeTip,
                      encodePoint, encodeTip)
@@ -66,27 +82,6 @@ import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.Query
-import           Ouroboros.Consensus.Ledger.SupportsMempool
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.MiniProtocol.ChainSync.Server
-import           Ouroboros.Consensus.MiniProtocol.LocalStateQuery.Server
-import           Ouroboros.Consensus.MiniProtocol.LocalTxMonitor.Server
-import           Ouroboros.Consensus.MiniProtocol.LocalTxSubmission.Server
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.Node.Run
-import           Ouroboros.Consensus.Node.Serialisation
-import qualified Ouroboros.Consensus.Node.Tracers as Node
-import           Ouroboros.Consensus.NodeKernel
-import           Ouroboros.Consensus.Util (ShowProxy)
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.Orphans ()
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
-import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 {-------------------------------------------------------------------------------
   Handlers

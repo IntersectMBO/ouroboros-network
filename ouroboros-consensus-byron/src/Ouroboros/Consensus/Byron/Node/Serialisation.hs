@@ -10,34 +10,29 @@
 
 module Ouroboros.Consensus.Byron.Node.Serialisation () where
 
+import qualified Cardano.Chain.Block as CC
+import qualified Cardano.Chain.Byron.API as CC
+import           Cardano.Ledger.Binary (fromByronCBOR, toByronCBOR)
+import           Cardano.Ledger.Binary.Plain
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (decode, encode)
 import           Control.Monad.Except
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Short as Short
-
-import           Cardano.Ledger.Binary (fromByronCBOR, toByronCBOR)
-import           Cardano.Ledger.Binary.Plain
-
-import qualified Cardano.Chain.Block as CC
-import qualified Cardano.Chain.Byron.API as CC
-
-import           Ouroboros.Network.Block (Serialised (..), unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
-import           Ouroboros.Network.SizeInBytes (SizeInBytes (..))
-
 import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.Byron.Ledger
+import           Ouroboros.Consensus.Byron.Ledger.Conversions
+import           Ouroboros.Consensus.Byron.Protocol
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.SupportsMempool (GenTxId)
 import           Ouroboros.Consensus.Node.Run
 import           Ouroboros.Consensus.Node.Serialisation
 import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import           Ouroboros.Consensus.Storage.Serialisation
-
-import           Ouroboros.Consensus.Byron.Ledger
-import           Ouroboros.Consensus.Byron.Ledger.Conversions
-import           Ouroboros.Consensus.Byron.Protocol
+import           Ouroboros.Network.Block (Serialised (..), unwrapCBORinCBOR,
+                     wrapCBORinCBOR)
+import           Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 {-------------------------------------------------------------------------------
   EncodeDisk & DecodeDisk

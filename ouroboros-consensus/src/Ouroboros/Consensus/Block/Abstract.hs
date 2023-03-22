@@ -58,6 +58,11 @@ module Ouroboros.Consensus.Block.Abstract (
   , withOriginToMaybe
   ) where
 
+import           Cardano.Slotting.Block (BlockNo (..))
+import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
+                     SlotNo (..), WithOrigin (Origin), fromWithOrigin,
+                     withOrigin, withOriginFromMaybe, withOriginToMaybe)
+import qualified Cardano.Slotting.Slot as Cardano
 import qualified Codec.Serialise as Serialise
 import           Codec.Serialise.Decoding (Decoder)
 import           Codec.Serialise.Encoding (Encoding)
@@ -67,20 +72,12 @@ import qualified Data.ByteString.Short as Short
 import           Data.Kind (Type)
 import           Data.Maybe (isJust)
 import           Data.Word (Word32)
-
-import           Cardano.Slotting.Block (BlockNo (..))
-import           Cardano.Slotting.Slot (EpochNo (..), EpochSize (..),
-                     SlotNo (..), WithOrigin (Origin), fromWithOrigin,
-                     withOrigin, withOriginFromMaybe, withOriginToMaybe)
-import qualified Cardano.Slotting.Slot as Cardano
-
+import           Ouroboros.Consensus.Block.EBB
 import           Ouroboros.Network.Block (ChainHash (..), HasHeader (..),
                      HeaderFields (..), HeaderHash, Point, StandardHash,
                      blockHash, blockNo, blockPoint, blockSlot, castHash,
                      castHeaderFields, castPoint, pattern BlockPoint,
                      pattern GenesisPoint, pointHash, pointSlot)
-
-import           Ouroboros.Consensus.Block.EBB
 
 {-------------------------------------------------------------------------------
   Protocol

@@ -24,18 +24,15 @@ module Ouroboros.Consensus.Protocol.Ledger.HotKey (
   , sign
   ) where
 
-import           Data.Word (Word64)
-import           GHC.Generics (Generic)
-import           GHC.Stack (HasCallStack)
-
 import qualified Cardano.Crypto.KES as Relative (Period)
-
-import           Ouroboros.Consensus.Block.Forging (UpdateInfo (..))
-import           Ouroboros.Consensus.Util.IOLike
-
 import           Cardano.Ledger.Crypto (Crypto)
 import qualified Cardano.Ledger.Keys as SL
 import qualified Cardano.Protocol.TPraos.OCert as Absolute (KESPeriod (..))
+import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           GHC.Stack (HasCallStack)
+import           Ouroboros.Consensus.Block.Forging (UpdateInfo (..))
+import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
   KES Info

@@ -34,6 +34,7 @@ module Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Cache (
   , readEntries
   ) where
 
+import           Cardano.Prelude (forceElemsToWHNF)
 import           Control.Exception (assert)
 import           Control.Monad (forM, forM_, forever, mplus, unless, void, when)
 import           Control.Monad.Except (throwError)
@@ -53,20 +54,8 @@ import           Data.Void (Void)
 import           Data.Word (Word32, Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (unsafeNoThunks)
-import           System.FS.API (HasFS (..), withFile)
-import           System.FS.API.Types (AllowExisting (..), Handle,
-                     OpenMode (ReadMode))
-
-import           Cardano.Prelude (forceElemsToWHNF)
-
 import           Ouroboros.Consensus.Block (ConvertRawHash, IsEBB (..),
                      StandardHash)
-import           Ouroboros.Consensus.Util (takeUntil, whenJust)
-import           Ouroboros.Consensus.Util.CallStack
-import           Ouroboros.Consensus.Util.IOLike
-import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
                      (UnexpectedFailure (..), throwUnexpectedFailure)
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
@@ -82,6 +71,14 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
                      (fsPathChunkFile, fsPathPrimaryIndexFile,
                      fsPathSecondaryIndexFile)
+import           Ouroboros.Consensus.Util (takeUntil, whenJust)
+import           Ouroboros.Consensus.Util.CallStack
+import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Util.MonadSTM.StrictMVar as Strict
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           System.FS.API (HasFS (..), withFile)
+import           System.FS.API.Types (AllowExisting (..), Handle,
+                     OpenMode (ReadMode))
 
 -- TODO property and/or q-s-m tests comparing with 'fileBackedIndex'
 

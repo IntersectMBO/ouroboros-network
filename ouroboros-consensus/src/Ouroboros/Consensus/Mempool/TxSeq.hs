@@ -33,10 +33,8 @@ import qualified Data.Foldable as Foldable
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
-
 import           Ouroboros.Consensus.Mempool.Capacity (MempoolSize (..))
+import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
 {-------------------------------------------------------------------------------
   Mempool transaction sequence as a finger tree

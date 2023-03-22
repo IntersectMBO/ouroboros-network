@@ -26,6 +26,7 @@ import           Control.Monad.Except
 import           Control.Monad.Trans.State.Strict
 import           Control.Tracer (Tracer, nullTracer, traceWith)
 import           Data.Function (on)
+import           Data.Functor.Contravariant ((>$<))
 import           Data.List (partition, sortBy)
 import           Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -37,35 +38,23 @@ import           Data.Maybe.Strict (StrictMaybe (..), isSNothing,
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           GHC.Stack (HasCallStack)
-
-import           Ouroboros.Network.AnchoredFragment (Anchor, AnchoredFragment,
-                     AnchoredSeq (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
+import qualified Ouroboros.Consensus.Fragment.Diff as Diff
 import           Ouroboros.Consensus.Fragment.InFuture (CheckInFuture (..))
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
 import           Ouroboros.Consensus.Fragment.Validated (ValidatedFragment)
 import qualified Ouroboros.Consensus.Fragment.Validated as VF
+import           Ouroboros.Consensus.Fragment.ValidatedDiff
+                     (ValidatedChainDiff (..))
+import qualified Ouroboros.Consensus.Fragment.ValidatedDiff as ValidatedDiff
 import           Ouroboros.Consensus.HardFork.Abstract
 import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Util (whenJust)
-import           Ouroboros.Consensus.Util.AnchoredFragment
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
-import           Ouroboros.Consensus.Util.TentativeState
-
-import           Data.Functor.Contravariant ((>$<))
-import           Ouroboros.Consensus.Fragment.Diff (ChainDiff (..))
-import qualified Ouroboros.Consensus.Fragment.Diff as Diff
-import           Ouroboros.Consensus.Fragment.ValidatedDiff
-                     (ValidatedChainDiff (..))
-import qualified Ouroboros.Consensus.Fragment.ValidatedDiff as ValidatedDiff
 import           Ouroboros.Consensus.Storage.ChainDB.API (AddBlockPromise (..),
                      BlockComponent (..), ChainType (..),
                      InvalidBlockReason (..))
@@ -87,7 +76,15 @@ import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
+import           Ouroboros.Consensus.Util (whenJust)
+import           Ouroboros.Consensus.Util.AnchoredFragment
 import           Ouroboros.Consensus.Util.Enclose (encloseWith)
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.STM (WithFingerprint (..))
+import           Ouroboros.Consensus.Util.TentativeState
+import           Ouroboros.Network.AnchoredFragment (Anchor, AnchoredFragment,
+                     AnchoredSeq (..))
+import qualified Ouroboros.Network.AnchoredFragment as AF
 
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
 -- and the contents of the VolatileDB.

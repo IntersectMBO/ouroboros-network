@@ -23,41 +23,35 @@ module Ouroboros.Consensus.Shelley.ShelleyHFC (
   , translateLedgerViewAcrossShelley
   ) where
 
+import qualified Cardano.Ledger.BaseTypes as SL (mkVersion)
+import qualified Cardano.Ledger.Core as SL
+import qualified Cardano.Ledger.Shelley.API as SL
+import qualified Cardano.Protocol.TPraos.API as SL
+import           Cardano.Slotting.EpochInfo (hoistEpochInfo)
 import           Control.Monad (guard)
 import           Control.Monad.Except (runExcept, throwError, withExceptT)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe
+import           Data.SOP.InPairs (RequiringBoth (..), ignoringBoth)
 import           Data.SOP.Strict
 import qualified Data.Text as T (pack)
 import           Data.Void (Void)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Slotting.EpochInfo (hoistEpochInfo)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Forecast
+import qualified Ouroboros.Consensus.Forecast as Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation.Common
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (RequiringBoth (..), ignoringBoth)
 import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot))
 import           Ouroboros.Consensus.HardFork.Simple
 import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-import           Ouroboros.Consensus.TypeFamilyWrappers
-
-import qualified Cardano.Ledger.BaseTypes as SL (mkVersion)
-import qualified Cardano.Ledger.Core as SL
-import qualified Cardano.Ledger.Shelley.API as SL
-
-import qualified Cardano.Protocol.TPraos.API as SL
-import qualified Ouroboros.Consensus.Forecast as Forecast
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
                      (LedgerSupportsProtocol, ledgerViewForecastAt)
+import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.TPraos hiding (PraosCrypto)
 import           Ouroboros.Consensus.Protocol.Translate (TranslateProto)
@@ -66,6 +60,7 @@ import           Ouroboros.Consensus.Shelley.Eras
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Inspect as Shelley.Inspect
 import           Ouroboros.Consensus.Shelley.Node ()
+import           Ouroboros.Consensus.TypeFamilyWrappers
 
 {-------------------------------------------------------------------------------
   Synonym for convenience

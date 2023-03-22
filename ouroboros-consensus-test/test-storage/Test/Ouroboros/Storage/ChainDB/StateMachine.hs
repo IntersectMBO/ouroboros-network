@@ -101,34 +101,9 @@ import           Data.Proxy
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word16, Word32, Word64)
+import qualified Generics.SOP as SOP
 import           GHC.Generics (Generic)
 import           NoThunks.Class (AllowThunk (..))
-import qualified System.FS.Sim.MockFS as Mock
-import           System.FS.Sim.MockFS (MockFS)
-
-import qualified Generics.SOP as SOP
-
-import           Test.QuickCheck hiding (elements)
-import qualified Test.QuickCheck.Monadic as QC
-import           Test.StateMachine
-import qualified Test.StateMachine.Labelling as C
-import qualified Test.StateMachine.Sequential as QSM
-import qualified Test.StateMachine.Types as QSM
-import qualified Test.StateMachine.Types.Rank2 as Rank2
-import           Test.Tasty (TestTree, localOption, testGroup)
-import           Test.Tasty.QuickCheck (QuickCheckTests (..), testProperty)
-
-import           Test.Util.ChainDB
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo)
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ProducerState (ChainProducerState,
-                     FollowerNext, FollowerState)
-import qualified Ouroboros.Network.Mock.ProducerState as CPS
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
@@ -140,15 +115,6 @@ import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Protocol.Abstract
 import           Ouroboros.Consensus.Protocol.BFT
-import           Ouroboros.Consensus.Util (split)
-import           Ouroboros.Consensus.Util.CallStack
-import           Ouroboros.Consensus.Util.Condense (condense)
-import           Ouroboros.Consensus.Util.Enclose
-import           Ouroboros.Consensus.Util.IOLike hiding (invariant)
-import           Ouroboros.Consensus.Util.ResourceRegistry
-import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
-                     WithFingerprint (..))
-
 import           Ouroboros.Consensus.Storage.ChainDB hiding
                      (TraceFollowerEvent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
@@ -159,14 +125,40 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
 import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB)
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
-
+import           Ouroboros.Consensus.Util (split)
+import           Ouroboros.Consensus.Util.CallStack
+import           Ouroboros.Consensus.Util.Condense (condense)
+import           Ouroboros.Consensus.Util.Enclose
+import           Ouroboros.Consensus.Util.IOLike hiding (invariant)
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
+                     WithFingerprint (..))
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (ChainUpdate, MaxSlotNo)
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ProducerState (ChainProducerState,
+                     FollowerNext, FollowerState)
+import qualified Ouroboros.Network.Mock.ProducerState as CPS
+import qualified System.FS.Sim.MockFS as Mock
+import           System.FS.Sim.MockFS (MockFS)
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.Model (FollowerId, IteratorId,
                      ModelSupportsBlock,
                      ShouldGarbageCollect (DoNotGarbageCollect, GarbageCollect))
 import           Test.Ouroboros.Storage.Orphans ()
 import           Test.Ouroboros.Storage.TestBlock
-
+import           Test.QuickCheck hiding (elements)
+import qualified Test.QuickCheck.Monadic as QC
+import           Test.StateMachine
+import qualified Test.StateMachine.Labelling as C
+import qualified Test.StateMachine.Sequential as QSM
+import qualified Test.StateMachine.Types as QSM
+import qualified Test.StateMachine.Types.Rank2 as Rank2
+import           Test.Tasty (TestTree, localOption, testGroup)
+import           Test.Tasty.QuickCheck (QuickCheckTests (..), testProperty)
+import           Test.Util.ChainDB
 import           Test.Util.ChunkInfo
 import           Test.Util.Orphans.ToExpr ()
 import           Test.Util.QuickCheck

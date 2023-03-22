@@ -20,15 +20,11 @@ import           Data.Text (Text)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.API (Tip)
-
--- Importing from Internal to avoid circular dependency
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks.Internal
                      (ChunkNo)
+import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 
 {------------------------------------------------------------------------------
   Misc types

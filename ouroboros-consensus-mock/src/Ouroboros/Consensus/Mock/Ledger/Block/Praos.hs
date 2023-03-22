@@ -19,6 +19,9 @@ module Ouroboros.Consensus.Mock.Ledger.Block.Praos (
   , forgePraosExt
   ) where
 
+import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize')
+import           Cardano.Crypto.KES
+import           Cardano.Crypto.Util
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (Serialise (..))
@@ -26,11 +29,6 @@ import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-
-import           Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize')
-import           Cardano.Crypto.KES
-import           Cardano.Crypto.Util
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -41,9 +39,8 @@ import           Ouroboros.Consensus.Mock.Ledger.Forge
 import           Ouroboros.Consensus.Mock.Node.Abstract
 import           Ouroboros.Consensus.Mock.Protocol.Praos
 import           Ouroboros.Consensus.Protocol.Signed
-import           Ouroboros.Consensus.Util.Condense
-
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util.Condense
 
 {-------------------------------------------------------------------------------
   Instantiate the @ext@ to suit Praos

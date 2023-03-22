@@ -1,393 +1,354 @@
-cabal-version:         3.0
+cabal-version:      3.0
+name:               ouroboros-consensus-test
+version:            0.3.1.0
+synopsis:           Tests of the consensus layer
+description:        Tests of the consensus layer.
+license:            Apache-2.0
+license-files:
+  LICENSE
+  NOTICE
 
-name:                   ouroboros-consensus-test
-version:                0.3.1.0
-synopsis:               Tests of the consensus layer
-description:            Tests of the consensus layer.
-license:                Apache-2.0
-license-files:          LICENSE
-                        NOTICE
-copyright:              2020-2023 Input Output Global Inc (IOG)
-author:                 IOHK Engineering Team
-maintainer:             operations@iohk.io
-category:               Network
-build-type:             Simple
-extra-source-files:     CHANGELOG.md
+copyright:          2020-2023 Input Output Global Inc (IOG)
+author:             IOHK Engineering Team
+maintainer:         operations@iohk.io
+category:           Network
+build-type:         Simple
+extra-source-files: CHANGELOG.md
 
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
 library
-  hs-source-dirs:      src
+  hs-source-dirs:   src
   exposed-modules:
-                       Test.ThreadNet.General
-                       Test.ThreadNet.Network
-                       Test.ThreadNet.Ref.PBFT
-                       Test.ThreadNet.Rekeying
-                       Test.ThreadNet.TxGen
-                       Test.ThreadNet.Util
-                       Test.ThreadNet.Util.Expectations
-                       Test.ThreadNet.Util.HasCreator
-                       Test.ThreadNet.Util.NodeJoinPlan
-                       Test.ThreadNet.Util.NodeRestarts
-                       Test.ThreadNet.Util.NodeToNodeVersion
-                       Test.ThreadNet.Util.NodeTopology
-                       Test.ThreadNet.Util.Seed
+    Test.ThreadNet.General
+    Test.ThreadNet.Network
+    Test.ThreadNet.Ref.PBFT
+    Test.ThreadNet.Rekeying
+    Test.ThreadNet.TxGen
+    Test.ThreadNet.Util
+    Test.ThreadNet.Util.Expectations
+    Test.ThreadNet.Util.HasCreator
+    Test.ThreadNet.Util.NodeJoinPlan
+    Test.ThreadNet.Util.NodeRestarts
+    Test.ThreadNet.Util.NodeToNodeVersion
+    Test.ThreadNet.Util.NodeTopology
+    Test.ThreadNet.Util.Seed
+    Test.Util.Blob
+    Test.Util.BoolProps
+    Test.Util.ChainDB
+    Test.Util.ChainUpdates
+    Test.Util.ChunkInfo
+    Test.Util.Classify
+    Test.Util.Corruption
+    Test.Util.FileLock
+    Test.Util.FS.Sim.Error
+    Test.Util.FS.Sim.FsTree
+    Test.Util.FS.Sim.MockFS
+    Test.Util.FS.Sim.Pure
+    Test.Util.FS.Sim.STM
+    Test.Util.HardFork.Future
+    Test.Util.HardFork.OracularClock
+    Test.Util.InvertedMap
+    Test.Util.LogicalClock
+    Test.Util.MockChain
+    Test.Util.Orphans.Arbitrary
+    Test.Util.Orphans.IOLike
+    Test.Util.Orphans.NoThunks
+    Test.Util.Orphans.SignableRepresentation
+    Test.Util.Orphans.ToExpr
+    Test.Util.Paths
+    Test.Util.QSM
+    Test.Util.QuickCheck
+    Test.Util.Range
+    Test.Util.RefEnv
+    Test.Util.Schedule
+    Test.Util.Serialisation.Golden
+    Test.Util.Serialisation.Roundtrip
+    Test.Util.Shrink
+    Test.Util.Slots
+    Test.Util.SOP
+    Test.Util.Split
+    Test.Util.Stream
+    Test.Util.TestBlock
+    Test.Util.TestEnv
+    Test.Util.Time
+    Test.Util.Tracer
+    Test.Util.WithEq
 
-                       Test.Util.Blob
-                       Test.Util.BoolProps
-                       Test.Util.ChainDB
-                       Test.Util.ChainUpdates
-                       Test.Util.ChunkInfo
-                       Test.Util.Classify
-                       Test.Util.Corruption
-                       Test.Util.FileLock
-                       Test.Util.FS.Sim.Error
-                       Test.Util.FS.Sim.FsTree
-                       Test.Util.FS.Sim.MockFS
-                       Test.Util.FS.Sim.Pure
-                       Test.Util.FS.Sim.STM
-                       Test.Util.HardFork.Future
-                       Test.Util.HardFork.OracularClock
-                       Test.Util.InvertedMap
-                       Test.Util.LogicalClock
-                       Test.Util.MockChain
-                       Test.Util.Orphans.Arbitrary
-                       Test.Util.Orphans.IOLike
-                       Test.Util.Orphans.NoThunks
-                       Test.Util.Orphans.SignableRepresentation
-                       Test.Util.Orphans.ToExpr
-                       Test.Util.Paths
-                       Test.Util.QSM
-                       Test.Util.QuickCheck
-                       Test.Util.Range
-                       Test.Util.RefEnv
-                       Test.Util.Schedule
-                       Test.Util.Serialisation.Golden
-                       Test.Util.Serialisation.Roundtrip
-                       Test.Util.Shrink
-                       Test.Util.SOP
-                       Test.Util.Slots
-                       Test.Util.Split
-                       Test.Util.Stream
-                       Test.Util.TestBlock
-                       Test.Util.TestEnv
-                       Test.Util.Time
-                       Test.Util.Tracer
-                       Test.Util.WithEq
+  build-depends:
+    , base                           >=4.14   && <4.17
+    , base16-bytestring
+    , binary
+    , bytestring                     >=0.10   && <0.12
+    , cardano-crypto-class
+    , cardano-ledger-binary:testlib
+    , cardano-prelude
+    , cardano-strict-containers
+    , cborg                          >=0.2.2  && <0.3
+    , containers                     >=0.5    && <0.7
+    , contra-tracer
+    , deepseq
+    , directory
+    , fgl
+    , file-embed
+    , filepath
+    , fs-api
+    , fs-sim
+    , generics-sop
+    , graphviz
+    , io-classes
+    , io-sim
+    , mtl                            >=2.2    && <2.3
+    , nothunks
+    , optparse-applicative
+    , ouroboros-consensus            ^>=0.3.1
+    , ouroboros-consensus-diffusion  ^>=0.3.1
+    , ouroboros-network
+    , ouroboros-network-api
+    , ouroboros-network-framework
+    , ouroboros-network-mock
+    , ouroboros-network-protocols
+    , QuickCheck
+    , quickcheck-state-machine
+    , quiet                          >=0.2    && <0.3
+    , random
+    , serialise                      >=0.2    && <0.3
+    , sop-core
+    , tasty
+    , tasty-golden
+    , tasty-quickcheck
+    , template-haskell
+    , text                           >=1.2    && <1.3
+    , time
+    , tree-diff
+    , typed-protocols
+    , utf8-string
 
-  build-depends:       base              >=4.14  && <4.17
-                     , base16-bytestring
-                     , binary
-                     , bytestring        >=0.10  && <0.12
-                     , cardano-crypto-class
-                     , cardano-ledger-binary:{testlib}
-                     , cardano-prelude
-                     , cborg             >=0.2.2 && <0.3
-                     , containers        >=0.5   && <0.7
-                     , contra-tracer
-                     , deepseq
-                     , directory
-                     , fgl
-                     , file-embed
-                     , filepath
-                     , generics-sop
-                     , graphviz
-                     , mtl               >=2.2   && <2.3
-                     , nothunks
-                     , optparse-applicative
-                     , QuickCheck
-                     , quickcheck-state-machine
-                     , quiet             >=0.2   && <0.3
-                     , random
-                     , serialise         >=0.2   && <0.3
-                     , sop-core
-                     , cardano-strict-containers
-                     , tasty
-                     , tasty-golden
-                     , tasty-quickcheck
-                     , typed-protocols
-                     , template-haskell
-                     , text              >=1.2   && <1.3
-                     , time
-                     , tree-diff
-                     , utf8-string
-
-                     , io-classes
-                     , io-sim
-
-                     , ouroboros-network-api
-                     , ouroboros-network
-                     , ouroboros-network-framework
-                     , ouroboros-network-mock
-                     , ouroboros-network-protocols
-
-                     , ouroboros-consensus           ^>=0.3.1
-                     , ouroboros-consensus-diffusion ^>=0.3.1
-
-                     , fs-api
-                     , fs-sim
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -fno-ignore-asserts
 
 test-suite test-consensus
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test-consensus
-  main-is:             Main.hs
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test-consensus
+  main-is:          Main.hs
   other-modules:
-                       Test.Consensus.BlockchainTime.Simple
-                       Test.Consensus.HardFork.Forecast
-                       Test.Consensus.HardFork.History
-                       Test.Consensus.HardFork.Infra
-                       Test.Consensus.HardFork.Summary
-                       Test.Consensus.HardFork.Combinator
-                       Test.Consensus.HardFork.Combinator.A
-                       Test.Consensus.HardFork.Combinator.B
-                       Test.Consensus.MiniProtocol.BlockFetch.Client
-                       Test.Consensus.MiniProtocol.ChainSync.Client
-                       Test.Consensus.MiniProtocol.LocalStateQuery.Server
-                       Test.Consensus.Mempool
-                       Test.Consensus.Mempool.Fairness
-                       Test.Consensus.Mempool.Fairness.TestBlock
-                       Test.Consensus.Node
-                       Test.Consensus.ResourceRegistry
-                       Test.Consensus.Util.MonadSTM.RAWLock
-                       Test.Consensus.Util.Versioned
+    Test.Consensus.BlockchainTime.Simple
+    Test.Consensus.HardFork.Combinator
+    Test.Consensus.HardFork.Combinator.A
+    Test.Consensus.HardFork.Combinator.B
+    Test.Consensus.HardFork.Forecast
+    Test.Consensus.HardFork.History
+    Test.Consensus.HardFork.Infra
+    Test.Consensus.HardFork.Summary
+    Test.Consensus.Mempool
+    Test.Consensus.Mempool.Fairness
+    Test.Consensus.Mempool.Fairness.TestBlock
+    Test.Consensus.MiniProtocol.BlockFetch.Client
+    Test.Consensus.MiniProtocol.ChainSync.Client
+    Test.Consensus.MiniProtocol.LocalStateQuery.Server
+    Test.Consensus.Node
+    Test.Consensus.ResourceRegistry
+    Test.Consensus.Util.MonadSTM.RAWLock
+    Test.Consensus.Util.Versioned
 
-  build-depends:       base              >=4.14 && <4.17
-                     , async
-                     , binary
-                     , bytestring
-                     , cardano-binary
-                     , cardano-crypto-class
-                     , cardano-slotting
-                     , cborg
-                     , containers
-                     , contra-tracer
-                     , deepseq
-                     , directory
-                     , generics-sop
-                     , hashable
-                     , mtl
-                     , nothunks
-                     , QuickCheck
-                     , quickcheck-state-machine
-                     , quiet
-                     , random
-                     , serialise
-                     , tasty
-                     , tasty-expected-failure
-                     , tasty-hunit
-                     , tasty-quickcheck
-                     , temporary
-                     , time
-                     , tree-diff
+  build-depends:
+    , async
+    , base                                                                >=4.14    && <4.17
+    , binary
+    , bytestring
+    , cardano-binary
+    , cardano-crypto-class
+    , cardano-slotting
+    , cborg
+    , containers
+    , contra-tracer
+    , deepseq
+    , directory
+    , fs-api
+    , fs-sim
+    , generics-sop
+    , hashable
+    , io-classes
+    , io-sim
+    , mtl
+    , nothunks
+    , ouroboros-consensus                                                 ^>=0.3.1
+    , ouroboros-consensus-diffusion                                       ^>=0.3.1
+    , ouroboros-consensus-mock                                            ==0.3.1.0
+    , ouroboros-consensus-test
+    , ouroboros-network
+    , ouroboros-network-api
+    , ouroboros-network-framework
+    , ouroboros-network-mock
+    , ouroboros-network-protocols:{ouroboros-network-protocols, testlib}
+    , QuickCheck
+    , quickcheck-state-machine
+    , quiet
+    , random
+    , serialise
+    , tasty
+    , tasty-expected-failure
+    , tasty-hunit
+    , tasty-quickcheck
+    , temporary
+    , time
+    , tree-diff
+    , typed-protocols
 
-                     , io-classes
-                     , io-sim
-                     , typed-protocols
-                     , ouroboros-network
-                     , ouroboros-network-api
-                     , ouroboros-network-framework
-                     , ouroboros-network-mock
-                     , ouroboros-network-protocols
-                     , ouroboros-network-protocols:testlib
-
-                     , ouroboros-consensus           ^>=0.3.1
-                     , ouroboros-consensus-diffusion ^>=0.3.1
-
-                     , ouroboros-consensus-mock      ==0.3.1.0
-                     , ouroboros-consensus-test
-
-                     , fs-api
-                     , fs-sim
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
-                       -threaded
-                       -rtsopts
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -fno-ignore-asserts -threaded -rtsopts
 
 test-suite test-storage
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test-storage
-  main-is:             Main.hs
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test-storage
+  main-is:          Main.hs
   other-modules:
-                       Test.Ouroboros.Storage
-                       Test.Ouroboros.Storage.ChainDB
-                       Test.Ouroboros.Storage.ChainDB.Iterator
-                       Test.Ouroboros.Storage.ChainDB.FollowerPromptness
-                       Test.Ouroboros.Storage.ChainDB.GcSchedule
-                       Test.Ouroboros.Storage.ChainDB.Model
-                       Test.Ouroboros.Storage.ChainDB.Model.Test
-                       Test.Ouroboros.Storage.ChainDB.Paths
-                       Test.Ouroboros.Storage.ChainDB.StateMachine
-                       Test.Ouroboros.Storage.ChainDB.StateMachine.Utils.RunOnRepl
-                       Test.Ouroboros.Storage.ImmutableDB
-                       Test.Ouroboros.Storage.ImmutableDB.Mock
-                       Test.Ouroboros.Storage.ImmutableDB.Model
-                       Test.Ouroboros.Storage.ImmutableDB.Primary
-                       Test.Ouroboros.Storage.ImmutableDB.StateMachine
-                       Test.Ouroboros.Storage.LedgerDB
-                       Test.Ouroboros.Storage.LedgerDB.DiskPolicy
-                       Test.Ouroboros.Storage.LedgerDB.InMemory
-                       Test.Ouroboros.Storage.LedgerDB.OnDisk
-                       Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
-                       Test.Ouroboros.Storage.Orphans
-                       Test.Ouroboros.Storage.TestBlock
-                       Test.Ouroboros.Storage.VolatileDB
-                       Test.Ouroboros.Storage.VolatileDB.Mock
-                       Test.Ouroboros.Storage.VolatileDB.Model
-                       Test.Ouroboros.Storage.VolatileDB.StateMachine
-                       Test.Ouroboros.Storage.ChainDB.Unit
+    Test.Ouroboros.Storage
+    Test.Ouroboros.Storage.ChainDB
+    Test.Ouroboros.Storage.ChainDB.FollowerPromptness
+    Test.Ouroboros.Storage.ChainDB.GcSchedule
+    Test.Ouroboros.Storage.ChainDB.Iterator
+    Test.Ouroboros.Storage.ChainDB.Model
+    Test.Ouroboros.Storage.ChainDB.Model.Test
+    Test.Ouroboros.Storage.ChainDB.Paths
+    Test.Ouroboros.Storage.ChainDB.StateMachine
+    Test.Ouroboros.Storage.ChainDB.StateMachine.Utils.RunOnRepl
+    Test.Ouroboros.Storage.ChainDB.Unit
+    Test.Ouroboros.Storage.ImmutableDB
+    Test.Ouroboros.Storage.ImmutableDB.Mock
+    Test.Ouroboros.Storage.ImmutableDB.Model
+    Test.Ouroboros.Storage.ImmutableDB.Primary
+    Test.Ouroboros.Storage.ImmutableDB.StateMachine
+    Test.Ouroboros.Storage.LedgerDB
+    Test.Ouroboros.Storage.LedgerDB.DiskPolicy
+    Test.Ouroboros.Storage.LedgerDB.InMemory
+    Test.Ouroboros.Storage.LedgerDB.OnDisk
+    Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary
+    Test.Ouroboros.Storage.Orphans
+    Test.Ouroboros.Storage.TestBlock
+    Test.Ouroboros.Storage.VolatileDB
+    Test.Ouroboros.Storage.VolatileDB.Mock
+    Test.Ouroboros.Storage.VolatileDB.Model
+    Test.Ouroboros.Storage.VolatileDB.StateMachine
 
-  build-depends:       base              >=4.14 && <4.17
-                     , bifunctors
-                     , binary
-                     , bytestring
-                     , cardano-crypto-class
-                     , cardano-slotting
-                     , cborg
-                     , containers
-                     , contra-tracer
-                     , generics-sop
-                     , hashable
-                     , mtl
-                     , nothunks
-                     , pretty-show
-                     , QuickCheck
-                     , quickcheck-state-machine >=0.7.0
-                     , random
-                     , serialise
-                     , tasty
-                     , tasty-expected-failure
-                     , tasty-hunit
-                     , tasty-quickcheck
-                     , text
-                     , time
-                     , tree-diff
-                     , vector
+  build-depends:
+    , base                      >=4.14   && <4.17
+    , bifunctors
+    , binary
+    , bytestring
+    , cardano-crypto-class
+    , cardano-slotting
+    , cborg
+    , containers
+    , contra-tracer
+    , fs-api
+    , fs-sim
+    , generics-sop
+    , hashable
+    , io-classes
+    , io-sim
+    , mtl
+    , nothunks
+    , ouroboros-consensus       ^>=0.3.1
+    , ouroboros-consensus-test
+    , ouroboros-network-api
+    , ouroboros-network-mock
+    , pretty-show
+    , QuickCheck
+    , quickcheck-state-machine  >=0.7.0
+    , random
+    , serialise
+    , tasty
+    , tasty-expected-failure
+    , tasty-hunit
+    , tasty-quickcheck
+    , text
+    , time
+    , tree-diff
+    , vector
 
-                     , io-classes
-                     , io-sim
-
-                     , ouroboros-network-api
-                     , ouroboros-network-mock
-
-                     , ouroboros-consensus      ^>=0.3.1
-
-                     , ouroboros-consensus-test
-
-                     , fs-api
-                     , fs-sim
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -fno-ignore-asserts
 
 test-suite test-infra
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test-infra
-  main-is:             Main.hs
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test-infra
+  main-is:          Main.hs
   other-modules:
-                       Ouroboros.Consensus.Util.Tests
-                       Test.ThreadNet.Util.Tests
-                       Test.Util.ChainUpdates.Tests
-                       Test.Util.Schedule.Tests
-                       Test.Util.Split.Tests
+    Ouroboros.Consensus.Util.Tests
+    Test.ThreadNet.Util.Tests
+    Test.Util.ChainUpdates.Tests
+    Test.Util.Schedule.Tests
+    Test.Util.Split.Tests
 
-  build-depends:       base              >=4.14 && <4.17
-                     , QuickCheck
-                     , tasty
-                     , tasty-quickcheck
+  build-depends:
+    , base                      >=4.14    && <4.17
+    , ouroboros-consensus       ==0.3.1.0
+    , ouroboros-consensus-test
+    , QuickCheck
+    , tasty
+    , tasty-quickcheck
 
-                     , ouroboros-consensus      ==0.3.1.0
-                     , ouroboros-consensus-test
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -fno-ignore-asserts
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -fno-ignore-asserts
 
 benchmark bench-mempool
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      bench-mempool
-  main-is:             Main.hs
-  other-modules:       Bench.Consensus.Mempool
-                     , Bench.Consensus.MempoolWithMockedLedgerItf
-                     , Bench.Consensus.Mempool.TestBlock
-  build-depends:       base
-                     , aeson
-                     , bytestring
-                     , cassava
-                     , containers
-                     , contra-tracer
-                     , deepseq
-                     , nothunks
-                     , serialise         >=0.2   && <0.3
-                     , strict-stm
-                     , tree-diff
-                     , tasty
-                     , tasty-bench
-                     , tasty-hunit
-                     , transformers
-                     , text
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   bench-mempool
+  main-is:          Main.hs
+  other-modules:
+    Bench.Consensus.Mempool
+    Bench.Consensus.Mempool.TestBlock
+    Bench.Consensus.MempoolWithMockedLedgerItf
 
-                     , cardano-slotting
+  build-depends:
+    , aeson
+    , base
+    , bytestring
+    , cardano-slotting
+    , cassava
+    , containers
+    , contra-tracer
+    , deepseq
+    , nothunks
+    , ouroboros-consensus       ^>=0.3.1
+    , ouroboros-consensus-test
+    , serialise                 >=0.2    && <0.3
+    , strict-stm
+    , tasty
+    , tasty-bench
+    , tasty-hunit
+    , text
+    , transformers
+    , tree-diff
 
-                     , ouroboros-consensus ^>=0.3.1
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors -rtsopts -with-rtsopts=-A32m
 
-                     , ouroboros-consensus-test
-
-  default-language:    Haskell2010
-  ghc-options:         -Wall
-                       -Wcompat
-                       -Wincomplete-uni-patterns
-                       -Wincomplete-record-updates
-                       -Wpartial-fields
-                       -Widentities
-                       -Wredundant-constraints
-                       -Wmissing-export-lists
-                       -Wunused-packages
-                       -Wno-unticked-promoted-constructors
-                       -rtsopts
-                       "-with-rtsopts=-A32m"
   -- We use this option to avoid skewed results due to changes in cache-line
   -- alignment. See
   -- https://github.com/Bodigrim/tasty-bench#comparison-against-baseline
-  if impl(ghc >= 8.6)
+  if impl(ghc >=8.6)
     ghc-options: -fproc-alignment=64

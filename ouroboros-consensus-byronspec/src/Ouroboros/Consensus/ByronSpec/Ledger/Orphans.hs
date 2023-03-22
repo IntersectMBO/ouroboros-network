@@ -10,15 +10,6 @@
 -- | Missing instances for standard type classes in the Byron spec
 module Ouroboros.Consensus.ByronSpec.Ledger.Orphans () where
 
-import           Codec.CBOR.Encoding (encodeListLen)
-import           Codec.Serialise
-import           Data.Bimap (Bimap)
-import qualified Data.Bimap as Bimap
-import           GHC.Generics (Generic)
-
-import           Cardano.Ledger.Binary.Plain (FromCBOR (..), ToCBOR (..),
-                     enforceSize)
-
 import qualified Byron.Spec.Chain.STS.Block as Spec
 import qualified Byron.Spec.Chain.STS.Rule.BBody as Spec
 import qualified Byron.Spec.Chain.STS.Rule.Bupi as Spec
@@ -33,8 +24,14 @@ import qualified Byron.Spec.Ledger.STS.UTXOW as Spec
 import qualified Byron.Spec.Ledger.STS.UTXOWS as Spec
 import qualified Byron.Spec.Ledger.Update as Spec
 import qualified Byron.Spec.Ledger.UTxO as Spec
+import           Cardano.Ledger.Binary.Plain (FromCBOR (..), ToCBOR (..),
+                     enforceSize)
+import           Codec.CBOR.Encoding (encodeListLen)
+import           Codec.Serialise
 import qualified Control.State.Transition as Spec
-
+import           Data.Bimap (Bimap)
+import qualified Data.Bimap as Bimap
+import           GHC.Generics (Generic)
 import           Test.Cardano.Chain.Elaboration.Block as Spec.Test
 
 {-------------------------------------------------------------------------------

@@ -10,6 +10,21 @@ module Ouroboros.Consensus.Util.Condense (
   , condense1
   ) where
 
+import           Cardano.Crypto.DSIGN (Ed25519DSIGN, Ed448DSIGN, MockDSIGN,
+                     SigDSIGN, SignedDSIGN (..), VerKeyDSIGN,
+                     pattern SigEd25519DSIGN, pattern SigEd448DSIGN,
+                     pattern SigMockDSIGN)
+import           Cardano.Crypto.Hash (Hash)
+import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES, SignedKES (..),
+                     SimpleKES, SingleKES, SumKES, VerKeyKES,
+                     pattern SigMockKES, pattern SigSimpleKES,
+                     pattern SigSingleKES, pattern SigSumKES,
+                     pattern SignKeyMockKES, pattern VerKeyMockKES,
+                     pattern VerKeySingleKES, pattern VerKeySumKES)
+import           Cardano.Slotting.Block (BlockNo (..))
+import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..),
+                     WithOrigin (..))
+import           Control.Monad.Class.MonadTime (Time (..))
 import qualified Data.ByteString as BS.Strict
 import qualified Data.ByteString.Lazy as BS.Lazy
 import           Data.Int
@@ -23,30 +38,10 @@ import           Data.Text (Text, unpack)
 import           Data.Void
 import           Data.Word
 import           Numeric.Natural
-import           Text.Printf (printf)
-
-import           Control.Monad.Class.MonadTime (Time (..))
-
-import           Cardano.Crypto.DSIGN (Ed25519DSIGN, Ed448DSIGN, MockDSIGN,
-                     SigDSIGN, SignedDSIGN (..), VerKeyDSIGN,
-                     pattern SigEd25519DSIGN, pattern SigEd448DSIGN,
-                     pattern SigMockDSIGN)
-import           Cardano.Crypto.Hash (Hash)
-import           Cardano.Crypto.KES (MockKES, NeverKES, SigKES, SignedKES (..),
-                     SimpleKES, SingleKES, SumKES, VerKeyKES,
-                     pattern SigMockKES, pattern SigSimpleKES,
-                     pattern SigSingleKES, pattern SigSumKES,
-                     pattern SignKeyMockKES, pattern VerKeyMockKES,
-                     pattern VerKeySingleKES, pattern VerKeySumKES)
-
 import           Ouroboros.Consensus.Util.HList (All, HList (..))
 import qualified Ouroboros.Consensus.Util.HList as HList
-
--- Imports from lower-level libs to avoid circular dependencies
-import           Cardano.Slotting.Block (BlockNo (..))
-import           Cardano.Slotting.Slot (EpochNo (..), SlotNo (..),
-                     WithOrigin (..))
 import           Ouroboros.Network.Block (ChainHash (..), HeaderHash, Tip (..))
+import           Text.Printf (printf)
 
 {-------------------------------------------------------------------------------
   Main class

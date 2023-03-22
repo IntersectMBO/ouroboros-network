@@ -17,19 +17,17 @@ module Ouroboros.Consensus.HardFork.Combinator.Forging (
 import           Data.Functor.Product
 import           Data.Maybe (fromMaybe)
 import           Data.SOP.BasicFunctors
+import           Data.SOP.Functors (Product2 (..))
+import           Data.SOP.Index
+import           Data.SOP.InPairs (InPairs)
+import qualified Data.SOP.InPairs as InPairs
+import qualified Data.SOP.Match as Match
+import           Data.SOP.OptNP (NonEmptyOptNP, OptNP, ViewOptNP (..))
+import qualified Data.SOP.OptNP as OptNP
 import           Data.SOP.Strict
 import           Data.Text (Text)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util ((.:))
-import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP, OptNP,
-                     ViewOptNP (..))
-import qualified Ouroboros.Consensus.Util.OptNP as OptNP
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
@@ -38,11 +36,9 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger (Ticked (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Mempool
 import           Ouroboros.Consensus.HardFork.Combinator.Protocol
 import qualified Ouroboros.Consensus.HardFork.Combinator.State as State
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors
-                     (Product2 (..))
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs (InPairs)
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as InPairs
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
+import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.TypeFamilyWrappers
+import           Ouroboros.Consensus.Util ((.:))
 
 -- | If we cannot forge, it's because the current era could not forge
 type HardForkCannotForge xs = OneEraCannotForge xs

@@ -65,27 +65,25 @@ import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
 import           Data.ByteString.Short (ShortByteString)
 import qualified Data.ByteString.Short as Short
+import           Data.SOP.Match (Mismatch)
+import qualified Data.SOP.Match as Match
+import           Data.SOP.OptNP (NonEmptyOptNP)
 import           Data.SOP.Strict hiding (shift)
 import           Data.Text (Text)
 import           Data.Void
 import           GHC.Generics (Generic)
 import           GHC.Stack
 import           NoThunks.Class (NoThunks)
-
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.Abstract
+import           Ouroboros.Consensus.HardFork.Combinator.Info
+import           Ouroboros.Consensus.HardFork.Combinator.Lifting
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (allEqual)
 import           Ouroboros.Consensus.Util.Assert
 import           Ouroboros.Consensus.Util.Condense (Condense (..))
-import           Ouroboros.Consensus.Util.OptNP (NonEmptyOptNP)
-
-import           Ouroboros.Consensus.HardFork.Combinator.Abstract
-import           Ouroboros.Consensus.HardFork.Combinator.Info
-import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig
-import           Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Match (Mismatch)
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Match as Match
 
 {-------------------------------------------------------------------------------
   Value for /each/ era

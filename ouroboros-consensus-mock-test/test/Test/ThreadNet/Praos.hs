@@ -7,12 +7,6 @@ import           Control.Monad (replicateM)
 import qualified Data.Map.Strict as Map
 import           Data.Word (Word64)
 import           Numeric.Natural (Natural)
-
-import           Test.QuickCheck
-
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config.SecurityParam
@@ -22,7 +16,11 @@ import           Ouroboros.Consensus.Mock.Node ()
 import           Ouroboros.Consensus.Mock.Node.Praos (MockPraosBlock,
                      protocolInfoPraos)
 import           Ouroboros.Consensus.Mock.Protocol.Praos
-
+import           Ouroboros.Consensus.Node.ProtocolInfo
+                     (NumCoreNodes (NumCoreNodes), enumCoreNodes)
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.ThreadNet.General
 import           Test.ThreadNet.TxGen.Mock ()
 import           Test.ThreadNet.Util
@@ -31,9 +29,6 @@ import           Test.ThreadNet.Util.NodeJoinPlan
 import           Test.ThreadNet.Util.NodeRestarts
 import           Test.ThreadNet.Util.NodeToNodeVersion
 import           Test.ThreadNet.Util.SimpleBlock
-
-import           Ouroboros.Consensus.Node.ProtocolInfo
-                     (NumCoreNodes (NumCoreNodes), enumCoreNodes)
 import           Test.Util.HardFork.Future (singleEraFuture)
 import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (unNumSlots))

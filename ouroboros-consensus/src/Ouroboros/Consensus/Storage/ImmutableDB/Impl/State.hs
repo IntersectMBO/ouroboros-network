@@ -32,14 +32,7 @@ import           Control.Tracer (Tracer)
 import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           GHC.Stack (HasCallStack)
-import           System.FS.API
-import           System.FS.API.Types
-
 import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Util (SomePair (..))
-import           Ouroboros.Consensus.Util.IOLike
-import           Ouroboros.Consensus.Util.ResourceRegistry
-
 import           Ouroboros.Consensus.Storage.ImmutableDB.API
 import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index (Index)
@@ -50,6 +43,11 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Index.Secondary
                      (BlockOffset (..))
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB.Impl.Util
+import           Ouroboros.Consensus.Util (SomePair (..))
+import           Ouroboros.Consensus.Util.IOLike
+import           Ouroboros.Consensus.Util.ResourceRegistry
+import           System.FS.API
+import           System.FS.API.Types
 
 {------------------------------------------------------------------------------
   Main types

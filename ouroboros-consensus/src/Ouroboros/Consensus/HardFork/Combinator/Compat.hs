@@ -18,19 +18,17 @@ module Ouroboros.Consensus.HardFork.Combinator.Compat (
   ) where
 
 import           Data.Kind (Type)
+import           Data.SOP.NonEmpty
 import           Data.SOP.Strict
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.HardFork.History.Summary (Bound, Summary,
-                     initBound, neverForksSummary)
-import           Ouroboros.Consensus.Util.SOP
-
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
 import           Ouroboros.Consensus.HardFork.Combinator.Basics
 import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import qualified Ouroboros.Consensus.HardFork.History.Qry as Qry
+import           Ouroboros.Consensus.HardFork.History.Summary (Bound, Summary,
+                     initBound, neverForksSummary)
 
 {-------------------------------------------------------------------------------
   Query language

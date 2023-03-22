@@ -73,6 +73,7 @@ module Test.Util.TestBlock (
   , permute
   ) where
 
+import           Cardano.Crypto.DSIGN
 import           Codec.Serialise (Serialise (..), serialise)
 import           Control.DeepSeq (force)
 import           Control.Monad (guard, replicateM, replicateM_)
@@ -98,15 +99,6 @@ import           Data.Typeable (Typeable)
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
-import qualified System.Random as R
-import           Test.QuickCheck hiding (Result)
-
-import           Cardano.Crypto.DSIGN
-
-import           Ouroboros.Network.Magic (NetworkMagic (..))
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -130,7 +122,11 @@ import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util (ShowProxy (..))
 import           Ouroboros.Consensus.Util.Condense
 import           Ouroboros.Consensus.Util.Orphans ()
-
+import           Ouroboros.Network.Magic (NetworkMagic (..))
+import           Ouroboros.Network.Mock.Chain (Chain (..))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import qualified System.Random as R
+import           Test.QuickCheck hiding (Result)
 import           Test.Util.Orphans.SignableRepresentation ()
 import           Test.Util.Orphans.ToExpr ()
 

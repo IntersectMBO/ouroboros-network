@@ -35,25 +35,6 @@ module Test.ThreadNet.Infra.Shelley (
   , tpraosSlotLength
   ) where
 
-import           Control.Monad.Except (throwError)
-import qualified Data.ByteString as BS
-import           Data.Coerce (coerce)
-import           Data.ListMap (ListMap (ListMap))
-import qualified Data.ListMap as ListMap
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe.Strict (maybeToStrictMaybe)
-import           Data.Ratio (denominator, numerator)
-import qualified Data.Sequence.Strict as Seq
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Word (Word64)
-import           GHC.Generics (Generic)
-import           Lens.Micro
-import           Quiet (Quiet (..))
-
-import           Test.QuickCheck
-
 import           Cardano.Crypto.DSIGN (DSIGNAlgorithm (..), seedSizeDSIGN)
 import           Cardano.Crypto.Hash (Hash, HashAlgorithm)
 import           Cardano.Crypto.KES (KESAlgorithm (..))
@@ -61,19 +42,6 @@ import           Cardano.Crypto.Seed (mkSeedFromBytes)
 import qualified Cardano.Crypto.Seed as Cardano.Crypto
 import           Cardano.Crypto.VRF (SignKeyVRF, VRFAlgorithm, VerKeyVRF,
                      deriveVerKeyVRF, genKeyVRF, seedSizeVRF)
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.BlockchainTime
-import           Ouroboros.Consensus.Config.SecurityParam
-import qualified Ouroboros.Consensus.Mempool as Mempool
-import           Ouroboros.Consensus.Node.ProtocolInfo
-import           Ouroboros.Consensus.Util.Assert
-import           Ouroboros.Consensus.Util.IOLike
-
-import           Test.Util.Orphans.Arbitrary ()
-import           Test.Util.Slots (NumSlots (..))
-import           Test.Util.Time (dawnOfTime)
-
 import qualified Cardano.Ledger.Allegra.Scripts as SL
 import           Cardano.Ledger.Alonzo (AlonzoEra)
 import           Cardano.Ledger.Babbage (BabbageEra)
@@ -90,22 +58,47 @@ import           Cardano.Protocol.TPraos.OCert
                      (OCert (ocertKESPeriod, ocertN, ocertSigma, ocertVkHot))
 import qualified Cardano.Protocol.TPraos.OCert as SL (KESPeriod, OCert (OCert),
                      OCertSignable (..))
-import qualified Test.Cardano.Ledger.Core.KeyPair as TL (KeyPair (..),
-                     mkWitnessesVKey)
-
+import           Control.Monad.Except (throwError)
+import qualified Data.ByteString as BS
+import           Data.Coerce (coerce)
+import           Data.ListMap (ListMap (ListMap))
+import qualified Data.ListMap as ListMap
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.Maybe.Strict (maybeToStrictMaybe)
+import           Data.Ratio (denominator, numerator)
+import qualified Data.Sequence.Strict as Seq
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.Word (Word64)
+import           GHC.Generics (Generic)
+import           Lens.Micro
+import           Ouroboros.Consensus.Block
+import           Ouroboros.Consensus.BlockchainTime
+import           Ouroboros.Consensus.Config.SecurityParam
+import qualified Ouroboros.Consensus.Mempool as Mempool
+import           Ouroboros.Consensus.Node.ProtocolInfo
+import           Ouroboros.Consensus.Protocol.Praos.Common
+                     (PraosCanBeLeader (PraosCanBeLeader),
+                     praosCanBeLeaderColdVerKey, praosCanBeLeaderOpCert,
+                     praosCanBeLeaderSignKeyVRF)
 import           Ouroboros.Consensus.Protocol.TPraos
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto, ShelleyEra)
 import           Ouroboros.Consensus.Shelley.Ledger (GenTx (..),
                      ShelleyBasedEra, ShelleyBlock, ShelleyCompatible,
                      mkShelleyTx)
 import           Ouroboros.Consensus.Shelley.Node
-
-import           Ouroboros.Consensus.Protocol.Praos.Common
-                     (PraosCanBeLeader (PraosCanBeLeader),
-                     praosCanBeLeaderColdVerKey, praosCanBeLeaderOpCert,
-                     praosCanBeLeaderSignKeyVRF)
+import           Ouroboros.Consensus.Util.Assert
+import           Ouroboros.Consensus.Util.IOLike
+import           Quiet (Quiet (..))
+import qualified Test.Cardano.Ledger.Core.KeyPair as TL (KeyPair (..),
+                     mkWitnessesVKey)
 import qualified Test.Cardano.Ledger.Shelley.Generator.Core as Gen
 import           Test.Cardano.Ledger.Shelley.Utils (unsafeBoundRational)
+import           Test.QuickCheck
+import           Test.Util.Orphans.Arbitrary ()
+import           Test.Util.Slots (NumSlots (..))
+import           Test.Util.Time (dawnOfTime)
 
 {-------------------------------------------------------------------------------
   The decentralization parameter

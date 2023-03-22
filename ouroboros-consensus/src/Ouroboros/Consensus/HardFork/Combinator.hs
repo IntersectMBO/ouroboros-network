@@ -5,98 +5,41 @@
 -- Intended for unqualified import
 module Ouroboros.Consensus.HardFork.Combinator (module X) where
 
--- Defines 'SingleEraInfo' and 'LedgerEraInfo'
-import           Ouroboros.Consensus.HardFork.Combinator.Info as X
-
--- Defines 'SingleEraBlock' and 'CanHardFork'
+import           Data.SOP.Functors as X (Product2 (..))
+import           Data.SOP.InPairs as X (InPairs (..))
+import           Data.SOP.Match as X (Mismatch (..))
+import           Data.SOP.Telescope as X (Telescope (..))
 import           Ouroboros.Consensus.HardFork.Combinator.Abstract as X
-
--- Defines 'HardForkProtocol', 'HardForkBlock', and 'LedgerState',
--- as well as various config types.
-import           Ouroboros.Consensus.HardFork.Combinator.Basics as X
-
--- Defines 'HasPartialConsensusConfig' and 'HasPartialLedgerConfig'
-import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig as X
-
--- Instances for 'BlockHasCodecConfig', 'GetHeader', 'HasHeader',
--- 'BasicEnvelopeValidation'
-import           Ouroboros.Consensus.HardFork.Combinator.Block as X
-
--- Instances for 'IsLedger', 'ApplyBlock', 'UpdateLedger',
--- 'LedgerSupportsProtocol', 'HasHardForkHistory', 'ValidateEnvelope'
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger as X
-
--- Instances for 'ApplyTx', 'HasTxId', 'HasTxs'
-import           Ouroboros.Consensus.HardFork.Combinator.Mempool as X
-
--- Instance for 'ConsensusProtocol'
-import           Ouroboros.Consensus.HardFork.Combinator.Protocol as X
-
--- Instance for 'CommonProtocolParams'
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams as X ()
-
--- Instance for 'LedgerSupportsPeerSelection'
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection as X ()
-
--- Instances for 'ShowQuery' and 'QueryLedger'
--- Definition of 'Query', required for serialisation code
-import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query as X
-
--- Instance for 'ChainSelection'
-import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel as X
-
--- Re-export only the types that are useful in RunNode instances for HFC blocks
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
                      (MismatchEraInfo (..), OneEraApplyTxErr (..),
                      OneEraBlock (..), OneEraGenTx (..), OneEraGenTxId (..),
                      OneEraHash (..), OneEraHeader (..), OneEraTipInfo (..),
-                     PerEraCodecConfig (..), PerEraLedgerConfig (..))
-
--- Re-export types required to initialize 'ProtocolInfo'
-import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras as X
-                     (PerEraBlockConfig (..), PerEraConsensusConfig (..),
+                     PerEraBlockConfig (..), PerEraCodecConfig (..),
+                     PerEraConsensusConfig (..), PerEraLedgerConfig (..),
                      PerEraStorageConfig (..))
-
--- Defines the various translation types required for concrete HFC instances
-import           Ouroboros.Consensus.HardFork.Combinator.Translation as X
-
--- Combinator for 'BlockForging'
+import           Ouroboros.Consensus.HardFork.Combinator.Basics as X
+import           Ouroboros.Consensus.HardFork.Combinator.Block as X
 import           Ouroboros.Consensus.HardFork.Combinator.Forging as X
                      (HardForkForgeStateInfo (..), hardForkBlockForging)
-
--- Instances for 'RunNode' and 'ConfigSupportsNode'
-import           Ouroboros.Consensus.HardFork.Combinator.Node as X ()
-
--- Instance for 'NodeInitStorage'
-import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage as X ()
-
--- Instance for 'BlockSupportsMetrics'
-import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics as X ()
-
--- Definition of InPairs (required to define translations)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs as X
-                     (InPairs (..))
-
--- Definition of Telescope (required to define serialisation code)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Telescope as X
-                     (Telescope (..))
-
--- Definition of 'Mismatch' (required to define serialisation code)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Match as X
-                     (Mismatch (..))
-
--- Definition of HardForkState (required to define serialisation code)
--- Also export functions required to define 'protocolInfo'.
-import           Ouroboros.Consensus.HardFork.Combinator.State as X
-                     (HardForkState (..), initHardForkState)
-
--- Definition of 'InjectTx' (required to define tx injections)
+import           Ouroboros.Consensus.HardFork.Combinator.Info as X
 import           Ouroboros.Consensus.HardFork.Combinator.InjectTxs as X
                      (InjectTx, InjectValidatedTx, cannotInjectTx,
                      cannotInjectValidatedTx, pattern InjectTx,
                      pattern InjectValidatedTx)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Functors as X
-                     (Product2 (..))
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger as X
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger.CommonProtocolParams as X ()
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection as X ()
+import           Ouroboros.Consensus.HardFork.Combinator.Ledger.Query as X
+import           Ouroboros.Consensus.HardFork.Combinator.Mempool as X
+import           Ouroboros.Consensus.HardFork.Combinator.Node as X ()
+import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage as X ()
+import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics as X ()
+import           Ouroboros.Consensus.HardFork.Combinator.PartialConfig as X
+import           Ouroboros.Consensus.HardFork.Combinator.Protocol as X
+import           Ouroboros.Consensus.HardFork.Combinator.Protocol.ChainSel as X
+import           Ouroboros.Consensus.HardFork.Combinator.State as X
+                     (HardForkState (..), initHardForkState)
+import           Ouroboros.Consensus.HardFork.Combinator.Translation as X
 
 -- Omitted from this export:
 --
