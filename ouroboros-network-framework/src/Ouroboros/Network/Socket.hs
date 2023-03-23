@@ -522,14 +522,14 @@ fromSnocket tblVar sn sd = go <$> Snocket.accept sn sd
         Snocket.Accepted sd' remoteAddr -> do
           -- TOOD: we don't need to that on each accept
           localAddr <- Snocket.getLocalAddr sn sd'
-          atomically $ addConnection tblVar remoteAddr localAddr Nothing
+          atomically $ addConnection tblVar remoteAddr localAddr ConnectionInbound Nothing
           pure (remoteAddr, sd', close remoteAddr localAddr sd', go next)
         Snocket.AcceptFailure err ->
           -- the is no way to construct 'Server.Socket'; This will be removed in a later commit!
           throwIO err
 
     close remoteAddr localAddr sd' = do
-        removeConnection tblVar remoteAddr localAddr
+        removeConnection tblVar remoteAddr localAddr ConnectionInbound
         Snocket.close sn sd'
 
 
@@ -710,6 +710,7 @@ runServerThread NetworkServerTracers { nstMuxTracer
       d <- beforeConnectTx t connAddr st
       case d of
         AllowConnection st'    -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr) versions
+        OnlyAccept st'         -> pure $ AcceptConnection st' (ConnectionId sockAddr connAddr) versions
         DisallowConnection st' -> pure $ RejectConnection st' (ConnectionId sockAddr connAddr)
 
 -- | Run a server application. It will listen on the given address for incoming
