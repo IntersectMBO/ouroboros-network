@@ -1,5 +1,11 @@
 # Revision history for ouroboros-network
 
+## next version
+
+### Non breaking
+
+- Fix interop problems between NonP2P and P2P nodes (PR #4465)
+
 ## 0.4.0.1 -- 2023-02-24
 
 ### Non-Breaking
