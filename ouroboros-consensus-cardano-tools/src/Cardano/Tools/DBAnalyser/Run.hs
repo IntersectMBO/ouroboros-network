@@ -52,9 +52,9 @@ analyse ::
   -> IO (Maybe AnalysisResult)
 analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbose} args =
     withRegistry $ \registry -> do
-
-      chainDBTracer  <- mkTracer verbose
-      analysisTracer <- mkTracer True
+      lock           <- newMVar ()
+      chainDBTracer  <- mkTracer lock verbose
+      analysisTracer <- mkTracer lock True
       ProtocolInfo { pInfoInitLedger = genesisLedger, pInfoConfig = cfg } <-
         mkProtocolInfo args
       let chunkInfo  = Node.nodeImmutableDbChunkInfo (configStorage cfg)
@@ -119,14 +119,16 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
             putStrLn $ "ChainDB tip: " ++ show tipPoint
             pure result
   where
-    mkTracer False = return nullTracer
-    mkTracer True  = do
+    mkTracer _    False = return nullTracer
+    mkTracer lock True  = do
       startTime <- getMonotonicTime
-      return $ Tracer $ \ev -> do
+      return $ Tracer $ \ev -> withLock $ do
         traceTime <- getMonotonicTime
         let diff = diffTime traceTime startTime
         hPutStrLn stderr $ concat ["[", show diff, "] ", show ev]
         hFlush stderr
+      where
+        withLock = bracket_ (takeMVar lock) (putMVar lock ())
 
     immValidationPolicy = case (analysis, validation) of
       (_, Just ValidateAllBlocks)      -> ImmutableDB.ValidateAllChunks
