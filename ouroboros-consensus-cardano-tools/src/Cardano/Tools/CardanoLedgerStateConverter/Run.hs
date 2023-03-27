@@ -17,7 +17,7 @@ import           Ouroboros.Consensus.Util.Orphans ()
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
                      (SnapshotInterval (..), defaultDiskPolicy)
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (readSnapshot, DiskSnapshot (..))
+import           Ouroboros.Consensus.Storage.LedgerDB (readSnapshot, DiskSnapshot (..))
 
 import           Cardano.Tools.CardanoLedgerStateConverter.Types
 
@@ -29,7 +29,7 @@ import qualified Ouroboros.Consensus.Ledger.Extended as Consensus
 import           Ouroboros.Consensus.Shelley.Ledger (shelleyLedgerState)
 import           Ouroboros.Consensus.Shelley.Ledger.Config (CodecConfig (ShelleyCodecConfig))
 import           Ouroboros.Consensus.Byron.Ledger.Config (CodecConfig (ByronCodecConfig))
-import           Cardano.Binary (serialize')
+import           Cardano.Ledger.Binary.Plain (serialize')
 import           Cardano.Chain.Slotting (EpochSlots(..))
 import qualified Data.ByteString as BS
 import           Cardano.Tools.DBAnalyser.Block.Cardano ()
@@ -47,6 +47,7 @@ projectNewEpochState extLedgerState =
       Cardano.LedgerStateMary    x -> f MaryEra    x
       Cardano.LedgerStateAlonzo  x -> f AlonzoEra  x
       Cardano.LedgerStateBabbage x -> f BabbageEra x
+      Cardano.LedgerStateConway  x -> f ConwayEra x
   where
     ledgerState :: Consensus.LedgerState (CardanoBlock StandardCrypto)
     Consensus.ExtLedgerState {Consensus.ledgerState} = extLedgerState
@@ -67,11 +68,12 @@ convert Config{dbDir, snapShot} = do
         Just ls -> BS.writeFile outputFilename (serialize' ls)
 
   where
-    decodeExtLedgerState' :: forall s .Decoder s (ExtLedgerState (CardanoBlock StandardCrypto))
+    decodeExtLedgerState' :: forall s. Decoder s (ExtLedgerState (CardanoBlock StandardCrypto))
     decodeExtLedgerState' =
       let ccfg =
             Cardano.CardanoCodecConfig
               (ByronCodecConfig (EpochSlots 0))
+              ShelleyCodecConfig
               ShelleyCodecConfig
               ShelleyCodecConfig
               ShelleyCodecConfig

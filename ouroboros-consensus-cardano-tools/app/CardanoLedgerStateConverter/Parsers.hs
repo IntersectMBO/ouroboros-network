@@ -3,7 +3,7 @@
 module CardanoLedgerStateConverter.Parsers (parseCmdLine) where
 
 import           Options.Applicative
-import           Ouroboros.Consensus.Storage.LedgerDB.OnDisk (DiskSnapshot (..))
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskSnapshot (..))
 import           Cardano.Tools.CardanoLedgerStateConverter.Types
 
 
