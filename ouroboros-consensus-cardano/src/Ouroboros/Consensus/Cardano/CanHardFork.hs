@@ -3,11 +3,8 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE EmptyCase                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -15,10 +12,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE StandaloneKindSignatures   #-}
 {-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeFamilyDependencies     #-}
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -551,7 +545,9 @@ translateLedgerStateShelleyToAllegraWrapper =
               -- In the long run, the ledger will already use ledger states
               -- parametrized by the map kind and therefore will already provide
               -- the differences in this translation.
-              let avvms           = SL.unUTxO (shelleyToAllegraAVVMsToDelete $ shelleyLedgerState ls)
+              let avvms           = SL.unUTxO
+                                  $ shelleyToAllegraAVVMsToDelete
+                                  $ shelleyLedgerState ls
 
                   -- While techically we can diff the LedgerTables, it becomes
                   -- complex doing so, as we cannot perform operations with
@@ -561,9 +557,8 @@ translateLedgerStateShelleyToAllegraWrapper =
                   -- differences, we will have to revisit this.
                   avvmsAsDeletions = ShelleyLedgerTables
                                    . DiffMK
-                                   . Diff.Internal.Diff
-                                   . Map.map (  Diff.Internal.singletonDelete
-                                              . unTxOutWrapper
+                                   . Diff.Internal.fromMapDeletes
+                                   . Map.map (  unTxOutWrapper
                                               . SL.translateEra' ()
                                               . TxOutWrapper
                                              )
@@ -587,9 +582,7 @@ translateLedgerStateShelleyToAllegraWrapper =
               in resultingState `withLedgerTables` avvmsAsDeletions
 
         , translateLedgerTablesWith =
-            \ShelleyLedgerTables { shelleyUTxOTable = diffMK } ->
-             ShelleyLedgerTables { shelleyUTxOTable = fmap (SL.translateEra' ()) diffMK
-                                 }
+             ShelleyLedgerTables . fmap (SL.translateEra' ()) . shelleyUTxOTable
         }
 
 translateTxShelleyToAllegraWrapper ::

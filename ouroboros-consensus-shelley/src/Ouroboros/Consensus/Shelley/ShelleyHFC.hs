@@ -5,7 +5,6 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE Rank2Types            #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
@@ -401,23 +400,17 @@ newtype ShelleyTxOut eras =
     ShelleyTxOut {unShelleyTxOut :: NS TxOutWrapper eras}
   deriving (Generic)
 
--- TODO Can't reuse the 'NS' instance because of its use of 'SOP.Compose', so I
--- inlined it
 instance SOP.All ShelleyBasedEra eras => Eq       (ShelleyTxOut eras) where
   ShelleyTxOut (SOP.Z l) == ShelleyTxOut (SOP.Z r) = l == r
   ShelleyTxOut (SOP.S l) == ShelleyTxOut (SOP.S r) = ShelleyTxOut l == ShelleyTxOut r
   _                      == _                      = False
 
--- TODO Can't reuse the 'NS' instance because of its use of 'SOP.Compose', so I
--- inlined it
 instance SOP.All ShelleyBasedEra eras => NoThunks (ShelleyTxOut eras) where
   wNoThunks ctxt = (. unShelleyTxOut) $ \case
       Z l -> noThunks ("Z" : ctxt) l
       S r -> noThunks ("S" : ctxt) (ShelleyTxOut r)
 
--- TODO Can't reuse the 'NS' instance because of its use of 'SOP.Compose', so I
--- inlined it
-instance SOP.All ShelleyBasedEra eras => Show (ShelleyTxOut eras) where
+instance SOP.All ShelleyBasedEra eras => Show     (ShelleyTxOut eras) where
   showsPrec =
       \p (ShelleyTxOut ns) -> showParen (p > 10) $ showString "ShelleyTxOut " . go ns
     where
@@ -453,26 +446,19 @@ instance (SOP.All ShelleyBasedEra eras, Typeable eras)
   fromCBOR = do
       CBOR.decodeListLenOf 2
       tag <- CBOR.decodeWord
-      let aDecoder =
-              mconcat
-            $ SOP.hcollapse
-            $ SOP.hcmap
-                (Proxy @ShelleyBasedEra)
-                each
-                (SOP.indices @eras)
       case Monoid.getFirst $ aDecoder tag of
         Nothing -> error $ "FromCBOR ShelleyTxOut, unknown tag: " <> show tag
-        Just x  -> unADecoder x
+        Just x  -> x
     where
-      each ::
-           ShelleyBasedEra x
-        => SOP.Index eras x
-        -> SOP.K (Word -> Monoid.First (ADecoder eras)) x
       each idx = SOP.K $ \w -> Monoid.First $
         if w /= toEnum (idxLength idx) then Nothing else
         Just
-          $ ADecoder
           $ ShelleyTxOut . SOP.injectNS idx . TxOutWrapper <$> fromCBOR
 
-newtype ADecoder eras =
-  ADecoder {unADecoder :: forall s. CBOR.Decoder s (ShelleyTxOut eras)}
+      aDecoder = mconcat
+               $ SOP.hcollapse
+               $ SOP.hcmap
+                  (Proxy @ShelleyBasedEra)
+                  each
+                  (SOP.indices @eras)
+

@@ -70,13 +70,16 @@ import           Ouroboros.Consensus.Shelley.ShelleyHFC
 -- HasLedgerTables case. However, since x is always a Cardano era, we do know we
 -- have HasTickedLedgerTables for every x, so hardcoding the stronger constraint
 -- is easier than parameterizing this helper over the constraint.
-projectLedgerTablesHelper :: forall c mk fmk.
+--
+-- @lmk@ will be concretized into @Flip LedgerState mk@ or
+-- @FlipTickedLedgerState mk@
+projectLedgerTablesHelper :: forall c mk lmk.
      (CardanoHardForkConstraints c, IsMapKind mk)
   => (forall blk.
          HasTickedLedgerTables (LedgerState blk)
-      => fmk blk -> LedgerTables (LedgerState blk) mk
+      => lmk blk -> LedgerTables (LedgerState blk) mk
      )
-  -> HardForkState fmk (CardanoEras c)
+  -> HardForkState lmk (CardanoEras c)
   -> LedgerTables (LedgerState (CardanoBlock c)) mk
 projectLedgerTablesHelper prjLT (HardForkState st) =
       hcollapse
@@ -85,7 +88,7 @@ projectLedgerTablesHelper prjLT (HardForkState st) =
   where
     projectOne :: HasTickedLedgerTables (LedgerState x)
                => Index (CardanoEras c) x
-               -> Current fmk           x
+               -> Current lmk           x
                -> K (LedgerTables
                       (LedgerState (HardForkBlock (CardanoEras c))) mk)
                                         x
@@ -96,16 +99,19 @@ projectLedgerTablesHelper prjLT (HardForkState st) =
 
 -- Same note regarding the @HasTickedLedgerTables x@ constraint as
 -- 'projectLedgerTablesHelper'
+--
+-- @lmk@ will be concretized into @Flip LedgerState mk@ or
+-- @FlipTickedLedgerState mk@
 withLedgerTablesHelper ::
-  forall c mk fany fmk.
+  forall c mk fany lmk.
      (CardanoHardForkConstraints c, IsMapKind mk)
   => (forall x.
          HasTickedLedgerTables (LedgerState x)
-      => fany x -> LedgerTables (LedgerState x) mk -> fmk x
+      => fany x -> LedgerTables (LedgerState x) mk -> lmk x
      )
   -> HardForkState fany (CardanoEras c)
   -> LedgerTables (LedgerState (CardanoBlock c)) mk
-  -> HardForkState fmk (CardanoEras c)
+  -> HardForkState lmk (CardanoEras c)
 withLedgerTablesHelper withLT (HardForkState st) tbs =
       HardForkState
     $ hcimap (Proxy @(Compose HasTickedLedgerTables LedgerState)) updateOne st
@@ -113,7 +119,7 @@ withLedgerTablesHelper withLT (HardForkState st) tbs =
     updateOne :: HasTickedLedgerTables (LedgerState x)
               => Index (CardanoEras c) x
               -> Current fany          x
-              -> Current fmk           x
+              -> Current lmk           x
     updateOne i current@Current{currentState = innerSt} =
       current { currentState =
                   withLT innerSt
@@ -144,17 +150,31 @@ instance CardanoHardForkConstraints c
           hfstate
           tables
 
-  pureLedgerTables     f                                                                         = CardanoLedgerTables f
-  mapLedgerTables      f                                                 (CardanoLedgerTables x) = CardanoLedgerTables (f x)
-  traverseLedgerTables f                                                 (CardanoLedgerTables x) = CardanoLedgerTables <$> f x
-  zipLedgerTables      f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables (f l r)
-  zipLedgerTables3     f (CardanoLedgerTables l) (CardanoLedgerTables c) (CardanoLedgerTables r) = CardanoLedgerTables (f l c r)
-  zipLedgerTablesA     f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = CardanoLedgerTables <$> f l r
-  zipLedgerTables3A    f (CardanoLedgerTables l) (CardanoLedgerTables c) (CardanoLedgerTables r) = CardanoLedgerTables <$> f l c r
-  foldLedgerTables     f                                                 (CardanoLedgerTables x) = f x
-  foldLedgerTables2    f                         (CardanoLedgerTables l) (CardanoLedgerTables r) = f l r
+  pureLedgerTables = CardanoLedgerTables
+  mapLedgerTables      f (CardanoLedgerTables x) =
+    CardanoLedgerTables (f x)
+  traverseLedgerTables f (CardanoLedgerTables x) =
+    CardanoLedgerTables <$> f x
+  zipLedgerTables      f (CardanoLedgerTables l) (CardanoLedgerTables r) =
+    CardanoLedgerTables (f l r)
+  zipLedgerTables3     f
+    (CardanoLedgerTables l)
+    (CardanoLedgerTables c)
+    (CardanoLedgerTables r) =
+    CardanoLedgerTables (f l c r)
+  zipLedgerTablesA     f (CardanoLedgerTables l) (CardanoLedgerTables r) =
+    CardanoLedgerTables <$> f l r
+  zipLedgerTables3A    f
+    (CardanoLedgerTables l)
+    (CardanoLedgerTables c)
+    (CardanoLedgerTables r) =
+    CardanoLedgerTables <$> f l c r
+  foldLedgerTables     f (CardanoLedgerTables x) = f x
+  foldLedgerTables2    f (CardanoLedgerTables l) (CardanoLedgerTables r) = f l r
 
-  namesLedgerTables = CardanoLedgerTables { cardanoUTxOTable = NameMK "cardanoUTxOTable" }
+  namesLedgerTables = CardanoLedgerTables {
+      cardanoUTxOTable = NameMK "cardanoUTxOTable"
+    }
 
 deriving newtype
          instance ( IsMapKind mk
@@ -273,7 +293,7 @@ shelleyTxOutTranslations =
     $ PCons (TranslateTxOutWrapper Alonzo.translateTxOut)
     $ PCons (TranslateTxOutWrapper Babbage.translateTxOut)
     $ PCons (TranslateTxOutWrapper Conway.translateTxOut)
-    $ PNil
+       PNil
 
 -- | Auxiliary for convenience
 --
@@ -297,10 +317,9 @@ composeTxOutTranslationPairs ::
        eras
 composeTxOutTranslationPairs = \case
     PNil                                  ->
-      (fn $ unZ . unK) :* Nil
+      fn (unZ . unK) :* Nil
     PCons (TranslateTxOutWrapper f) inner ->
-         (fn $
-            eitherNS
+      fn ( eitherNS
               id
               (error "composeTxOutTranslationPairs: anachrony")
           . unK

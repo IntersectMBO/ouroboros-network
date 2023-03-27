@@ -246,16 +246,12 @@ applyShelleyTx cfg wti slot (ShelleyTx _ tx) st0 = do
          wti
          tx
 
-    let st2 :: TickedLedgerState (ShelleyBlock proto era) EmptyMK
-        st2 = set theLedgerLens mempoolState' st1
+    let st' :: TickedLedgerState (ShelleyBlock proto era) TrackingMK
+        st' = calculateDifferenceTicked st0
+            $ unstowLedgerTables
+            $ set theLedgerLens mempoolState' st1
 
-        st3 :: TickedLedgerState (ShelleyBlock proto era) ValuesMK
-        st3 = unstowLedgerTables st2
-
-        st4 :: TickedLedgerState (ShelleyBlock proto era) TrackingMK
-        st4 = calculateDifferenceTicked st0 st3
-
-    pure (st4, mkShelleyValidatedTx vtx)
+    pure (st', mkShelleyValidatedTx vtx)
 
 reapplyShelleyTx ::
      ShelleyBasedEra era
