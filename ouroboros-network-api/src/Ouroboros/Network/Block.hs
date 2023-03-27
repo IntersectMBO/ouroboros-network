@@ -91,7 +91,7 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Ledger.Binary (Case (..), Size, szCases, szGreedy)
+import           Cardano.Binary (Case (..), Size, szCases, szGreedy)
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot (SlotNo (..))
 

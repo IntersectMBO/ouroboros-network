@@ -58,7 +58,7 @@ library
                        serialise         >=0.2   && <0.3,
                        text              >=1.2 && <1.3,
 
-                       cardano-ledger-binary,
+                       cardano-binary,
                        cardano-slotting,
                        cardano-strict-containers,
                        contra-tracer,
