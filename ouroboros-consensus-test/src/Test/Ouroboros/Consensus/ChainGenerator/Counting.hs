@@ -146,7 +146,11 @@ uniformIndex n g = Count <$> R.uniformRM (0, getCount $ lastIndex n) g
 -----
 
 -- | A human-readable label for a 'Win'
-data Lbl lbl = Lbl   -- no explicit kind var so that type applications don't need to provide the kind
+data Lbl lbl = Lbl   -- no explicit kind var so that type applications don't
+                     -- need to provide the kind
+                     --
+                     -- TODO as of GHC 9.0, use a standalone kind signature to
+                     -- declare k as /inferred/ instead of /specified/
 instance (lbl TypeEq.~~ s) => IsLabel s (Lbl lbl) where fromLabel = Lbl
 
 -- | A named window within some containing sequence
