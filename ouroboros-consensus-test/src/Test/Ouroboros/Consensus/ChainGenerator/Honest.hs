@@ -360,7 +360,7 @@ uniformTheHonestChain mbAsc recipe g0 = wrap $ C.createV $ do
     --       @numerator@, and then each slot not in the first window is either
     --       forced to @1@ by its preceding @denominator - 1@ samples or is
     --       sampled from @mbAsc@.
-    C.forRangeM_ (C.windowSize remainingFullWindows) $ \(C.frWin remainingFullWindows -> islot) -> do
+    C.forRange_ (C.windowSize remainingFullWindows) $ \(C.frWin remainingFullWindows -> islot) -> do
         -- NB will not be truncated
         C.SomeWindow Proxy ehcgSlots <- pure $ C.withWindow sz (C.Lbl @EhcgLbl) islot (C.toSize denominator)
 
@@ -620,7 +620,7 @@ checkHonestChain recipe sched = do
         when (C.toVar pc <= 0) $ Exn.throwError BadCount
 
     -- every slot is the first slot of a unique EHCG window
-    C.forRangeM_ sz $ \i -> do
+    C.forRange_ sz $ \i -> do
         C.SomeWindow Proxy ehcg <- pure $ C.withWindow sz (C.Lbl @EhcgLbl) i (C.Count ehcgWidth)
 
         let pc = BV.countActivesInV S.notInverted (C.sliceV ehcg v)

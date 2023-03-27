@@ -25,7 +25,7 @@ module Test.Ouroboros.Consensus.ChainGenerator.Counting (
   Index,
   Size,
   Total,
-  forRangeM_,
+  forRange_,
   lastIndex,
   range, 
   uniformIndex,
@@ -73,7 +73,7 @@ module Test.Ouroboros.Consensus.ChainGenerator.Counting (
 
 import           Control.Monad.ST (ST)
 import           Data.Coerce (coerce)
-import           Data.Foldable (forM_)
+import           Data.Foldable (for_)
 import           Data.Kind (Type)
 import           Data.Proxy (Proxy (Proxy))
 import qualified Data.Type.Equality as TypeEq
@@ -137,8 +137,8 @@ lastIndex (Count n) = Count (n .- 1)
 range :: Size base elem -> [Index base elem]
 range (Count n) = coerce [0 .. max 0 n .- 1]
 
-forRangeM_ :: Monad m => Size base elem -> (Index base elem -> m a) -> m ()
-forRangeM_ c = forM_ (range c)
+forRange_ :: Applicative f => Size base elem -> (Index base elem -> f a) -> f ()
+forRange_ c = for_ (range c)
 
 uniformIndex :: R.StatefulGen g m => Size base elem -> g -> m (Index base elem)
 uniformIndex n g = Count <$> R.uniformRM (0, getCount $ lastIndex n) g

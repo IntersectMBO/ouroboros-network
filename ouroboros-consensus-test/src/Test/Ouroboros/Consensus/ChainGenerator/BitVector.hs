@@ -159,7 +159,7 @@ fillInWindow pol (SomeDensityWindow k s) g mv = do
     let adding = C.toVar discountedK - initialActives :: C.Var base (PreImage pol ActiveSlotE)
 
     -- draw from the empty polarized slots uniformly without replacement, a la Fisher-Yates shuffle
-    C.forRangeM_ (C.toSize adding) $ \alreadyAdded -> do
+    C.forRange_ (C.toSize adding) $ \alreadyAdded -> do
         let currentActives = C.toSize $ initialActives + C.toVar alreadyAdded
             currentEmpties = S.complementActive pol sz currentActives
 
