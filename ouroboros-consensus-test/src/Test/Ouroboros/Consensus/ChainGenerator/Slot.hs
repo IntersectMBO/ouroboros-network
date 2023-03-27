@@ -79,7 +79,7 @@ genAsc :: R.RandomGen g => Asc -> g -> (S, g)
 genAsc asc g =
     bool `seq` (S bool, g')
   where
-    (q, g') = R.random g   -- note 0 <= q <- 1
+    (q, g') = R.random g   -- note 0 <= q <= 1
 
     bool = q < ascVal asc
 

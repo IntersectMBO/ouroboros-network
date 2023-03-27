@@ -169,7 +169,7 @@ pattern Contains x y <- UnsafeContains x y
 {-# COMPLETE Contains #-}
 
 forgetWindow :: Contains elem outer inner -> Some.Forgotten (Index outer elem, Index outer elem)
-forgetWindow win = Some.forgotten $ (windowStart win, windowLast win)
+forgetWindow win = Some.forgotten (windowStart win, windowLast win)
 
 frWin :: Contains elem outer inner -> Index inner elem -> Index outer elem
 frWin (Contains (Count i) _n) (Count j) = Count (i .+ j)
