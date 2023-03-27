@@ -9,6 +9,13 @@
 -- | Utilities that make it easier to declare types that merely existential
 -- quantify some type arguments, and actually for any other type that is not
 -- amenable to @deriving@
+--
+-- For existentials that only quantify one type variable, this module's
+-- functionality is mostly superseded by the @some@ Hackage package. However,
+-- this library involves many existentials that quantify multiple variables.
+-- That can be shoehorned into @some@ with some encoding, but I believe this
+-- module's weight is preferable to the overhead of using that encoding in our
+-- existential data types' declarations.
 module Test.Ouroboros.Consensus.ChainGenerator.Some (
   -- * 'Show'
   runShowsPrec,
