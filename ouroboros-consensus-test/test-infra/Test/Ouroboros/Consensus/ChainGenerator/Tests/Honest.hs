@@ -15,13 +15,15 @@ module Test.Ouroboros.Consensus.ChainGenerator.Tests.Honest (
 
 import qualified Control.Exception as IO (evaluate)
 import qualified Control.Monad.Except as Exn
+import           Data.Complex (imagPart, magnitude, realPart)
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (runIdentity)
 import           Data.Proxy (Proxy (Proxy))
 import           Data.Word (Word8)
+import qualified Numeric.LinearAlgebra as Mat
 import qualified System.Random as R
 import qualified System.Timeout as IO (timeout)
-import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc, Delta (Delta), Kcp (Kcp), Len (Len), Scg (Scg), ascFromBits)
+import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc, Delta (Delta), Kcp (Kcp), Len (Len), Scg (Scg), ascFromBits, ascVal)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Honest as H
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Random (QCGen)
@@ -35,6 +37,8 @@ tests = [
     TT.testProperty "prop_honestChain" prop_honestChain
   ,
     TT.testProperty "prop_honestChainMutation" prop_honestChainMutation
+  ,
+    TT.testProperty "prop_transitionMatrix" prop_transitionMatrix
   ]
 
 -----
@@ -194,3 +198,60 @@ prop_honestChainMutation testHonestMut testSeedsSeed0 = QC.ioProperty $ do
                 H.BadCount{}      -> error $ "impossible! " <> show e
                 H.BadEhcgWindow{} -> True
                 H.BadLength{}     -> error $ "impossible! " <> show e
+
+-----
+
+data TestSetupTransitionMatrix = TestSetupTransitionMatrix !Asc !Int !Int
+  deriving (Show)
+
+instance QC.Arbitrary TestSetupTransitionMatrix where
+    arbitrary = do
+        asc <- ascFromBits <$> QC.choose (1 :: Word8, maxBound - 1)
+
+        d <- QC.choose (1, 100)
+
+        n <- QC.choose (1, d)
+
+        pure $ TestSetupTransitionMatrix asc n d
+
+prop_transitionMatrix :: TestSetupTransitionMatrix -> QC.Property
+prop_transitionMatrix testSetup =
+    checkStochastic QC..&&. checkStationary
+  where
+    TestSetupTransitionMatrix asc n d = testSetup
+
+    p = H.transitionMatrix (ascVal asc) n d
+
+    -- a reasonable tolerance since 'Asc' is no finer than 1/256 and 1/d is no finer than 1/100
+    tol = 1e-6
+
+    checkStochastic =
+        QC.conjoin [
+                QC.counterexample ("row " <> show i <> " does not sum to 1: " <> show x)
+              $ abs (x - 1) < tol
+          | i <- [0 .. Mat.rows p - 1]
+          , let x = Mat.sumElements (p Mat.! i)   -- the bang operator extracts /rows/ in @hmatrix@
+          ]
+
+    checkStationary =
+        let vals = Mat.eigenvalues p
+            maxi = Mat.maxIndex vals
+            maxv = vals Mat.! maxi
+
+            exists =
+                QC.counterexample ("max eigenvalue is not 1: " <> show maxv)
+              $ imagPart maxv QC.=== 0 QC..&&. (realPart maxv - 1) <= tol
+
+            -- vals with the greatest value set to 0
+            vals2 = vals * mask   --  this * is pointwise
+            mask  = Mat.size vals Mat.|> (replicate maxi 1 <> (0 : let x = 1 : x in x))
+            maxv2 = vals2 Mat.! Mat.maxIndex vals2
+
+            unique =
+                QC.counterexample
+                    (   "second greatest eigenvalue is within tolerance of greatest eigenvalue: "
+                     <> show (tol, maxv, maxv2)
+                    )
+              $ realPart maxv - abs (magnitude maxv2) > tol
+        in
+        exists QC..&&. unique

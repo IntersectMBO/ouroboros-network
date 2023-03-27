@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE PolyKinds #-}
@@ -28,8 +29,10 @@ module Test.Ouroboros.Consensus.ChainGenerator.Honest (
     checkHonestChain,
     prettyChainSchedule,
     prettyWindow,
+    transitionMatrix,
   ) where
 
+import           Control.Arrow ((***))
 import           Control.Monad (void, when)
 import qualified Control.Monad.Except as Exn
 import           Data.Monoid (Endo (Endo, appEndo))
@@ -408,11 +411,6 @@ genFirstWindowPopCount asc densityWindow g =
 
     BV.SomeDensityWindow (C.Count n) (C.Count d) = densityWindow
 
-    sz = d - n + 1
-
-    dd = toEnum d :: Double
-    nn = toEnum n :: Double
-
     -- the non-normalized stationary distribution
     --
     -- 1) See
@@ -430,7 +428,7 @@ genFirstWindowPopCount asc densityWindow g =
     --
     -- We find that using 'Mat.null1' of the transpose of A - I.
     sd :: Mat.Vector Double
-    sd = Mat.null1 $ Mat.tr $ p - Mat.ident sz
+    sd = Mat.null1 $ Mat.tr $ transitionMatrix f n d - Mat.ident (d - n + 1)
 
 {-
     This would be equally (?) exact, but it makes the test suite about 2-3
@@ -453,54 +451,65 @@ genFirstWindowPopCount asc densityWindow g =
     -- sd = (Mat.! 0) $ stimes (2^(10 :: Int) :: Int) p
 -}
 
-    -- Transition matrix of an Markov Chain where each state is the
-    -- (idealized?) number of active slots in an EHCG window.
-    --
-    -- (This is a /stochastic matrix/ because every /row/ sums to 1. And every
-    -- state is reachable from every other, since @0 < asc@.)
-    --
-    -- We have one lingering doubt about whether this system perfectly models
-    -- the behavior of the loop in 'uniformTheHonestChain' that visits the
-    -- remaining windows, hence the "idealized?" above. In particular, these
-    -- transitions are the result of assuming that the active slots within a
-    -- window are uniformly distributed after it has been visited by that loop.
-    -- Specifically, we assume that the probability of the oldest slot being
-    -- active is the population count divided by the window width. Our
-    -- lingering doubt is that we're overestimating the degrees of freedom such
-    -- that somehow a slot's value from /before/ some window is unexpectedly
-    -- influencing the value of the first slot in that window in a way that is
-    -- not accounted for by the number of active slots in the preceding window,
-    -- ie that the Markov Property does not actually hold. I think the seed for
-    -- this doubt was Esgen's earlier insight that a chain with /exactly/ @n@
-    -- actives in every @d@ slot window is periodic. In that case, if there are
-    -- more than @d@ contiguous windows that each have exactly @n@ actives,
-    -- then there is perfect auto-correlation throughout those windows, and it
-    -- spans farther than one window. That's our suspicion for the kind of
-    -- counterexample of the Markov Property of this transition matrix.
-    --
-    -- That said, even if it's not a perfect model, we would guess it's usually
-    -- a fine approximation to use for sampling the density of the first
-    -- window.
-    --
-    -- The indices @i@ and @j@ are @n@ less than state they represent. In other
-    -- words, they count the /extra/ active slots, not just the active slots.
-    p = Mat.build (sz, sz) $ curry $ \case
+-- | Transition matrix of an Markov Chain where each state is the (idealized?)
+-- number of active slots in an EHCG window
+--
+-- The indices @i@ and @j@ are @n@ less than state they represent; in other
+-- words, they count the /extra/ active slots, not just the active slots.
+--
+-- This is a /stochastic matrix/ because every /row/ sums to 1. And every state
+-- is reachable from every other, since @0 < asc@ -- hence it's an
+-- /irreducible/ Markov chain. This chain is also /aperiodic/: since every
+-- state can step to itself, there's no multiple >1 constraining how many steps
+-- it takes for a state to recur. Irrreducibility and aperiodicity imply the
+-- /stationary distribution/ exist and is unique.
+--
+-- We have one lingering doubt about whether this system perfectly models the
+-- behavior of the loop in 'uniformTheHonestChain' that visits the remaining
+-- windows, hence the "idealized?" above. In particular, these transitions are
+-- the result of assuming that the active slots within a window are uniformly
+-- distributed after it has been visited by that loop. Specifically, we assume
+-- that the probability of the oldest slot being active is the population count
+-- divided by the window width. Our lingering doubt is that we're
+-- overestimating the degrees of freedom such that somehow a slot's value from
+-- /before/ some window is unexpectedly influencing the value of the first slot
+-- in that window in a way that is not accounted for by the number of active
+-- slots in the immediately preceding window, ie that the Markov Property does
+-- not actually hold. I think the seed for this doubt was Esgen's earlier
+-- insight that a chain with /exactly/ @n@ actives in every @d@ slot window is
+-- periodic. In that case, if there are more than @d@ contiguous windows that
+-- each have exactly @n@ actives, then there is perfect auto-correlation
+-- throughout those windows, and it spans farther than one window. That's our
+-- suspicion for the kind of counterexample of the Markov Property of the
+-- system we intend for this transition matrix to model.
+--
+-- That said, even if it's not a perfect model, we would guess it's usually a
+-- fine approximation to use for sampling the density of the first window.
+transitionMatrix :: (Enum a, Fractional a, Mat.Container Mat.Vector a) => a -> Int -> Int -> Mat.Matrix a
+{-# SPECIALIZE transitionMatrix :: Double -> Int -> Int -> Mat.Matrix Double #-}
+transitionMatrix f n d =
+    Mat.build (sz, sz) $ curry $ (. (fromEnum *** fromEnum)) $ \case
       (0, 0) -> (dd - dd * f + nn * f) / dd
       (0, 1) -> (     dd * f - nn * f) / dd
 
       (i, j)
-        | dd - nn == i, j == i - 1
+        | d - n == i, j == i - 1
         -> 1 - f
-        | dd - nn == i, j == i
+        | d - n == i, j == i
         -> f
 
         | j == i - 1 -> (x - x * f)                   / dd
         | j == i     -> (2 * x * f + dd - dd * f - x) / dd
         | j == i + 1 -> (dd * f - x * f)              / dd
         where
-          x = i + nn
+          x = toEnum i + nn
 
       _ -> 0
+  where
+    sz = d - n + 1
+
+    dd = toEnum d
+    nn = toEnum n
 
 {-
 
@@ -510,7 +519,7 @@ The (d - x)/d summand is the chance we're sliding the window off of an empty slo
 
 One reflecting barrier at n.
 
-    P( n -> n     ) = (n/d) * 1         +   ((d - n)/d) * 1
+    P( n -> n     ) = (n/d) * 1         +   ((d - n)/d) * (1 - f)
     P( n -> n + 1 ) = (n/d) * 0         +   ((d - n)/d) * f
 
 And another at d.
