@@ -1,13 +1,13 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Test.Ouroboros.Consensus.ChainGenerator.Params (
-  Asc (Half, HalfOf, HalfOfOnePlus),
+  Asc (Asc, UnsafeAsc),
   Delta (Delta),
   Len (Len),
   Kcp (Kcp),
   Scg (Scg),
   ascFromBits,
+  ascFromDouble,
   ascVal,
   ) where
 
@@ -62,33 +62,29 @@ newtype Scg = Scg Int
 
 -- | The /active slot coefficient/
 --
--- Algebraic data type representing a binary fraction greater than 0 and less than 1.
-data Asc =
-    Half   -- ^ @0.5@ in decimal, ie @0.1@ in binary
-  |
-    HalfOf Asc   -- ^ @x \/ 2@ in decimal, ie @x \/ 10@ in binary
-  |
-    HalfOfOnePlus Asc   -- ^ @(x + 1) \/ 2@ in decimal, ie @0.1 + (x \/ 10)@ in binary
+-- INVARIANT: 0 < x < 1
+--
+-- It's as precise as 'Double', which is likely suffices for all of our needs.
+newtype Asc = UnsafeAsc Double
   deriving (Eq, Read, Show)
+
+pattern Asc :: Double -> Asc
+pattern Asc d <- UnsafeAsc d
+
+{-# COMPLETE Asc #-}
+
+ascFromDouble :: Double -> Asc
+ascFromDouble d
+  | d <= 0    = error "Asc must be > 0"
+  | 1 <= d    = error "Asc must be < 1"
+  | otherwise = UnsafeAsc d
 
 -- | PRECONDITION: the bits aren't all the same
 --
 -- The 'Asc' that equals the fraction @w \/ 2^widthW@.
-ascFromBits :: B.FiniteBits w => w -> Asc
-ascFromBits = \w -> if
-    |              B.zeroBits == w -> error "ascFromBits undefined for all bits clear"
-    | B.complement B.zeroBits == w -> error "ascFromBits undefined for all bits set"
-    | otherwise                    -> go w
-  where
-    go w =
-        let msb = B.testBit w (B.finiteBitSize w - 1)
-            w'  = w `B.shiftL` 1   -- ie towards the MSB
-        in
-        if 0 == B.popCount w' then Half else (if msb then HalfOfOnePlus else HalfOf) (go w')
+ascFromBits :: (Enum w, B.FiniteBits w) => w -> Asc
+ascFromBits w = ascFromDouble $ toEnum (fromEnum w) / (2 ^ B.finiteBitSize w)
 
 -- | Interpret 'Asc' as a 'Double'
 ascVal :: Asc -> Double
-ascVal = \case
-    Half              -> 0.5
-    HalfOf        asc -> ascVal asc / 2
-    HalfOfOnePlus asc -> (1 + ascVal asc) / 2
+ascVal (Asc x) = x
