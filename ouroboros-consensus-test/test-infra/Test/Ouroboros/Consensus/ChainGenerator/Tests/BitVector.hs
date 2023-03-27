@@ -1,21 +1,20 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
-module Test.Ouroboros.Consensus.ChainGenerator.Tests.BitVector (
-  tests,
-  ) where
+module Test.Ouroboros.Consensus.ChainGenerator.Tests.BitVector (tests) where
 
 import           Data.Monoid (Endo (Endo, appEndo))
 import qualified Data.Vector.Unboxed as V
-import           GHC.Generics(Generic)
+import           GHC.Generics (Generic)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.BitVector as BV
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Counting as C
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Slot as S
-import           Test.Ouroboros.Consensus.ChainGenerator.Slot (E (EmptySlotE, SlotE), POL, PreImage, S)
+import           Test.Ouroboros.Consensus.ChainGenerator.Slot
+                     (E (EmptySlotE, SlotE), POL, PreImage, S)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Some as Some
 import qualified Test.QuickCheck as QC
 import qualified Test.Tasty as TT

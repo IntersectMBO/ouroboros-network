@@ -1,16 +1,16 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE PatternSynonyms     #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.Ouroboros.Consensus.ChainGenerator.RaceIterator (
-  RaceLbl,
-  Race (Race, UnsafeRace),
-  init,
-  initConservative,
-  next,
-  nextConservative,
+    Race (Race, UnsafeRace)
+  , RaceLbl
+  , init
+  , initConservative
+  , next
+  , nextConservative
   ) where
 
 import           Control.Monad (when)
@@ -18,9 +18,10 @@ import           Data.Proxy (Proxy (Proxy))
 import           Prelude hiding (init)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.BitVector as BV
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Counting as C
-import           Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (Delta), Kcp (Kcp), Scg (Scg))
-import           Test.Ouroboros.Consensus.ChainGenerator.Slot (E (SlotE), S)
+import           Test.Ouroboros.Consensus.ChainGenerator.Params (Delta (Delta),
+                     Kcp (Kcp), Scg (Scg))
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Slot as S
+import           Test.Ouroboros.Consensus.ChainGenerator.Slot (E (SlotE), S)
 
 -----
 

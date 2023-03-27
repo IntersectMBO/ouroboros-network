@@ -1,74 +1,73 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE Rank2Types                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 
 -- | Very strong types for working with indices, counts, etc within sequences.
 module Test.Ouroboros.Consensus.ChainGenerator.Counting (
-  -- * general counts
-  Count (Count),
-  (-),
-  (+),
-  getCount,
-  forgetBase,
-  forgetElem,
-  -- * indices and sizes
-  Preds,
-  Index,
-  Size,
-  Total,
-  forRange_,
-  lastIndex,
-  range, 
-  uniformIndex,
-  -- * windows
-  Lbl (Lbl),
-  SomeWindow (SomeWindow),
-  Win,
-  Contains (Contains, UnsafeContains),
-  forgetWindow,
-  frWin,
-  frWinVar,
-  joinWin,
-  toWin,
-  windowLast,
-  windowSize,
-  windowStart,
-  withSuffixWindow,
-  withTopWindow,
-  withWindow,
-  withWindowBetween,
-  -- * vectors
-  Vector (Vector),
-  MVector (MVector),
-  createV,
-  getMVector,
-  getVector,
-  lengthMV,
-  lengthV,
-  modifyMV,
-  readMV,
-  readV,
-  replicateMV,
-  sliceMV,
-  sliceV,
-  unsafeThawV,
-  writeMV,
-  -- * variables
-  Other,
-  Var,
-  joinVar,
-  toIndex,
-  toSize,
-  toVar,
+    -- * general counts
+    Count (Count)
+  , forgetBase
+  , forgetElem
+  , getCount
+  , (+)
+  , (-)
+    -- * indices and sizes
+  , Index
+  , Preds
+  , Size
+  , Total
+  , forRange_
+  , lastIndex
+  , range
+  , uniformIndex
+    -- * windows
+  , Contains (Contains, UnsafeContains)
+  , Lbl (Lbl)
+  , SomeWindow (SomeWindow)
+  , Win
+  , forgetWindow
+  , frWin
+  , frWinVar
+  , joinWin
+  , toWin
+  , windowLast
+  , windowSize
+  , windowStart
+  , withSuffixWindow
+  , withTopWindow
+  , withWindow
+  , withWindowBetween
+    -- * vectors
+  , MVector (MVector)
+  , Vector (Vector)
+  , createV
+  , getMVector
+  , getVector
+  , lengthMV
+  , lengthV
+  , modifyMV
+  , readMV
+  , readV
+  , replicateMV
+  , sliceMV
+  , sliceV
+  , unsafeThawV
+  , writeMV
+    -- * variables
+  , Other
+  , Var
+  , joinVar
+  , toIndex
+  , toSize
+  , toVar
   ) where
 
 import           Control.Monad.ST (ST)

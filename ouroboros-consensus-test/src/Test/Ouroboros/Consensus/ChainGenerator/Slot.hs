@@ -1,28 +1,27 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 
 module Test.Ouroboros.Consensus.ChainGenerator.Slot (
-  -- * Counting
-  E (ActiveSlotE, EmptySlotE, SlotE),
-  complementActive,
-  complementEmpty,
-  -- * Slot
-  S,
-  genAsc,
-  Test.Ouroboros.Consensus.ChainGenerator.Slot.showS,
-  -- * Reuse
-  POL (mkActive, test),
-  Pol (Inverted, NotInverted),
-  PreImage,
-  inverted,
-  notInverted,
+    -- * Counting
+    E (ActiveSlotE, EmptySlotE, SlotE)
+  , complementActive
+  , complementEmpty
+    -- * Slot
+  , S
+  , Test.Ouroboros.Consensus.ChainGenerator.Slot.showS
+  , genAsc
+    -- * Reuse
+  , POL (mkActive, test)
+  , Pol (Inverted, NotInverted)
+  , PreImage
+  , inverted
+  , notInverted
   ) where
 
 import           Data.Coerce (coerce)

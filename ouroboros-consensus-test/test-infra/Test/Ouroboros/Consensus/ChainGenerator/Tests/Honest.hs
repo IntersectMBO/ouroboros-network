@@ -1,15 +1,15 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Test.Ouroboros.Consensus.ChainGenerator.Tests.Honest (
-  -- * Re-use
-  TestHonest (TestHonest, testAsc, testRecipe, testRecipe'),
-  genKSD,
-  sized1,
-  unlines',
-  unsafeMapSuchThatJust,
-  -- * Tests
-  tests,
+    -- * Re-use
+    TestHonest (TestHonest, testAsc, testRecipe, testRecipe')
+  , genKSD
+  , sized1
+  , unlines'
+  , unsafeMapSuchThatJust
+    -- * Tests
+  , tests
   ) where
 
 import qualified Control.Exception as IO (evaluate)
@@ -22,8 +22,10 @@ import           Data.Word (Word8)
 import qualified Numeric.LinearAlgebra as Mat
 import qualified System.Random as R
 import qualified System.Timeout as IO (timeout)
-import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc, Delta (Delta), Kcp (Kcp), Len (Len), Scg (Scg), ascFromBits, ascVal)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Honest as H
+import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc,
+                     Delta (Delta), Kcp (Kcp), Len (Len), Scg (Scg),
+                     ascFromBits, ascVal)
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Random (QCGen)
 import qualified Test.Tasty as TT
@@ -127,8 +129,8 @@ prop_honestChain testHonest testSeed = runIdentity $ do
       } = testHonest
 
 unlines' :: [String] -> String
-unlines' [] = ""
-unlines' [x] = x
+unlines' []     = ""
+unlines' [x]    = x
 unlines' (x:xs) = x <> "\n" <> unlines' xs
 
 -----

@@ -1,8 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 
-module Test.Ouroboros.Consensus.ChainGenerator.Tests.Counting (
-  tests,
-  ) where
+module Test.Ouroboros.Consensus.ChainGenerator.Tests.Counting (tests) where
 
 import           Data.Proxy (Proxy (Proxy))
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Counting as C
@@ -31,4 +29,4 @@ prop_withWindow (QC.NonNegative n) i m =
               , if m < 0
                 then QC.counterexample "neg m" $ m' QC.=== 0
                 else QC.counterexample "nonneg m" $ min (n - 1) i' + m' <= n
-              ] 
+              ]

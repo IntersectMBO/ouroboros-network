@@ -1,33 +1,32 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE MultiWayIf                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
 
 module Test.Ouroboros.Consensus.ChainGenerator.BitVector (
-  -- * Finding
-  MaybeFound (JustFound, NothingFound),
-  findIthEmptyInV,
-  findIthEmptyInMV,
-  -- * Counting
-  countActivesInV,
-  countActivesInMV,
-  -- * Slots
-  setMV,
-  testMV,
-  testV,
-  -- * Generating
-  SomeDensityWindow (SomeDensityWindow),
-  fillInWindow,
+    -- * Finding
+    MaybeFound (JustFound, NothingFound)
+  , findIthEmptyInMV
+  , findIthEmptyInV
+    -- * Counting
+  , countActivesInMV
+  , countActivesInV
+    -- * Slots
+  , setMV
+  , testMV
+  , testV
+    -- * Generating
+  , SomeDensityWindow (SomeDensityWindow)
+  , fillInWindow
   ) where
 
 import           Control.Monad.ST (ST, runST)
@@ -35,7 +34,8 @@ import qualified Data.Vector.Unboxed.Mutable as MV
 import qualified System.Random.Stateful as R
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Counting as C
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Slot as S
-import           Test.Ouroboros.Consensus.ChainGenerator.Slot (E (ActiveSlotE, EmptySlotE, SlotE), POL, PreImage, S)
+import           Test.Ouroboros.Consensus.ChainGenerator.Slot
+                     (E (ActiveSlotE, EmptySlotE, SlotE), POL, PreImage, S)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Some as Some
 
 -----

@@ -1,6 +1,4 @@
-module Test.Ouroboros.Consensus.ChainGenerator.Tests (
-  tests,
-  ) where
+module Test.Ouroboros.Consensus.ChainGenerator.Tests (tests) where
 
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Tests.Adversarial as A
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Tests.BitVector as BV

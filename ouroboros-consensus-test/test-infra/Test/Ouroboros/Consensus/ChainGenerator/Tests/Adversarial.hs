@@ -1,18 +1,16 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE TypeApplications          #-}
 
-module Test.Ouroboros.Consensus.ChainGenerator.Tests.Adversarial (
-  tests,
-  ) where
+module Test.Ouroboros.Consensus.ChainGenerator.Tests.Adversarial (tests) where
 
 import           Control.Applicative ((<|>))
 import qualified Control.Monad.Except as Exn
 import           Data.Functor ((<&>))
 import           Data.Functor.Identity (runIdentity)
-import           Data.IORef (newIORef, modifyIORef', readIORef, writeIORef)
+import           Data.IORef (modifyIORef', newIORef, readIORef, writeIORef)
 import           Data.Proxy (Proxy (Proxy))
 import           Data.Word (Word8)
 import qualified System.Random as R
@@ -21,13 +19,16 @@ import qualified System.Timeout as IO (timeout)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Adversarial as A
 import qualified Test.Ouroboros.Consensus.ChainGenerator.BitVector as BV
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Counting as C
-import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc, Delta (Delta), Kcp (Kcp), Len (Len), Scg (Scg), ascFromBits)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Honest as H
+import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc,
+                     Delta (Delta), Kcp (Kcp), Len (Len), Scg (Scg),
+                     ascFromBits)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.RaceIterator as RI
+import qualified Test.Ouroboros.Consensus.ChainGenerator.Slot as S
+import           Test.Ouroboros.Consensus.ChainGenerator.Slot
+                     (E (ActiveSlotE, SlotE))
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Some as Some
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Tests.Honest as H
-import qualified Test.Ouroboros.Consensus.ChainGenerator.Slot as S
-import           Test.Ouroboros.Consensus.ChainGenerator.Slot (E (ActiveSlotE, SlotE))
 import qualified Test.QuickCheck as QC
 import           Test.QuickCheck.Random (QCGen)
 import qualified Test.Tasty as TT
@@ -287,8 +288,8 @@ mutateAdversarial recipe mut =
     A.AdversarialRecipe { A.arHonest, A.arParams = (Kcp k,  Scg s,  Delta d ), A.arPrefix } = recipe
 
     (k', s', d') = case mut of
-        AdversarialMutateDelta  -> (k,     s,     d + 1)
-        AdversarialMutateKcp    -> (k - 1, s,     d    )
+        AdversarialMutateDelta -> (k,     s,     d + 1)
+        AdversarialMutateKcp   -> (k - 1, s,     d    )
 --        AdversarialMutateScgNeg -> (k,     s - 1, d    )
 --        AdversarialMutateScgPos -> (k,     s + 1, d    )
 

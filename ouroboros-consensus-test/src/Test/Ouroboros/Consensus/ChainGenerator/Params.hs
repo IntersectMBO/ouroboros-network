@@ -1,14 +1,14 @@
 {-# LANGUAGE PatternSynonyms #-}
 
 module Test.Ouroboros.Consensus.ChainGenerator.Params (
-  Asc (Asc, UnsafeAsc),
-  Delta (Delta),
-  Len (Len),
-  Kcp (Kcp),
-  Scg (Scg),
-  ascFromBits,
-  ascFromDouble,
-  ascVal,
+    Asc (Asc, UnsafeAsc)
+  , Delta (Delta)
+  , Kcp (Kcp)
+  , Len (Len)
+  , Scg (Scg)
+  , ascFromBits
+  , ascFromDouble
+  , ascVal
   ) where
 
 import qualified Data.Bits as B

@@ -1,8 +1,8 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
@@ -17,31 +17,31 @@
 -- module's weight is preferable to the overhead of using that encoding in our
 -- existential data types' declarations.
 module Test.Ouroboros.Consensus.ChainGenerator.Some (
-  -- * 'Show'
-  runShowsPrec,
-  showArg,
-  showCtor,
-  showCtorProxy,
-  -- * 'Read'
-  readArg,
-  readCtor,
-  Read.readPrec,
-  runReadPrec,
-  -- * 'Eq'
-  eqArg,
-  eqCtor,
-  eqCtorProxy,
-  Forgotten,
-  forgotten,
-  runEq,
+    -- * 'Show'
+    runShowsPrec
+  , showArg
+  , showCtor
+  , showCtorProxy
+    -- * 'Read'
+  , Read.readPrec
+  , readArg
+  , readCtor
+  , runReadPrec
+    -- * 'Eq'
+  , Forgotten
+  , eqArg
+  , eqCtor
+  , eqCtorProxy
+  , forgotten
+  , runEq
   ) where
 
 import           Data.Kind (Constraint, Type)
 import           Data.Proxy (Proxy (Proxy))
 import           Data.Void (Void)
 import qualified GHC.Read as Read
-import qualified GHC.TypeLits as TE
 import           GHC.TypeLits (Symbol)
+import qualified GHC.TypeLits as TE
 import qualified Text.ParserCombinators.ReadPrec as Read
 import qualified Text.Read.Lex as Read
 

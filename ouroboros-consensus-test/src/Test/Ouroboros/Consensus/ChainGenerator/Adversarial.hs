@@ -1,27 +1,27 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE MultiWayIf                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
 
 module Test.Ouroboros.Consensus.ChainGenerator.Adversarial (
-  -- * Generating
-  AdversarialRecipe (AdversarialRecipe, arHonest, arParams, arPrefix),
-  CheckedAdversarialRecipe (UnsafeCheckedAdversarialRecipe, carHonest, carParams, carWin),
-  NoSuchAdversarialChainSchedule (NoSuchAdversarialBlock, NoSuchCompetitor, NoSuchIntersection),
-  SomeCheckedAdversarialRecipe (SomeCheckedAdversarialRecipe),
-  checkAdversarialRecipe,
-  uniformAdversarialChain,
-  -- * Testing
-  AdversarialViolation (BadAnchor, BadCount, BadRace),
-  AnchorViolation (HonestActiveMustAnchorAdversarial),
-  ChainSchedule (ChainSchedule),
-  RaceViolation (AdversaryWonRace, rvAdv, rvHon),
-  checkAdversarialChain,
+    -- * Generating
+    AdversarialRecipe (AdversarialRecipe, arHonest, arParams, arPrefix)
+  , CheckedAdversarialRecipe (UnsafeCheckedAdversarialRecipe, carHonest, carParams, carWin)
+  , NoSuchAdversarialChainSchedule (NoSuchAdversarialBlock, NoSuchCompetitor, NoSuchIntersection)
+  , SomeCheckedAdversarialRecipe (SomeCheckedAdversarialRecipe)
+  , checkAdversarialRecipe
+  , uniformAdversarialChain
+    -- * Testing
+  , AdversarialViolation (BadAnchor, BadCount, BadRace)
+  , AnchorViolation (HonestActiveMustAnchorAdversarial)
+  , ChainSchedule (ChainSchedule)
+  , RaceViolation (AdversaryWonRace, rvAdv, rvHon)
+  , checkAdversarialChain
   ) where
 
 import           Control.Applicative ((<|>))
@@ -31,11 +31,14 @@ import           Data.Proxy (Proxy (Proxy))
 import qualified System.Random.Stateful as R
 import qualified Test.Ouroboros.Consensus.ChainGenerator.BitVector as BV
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Counting as C
-import           Test.Ouroboros.Consensus.ChainGenerator.Honest (ChainSchedule (ChainSchedule))
-import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc, Delta (Delta), Kcp (Kcp), Scg (Scg))
+import           Test.Ouroboros.Consensus.ChainGenerator.Honest
+                     (ChainSchedule (ChainSchedule))
+import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc,
+                     Delta (Delta), Kcp (Kcp), Scg (Scg))
 import qualified Test.Ouroboros.Consensus.ChainGenerator.RaceIterator as RI
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Slot as S
-import           Test.Ouroboros.Consensus.ChainGenerator.Slot (E (ActiveSlotE, EmptySlotE, SlotE))
+import           Test.Ouroboros.Consensus.ChainGenerator.Slot
+                     (E (ActiveSlotE, EmptySlotE, SlotE))
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Some as Some
 
 -----

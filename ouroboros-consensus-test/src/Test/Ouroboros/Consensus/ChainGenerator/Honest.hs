@@ -1,33 +1,33 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE LambdaCase                #-}
+{-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE ViewPatterns              #-}
 
 module Test.Ouroboros.Consensus.ChainGenerator.Honest (
     -- * Generating
-    ChainSchedule (ChainSchedule),
-    CheckedHonestRecipe (UnsafeCheckedHonestRecipe, chrEhcgDensity, chrWin),
-    HonestRecipe (HonestRecipe),
-    HonestLbl,
-    NoSuchHonestChainSchedule (BadDeltaScg, BadKcp, BadLen),
-    SomeCheckedHonestRecipe (SomeCheckedHonestRecipe),
-    SomeHonestChainSchedule (SomeHonestChainSchedule),
-    checkHonestRecipe,
-    countChainSchedule,
-    uniformTheHonestChain,
+    ChainSchedule (ChainSchedule)
+  , CheckedHonestRecipe (UnsafeCheckedHonestRecipe, chrEhcgDensity, chrWin)
+  , HonestLbl
+  , HonestRecipe (HonestRecipe)
+  , NoSuchHonestChainSchedule (BadDeltaScg, BadKcp, BadLen)
+  , SomeCheckedHonestRecipe (SomeCheckedHonestRecipe)
+  , SomeHonestChainSchedule (SomeHonestChainSchedule)
+  , checkHonestRecipe
+  , countChainSchedule
+  , uniformTheHonestChain
     -- * Testing
-    EhcgLbl,
-    EhcgViolation (EhcgViolation, ehcgvPopCount, ehcgvWindow),
-    HonestChainViolation (BadCount, BadEhcgWindow, BadLength),
-    checkHonestChain,
-    prettyChainSchedule,
-    prettyWindow,
-    transitionMatrix,
+  , EhcgLbl
+  , EhcgViolation (EhcgViolation, ehcgvPopCount, ehcgvWindow)
+  , HonestChainViolation (BadCount, BadEhcgWindow, BadLength)
+  , checkHonestChain
+  , prettyChainSchedule
+  , prettyWindow
+  , transitionMatrix
   ) where
 
 import           Control.Arrow ((***))
@@ -42,9 +42,11 @@ import           Prelude hiding (words)
 import qualified System.Random.Stateful as R
 import qualified Test.Ouroboros.Consensus.ChainGenerator.BitVector as BV
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Counting as C
-import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc, Delta (Delta), Kcp (Kcp), Len (Len), Scg (Scg), ascVal)
+import           Test.Ouroboros.Consensus.ChainGenerator.Params (Asc,
+                     Delta (Delta), Kcp (Kcp), Len (Len), Scg (Scg), ascVal)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Slot as S
-import           Test.Ouroboros.Consensus.ChainGenerator.Slot (E (ActiveSlotE, SlotE), S)
+import           Test.Ouroboros.Consensus.ChainGenerator.Slot
+                     (E (ActiveSlotE, SlotE), S)
 import qualified Test.Ouroboros.Consensus.ChainGenerator.Some as Some
 
 -----
