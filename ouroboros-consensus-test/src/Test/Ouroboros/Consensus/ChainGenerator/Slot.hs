@@ -42,9 +42,11 @@ import qualified Test.QuickCheck as QC
 newtype S = S Bool
   deriving (QC.Arbitrary, Eq, Ord, Read, Show)
 
--- these instances adapted from https://github.com/minoki/unboxing-vector/blob/3a152014b9660ef1e2885d6b9c66423064223f63/test/Foo.hs#L36-L63
+-- these instances adapted from
+-- https://github.com/minoki/unboxing-vector/blob/3a152014b9660ef1e2885d6b9c66423064223f63/test/Foo.hs#L36-L63
 --
--- vector 0.13 lets us derive the two big instances; see the top of https://hackage.haskell.org/package/vector-0.13.0.0/docs/Data-Vector-Unboxed.html
+-- vector 0.13 lets us derive the two big instances;
+-- see the top of https://hackage.haskell.org/package/vector-0.13.0.0/docs/Data-Vector-Unboxed.html
 --
 -- TODO do so once we eventually bump our dependency on vector to include that feature
 newtype instance MV.MVector s S = MV_S (MV.MVector s Bool)
@@ -115,11 +117,19 @@ class POL (pol :: Pol) where
     test :: proxy pol -> S -> Bool
 
 -- | Every slot is either active or empty
-complementActive :: proxy pol -> C.Size base SlotE -> C.Count base (PreImage pol ActiveSlotE) which -> C.Count base (PreImage pol EmptySlotE) which
+complementActive ::
+     proxy pol
+  -> C.Size base SlotE
+  -> C.Count base (PreImage pol ActiveSlotE) which
+  -> C.Count base (PreImage pol EmptySlotE ) which
 complementActive _pol (C.Count n) (C.Count i) = C.Count (n - i)
 
 -- | Every slot is either active or empty
-complementEmpty :: proxy pol -> C.Size base SlotE -> C.Count base (PreImage pol EmptySlotE) which -> C.Count base (PreImage pol ActiveSlotE) which
+complementEmpty ::
+     proxy pol
+  -> C.Size base SlotE
+  -> C.Count base (PreImage pol EmptySlotE ) which
+  -> C.Count base (PreImage pol ActiveSlotE) which
 complementEmpty _pol (C.Count n) (C.Count i) = C.Count (n - i)
 
 instance POL Inverted where

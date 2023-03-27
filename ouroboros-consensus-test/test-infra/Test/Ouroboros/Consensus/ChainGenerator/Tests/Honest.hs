@@ -1,6 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE ViewPatterns #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -8,7 +7,9 @@ module Test.Ouroboros.Consensus.ChainGenerator.Tests.Honest (
   -- * Re-use
   TestHonest (TestHonest, testAsc, testRecipe, testRecipe'),
   genKSD,
+  sized1,
   unlines',
+  unsafeMapSuchThatJust,
   -- * Tests
   tests,
   ) where
@@ -43,6 +44,18 @@ tests = [
 
 -----
 
+sized1 :: (Int -> QC.Gen a) -> QC.Gen a
+sized1 f = QC.sized (f . succ)
+
+-- | A generator that checks its own satisfaction
+--
+-- WARNING: 'QC.suchThat' et al often causes a /very/ confusing
+-- non-termination when its argument is impossible/extremely unlikely
+unsafeMapSuchThatJust :: QC.Gen (Maybe a) -> QC.Gen a
+unsafeMapSuchThatJust m = QC.suchThatMap m id
+
+-----
+
 data TestHonest = TestHonest {
     testAsc     :: !Asc
   ,
@@ -53,14 +66,14 @@ data TestHonest = TestHonest {
   deriving (Read, Show)
 
 genKSD :: QC.Gen (Kcp, Scg, Delta)
-genKSD = QC.sized $ \(succ -> sz) -> do
+genKSD = sized1 $ \sz -> do
     d <- QC.choose (0, div sz 4)
     k <- QC.choose (0, 2 * sz)
     s <- (\x -> x + d + k) <$> QC.choose (1, 3 * sz)   -- ensures @k + 1 / s - d <= 1@
     pure (Kcp k, Scg s, Delta d)
 
 instance QC.Arbitrary TestHonest where
-    arbitrary = QC.sized $ \(succ -> sz) -> do
+    arbitrary = sized1 $ \sz -> do
         testAsc <- ascFromBits <$> QC.choose (1 :: Word8, maxBound - 1)
 
         testRecipe <- do
@@ -153,7 +166,7 @@ mutateHonest recipe mut =
         HonestMutateScg   -> (k,     s - 1, d    )
 
 instance QC.Arbitrary TestHonestMutation where
-    arbitrary = QC.sized $ \(succ -> sz) -> flip QC.suchThatMap id $ do   -- TODO QC.suchThat often causes a /very/ confusing non-termination
+    arbitrary = sized1 $ \sz -> unsafeMapSuchThatJust $ do
         (kcp, Scg s, delta) <- genKSD
         l <- (+ s) <$> QC.choose (0, 5 * sz)
 
@@ -169,7 +182,8 @@ instance QC.Arbitrary TestHonestMutation where
             Left{}  -> Nothing
             Right{} -> Just $ TestHonestMutation testRecipe testRecipe' mut
 
--- | There exists a seed such that each 'TestHonestMutation' causes 'H.checkHonestChain' to reject the result of 'H.uniformTheHonestChain'
+-- | There exists a seed such that each 'TestHonestMutation' causes
+-- 'H.checkHonestChain' to reject the result of 'H.uniformTheHonestChain'
 prop_honestChainMutation :: TestHonestMutation -> QCGen -> QC.Property
 prop_honestChainMutation testHonestMut testSeedsSeed0 = QC.ioProperty $ do
     H.SomeCheckedHonestRecipe Proxy Proxy recipe' <- pure someRecipe'

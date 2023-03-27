@@ -125,7 +125,11 @@ prop_findIthZeroInV testSetup = case testSetup of
         BV.JustFound i  ->
               id
             $ QC.counterexample (showPol testPol)
-            $ QC.counterexample ("v =" <> let C.Vector v = testV in V.foldMap (\x -> Endo $ showChar ' ' . S.showS x) v `appEndo` "")
+            $ QC.counterexample
+                (let C.Vector v = testV
+                 in
+                 "v =" <> V.foldMap (Endo . S.showS) v `appEndo` ""
+                )
             $ QC.counterexample ("i = " <> show i)
             $
                (   id

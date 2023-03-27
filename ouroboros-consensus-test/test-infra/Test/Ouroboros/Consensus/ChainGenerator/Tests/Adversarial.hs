@@ -3,7 +3,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ViewPatterns #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -101,7 +100,7 @@ genArPrefix schedH =
     pc = BV.countActivesInV S.notInverted v
 
 instance QC.Arbitrary SomeTestAdversarial where
-    arbitrary = flip QC.suchThatMap id $ do   -- TODO QC.suchThat often causes a /very/ confusing non-termination
+    arbitrary = H.unsafeMapSuchThatJust $ do
         H.TestHonest {
             H.testAsc     = testAscH
           ,
@@ -171,9 +170,6 @@ prop_adversarialChain someTestAdversarial testSeedA = runIdentity $ do
 
     let H.ChainSchedule winA _vA = schedA
 
-    let coreAnnotations :: [String]
-        coreAnnotations = reverse (H.prettyChainSchedule schedH "H") <> H.prettyChainSchedule schedA "A"
-
     C.SomeWindow Proxy stabWin <- do
         let A.AdversarialRecipe { A.arParams = (_kcp, scg, _delta) } = testRecipeA
         pure $ calculateStability scg schedA
@@ -183,14 +179,13 @@ prop_adversarialChain someTestAdversarial testSeedA = runIdentity $ do
         Left e   -> case e of
             A.BadAnchor{} -> QC.counterexample (show e) False
             A.BadCount{}  -> QC.counterexample (show e) False
-            A.BadRace v   -> case v of
+            A.BadRace rv  -> case rv of
                 A.AdversaryWonRace {
                     A.rvAdv = RI.Race (C.SomeWindow Proxy rAdv)
                   ,
                     A.rvHon = RI.Race (C.SomeWindow Proxy rHon)
-                  } ->
-                      id
-                    $ QC.counterexample (H.unlines' $ [H.prettyWindow rHon "rHon"] <> coreAnnotations <> [H.prettyWindow (C.joinWin winA rAdv) "rAdv'"] <> [H.prettyWindow (C.joinWin winA stabWin) "stabWin'"])
+                  } -> id
+                    $ QC.counterexample (advCounterexample schedH schedA winA stabWin rv)
                     $ QC.counterexample ("arPrefix = " <> show (A.arPrefix testRecipeA))
                     $ QC.counterexample ("rvAdv    = " <> show rAdv)
                     $ QC.counterexample ("rvAdv'   = " <> show (C.joinWin winA rAdv))
@@ -214,6 +209,28 @@ calculateStability (Scg s) schedA =
             BV.NothingFound -> error $ "impossible! " <> H.unlines' (H.prettyChainSchedule schedA "A")
     theBlockItself = 1
 
+-- | A nice rendering for failures of 'prop_adversarialChain'
+advCounterexample ::
+     A.ChainSchedule base hon
+  -> A.ChainSchedule base adv
+  -> C.Contains 'SlotE base adv
+  -> C.Contains 'SlotE adv stab
+  -> A.RaceViolation hon adv
+  -> String
+advCounterexample schedH schedA winA stabWin rv =
+    case rv of
+        A.AdversaryWonRace {
+            A.rvAdv = RI.Race (C.SomeWindow Proxy rAdv)
+          ,
+            A.rvHon = RI.Race (C.SomeWindow Proxy rHon)
+          } ->
+            H.unlines' $ []
+             <> [H.prettyWindow rHon "rHon"]
+             <> reverse (H.prettyChainSchedule schedH "H")
+             <> H.prettyChainSchedule schedA "A"
+             <> [H.prettyWindow (C.joinWin winA rAdv) "rAdv'"]
+             <> [H.prettyWindow (C.joinWin winA stabWin) "stabWin'"]
+
 -----
 
 -- | A mutation that causes some honest Race Windows to end one slot sooner
@@ -231,7 +248,7 @@ data AdversarialMutation =
     -- | Increasing 'Scg' by one may case the adversary to accelerate prematurely
     AdversarialMutateScgPos
 -}
-  deriving (Eq, Read, Show)
+  deriving (Bounded, Eq, Enum, Read, Show)
 
 data TestAdversarialMutation base hon =
     TestAdversarialMutation
@@ -278,77 +295,92 @@ mutateAdversarial recipe mut =
 --        AdversarialMutateScgPos -> (k,     s + 1, d    )
 
 instance QC.Arbitrary SomeTestAdversarialMutation where
-    arbitrary = QC.sized $ \(succ -> sz) -> QC.elements [AdversarialMutateDelta, AdversarialMutateKcp {-, AdversarialMutateScgNeg, AdversarialMutateScgPos -}] >>= \mut -> flip QC.suchThatMap id $ do   -- TODO QC.suchThat often causes a /very/ confusing non-termination
-        (kcp, scg, delta, len) <- do
-            (kcp, Scg s, delta) <- H.genKSD
+    arbitrary = do
+        mut <- QC.elements [minBound .. maxBound :: AdversarialMutation]
+        H.unsafeMapSuchThatJust $ do
+            (kcp, scg, delta, len) <- H.sized1 $ \sz -> do
+                (kcp, Scg s, delta) <- H.genKSD
 
-            l <- (+ s) <$> QC.choose (0, 5 * sz)
+                l <- (+ s) <$> QC.choose (0, 5 * sz)
 
-            pure (kcp, Scg s, delta, Len l)
+                pure (kcp, Scg s, delta, Len l)
 
-        let recipeH = H.HonestRecipe kcp scg delta len
+            let recipeH = H.HonestRecipe kcp scg delta len
 
-        someTestRecipeH' <- case Exn.runExcept $ H.checkHonestRecipe recipeH of
-            Left e  -> error $ "impossible! " <> show (recipeH, e)
-            Right x -> pure x
+            someTestRecipeH' <- case Exn.runExcept $ H.checkHonestRecipe recipeH of
+                Left e  -> error $ "impossible! " <> show (recipeH, e)
+                Right x -> pure x
 
-        H.SomeCheckedHonestRecipe Proxy Proxy recipeH' <- pure someTestRecipeH'
+            H.SomeCheckedHonestRecipe Proxy Proxy recipeH' <- pure someTestRecipeH'
 
-        seedH <- QC.arbitrary @QCGen
+            seedH <- QC.arbitrary @QCGen
 
-        let arHonest = H.uniformTheHonestChain Nothing recipeH' seedH
+            let arHonest = H.uniformTheHonestChain Nothing recipeH' seedH
 
-        arPrefix <- genArPrefix arHonest
+            arPrefix <- genArPrefix arHonest
 
-        let recipeA = A.AdversarialRecipe {
-                A.arPrefix
-              ,
-                A.arParams = (kcp, scg, delta)
-              ,
-                A.arHonest
-              }
+            let recipeA = A.AdversarialRecipe {
+                    A.arPrefix
+                  ,
+                    A.arParams = (kcp, scg, delta)
+                  ,
+                    A.arHonest
+                  }
 
-        pure $ case Exn.runExcept $ A.checkAdversarialRecipe recipeA of
-            Left e -> case e of
-                A.NoSuchAdversarialBlock -> Nothing
-                A.NoSuchCompetitor       -> error $ "impossible! " <> show e
-                A.NoSuchIntersection     -> error $ "impossible! " <> show e
+            pure $ case Exn.runExcept $ A.checkAdversarialRecipe recipeA of
+                Left e -> case e of
+                    A.NoSuchAdversarialBlock -> Nothing
+                    A.NoSuchCompetitor       -> error $ "impossible! " <> show e
+                    A.NoSuchIntersection     -> error $ "impossible! " <> show e
 
-            Right recipeA' -> case Exn.runExcept $ A.checkAdversarialRecipe $ mutateAdversarial recipeA mut of
-                Left{} -> Nothing
+                Right recipeA' -> case Exn.runExcept $ A.checkAdversarialRecipe $ mutateAdversarial recipeA mut of
+                    Left{} -> Nothing
 
-                Right (A.SomeCheckedAdversarialRecipe Proxy mutRecipeA)
-                    -- no mutation matters if the adversary doesn't even have k+1 slots of any kind, let alone active slots
-                  | let A.UnsafeCheckedAdversarialRecipe { A.carParams = (Kcp k', _scg', _delta'), A.carWin } = mutRecipeA
-                  , C.getCount (C.windowSize carWin) < k' + 1
-                  -> Nothing
+                    Right (A.SomeCheckedAdversarialRecipe Proxy mutRecipeA)
+                        -- no mutation matters if the adversary doesn't even
+                        -- have k+1 slots of any kind, let alone active slots
+                      | let A.UnsafeCheckedAdversarialRecipe {
+                                A.carParams = (Kcp k', _scg', _delta')
+                              ,
+                                A.carWin
+                              } = mutRecipeA
+                      , C.getCount (C.windowSize carWin) < k' + 1
+                      -> Nothing
 
-                  -- ASSUMPTION: the adversary has k blocks in the first race.
-                  --
-                  -- If there's no slot after the first race, then the increment of delta cannot make a difference.
-                  | AdversarialMutateDelta <- mut
-                  , let H.ChainSchedule _winH vH = arHonest
-                    -- slot of the k+1 honest active in adv
-                  , let Kcp k   = kcp
-                  , let Scg s   = scg
-                  , let Delta d = delta
-                  , let Len l   = len
-                  , let slot = if 0 == C.toVar arPrefix then 0 else case BV.findIthEmptyInV S.inverted vH (C.toIndex arPrefix C.- 1) of BV.NothingFound{} -> error "impossible!"; BV.JustFound x -> C.getCount x
-                  , endOfFirstRace <- case BV.findIthEmptyInV S.inverted vH (C.toIndex arPrefix C.+ k) of BV.NothingFound{} -> slot + s; BV.JustFound x -> C.getCount x + d
-                  , l <= endOfFirstRace + 1   -- adding one for the mutation
-                  -> Nothing
+                      -- ASSUMPTION: the adversary has k blocks in the first race.
+                      --
+                      -- If there's no slot after the first race, then the
+                      -- increment of delta cannot make a difference.
+                      | AdversarialMutateDelta <- mut
+                      , let H.ChainSchedule _winH vH = arHonest
+                        -- slot of the k+1 honest active in adv
+                      , let Kcp k   = kcp
+                      , let Scg s   = scg
+                      , let Delta d = delta
+                      , let Len l   = len
+                      , let slot =
+                                if 0 == C.toVar arPrefix then 0 else
+                                case BV.findIthEmptyInV S.inverted vH (C.toIndex arPrefix C.- 1) of
+                                    BV.NothingFound{} -> error "impossible!"
+                                    BV.JustFound x    -> C.getCount x
+                      , endOfFirstRace <- case BV.findIthEmptyInV S.inverted vH (C.toIndex arPrefix C.+ k) of
+                            BV.NothingFound{} -> slot + s
+                            BV.JustFound x    -> C.getCount x + d
+                      , l <= endOfFirstRace + 1   -- adding one for the mutation
+                      -> Nothing
 
-                  | otherwise ->
-                    Just
-                  $ SomeTestAdversarialMutation Proxy Proxy
-                  $ TestAdversarialMutation
-                        recipeH
-                        recipeH'
-                        recipeA
-                        recipeA'
-                        mut
+                      | otherwise ->
+                        Just
+                      $ SomeTestAdversarialMutation Proxy Proxy
+                      $ TestAdversarialMutation
+                            recipeH
+                            recipeH'
+                            recipeA
+                            recipeA'
+                            mut
 
--- | There exists a seed such that each 'TestAdversrialMutation' causes 'A.checkAdversrialChain' to reject the result of 'A.uniformAdversarialChain'
+-- | There exists a seed such that each 'TestAdversrialMutation' causes
+-- 'A.checkAdversrialChain' to reject the result of 'A.uniformAdversarialChain'
 --
 -- TODO this did fail after >500,000 tests. Is that amount of flakiness acceptable?
 prop_adversarialChainMutation :: SomeTestAdversarialMutation -> QCGen -> QC.Property
@@ -364,43 +396,16 @@ prop_adversarialChainMutation (SomeTestAdversarialMutation Proxy Proxy testAdver
         (5 * 10^(5::Int))
         (go catch counter recipeA' testSeedAsSeed0) >>= \case
             Just bool -> pure $ QC.property bool
-            Nothing   -> ((,) <$> readIORef catch <*> readIORef counter) <&> \((seedA, schedA'), n) -> id   -- did not find a failure caused by the mutation
-              $ QC.counterexample ("n = " <> show n)
-              $ QC.counterexample
-                    (   let A.AdversarialRecipe { A.arHonest, A.arPrefix } = recipeA
-                            A.UnsafeCheckedAdversarialRecipe { A.carWin }  = recipeA'
-
-                            schedH' = H.prettyChainSchedule arHonest "H"
-
-                            ch = H.countChainSchedule arHonest
-                        in
-                           H.unlines' $ []
-                            <> [show seedA]
-                            <> [show ch <> " - " <> show arPrefix <> " = " <> show (C.toVar ch - arPrefix) <> "   vs " <> show (kcp, mut)]
-                            <> schedH'
-                            <> schedA'
-                            <> (let A.AdversarialRecipe { A.arParams = (kcp', _scg', _delta') } = mutatedRecipe
-                                    H.ChainSchedule winH vH = arHonest
-                                    next iter = ((,) False <$> RI.next vH iter) <|> ((,) True <$> RI.nextConservative scg delta vH iter)
-                                    go' = \case
-                                        Nothing -> []
-                                        Just (cons, iter@(RI.Race (C.SomeWindow Proxy win)))
-                                          | C.windowStart win < C.windowStart carWin
-                                          -> go' (next iter)
-
-                                          | otherwise ->
-                                              ""
-                                            : head (tail schedH')
-                                            : H.prettyWindow win ("raceH" <> if cons then " (conservative)" else "")
-                                            : (take 2 (tail schedA') <> go' (next iter))
-                                in go' (((,) False <$> RI.init kcp' vH) <|> Just (True, RI.initConservative scg delta winH))
-                               )
-                    )
-              $ False
+            Nothing   ->    -- did not find a failure caused by the mutation
+                ((,) <$> readIORef catch <*> readIORef counter) <&> \((seedA, schedA'), n) -> id
+                  $ QC.counterexample ("n = " <> show n)
+                  $ QC.counterexample
+                        (advMutCounterexample testAdversarialMut mutatedRecipe schedA' seedA)
+                  $ False
   where
     TestAdversarialMutation recipeH _recipeH' recipeA someRecipeA' mut = testAdversarialMut
 
-    H.HonestRecipe kcp scg delta _len = recipeH
+    H.HonestRecipe _kcp scg _delta _len = recipeH
 
     mutatedRecipe = mutateAdversarial recipeA mut
 
@@ -413,9 +418,64 @@ prop_adversarialChainMutation (SomeTestAdversarialMutation Proxy Proxy testAdver
             m      = A.checkAdversarialChain mutatedRecipe schedA
         case Exn.runExcept m of
             Right () -> do
-                writeIORef catch $ (,) testSeedA $ H.prettyChainSchedule schedA "A" <> (let A.UnsafeCheckedAdversarialRecipe { A.carWin } = recipeA' in case calculateStability scg schedA of C.SomeWindow Proxy win -> [H.prettyWindow (C.joinWin carWin win) "no accel"] <> [show (H.countChainSchedule schedA)])
+                let A.UnsafeCheckedAdversarialRecipe { A.carWin } = recipeA'
+                    pretty = case calculateStability scg schedA of
+                        C.SomeWindow Proxy win ->
+                            [H.prettyWindow (C.joinWin carWin win) "no accel"]
+                         <> [show (H.countChainSchedule schedA)]
+                writeIORef catch (testSeedA,  H.prettyChainSchedule schedA "A" <> pretty)
                 go catch counter recipeA' testSeedAsSeed'
             Left e   -> case e of
                 A.BadAnchor{} -> error $ "impossible! " <> show e
                 A.BadCount{}  -> error $ "impossible! " <> show e
                 A.BadRace{}   -> pure True
+
+-----
+
+-- | A nice rendering for failures of 'prop_adversarialChainMutation'
+advMutCounterexample ::
+     TestAdversarialMutation base hon
+  -> A.AdversarialRecipe base hon
+  -> [String]
+  -> QCGen
+  -> String
+advMutCounterexample testAdversarialMut mutatedRecipe schedA' seedA =
+    H.unlines' $ []
+     <> [show seedA]
+     <> [show ch <> " - " <> show arPrefix <> " = " <> show (C.toVar ch - arPrefix) <> "   vs " <> show (kcp, mut)]
+     <> schedH'
+     <> schedA'
+     <> go' (((,) False <$> RI.init kcp' vH) <|> Just (True, RI.initConservative scg delta winH))
+  where
+    TestAdversarialMutation recipeH _recipeH' recipeA someRecipeA' mut = testAdversarialMut
+
+    H.HonestRecipe kcp scg delta _len = recipeH
+
+    A.AdversarialRecipe { A.arHonest, A.arPrefix } = recipeA
+
+    H.ChainSchedule winH vH = arHonest
+
+    A.AdversarialRecipe { A.arParams = (kcp', _scg', _delta') } = mutatedRecipe
+
+    schedH' = H.prettyChainSchedule arHonest "H"
+
+    ch = H.countChainSchedule arHonest
+
+    next iter =
+            ((,) False <$> RI.next vH iter)
+        <|>
+            ((,) True <$> RI.nextConservative scg delta vH iter)
+
+    go' = \case
+        Nothing -> []
+        Just (cons, iter@(RI.Race (C.SomeWindow Proxy win)))
+          | A.SomeCheckedAdversarialRecipe Proxy recipeA' <- someRecipeA'
+          , A.UnsafeCheckedAdversarialRecipe { A.carWin } <- recipeA'
+          , C.windowStart win < C.windowStart carWin
+          -> go' (next iter)
+
+          | otherwise ->
+              ""
+            : head (tail schedH')
+            : H.prettyWindow win ("raceH" <> if cons then " (conservative)" else "")
+            : (take 2 (tail schedA') <> go' (next iter))

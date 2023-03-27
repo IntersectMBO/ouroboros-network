@@ -27,6 +27,10 @@ prop_withWindow (QC.NonNegative n) i m =
         C.SomeWindow Proxy (C.Contains (C.Count i') (C.Count m')) ->
             QC.counterexample (show (i', m'))
           $ QC.conjoin [
-                if i < 0 then QC.counterexample "neg i" $ i' QC.=== 0 else QC.counterexample "nonneg i" $ i' QC.=== i
-              , if m < 0 then QC.counterexample "neg m" $ m' QC.=== 0 else QC.counterexample "nonneg m" $ min (n - 1) i' + m' <= n
+                if i < 0
+                then QC.counterexample "neg i" $ i' QC.=== 0
+                else QC.counterexample "nonneg i" $ i' QC.=== i
+              , if m < 0
+                then QC.counterexample "neg m" $ m' QC.=== 0
+                else QC.counterexample "nonneg m" $ min (n - 1) i' + m' <= n
               ] 

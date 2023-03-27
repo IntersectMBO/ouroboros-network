@@ -222,7 +222,9 @@ instance Read (SomeWindow lbl outer elem) where
           <*> Some.readArg
           <*> Some.readArg
 
--- | Create a fresh 'Window' within a given 'Size' that starts with the given 'Index' and contains however many of the given smaller 'Size' of elements exist within the larger 'Size'
+-- | Create a fresh 'Window' within a given 'Size' that starts with the given
+-- 'Index' and contains however many of the given smaller 'Size' of elements
+-- exist within the larger 'Size'
 --
 -- NOTE: the requested window size is truncated if necessary to ensure it fits in the containing sequence
 --

@@ -133,10 +133,12 @@ checkAdversarialChain recipe adv = do
                 when (BV.testV S.inverted vH i) $ do
                     Exn.throwError $ BadAnchor HonestActiveMustAnchorAdversarial
 
-                C.SomeWindow Proxy precedingSlots <- pure $ C.withWindowBetween (C.windowSize winH) (C.Lbl @"foo") (C.Count 0) i
+                C.SomeWindow Proxy precedingSlots <-
+                    pure $ C.withWindowBetween (C.windowSize winH) (C.Lbl @"foo") (C.Count 0) i
                 let pc = BV.countActivesInV S.notInverted (C.sliceV precedingSlots vH)
 
-                when (C.frWinVar precedingSlots (C.toVar pc) /= arPrefix) $ Exn.throwError $ BadAnchor WrongNumberOfHonestPredecessors
+                when (C.frWinVar precedingSlots (C.toVar pc) /= arPrefix) $ do
+                    Exn.throwError $ BadAnchor WrongNumberOfHonestPredecessors
 
     checkCount = do
         let pc = BV.countActivesInV S.notInverted vA
@@ -148,7 +150,9 @@ checkAdversarialChain recipe adv = do
     youngestStableA :: C.Index adv SlotE
     youngestStableA =
         case BV.findIthEmptyInV S.inverted vA (C.Count 0) of
-            BV.JustFound firstActiveA -> firstActiveA C.+ s   -- if s=0, then the slot of their block is the youngest stable slot
+            BV.JustFound firstActiveA ->
+                -- if s=0, then the slot of their block is the youngest stable slot
+                firstActiveA C.+ s
             BV.NothingFound           ->
                 -- the rest of the function won' force this since there are no
                 -- adverarial active slots
@@ -201,7 +205,9 @@ checkAdversarialChain recipe adv = do
           -- advance the honest Race Window
           | otherwise -> case RI.next vH iterH <|> RI.nextConservative (Scg s) (Delta d) vH iterH of
                 Just iterH' -> go iterH' iterA
-                Nothing     -> pure ()   -- there are no remaining honest active slots   TODO hpc shows this never executes
+                Nothing     -> pure ()   -- there are no remaining honest active slots
+                                         --
+                                         -- TODO hpc shows this never executes
 
 -----
 
@@ -267,11 +273,14 @@ data NoSuchAdversarialChainSchedule =
     --
     --    * @k=0@
     --
-    -- Suppose k=0 and slot x and slot y are two honest active slots with only honest empty slots between them.
+    -- Suppose k=0 and slot x and slot y are two honest active slots with only
+    -- honest empty slots between them.
     --
     -- The Praos Race Assumption prohibits the adversary from leading in the interval (x,y].
     --
-    -- In fact, by induction, the adversary can never lead: suppose the same y and a slot z are two honest active slots with only honest empty slots between them...
+    -- In fact, by induction, the adversary can never lead: suppose the same y
+    -- and a slot z are two honest active slots with only honest empty slots
+    -- between them...
     NoSuchAdversarialBlock
   |
     -- | @not (arPrefix' < C)@ where @C@ is the number of active slots in 'arHonest'
@@ -420,7 +429,9 @@ uniformAdversarialChain mbAsc recipe g0 = wrap $ C.createV $ do
                 (C.windowSize carWin)
                 (C.Lbl @RaceAssumptionLbl)
                 (C.windowStart rwin)
-                (C.windowLast  rwin C.+ d)   -- rwin ends in a block, so if d=0 then the slot after that block is unconstrained; hence no +1
+                (C.windowLast  rwin C.+ d)   -- rwin ends in a block, so if d=0
+                                             -- then the slot after that block
+                                             -- is unconstrained; hence no +1
 
         -- INVARIANT: @win@ contains @scope@
         let _ = scope :: C.Index adv SlotE
@@ -448,11 +459,19 @@ uniformAdversarialChain mbAsc recipe g0 = wrap $ C.createV $ do
                     (C.windowLast rwin C.+ d)
 
             -- at most k can be active in this race window, so at least size - k must be empty
-            let req = C.Count $ max 0 $ C.getCount (C.windowSize win) - k :: C.Var (C.Win RaceAssumptionLbl skolem) EmptySlotE
+            let req =
+                    C.Count
+                  $ max 0
+                  $ C.getCount (C.windowSize win) - k
+                  :: C.Var (C.Win RaceAssumptionLbl skolem) EmptySlotE
 
             -- Discount that basic requirement by the number of zeros already
             -- in the untouchable portion of this race window.
-            let req' = C.Count $ max 0 $ C.getCount req - C.getCount untouchZeroCount :: C.Var (C.Win TouchableLbl skolem2) EmptySlotE
+            let req' =
+                    C.Count
+                  $ max 0
+                  $ C.getCount req - C.getCount untouchZeroCount
+                  :: C.Var (C.Win TouchableLbl skolem2) EmptySlotE
 
             void $ BV.fillInWindow
                 S.inverted
@@ -468,7 +487,8 @@ uniformAdversarialChain mbAsc recipe g0 = wrap $ C.createV $ do
                 mbYS' <- case mbYS of
                     KnownYS{} -> pure mbYS
                     UnknownYS -> do
-                        -- check whether the slots that are settled as of just now contain the first adversarial active slot
+                        -- check whether the slots that are settled as of just
+                        -- now contain the first adversarial active slot
                         C.SomeWindow Proxy settledSlots <-
                             pure
                           $ C.withWindowBetween
@@ -480,8 +500,10 @@ uniformAdversarialChain mbAsc recipe g0 = wrap $ C.createV $ do
                         pure $! case mbFound of
                             BV.NothingFound -> UnknownYS
                             BV.JustFound x  ->
-                                -- x is the first settled adversarial slot, so the adversary can accelerate its growth as of x+s+1
-                                -- (If s were 0, it could accelerate in the very next slot, thus the plus 1.)
+                                -- x is the first settled adversarial slot, so
+                                -- the adversary can accelerate its growth as
+                                -- of x+s+1 (If s were 0, it could accelerate
+                                -- in the very next slot, thus the plus 1.)
                                 KnownYS $! C.frWin settledSlots x C.+ s C.+ 1
                 unfillRaces (C.windowLast win C.+ 1) mbYS' iter' g mv
 

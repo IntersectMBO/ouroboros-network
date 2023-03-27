@@ -41,10 +41,21 @@ import qualified Text.Read.Lex as Read
 
 -----
 
-type family AbsError (s :: Symbol) (a :: Type) :: Void where AbsError s a = TE.TypeError (TE.Text "You have accidentaly applied `" TE.:<>: TE.Text s TE.:<>: TE.Text "' to a non-concrete type: " TE.:<>: TE.ShowType a)
+type family AbsError (s :: Symbol) (a :: Type) :: Void where
+    AbsError s a = TE.TypeError (
+                TE.Text "You have accidentaly applied `"
+        TE.:<>: TE.Text s
+        TE.:<>: TE.Text "' to a non-concrete type: "
+        TE.:<>: TE.ShowType a
+      )
 
 type family NoFun (s :: Symbol) (a :: Type) (absError :: Void) :: Constraint where
-    NoFun s (a -> b) abs = TE.TypeError (TE.Text "You have accidentaly applied `" TE.:<>: TE.Text s TE.:<>: TE.Text "' to a function type: " TE.:<>: TE.ShowType (a -> b))
+    NoFun s (a -> b) abs = TE.TypeError (
+                TE.Text "You have accidentaly applied `"
+        TE.:<>: TE.Text s
+        TE.:<>: TE.Text "' to a function type: "
+        TE.:<>: TE.ShowType (a -> b)
+      )
     NoFun s t        abs = ()
 
 -----
