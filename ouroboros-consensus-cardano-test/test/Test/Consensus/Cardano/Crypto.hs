@@ -25,15 +25,18 @@ import           Ouroboros.Consensus.Cardano.Block (CardanoHeader,
                      pattern HeaderAlonzo, pattern HeaderBabbage,
                      pattern HeaderByron, pattern HeaderConway,
                      pattern HeaderMary, pattern HeaderShelley)
+import           Ouroboros.Consensus.Protocol.BatchCompatibleCrypto
+                     (BatchCompatibleCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (Header (..))
 import           Ouroboros.Consensus.Shelley.Protocol.Abstract
                      (pTieBreakVRFValue)
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
-import           Ouroboros.Consensus.Protocol.BatchCompatibleCrypto(BatchCompatibleCrypto)
 import           Test.Consensus.Cardano.Generators ()
-import           Test.QuickCheck (Property, label, property, (===))
+import           Test.QuickCheck (Gen, Property, forAllBlind, label, property,
+                     (===))
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck (arbitrary)
 
 tests :: TestTree
 tests =
@@ -87,8 +90,9 @@ tests =
 -- need to beef up the test but that's ok because we always want to
 -- have a /red test/ before writing any production code, right?
 --
-prop_VRFCryptoDependsOnBlockEra :: CardanoHeader StandardCrypto StandardCrypto -> Property
-prop_VRFCryptoDependsOnBlockEra = \case
+prop_VRFCryptoDependsOnBlockEra :: Property
+prop_VRFCryptoDependsOnBlockEra =
+  forAllBlind (arbitrary :: Gen (CardanoHeader StandardCrypto BatchCompatibleCrypto)) $ \case
     HeaderShelley ShelleyHeader {shelleyHeaderRaw} ->
       certVRFHasPraosSize shelleyHeaderRaw & label "Shelley"
     HeaderAllegra ShelleyHeader {shelleyHeaderRaw} ->
