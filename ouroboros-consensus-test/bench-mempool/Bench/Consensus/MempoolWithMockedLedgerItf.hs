@@ -12,19 +12,21 @@ module Bench.Consensus.MempoolWithMockedLedgerItf (
   ) where
 
 import           Control.Concurrent.Class.MonadSTM.Strict (StrictTVar,
-                     atomically, newTVarIO, readTVar, writeTVar)
+                     atomically, newTVarIO, readTVar, readTVarIO, writeTVar)
 import           Control.DeepSeq (NFData (rnf))
 import           Control.Tracer (Tracer)
+import           Data.Foldable (foldMap')
 import           Ouroboros.Consensus.HeaderValidation as Header
-import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState, ValuesMK)
 import qualified Ouroboros.Consensus.Ledger.Basics as Ledger
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as Ledger
+import qualified Ouroboros.Consensus.Ledger.Tables.Utils as Ledger
 import           Ouroboros.Consensus.Mempool (Mempool)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 
 data MempoolWithMockedLedgerItf m blk = MempoolWithMockedLedgerItf {
       getLedgerInterface :: !(Mempool.LedgerInterface m blk)
-    , getLedgerStateTVar :: !(StrictTVar m (LedgerState blk))
+    , getLedgerStateTVar :: !(StrictTVar m (LedgerState blk ValuesMK))
     , getMempool         :: !(Mempool m blk)
     }
 
@@ -40,7 +42,7 @@ instance NFData (MempoolWithMockedLedgerItf m blk) where
   rnf MempoolWithMockedLedgerItf {} = ()
 
 data InitialMempoolAndModelParams blk = MempoolAndModelParams {
-      immpInitialState :: !(Ledger.LedgerState blk)
+      immpInitialState :: !(Ledger.LedgerState blk ValuesMK)
     , immpLedgerConfig :: !(Ledger.LedgerConfig blk)
     }
 
@@ -58,8 +60,14 @@ openMempoolWithMockedLedgerItf ::
 openMempoolWithMockedLedgerItf capacityOverride tracer txSizeImpl params = do
     currentLedgerStateTVar <- newTVarIO (immpInitialState params)
     let ledgerItf = Mempool.LedgerInterface {
-            Mempool.getCurrentLedgerState = readTVar currentLedgerStateTVar
-        }
+            Mempool.getCurrentLedgerState = Ledger.forgetLedgerTables <$>
+              readTVar currentLedgerStateTVar
+          , Mempool.getLedgerTablesAtFor = \_pt txs -> do
+              let keys = foldMap' Ledger.getTransactionKeySets txs
+              st <- readTVarIO currentLedgerStateTVar
+              let values = Ledger.restrictValues st keys
+              pure (Right values)
+          }
     mempool <- Mempool.openMempoolWithoutSyncThread
                    ledgerItf
                    (immpLedgerConfig params)
@@ -74,7 +82,7 @@ openMempoolWithMockedLedgerItf capacityOverride tracer txSizeImpl params = do
 
 setLedgerState ::
      MempoolWithMockedLedgerItf IO blk
-  -> LedgerState blk
+  -> LedgerState blk ValuesMK
   -> IO ()
 setLedgerState MempoolWithMockedLedgerItf {getLedgerStateTVar} newSt =
   atomically $ writeTVar getLedgerStateTVar newSt
