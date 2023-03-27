@@ -1091,9 +1091,7 @@ withConnectionManager ConnectionManagerArguments {
                             TerminatedState (Just handleError)
                       transition = mkTransition connState connState'
                       absConnState = abstractState (Known connState)
-                      absConnState' = abstractState (Known connState')
                       shouldTrace = absConnState /= TerminatedSt
-                      isTerminating = absConnState' == TerminatingSt
 
                   updated <-
                     modifyTMVarSTM
@@ -1122,27 +1120,23 @@ withConnectionManager ConnectionManagerArguments {
                               else return (state                  , False)
                       )
 
-                  let transitions =
-                        [ Transition
-                            { fromState = Known connState'
-                            , toState   = Known (TerminatedState Nothing)
-                            }
-                        | isTerminating
-                        ] ++
-                        [ Transition
-                            { fromState = Known (TerminatedState Nothing)
-                            , toState   = Unknown
-                            }
-                        ]
-
                   if updated
                      then
                     -- Key was present in the dictionary (stateVar) and
                     -- removed so we trace the removal.
                       return $
                         if shouldTrace
-                           then transition : transitions
-                           else transitions
+                           then [ transition
+                                , Transition
+                                   { fromState = Known (TerminatedState Nothing)
+                                   , toState   = Unknown
+                                   }
+                                ]
+                           else [ Transition
+                                   { fromState = Known (TerminatedState Nothing)
+                                   , toState   = Unknown
+                                   }
+                                ]
                     -- Key was not present in the dictionary (stateVar),
                     -- so we do not trace anything as it was already traced upon
                     -- deletion.
