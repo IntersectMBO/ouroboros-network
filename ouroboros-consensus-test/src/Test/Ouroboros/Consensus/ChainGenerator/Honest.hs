@@ -8,8 +8,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
-
 module Test.Ouroboros.Consensus.ChainGenerator.Honest (
     -- * Generating
     ChainSchedule (ChainSchedule),

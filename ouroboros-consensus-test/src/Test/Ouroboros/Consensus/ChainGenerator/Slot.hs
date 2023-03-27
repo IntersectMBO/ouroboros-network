@@ -8,8 +8,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
-
 module Test.Ouroboros.Consensus.ChainGenerator.Slot (
   -- * Counting
   E (ActiveSlotE, EmptySlotE, SlotE),

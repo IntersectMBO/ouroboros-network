@@ -1,7 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
-
 module Test.Ouroboros.Consensus.ChainGenerator.Tests.Counting (
   tests,
   ) where

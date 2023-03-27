@@ -5,7 +5,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | Utilities that make it easier to declare types that merely existential
 -- quantify some type arguments, and actually for any other type that is not

@@ -5,8 +5,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
-
 module Test.Ouroboros.Consensus.ChainGenerator.Tests.BitVector (
   tests,
   ) where

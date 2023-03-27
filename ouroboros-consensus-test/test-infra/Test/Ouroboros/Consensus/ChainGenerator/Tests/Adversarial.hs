@@ -4,8 +4,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TypeApplications #-}
 
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
-
 module Test.Ouroboros.Consensus.ChainGenerator.Tests.Adversarial (
   tests,
   ) where

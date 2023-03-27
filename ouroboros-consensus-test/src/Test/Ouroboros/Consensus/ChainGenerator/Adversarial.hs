@@ -8,8 +8,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
-
 module Test.Ouroboros.Consensus.ChainGenerator.Adversarial (
   -- * Generating
   AdversarialRecipe (AdversarialRecipe, arHonest, arParams, arPrefix),
