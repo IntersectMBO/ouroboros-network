@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 -- DUPLICATE -- adapted from: cardano-api/src/Cardano/Api/Protocol/Types.hs
 
@@ -58,8 +59,8 @@ instance IOLike m => Protocol m ByronBlockHFC where
   data ProtocolInfoArgs m ByronBlockHFC = ProtocolInfoArgsByron ProtocolParamsByron
   protocolInfo (ProtocolInfoArgsByron params) = inject $ protocolInfoByron params
 
-instance (CardanoHardForkConstraints StandardCrypto, IOLike m) => Protocol m (CardanoBlock StandardCrypto) where
-  data ProtocolInfoArgs m (CardanoBlock StandardCrypto) =
+instance (CardanoHardForkConstraints StandardCrypto StandardCrypto, IOLike m) => Protocol m (CardanoBlock StandardCrypto StandardCrypto) where
+  data ProtocolInfoArgs m (CardanoBlock StandardCrypto StandardCrypto) =
          ProtocolInfoArgsCardano
            ProtocolParamsByron
           (ProtocolParamsShelleyBased StandardShelley)
@@ -113,8 +114,8 @@ instance ProtocolClient ByronBlockHFC where
   protocolClientInfo (ProtocolClientInfoArgsByron epochSlots) =
     inject $ protocolClientInfoByron epochSlots
 
-instance CardanoHardForkConstraints StandardCrypto => ProtocolClient (CardanoBlock StandardCrypto) where
-  data ProtocolClientInfoArgs (CardanoBlock StandardCrypto) =
+instance CardanoHardForkConstraints StandardCrypto StandardCrypto => ProtocolClient (CardanoBlock StandardCrypto StandardCrypto) where
+  data ProtocolClientInfoArgs (CardanoBlock StandardCrypto StandardCrypto) =
     ProtocolClientInfoArgsCardano EpochSlots
   protocolClientInfo (ProtocolClientInfoArgsCardano epochSlots) =
     protocolClientInfoCardano epochSlots
@@ -143,7 +144,7 @@ instance Consensus.LedgerSupportsProtocol
 data BlockType blk where
   ByronBlockType :: BlockType ByronBlockHFC
   ShelleyBlockType :: BlockType (ShelleyBlockHFC (Consensus.TPraos StandardCrypto) StandardShelley)
-  CardanoBlockType :: BlockType (CardanoBlock StandardCrypto)
+  CardanoBlockType :: BlockType (CardanoBlock StandardCrypto StandardCrypto)
 
 deriving instance Eq (BlockType blk)
 deriving instance Show (BlockType blk)

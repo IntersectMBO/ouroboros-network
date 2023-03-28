@@ -73,9 +73,11 @@ import           Ouroboros.Consensus.Shelley.Node.Praos
 import           System.Directory (makeAbsolute)
 import           System.FilePath (takeDirectory, (</>))
 
+type CBlock = CardanoBlock StandardCrypto StandardCrypto
+
 analyseBlock ::
      (forall blk. HasAnalysis blk => blk -> a)
-  -> CardanoBlock StandardCrypto -> a
+  -> CBlock -> a
 analyseBlock f =
       hcollapse
     . hcmap p (K . f . unI)
@@ -90,7 +92,7 @@ analyseBlock f =
 analyseWithLedgerState ::
   forall a.
   (forall blk. HasAnalysis blk => WithLedgerState blk -> a) ->
-  WithLedgerState (CardanoBlock StandardCrypto) ->
+  WithLedgerState (CBlock) ->
   a
 analyseWithLedgerState f (WithLedgerState cb sb sa) =
   hcollapse
@@ -109,8 +111,8 @@ analyseWithLedgerState f (WithLedgerState cb sb sa) =
     oeb = getOneEraBlock . getHardForkBlock $ cb
 
     goLS ::
-      LedgerState (CardanoBlock StandardCrypto) ->
-      NP (Maybe :.: LedgerState) (CardanoEras StandardCrypto)
+      LedgerState CBlock ->
+      NP (Maybe :.: LedgerState) (CardanoEras StandardCrypto StandardCrypto)
     goLS =
       hexpand (Comp Nothing)
         . hmap (Comp . Just . currentState)
@@ -118,8 +120,8 @@ analyseWithLedgerState f (WithLedgerState cb sb sa) =
         . getHardForkState
         . hardForkLedgerStatePerEra
 
-instance HasProtocolInfo (CardanoBlock StandardCrypto) where
-  data Args (CardanoBlock StandardCrypto) = CardanoBlockArgs {
+instance HasProtocolInfo (CBlock) where
+  data Args (CBlock) = CardanoBlockArgs {
           configFile           :: FilePath
         , threshold            :: Maybe PBftSignatureThreshold
         }
@@ -182,7 +184,7 @@ data CardanoConfig = CardanoConfig {
   , conwayGenesisPath    :: FilePath
 
     -- | @Test*HardForkAtEpoch@ for each Shelley era
-  , hardForkTriggers     :: NP ShelleyTransitionArguments (CardanoShelleyEras StandardCrypto)
+  , hardForkTriggers     :: NP ShelleyTransitionArguments (CardanoShelleyEras StandardCrypto StandardCrypto)
   }
 
 instance AdjustFilePaths CardanoConfig where
@@ -274,7 +276,7 @@ instance Aeson.FromJSON CardanoConfig where
         , hardForkTriggers = hardForkTriggers
         }
 
-instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock StandardCrypto)) => HasAnalysis (CardanoBlock StandardCrypto) where
+instance (HasAnnTip (CBlock), GetPrevHash (CBlock)) => HasAnalysis (CBlock) where
   countTxOutputs = analyseBlock countTxOutputs
   blockTxSizes   = analyseBlock blockTxSizes
   knownEBBs _    =
@@ -285,7 +287,7 @@ instance (HasAnnTip (CardanoBlock StandardCrypto), GetPrevHash (CardanoBlock Sta
 
   blockStats = analyseBlock blockStats
 
-type CardanoBlockArgs = Args (CardanoBlock StandardCrypto)
+type CardanoBlockArgs = Args (CBlock)
 
 mkCardanoProtocolInfo ::
      Byron.Genesis.Config
@@ -294,8 +296,8 @@ mkCardanoProtocolInfo ::
   -> SL.AlonzoGenesis
   -> SL.ConwayGenesis StandardCrypto
   -> Nonce
-  -> NP ShelleyTransitionArguments (CardanoShelleyEras StandardCrypto)
-  -> ProtocolInfo IO (CardanoBlock StandardCrypto)
+  -> NP ShelleyTransitionArguments (CardanoShelleyEras StandardCrypto StandardCrypto)
+  -> ProtocolInfo IO (CBlock)
 mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlonzo genesisConway initialNonce hardForkTriggers =
     protocolInfoCardano
       ProtocolParamsByron {
@@ -364,11 +366,11 @@ mkCardanoProtocolInfo genesisByron signatureThreshold genesisShelley genesisAlon
 
 castHeaderHash ::
      HeaderHash ByronBlock
-  -> HeaderHash (CardanoBlock StandardCrypto)
+  -> HeaderHash (CBlock)
 castHeaderHash = OneEraHash . toShortRawHash (Proxy @ByronBlock)
 
 castChainHash ::
      ChainHash ByronBlock
-  -> ChainHash (CardanoBlock StandardCrypto)
+  -> ChainHash (CBlock)
 castChainHash GenesisHash   = GenesisHash
 castChainHash (BlockHash h) = BlockHash $ castHeaderHash h
