@@ -332,7 +332,7 @@ library
     , vector                       >=0.12  && <0.13
 
   if os(windows)
-    build-depends: Win32 >=2.6.1.0
+    build-depends:
 
   else
     build-depends:
