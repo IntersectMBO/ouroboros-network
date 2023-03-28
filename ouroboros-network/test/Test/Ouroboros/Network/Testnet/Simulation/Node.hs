@@ -327,14 +327,10 @@ mainnetSimArgs raps =
 -- | Given a NtNAddr generate the necessary things to run a node in
 -- Simulation
 genNodeArgs :: [RelayAccessPoint]
-           -> Int
-           -> ( [RelayAccessPoint]
-             -> RelayAccessPoint
-             -> Gen [( HotValency
-                     , WarmValency
-                     , Map RelayAccessPoint PeerAdvertise)] )
-           -> (NtNAddr, RelayAccessPoint)
-           -> Gen NodeArgs
+            -> Int
+            -> Gen [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
+            -> (NtNAddr, RelayAccessPoint)
+            -> Gen NodeArgs
 genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
 
   let rapsWithoutSelf = filter (/= rap) raps
@@ -363,7 +359,7 @@ genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
   -- Taken from ouroboros-consensus/src/Ouroboros/Consensus/Node.hs
   mustReplyTimeout <- Just <$> oneof (pure <$> [90, 135, 180, 224, 269])
 
-  lrp <- genLocalRootPeers rapsWithoutSelf rap
+  lrp <- genLocalRootPeers
   relays <- sublistOf rapsWithoutSelf
   relayPeerAdvertise <- vectorOf (length relays) arbitrary
   let relayMap = Map.fromList (zip relays relayPeerAdvertise)
@@ -435,7 +431,10 @@ genNonHotDiffusionScript = do
 
   let toRunRaps = [ r | r@(RelayAccessAddress _ _) <- raps ]
       simArgs = mainnetSimArgs raps
-  toRun <- mapM (genNodeArgs raps 0 genLocalRootPeers)
+  toRun <- mapM (\a@(_, rap) -> genNodeArgs
+                                  raps 0
+                                  (genLocalRootPeers toRunRaps rap)
+                                  a)
                [ (ntnToPeerAddr ip p, r)
                | r@(RelayAccessAddress ip p) <- toRunRaps ]
 
@@ -498,17 +497,20 @@ genHotDiffusionScript = do
     -- They could be domains but it is easier to connect to IPs straight away.
     -- We also want to make sure we get as many peers as specified by
     -- 'minConnected'.
-    raas <- (nub <$> vectorOf minConnected (arbitrary `suchThat` isRelayAccessAddress))
+    allRaps <- (nub <$> vectorOf minConnected (arbitrary `suchThat` isRelayAccessAddress))
             `suchThat` ((>= minConnected) . length)
 
-    let allRaps = nub raas
-        toRunRaps = [ r | r@(RelayAccessAddress _ _) <- allRaps ]
+    let toRunRaps = [ r | r@(RelayAccessAddress _ _) <- allRaps ]
 
         -- Nodes are not killed
         comands = repeat [JoinNetwork 0 Nothing]
 
         simArgs = mainnetSimArgs allRaps
-    toRun <- mapM (genNodeArgs allRaps minConnected genLocalRootPeers)
+
+    toRun <- mapM (\a@(_, rap) -> genNodeArgs
+                                    allRaps minConnected
+                                    (genLocalRootPeers allRaps rap)
+                                    a)
                  [ (ntnToPeerAddr ip p, r)
                  | r@(RelayAccessAddress ip p) <- toRunRaps ]
 
