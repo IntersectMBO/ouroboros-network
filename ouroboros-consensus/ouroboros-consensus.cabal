@@ -323,16 +323,21 @@ library
                      , ouroboros-network-protocols ^>=0.2
                      , strict-stm       ^>=0.2
 
+
   if os(windows)
      build-depends:    Win32            >= 2.6.1.0
   else
      build-depends:    unix
                      , unix-bytestring
 
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wmissing-export-lists
 
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
