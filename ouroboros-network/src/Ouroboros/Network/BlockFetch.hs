@@ -153,20 +153,20 @@ data BlockFetchConfiguration =
 --
 -- This runs forever and should be shut down using mechanisms such as async.
 --
-blockFetchLogic :: forall peer header block m.
+blockFetchLogic :: forall addr header block m.
                    ( HasHeader header
                    , HasHeader block
                    , HeaderHash header ~ HeaderHash block
                    , MonadDelay m
                    , MonadMonotonicTime m
                    , MonadSTM m
-                   , Ord peer
-                   , Hashable peer
+                   , Ord addr
+                   , Hashable addr
                    )
-                => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
-                -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                -> BlockFetchConsensusInterface peer header block m
-                -> FetchClientRegistry peer header block m
+                => Tracer m [TraceLabelPeer addr (FetchDecision [Point header])]
+                -> Tracer m (TraceLabelPeer addr (TraceFetchClientState header))
+                -> BlockFetchConsensusInterface addr header block m
+                -> FetchClientRegistry addr header block m
                 -> BlockFetchConfiguration
                 -> m Void
 blockFetchLogic decisionTracer clientStateTracer
@@ -206,7 +206,7 @@ blockFetchLogic decisionTracer clientStateTracer
         blockFetchSize
       }
 
-    fetchTriggerVariables :: FetchTriggerVariables peer header m
+    fetchTriggerVariables :: FetchTriggerVariables addr header m
     fetchTriggerVariables =
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,
@@ -214,7 +214,7 @@ blockFetchLogic decisionTracer clientStateTracer
         readStatePeerStatus      = readFetchClientsStatus registry
       }
 
-    fetchNonTriggerVariables :: FetchNonTriggerVariables peer header block m
+    fetchNonTriggerVariables :: FetchNonTriggerVariables addr header block m
     fetchNonTriggerVariables =
       FetchNonTriggerVariables {
         readStateFetchedBlocks    = readFetchedBlocks,

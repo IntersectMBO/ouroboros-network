@@ -19,13 +19,13 @@ import           Ouroboros.Network.PeerSelection.LocalRootPeers
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.PeerSelection.Governor
-import           Ouroboros.Network.PeerSelection.Types
 
 import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
                      prop_shrink_valid, renderRanges)
 import           Test.Ouroboros.Network.PeerSelection.Instances
 
 
+import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)

@@ -104,16 +104,16 @@ data Handlers m peer blk = Handlers {
     }
 
 mkHandlers
-  :: forall m blk remotePeer localPeer.
+  :: forall m blk addrNTN addrNTC.
      ( IOLike m
      , LedgerSupportsMempool blk
      , LedgerSupportsProtocol blk
      , QueryLedger blk
      , ConfigSupportsNode blk
      )
-  => NodeKernelArgs m remotePeer localPeer blk
-  -> NodeKernel     m remotePeer localPeer blk
-  -> Handlers       m            localPeer blk
+  => NodeKernelArgs m addrNTN addrNTC blk
+  -> NodeKernel     m addrNTN addrNTC blk
+  -> Handlers       m         addrNTC blk
 mkHandlers NodeKernelArgs {cfg, tracers} NodeKernel {getChainDB, getMempool} =
     Handlers {
         hChainSyncServer =
@@ -378,7 +378,7 @@ data Apps m peer bCS bTX bSQ bTM a = Apps {
 
 -- | Construct the 'NetworkApplication' for the node-to-client protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bTX bSQ bTM.
+  :: forall m addrNTN addrNTC blk e bCS bTX bSQ bTM.
      ( IOLike m
      , Exception e
      , ShowProxy blk
@@ -388,16 +388,16 @@ mkApps
      , ShowProxy (GenTxId blk)
      , ShowQuery (BlockQuery blk)
      )
-  => NodeKernel m remotePeer localPeer blk
-  -> Tracers m localPeer blk e
+  => NodeKernel m addrNTN addrNTC blk
+  -> Tracers m addrNTC blk e
   -> Codecs blk e m bCS bTX bSQ bTM
-  -> Handlers m localPeer blk
-  -> Apps m localPeer bCS bTX bSQ bTM ()
+  -> Handlers m addrNTC blk
+  -> Apps m addrNTC bCS bTX bSQ bTM ()
 mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
     Apps {..}
   where
     aChainSyncServer
-      :: localPeer
+      :: addrNTC
       -> Channel m bCS
       -> m ((), Maybe bCS)
     aChainSyncServer them channel = do
@@ -414,7 +414,7 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
             $ hChainSyncServer flr
 
     aTxSubmissionServer
-      :: localPeer
+      :: addrNTC
       -> Channel m bTX
       -> m ((), Maybe bTX)
     aTxSubmissionServer them channel = do
@@ -426,7 +426,7 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
         (localTxSubmissionServerPeer (pure hTxSubmissionServer))
 
     aStateQueryServer
-      :: localPeer
+      :: addrNTC
       -> Channel m bSQ
       -> m ((), Maybe bSQ)
     aStateQueryServer them channel = do
@@ -438,7 +438,7 @@ mkApps kernel Tracers {..} Codecs {..} Handlers {..} =
         (localStateQueryServerPeer hStateQueryServer)
 
     aTxMonitorServer
-      :: localPeer
+      :: addrNTC
       -> Channel m bTM
       -> m ((), Maybe bTM)
     aTxMonitorServer them channel = do

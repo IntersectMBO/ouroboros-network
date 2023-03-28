@@ -36,7 +36,9 @@ import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
 import           Ouroboros.Network.PeerSelection.Governor.Types hiding
                      (PeerSelectionCounters (..))
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.Types
 
 
@@ -242,7 +244,8 @@ localRoots :: forall peeraddr peerconn m.
            -> PeerSelectionPolicy peeraddr m
            -> PeerSelectionState peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-localRoots actions@PeerSelectionActions{readLocalRootPeers}
+localRoots actions@PeerSelectionActions{ readLocalRootPeers
+                                       }
            policy
            st@PeerSelectionState{
              localRootPeers,
@@ -265,13 +268,14 @@ localRoots actions@PeerSelectionActions{readLocalRootPeers}
       check (localRootPeers' /= localRootPeers)
       --TODO: trace when the clamping kicks in, and warn operators
 
-      let added       = LocalRootPeers.toMap localRootPeers' Map.\\
-                        LocalRootPeers.toMap localRootPeers
-          removed     = LocalRootPeers.toMap localRootPeers  Map.\\
-                        LocalRootPeers.toMap localRootPeers'
-          addedSet    = Map.keysSet added
-          removedSet  = Map.keysSet removed
-          knownPeers' = KnownPeers.insert addedSet knownPeers
+      let added        = LocalRootPeers.toMap localRootPeers' Map.\\
+                         LocalRootPeers.toMap localRootPeers
+          removed      = LocalRootPeers.toMap localRootPeers  Map.\\
+                         LocalRootPeers.toMap localRootPeers'
+          -- LocalRoots are not ledger!
+          addedInfoMap = Map.map (\a -> (NoPeerSharing, a, IsNotLedgerPeer)) added
+          removedSet   = Map.keysSet removed
+          knownPeers'  = KnownPeers.insert addedInfoMap knownPeers
                         -- We do not immediately remove old ones from the
                         -- known peers set because we may have established
                         -- connections

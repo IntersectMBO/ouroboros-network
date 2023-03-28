@@ -40,6 +40,7 @@ import           Codec.CBOR.Read (DeserialiseFailure)
 import qualified Control.Concurrent.Class.MonadSTM as MonadSTM
 import qualified Control.Exception as Exn
 import           Control.Monad
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import qualified Control.Monad.Except as Exc
@@ -100,12 +101,14 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ControlMessage (ControlMessage (..),
                      ControlMessageSTM)
 import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
-import           Ouroboros.Network.NodeToNode (MiniProtocolParameters (..))
+import           Ouroboros.Network.NodeToNode (ConnectionId (..),
+                     MiniProtocolParameters (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (nullMetric)
 import           Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as CS
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 import           Ouroboros.Network.Protocol.Limits (waitForever)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 import qualified System.FS.Sim.MockFS as Mock
 import           System.FS.Sim.MockFS (MockFS)
@@ -275,6 +278,7 @@ runThreadNetwork :: forall m blk.
                     ( IOLike m
                     , MonadTime m
                     , MonadTimer m
+                    , MonadMVar m
                     , RunNode blk
                     , TxGen blk
                     , TracingConstraints blk
@@ -1005,7 +1009,10 @@ runThreadNetwork systemTime ThreadNetworkArgs
                      , mustReplyTimeout = waitForever
                      })
                   nullMetric
-                  (NTN.mkHandlers nodeKernelArgs nodeKernel)
+                  -- The purpose of this test is not testing protocols, so
+                  -- returning constant empty list is fine if we have thorough
+                  -- tests about the peer sharing protocol itself.
+                  (NTN.mkHandlers nodeKernelArgs nodeKernel (\_ -> return []))
 
       -- In practice, a robust wallet/user can persistently add a transaction
       -- until it appears on the chain. This thread adds robustness for the
@@ -1051,13 +1058,14 @@ runThreadNetwork systemTime ThreadNetworkArgs
     customNodeToNodeCodecs
       :: TopLevelConfig blk
       -> NodeToNodeVersion
-      -> NTN.Codecs blk CodecError m
+      -> NTN.Codecs blk NodeId CodecError m
            Lazy.ByteString
            Lazy.ByteString
            Lazy.ByteString
            Lazy.ByteString
            (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
            (AnyMessage KeepAlive)
+           (AnyMessage (PeerSharing NodeId))
     customNodeToNodeCodecs cfg ntnVersion = NTN.Codecs
         { cChainSyncCodec =
             mapFailureCodec (CodecBytesFailure "ChainSync") $
@@ -1077,9 +1085,12 @@ runThreadNetwork systemTime ThreadNetworkArgs
         , cKeepAliveCodec =
             mapFailureCodec CodecIdFailure $
               NTN.cKeepAliveCodec NTN.identityCodecs
+        , cPeerSharingCodec =
+            mapFailureCodec CodecIdFailure $
+              NTN.cPeerSharingCodec NTN.identityCodecs
         }
       where
-        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion ntnVersion
+        binaryProtocolCodecs = NTN.defaultCodecs (configCodec cfg) blockVersion encodeNodeId decodeNodeId ntnVersion
 
 -- | Sum of 'CodecFailure' (from @identityCodecs@) and 'DeserialiseFailure'
 -- (from @defaultCodecs@).
@@ -1220,7 +1231,8 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
 
     atomically $ writeTVar edgeStatusVar EUp
 
-    let miniProtocol ::
+    let local = CoreId (CoreNodeId 0)
+        miniProtocol ::
              String
              -- ^ protocol name
           -> (String -> a -> RestartCause)
@@ -1228,14 +1240,14 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
              -> ControlMessageSTM m
-             -> NodeId
+             -> ConnectionId NodeId
              -> Channel m msg
              -> m (a, trailingBytes)
              )
             -- ^ client action to run on node1
           -> (  LimitedApp' m NodeId blk
              -> NodeToNodeVersion
-             -> NodeId
+             -> ConnectionId NodeId
              -> Channel m msg
              -> m (b, trailingBytes)
              )
@@ -1246,8 +1258,8 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
            (chan, dualChan) <-
              createConnectedChannelsWithDelay registry (node1, node2, proto) middle
            pure
-             ( (retClient (proto <> ".client") . fst) <$> client app1 version (return Continue) (fromCoreNodeId node2) chan
-             , (retServer (proto <> ".server") . fst) <$> server app2 version (fromCoreNodeId node1) dualChan
+             ( (retClient (proto <> ".client") . fst) <$> client app1 version (return Continue) (ConnectionId local (fromCoreNodeId node2)) chan
+             , (retServer (proto <> ".server") . fst) <$> server app2 version (ConnectionId local (fromCoreNodeId node1)) dualChan
              )
 
     (>>= withAsyncsWaitAny) $
@@ -1320,7 +1332,7 @@ directedEdgeInner registry clock (version, blockVersion) (cfg, calcMessageDelay)
           _ -> pure ()
       where
         codec =
-            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion version
+            NTN.cChainSyncCodec $ NTN.defaultCodecs cfg blockVersion encodeNodeId decodeNodeId version
 
 -- | Variant of 'createConnectChannels' with intermediate queues for
 -- delayed-but-in-order messages
@@ -1592,14 +1604,14 @@ withAsyncsWaitAny = go [] . NE.toList
 -- its use in this module
 --
 -- Used internal to this module, essentially as an abbreviation.
-data LimitedApp m peer blk =
-   LimitedApp (LimitedApp' m peer blk)
+data LimitedApp m addr blk =
+   LimitedApp (LimitedApp' m addr blk)
 
 -- | Argument of 'LimitedApp' data constructor
 --
 -- Used internal to this module, essentially as an abbreviation.
-type LimitedApp' m peer blk =
-    NTN.Apps m peer
+type LimitedApp' m addr blk =
+    NTN.Apps m addr
         -- The 'ChainSync' and 'BlockFetch' protocols use @'Serialised' x@ for
         -- the servers and @x@ for the clients. Since both have to match to be
         -- sent across a channel, we can't use @'AnyMessage' ..@, instead, we
@@ -1609,6 +1621,7 @@ type LimitedApp' m peer blk =
         Lazy.ByteString
         (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
         (AnyMessage KeepAlive)
+        (AnyMessage (PeerSharing addr))
         NodeToNodeInitiatorResult ()
 
 {-------------------------------------------------------------------------------

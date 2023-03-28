@@ -51,7 +51,10 @@ module Ouroboros.Consensus.Node (
   , openChainDB
   ) where
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.Serialise (DeserialiseFailure)
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer (Tracer, contramap, traceWith)
@@ -112,7 +115,10 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
                      newPeerMetric, reportMetric)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing,
+                     decodeRemoteAddress, encodeRemoteAddress)
 import           Ouroboros.Network.Protocol.Limits (shortWait)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.RethrowPolicy
 import           System.FilePath ((</>))
 import           System.FS.API (SomeHasFS (..))
@@ -164,11 +170,14 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
       -- Called on the 'NodeKernel' after creating it, but before the network
       -- layer is initialised.
     , rnNodeKernelHook :: ResourceRegistry m
-                       -> NodeKernel m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+                       -> NodeKernel m addrNTN (ConnectionId addrNTC) blk
                        -> m ()
 
       -- | Network P2P Mode switch
     , rnEnableP2P :: NetworkP2PMode p2p
+
+      -- | Network PeerSharing miniprotocol willingness flag
+    , rnPeerSharing :: PeerSharing
     }
 
 -- | Arguments that usually only tests /directly/ specify.
@@ -200,8 +209,8 @@ data LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk
 
       -- | Customise the 'NodeArgs'
     , llrnCustomiseNodeKernelArgs ::
-           NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-        -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+           NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+        -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
 
       -- | Ie 'bfcSalt'
     , llrnBfcSalt :: Int
@@ -263,7 +272,7 @@ run :: forall blk p2p.
   => RunNodeArgs IO RemoteAddress LocalAddress blk p2p
   -> StdRunNodeArgs IO blk p2p
   -> IO ()
-run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
+run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args encodeRemoteAddress decodeRemoteAddress
 
 -- | Start a node.
 --
@@ -273,13 +282,15 @@ run args stdArgs = stdLowLevelRunNodeArgsIO args stdArgs >>= runWith args
 -- This function runs forever unless an exception is thrown.
 runWith :: forall m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p.
      ( RunNode blk
-     , IOLike m, MonadTime m, MonadTimer m
+     , IOLike m, MonadTime m, MonadTimer m, MonadMVar m
      , Hashable addrNTN, Ord addrNTN, Show addrNTN, Typeable addrNTN
      )
   => RunNodeArgs m addrNTN addrNTC blk p2p
+  -> (addrNTN -> CBOR.Encoding)
+  -> (forall s . CBOR.Decoder s addrNTN)
   -> LowLevelRunNodeArgs m addrNTN addrNTC versionDataNTN versionDataNTC blk p2p
   -> m ()
-runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
+runWith RunNodeArgs{..} encAddrNtN decAddrNtN LowLevelRunNodeArgs{..} =
 
     llrnWithCheckedDB $ \(LastShutDownWasClean lastShutDownWasClean) continueWithCleanChainDB ->
     withRegistry $ \registry ->
@@ -359,7 +370,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           rnNodeKernelHook registry nodeKernel
 
           peerMetrics <- newPeerMetric Diffusion.peerMetricsConfiguration
-          let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics
+          let ntnApps = mkNodeToNodeApps   nodeKernelArgs nodeKernel peerMetrics encAddrNtN decAddrNtN
               ntcApps = mkNodeToClientApps nodeKernelArgs nodeKernel
               (apps, appsExtra) = mkDiffusionApplications
                                         rnEnableP2P
@@ -381,31 +392,36 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
     codecConfig = configCodec cfg
 
     mkNodeToNodeApps
-      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+      -> NodeKernel     m addrNTN (ConnectionId addrNTC) blk
       -> PeerMetrics m addrNTN
+      -> (addrNTN -> CBOR.Encoding)
+      -> (forall s . CBOR.Decoder s addrNTN)
       -> BlockNodeToNodeVersion blk
+      -> (PeerSharingAmount -> m [addrNTN])
+      -- ^ Peer Sharing result computation callback
       -> NTN.Apps m
-          (ConnectionId addrNTN)
+          addrNTN
+          ByteString
           ByteString
           ByteString
           ByteString
           ByteString
           NodeToNodeInitiatorResult
           ()
-    mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics version =
+    mkNodeToNodeApps nodeKernelArgs nodeKernel peerMetrics encAddrNTN decAddrNTN version computePeers =
         NTN.mkApps
           nodeKernel
           rnTraceNTN
-          (NTN.defaultCodecs codecConfig version)
+          (NTN.defaultCodecs codecConfig version encAddrNTN decAddrNTN)
           NTN.byteLimits
           llrnChainSyncTimeout
           (reportMetric Diffusion.peerMetricsConfiguration peerMetrics)
-          (NTN.mkHandlers nodeKernelArgs nodeKernel)
+          (NTN.mkHandlers nodeKernelArgs nodeKernel computePeers)
 
     mkNodeToClientApps
-      :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernel     m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+      :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+      -> NodeKernel     m addrNTN (ConnectionId addrNTC) blk
       -> BlockNodeToClientVersion blk
       -> NodeToClientVersion
       -> NTC.Apps m (ConnectionId addrNTC) ByteString ByteString ByteString ByteString ()
@@ -420,9 +436,12 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
       :: NetworkP2PMode p2p
       -> MiniProtocolParameters
       -> (   BlockNodeToNodeVersion blk
+          -- Peer Sharing result computation callback
+          -> (PeerSharingAmount -> m [addrNTN])
           -> NTN.Apps
                m
-               (ConnectionId addrNTN)
+               addrNTN
+               ByteString
                ByteString
                ByteString
                ByteString
@@ -435,7 +454,7 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
           -> NTC.Apps
                m (ConnectionId addrNTC) ByteString ByteString ByteString ByteString ()
         )
-      -> NodeKernel m remotePeer localPeer blk
+      -> NodeKernel m addrNTN (ConnectionId addrNTC) blk
       -> PeerMetrics m addrNTN
       -> ( Diffusion.Applications
              addrNTN NodeToNodeVersion   versionDataNTN
@@ -459,7 +478,8 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 P2P.daReturnPolicy           = returnPolicy,
                 P2P.daLocalRethrowPolicy     = localRethrowPolicy,
                 P2P.daPeerMetrics            = peerMetrics,
-                P2P.daBlockFetchMode         = getFetchMode kernel
+                P2P.daBlockFetchMode         = getFetchMode kernel,
+                P2P.daPeerSharingRegistry    = getPeerSharingRegistry kernel
               }
           )
         DisabledP2PMode ->
@@ -476,17 +496,20 @@ runWith RunNodeArgs{..} LowLevelRunNodeArgs{..} =
                 [ simpleSingletonVersions
                     version
                     llrnVersionDataNTN
-                    (NTN.initiator miniProtocolParams version
-                      $ ntnApps blockVersion)
+                    (NTN.initiator miniProtocolParams version rnPeerSharing
+                      -- Initiator side won't start responder side of Peer
+                      -- Sharing protocol so we give a dummy implementation
+                      -- here.
+                      $ ntnApps blockVersion (error "impossible happened!"))
                 | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
                 ],
-            Diffusion.daApplicationInitiatorResponderMode =
+            Diffusion.daApplicationInitiatorResponderMode = \computePeers ->
               combineVersions
                 [ simpleSingletonVersions
                     version
                     llrnVersionDataNTN
-                    (NTN.initiatorAndResponder miniProtocolParams version
-                      $ ntnApps blockVersion)
+                    (NTN.initiatorAndResponder miniProtocolParams version rnPeerSharing
+                      $ ntnApps blockVersion computePeers)
                 | (version, blockVersion) <- Map.toList llrnNodeToNodeVersions
                 ],
             Diffusion.daLocalResponderApplication =
@@ -588,7 +611,7 @@ mkNodeKernelArgs
   -> Tracers m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
   -> BlockchainTime m
   -> ChainDB m blk
-  -> m (NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk)
+  -> m (NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk)
 mkNodeKernelArgs
   registry
   bfcSalt
@@ -629,8 +652,8 @@ mkNodeKernelArgs
 -- values. This function makes sure we don't exceed those limits and that the
 -- values are consistent.
 nodeKernelArgsEnforceInvariants
-  :: NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  :: NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
 nodeKernelArgsEnforceInvariants nodeKernelArgs = nodeKernelArgs
     { miniProtocolParameters = miniProtocolParameters
         -- If 'blockFetchPipeliningMax' exceeds the configured default, it
@@ -690,10 +713,14 @@ stdChainSyncTimeout = do
       ix <- randomRIO (0, length xs - 1)
       return $ xs !! ix
 
-stdVersionDataNTN :: NetworkMagic -> DiffusionMode -> NodeToNodeVersionData
-stdVersionDataNTN networkMagic diffusionMode = NodeToNodeVersionData
+stdVersionDataNTN :: NetworkMagic
+                  -> DiffusionMode
+                  -> PeerSharing
+                  -> NodeToNodeVersionData
+stdVersionDataNTN networkMagic diffusionMode peerSharing = NodeToNodeVersionData
     { networkMagic
     , diffusionMode
+    , peerSharing
     }
 
 stdVersionDataNTC :: NetworkMagic -> NodeToClientVersionData
@@ -764,7 +791,10 @@ stdLowLevelRunNodeArgsIO ::
           NodeToClientVersionData
           blk
           p2p)
-stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
+stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo
+                                    , rnEnableP2P
+                                    , rnPeerSharing
+                                    }
                          StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
@@ -797,6 +827,7 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
                -- `InitiatorAndResponderDiffusionMode`.
                DisabledP2PMode -> InitiatorOnlyDiffusionMode
             )
+            rnPeerSharing
       , llrnNodeToNodeVersions =
           limitToLatestReleasedVersion
             fst
@@ -834,8 +865,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
           })
 
     llrnCustomiseNodeKernelArgs ::
-         NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-      -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+         NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+      -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
     llrnCustomiseNodeKernelArgs =
         overBlockFetchConfiguration modifyBlockFetchConfiguration
       . modifyMempoolCapacityOverride
@@ -871,8 +902,8 @@ stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P }
 
 overBlockFetchConfiguration ::
      (BlockFetchConfiguration -> BlockFetchConfiguration)
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
-  -> NodeKernelArgs m (ConnectionId addrNTN) (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
+  -> NodeKernelArgs m addrNTN (ConnectionId addrNTC) blk
 overBlockFetchConfiguration f args = args {
       blockFetchConfiguration = f blockFetchConfiguration
     }

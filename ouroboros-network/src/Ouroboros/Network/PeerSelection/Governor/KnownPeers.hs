@@ -7,6 +7,7 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
   , aboveTarget
   ) where
 
+import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Semigroup (Min (..))
 import qualified Data.Set as Set
@@ -20,8 +21,14 @@ import           Control.Monad.Class.MonadTimer
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.KnownPeers (isKnownLedgerPeer)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 
 ---------------------------
@@ -29,166 +36,224 @@ import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeer
 --
 
 
--- | If we are below the target of /known peers/ we gossip (if we are above the
--- gossip request threashold).
+-- | If we are below the target of /known peers/ we peer share (if we are above
+-- the peer share request threashold).
 --
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
+            -> PeerSharing
             -> MkGuardedDecision peeraddr peerconn m
 belowTarget actions
+            peerSharing
             policy@PeerSelectionPolicy {
-              policyMaxInProgressGossipReqs,
-              policyPickKnownPeersForGossip,
-              policyGossipRetryTime
+              policyMaxInProgressPeerShareReqs,
+              policyPickKnownPeersForPeerShare,
+              policyPeerShareRetryTime
             }
             st@PeerSelectionState {
               knownPeers,
-              inProgressGossipReqs,
+              establishedPeers,
+              inProgressPeerShareReqs,
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
                         }
             }
+    -- Only start Peer Sharing request if PeerSharing was enabled
+  | peerSharing /= NoPeerSharing
     -- Are we under target for number of known peers?
-  | numKnownPeers < targetNumberOfKnownPeers
+  , numKnownPeers < targetNumberOfKnownPeers
 
-    -- Are we at our limit for number of gossip requests?
-  , numGossipReqsPossible > 0
+    -- Are we at our limit for number of peer share requests?
+  , numPeerShareReqsPossible > 0
 
-    -- Are there any known peers that we can send a gossip request to?
+    -- Are there any known peers that we can send a peer share request to?
     -- We can only ask ones where we have not asked them within a certain time.
-  , not (Set.null availableForGossip)
+  , not (Set.null availableForPeerShare)
+
+    -- Are there any peers from the availableForPeerShare set we can really ask
+    -- (i.e. have correct PeerSharing permissions)?
+  , not (Set.null canAsk)
   = Guarded Nothing $ do
-      selectedForGossip <- pickPeers st
-                             policyPickKnownPeersForGossip
-                             availableForGossip
-                             numGossipReqsPossible
-      let numGossipReqs = Set.size selectedForGossip
+      -- Max selected should be <= numPeerShareReqsPossible
+      selectedForPeerShare <- pickPeers st
+                              policyPickKnownPeersForPeerShare
+                              canAsk
+                              numPeerShareReqsPossible
+
+      let -- Should be <= numPeerShareReqsPossible
+          numPeerShareReqs = Set.size selectedForPeerShare
+          objective        = targetNumberOfKnownPeers - numKnownPeers
+          -- Split current peer target objective across all peer sharing
+          -- candidates. If the objective is smaller than the number of
+          -- peer share requests available, ask for at 1 peer to each.
+          --
+          -- This is to increase diversity.
+          numPeersToReq      = min 255 (max 1 (objective `div` numPeerShareReqs))
+          selForPSWithAmount = Set.toList
+                             $ Set.map (\a -> (fromIntegral numPeersToReq, a))
+                                       selectedForPeerShare
       return $ \now -> Decision {
-        decisionTrace = [TraceGossipRequests
-                           targetNumberOfKnownPeers
-                           numKnownPeers
-                           availableForGossip
-                           selectedForGossip],
+        decisionTrace = [TracePeerShareRequests
+                          targetNumberOfKnownPeers
+                          numKnownPeers
+                          availableForPeerShare
+                          selectedForPeerShare],
         decisionState = st {
-                          inProgressGossipReqs = inProgressGossipReqs
-                                               + numGossipReqs,
-                          knownPeers = KnownPeers.setGossipTime
-                                         selectedForGossip
-                                         (addTime policyGossipRetryTime now)
-                                         knownPeers
+                          inProgressPeerShareReqs = inProgressPeerShareReqs
+                                                  + numPeerShareReqs,
+                          establishedPeers = EstablishedPeers.setPeerShareTime
+                                              selectedForPeerShare
+                                              (addTime policyPeerShareRetryTime now)
+                                              establishedPeers
                         },
-        decisionJobs  = [jobGossip actions policy
-                           (Set.toList selectedForGossip)]
+        decisionJobs  =
+          [jobPeerShare actions policy selForPSWithAmount]
       }
 
-    -- If we could gossip except that there are none currently available
+    -- If we could peer share except that there are none currently available
     -- then we return the next wakeup time (if any)
   | numKnownPeers < targetNumberOfKnownPeers
-  , numGossipReqsPossible > 0
-  , Set.null availableForGossip
-  = GuardedSkip (Min <$> KnownPeers.minGossipTime knownPeers)
+  , numPeerShareReqsPossible > 0
+  , Set.null availableForPeerShare
+  = GuardedSkip (Min <$> EstablishedPeers.minPeerShareTime establishedPeers)
 
   | otherwise
   = GuardedSkip Nothing
   where
-    numKnownPeers         = KnownPeers.size knownPeers
-    numGossipReqsPossible = policyMaxInProgressGossipReqs
-                          - inProgressGossipReqs
-    availableForGossip    = KnownPeers.availableForGossip knownPeers
+    numKnownPeers            = KnownPeers.size knownPeers
+    numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
+                             - inProgressPeerShareReqs
+    availableForPeerShare    = EstablishedPeers.availableForPeerShare establishedPeers
+    -- Only ask peers which have the correct willingness permission flags
+    canAsk                   =
+      KnownPeers.getAvailablePeerSharingPeers availableForPeerShare knownPeers
 
 
-jobGossip :: forall m peeraddr peerconn.
+jobPeerShare :: forall m peeraddr peerconn.
              (MonadAsync m, MonadTimer m, Ord peeraddr)
-          => PeerSelectionActions peeraddr peerconn m
-          -> PeerSelectionPolicy peeraddr m
-          -> [peeraddr]
-          -> Job () m (Completion m peeraddr peerconn)
-jobGossip PeerSelectionActions{requestPeerGossip}
-           PeerSelectionPolicy{..} =
-    \peers -> Job (jobPhase1 peers) (handler peers) () "gossipPhase1"
+             => PeerSelectionActions peeraddr peerconn m
+             -> PeerSelectionPolicy peeraddr m
+             -> [(PeerSharingAmount, peeraddr)]
+             -> Job () m (Completion m peeraddr peerconn)
+jobPeerShare PeerSelectionActions{requestPeerShare}
+             PeerSelectionPolicy{..} =
+    \peers -> Job (jobPhase1 peers) (handler (map snd peers)) () "peerSharePhase1"
   where
     handler :: [peeraddr] -> SomeException -> m (Completion m peeraddr peerconn)
     handler peers e = return $
       Completion $ \st _ ->
-      Decision {
-        decisionTrace = [TraceGossipResults [ (p, Left e) | p <- peers ]],
-        decisionState = st {
-                          inProgressGossipReqs = inProgressGossipReqs st
+      Decision { decisionTrace = [TracePeerShareResults [ (p, Left e) | p <- peers ]],
+                 decisionState =
+                  st { inProgressPeerShareReqs = inProgressPeerShareReqs st
                                                - length peers
-                        },
-        decisionJobs  = []
-      }
+                     },
+                 decisionJobs = []
+               }
 
-    jobPhase1 :: [peeraddr] -> m (Completion m peeraddr peerconn)
+    jobPhase1 :: [(PeerSharingAmount, peeraddr)] -> m (Completion m peeraddr peerconn)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
       -- add them to the known peers set in one go.
       --
       -- So fire them all off in one go:
-      gossips <- sequence [ async (requestPeerGossip peer) | peer <- peers ]
+      peerShares <- sequence [ async (requestPeerShare amount peer)
+                             | (amount, peer) <- peers ]
 
-      -- First to finish synchronisation between /all/ the gossips completing
-      -- or the timeout (with whatever partial results we have at the time)
-      results <- waitAllCatchOrTimeout gossips policyGossipBatchWaitTime
+      -- First to finish synchronisation between /all/ the peer share requests
+      -- completing or the timeout (with whatever partial results we have at
+      -- the time)
+      results <- waitAllCatchOrTimeout peerShares policyPeerShareBatchWaitTime
       case results of
-        Right totalResults -> do
-          let peerResults = zip peers totalResults
-              newPeers    = [ p | Right ps <- totalResults, p <- ps ]
-          return $ Completion $ \st _ -> Decision {
-            decisionTrace = [TraceGossipResults peerResults],
-            decisionState = st {
-                              --TODO: also update with the failures
-                              knownPeers = KnownPeers.insert
-                                             (Set.fromList newPeers)
-                                             (knownPeers st),
-                              inProgressGossipReqs = inProgressGossipReqs st
-                                                   - length peers
-                            },
-            decisionJobs  = []
-          }
+        Right totalResults ->
+          return $ Completion $ \st _ ->
+           let peerResults = zip (map snd peers) totalResults
+               -- Filter known-to-be ledger peers before adding them to known
+               -- peers. We to improve efficacy of Peer Sharing, because ledger
+               -- peers are going to be hub nodes in the network (i.e. nodes
+               -- with higher valency) they are going to be shared quite often,
+               -- which means other smaller valency nodes won't be shared that
+               -- much. So any chance we can have of filtering them from peer
+               -- sharing results is welcome.
+               newPeers    = [ p | Right (PeerSharingResult ps) <- totalResults
+                                 , p <- ps
+                                 , not (isKnownLedgerPeer p (knownPeers st)) ]
+            in Decision { decisionTrace = [ TracePeerShareResults peerResults
+                                          , TracePeerShareResultsFiltered newPeers
+                                          ]
+                        , decisionState =
+                           st { -- TODO: also update with the failures
+                                knownPeers = KnownPeers.insert
+                                               (Map.fromList
+                                                $ map (\a -> ( a
+                                                             , ( NoPeerSharing
+                                                               , DoAdvertisePeer
+                                                               , IsNotLedgerPeer))
+                                                      )
+                                                      newPeers)
+                                               (knownPeers st),
+                                inProgressPeerShareReqs = inProgressPeerShareReqs st
+                                                        - length peers
+                           }
+                        , decisionJobs  = []
+                        }
 
         -- But if any don't make the first timeout then they'll be added later
         -- when they do reply or never if we hit the hard timeout.
         Left partialResults -> do
 
           -- We have to keep track of the relationship between the peer
-          -- addresses and the gossip requests, completed and still in progress:
+          -- addresses and the peer share requests, completed and still in progress:
           let peerResults      = [ (p, r)
-                                 | (p, Just r)  <- zip peers   partialResults ]
-              newPeers         = [  p
-                                 | Just (Right ps) <-          partialResults
-                                 ,  p <- ps ]
+                                 | ((_, p), Just r)  <- zip peers partialResults ]
               peersRemaining   = [  p
-                                 | (p, Nothing) <- zip peers   partialResults ]
-              gossipsRemaining = [  a
-                                 | (a, Nothing) <- zip gossips partialResults ]
+                                 | ((_, p), Nothing) <- zip peers partialResults ]
+              peerSharesRemaining = [  a
+                                    | (a, Nothing) <- zip peerShares partialResults ]
 
-          return $ Completion $ \st _ -> Decision {
-            decisionTrace = [TraceGossipResults peerResults],
-            decisionState = st {
-                              --TODO: also update with the failures
-                              knownPeers = KnownPeers.insert
-                                             (Set.fromList newPeers)
-                                             (knownPeers st),
-                              inProgressGossipReqs = inProgressGossipReqs st
-                                                   - length peerResults
-                            },
-            decisionJobs  = [Job (jobPhase2 peersRemaining gossipsRemaining)
-                                 (handler peersRemaining)
-                                 ()
-                                 "gossipPhase2"]
-          }
+          return $ Completion $ \st _ ->
+                -- Filter known-to-be ledger peers before adding them to known
+                -- peers. We to improve efficacy of Peer Sharing, because ledger
+                -- peers are going to be hub nodes in the network (i.e. nodes
+                -- with higher valency) they are going to be shared quite often,
+                -- which means other smaller valency nodes won't be shared that
+                -- much. So any chance we can have of filtering them from peer
+                -- sharing results is welcome.
+            let newPeers = [ p | Just (Right (PeerSharingResult ps)) <- partialResults
+                               , p <- ps
+                               , not (isKnownLedgerPeer p (knownPeers st)) ]
+             in Decision { decisionTrace = [ TracePeerShareResults peerResults
+                                           , TracePeerShareResultsFiltered newPeers
+                                           ]
+                         , decisionState =
+                            st { -- TODO: also update with the failures
+                                 knownPeers = KnownPeers.insert
+                                                (Map.fromList
+                                                 $ map (\a -> ( a
+                                                              , ( NoPeerSharing
+                                                                , DoAdvertisePeer
+                                                                , IsNotLedgerPeer))
+                                                       )
+                                                       newPeers)
+                                                (knownPeers st),
+                                 inProgressPeerShareReqs = inProgressPeerShareReqs st
+                                                         - length peerResults
+                               }
+                         , decisionJobs  = [Job (jobPhase2 peersRemaining peerSharesRemaining)
+                                                (handler peersRemaining)
+                                                ()
+                                                "peerSharePhase2"]
+                         }
 
-    jobPhase2 :: [peeraddr] -> [Async m [peeraddr]]
+    jobPhase2 :: [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
               -> m (Completion m peeraddr peerconn)
-    jobPhase2 peers gossips = do
+    jobPhase2 peers peerShares = do
 
       -- Wait again, for all remaining to finish or a timeout.
       results <- waitAllCatchOrTimeout
-                      gossips
-                      (policyGossipOverallTimeout
-                       - policyGossipBatchWaitTime)
+                      peerShares
+                      (policyPeerShareOverallTimeout
+                       - policyPeerShareBatchWaitTime)
       let peerResults =
             case results of
               Right totalResults  -> zip peers totalResults
@@ -196,31 +261,50 @@ jobGossip PeerSelectionActions{requestPeerGossip}
                                      | (p, r) <- zip peers partialResults ]
                 where err = Left (toException AsyncCancelled)
 
-          newPeers =
-            case results of
-              Right totalResults  -> [ p | Right ps <- totalResults,  p <- ps ]
-              Left partialResults -> [ p | Just (Right ps) <- partialResults,  p <- ps ]
-
-          gossipsIncomplete =
+          peerSharesIncomplete =
             case results of
               Right _totalResults -> []
               Left partialResults ->
-                [ a | (a, Nothing) <- zip gossips partialResults ]
+                [ a | (a, Nothing) <- zip peerShares partialResults ]
 
-      mapM_ cancel gossipsIncomplete
+      mapM_ cancel peerSharesIncomplete
 
-      return $ Completion $ \st _ -> Decision {
-        decisionTrace = [TraceGossipResults peerResults],
-        decisionState = st {
-                          --TODO: also update with the failures
-                          knownPeers = KnownPeers.insert
-                                         (Set.fromList newPeers)
-                                         (knownPeers st),
-                          inProgressGossipReqs = inProgressGossipReqs st
-                                               - length peers
-                        },
-        decisionJobs  = []
-      }
+      return $ Completion $ \st _ ->
+            -- Filter known-to-be ledger peers before adding them to known
+            -- peers. We to improve efficacy of Peer Sharing, because ledger
+            -- peers are going to be hub nodes in the network (i.e. nodes
+            -- with higher valency) they are going to be shared quite often,
+            -- which means other smaller valency nodes won't be shared that
+            -- much. So any chance we can have of filtering them from peer
+            -- sharing results is welcome.
+        let newPeers =
+              case results of
+                Right totalResults  -> [ p | Right (PeerSharingResult ps) <- totalResults
+                                           , p <- ps
+                                           , not (isKnownLedgerPeer p (knownPeers st)) ]
+                Left partialResults -> [ p | Just (Right (PeerSharingResult ps)) <- partialResults
+                                           , p <- ps
+                                           , not (isKnownLedgerPeer p (knownPeers st)) ]
+
+         in Decision { decisionTrace = [ TracePeerShareResults peerResults
+                                       , TracePeerShareResultsFiltered newPeers
+                                       ]
+                     , decisionState =
+                        st { -- TODO: also update with the failures
+                             knownPeers = KnownPeers.insert
+                                            (Map.fromList
+                                             $ map (\a -> ( a
+                                                          , ( NoPeerSharing
+                                                            , DoAdvertisePeer
+                                                            , IsNotLedgerPeer))
+                                                   )
+                                                   newPeers)
+                                            (knownPeers st),
+                             inProgressPeerShareReqs = inProgressPeerShareReqs st
+                                                     - length peers
+                           }
+                     , decisionJobs  = []
+                     }
 
 
 ---------------------------

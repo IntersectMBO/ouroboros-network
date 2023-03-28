@@ -82,7 +82,6 @@ import           Ouroboros.Network.PeerSelection.PeerMetric
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..),
                      RelayAccessPoint (..))
-import           Ouroboros.Network.PeerSelection.Types (PeerAdvertise (..))
 import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (VersionDataCodec (..), noTimeLimitsHandshake,
@@ -102,6 +101,12 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
+import           Control.Monad.Class.MonadMVar (MonadMVar)
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSharing
+                     (PeerSharingRegistry (PeerSharingRegistry))
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -138,7 +143,8 @@ data Arguments m = Arguments
 
     , aPeerSelectionTargets :: PeerSelectionTargets
     , aReadLocalRootPeers   :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
-    , aReadPublicRootPeers  :: STM m [RelayAccessPoint]
+    , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerAfter   :: STM m UseLedgerAfter
     , aProtocolIdleTimeout  :: DiffTime
     , aTimeWaitTimeout      :: DiffTime
@@ -166,6 +172,7 @@ run :: forall resolver m.
        , MonadTimer       m
        , MonadThrow       m
        , MonadThrow       (STM m)
+       , MonadMVar        m
 
        , resolver ~ ()
        , forall a. Semigroup a => Semigroup (m a)
@@ -185,6 +192,9 @@ run blockGeneratorArgs limits ni na tracersExtra =
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
+
+        peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
+
         let -- diffusion interfaces
             interfaces :: Diff.P2P.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                               (NtCFD m) NtCAddr NtCVersion NtCVersionData
@@ -209,6 +219,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
                   case ntnDiffusionMode of
                     InitiatorOnlyDiffusionMode         -> Unidirectional
                     InitiatorAndResponderDiffusionMode -> Duplex
+              , Diff.P2P.diNtnPeerSharing        = ntnPeerSharing
               , Diff.P2P.diNtnToPeerAddr         = \a b -> TestAddress (Node.IPAddr a b)
               , Diff.P2P.diNtnDomainResolver     = iNtnDomainResolver ni
               , Diff.P2P.diNtcSnocket            = iNtcSnocket ni
@@ -246,9 +257,10 @@ run blockGeneratorArgs limits ni na tracersExtra =
                 -- fetch mode is not used (no block-fetch mini-protocol)
               , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
               , Diff.P2P.daReturnPolicy           = \_ -> config_RECONNECT_DELAY
+              , Diff.P2P.daPeerSharingRegistry    = peerSharingRegistry
               }
 
-        apps <- Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
+        let apps = Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
 
         withAsync
            (Diff.P2P.runM interfaces
@@ -339,13 +351,24 @@ run blockGeneratorArgs limits ni na tracersExtra =
     ntnUnversionedDataCodec :: VersionDataCodec CBOR.Term NtNVersion NtNVersionData
     ntnUnversionedDataCodec = VersionDataCodec { encodeData, decodeData }
       where
-        encodeData _ NtNVersionData { ntnDiffusionMode } =
+        encodeData _ NtNVersionData { ntnDiffusionMode, ntnPeerSharing } =
           case ntnDiffusionMode of
-            InitiatorOnlyDiffusionMode         -> CBOR.TBool False
-            InitiatorAndResponderDiffusionMode -> CBOR.TBool True
+            InitiatorOnlyDiffusionMode         -> case ntnPeerSharing of
+              NoPeerSharing      -> CBOR.TList [CBOR.TBool False, CBOR.TInt 0]
+              PeerSharingPrivate -> CBOR.TList [CBOR.TBool False, CBOR.TInt 1]
+              PeerSharingPublic  -> CBOR.TList [CBOR.TBool False, CBOR.TInt 2]
+            InitiatorAndResponderDiffusionMode -> case ntnPeerSharing of
+              NoPeerSharing      -> CBOR.TList [CBOR.TBool True, CBOR.TInt 0]
+              PeerSharingPrivate -> CBOR.TList [CBOR.TBool True, CBOR.TInt 1]
+              PeerSharingPublic  -> CBOR.TList [CBOR.TBool True, CBOR.TInt 2]
         decodeData _ bytes = case bytes of
-          CBOR.TBool False -> Right (NtNVersionData InitiatorOnlyDiffusionMode)
-          CBOR.TBool True  -> Right (NtNVersionData InitiatorAndResponderDiffusionMode)
+          CBOR.TList [CBOR.TBool False, CBOR.TInt 0] -> Right (NtNVersionData InitiatorOnlyDiffusionMode NoPeerSharing)
+          CBOR.TList [CBOR.TBool False, CBOR.TInt 1] -> Right (NtNVersionData InitiatorOnlyDiffusionMode PeerSharingPrivate)
+          CBOR.TList [CBOR.TBool False, CBOR.TInt 2] -> Right (NtNVersionData InitiatorOnlyDiffusionMode PeerSharingPublic)
+
+          CBOR.TList [CBOR.TBool True, CBOR.TInt 0] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode NoPeerSharing)
+          CBOR.TList [CBOR.TBool True, CBOR.TInt 1] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode PeerSharingPrivate)
+          CBOR.TList [CBOR.TBool True, CBOR.TInt 2] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode PeerSharingPublic)
           _                -> Left (Text.pack "unversionedDataCodec: unexpected term")
 
     args :: Diff.Arguments (NtNFD m) NtNAddr (NtCFD m) NtCAddr
@@ -363,6 +386,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
       { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
+      , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
       , Diff.P2P.daReadUseLedgerAfter    = aReadUseLedgerAfter na
       , Diff.P2P.daProtocolIdleTimeout   = aProtocolIdleTimeout na
       , Diff.P2P.daTimeWaitTimeout       = aTimeWaitTimeout na
@@ -380,6 +404,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
       , Node.aaPingPongInterval         = aPingPongInterval na
       , Node.aaShouldChainSyncExit      = aShouldChainSyncExit na
       , Node.aaChainSyncEarlyExit       = aChainSyncEarlyExit na
+      , Node.aaOwnPeerSharing           = aOwnPeerSharing na
       }
 
 --- Utils

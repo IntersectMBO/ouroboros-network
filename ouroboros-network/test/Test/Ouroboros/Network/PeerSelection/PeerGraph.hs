@@ -8,13 +8,14 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph
   ( PeerGraph (..)
   , validPeerGraph
   , allPeers
-  , firstGossipReachablePeers
+  , peerShareReachablePeers
   , GovernorScripts (..)
-  , GossipScript
+  , PeerShareScript
   , ConnectionScript
+  , PeerSharingScript
   , AsyncDemotion (..)
-  , GossipTime (..)
-  , interpretGossipTime
+  , PeerShareTime (..)
+  , interpretPeerShareTime
   , prop_shrink_GovernorScripts
   , prop_arbitrary_PeerGraph
   , prop_shrink_PeerGraph
@@ -24,7 +25,7 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Data.Graph (Graph)
 import qualified Data.Graph as Graph
-import           Data.List.NonEmpty (NonEmpty ((:|)))
+import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
@@ -40,6 +41,7 @@ import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.ShrinkCarefully
 
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Test.QuickCheck
 
 
@@ -53,41 +55,41 @@ import           Test.QuickCheck
 newtype PeerGraph = PeerGraph [(PeerAddr, [PeerAddr], PeerInfo)]
   deriving (Eq, Show)
 
--- | For now the information associated with each node is just the gossip
+-- | For now the information associated with each node is just the peer sharing
 -- script and connection script.
 --
 type PeerInfo = GovernorScripts
 
 data GovernorScripts = GovernorScripts {
-    gossipScript     :: GossipScript,
+    peerShareScript  :: PeerShareScript,
     connectionScript :: ConnectionScript
   }
   deriving (Eq, Show)
 
 
--- | The gossip script is the script we interpret to provide answers to gossip
--- requests that the governor makes. After each gossip request to a peer we
--- move on to the next entry in the script, unless we get to the end in which
--- case that becomes the reply for all remaining gossips.
+-- | The peer sharing script is the script we interpret to provide answers to
+-- peer share requests that the governor makes. After each peer share request
+-- to a peer we move on to the next entry in the script, unless we get to the
+-- end in which case that becomes the reply for all remaining peer share requests.
 --
 -- A @Nothing@ indicates failure. The @[PeerAddr]@ is the list of peers to
 -- return which must always be a subset of the actual edges in the p2p graph.
 --
 -- This representation was chosen because it allows easy shrinking.
 --
-type GossipScript = Script (Maybe ([PeerAddr], GossipTime))
+type PeerShareScript = Script (Maybe ([PeerAddr], PeerShareTime))
 
--- | The gossp time is our simulation of elapsed time to respond to gossip
--- requests. This is important because the governor uses timeouts and behaves
--- differently in these three cases.
+-- | The peer sharing time is our simulation of elapsed time to respond to peer
+-- share requests. This is important because the governor uses timeouts and
+-- behaves differently in these three cases.
 --
-data GossipTime = GossipTimeQuick | GossipTimeSlow | GossipTimeTimeout
+data PeerShareTime = PeerShareTimeQuick | PeerShareTimeSlow | PeerShareTimeTimeout
   deriving (Eq, Show)
 
-interpretGossipTime :: GossipTime -> DiffTime
-interpretGossipTime GossipTimeQuick   = 1
-interpretGossipTime GossipTimeSlow    = 5
-interpretGossipTime GossipTimeTimeout = 25
+interpretPeerShareTime :: PeerShareTime -> DiffTime
+interpretPeerShareTime PeerShareTimeQuick   = 1
+interpretPeerShareTime PeerShareTimeSlow    = 5
+interpretPeerShareTime PeerShareTimeTimeout = 25
 
 
 -- | Connection script is the script which provides asynchronous demotions
@@ -100,18 +102,21 @@ data AsyncDemotion = ToWarm
                    | Noop
   deriving (Eq, Show)
 
-
+-- | PeerSharing script is the script which provides PeerSharing values
+-- when a new connection is established.
+--
+type PeerSharingScript = Script PeerSharing
 
 -- | Invariant. Used to check the QC generator and shrinker.
 --
 validPeerGraph :: PeerGraph -> Bool
 validPeerGraph g@(PeerGraph adjacency) =
     and [ edgesSet  `Set.isSubsetOf` allpeersSet &&
-          gossipSet `Set.isSubsetOf` edgesSet
+          peerShareSet `Set.isSubsetOf` edgesSet
         | let allpeersSet = allPeers g
-        , (_, outedges, GovernorScripts { gossipScript = Script script }) <- adjacency
+        , (_, outedges, GovernorScripts { peerShareScript = Script script }) <- adjacency
         , let edgesSet  = Set.fromList outedges
-              gossipSet = Set.fromList
+              peerShareSet = Set.fromList
                             [ x | Just (xs, _) <- NonEmpty.toList script
                                 , x <- xs ]
         ]
@@ -126,8 +131,8 @@ allPeers (PeerGraph g) = Set.fromList [ addr | (addr, _, _) <- g ]
 
 -- | The peers that are notionally reachable from the root set. It is notional
 -- in the sense that it only takes account of the connectivity graph and not
--- the 'GossipScript's which determine what subset of edges the governor
--- actually sees when it tries to gossip.
+-- the 'PeerShareScript's which determine what subset of edges the governor
+-- actually sees when it tries to peer share.
 --
 _notionallyReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
 _notionallyReachablePeers pg roots =
@@ -140,8 +145,8 @@ _notionallyReachablePeers pg roots =
   where
     (graph, vertexToAddr, addrToVertex) = peerGraphAsGraph pg
 
-firstGossipReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
-firstGossipReachablePeers pg roots =
+peerShareReachablePeers :: PeerGraph -> Set PeerAddr -> Set PeerAddr
+peerShareReachablePeers pg roots =
     Set.fromList
   . map vertexToAddr
   . concatMap Tree.flatten
@@ -149,7 +154,7 @@ firstGossipReachablePeers pg roots =
   . map addrToVertex
   $ Set.toList roots
   where
-    (graph, vertexToAddr, addrToVertex) = firstGossipGraph pg
+    (graph, vertexToAddr, addrToVertex) = peerShareGraph pg
 
 peerGraphAsGraph :: PeerGraph
                  -> (Graph, Graph.Vertex -> PeerAddr, PeerAddr -> Graph.Vertex)
@@ -157,20 +162,26 @@ peerGraphAsGraph (PeerGraph adjacency) =
     simpleGraphRep $
       Graph.graphFromEdges [ ((), node, edges) | (node, edges, _) <- adjacency ]
 
-firstGossipGraph :: PeerGraph
+peerShareGraph :: PeerGraph
                  -> (Graph, Graph.Vertex -> PeerAddr, PeerAddr -> Graph.Vertex)
-firstGossipGraph (PeerGraph adjacency) =
+peerShareGraph (PeerGraph adjacency) =
     simpleGraphRep $
       Graph.graphFromEdges
-        [ ((), node, gossipScriptEdges gossipScript)
-        | (node, _edges, GovernorScripts { gossipScript }) <- adjacency ]
+        [ ((), node, peerShareScriptEdges peerShareScript)
+        | (node, _edges, GovernorScripts { peerShareScript }) <- adjacency ]
   where
-    gossipScriptEdges :: GossipScript -> [PeerAddr]
-    gossipScriptEdges (Script (script :| _)) =
+    peerShareScriptEdges :: PeerShareScript -> [PeerAddr]
+    peerShareScriptEdges (Script (script :| [])) =
       case script of
-        Nothing                     -> []
-        Just (_, GossipTimeTimeout) -> []
-        Just (edges, _)             -> edges
+        Nothing                        -> []
+        Just (_, PeerShareTimeTimeout) -> []
+        Just (edges, _)                -> edges
+    peerShareScriptEdges (Script (script :| (h:t))) =
+      case script of
+        Nothing                        -> peerShareScriptEdges (Script (h :| t))
+        Just (_, PeerShareTimeTimeout) -> peerShareScriptEdges (Script (h :| t))
+        Just (edges, _)                -> edges
+                                       ++ peerShareScriptEdges (Script (h :| t))
 
 simpleGraphRep :: forall a n.
                   (Graph, Graph.Vertex -> (a, n, [n]), n -> Maybe Graph.Vertex)
@@ -204,12 +215,12 @@ instance Arbitrary GovernorScripts where
     arbitrary = GovernorScripts
             <$> arbitrary
             <*> (fixConnectionScript <$> arbitrary)
-    shrink GovernorScripts { gossipScript, connectionScript } =
-      [ GovernorScripts gossipScript' connectionScript
-      | gossipScript' <- shrink gossipScript
+    shrink GovernorScripts { peerShareScript, connectionScript } =
+      [ GovernorScripts peerShareScript' connectionScript
+      | peerShareScript' <- shrink peerShareScript
       ]
       ++
-      [ GovernorScripts gossipScript connectionScript'
+      [ GovernorScripts peerShareScript connectionScript'
       | connectionScript' <- map fixConnectionScript (shrink connectionScript)
         -- fixConnectionScript can result in re-creating the same script
         -- which would cause shrinking to loop. Filter out such cases.
@@ -236,9 +247,9 @@ instance Arbitrary PeerGraph where
       let adjacency = Map.fromListWith (<>)
                         [ (from, Set.singleton (PeerAddr to))
                         | (from, to) <- edges ]
-      graph <- sequence [ do gossipScript <- arbitraryGossipScript outedges
+      graph <- sequence [ do peerShareScript <- arbitraryPeerShareScript outedges
                              connectionScript <- fixConnectionScript <$> arbitrary
-                             let node = GovernorScripts { gossipScript, connectionScript }
+                             let node = GovernorScripts { peerShareScript, connectionScript }
                              return (PeerAddr n, outedges, node)
                         | n <- [0..numNodes-1]
                         , let outedges = maybe [] Set.toList
@@ -250,19 +261,19 @@ instance Arbitrary PeerGraph where
       | graph' <- shrinkList shrinkNode graph ]
     where
       shrinkNode (nodeaddr, edges, script) =
-          -- shrink edges before gossip script, and addr does not shrink
+          -- shrink edges before peer share script, and addr does not shrink
           [ (nodeaddr, edges', script)
           | edges' <- shrinkList shrinkNothing edges ]
        ++ [ (nodeaddr, edges, script')
           | script' <- shrink script ]
 
-arbitraryGossipScript :: [PeerAddr] -> Gen GossipScript
-arbitraryGossipScript peers =
+arbitraryPeerShareScript :: [PeerAddr] -> Gen PeerShareScript
+arbitraryPeerShareScript peers =
     sized $ \sz ->
-      arbitraryScriptOf (isqrt sz) gossipResult
+      arbitraryScriptOf (isqrt sz) peerShareResult
   where
-    gossipResult :: Gen (Maybe ([PeerAddr], GossipTime))
-    gossipResult =
+    peerShareResult :: Gen (Maybe ([PeerAddr], PeerShareTime))
+    peerShareResult =
       frequency [ (1, pure Nothing)
                 , (4, Just <$> ((,) <$> selectHalfRandomly peers
                                     <*> arbitrary)) ]
@@ -275,18 +286,18 @@ arbitraryGossipScript peers =
 isqrt :: Int -> Int
 isqrt = floor . sqrt . (fromIntegral :: Int -> Double)
 
--- | Remove dangling graph edges and gossip results.
+-- | Remove dangling graph edges and peer sharing results.
 --
 prunePeerGraphEdges :: [(PeerAddr, [PeerAddr], PeerInfo)]
                     -> [(PeerAddr, [PeerAddr], PeerInfo)]
 prunePeerGraphEdges graph =
     [ (nodeaddr, edges', node)
     | let nodes   = Set.fromList [ nodeaddr | (nodeaddr, _, _) <- graph ]
-    , (nodeaddr, edges, GovernorScripts { gossipScript = Script gossip, connectionScript }) <- graph
+    , (nodeaddr, edges, GovernorScripts { peerShareScript = Script peershare, connectionScript }) <- graph
     , let edges'  = pruneEdgeList nodes edges
-          gossip' = pruneGossipScript (Set.fromList edges') gossip
+          peershare' = prunePeerShareScript (Set.fromList edges') peershare
           node    = GovernorScripts {
-                        gossipScript = Script gossip',
+                        peerShareScript = Script peershare',
                         connectionScript
                       }
     ]
@@ -294,21 +305,21 @@ prunePeerGraphEdges graph =
     pruneEdgeList :: Set PeerAddr -> [PeerAddr] -> [PeerAddr]
     pruneEdgeList nodes = filter (`Set.member` nodes)
 
-    pruneGossipScript :: Set PeerAddr
-                      -> NonEmpty (Maybe ([PeerAddr], GossipTime))
-                      -> NonEmpty (Maybe ([PeerAddr], GossipTime))
-    pruneGossipScript nodes =
+    prunePeerShareScript :: Set PeerAddr
+                         -> NonEmpty (Maybe ([PeerAddr], PeerShareTime))
+                         -> NonEmpty (Maybe ([PeerAddr], PeerShareTime))
+    prunePeerShareScript nodes =
       NonEmpty.map (fmap (\(es, t) -> (pruneEdgeList nodes es, t)))
 
 
-instance Arbitrary GossipTime where
-  arbitrary = frequency [ (2, pure GossipTimeQuick)
-                        , (2, pure GossipTimeSlow)
-                        , (1, pure GossipTimeTimeout) ]
+instance Arbitrary PeerShareTime where
+  arbitrary = frequency [ (2, pure PeerShareTimeQuick)
+                        , (2, pure PeerShareTimeSlow)
+                        , (1, pure PeerShareTimeTimeout) ]
 
-  shrink GossipTimeTimeout = [GossipTimeQuick, GossipTimeSlow]
-  shrink GossipTimeSlow    = [GossipTimeQuick]
-  shrink GossipTimeQuick   = []
+  shrink PeerShareTimeTimeout = [PeerShareTimeQuick, PeerShareTimeSlow]
+  shrink PeerShareTimeSlow    = [PeerShareTimeQuick]
+  shrink PeerShareTimeQuick   = []
 
 
 

@@ -234,7 +234,8 @@ jobPromoteColdPeer :: forall peeraddr peerconn m.
                    -> peeraddr
                    -> Job () m (Completion m peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
-                     peerStateActions = PeerStateActions {establishPeerConnection}
+                     peerStateActions = PeerStateActions {establishPeerConnection},
+                     peerConnToPeerSharing
                    } peeraddr =
     Job job handler () "promoteColdPeer"
   where
@@ -283,6 +284,8 @@ jobPromoteColdPeer PeerSelectionActions {
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
       peerconn <- establishPeerConnection peeraddr
+      let peerSharing = peerConnToPeerSharing peerconn
+
       return $ Completion $ \st@PeerSelectionState {
                                establishedPeers,
                                knownPeers,
@@ -293,7 +296,11 @@ jobPromoteColdPeer PeerSelectionActions {
                              _now ->
         let establishedPeers' = EstablishedPeers.insert peeraddr peerconn
                                                         establishedPeers
-            knownPeers'       = KnownPeers.clearTepidFlag peeraddr $
+            -- Update PeerSharing value in KnownPeers
+            -- Overwrite the previous value
+            knownPeers'       = KnownPeers.updatePeerSharing peeraddr
+                                                             peerSharing
+                              $ KnownPeers.clearTepidFlag peeraddr $
                                     KnownPeers.resetFailCount
                                         peeraddr
                                         knownPeers

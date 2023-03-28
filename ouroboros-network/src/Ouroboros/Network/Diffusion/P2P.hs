@@ -47,10 +47,10 @@ import           Data.Kind (Type)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map (Map)
 import           Data.Maybe (catMaybes, maybeToList)
-import           Data.Set (Set)
+import           Data.Set (Set, elemAt)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
-import           System.Random (StdGen, newStdGen, split)
+import           System.Random (StdGen, newStdGen, randomRs, split)
 #ifdef POSIX
 import qualified System.Posix.Signals as Signals
 #endif
@@ -75,6 +75,8 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket (configureSocket,
                      configureSystemdSocket)
 
+import           Control.Monad.Class.MonadMVar (MonadMVar)
+import           Data.List (nub)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.Types
@@ -97,18 +99,23 @@ import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types
                      (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-                     PeerSelectionCounters (..), TracePeerSelection (..))
+                     PeerSelectionCounters (..), PublicPeerSelectionState (..),
+                     TracePeerSelection (..), emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
-                     PeerStateActionsArguments (..), withPeerStateActions)
+                     PeerStateActionsArguments (..), pchPeerSharing,
+                     withPeerStateActions)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
                      DomainAccessPoint, LookupReqs (..), RelayAccessPoint (..),
                      TraceLocalRootPeers (..), TracePublicRootPeers (..),
                      ioDNSActions, resolveDomainAccessPoint)
 import           Ouroboros.Network.PeerSelection.Simple
+import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server2 (ServerArguments (..),
                      ServerControlChannel, ServerTrace (..))
@@ -213,7 +220,11 @@ data ArgumentsExtra m = ArgumentsExtra {
       daPeerSelectionTargets :: PeerSelectionTargets
 
     , daReadLocalRootPeers  :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
-    , daReadPublicRootPeers :: STM m [RelayAccessPoint]
+    , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
+    -- | Peer's own PeerSharing value.
+    --
+    -- This value comes from the node's configuration file and is static.
+    , daOwnPeerSharing      :: PeerSharing
     , daReadUseLedgerAfter  :: STM m UseLedgerAfter
 
       -- | Timeout which starts once all responder protocols are idle. If the
@@ -283,24 +294,28 @@ data ApplicationsExtra ntnAddr m a =
     ApplicationsExtra {
     -- | /node-to-node/ rethrow policy
     --
-      daRethrowPolicy      :: RethrowPolicy
+      daRethrowPolicy       :: RethrowPolicy
 
     -- | /node-to-node/ return policy
     --
-    , daReturnPolicy       :: ReturnPolicy a
+    , daReturnPolicy        :: ReturnPolicy a
 
     -- | /node-to-client/ rethrow policy
     --
-    , daLocalRethrowPolicy :: RethrowPolicy
+    , daLocalRethrowPolicy  :: RethrowPolicy
 
     -- | 'PeerMetrics' used by peer selection policy (see
     -- 'simplePeerSelectionPolicy')
     --
-    , daPeerMetrics        :: PeerMetrics m ntnAddr
+    , daPeerMetrics         :: PeerMetrics m ntnAddr
 
     -- | Used by churn-governor
     --
-    , daBlockFetchMode     :: STM m FetchMode
+    , daBlockFetchMode      :: STM m FetchMode
+
+    -- | Used for peer sharing protocol
+    --
+    , daPeerSharingRegistry :: PeerSharingRegistry ntnAddr m
   }
 
 -- | Diffusion will always run initiator of node-to-node protocols, but in some
@@ -325,14 +340,14 @@ data HasMuxMode (f :: MuxMode -> Type) where
 -- | Node-To-Node connection manager requires extra data when running in
 -- 'InitiatorResponderMode'.
 --
-data ConnectionManagerDataInMode peerAddr m a (mode :: MuxMode) where
+data ConnectionManagerDataInMode peerAddr versionData m a (mode :: MuxMode) where
     CMDInInitiatorMode
-      :: ConnectionManagerDataInMode peerAddr m a InitiatorMode
+      :: ConnectionManagerDataInMode peerAddr versionData m a InitiatorMode
 
     CMDInInitiatorResponderMode
-      :: ServerControlChannel InitiatorResponderMode peerAddr ByteString  m a ()
+      :: ServerControlChannel InitiatorResponderMode peerAddr versionData ByteString  m a ()
       -> StrictTVar m Server.InboundGovernorObservableState
-      -> ConnectionManagerDataInMode peerAddr m a InitiatorResponderMode
+      -> ConnectionManagerDataInMode peerAddr versionData m a InitiatorResponderMode
 
 
 --
@@ -341,8 +356,8 @@ data ConnectionManagerDataInMode peerAddr m a (mode :: MuxMode) where
 -- Node-To-Client diffusion is only used in 'ResponderMode'.
 --
 
-type NodeToClientHandle ntcAddr m =
-    Handle ResponderMode ntcAddr ByteString m Void ()
+type NodeToClientHandle ntcAddr versionData m =
+    Handle ResponderMode ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
     HandleError ResponderMode ntcVersion
@@ -354,7 +369,7 @@ type NodeToClientConnectionHandler
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
-      (NodeToClientHandle ntcAddr m)
+      (NodeToClientHandle ntcAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
       (ntcVersion, ntcVersionData)
       m
@@ -365,9 +380,10 @@ type NodeToClientConnectionManagerArguments
       (ConnectionHandlerTrace ntcVersion ntcVersionData)
       ntcFd
       ntcAddr
-      (NodeToClientHandle ntcAddr m)
+      (NodeToClientHandle ntcAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
-      (ntcVersion, ntcVersionData)
+      ntcVersion
+      ntcVersionData
       m
 
 type NodeToClientConnectionManager
@@ -376,7 +392,7 @@ type NodeToClientConnectionManager
       ResponderMode
       ntcFd
       ntcAddr
-      (NodeToClientHandle ntcAddr m)
+      (NodeToClientHandle ntcAddr ntcVersionData m)
       (NodeToClientHandleError ntcVersion)
       m
 
@@ -388,8 +404,8 @@ type NodeToClientConnectionManager
 
 type NodeToNodeHandle
        (mode :: MuxMode)
-       ntnAddr m a b =
-    Handle mode ntnAddr ByteString m a b
+       ntnAddr ntnVersionData m a b =
+    Handle mode ntnAddr ntnVersionData ByteString m a b
 
 type NodeToNodeConnectionHandler
        (mode :: MuxMode)
@@ -399,7 +415,7 @@ type NodeToNodeConnectionHandler
       (ConnectionHandlerTrace ntnVersion ntnVersionData)
       ntnFd
       ntnAddr
-      (NodeToNodeHandle mode ntnAddr m a b)
+      (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
       (HandleError mode ntnVersion)
       (ntnVersion, ntnVersionData)
       m
@@ -411,19 +427,20 @@ type NodeToNodeConnectionManagerArguments
       (ConnectionHandlerTrace ntnVersion ntnVersionData)
       ntnFd
       ntnAddr
-      (NodeToNodeHandle mode ntnAddr m a b)
+      (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
       (HandleError mode ntnVersion)
-      (ntnVersion, ntnVersionData)
+      ntnVersion
+      ntnVersionData
       m
 
 type NodeToNodeConnectionManager
        (mode :: MuxMode)
-       ntnFd ntnAddr ntnVersion m a b =
+       ntnFd ntnAddr ntnVersionData ntnVersion m a b =
     ConnectionManager
       mode
       ntnFd
       ntnAddr
-      (NodeToNodeHandle mode ntnAddr m a b)
+      (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
       (HandleError mode ntnVersion)
       m
 
@@ -431,23 +448,24 @@ type NodeToNodeConnectionManager
 -- Governor type aliases
 --
 
-type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr m a b =
+type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a b =
     PeerConnectionHandle
       mode
       ntnAddr
+      ntnVersionData
       ByteString
       m a b
 
-type NodeToNodePeerStateActions (mode :: MuxMode) ntnAddr m a b =
+type NodeToNodePeerStateActions (mode :: MuxMode) ntnAddr ntnVersionData m a b =
     Governor.PeerStateActions
       ntnAddr
-      (NodeToNodePeerConnectionHandle mode ntnAddr m a b)
+      (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
       m
 
-type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr m a b =
+type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr ntnVersionData m a b =
     Governor.PeerSelectionActions
       ntnAddr
-      (NodeToNodePeerConnectionHandle mode ntnAddr m a b)
+      (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
       m
 
 
@@ -492,6 +510,11 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnDataFlow
           :: ntnVersion -> ntnVersionData -> DataFlow,
 
+        -- | peer sharing information used by peer selection governor to
+        -- decide which peers are available for performing peer sharing
+        diNtnPeerSharing
+          :: ntnVersionData -> PeerSharing,
+
         -- | node-to-node peer address
         --
         diNtnToPeerAddr
@@ -532,7 +555,7 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | callback which is used to register @SIGUSR1@ signal handler.
         diInstallSigUSR1Handler
           :: forall mode x y.
-             NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersion m x y
+             NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersionData ntnVersion  m x y
           -> m (),
 
         -- | diffusion dns actions
@@ -555,6 +578,7 @@ runM
        , MonadThrow  (STM m)
        , MonadTime        m
        , MonadTimer       m
+       , MonadMVar        m
        , Eq (Async m Void)
        , Typeable  ntnAddr
        , Ord       ntnAddr
@@ -562,6 +586,7 @@ runM
        , Typeable  ntnVersion
        , Ord       ntnVersion
        , Show      ntnVersion
+       , Show      ntnVersionData
        , Typeable  ntcAddr
        , Ord       ntcAddr
        , Show      ntcAddr
@@ -602,6 +627,7 @@ runM Interfaces
        , diNtnHandshakeArguments
        , diNtnAddressType
        , diNtnDataFlow
+       , diNtnPeerSharing
        , diNtnToPeerAddr
        , diNtnDomainResolver
        , diNtcSnocket
@@ -646,6 +672,7 @@ runM Interfaces
        { daPeerSelectionTargets
        , daReadLocalRootPeers
        , daReadPublicRootPeers
+       , daOwnPeerSharing
        , daReadUseLedgerAfter
        , daProtocolIdleTimeout
        , daTimeWaitTimeout
@@ -664,6 +691,7 @@ runM Interfaces
        , daReturnPolicy
        , daPeerMetrics
        , daBlockFetchMode
+       , daPeerSharingRegistry
        }
   = do
     -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
@@ -735,7 +763,7 @@ runM Interfaces
                           cmConfigureSocket     = \_ _ -> return (),
                           cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                           cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
-                          connectionDataFlow    = uncurry localDataFlow,
+                          connectionDataFlow    = localDataFlow,
                           cmPrunePolicy         = Diffusion.Policies.prunePolicy
                                                     localServerStateVar,
                           cmConnectionsLimits   = localConnectionLimits
@@ -811,6 +839,9 @@ runM Interfaces
                 min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
             }
 
+
+          publicStateVar <- newTVarIO emptyPublicPeerSelectionState
+
           withLedgerPeers
             ledgerPeersRng
             diNtnToPeerAddr
@@ -842,7 +873,7 @@ runM Interfaces
                           cmSnocket             = diNtnSnocket,
                           cmMakeBearer          = diNtnBearer,
                           cmConfigureSocket     = diNtnConfigureSocket,
-                          connectionDataFlow    = uncurry diNtnDataFlow,
+                          connectionDataFlow    = diNtnDataFlow,
                           cmPrunePolicy         = simplePrunePolicy,
                           -- Server is not running, it will not be able to
                           -- advise which connections to prune.  It's also not
@@ -873,7 +904,7 @@ runM Interfaces
                   NotInResponderMode
                   $ \(connectionManager
                       :: NodeToNodeConnectionManager
-                           InitiatorMode ntnFd ntnAddr ntnVersion m a Void)
+                           InitiatorMode ntnFd ntnAddr ntnVersionData ntnVersion m a Void)
                     -> do
                   diInstallSigUSR1Handler connectionManager
 
@@ -894,7 +925,7 @@ runM Interfaces
                         spsExitPolicy = exitPolicy
                       }
                     $ \(peerStateActions
-                          :: NodeToNodePeerStateActions InitiatorMode ntnAddr m a Void) ->
+                          :: NodeToNodePeerStateActions InitiatorMode ntnAddr versionData m a Void) ->
                     --
                     -- Run peer selection (p2p governor)
                     --
@@ -907,12 +938,15 @@ runM Interfaces
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
+                      daOwnPeerSharing
+                      (pchPeerSharing diNtnPeerSharing)
+                      (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerSelectionActionsThread
                         (peerSelectionActions
                            :: NodeToNodePeerSelectionActions
-                                InitiatorMode ntnAddr m a Void) ->
+                                InitiatorMode ntnAddr versionData m a Void) ->
 
                         Async.withAsync
                         (Governor.peerSelectionGovernor
@@ -920,6 +954,7 @@ runM Interfaces
                           dtDebugPeerSelectionInitiatorTracer
                           dtTracePeerSelectionCounters
                           fuzzRng
+                          publicStateVar
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
                              policyRngVar (readTVar churnModeVar)
@@ -969,12 +1004,29 @@ runM Interfaces
                           cmSnocket             = diNtnSnocket,
                           cmMakeBearer          = diNtnBearer,
                           cmConfigureSocket     = diNtnConfigureSocket,
-                          connectionDataFlow    = uncurry diNtnDataFlow,
+                          connectionDataFlow    = diNtnDataFlow,
                           cmPrunePolicy         = Diffusion.Policies.prunePolicy observableStateVar,
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
                           cmTimeWaitTimeout     = daTimeWaitTimeout,
                           cmOutboundIdleTimeout = daProtocolIdleTimeout
                         }
+
+                    computePeerSharingPeers :: STM m (PublicPeerSelectionState ntnAddr)
+                                            -> StdGen
+                                            -> PeerSharingAmount
+                                            -> m [ntnAddr]
+                    computePeerSharingPeers readPublicState gen amount = do
+                      publicState <- atomically readPublicState
+                      let availableToShareSet = availableToShare
+                                              $ publicState
+                          is = nub
+                             $ take (fromIntegral amount)
+                             $ randomRs (0, length availableToShareSet - 1) gen
+                          randomList = map (`elemAt` availableToShareSet) is
+                      if null availableToShareSet
+                         then return []
+                         else return randomList
+
 
                     connectionHandler
                       :: NodeToNodeConnectionHandler
@@ -986,7 +1038,8 @@ runM Interfaces
                          dtMuxTracer
                          SingInitiatorResponderMode
                          diNtnHandshakeArguments
-                         daApplicationInitiatorResponderMode
+                         (daApplicationInitiatorResponderMode
+                            (computePeerSharingPeers (readTVar publicStateVar) peerSharingRng))
                          (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
                 withConnectionManager
@@ -996,7 +1049,7 @@ runM Interfaces
                   (InResponderMode controlChannel)
                   $ \(connectionManager
                         :: NodeToNodeConnectionManager
-                             InitiatorResponderMode ntnFd ntnAddr ntnVersion m a ()
+                             InitiatorResponderMode ntnFd ntnAddr ntnVersionData ntnVersion m a ()
                      ) -> do
                   diInstallSigUSR1Handler connectionManager
 
@@ -1018,7 +1071,7 @@ runM Interfaces
                       }
                     $ \(peerStateActions
                           :: NodeToNodePeerStateActions
-                               InitiatorResponderMode ntnAddr m a ()) ->
+                               InitiatorResponderMode ntnAddr versionData m a ()) ->
 
                     --
                     -- Run peer selection (p2p governor)
@@ -1032,12 +1085,15 @@ runM Interfaces
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
                       daReadPublicRootPeers
+                      daOwnPeerSharing
+                      (pchPeerSharing diNtnPeerSharing)
+                      (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerRootProviderThread
                         (peerSelectionActions
                            :: NodeToNodePeerSelectionActions
-                                InitiatorResponderMode ntnAddr m a ()) ->
+                                InitiatorResponderMode ntnAddr versionData m a ()) ->
 
                       Async.withAsync
                         (Governor.peerSelectionGovernor
@@ -1045,6 +1101,7 @@ runM Interfaces
                           dtDebugPeerSelectionInitiatorResponderTracer
                           dtTracePeerSelectionCounters
                           fuzzRng
+                          publicStateVar
                           peerSelectionActions
                           (Diffusion.Policies.simplePeerSelectionPolicy
                              policyRngVar (readTVar churnModeVar)
@@ -1112,7 +1169,8 @@ runM Interfaces
     (policyRng,      rng2) = split rng1
     (churnRng,       rng3) = split rng2
     (fuzzRng,        rng4) = split rng3
-    (ntnInbgovRng,   ntcInbgovRng) = split rng4
+    (ntnInbgovRng,   rng5) = split rng4
+    (ntcInbgovRng,   peerSharingRng) = split rng5
 
     -- Only the 'IOManagerError's are fatal, all the other exceptions in the
     -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
@@ -1190,7 +1248,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
                  diInstallSigUSR1Handler
                    :: forall mode x y.
-                      NodeToNodeConnectionManager mode Socket RemoteAddress NodeToNodeVersion IO x y
+                      NodeToNodeConnectionManager mode Socket RemoteAddress
+                                                  NodeToNodeVersionData NodeToNodeVersion IO x y
                    -> IO ()
 #ifdef POSIX
                  diInstallSigUSR1Handler = \connectionManager -> do
@@ -1228,6 +1287,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diNtnHandshakeArguments,
                  diNtnAddressType = socketAddressType,
                  diNtnDataFlow = nodeDataFlow,
+                 diNtnPeerSharing = peerSharing,
                  diNtnToPeerAddr = curry IP.toSockAddr,
                  diNtnDomainResolver,
 

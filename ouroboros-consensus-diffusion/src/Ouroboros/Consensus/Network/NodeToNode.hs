@@ -38,8 +38,11 @@ module Ouroboros.Consensus.Network.NodeToNode (
   ) where
 
 import           Codec.CBOR.Decoding (Decoder)
+import qualified Codec.CBOR.Decoding as CBOR
 import           Codec.CBOR.Encoding (Encoding)
+import qualified Codec.CBOR.Encoding as CBOR
 import           Codec.CBOR.Read (DeserialiseFailure)
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import           Control.Monad.Class.MonadTime (MonadTime)
 import           Control.Monad.Class.MonadTimer (MonadTimer)
 import           Control.Tracer
@@ -84,6 +87,10 @@ import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
 import           Ouroboros.Network.PeerSelection.PeerMetric.Type
                      (FetchedMetricsTracer, HeaderMetricsTracer,
                      ReportPeerMetrics (..))
+import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
+import           Ouroboros.Network.PeerSharing (PeerSharingController,
+                     bracketPeerSharingClient, peerSharingClient,
+                     peerSharingServer)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server (BlockFetchServer,
                      blockFetchServerPeer)
@@ -97,6 +104,15 @@ import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Codec
 import           Ouroboros.Network.Protocol.KeepAlive.Server
 import           Ouroboros.Network.Protocol.KeepAlive.Type
+import           Ouroboros.Network.Protocol.PeerSharing.Client
+                     (PeerSharingClient, peerSharingClientPeer)
+import           Ouroboros.Network.Protocol.PeerSharing.Codec
+                     (byteLimitsPeerSharing, codecPeerSharing,
+                     codecPeerSharingId, timeLimitsPeerSharing)
+import           Ouroboros.Network.Protocol.PeerSharing.Server
+                     (PeerSharingServer, peerSharingServerPeer)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing,
+                     PeerSharingAmount)
 import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
 import           Ouroboros.Network.Protocol.TxSubmission2.Server
@@ -111,9 +127,9 @@ import           Ouroboros.Network.TxSubmission.Outbound
 -------------------------------------------------------------------------------}
 
 -- | Protocol handlers for node-to-node (remote) communication
-data Handlers m peer blk = Handlers {
+data Handlers m addr blk = Handlers {
       hChainSyncClient
-        :: peer
+        :: ConnectionId addr
         -> NodeToNodeVersion
         -> ControlMessageSTM m
         -> HeaderMetricsTracer m
@@ -144,44 +160,60 @@ data Handlers m peer blk = Handlers {
     , hTxSubmissionClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
-        -> peer
+        -> ConnectionId addr
         -> TxSubmissionClient (GenTxId blk) (GenTx blk) m ()
 
     , hTxSubmissionServer
         :: NodeToNodeVersion
-        -> peer
+        -> ConnectionId addr
         -> TxSubmissionServerPipelined (GenTxId blk) (GenTx blk) m ()
 
     , hKeepAliveClient
         :: NodeToNodeVersion
         -> ControlMessageSTM m
-        -> peer
-        -> StrictTVar m (Map peer PeerGSV)
+        -> ConnectionId addr
+        -> StrictTVar m (Map (ConnectionId addr) PeerGSV)
         -> KeepAliveInterval
         -> KeepAliveClient m ()
 
     , hKeepAliveServer
         :: NodeToNodeVersion
-        -> peer
+        -> ConnectionId addr
         -> KeepAliveServer m ()
+
+    , hPeerSharingClient
+        :: NodeToNodeVersion
+        -> ControlMessageSTM m
+        -> addr
+        -> PeerSharingController addr m
+        -> m (PeerSharingClient addr m ())
+
+    , hPeerSharingServer
+        :: NodeToNodeVersion
+        -> addr
+        -> PeerSharingServer addr m
     }
 
 mkHandlers
-  :: forall m blk remotePeer localPeer.
+  :: forall m blk addrNTN addrNTC.
      ( IOLike m
      , MonadTime m
      , MonadTimer m
+     , MonadMVar m
      , LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
      , LedgerSupportsProtocol blk
-     , Ord remotePeer
+     , Ord addrNTN
      )
-  => NodeKernelArgs m remotePeer localPeer blk
-  -> NodeKernel     m remotePeer localPeer blk
-  -> Handlers       m remotePeer           blk
+  => NodeKernelArgs m addrNTN addrNTC blk
+  -> NodeKernel     m addrNTN addrNTC blk
+  -> (PeerSharingAmount -> m [addrNTN])
+  -- ^ Peer Sharing result computation callback
+  -> Handlers       m addrNTN           blk
 mkHandlers
       NodeKernelArgs {keepAliveRng, miniProtocolParameters}
-      NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers} =
+      NodeKernel {getChainDB, getMempool, getTopLevelConfig, getTracers = tracers}
+      computePeers =
     Handlers {
         hChainSyncClient = \peer ->
           chainSyncClient
@@ -218,6 +250,8 @@ mkHandlers
             version
       , hKeepAliveClient = \_version -> keepAliveClient (Node.keepAliveClientTracer tracers) keepAliveRng
       , hKeepAliveServer = \_version _peer -> keepAliveServer
+      , hPeerSharingClient = \_version controlMessageSTM _peer -> peerSharingClient controlMessageSTM
+      , hPeerSharingServer = \_version _peer -> peerSharingServer computePeers
       }
 
 {-------------------------------------------------------------------------------
@@ -225,23 +259,29 @@ mkHandlers
 -------------------------------------------------------------------------------}
 
 -- | Node-to-node protocol codecs needed to run 'Handlers'.
-data Codecs blk e m bCS bSCS bBF bSBF bTX bKA = Codecs {
+data Codecs blk addr e m bCS bSCS bBF bSBF bTX bKA bPS = Codecs {
       cChainSyncCodec            :: Codec (ChainSync (Header blk) (Point blk) (Tip blk))           e m bCS
     , cChainSyncCodecSerialised  :: Codec (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)) e m bSCS
     , cBlockFetchCodec           :: Codec (BlockFetch blk (Point blk))                             e m bBF
     , cBlockFetchCodecSerialised :: Codec (BlockFetch (Serialised blk) (Point blk))                e m bSBF
     , cTxSubmission2Codec        :: Codec (TxSubmission2 (GenTxId blk) (GenTx blk))                e m bTX
     , cKeepAliveCodec            :: Codec KeepAlive                                                e m bKA
+    , cPeerSharingCodec          :: Codec (PeerSharing addr)                                       e m bPS
     }
 
 -- | Protocol codecs for the node-to-node protocols
-defaultCodecs :: forall m blk. (IOLike m, SerialiseNodeToNodeConstraints blk)
+defaultCodecs :: forall m blk addr.
+                ( IOLike m
+                , SerialiseNodeToNodeConstraints blk
+                )
               => CodecConfig       blk
               -> BlockNodeToNodeVersion blk
+              -> (addr -> CBOR.Encoding)
+              -> (forall s . CBOR.Decoder s addr)
               -> NodeToNodeVersion
-              -> Codecs blk DeserialiseFailure m
-                   ByteString ByteString ByteString ByteString ByteString ByteString
-defaultCodecs ccfg version _nodeToNodeVersion = Codecs {
+              -> Codecs blk addr DeserialiseFailure m
+                   ByteString ByteString ByteString ByteString ByteString ByteString ByteString
+defaultCodecs ccfg version encAddr decAddr _nodeToNodeVersion = Codecs {
       cChainSyncCodec =
         codecChainSync
           enc
@@ -282,6 +322,8 @@ defaultCodecs ccfg version _nodeToNodeVersion = Codecs {
           dec
 
     , cKeepAliveCodec = codecKeepAlive_v2
+
+    , cPeerSharingCodec = codecPeerSharing encAddr decAddr
     }
   where
     p :: Proxy blk
@@ -295,13 +337,14 @@ defaultCodecs ccfg version _nodeToNodeVersion = Codecs {
 
 -- | Identity codecs used in tests.
 identityCodecs :: Monad m
-               => Codecs blk CodecFailure m
+               => Codecs blk addr CodecFailure m
                     (AnyMessage (ChainSync (Header blk) (Point blk) (Tip blk)))
                     (AnyMessage (ChainSync (SerialisedHeader blk) (Point blk) (Tip blk)))
                     (AnyMessage (BlockFetch blk (Point blk)))
                     (AnyMessage (BlockFetch (Serialised blk) (Point blk)))
                     (AnyMessage (TxSubmission2 (GenTxId blk) (GenTx blk)))
                     (AnyMessage KeepAlive)
+                    (AnyMessage (PeerSharing addr))
 identityCodecs = Codecs {
       cChainSyncCodec            = codecChainSyncId
     , cChainSyncCodecSerialised  = codecChainSyncId
@@ -309,6 +352,7 @@ identityCodecs = Codecs {
     , cBlockFetchCodecSerialised = codecBlockFetchId
     , cTxSubmission2Codec        = codecTxSubmission2Id
     , cKeepAliveCodec            = codecKeepAliveId
+    , cPeerSharingCodec          = codecPeerSharingId
     }
 
 {-------------------------------------------------------------------------------
@@ -389,33 +433,39 @@ type ServerApp m peer bytes a =
 -- | Applications for the node-to-node protocols
 --
 -- See 'Network.Mux.Types.MuxApplication'
-data Apps m peer bCS bBF bTX bKA a b = Apps {
+data Apps m addr bCS bBF bTX bKA bPS a b = Apps {
       -- | Start a chain sync client that communicates with the given upstream
       -- node.
-      aChainSyncClient     :: ClientApp m peer bCS a
+      aChainSyncClient     :: ClientApp m (ConnectionId addr) bCS a
 
       -- | Start a chain sync server.
-    , aChainSyncServer     :: ServerApp m peer bCS b
+    , aChainSyncServer     :: ServerApp m (ConnectionId addr) bCS b
 
       -- | Start a block fetch client that communicates with the given
       -- upstream node.
-    , aBlockFetchClient    :: ClientApp m peer bBF a
+    , aBlockFetchClient    :: ClientApp m (ConnectionId addr) bBF a
 
       -- | Start a block fetch server.
-    , aBlockFetchServer    :: ServerApp m peer bBF b
+    , aBlockFetchServer    :: ServerApp m (ConnectionId addr) bBF b
 
       -- | Start a transaction submission v2 client that communicates with the
       -- given upstream node.
-    , aTxSubmission2Client :: ClientApp m peer bTX a
+    , aTxSubmission2Client :: ClientApp m (ConnectionId addr) bTX a
 
       -- | Start a transaction submission v2 server.
-    , aTxSubmission2Server :: ServerApp m peer bTX b
+    , aTxSubmission2Server :: ServerApp m (ConnectionId addr) bTX b
 
       -- | Start a keep-alive client.
-    , aKeepAliveClient     :: ClientApp m peer bKA a
+    , aKeepAliveClient     :: ClientApp m (ConnectionId addr) bKA a
 
       -- | Start a keep-alive server.
-    , aKeepAliveServer     :: ServerApp m peer bKA b
+    , aKeepAliveServer     :: ServerApp m (ConnectionId addr) bKA b
+
+      -- | Start a peer-sharing client.
+    , aPeerSharingClient   :: ClientApp m addr bPS a
+
+      -- | Start a peer-sharing server.
+    , aPeerSharingServer   :: ServerApp m addr bPS b
     }
 
 
@@ -469,10 +519,10 @@ byteLimits = ByteLimits {
 
 -- | Construct the 'NetworkApplication' for the node-to-node protocols
 mkApps
-  :: forall m remotePeer localPeer blk e bCS bBF bTX bKA.
+  :: forall m addrNTN addrNTC blk e bCS bBF bTX bKA bPS.
      ( IOLike m
      , MonadTimer m
-     , Ord remotePeer
+     , Ord addrNTN
      , Exception e
      , LedgerSupportsProtocol blk
      , ShowProxy blk
@@ -480,21 +530,21 @@ mkApps
      , ShowProxy (TxId (GenTx blk))
      , ShowProxy (GenTx blk)
      )
-  => NodeKernel m remotePeer localPeer blk -- ^ Needed for bracketing only
-  -> Tracers m remotePeer blk e
-  -> (NodeToNodeVersion -> Codecs blk e m bCS bCS bBF bBF bTX bKA)
+  => NodeKernel m addrNTN addrNTC blk -- ^ Needed for bracketing only
+  -> Tracers m (ConnectionId addrNTN) blk e
+  -> (NodeToNodeVersion -> Codecs blk addrNTN e m bCS bCS bBF bBF bTX bKA bPS)
   -> ByteLimits bCS bBF bTX bKA
   -> m ChainSyncTimeout
-  -> ReportPeerMetrics m remotePeer
-  -> Handlers m remotePeer blk
-  -> Apps m remotePeer bCS bBF bTX bKA NodeToNodeInitiatorResult ()
+  -> ReportPeerMetrics m (ConnectionId addrNTN)
+  -> Handlers m addrNTN blk
+  -> Apps m addrNTN bCS bBF bTX bKA bPS NodeToNodeInitiatorResult ()
 mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPeerMetrics {..} Handlers {..} =
     Apps {..}
   where
     aChainSyncClient
       :: NodeToNodeVersion
       -> ControlMessageSTM m
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bCS
       -> m (NodeToNodeInitiatorResult, Maybe bCS)
     aChainSyncClient version controlMessageSTM them channel = do
@@ -528,7 +578,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 
     aChainSyncServer
       :: NodeToNodeVersion
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bCS
       -> m ((), Maybe bCS)
     aChainSyncServer version them channel = do
@@ -556,7 +606,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
     aBlockFetchClient
       :: NodeToNodeVersion
       -> ControlMessageSTM m
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bBF
       -> m (NodeToNodeInitiatorResult, Maybe bBF)
     aBlockFetchClient version controlMessageSTM them channel = do
@@ -575,7 +625,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 
     aBlockFetchServer
       :: NodeToNodeVersion
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bBF
       -> m ((), Maybe bBF)
     aBlockFetchServer version them channel = do
@@ -593,7 +643,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
     aTxSubmission2Client
       :: NodeToNodeVersion
       -> ControlMessageSTM m
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bTX
       -> m (NodeToNodeInitiatorResult, Maybe bTX)
     aTxSubmission2Client version controlMessageSTM them channel = do
@@ -609,7 +659,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 
     aTxSubmission2Server
       :: NodeToNodeVersion
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bTX
       -> m ((), Maybe bTX)
     aTxSubmission2Server version them channel = do
@@ -625,7 +675,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
     aKeepAliveClient
       :: NodeToNodeVersion
       -> ControlMessageSTM m
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bKA
       -> m (NodeToNodeInitiatorResult, Maybe bKA)
     aKeepAliveClient version controlMessageSTM them channel = do
@@ -646,7 +696,7 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 
     aKeepAliveServer
       :: NodeToNodeVersion
-      -> remotePeer
+      -> ConnectionId addrNTN
       -> Channel m bKA
       -> m ((), Maybe bKA)
     aKeepAliveServer version _them channel = do
@@ -659,6 +709,43 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
         channel
         $ keepAliveServerPeer
         $ keepAliveServer
+
+
+    aPeerSharingClient
+      :: NodeToNodeVersion
+      -> ControlMessageSTM m
+      -> addrNTN
+      -> Channel m bPS
+      -> m (NodeToNodeInitiatorResult, Maybe bPS)
+    aPeerSharingClient version controlMessageSTM them channel = do
+      labelThisThread "PeerSharingClient"
+      bracketPeerSharingClient (getPeerSharingRegistry kernel) them
+        $ \controller -> do
+          psClient <- hPeerSharingClient version controlMessageSTM them controller
+          ((), trailing) <- runPeerWithLimits
+            nullTracer
+            (cPeerSharingCodec (mkCodecs version))
+            (byteLimitsPeerSharing (const 0))
+            timeLimitsPeerSharing
+            channel
+            (peerSharingClientPeer psClient)
+          return (NoInitiatorResult, trailing)
+
+    aPeerSharingServer
+      :: NodeToNodeVersion
+      -> addrNTN
+      -> Channel m bPS
+      -> m ((), Maybe bPS)
+    aPeerSharingServer version them channel = do
+      labelThisThread "PeerSharingServer"
+      runPeerWithLimits
+        nullTracer
+        (cPeerSharingCodec (mkCodecs version))
+        (byteLimitsPeerSharing (const 0))
+        timeLimitsPeerSharing
+        channel
+        $ peerSharingServerPeer
+        $ hPeerSharingServer version them
 
 {-------------------------------------------------------------------------------
   Projections from 'Apps'
@@ -673,9 +760,10 @@ mkApps kernel Tracers {..} mkCodecs ByteLimits {..} genChainSyncTimeout ReportPe
 initiator
   :: MiniProtocolParameters
   -> NodeToNodeVersion
-  -> Apps m (ConnectionId peer) b b b b a c
-  -> OuroborosBundle 'InitiatorMode peer b m a Void
-initiator miniProtocolParameters version Apps {..} =
+  -> PSTypes.PeerSharing
+  -> Apps m addr b b b b b a c
+  -> OuroborosBundle 'InitiatorMode addr b m a Void
+initiator miniProtocolParameters version ownPeerSharing Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
       -- TODO: currently consensus is using 'ConnectionId' for its 'peer' type.
@@ -692,9 +780,12 @@ initiator miniProtocolParameters version Apps {..} =
           txSubmissionProtocol =
             (InitiatorProtocolOnly (MuxPeerRaw (aTxSubmission2Client version controlMessageSTM them))),
           keepAliveProtocol =
-            (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them)))
+            (InitiatorProtocolOnly (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them))),
+          peerSharingProtocol =
+            (InitiatorProtocolOnly (MuxPeerRaw (aPeerSharingClient version controlMessageSTM (remoteAddress them))))
         })
       version
+      ownPeerSharing
 
 -- | A bi-directional network applicaiton.
 --
@@ -704,9 +795,10 @@ initiator miniProtocolParameters version Apps {..} =
 initiatorAndResponder
   :: MiniProtocolParameters
   -> NodeToNodeVersion
-  -> Apps m (ConnectionId peer) b b b b a c
-  -> OuroborosBundle 'InitiatorResponderMode peer b m a c
-initiatorAndResponder miniProtocolParameters version Apps {..} =
+  -> PSTypes.PeerSharing
+  -> Apps m addr b b b b b a c
+  -> OuroborosBundle 'InitiatorResponderMode addr b m a c
+initiatorAndResponder miniProtocolParameters version ownPeerSharing Apps {..} =
     nodeToNodeProtocols
       miniProtocolParameters
       (\them controlMessageSTM -> NodeToNodeProtocols {
@@ -725,6 +817,12 @@ initiatorAndResponder miniProtocolParameters version Apps {..} =
           keepAliveProtocol =
             (InitiatorAndResponderProtocol
               (MuxPeerRaw (aKeepAliveClient version controlMessageSTM them))
-              (MuxPeerRaw (aKeepAliveServer version                   them)))
+              (MuxPeerRaw (aKeepAliveServer version                   them))),
+
+          peerSharingProtocol =
+            (InitiatorAndResponderProtocol
+              (MuxPeerRaw (aPeerSharingClient version controlMessageSTM (remoteAddress them)))
+              (MuxPeerRaw (aPeerSharingServer version                   (remoteAddress them))))
         })
       version
+      ownPeerSharing

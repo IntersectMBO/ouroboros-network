@@ -59,6 +59,7 @@ material.\\
 1.8 & 2020-08-05 & Revised & Resolving remaining points and correcting
 headings.\\
 1.9 & 2020-08-09 & Format & Converted from Google doc to LaTeX (via pandoc).\\
+1.9.1 & 2022-08-29 & Revised & Revised Gossip definition - renamed to "Peer Sharing" .\\
 \bottomrule
 \end{longtable}
 
@@ -1726,7 +1727,7 @@ partitions\footnote{The consideration of the appropriate mitigations to
   planned work.}.
 
 In our use case we must build a large graph in a decentralised way,
-initially from nodes contributed by IOHK and later by state pool
+initially from nodes contributed by IOHK and later by stake pool
 operators, and grow it to support all stake pools and users. We would
 like small hop counts and we would also like to avoid the danger of
 there being too many long hops.
@@ -1770,14 +1771,18 @@ The theory tells us that we can use random graph construction, which we
 can do with standard \emph{random gossip} techniques. This deals with
 the decentralisation requirement and the low hop count constraint. The
 remaining significant issues are avoiding eclipse attacks, as previously
-discussed, and avoiding too many long hops. Our design is to augment
-random gossip with two layers of control loop to address these two
-issues. This general design is relatively simple, and has the
-significant virtue that the policy for the control loops can be adjusted
-after initial deployment with relatively few compatibility impacts. This
-should enable the policy to be optimised based on real-world feedback,
-and feedback from simulations of scale or scenarios that are hard (or
-undesirable) to test in a real deployment.
+discussed, and avoiding too many long hops. Our design is to address
+these 2 concerns with separate mechanisms: eclipse evasion and peer sharing.
+Because of this, we're rebranding this "random gossip" inspired process to
+\emph{Peer Sharing}. The Peer Sharing protocol's goal is to make it easier
+to find possible peers within the overall Cardano network, leaving the
+Eclipse Evasion mechanism to deal with that separately. This general
+design is relatively simple, and has the significant virtue that the
+policy for the control loops can be adjusted after initial deployment
+with relatively few compatibility impacts. This should enable the
+policy to be optimised based on real-world feedback, and feedback
+from simulations of scale or scenarios that are hard (or undesirable)
+to test in a real deployment.
 
 Each node maintains three sets of known peer nodes:
 
@@ -1807,12 +1812,12 @@ restarts, but it is always safe to re-bootstrap -- as new nodes must do.
 For an individual node to join the network, its bootstrapping phase
 starts by contacting root nodes and requesting sets of other peers,
 which are added to the cold peer set. It proceeds iteratively by
-randomly selecting other peers to contact to request more known peers.
-This gossip process is governed by a control loop that has a target to
+randomly sampling suitable peers to contact to request more known peers.
+This Peer Sharing process is governed by a control loop that has a target to
 find and maintain a certain number of cold peers. Bootstrapping is not a
 special mode, rather it is just a phase for the control loop following
 starting with a cold peers set consisting only of the root nodes. This
-gossiping aspect is closely analogous to the first stage of Kademlia,
+peer sharing aspect is closely analogous to the first stage of Kademlia,
 but with random selection rather than selection directed towards finding
 peers in an artificial metric space.
 
@@ -1828,7 +1833,7 @@ The inner control loop governs the following activities:
 
 \begin{itemize}
 \item
-  the random gossip used to discover more cold peers;
+  the peer sharing used to discover more cold peers;
 \item
   promotion of cold peers to be warm peers;
 \item
@@ -1879,8 +1884,8 @@ request the block body from the first node that sends the block header.
 
 While the purpose of cold and hot peers is clear, the purpose of warm
 peers requires further explanation. The primary purpose is to address
-the challenge of avoiding too many long hops in the graph. The random
-gossip is oblivious to hop distance. By actually connecting to a
+the challenge of avoiding too many long hops in the graph. The Peer
+Sharing protocol is oblivious to hop distance. By actually connecting to a
 selection of peers and measuring the round trip delays\footnote{Or more
   precisely the two unidirectional $\Delta{}Q$ measures} we can start to
 establish which peers are near or far. The policy for selecting which
@@ -3793,7 +3798,7 @@ provide addresses of other peers that it knows; note that the receiving
 node does not need to trust the addresses that it is given, as it can
 try them out for itself and make dynamic decisions about which peers it
 uses as described in \cref{decentralisation-design}. This exchange of
-information about (the addresses of) other nodes is called `gossiping',
+information about (the addresses of) other nodes is called \emph{Peer Sharing},
 and is required for the fully decentralised version of Shelley. The
 implementation that will be taken here is inspired by Kademlia, but can
 be far less complex.
@@ -5024,7 +5029,7 @@ its own set of protocol parameters.
 \paragraph{Other components of Ouroboros-Network package}
 
 We implemented a peer-to-peer governor which role is to drive decisions
-about promotions, demotions and gossip. It is there to provide the rest
+about promotions, demotions and peer sharing. It is there to provide the rest
 of the system with possible peers to communicate with and govern their
 state (hot peer / worm peer / cold peer). We are implementing a
 connection manager which will manage active connections and threads and

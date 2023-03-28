@@ -25,9 +25,11 @@ module Ouroboros.Network.PeerSelection.Governor
   , sanePeerSelectionTargets
   , establishedPeersStatus
   , PeerSelectionState (..)
+  , PublicPeerSelectionState (..)
   , PeerSelectionCounters (..)
   , nullPeerSelectionTargets
   , emptyPeerSelectionState
+  , emptyPublicPeerSelectionState
   , ChurnMode (..)
   ) where
 
@@ -58,6 +60,7 @@ import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers as RootPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.PeerMetric
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 
 {- $overview
 
@@ -74,7 +77,7 @@ We have a number of requirements for constructing our connectivity graphs:
 [\"Small world" graph theory](https://press.princeton.edu/books/paperback/9780691117041/small-worlds)
 tells us that we can use random graph construction to make graphs with a low
 characteristic path length (i.e. hop count). We can build random graphs with
-random gossip techniques. This deals with our requirement for decentralisation
+peer sharing techniques. This deals with our requirement for decentralisation
 and our goal of low hop counts.
 
 The remaining significant issues are:
@@ -82,7 +85,7 @@ The remaining significant issues are:
  * the goal of short hop lengths, and
  * avoiding and recovering from partitions and eclipse attacks.
 
-Our design is to augment random gossip with two /governors/ (control loops) to
+Our design is to augment random peer sharing with two /governors/ (control loops) to
 address these two issues. The design is relatively simple, and has the virtue
 that the policy for the governors can be adjusted with relatively few
 compatibility impacts. This should enable the policy to be optimised based on
@@ -114,11 +117,11 @@ new nodes must do.
 For an individual node to join the network, the bootstrapping phase starts by
 contacting root nodes and requesting sets of other peers. Newly discovered
 peers are added to the cold peer set. It proceeds iteratively by randomly
-selecting other peers to contact to request more known peers. This gossip
+selecting other peers to contact to request more known peers. This peer sharing
 process is controlled by a governor that has a target to find and maintain a
 certain number of cold peers. Bootstrapping is not a special mode, rather it is
 just a phase for the governor following starting with a cold peers set
-consisting only of the root nodes. This gossiping aspect is closely analogous
+consisting only of the root nodes. This peer sharing aspect is closely analogous
 to the first stage of Kademlia, but with random selection rather than selection
 directed towards finding peers in an artificial metric space.
 
@@ -130,7 +133,7 @@ the software.
 
 The peer selection governor engages in the following activities:
 
- * the random gossip used to discover more cold peers;
+ * the random peer share used to discover more cold peers;
  * promotion of cold peers to be warm peers;
  * demotion of warm peers to cold peers;
  * promotion of warm peers to hot peers; and
@@ -164,7 +167,7 @@ that sends the block header.
 
 While the purpose of cold and hot peers is clear, the purpose of warm peers
 requires further explanation. The primary purpose is to address the challenge
-of avoiding too many long hops in the graph. The random gossip is oblivious to
+of avoiding too many long hops in the graph. The random peer share is oblivious to
 hop distance. By actually connecting to a selection of peers and measuring the
 round trip delays we can start to establish which peers are near or far. The
 policy for selecting which warm peers to promote to hot peers will take into
@@ -308,7 +311,7 @@ We will consider each case.
 There are two main mechanisms by which we discover cold peers:
 
  * Externally supplied peer root set
- * Peer gossip
+ * Peer Share
 
 === Externally supplied peer root set
 
@@ -334,7 +337,7 @@ set of addresses, and the peer selection governor observes the time-varying
 value. This allows multiple implementations of the root set provider, which
 deal with the various sources.
 
-=== Peer gossip
+=== Peer Share
 
 We can ask peers to give us a sample of their set of known peers.
 
@@ -429,7 +432,6 @@ base our decision on include:
 
 -}
 
-
 -- |
 --
 peerSelectionGovernor :: (MonadAsync m, MonadLabelledSTM m, MonadMask m,
@@ -439,10 +441,11 @@ peerSelectionGovernor :: (MonadAsync m, MonadLabelledSTM m, MonadMask m,
                       -> Tracer m (DebugPeerSelection peeraddr)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
+                      -> StrictTVar m (PublicPeerSelectionState peeraddr)
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar actions policy =
     JobPool.withJobPool $ \jobPool -> do
       localPeers <- map (\(target, _) -> (target, 0))
                 <$> atomically (readLocalRootPeers actions)
@@ -450,6 +453,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng actions policy =
         tracer
         debugTracer
         countersTracer
+        stateVar
         actions
         policy
         jobPool
@@ -477,6 +481,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           => Tracer m (TracePeerSelection peeraddr)
                           -> Tracer m (DebugPeerSelection peeraddr)
                           -> Tracer m PeerSelectionCounters
+                          -> StrictTVar m (PublicPeerSelectionState peeraddr)
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
                           -> JobPool () m (Completion m peeraddr peerconn)
@@ -485,6 +490,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
 peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
+                          stateVar
                           actions
                           policy
                           jobPool =
@@ -492,13 +498,16 @@ peerSelectionGovernorLoop tracer
   where
     loop :: PeerSelectionState peeraddr peerconn -> m Void
     loop !st = assertPeerSelectionState st $ do
+      -- Update public state using 'toPublicState' to compute available peers
+      -- to share for peer sharing
+      atomically $ writeTVar stateVar (toPublicState st)
       blockedAt <- getMonotonicTime
       let knownPeers'       = KnownPeers.setCurrentTime blockedAt (knownPeers st)
           establishedPeers' = EstablishedPeers.setCurrentTime blockedAt (establishedPeers st)
           st'               = st { knownPeers       = knownPeers',
                                    establishedPeers = establishedPeers' }
 
-      timedDecision <- evalGuardedDecisions blockedAt st'
+      timedDecision <- evalGuardedDecisions blockedAt (peerSharing actions) st'
 
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
@@ -515,10 +524,11 @@ peerSelectionGovernorLoop tracer
       loop (decisionState { countersCache = Cache newCounters })
 
     evalGuardedDecisions :: Time
+                         -> PeerSharing
                          -> PeerSelectionState peeraddr peerconn
                          -> m (TimedDecision m peeraddr peerconn)
-    evalGuardedDecisions blockedAt st =
-      case guardedDecisions blockedAt st of
+    evalGuardedDecisions blockedAt peerSharing st =
+      case guardedDecisions blockedAt peerSharing st of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
@@ -537,9 +547,10 @@ peerSelectionGovernorLoop tracer
           return timedDecision
 
     guardedDecisions :: Time
+                     -> PeerSharing
                      -> PeerSelectionState peeraddr peerconn
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions blockedAt st =
+    guardedDecisions blockedAt peerSharing st =
       -- All the alternative potentially-blocking decisions.
          Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
@@ -547,13 +558,13 @@ peerSelectionGovernorLoop tracer
       <> Monitor.localRoots           actions policy st
 
       -- All the alternative non-blocking internal decisions.
-      <> RootPeers.belowTarget        actions blockedAt  st
-      <> KnownPeers.belowTarget       actions     policy st
-      <> KnownPeers.aboveTarget                   policy st
-      <> EstablishedPeers.belowTarget actions     policy st
-      <> EstablishedPeers.aboveTarget actions     policy st
-      <> ActivePeers.belowTarget      actions     policy st
-      <> ActivePeers.aboveTarget      actions     policy st
+      <> RootPeers.belowTarget        actions blockedAt         st
+      <> KnownPeers.belowTarget       actions peerSharing policy st
+      <> KnownPeers.aboveTarget                           policy st
+      <> EstablishedPeers.belowTarget actions             policy st
+      <> EstablishedPeers.aboveTarget actions             policy st
+      <> ActivePeers.belowTarget      actions             policy st
+      <> ActivePeers.aboveTarget      actions             policy st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 

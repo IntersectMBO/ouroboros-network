@@ -26,6 +26,9 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , emptyPeerSelectionState
   , assertPeerSelectionState
   , establishedPeersStatus
+  , PublicPeerSelectionState (..)
+  , emptyPublicPeerSelectionState
+  , toPublicState
   , Guarded (GuardedSkip, Guarded)
   , Decision (..)
   , TimedDecision
@@ -33,6 +36,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , Completion (..)
   , PeerSelectionCounters (..)
   , peerStateToCounters
+    -- * Peer Sharing Auxiliary data type
+  , PeerSharingResult (..)
     -- * Traces
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
@@ -57,12 +62,19 @@ import           System.Random (StdGen)
 import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.PeerSelection.EstablishedPeers
                      (EstablishedPeers)
+import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as Established
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.Types
+import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.Types (PeerSource (..),
+                     PeerStatus (PeerHot, PeerWarm))
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
+                     PeerSharingResult (..))
 
 
 -- | A peer pick policy is an action that picks a subset of elements from a
@@ -87,22 +99,28 @@ type PickPolicy peeraddr m =
 
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
 
-       policyPickKnownPeersForGossip :: PickPolicy peeraddr m,
-       policyPickColdPeersToPromote  :: PickPolicy peeraddr m,
-       policyPickWarmPeersToPromote  :: PickPolicy peeraddr m,
-       policyPickHotPeersToDemote    :: PickPolicy peeraddr m,
-       policyPickWarmPeersToDemote   :: PickPolicy peeraddr m,
-       policyPickColdPeersToForget   :: PickPolicy peeraddr m,
+       policyPickKnownPeersForPeerShare :: PickPolicy peeraddr m,
+       policyPickColdPeersToPromote     :: PickPolicy peeraddr m,
+       policyPickWarmPeersToPromote     :: PickPolicy peeraddr m,
+       policyPickHotPeersToDemote       :: PickPolicy peeraddr m,
+       policyPickWarmPeersToDemote      :: PickPolicy peeraddr m,
+       policyPickColdPeersToForget      :: PickPolicy peeraddr m,
 
-       policyFindPublicRootTimeout   :: !DiffTime,
-       policyMaxInProgressGossipReqs :: !Int,
-       policyGossipRetryTime         :: !DiffTime,
-       policyGossipBatchWaitTime     :: !DiffTime,
-       policyGossipOverallTimeout    :: !DiffTime,
+       policyFindPublicRootTimeout      :: !DiffTime,
+       policyMaxInProgressPeerShareReqs :: !Int,
+       -- ^ Maximum number of peer sharing requests that can be in progress
+       policyPeerShareRetryTime         :: !DiffTime,
+       -- ^ Amount of time a node has to wait before issuing a new peer sharing
+       -- request
+       policyPeerShareBatchWaitTime     :: !DiffTime,
+       -- ^ Amount of time a batch of peer sharing requests is allowed to take
+       policyPeerShareOverallTimeout    :: !DiffTime,
+       -- ^ Amount of time the overall batches of peer sharing requests are
+       -- allowed to take
 
        -- | Reconnection delay, passed from `ExitPolicy`.
        --
-       policyErrorDelay              :: !DiffTime
+       policyErrorDelay                 :: !DiffTime
      }
 
 
@@ -186,6 +204,21 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        readLocalRootPeers       :: STM m [(Int, Map peeraddr PeerAdvertise)],
 
+       -- | Read the current Peer Sharing willingness value
+       --
+       -- This value comes from the Node's configuration file.
+       --
+       peerSharing :: PeerSharing,
+
+       -- | Get a PeerSharing value from 'peerconn'
+       --
+       -- 'peerconn' ideally comes from a call to 'establishPeerConnection'.
+       -- This will establish a connection and perform handshake. The returned
+       -- 'peerconn' has all the versionData negotiated in the handshake,
+       -- including the remote peer's 'PeerSharing' willingness information.
+       --
+       peerConnToPeerSharing :: peerconn -> PeerSharing,
+
        -- | Request a sample of public root peers.
        --
        -- It is intended to cover use cases including:
@@ -194,15 +227,12 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- * stake pool relays published in the blockchain
        -- * a pre-distributed snapshot of stake pool relays from the blockchain
        --
-       requestPublicRootPeers   :: Int -> m (Set peeraddr, DiffTime),
+       requestPublicRootPeers   :: Int -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime),
 
        -- | The action to contact a known peer and request a sample of its
        -- known peers.
        --
-       -- This is synchronous, but it should expect to be interrupted by a
-       -- timeout asynchronous exception. Failures are throw as exceptions.
-       --
-       requestPeerGossip        :: peeraddr -> m [peeraddr],
+       requestPeerShare         :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr),
 
        -- | Core actions run by the governor to change 'PeerStatus'.
        --
@@ -283,7 +313,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        publicRootRetryTime      :: !Time,
 
        inProgressPublicRootsReq :: !Bool,
-       inProgressGossipReqs     :: !Int,
+       inProgressPeerShareReqs  :: !Int,
        inProgressPromoteCold    :: !(Set peeraddr),
        inProgressPromoteWarm    :: !(Set peeraddr),
        inProgressDemoteWarm     :: !(Set peeraddr),
@@ -305,6 +335,41 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     lastSuccessfulNetworkEvent :: Time
      }
   deriving (Show, Functor)
+
+-- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
+-- mechaninsms without any problem.
+--
+-- This data type should not expose too much information and keep only
+-- essential data needed for computing the peer sharing request result
+--
+data PublicPeerSelectionState peeraddr =
+  PublicPeerSelectionState {
+    availableToShare :: Set peeraddr
+  }
+
+emptyPublicPeerSelectionState :: Ord peeraddr
+                              => PublicPeerSelectionState peeraddr
+emptyPublicPeerSelectionState =
+  PublicPeerSelectionState {
+    availableToShare = mempty
+  }
+
+-- | Convert a 'PeerSelectionState' into a public record accessible by the
+-- Peer Sharing mechanisms so we can know about which peers are available and
+-- possibly other needed context.
+--
+toPublicState :: Ord peeraddr
+              => PeerSelectionState peeraddr peerconn
+              -> PublicPeerSelectionState peeraddr
+toPublicState PeerSelectionState { knownPeers
+                                 , establishedPeers
+                                 } =
+  let availableNow = Established.availableForPeerShare establishedPeers
+      availableNowWithPermission =
+        Set.filter (`KnownPeers.canPeerShareRequest` knownPeers) availableNow
+   in PublicPeerSelectionState {
+        availableToShare = availableNowWithPermission
+      }
 
 data PeerSelectionCounters = PeerSelectionCounters {
       coldPeers  :: Int,
@@ -341,7 +406,7 @@ emptyPeerSelectionState rng localRoots =
       publicRootBackoffs   = 0,
       publicRootRetryTime  = Time 0,
       inProgressPublicRootsReq = False,
-      inProgressGossipReqs     = 0,
+      inProgressPeerShareReqs  = 0,
       inProgressPromoteCold    = Set.empty,
       inProgressPromoteWarm    = Set.empty,
       inProgressDemoteWarm     = Set.empty,
@@ -413,7 +478,7 @@ assertPeerSelectionState PeerSelectionState{..} =
     -- No constraint for publicRootBackoffs, publicRootRetryTime
     -- or inProgressPublicRootsReq
 
-  . assert (inProgressGossipReqs >= 0)
+  . assert (inProgressPeerShareReqs >= 0)
   . assert (Set.isSubsetOf inProgressPromoteCold coldPeersSet)
   . assert (Set.isSubsetOf inProgressPromoteWarm warmPeersSet)
   . assert (Set.isSubsetOf inProgressDemoteWarm  warmPeersSet)
@@ -471,7 +536,7 @@ pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
     peerSource p
       | LocalRootPeers.member p localRootPeers = PeerSourceLocalRoot
       | Set.member p publicRootPeers           = PeerSourcePublicRoot
-      | KnownPeers.member p knownPeers         = PeerSourceGossip
+      | KnownPeers.member p knownPeers         = PeerSourcePeerShare
       | otherwise                              = errorUnavailable
 
     peerConnectFailCount p =
@@ -582,12 +647,13 @@ data TracePeerSelection peeraddr =
                                   (LocalRootPeers peeraddr)
      | TraceTargetsChanged     PeerSelectionTargets PeerSelectionTargets
      | TracePublicRootsRequest Int Int
-     | TracePublicRootsResults (Set peeraddr) Int DiffTime
+     | TracePublicRootsResults (Map peeraddr PeerAdvertise) Int DiffTime
      | TracePublicRootsFailure SomeException Int DiffTime
-     -- | target known peers, actual known peers, peers available for gossip,
-     -- peers selected for gossip
-     | TraceGossipRequests     Int Int (Set peeraddr) (Set peeraddr)
-     | TraceGossipResults      [(peeraddr, Either SomeException [peeraddr])] --TODO: classify failures
+     -- | target known peers, actual known peers, peers available for
+     -- peer sharing, peers selected for peer sharing
+     | TracePeerShareRequests     Int Int (Set peeraddr) (Set peeraddr)
+     | TracePeerShareResults         [(peeraddr, Either SomeException (PeerSharingResult peeraddr))] --TODO: classify failures
+     | TracePeerShareResultsFiltered [peeraddr]
      -- | target known peers, actual known peers, selected peer
      | TraceForgetColdPeers    Int Int (Set peeraddr)
      -- | target established, actual established, selected peers

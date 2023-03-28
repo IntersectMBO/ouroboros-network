@@ -7,6 +7,7 @@ import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.NodeToNode.Version
 
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -30,6 +31,10 @@ instance Arbitrary NodeToNodeVersionData where
         <$> (NetworkMagic <$> arbitrary)
         <*> oneof [ pure InitiatorOnlyDiffusionMode
                   , pure InitiatorAndResponderDiffusionMode
+                  ]
+        <*> oneof [ pure NoPeerSharing
+                  , pure PeerSharingPrivate
+                  , pure PeerSharingPublic
                   ]
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool

@@ -55,8 +55,8 @@ instance Show peerAddr
 
 -- | A Server control channel which instantiates 'handle'.
 --
-type ServerControlChannel (muxMode :: MuxMode) peerAddr bytes m a b =
-    ControlChannel peerAddr (Handle muxMode peerAddr bytes m a b) m
+type ServerControlChannel (muxMode :: MuxMode) peerAddr versionData bytes m a b =
+    ControlChannel peerAddr (Handle muxMode peerAddr versionData bytes m a b) m
 
 -- | Control channel.  It allows to pass 'STM' transactions which will
 -- resolve to 'NewConnection'.   Server's monitoring thread is the consumer

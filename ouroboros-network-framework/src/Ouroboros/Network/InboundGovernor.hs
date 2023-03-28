@@ -84,7 +84,7 @@ import           Ouroboros.Network.Server.RateLimiting
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a b.
+inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionData versionNumber m a b.
                    ( MonadAsync    m
                    , MonadCatch    m
                    , MonadEvaluate m
@@ -98,9 +98,9 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionNumber m a
                    )
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)
-                -> ServerControlChannel muxMode peerAddr ByteString m a b
+                -> ServerControlChannel muxMode peerAddr versionData ByteString m a b
                 -> Maybe DiffTime -- protocol idle timeout
-                -> MuxConnectionManager muxMode socket peerAddr
+                -> MuxConnectionManager muxMode socket peerAddr versionData
                                         versionNumber ByteString m a b
                 -> StrictTVar m InboundGovernorObservableState
                 -> m Void
@@ -162,7 +162,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                    <> firstPeerDemotedToCold
                    <> firstPeerCommitRemote
 
-                   :: EventSignal muxMode peerAddr m a b
+                   :: EventSignal muxMode peerAddr versionData m a b
                  )
                  (igsConnections state)
             <> FirstToFinish (
@@ -176,7 +176,7 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
             provenance
             connId
             csDataFlow
-            (Handle csMux muxBundle _)) -> do
+            (Handle csMux muxBundle _ _)) -> do
 
               traceWith tracer (TrNewConnection provenance connId)
 

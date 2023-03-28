@@ -9,6 +9,8 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   ( -- * Common types
     NtNAddr
   , NtNAddr_ (..)
+  , encodeNtNAddr
+  , decodeNtNAddr
   , NtNVersion
   , NtNVersionData (..)
   , NtCAddr
@@ -37,7 +39,8 @@ import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Coerce (coerce)
 import           Data.Hashable (Hashable)
-import           Data.IP (IP (..), toIPv4, toIPv6)
+import           Data.IP (IP (..), fromIPv4w, fromIPv6w, toIPv4, toIPv4w,
+                     toIPv6, toIPv6w)
 import qualified Data.IP as IP
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -70,6 +73,12 @@ import           Simulation.Network.Snocket (AddressType (..),
 
 import           Test.Ouroboros.Network.Orphans ()
 
+import qualified Codec.CBOR.Decoding as CBOR
+import qualified Codec.CBOR.Encoding as CBOR
+import           Ouroboros.Network.NodeToNode ()
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..),
+                     newPeerSharingRegistry)
 import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
                      oneof)
 
@@ -113,12 +122,69 @@ instance Hashable NtNAddr_
 
 type NtNAddr        = TestAddress NtNAddr_
 type NtNVersion     = UnversionedProtocol
-data NtNVersionData = NtNVersionData { ntnDiffusionMode :: DiffusionMode }
+data NtNVersionData = NtNVersionData
+  { ntnDiffusionMode :: DiffusionMode
+  , ntnPeerSharing   :: PeerSharing
+  }
   deriving Show
 type NtCAddr        = TestAddress Int
 type NtCVersion     = UnversionedProtocol
 type NtCVersionData = UnversionedProtocolData
 
+encodeNtNAddr :: NtNAddr -> CBOR.Encoding
+encodeNtNAddr (TestAddress (EphemeralIPv4Addr nat)) = CBOR.encodeListLen 2
+                                                   <> CBOR.encodeWord 0
+                                                   <> CBOR.encodeWord (fromIntegral nat)
+encodeNtNAddr (TestAddress (EphemeralIPv6Addr nat)) = CBOR.encodeListLen 2
+                                                   <> CBOR.encodeWord 1
+                                                   <> CBOR.encodeWord (fromIntegral nat)
+encodeNtNAddr (TestAddress (IPAddr ip pn)) = CBOR.encodeListLen 3
+                                          <> CBOR.encodeWord 2
+                                          <> encodeIP ip
+                                          <> encodePortNumber pn
+
+decodeNtNAddr :: CBOR.Decoder s NtNAddr
+decodeNtNAddr = do
+  _ <- CBOR.decodeListLen
+  tok <- CBOR.decodeWord
+  case tok of
+    0 -> (TestAddress . EphemeralIPv4Addr . fromIntegral) <$> CBOR.decodeWord
+    1 -> (TestAddress . EphemeralIPv6Addr . fromIntegral) <$> CBOR.decodeWord
+    2 -> TestAddress <$> (IPAddr <$> decodeIP <*> decodePortNumber)
+    _ -> fail ("decodeNtNAddr: unknown tok:" ++ show tok)
+
+encodeIP :: IP -> CBOR.Encoding
+encodeIP (IPv4 ip) = CBOR.encodeListLen 2
+                  <> CBOR.encodeWord 0
+                  <> CBOR.encodeWord32 (fromIPv4w ip)
+encodeIP (IPv6 ip) = case fromIPv6w ip of
+  (w1, w2, w3, w4) -> CBOR.encodeListLen 5
+                   <> CBOR.encodeWord 1
+                   <> CBOR.encodeWord32 w1
+                   <> CBOR.encodeWord32 w2
+                   <> CBOR.encodeWord32 w3
+                   <> CBOR.encodeWord32 w4
+
+decodeIP :: CBOR.Decoder s IP
+decodeIP = do
+  _ <- CBOR.decodeListLen
+  tok <- CBOR.decodeWord
+  case tok of
+    0 -> (IPv4 . toIPv4w) <$> CBOR.decodeWord32
+    1 -> do
+      w1 <- CBOR.decodeWord32
+      w2 <- CBOR.decodeWord32
+      w3 <- CBOR.decodeWord32
+      w4 <- CBOR.decodeWord32
+      return (IPv6 (toIPv6w (w1, w2, w3, w4)))
+
+    _ -> fail ("decodeIP: unknown tok:" ++ show tok)
+
+encodePortNumber :: PortNumber -> CBOR.Encoding
+encodePortNumber = CBOR.encodeWord16 . fromIntegral
+
+decodePortNumber :: CBOR.Decoder s PortNumber
+decodePortNumber = fromIntegral <$> CBOR.decodeWord16
 
 data BlockGeneratorArgs block s = BlockGeneratorArgs
   { bgaSlotDuration   :: DiffTime
@@ -175,7 +241,9 @@ data NodeKernel header block m = NodeKernel {
       nkChainProducerState
         :: StrictTVar m (ChainProducerState block),
 
-      nkFetchClientRegistry :: FetchClientRegistry NtNAddr header block m
+      nkFetchClientRegistry :: FetchClientRegistry NtNAddr header block m,
+
+      nkPeerSharingRegistry :: PeerSharingRegistry NtNAddr m
     }
 
 newNodeKernel :: MonadSTM m => m (NodeKernel header block m)
@@ -183,6 +251,7 @@ newNodeKernel = NodeKernel
             <$> newTVarIO Map.empty
             <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
             <*> newFetchClientRegistry
+            <*> newPeerSharingRegistry
 
 -- | Register a new upstream chain-sync client.
 --

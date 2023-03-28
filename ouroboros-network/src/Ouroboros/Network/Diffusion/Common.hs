@@ -28,6 +28,7 @@ import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit,
 import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface, TraceLedgerPeers)
+import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.Snocket (FileDescriptor)
 import           Ouroboros.Network.Socket (SystemdSocketTracer)
 
@@ -160,7 +161,9 @@ data Applications ntnAddr ntnVersion ntnVersionData
       -- | NodeToNode initiator & responder applications for bidirectional mode.
       --
     , daApplicationInitiatorResponderMode
-        :: Versions ntnVersion
+           -- Peer Sharing result computation callback
+        :: (PeerSharingAmount -> m [ntnAddr])
+        -> Versions ntnVersion
                     ntnVersionData
                     (OuroborosBundle
                       InitiatorResponderMode ntnAddr
