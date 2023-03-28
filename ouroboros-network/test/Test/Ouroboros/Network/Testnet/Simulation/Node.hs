@@ -49,10 +49,10 @@ import           Control.Monad.IOSim (IOSim, traceM)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Foldable (traverse_)
 import           Data.IP (IP (..), toIPv4, toIPv6)
-import           Data.List (delete, intercalate, nub, (\\))
+import           Data.List (delete, intercalate, nub)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, maybeToList)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
@@ -909,7 +909,7 @@ diffusionSimulation
               { NodeKernel.iNtnSnocket        = ntnSnocket
               , NodeKernel.iNtnBearer         = makeFDBearer
               , NodeKernel.iAcceptVersion     = acceptVersion
-              , NodeKernel.iNtnDomainResolver = domainResolver raps dMapVar
+              , NodeKernel.iNtnDomainResolver = domainResolver dMapVar
               , NodeKernel.iNtcSnocket        = ntcSnocket
               , NodeKernel.iNtcBearer         = makeFDBearer
               , NodeKernel.iRng               = rng
@@ -966,23 +966,21 @@ diffusionSimulation
                      . tracerWithTime
                      $ nodeTracer)
 
-    domainResolver :: Map RelayAccessPoint PeerAdvertise
-                   -> StrictTVar m (Map Domain [(IP, TTL)])
+    domainResolver :: StrictTVar m (Map Domain [(IP, TTL)])
                    -> LookupReqs
                    -> [DomainAccessPoint]
                    -> m (Map DomainAccessPoint (Set NtNAddr))
-    domainResolver raps dMapVar _ daps = do
+    -- TODO: we can take into account the `LookupReqs` and return only `IPv4`
+    -- / `IPv6` if so requested.  But we should make sure the connectivity graph
+    -- is not severely reduced.
+    domainResolver dMapVar _ daps = do
       dMap <- fmap (map fst) <$> atomically (readTVar dMapVar)
-      let domains    = [ (d, p) | (RelayAccessDomain d p, _) <- Map.assocs raps ]
-          domainsAP  = uncurry DomainAccessPoint <$> domains
-          mapDomains = [ ( DomainAccessPoint d p
-                         , Set.fromList
-                         $ uncurry ntnToPeerAddr
-                         <$> zip (dMap Map.! d) (repeat p)
+      let mapDomains :: [(DomainAccessPoint, Set NtNAddr)]
+          mapDomains = [ ( dap
+                         , Set.fromList [ ntnToPeerAddr a p | a <- addrs ]
                          )
-                       | DomainAccessPoint d p <- domainsAP \\ daps
-                       , Map.member d dMap
-                       ]
+                       | dap@(DomainAccessPoint d p) <- daps
+                       , addrs <- maybeToList (d `Map.lookup` dMap) ]
       return (Map.fromList mapDomains)
 
     tracersExtra
