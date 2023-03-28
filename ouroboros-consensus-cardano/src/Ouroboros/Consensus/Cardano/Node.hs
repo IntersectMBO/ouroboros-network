@@ -98,8 +98,6 @@ import           Ouroboros.Consensus.Cardano.CanHardFork
                      CardanoHardForkConstraints,
                      ShelleyPartialLedgerConfig (ShelleyPartialLedgerConfig, shelleyLedgerConfig, shelleyTriggerHardFork),
                      TriggerHardFork (..))
-import           Ouroboros.Consensus.Cardano.ShelleyBased
-                     (overShelleyBasedLedgerState)
 import           Ouroboros.Consensus.Config (SecurityParam (SecurityParam),
                      TopLevelConfig (..), configCodec, configStorage)
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -107,7 +105,7 @@ import           Ouroboros.Consensus.HardFork.Combinator
                      HardForkLedgerConfig (HardForkLedgerConfig, hardForkLedgerConfigPerEra, hardForkLedgerConfigShape),
                      HasPartialConsensusConfig (PartialConsensusConfig),
                      HasPartialLedgerConfig (PartialLedgerConfig),
-                     NestedCtxt_ (NCS, NCZ),
+                     LedgerState (..), NestedCtxt_ (NCS, NCZ),
                      PerEraConsensusConfig (PerEraConsensusConfig),
                      PerEraLedgerConfig (PerEraLedgerConfig),
                      WrapPartialConsensusConfig (WrapPartialConsensusConfig),
@@ -142,7 +140,8 @@ import           Ouroboros.Consensus.Protocol.Praos.Common
                      (praosCanBeLeaderOpCert)
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..))
 import qualified Ouroboros.Consensus.Protocol.TPraos as Shelley
-import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
+import           Ouroboros.Consensus.Shelley.Ledger (LedgerState (..),
+                     ShelleyBlock, ShelleyCompatible)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
 import           Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion
                      (ShelleyNodeToClientVersion (ShelleyNodeToClientVersion1, ShelleyNodeToClientVersion2, ShelleyNodeToClientVersion3, ShelleyNodeToClientVersion4, ShelleyNodeToClientVersion5, ShelleyNodeToClientVersion6),
@@ -159,6 +158,7 @@ import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto,
                      shelleyBlockIssuerVKey, translateShelleyLeaderCredentials)
 
 import           Cardano.Ledger.Address (BootstrapAddress (..), RewardAcnt (..))
+import qualified Cardano.Ledger.BaseTypes as SL
 import           Cardano.Ledger.CompactAddress (Addr (..))
 import           Cardano.Ledger.Core (PParams (..))
 import           Cardano.Ledger.Credential (StakeReference (..))
@@ -166,13 +166,18 @@ import           Cardano.Ledger.Crypto (Crypto (..))
 import           Cardano.Ledger.Keys (GenDelegPair (..))
 import           Cardano.Ledger.PoolParams (PoolParams (..))
 import           Cardano.Ledger.Shelley.API (Credential (..))
+import           Cardano.Slotting.Time (SystemStart (SystemStart))
+import           Data.Coerce (coerce)
 import qualified Data.Set as Set
+import           Ouroboros.Consensus.Cardano.Block
 import           Ouroboros.Consensus.Cardano.Block ()
+import           Ouroboros.Consensus.Cardano.CanHardFork
 import           Ouroboros.Consensus.Cardano.CanHardFork ()
-import           Ouroboros.Consensus.Cardano.ShelleyBased ()
 import           Ouroboros.Consensus.Protocol.BatchCompatibleCrypto
                      (BatchCompatibleCrypto)
 import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey (..))
+import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosCrypto,
+                     PraosParams (..))
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (praosCanBeLeaderOpCert, translateCanBeLeader)
 import           Ouroboros.Consensus.Protocol.Praos.Crypto
@@ -188,8 +193,7 @@ import           Ouroboros.Consensus.Storage.Serialisation
                      PrefixLen (PrefixLen))
 import           Ouroboros.Consensus.Util.Assert (assertWithMsg)
 import           Ouroboros.Consensus.Util.IOLike (IOLike)
-import Data.Coerce (coerce)
-import Ouroboros.Network.Magic (NetworkMagic(..))
+import           Ouroboros.Network.Magic (NetworkMagic (..))
 
 {-------------------------------------------------------------------------------
   SerialiseHFC
@@ -592,7 +596,7 @@ pattern CardanoNodeToClientVersion11 =
 
 instance CardanoHardForkConstraints c1 c2
       => SupportedNetworkProtocolVersion (CardanoBlock c1 c2) where
-  supportedNodeToNodeVersions _ = Map.fromList $
+  supportedNodeToNodeVersions _ = Map.fromList
       [ (NodeToNodeV_7, CardanoNodeToNodeVersion5)
       , (NodeToNodeV_8, CardanoNodeToNodeVersion5)
       , (NodeToNodeV_9, CardanoNodeToNodeVersion6)
@@ -600,7 +604,7 @@ instance CardanoHardForkConstraints c1 c2
       , (NodeToNodeV_11, CardanoNodeToNodeVersion7)
       ]
 
-  supportedNodeToClientVersions _ = Map.fromList $
+  supportedNodeToClientVersions _ = Map.fromList
       [ (NodeToClientV_9 , CardanoNodeToClientVersion7)
       , (NodeToClientV_10, CardanoNodeToClientVersion7)
       , (NodeToClientV_11, CardanoNodeToClientVersion8)
@@ -723,8 +727,7 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
           MaxMajorProtVer
         $ pvMajor
         $ nonEmptyLast
-        $ exactlyWeakenNonEmpty
-        $ protVers
+        $ exactlyWeakenNonEmpty protVers
       where
         protVers :: Exactly (CardanoShelleyEras StandardCrypto BatchCompatibleCrypto) ProtVer
         protVers = Exactly $
@@ -1006,28 +1009,13 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
     initExtLedgerStateCardano :: ExtLedgerState (CardanoBlock c1 c2)
     initExtLedgerStateCardano = ExtLedgerState {
           headerState = initHeaderState
-        , ledgerState = overShelleyBasedLedgerState register initLedgerState
+        , ledgerState = register (SL.sgStaking genesisShelley) (SL.sgInitialFunds genesisShelley) initLedgerState
         }
       where
         initHeaderState :: HeaderState (CardanoBlock c1 c2)
         initLedgerState :: LedgerState (CardanoBlock c1 c2)
         ExtLedgerState initLedgerState initHeaderState =
           injectInitialExtLedgerState cfg initExtLedgerStateByron
-
-        register ::
-             (EraCrypto era ~ c, ShelleyBasedEra era)
-          => LedgerState (ShelleyBlock proto era)
-          -> LedgerState (ShelleyBlock proto era)
-        register st = st {
-              Shelley.shelleyLedgerState =
-                -- We must first register the initial funds, because the stake
-                -- information depends on it.
-                  registerGenesisStaking
-                    (SL.sgStaking genesisShelley)
-                . registerInitialFunds
-                    (ListMap.toMap (SL.sgInitialFunds genesisShelley))
-                $ Shelley.shelleyLedgerState st
-            }
 
     -- | For each element in the list, a block forging thread will be started.
     --
@@ -1117,6 +1105,55 @@ protocolInfoCardano protocolParamsByron@ProtocolParamsByron {
             praos (translateCredentials credentials) (translateHotKey hotKey) maxTxCapacityOverridesConway  :*
             Nil
 
+register ::
+  forall c1 c2 .
+  (PraosCrypto c1, PraosCrypto c2, ADDRHASH c1 ~ ADDRHASH c2, HASH c1 ~ HASH c2)
+  => ShelleyGenesisStaking c1
+  -> ListMap.ListMap (Addr c1) SL.Coin
+  -> LedgerState (CardanoBlock c1 c2)
+  -> LedgerState (CardanoBlock c1 c2)
+register
+  staking
+  initialFunds
+  (HardForkLedgerState st) = HardForkLedgerState $ hap fs st
+  where
+    fs :: NP (LedgerState -.-> LedgerState)
+             (CardanoEras c1 c2)
+    fs = fn id
+        :* injectInC1
+        :* injectInC1
+        :* injectInC1
+        :* injectInC1
+        :* injectInC1
+        :* injectInC2
+        :* Nil
+
+    injectInC1 ::
+         (EraCrypto era ~ c1, ShelleyCompatible proto era)
+      => (LedgerState -.-> LedgerState) (ShelleyBlock proto era)
+    injectInC1 = fn (updateState staking initialFunds)
+
+    injectInC2 ::
+         (EraCrypto era ~ c2, ShelleyCompatible proto era)
+      => (LedgerState -.-> LedgerState) (ShelleyBlock proto era)
+    injectInC2 = fn (updateState (translateStaking staking) (translateInitialFunds initialFunds))
+
+    updateState ::
+      ShelleyBasedEra era
+      => ShelleyGenesisStaking (EraCrypto era)
+      -> ListMap.ListMap (Addr (EraCrypto era)) SL.Coin
+      -> LedgerState (ShelleyBlock proto era)
+      -> LedgerState (ShelleyBlock proto era)
+    updateState staking initialFunds (Shelley.ShelleyLedgerState tip st trs) =
+      Shelley.ShelleyLedgerState { shelleyLedgerTip = tip
+                                 , shelleyLedgerTransition = trs
+                                 , shelleyLedgerState =
+                                     registerGenesisStaking staking
+                                   . registerInitialFunds (ListMap.toMap initialFunds)
+                                   $ st
+                                 }
+
+
 translateHotKey :: (KES c1 ~ KES c2) => HotKey.HotKey c1 m -> HotKey.HotKey c2 m
 translateHotKey HotKey.HotKey {evolve, getInfo, isPoisoned, sign_} =
   HotKey.HotKey {evolve, getInfo, isPoisoned, sign_}
@@ -1129,23 +1166,6 @@ translateCredentials
                              , shelleyLeaderCredentialsCanBeLeader = translateCanBeLeader shelleyLeaderCredentialsCanBeLeader
                              , shelleyLeaderCredentialsLabel}
 
-
-register ::
-     (ShelleyBasedEra era)
-  => LedgerState (ShelleyBlock proto era)
-  -> LedgerState (ShelleyBlock proto era)
-register (Shelley.ShelleyLedgerState tip st trs) =
-  Shelley.ShelleyLedgerState tip st trs
-        --{
-        --       Shelley.shelleyLedgerState =
-        --         -- We must first register the initial funds, because the stake
-        --         -- information depends on it.
-        --           registerGenesisStaking
-        --             (translateStaking $ SL.sgStaking genesisShelley)
-        --         . registerInitialFunds
-        --             (ListMap.toMap (translateInitialFunds $ SL.sgInitialFunds genesisShelley))
-        --         $ Shelley.shelleyLedgerState st
-        --     }
 
 translateShelleyGenesis ::
   forall c1 c2 .

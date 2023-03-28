@@ -37,7 +37,6 @@ library
     Ouroboros.Consensus.Cardano.CanHardFork
     Ouroboros.Consensus.Cardano.Condense
     Ouroboros.Consensus.Cardano.Node
-    Ouroboros.Consensus.Cardano.ShelleyBased
 
   build-depends:
     , base                          >=4.14    && <4.17
