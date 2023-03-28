@@ -35,29 +35,6 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (isJust)
 import qualified Data.Set as Set
 import           Data.Typeable
-
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-
-
-
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (getTipPoint)
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ProducerState (chainState,
-                     initChainProducerState)
-import qualified Ouroboros.Network.Mock.ProducerState as CPS
-import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
-import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
-import           Ouroboros.Network.Protocol.ChainSync.Examples
-import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
-
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.BlockchainTime
 import           Ouroboros.Consensus.Config
@@ -79,10 +56,27 @@ import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
                      WithFingerprint (..), forkLinkedWatcher)
+import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import           Ouroboros.Network.Block (getTipPoint)
+import           Ouroboros.Network.Channel
 import           Ouroboros.Network.ControlMessage (ControlMessage (..))
+import           Ouroboros.Network.Driver
+import           Ouroboros.Network.Mock.Chain (Chain (Genesis))
+import qualified Ouroboros.Network.Mock.Chain as Chain
+import           Ouroboros.Network.Mock.ProducerState (chainState,
+                     initChainProducerState)
+import qualified Ouroboros.Network.Mock.ProducerState as CPS
+import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
+import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
+import           Ouroboros.Network.Protocol.ChainSync.Examples
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
                      (pipelineDecisionLowHighMark)
-
+import           Ouroboros.Network.Protocol.ChainSync.Server
+import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
+import           Test.QuickCheck
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Test.Util.ChainUpdates (ChainUpdate (..), UpdateBehavior (..),
                      genChainUpdates, toChainUpdates)
 import qualified Test.Util.LogicalClock as LogicalClock

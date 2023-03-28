@@ -104,8 +104,7 @@ import           Ouroboros.Network.Mock.ConcreteBlock (Block (..),
                      BlockHeader (..))
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-                     genDelayWithPrecision, tracerWithName,
-                     tracerWithTime)
+                     genDelayWithPrecision, tracerWithName, tracerWithTime)
 import           Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
                      WithAddr (..), makeFDBearer, withSnocket)
 
@@ -120,13 +119,13 @@ import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay (..), DNSTimeout (..))
 
 import           Control.Monad.Class.MonadMVar (MonadMVar)
+import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
+                     TraceLabelPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
                      (byteLimitsPeerSharing, timeLimitsPeerSharing)
-import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
-                     TraceLabelPeer (..))
 import           Test.QuickCheck
 
 -- | Diffusion Simulator Arguments

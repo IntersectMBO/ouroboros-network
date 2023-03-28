@@ -74,11 +74,11 @@ import           Test.Ouroboros.Network.Orphans ()
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
+import           Ouroboros.Network.Mock.Chain (Chain (..))
 import           Ouroboros.Network.NodeToNode ()
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..),
                      newPeerSharingRegistry)
-import           Ouroboros.Network.Mock.Chain (Chain (..))
 import qualified Test.Ouroboros.Network.Diffusion.Node.ChainDB as ChainDB
 import           Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
