@@ -2,6 +2,7 @@ max-backjumps: 5000
 reorder-goals: True
 ignore-project: False
 tests: True
+benchmarks: True
 
 program-options
   ghc-options: -Werror
