@@ -36,12 +36,10 @@ import           Ouroboros.Consensus.Protocol.Translate (TranslateProto (..))
 --
 -- - They share the same HASH algorithm
 -- - They share the same ADDRHASH algorithm
--- - They share the same DSIGN verification keys
 -- - They share the same VRF verification keys
 instance
   ( HASH c1 ~ HASH c2,
     ADDRHASH c1 ~ ADDRHASH c2,
-    VerKeyDSIGN c1 ~ VerKeyDSIGN c2,
     VerKeyVRF c1 ~ VerKeyVRF c2
   ) =>
   TranslateProto (TPraos c1) (Praos c2)
