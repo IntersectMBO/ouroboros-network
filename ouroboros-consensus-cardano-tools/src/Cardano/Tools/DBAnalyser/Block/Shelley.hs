@@ -28,34 +28,43 @@ import           Cardano.Ledger.Shelley (ShelleyEra)
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 import           Cardano.Tools.DBAnalyser.HasAnalysis
+import           Cardano.Tools.DBAnalyser.LedgerEvents (EventsConstraints,
+                     toLedgerEvent)
 import qualified Data.Aeson as Aeson
 import           Data.Foldable (foldl', toList)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (catMaybes, maybeToList)
+import           Data.Maybe (catMaybes, mapMaybe, maybeToList)
 import           Data.Maybe.Strict
 import           Data.Sequence.Strict (StrictSeq)
 import           Data.Word (Word64)
 import           Lens.Micro ((^.))
 import           Lens.Micro.Extras (view)
+import           Ouroboros.Consensus.Ledger.Abstract (AuxLedgerEvent)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
 import           Ouroboros.Consensus.Shelley.Eras (StandardCrypto,
                      StandardShelley)
 import           Ouroboros.Consensus.Shelley.HFEras ()
-import           Ouroboros.Consensus.Shelley.Ledger (ShelleyCompatible,
-                     shelleyLedgerState)
+import           Ouroboros.Consensus.Shelley.Ledger (LedgerState,
+                     ShelleyCompatible, ShelleyLedgerEvent, shelleyLedgerState)
 import           Ouroboros.Consensus.Shelley.Ledger.Block (ShelleyBlock)
 import qualified Ouroboros.Consensus.Shelley.Ledger.Block as Shelley
 import           Ouroboros.Consensus.Shelley.Node (Nonce (..),
                      ProtocolParamsShelley (..),
                      ProtocolParamsShelleyBased (..), ShelleyGenesis,
                      protocolInfoShelley)
+import           Ouroboros.Consensus.Shelley.Protocol.Abstract (ProtoCrypto)
+import           Ouroboros.Consensus.TypeFamilyWrappers
+                     (WrapLedgerEvent (WrapLedgerEvent))
 import           Text.Builder (decimal)
 
 -- | Usable for each Shelley-based era
 instance ( ShelleyCompatible proto era
          , PerEraAnalysis era
+         , ProtoCrypto proto ~ StandardCrypto
+         , AuxLedgerEvent (LedgerState (ShelleyBlock proto era)) ~ ShelleyLedgerEvent era
+         , EventsConstraints era
          ) => HasAnalysis (ShelleyBlock proto era) where
 
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
@@ -71,7 +80,7 @@ instance ( ShelleyCompatible proto era
 
   knownEBBs = const Map.empty
 
-  emitTraces (WithLedgerState _blk lsb lsa) = catMaybes
+  emitTraces (WithLedgerState _blk lsb lsa levents) = catMaybes
     [
       let be = SL.nesEL . shelleyLedgerState $ lsb
           ae = SL.nesEL . shelleyLedgerState $ lsa
@@ -86,6 +95,7 @@ instance ( ShelleyCompatible proto era
         (SJust (SL.Pulsing _ _), SJust (SL.Complete _)) -> Just "RWDPULSER_COMPLETE"
         (SJust _, SNothing) -> Just "RWDPULSER_RESET"
         (_, _) -> Nothing
+    , Just $ "EVENTS " <> show (mapMaybe (toLedgerEvent . WrapLedgerEvent @(ShelleyBlock proto era)) levents)
     ]
 
   blockStats blk =

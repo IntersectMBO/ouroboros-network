@@ -21,6 +21,8 @@ import qualified Cardano.Slotting.Slot as Slotting
 import qualified Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint as DP
 import           Cardano.Tools.DBAnalyser.HasAnalysis (HasAnalysis)
 import qualified Cardano.Tools.DBAnalyser.HasAnalysis as HasAnalysis
+import Cardano.Tools.DBAnalyser.LedgerEvents (convertAuxLedgerEvent, convertAuxLedgerEvent')
+import Data.Maybe (mapMaybe)
 import           Codec.CBOR.Encoding (Encoding)
 import           Control.Monad.Except
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
@@ -451,11 +453,12 @@ traceLedgerProcessing
       -> IO (ExtLedgerState blk)
     process oldLedger blk = do
       let ledgerCfg     = ExtLedgerCfg cfg
-          appliedResult = tickThenApplyLedgerResult ledgerCfg blk oldLedger
-          newLedger     = either (error . show) lrResult $ runExcept $ appliedResult
+          appliedResult = runExcept $ tickThenApplyLedgerResult ledgerCfg blk oldLedger
+          newLedger     = either (error . show) lrResult $ appliedResult
+          events        = either (error . show) lrEvents $ appliedResult
           traces        =
             (HasAnalysis.emitTraces $
-              HasAnalysis.WithLedgerState blk (ledgerState oldLedger) (ledgerState newLedger))
+              HasAnalysis.WithLedgerState blk (ledgerState oldLedger) (ledgerState newLedger) events)
       mapM_ Debug.traceMarkerIO traces
       return $ newLedger
 

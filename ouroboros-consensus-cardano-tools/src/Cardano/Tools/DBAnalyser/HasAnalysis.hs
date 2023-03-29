@@ -17,6 +17,8 @@ import           Ouroboros.Consensus.Storage.Serialisation (SizeInBytes)
 import           Ouroboros.Consensus.Util.Condense (Condense)
 import           Text.Builder (Builder)
 
+import Cardano.Tools.DBAnalyser.LedgerEvents(LedgerEvent)
+
 {-------------------------------------------------------------------------------
   HasAnalysis
 -------------------------------------------------------------------------------}
@@ -25,6 +27,7 @@ data WithLedgerState blk = WithLedgerState
   { wlsBlk         :: blk
   , wlsStateBefore :: LedgerState blk
   , wlsStateAfter  :: LedgerState blk
+  , wlsEvents      :: [AuxLedgerEvent (LedgerState blk)]
   }
 
 class (HasAnnTip blk, GetPrevHash blk, Condense (HeaderHash blk)) => HasAnalysis blk where

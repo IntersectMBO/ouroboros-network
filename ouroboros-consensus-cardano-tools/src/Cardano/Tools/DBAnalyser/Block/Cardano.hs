@@ -91,7 +91,7 @@ analyseWithLedgerState ::
   (forall blk. HasAnalysis blk => WithLedgerState blk -> a) ->
   WithLedgerState (CardanoBlock StandardCrypto) ->
   a
-analyseWithLedgerState f (WithLedgerState cb sb sa) =
+analyseWithLedgerState f (WithLedgerState cb sb sa evs) =
   hcollapse
     . hcmap p (K . f)
     . fromJust
@@ -102,7 +102,7 @@ analyseWithLedgerState f (WithLedgerState cb sb sa) =
     p = Proxy
 
     zipLS (Comp (Just sb')) (Comp (Just sa')) (I blk) =
-      Comp . Just $ WithLedgerState blk sb' sa'
+      Comp . Just $ WithLedgerState blk sb' sa' []
     zipLS _ _ _ = Comp Nothing
 
     oeb = getOneEraBlock . getHardForkBlock $ cb
