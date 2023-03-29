@@ -49,6 +49,7 @@ packages: ./cardano-ping
           ./cardano-client
 
 tests: True
+benchmarks: True
 
 package cardano-ping
   flags: +asserts
