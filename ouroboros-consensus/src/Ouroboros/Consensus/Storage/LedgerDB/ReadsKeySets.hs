@@ -156,7 +156,7 @@ forwardTableKeySets' ::
 forwardTableKeySets' seqNo chdiffs = \(UnforwardedReadSets seqNo' values keys) ->
     if seqNo /= seqNo' then Left (seqNo, seqNo') else
     Right
-      $ zipLedgerTables2 forward values keys chdiffs
+      $ zipLedgerTables3 forward values keys chdiffs
   where
     forward ::
          (Ord k, Eq v)

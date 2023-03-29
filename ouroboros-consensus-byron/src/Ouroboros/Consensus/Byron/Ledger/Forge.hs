@@ -53,7 +53,7 @@ forgeByronBlock
                                       --   defined by ledger
   -> BlockNo                          -- ^ Current block number
   -> SlotNo                           -- ^ Current slot number
-  -> TickedLedgerState ByronBlock     -- ^ Current ledger
+  -> TickedLedgerState ByronBlock mk  -- ^ Current ledger
   -> [Validated (GenTx ByronBlock)]   -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto     -- ^ Leader proof ('IsLeader')
   -> ByronBlock
@@ -130,7 +130,7 @@ forgeRegularBlock
                                        --   defined by ledger
   -> BlockNo                           -- ^ Current block number
   -> SlotNo                            -- ^ Current slot number
-  -> TickedLedgerState ByronBlock      -- ^ Current ledger
+  -> TickedLedgerState ByronBlock mk   -- ^ Current ledger
   -> [Validated (GenTx ByronBlock)]    -- ^ Txs to consider adding in the block
   -> PBftIsLeader PBftByronCrypto      -- ^ Leader proof ('IsLeader')
   -> ByronBlock

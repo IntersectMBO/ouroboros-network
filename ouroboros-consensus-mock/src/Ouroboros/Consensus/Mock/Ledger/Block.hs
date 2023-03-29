@@ -477,7 +477,7 @@ instance HasLedgerTables (LedgerState (SimpleBlock c ext)) where
   zipLedgerTables f (SimpleLedgerTables tbsL) (SimpleLedgerTables tbsR) =
     SimpleLedgerTables (f tbsL tbsR)
 
-  zipLedgerTables2
+  zipLedgerTables3
     f
     (SimpleLedgerTables utxoL)
     (SimpleLedgerTables utxoC)
@@ -487,7 +487,7 @@ instance HasLedgerTables (LedgerState (SimpleBlock c ext)) where
   zipLedgerTablesA f (SimpleLedgerTables utxoL) (SimpleLedgerTables utxoR) =
       SimpleLedgerTables <$> f utxoL utxoR
 
-  zipLedgerTables2A
+  zipLedgerTables3A
     f
     (SimpleLedgerTables utxoL)
     (SimpleLedgerTables utxoC)

@@ -68,6 +68,7 @@ import qualified Ouroboros.Consensus.HardFork.History as History
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mempool (TxLimits)
 import qualified Ouroboros.Consensus.Mempool as Mempool
 import           Ouroboros.Consensus.Node.ProtocolInfo
@@ -308,20 +309,22 @@ protocolInfoTPraosShelleyBased ProtocolParamsShelleyBased {
         , shelleyStorageConfigSecurityParam     = tpraosSecurityParam     tpraosParams
         }
 
-    initLedgerState :: LedgerState (ShelleyBlock (TPraos c) era)
+    initLedgerState :: LedgerState (ShelleyBlock (TPraos c) era) ValuesMK
     initLedgerState = ShelleyLedgerState {
-        shelleyLedgerTip        = Origin
-      , shelleyLedgerState      =
-          registerGenesisStaking (SL.sgStaking genesis) $
-            SL.initialState genesis additionalGenesisConfig
-      , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
-      }
+          shelleyLedgerTip        = Origin
+        , shelleyLedgerState      = st `withUtxoSL` shelleyUTxOTable emptyLedgerTables
+        , shelleyLedgerTransition = ShelleyTransitionInfo {shelleyAfterVoting = 0}
+        , shelleyLedgerTables     = ShelleyLedgerTables $ projectUtxoSL st
+        }
+      where
+        st = registerGenesisStaking (SL.sgStaking genesis) $
+               SL.initialState genesis additionalGenesisConfig
 
     initChainDepState :: TPraosState c
     initChainDepState = TPraosState Origin $
       SL.initialChainDepState initialNonce (SL.sgGenDelegs genesis)
 
-    initExtLedgerState :: ExtLedgerState (ShelleyBlock (TPraos c) era)
+    initExtLedgerState :: ExtLedgerState (ShelleyBlock (TPraos c) era) ValuesMK
     initExtLedgerState = ExtLedgerState {
         ledgerState = initLedgerState
       , headerState = genesisHeaderState initChainDepState

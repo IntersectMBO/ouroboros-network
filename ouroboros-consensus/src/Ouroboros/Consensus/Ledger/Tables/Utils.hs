@@ -14,6 +14,7 @@ module Ouroboros.Consensus.Ledger.Tables.Utils (
     applyLedgerTablesDiffs
   , applyLedgerTablesDiffsFromTicked
   , applyLedgerTablesDiffsTicked
+  , applyLedgerTablesDiffsTicked'
   , attachAndApplyDiffsTicked
   , attachAndApplyDiffsTickedToTables
   , calculateAdditions
@@ -37,6 +38,7 @@ module Ouroboros.Consensus.Ledger.Tables.Utils (
   , mapOverLedgerTables
   , mapOverLedgerTablesTicked
   , rawApplyDiffs
+  , rawAttachAndApplyDiffs
   , rawCalculateDifference
   , rawForgetValues
   , rawPrependTrackingDiffs
@@ -193,11 +195,13 @@ rawApplyDiffs ::
   -> ValuesMK k v
 rawApplyDiffs (ValuesMK vals) (DiffMK diffs) = ValuesMK (unsafeApplyDiff vals diffs)
 
-applyLedgerTablesDiffs           ::       HasLedgerTables l =>         l ValuesMK ->         l DiffMK ->         l ValuesMK
-applyLedgerTablesDiffsTicked     :: HasTickedLedgerTables l =>         l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
-applyLedgerTablesDiffsFromTicked :: HasTickedLedgerTables l => Ticked1 l ValuesMK ->         l DiffMK ->         l ValuesMK
+applyLedgerTablesDiffs           ::       HasLedgerTables l =>              l ValuesMK ->         l DiffMK ->         l ValuesMK
+applyLedgerTablesDiffsTicked     :: HasTickedLedgerTables l =>              l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
+applyLedgerTablesDiffsTicked'    :: HasTickedLedgerTables l => LedgerTables l ValuesMK -> Ticked1 l DiffMK -> Ticked1 l ValuesMK
+applyLedgerTablesDiffsFromTicked :: HasTickedLedgerTables l => Ticked1      l ValuesMK ->         l DiffMK ->         l ValuesMK
 applyLedgerTablesDiffs           = flip (zipOverLedgerTables       $ flip rawApplyDiffs) . projectLedgerTables
 applyLedgerTablesDiffsTicked     = flip (zipOverLedgerTablesTicked $ flip rawApplyDiffs) . projectLedgerTables
+applyLedgerTablesDiffsTicked'    = flip (zipOverLedgerTablesTicked $ flip rawApplyDiffs)
 applyLedgerTablesDiffsFromTicked = flip (zipOverLedgerTables       $ flip rawApplyDiffs) . projectLedgerTablesTicked
 
 -- Calculate differences

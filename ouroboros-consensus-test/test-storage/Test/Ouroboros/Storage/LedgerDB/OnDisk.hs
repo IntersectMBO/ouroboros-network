@@ -320,9 +320,9 @@ instance HasLedgerTables (LedgerState TestBlock) where
   mapLedgerTables      f                                     (TokenToTValue x) = TokenToTValue    (f x)
   traverseLedgerTables f                                     (TokenToTValue x) = TokenToTValue <$> f x
   zipLedgerTables      f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue    (f x y)
-  zipLedgerTables2     f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue    (f x y z)
+  zipLedgerTables3     f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue    (f x y z)
   zipLedgerTablesA     f                   (TokenToTValue x) (TokenToTValue y) = TokenToTValue <$> f x y
-  zipLedgerTables2A    f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue <$> f x y z
+  zipLedgerTables3A    f (TokenToTValue x) (TokenToTValue y) (TokenToTValue z) = TokenToTValue <$> f x y z
   foldLedgerTables     f                                     (TokenToTValue x) =                   f x
   foldLedgerTables2    f                   (TokenToTValue x) (TokenToTValue y) =                   f x y
   namesLedgerTables                                                            = TokenToTValue $ NameMK "testblocktables"

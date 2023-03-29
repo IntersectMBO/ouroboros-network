@@ -327,7 +327,7 @@ initFromVals tracer dbsSeq vals env st backingTables = do
   Trace.traceWith tracer $ TDBInitialisingFromValues dbsSeq
   liftIO $ LMDB.readWriteTransaction env $
     withDbStateRWMaybeNull st $ \case
-      Nothing -> zipLedgerTables2A initLMDBTable backingTables codecLedgerTables vals
+      Nothing -> zipLedgerTables3A initLMDBTable backingTables codecLedgerTables vals
                  $> ((), DbState{dbsSeq})
       Just _ -> liftIO . throwIO $ DbErrInitialisingAlreadyHasState
   Trace.traceWith tracer $ TDBInitialisedFromValues dbsSeq
@@ -476,7 +476,7 @@ newLMDBBackingStoreInitialiser dbTracer limits sfs initFrom = do
              guardDbClosed dbClosed
              oldSlot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbStateRW dbState $ \s@DbState{dbsSeq} -> do
                unless (dbsSeq <= At slot) $ liftIO . throwIO $ DbErrNonMonotonicSeq (At slot) dbsSeq
-               void $ zipLedgerTables2A writeLMDBTable dbBackingTables codecLedgerTables diffs
+               void $ zipLedgerTables3A writeLMDBTable dbBackingTables codecLedgerTables diffs
                pure (dbsSeq, s {dbsSeq = At slot})
              Trace.traceWith dbTracer $ TDBWrite oldSlot slot
 
@@ -536,7 +536,7 @@ mkLMDBBackingStoreValueHandle db = do
       Trace.traceWith tracer TVHReadStarted
       guardDbClosed dbClosed
       guardBsvhClosed vhId dbOpenHandles
-      res <- liftIO $ TrH.submitReadOnly trh (zipLedgerTables2A readLMDBTable dbBackingTables codecLedgerTables keys)
+      res <- liftIO $ TrH.submitReadOnly trh (zipLedgerTables3A readLMDBTable dbBackingTables codecLedgerTables keys)
       Trace.traceWith tracer TVHReadEnded
       pure res
 
@@ -554,7 +554,7 @@ mkLMDBBackingStoreValueHandle db = do
         outsideIn (Just tables) = mapLedgerTables (Comp2 . Just) tables
 
         transaction =
-          zipLedgerTables2A
+          zipLedgerTables3A
             (rangeRead rqCount)
             dbBackingTables
             codecLedgerTables

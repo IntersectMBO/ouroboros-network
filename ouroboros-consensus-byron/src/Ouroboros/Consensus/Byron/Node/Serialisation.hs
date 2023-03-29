@@ -48,9 +48,9 @@ instance EncodeDisk ByronBlock ByronBlock where
 instance DecodeDisk ByronBlock (Lazy.ByteString -> ByronBlock) where
   decodeDisk ccfg = decodeByronBlock (getByronEpochSlots ccfg)
 
-instance EncodeDisk ByronBlock (LedgerState ByronBlock) where
+instance EncodeDisk ByronBlock (LedgerState ByronBlock mk) where
   encodeDisk _ = encodeByronLedgerState
-instance DecodeDisk ByronBlock (LedgerState ByronBlock) where
+instance DecodeDisk ByronBlock (LedgerState ByronBlock mk) where
   decodeDisk _ = decodeByronLedgerState
 
 -- | @'ChainDepState' ('BlockProtocol' 'ByronBlock')@

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -13,6 +14,7 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -64,6 +66,9 @@ import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Ledger.Query
+import           Ouroboros.Consensus.Ledger.SupportsProtocol
+import           Ouroboros.Consensus.Ledger.Tables
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Protocol.Abstract (ChainDepState)
 import           Ouroboros.Consensus.Shelley.Eras (EraCrypto)
 import           Ouroboros.Consensus.Shelley.Ledger.Block
@@ -237,50 +242,54 @@ pattern GetFilteredUTxO x = GetUTxOByAddress x
 instance (Typeable era, Typeable proto)
   => ShowProxy (BlockQuery (ShelleyBlock proto era)) where
 
-instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedger (ShelleyBlock proto era) where
-  answerBlockQuery cfg query ext =
+instance ( ShelleyCompatible proto era
+         , LedgerSupportsProtocol (ShelleyBlock proto era)
+         , ProtoCrypto proto ~ crypto
+         )
+      => QueryLedger (ShelleyBlock proto era) where
+  answerBlockQuery cfg query dlv =
       case query of
         GetLedgerTip ->
-          shelleyLedgerTipPoint lst
+          pure $ shelleyLedgerTipPoint lst
         GetEpochNo ->
-          SL.nesEL st
+          pure $ SL.nesEL st
         GetNonMyopicMemberRewards creds ->
-          NonMyopicMemberRewards $
+          pure $ NonMyopicMemberRewards $
             SL.getNonMyopicMemberRewards globals st creds
         GetCurrentPParams ->
-          getPParams st
+          pure $ getPParams st
         GetProposedPParamsUpdates ->
-          getProposedPPUpdates st
+          pure $ getProposedPPUpdates st
         GetStakeDistribution ->
-          SL.poolsByTotalStakeFraction globals st
-        GetUTxOByAddress addrs ->
-          SL.getFilteredUTxO st addrs
-        GetUTxOWhole ->
-          SL.getUTxO st
+          pure $ SL.poolsByTotalStakeFraction globals st
+        q@GetUTxOByAddress{} ->
+          handleTraversingQuery dlv q
+        q@GetUTxOWhole ->
+          handleTraversingQuery dlv q
         DebugEpochState ->
-          getEpochState st
+          pure $ getEpochState st
         GetCBOR query' ->
-          mkSerialised (encodeShelleyResult query') $
-            answerBlockQuery cfg query' ext
+          mkSerialised (encodeShelleyResult query') <$>
+            answerBlockQuery cfg query' dlv
         GetFilteredDelegationsAndRewardAccounts creds ->
-          getFilteredDelegationsAndRewardAccounts st creds
+          pure $ getFilteredDelegationsAndRewardAccounts st creds
         GetGenesisConfig ->
-          shelleyLedgerCompactGenesis lcfg
+          pure $ shelleyLedgerCompactGenesis lcfg
         DebugNewEpochState ->
-          st
+          pure st
         DebugChainDepState ->
-          headerStateChainDep hst
+          pure $ headerStateChainDep hst
         GetRewardProvenance ->
-          snd $ SL.getRewardProvenance globals st
-        GetUTxOByTxIn txins ->
-          SL.getUTxOSubset st txins
+          pure $ snd $ SL.getRewardProvenance globals st
+        q@(GetUTxOByTxIn txins) ->
+          handleQueryWithStowedKeySets dlv q (flip SL.getUTxOSubset txins . shelleyLedgerState . ledgerState)
         GetStakePools ->
-          SL.getPools st
+          pure $ SL.getPools st
         GetStakePoolParams poolids ->
-          SL.getPoolParameters st poolids
+          pure $ SL.getPoolParameters st poolids
         GetRewardInfoPools ->
-          SL.getRewardInfoPools globals st
-        GetPoolState mPoolIds ->
+          pure $ SL.getRewardInfoPools globals st
+        GetPoolState mPoolIds -> pure $
           let dpsPState = SL.dpsPState . SL.lsDPState . SL.esLState . SL.nesEs $ st in
           case mPoolIds of
             Just poolIds ->
@@ -293,7 +302,7 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
                 , SL.psDeposits = Map.restrictKeys (SL.psDeposits dpsPState) poolIds
                 }
             Nothing -> dpsPState
-        GetStakeSnapshots mPoolIds ->
+        GetStakeSnapshots mPoolIds -> pure $
           let SL.SnapShots
                 { SL.ssStakeMark
                 , SL.ssStakeSet
@@ -340,7 +349,7 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
                 , ssGoTotal        = getAllStake ssStakeGo
                 }
 
-        GetPoolDistr mPoolIds ->
+        GetPoolDistr mPoolIds -> pure $
           let stakeSet = SL.ssStakeSet . SL.esSnapshots $ getEpochState st in
           SL.calculatePoolDistr' (maybe (const True) (flip Set.member) mPoolIds) stakeSet
     where
@@ -356,6 +365,29 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
       lst = ledgerState ext
       hst = headerState ext
       st  = shelleyLedgerState lst
+      DiskLedgerView ext _ _ _ = dlv
+
+  getQueryKeySets = \case
+    GetUTxOByTxIn ks -> ShelleyLedgerTables $ KeysMK ks
+    _other           -> emptyLedgerTables
+
+  tableTraversingQuery = \case
+      GetUTxOByAddress addrs ->
+        Just (TraversingQueryHandler
+              (\st -> SL.getFilteredUTxO (shelleyLedgerState $ ledgerState st) addrs)
+              emptyUtxo
+              combUtxo
+              id)
+      GetUTxOWhole           ->
+        Just (TraversingQueryHandler
+              (SL.getUTxO . shelleyLedgerState . ledgerState)
+              emptyUtxo
+              combUtxo
+              id)
+      _other -> Nothing
+    where
+      emptyUtxo                        = SL.UTxO Map.empty
+      combUtxo (SL.UTxO l) (SL.UTxO r) = SL.UTxO $ Map.union l r
 
 instance SameDepIndex (BlockQuery (ShelleyBlock proto era)) where
   sameDepIndex GetLedgerTip GetLedgerTip

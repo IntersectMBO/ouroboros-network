@@ -9,6 +9,7 @@
 {-# LANGUAGE Rank2Types               #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 -- | See @'LedgerTables'@
 module Ouroboros.Consensus.Ledger.Tables (
@@ -198,7 +199,7 @@ class ( forall mk. IsMapKind mk => Eq       (LedgerTables l mk)
     -> LedgerTables l mk3
   zipLedgerTables _ _ _ = trivialLedgerTables
 
-  zipLedgerTables2 ::
+  zipLedgerTables3 ::
        (forall k v.
             (Ord k, Eq v)
          => mk1 k v
@@ -210,7 +211,7 @@ class ( forall mk. IsMapKind mk => Eq       (LedgerTables l mk)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
     -> LedgerTables l mk4
-  default zipLedgerTables2 ::
+  default zipLedgerTables3 ::
        LedgerTablesAreTrivial l
     => (forall k v.
             (Ord k, Eq v)
@@ -223,7 +224,7 @@ class ( forall mk. IsMapKind mk => Eq       (LedgerTables l mk)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
     -> LedgerTables l mk4
-  zipLedgerTables2 _ _ _ _ = trivialLedgerTables
+  zipLedgerTables3 _ _ _ _ = trivialLedgerTables
 
   zipLedgerTablesA ::
        Applicative f
@@ -249,7 +250,7 @@ class ( forall mk. IsMapKind mk => Eq       (LedgerTables l mk)
     -> f (LedgerTables l mk3)
   zipLedgerTablesA _ _ _ = pure trivialLedgerTables
 
-  zipLedgerTables2A ::
+  zipLedgerTables3A ::
        Applicative f
     => (forall k v.
             (Ord k, Eq v)
@@ -262,7 +263,7 @@ class ( forall mk. IsMapKind mk => Eq       (LedgerTables l mk)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
     -> f (LedgerTables l mk4)
-  default zipLedgerTables2A ::
+  default zipLedgerTables3A ::
        (Applicative f, LedgerTablesAreTrivial l)
     => (forall k v.
             (Ord k, Eq v)
@@ -275,7 +276,7 @@ class ( forall mk. IsMapKind mk => Eq       (LedgerTables l mk)
     -> LedgerTables l mk2
     -> LedgerTables l mk3
     -> f (LedgerTables l mk4)
-  zipLedgerTables2A _ _ _ _ = pure trivialLedgerTables
+  zipLedgerTables3A _ _ _ _ = pure trivialLedgerTables
 
   foldLedgerTables ::
        Monoid m
@@ -342,6 +343,20 @@ class CanStowLedgerTables l where
   unstowLedgerTables   :: l EmptyMK  -> l ValuesMK
   default unstowLedgerTables :: LedgerTablesAreTrivial l => l EmptyMK -> l ValuesMK
   unstowLedgerTables = convertMapKind
+
+{-------------------------------------------------------------------------------
+  'LedgerTables' are 'Monoid's
+-------------------------------------------------------------------------------}
+
+instance ( forall k v. (Ord k, Eq v) => Semigroup (mk k v)
+         , HasLedgerTables l
+         ) => Semigroup (LedgerTables l mk) where
+  (<>) = zipLedgerTables (<>)
+
+instance ( forall k v. (Ord k, Eq v) => Monoid (mk k v)
+         , HasLedgerTables l
+         ) => Monoid (LedgerTables l mk) where
+  mempty = pureLedgerTables mempty
 
 {-------------------------------------------------------------------------------
   @MapKind@s

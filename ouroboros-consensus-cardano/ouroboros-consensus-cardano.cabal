@@ -37,7 +37,7 @@ library
     Ouroboros.Consensus.Cardano.CanHardFork
     Ouroboros.Consensus.Cardano.Condense
     Ouroboros.Consensus.Cardano.Node
-    Ouroboros.Consensus.Cardano.ShelleyBased
+    Ouroboros.Consensus.Cardano.Tables
 
   build-depends:
     , base                          >=4.14    && <4.17
@@ -45,7 +45,11 @@ library
     , cardano-binary
     , cardano-crypto-class
     , cardano-data
+    , cardano-ledger-allegra
+    , cardano-ledger-alonzo
+    , cardano-ledger-babbage
     , cardano-ledger-byron
+    , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-ledger-shelley
     , cardano-prelude
@@ -53,6 +57,7 @@ library
     , cardano-slotting
     , cborg                         >=0.2.2   && <0.3
     , containers                    >=0.5     && <0.7
+    , diff-containers
     , mtl                           >=2.2     && <2.3
     , nothunks
     , ouroboros-consensus           ^>=0.3
@@ -66,6 +71,35 @@ library
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
+
+executable ledger-db-backends-checker
+  hs-source-dirs:   tools/ledger-db-backends-checker
+  main-is:          Main.hs
+  build-depends:
+    , base
+    , bytestring
+    , cardano-binary
+    , cardano-crypto-wrapper
+    , cardano-ledger-core
+    , cardano-lmdb
+    , cardano-lmdb-simple
+    , cardano-slotting
+    , cborg
+    , containers
+    , fs-api
+    , io-classes
+    , mtl
+    , optparse-applicative
+    , ouroboros-consensus
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-protocol
+    , ouroboros-consensus-shelley
+
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -threaded -rtsopts "-with-rtsopts=-T -I0 -N2 -A16m"
+    -Wno-unticked-promoted-constructors

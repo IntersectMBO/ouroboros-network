@@ -1,11 +1,13 @@
 {-# LANGUAGE AllowAmbiguousTypes     #-}
 {-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE DeriveAnyClass          #-}
+{-# LANGUAGE DeriveGeneric           #-}
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
+{-# LANGUAGE StandaloneDeriving      #-}
 {-# LANGUAGE TypeApplications        #-}
 {-# LANGUAGE TypeFamilies            #-}
 {-# LANGUAGE UndecidableInstances    #-}
@@ -28,6 +30,7 @@ module Ouroboros.Consensus.Shelley.Eras (
   , StandardShelley
     -- * Shelley-based era
   , ShelleyBasedEra (..)
+  , TxOutWrapper (..)
   , WrapTx (..)
     -- * Type synonyms for convenience
   , EraCrypto
@@ -69,6 +72,8 @@ import           Control.State.Transition (PredicateFailure)
 import           Data.Data (Proxy (Proxy))
 import qualified Data.Set as Set
 import           Data.Text (Text)
+import           Data.Void (Void)
+import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
                      (WhetherToIntervene (..))
@@ -142,6 +147,9 @@ class ( Core.EraSegWits era
       , DSignable (EraCrypto era) (Hash (EraCrypto era) EraIndependentTxBody)
       , NoThunks (PredicateFailure (Core.EraRule "BBODY" era))
       , NoThunks (Core.TranslationContext era)
+
+      , DecCBOR (SL.TxIn (EraCrypto era))
+      , EncCBOR (SL.TxIn (EraCrypto era))
 
       ) => ShelleyBasedEra era where
 
@@ -380,3 +388,55 @@ instance ShelleyBasedEra (ConwayEra c) => Core.TranslateEra (ConwayEra c) WrapTx
         fmap (WrapTx . Conway.unTx)
       . Core.translateEra @(ConwayEra c) ctxt
       . Conway.Tx . unwrapTx
+
+{-------------------------------------------------------------------------------
+  TxOut family wrapper
+-------------------------------------------------------------------------------}
+
+-- | Wrapper for partially applying the 'Core.TxOut' type family
+--
+-- For generality, Consensus uses that type family as eg the index of
+-- 'Core.TranslateEra'. We thus need to partially apply it.
+newtype TxOutWrapper era = TxOutWrapper {unTxOutWrapper :: Core.TxOut era}
+  deriving (Generic)
+
+deriving instance Eq       (Core.TxOut era) => Eq       (TxOutWrapper era)
+deriving instance NoThunks (Core.TxOut era) => NoThunks (TxOutWrapper era)
+deriving instance Show     (Core.TxOut era) => Show     (TxOutWrapper era)
+
+instance ShelleyBasedEra (AllegraEra c)
+      => Core.TranslateEra (AllegraEra c) TxOutWrapper where
+  type TranslationError (AllegraEra c) TxOutWrapper = Void
+  translateEra ctxt = fmap TxOutWrapper . Core.translateEra ctxt . unTxOutWrapper
+
+instance ShelleyBasedEra (MaryEra c)
+      => Core.TranslateEra (MaryEra c) TxOutWrapper where
+  type TranslationError (MaryEra c) TxOutWrapper = Void
+  translateEra ctxt = fmap TxOutWrapper . Core.translateEra ctxt . unTxOutWrapper
+
+instance ShelleyBasedEra (AlonzoEra c)
+      => Core.TranslateEra (AlonzoEra c) TxOutWrapper where
+  type TranslationError (AlonzoEra c) TxOutWrapper = Void
+  translateEra _ctxt =
+        pure
+      . TxOutWrapper
+      . Alonzo.translateTxOut
+      . unTxOutWrapper
+
+instance ShelleyBasedEra (BabbageEra c)
+      => Core.TranslateEra (BabbageEra c) TxOutWrapper where
+  type TranslationError (BabbageEra c) TxOutWrapper = Void
+  translateEra _ctxt =
+        pure
+      . TxOutWrapper
+      . Babbage.translateTxOut
+      . unTxOutWrapper
+
+instance ShelleyBasedEra (ConwayEra c)
+      => Core.TranslateEra (ConwayEra c) TxOutWrapper where
+  type TranslationError (ConwayEra c) TxOutWrapper = Void
+  translateEra _ctxt =
+        pure
+      . TxOutWrapper
+      . Conway.translateTxOut
+      . unTxOutWrapper

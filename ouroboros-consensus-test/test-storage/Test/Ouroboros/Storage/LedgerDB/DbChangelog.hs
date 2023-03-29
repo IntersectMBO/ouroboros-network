@@ -121,9 +121,9 @@ instance HasLedgerTables TestLedger where
   mapLedgerTables f      (TestTables x)                               = TestTables (f x)
   traverseLedgerTables f (TestTables x)                               = TestTables <$> f x
   zipLedgerTables f      (TestTables x) (TestTables y)                = TestTables (f x y)
-  zipLedgerTables2 f     (TestTables x) (TestTables y) (TestTables z) = TestTables (f x y z)
+  zipLedgerTables3 f     (TestTables x) (TestTables y) (TestTables z) = TestTables (f x y z)
   zipLedgerTablesA f     (TestTables x) (TestTables y)                = TestTables <$> f x y
-  zipLedgerTables2A f    (TestTables x) (TestTables y) (TestTables z) = TestTables <$> f x y z
+  zipLedgerTables3A f    (TestTables x) (TestTables y) (TestTables z) = TestTables <$> f x y z
   foldLedgerTables f     (TestTables x)                               = f x
   foldLedgerTables2 f    (TestTables x) (TestTables y)                = f x y
   namesLedgerTables = TestTables $ NameMK "TestTables"
