@@ -9,6 +9,7 @@
 {-# LANGUAGE Rank2Types               #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 -- | See @'LedgerTables'@
 module Ouroboros.Consensus.Ledger.Tables (
@@ -342,6 +343,20 @@ class CanStowLedgerTables l where
   unstowLedgerTables   :: l EmptyMK  -> l ValuesMK
   default unstowLedgerTables :: LedgerTablesAreTrivial l => l EmptyMK -> l ValuesMK
   unstowLedgerTables = convertMapKind
+
+{-------------------------------------------------------------------------------
+  'LedgerTables' are 'Monoid's
+-------------------------------------------------------------------------------}
+
+instance ( forall k v. (Ord k, Eq v) => Semigroup (mk k v)
+         , HasLedgerTables l
+         ) => Semigroup (LedgerTables l mk) where
+  (<>) = zipLedgerTables (<>)
+
+instance ( forall k v. (Ord k, Eq v) => Monoid (mk k v)
+         , HasLedgerTables l
+         ) => Monoid (LedgerTables l mk) where
+  mempty = pureLedgerTables mempty
 
 {-------------------------------------------------------------------------------
   @MapKind@s
