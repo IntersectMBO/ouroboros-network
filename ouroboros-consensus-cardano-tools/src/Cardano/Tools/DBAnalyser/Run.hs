@@ -11,22 +11,29 @@ import           Cardano.Tools.DBAnalyser.Types
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.Serialise (Serialise (decode))
 import           Control.Monad.Except (runExceptT)
+import           Control.Monad.Trans (lift)
 import           Control.Tracer (Tracer (..), nullTracer)
 import qualified Debug.Trace as Debug
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import qualified Ouroboros.Consensus.Fragment.InFuture as InFuture
+import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as LedgerSupportsMempool
                      (HasTxs)
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import qualified Ouroboros.Consensus.Node as Node
 import qualified Ouroboros.Consensus.Node.InitStorage as Node
 import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB as ChainDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (fromChainDbArgs)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB (SnapshotInterval (..),
-                     defaultDiskPolicy, readSnapshot)
+import           Ouroboros.Consensus.Storage.LedgerDB
+                     (BackingStoreSelector (..), SnapshotInterval (..),
+                     defaultDiskPolicy, newBackingStore,
+                     newBackingStoreInitialiser, readSnapshot,
+                     restoreBackingStore)
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.Serialisation (DecodeDisk (..))
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util.IOLike
@@ -63,7 +70,7 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
           args' =
             Node.mkChainDbArgs
               registry InFuture.dontCheck cfg genesisLedger chunkInfo $
-            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy
+            ChainDB.defaultArgs (Node.stdMkChainDbHasFS dbDir) diskPolicy InMemoryBackingStore
           chainDbArgs = args' {
               ChainDB.cdbImmutableDbValidation = immValidationPolicy
             , ChainDB.cdbVolatileDbValidation  = volValidationPolicy
@@ -77,15 +84,20 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
           -- TODO we need to check if the snapshot exists. If not, print an
           -- error and ask the user if she wanted to create a snapshot first and
           -- how to do it.
-          initLedgerErr <- runExceptT $ case initializeFrom of
-            Nothing       -> pure genesisLedger
-            Just snapshot -> readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
+          eInitLedger <- runExceptT $ case initializeFrom of
+            Nothing       -> do
+              bstore <- lift $ newBackingStore (newBackingStoreInitialiser nullTracer LedgerDB.InMemoryBackingStore) ledgerDbFS (projectLedgerTables genesisLedger)
+              pure (forgetLedgerTables genesisLedger, bstore)
+            Just snapshot -> do
+              st <- readSnapshot ledgerDbFS (decodeExtLedgerState' cfg) decode snapshot
+              bstore <- lift $ restoreBackingStore (newBackingStoreInitialiser nullTracer LedgerDB.InMemoryBackingStore) ledgerDbFS snapshot
+              pure (st, bstore)
               -- TODO @readSnapshot@ has type @ExceptT ReadIncrementalErr m
               -- (ExtLedgerState blk)@ but it also throws exceptions! This makes
               -- error handling more challenging than it ought to be. Maybe we
               -- can enrich the error that @readSnapthot@ return, so that it can
               -- contain the @HasFS@ errors as well.
-          initLedger <- either (error . show) pure initLedgerErr
+          (initLedger, bs) <- either (error . show) pure eInitLedger
           -- This marker divides the "loading" phase of the program, where the
           -- system is principally occupied with reading snapshot data from
           -- disk, from the "processing" phase, where we are streaming blocks
@@ -100,20 +112,23 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
               , ledgerDbFS = ledgerDbFS
               , limit = confLimit
               , tracer = analysisTracer
+              , bstore = bs
               }
             tipPoint <- atomically $ ImmutableDB.getTipPoint immutableDB
             putStrLn $ "ImmutableDB tip: " ++ show tipPoint
             pure result
-        SelectChainDB ->
+        SelectChainDB -> do
+          bs <- newBackingStore (newBackingStoreInitialiser nullTracer LedgerDB.InMemoryBackingStore) ledgerDbFS (projectLedgerTables genesisLedger)
           ChainDB.withDB chainDbArgs $ \chainDB -> do
             result <- runAnalysis analysis $ AnalysisEnv {
                 cfg
-              , initLedger = genesisLedger
+              , initLedger = forgetLedgerTables genesisLedger
               , db = Right chainDB
               , registry
               , ledgerDbFS = ledgerDbFS
               , limit = confLimit
               , tracer = analysisTracer
+              , bstore = bs
               }
             tipPoint <- atomically $ ChainDB.getTipPoint chainDB
             putStrLn $ "ChainDB tip: " ++ show tipPoint
@@ -142,7 +157,7 @@ analyse DBAnalyserConfig{analysis, confLimit, dbDir, selectDB, validation, verbo
       (OnlyValidation, _ )             -> VolatileDB.ValidateAll
       _                                -> VolatileDB.NoValidation
 
-    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk)
+    decodeExtLedgerState' :: forall s . TopLevelConfig blk -> Decoder s (ExtLedgerState blk EmptyMK)
     decodeExtLedgerState' cfg =
       let ccfg = configCodec cfg
       in decodeExtLedgerState

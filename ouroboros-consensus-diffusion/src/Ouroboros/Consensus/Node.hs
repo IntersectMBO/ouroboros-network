@@ -178,13 +178,11 @@ data RunNodeArgs m addrNTN addrNTC blk (p2p :: Diffusion.P2P) = RunNodeArgs {
       -- | Network P2P Mode switch
     , rnEnableP2P :: NetworkP2PMode p2p
 
-<<<<<<< HEAD
       -- | Network PeerSharing miniprotocol willingness flag
     , rnPeerSharing :: PeerSharing
-=======
+
       -- | Whether to use the LMDB or the in-memory backend for UTxO-HD.
     , rnBackingStoreSelector :: !(BackingStoreSelector m)
->>>>>>> 2e9b596342 (Introduce LMDB backing store implementation (#4366))
     }
 
 -- | Arguments that usually only tests /directly/ specify.
@@ -798,14 +796,11 @@ stdLowLevelRunNodeArgsIO ::
           NodeToClientVersionData
           blk
           p2p)
-<<<<<<< HEAD
 stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo
                                     , rnEnableP2P
                                     , rnPeerSharing
+                                    , rnBackingStoreSelector
                                     }
-=======
-stdLowLevelRunNodeArgsIO RunNodeArgs{ rnProtocolInfo, rnEnableP2P, rnBackingStoreSelector }
->>>>>>> 2e9b596342 (Introduce LMDB backing store implementation (#4366))
                          StdRunNodeArgs{..} = do
     llrnBfcSalt      <- stdBfcSaltIO
     llrnKeepAliveRng <- stdKeepAliveRngIO
