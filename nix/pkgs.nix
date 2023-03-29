@@ -19,20 +19,10 @@ with pkgs; {
   cabal =
     haskell-nix.tool localConfig.ghcVersion "cabal" { version = "latest"; };
 
-  # can be changed back to haskell-nix.tool when we bump our index-state
-  stylish-haskell = (haskell-nix.cabalProject {
-    src = pkgs.fetchFromGitHub {
-      owner = "haskell";
-      repo = "stylish-haskell";
-      rev = "v0.14.4.0";
-      sha256 = "sha256-e5p2P54JabZsb4G1oTRI71hKzVdqd9TgYBwEXa63egg=";
-    };
-    cabalProjectLocal = ''
-      allow-older: ghc-lib-parser:base
-    '';
-    compiler-nix-name = localConfig.ghcVersion;
-    inherit (ouroborosNetworkHaskellPackages) index-state;
-  }).stylish-haskell.components.exes.stylish-haskell;
+  stylish-haskell = haskell-nix.tool localConfig.ghcVersion "stylish-haskell" {
+    version = "0.14.4.0";
+    cabalProjectLocal = "allow-older: ghc-lib-parser:base";
+  };
 
   cabal-fmt =
     haskell-nix.tool localConfig.ghcVersion "cabal-fmt" { version = "latest"; };
