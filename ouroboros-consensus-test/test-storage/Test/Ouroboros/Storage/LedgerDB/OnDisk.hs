@@ -79,7 +79,6 @@ import           Ouroboros.Consensus.Storage.LedgerDB hiding (maxRollback, push,
                      switch, tip)
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as HD
-import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.Impl as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB as LMDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DbChangelog as DbChangelog
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiffSeq as DS
@@ -865,7 +864,7 @@ runMock cmd initMock =
 data DbEnv m = DbEnv {
       dbHasFS                :: !(SomeHasFS m)
     , dbBackingStoreSelector :: !(BackingStoreSelector m)
-    , dbTracer               :: !(Trace.Tracer m HD.BackingStoreTrace)
+    , dbTracer               :: !(Trace.Tracer m (TraceLedgerDBEvent TestBlock))
     , dbCleanup              :: !(m ())
     }
 
@@ -925,7 +924,9 @@ initStandaloneDB ::
 initStandaloneDB dbEnv@DbEnv{..} dbRegistry dbSecParam = do
     dbBlocks <- uncheckedNewTVarM Map.empty
     dbState  <- uncheckedNewTVarM (initChain, initDB)
-    let bsi = newBackingStoreInitialiser dbTracer dbBackingStoreSelector
+    let bsi = newBackingStoreInitialiser
+                (BackingStoreEvent `Trace.contramap` dbTracer)
+                dbBackingStoreSelector
     dbBackingStore <- uncheckedNewTVarM . HD.LedgerBackingStore
                       =<< bsi
                              dbHasFS
@@ -1092,11 +1093,7 @@ runDB standalone@DB{..} cmd =
         (initLog, db, _replayed, backingStore) <-
           initialize
             nullTracer
-            -- Todo(jdral): Consider using @traceMaybe@. This would require
-            -- the function to be added to the IOHK-fork of @contra-variant@.
-            (Trace.Tracer $ \case
-               BackingStoreEvent e -> Trace.runTracer (dbTracer dbEnv) e
-               _           -> pure ())
+            (dbTracer dbEnv)
             hasFS
             dbRegistry
             S.decode
@@ -1527,8 +1524,8 @@ prop_sequential maxSuccess mkDbEnv cd secParam = QC.withMaxSuccess maxSuccess $
       rr <- QC.run unsafeNewRegistry
       QC.run mkDbEnv >>= \e -> propCmds e cd secParam rr cmds
 
-mkDbTracer :: Trace.Tracer IO HD.BackingStoreTrace
-mkDbTracer = show `Trace.contramap` Trace.stdoutTracer
+mkDbTracer :: Trace.Tracer IO (TraceLedgerDBEvent TestBlock)
+mkDbTracer = nullTracer
 
 inMemDbEnv :: Trans.MonadIO m
   => m (DbEnv IO)
