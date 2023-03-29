@@ -168,13 +168,13 @@ coreNodeKeys CoreNode{cnGenesisKey, cnDelegateKey, cnStakingKey} =
         cnkiCoreNode =
           ( mkKeyPair cnGenesisKey
           , Gen.AllIssuerKeys
-            { Gen.cold = mkKeyPair cnDelegateKey
+            { Gen.aikCold        = mkKeyPair cnDelegateKey
               -- 'CoreNodeKeyInfo' is used for all sorts of generators, not
               -- only transaction generators. To generate transactions we
               -- don't need all these keys, hence the 'error's.
-            , Gen.vrf  = error "vrf used while generating transactions"
-            , Gen.hot  = error "hot used while generating transactions"
-            , Gen.hk   = error "hk used while generating transactions"
+            , Gen.aikVrf         = error "vrf used while generating transactions"
+            , Gen.aikHot         = error "hot used while generating transactions"
+            , Gen.aikColdKeyHash = error "hk used while generating transactions"
             }
           )
       , cnkiKeyPair = (mkKeyPair cnDelegateKey, mkKeyPair cnStakingKey)

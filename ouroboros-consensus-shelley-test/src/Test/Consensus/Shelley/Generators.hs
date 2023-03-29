@@ -46,11 +46,14 @@ import           Test.Cardano.Ledger.AllegraEraGen ()
 import           Test.Cardano.Ledger.Alonzo.AlonzoEraGen ()
 import           Test.Cardano.Ledger.MaryEraGen ()
 import           Test.Cardano.Ledger.Shelley.ConcreteCryptoTypes as SL
+import           Test.Cardano.Ledger.Shelley.Constants (defaultConstants)
+import           Test.Cardano.Ledger.Shelley.Generator.Presets (coreNodeKeys)
 import           Test.Cardano.Ledger.Shelley.Generator.ShelleyEraGen ()
 import           Test.Cardano.Ledger.Shelley.Serialisation.EraIndepGenerators
                      (genCoherentBlock)
 import           Test.Cardano.Ledger.Shelley.Serialisation.Generators ()
 import           Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators ()
+import           Test.Cardano.Protocol.TPraos.Arbitrary (genBlock)
 import           Test.Consensus.Protocol.Serialisation.Generators ()
 import           Test.Consensus.Shelley.MockCrypto (CanMock)
 
@@ -65,7 +68,9 @@ import           Test.Consensus.Shelley.MockCrypto (CanMock)
 -- coherent blocks, so neither does this.
 instance (CanMock (TPraos crypto) era, crypto ~ EraCrypto era)
   => Arbitrary (ShelleyBlock (TPraos crypto) era) where
-  arbitrary = mkShelleyBlock <$> arbitrary
+  arbitrary = do
+    let allPoolKeys = map snd (coreNodeKeys defaultConstants)
+    mkShelleyBlock <$> genBlock allPoolKeys
 
 instance (Praos.PraosCrypto crypto, CanMock (Praos crypto) era, crypto ~ EraCrypto era)
     =>  Arbitrary (ShelleyBlock (Praos crypto) era) where
@@ -76,7 +81,9 @@ instance (Praos.PraosCrypto crypto, CanMock (Praos crypto) era, crypto ~ EraCryp
 -- body relate as expected.
 instance (CanMock (TPraos crypto) era, crypto ~ EraCrypto era)
   => Arbitrary (Coherent (ShelleyBlock (TPraos crypto) era)) where
-  arbitrary = Coherent . mkShelleyBlock <$> genCoherentBlock
+  arbitrary = do
+    let allPoolKeys = map snd (coreNodeKeys defaultConstants)
+    Coherent . mkShelleyBlock <$> genCoherentBlock allPoolKeys
 
 -- | Create a coherent Praos block
 --
@@ -84,8 +91,9 @@ instance (CanMock (TPraos crypto) era, crypto ~ EraCrypto era)
 --   TPraos header.
 instance (CanMock (Praos crypto) era, crypto ~ EraCrypto era)
   => Arbitrary (Coherent (ShelleyBlock (Praos crypto) era)) where
-  arbitrary = Coherent . mkBlk <$> genCoherentBlock
+  arbitrary = Coherent . mkBlk <$> genCoherentBlock allPoolKeys
     where
+      allPoolKeys = map snd (coreNodeKeys defaultConstants)
       mkBlk sleBlock = mkShelleyBlock $ let
         SL.Block hdr1 bdy = sleBlock in SL.Block (translateHeader hdr1) bdy
 
