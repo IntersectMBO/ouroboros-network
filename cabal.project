@@ -18,7 +18,7 @@ index-state:
   -- Bump this if you need newer packages from Hackage
   , hackage.haskell.org 2023-02-22T00:00:00Z
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2023-02-23T15:33:46Z
+  , cardano-haskell-packages 2023-03-22T15:33:46Z
 
 packages: ./cardano-ping
           ./ouroboros-network-testing
@@ -79,75 +79,6 @@ package ouroboros-consensus-shelley
 
 package ouroboros-consensus-cardano
   flags: +asserts
-
-constraints:
-  -- CONSTRAINTS FOR UPSTREAM CARDANO PACKAGES
-  -- These should all be constraints in upstream packages, but are currently missing.
-  -- We should a) fix these upstream and b) revise the constraints on the released
-  -- version in CHaP.
-  -- TODO Unfortunately revisions in CHaP don't work yet, revisit this when we fix it.
-  -- See https://github.com/input-output-hk/haskell.nix/issues/1675
-
-  -- bizarre issue: in earlier versions they define their own 'GEq', in newer
-  -- ones they reuse the one from 'some', but there isn't e.g. a proper version
-  -- constraint from dependent-sum-template (which is the library we actually use).
-  , dependent-sum > 0.6.2.0
-  -- plutus-core: needs a constraint here, fixed on plutus master but not in the released version
-  , algebraic-graphs >= 0.7
-
-  -- TODO: these should be set in cabal files, but avoiding setting them in lower dependencies for initial CHaP release
-  , cardano-prelude >= 0.1.0.1
-  , base-deriving-via >= 0.1.0.0
-  , cardano-binary >= 1.5.0
-  , cardano-binary-test >= 1.3.0
-  , cardano-crypto-class >= 2.0.0.1 && < 2.2.0.0
-  , cardano-crypto-praos >= 2.0.0.0.1 && < 2.2.0.0
-  , cardano-crypto-tests >= 2.0.0.0.1 && < 2.2.0.0
-  , cardano-slotting >= 0.1.0.0
-  , measures >= 0.1.0.0
-  , orphans-deriving-via >= 0.1.0.0
-  , strict-containers >= 0.1.0.0
-  , plutus-core >= 1.0.0.1
-  , plutus-ledger-api >= 1.0.0.1
-  , plutus-tx >= 1.0.0.0
-  , plutus-tx-plugin >= 1.0.0.0
-  , prettyprinter-configurable >= 0.1.0.0
-  , plutus-ghc-stub >= 8.6.5
-  , word-array >= 0.1.0.0
-  , typed-protocols >= 0.1.0.1
-  , typed-protocols-examples >= 0.1.0.1
-  -- cardano-ledger
-  , cardano-ledger-alonzo >= 1.0.0.0
-  , cardano-ledger-babbage >= 1.0.0.0
-  , cardano-ledger-conway >= 1.0.0.0
-  , cardano-ledger-allegra >= 1.0.0.0
-  , cardano-ledger-mary >= 1.0.0.0
-  , cardano-ledger-shelley >= 1.0.0.0
-  , cardano-ledger-alonzo-test >= 1.0.0.0
-  , cardano-ledger-babbage-test >= 1.0.0.0
-  , cardano-ledger-conway-test >= 1.0.0.0
-  , cardano-ledger-shelley-test >= 1.0.0.0
-  , cardano-ledger-shelley-ma-test >= 1.0.0.0
-  , cardano-ledger-binary >= 1.0.0.0
-  , cardano-protocol-tpraos >= 1.0.0.0
-  , cardano-ledger-pretty >= 1.0.0.0
-  , cardano-data >= 1.0.0.0
-  , non-integral >= 1.0.0.0
-  , set-algebra >= 1.0.0.0
-  , small-steps >= 1.0.0.0
-  , small-steps-test >= 1.0.0.0
-  , vector-map >= 1.0.0.0
-  -- Byron era
-  , cardano-ledger-core >= 1.0.0.0
-  , cardano-crypto-test >= 1.5.0.0
-  , cardano-crypto-wrapper >= 1.5.0.0
-  , cardano-ledger-byron-test >= 1.5.0.0
-  , cardano-ledger-byron >= 1.0.0.0
-  , byron-spec-ledger >= 1.0.0.0
-  , byron-spec-chain >= 1.0.0.0
-
-allow-newer:
-    Unique:hashable
 
 -- TODO: remove this once fs-api and fs-sim are published to CHaP.
 source-repository-package
