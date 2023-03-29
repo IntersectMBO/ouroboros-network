@@ -22,6 +22,7 @@ import qualified Ouroboros.Consensus.ByronSpec.Ledger.GenTx as GenTx
 import           Ouroboros.Consensus.ByronSpec.Ledger.Ledger
 import           Ouroboros.Consensus.ByronSpec.Ledger.Orphans ()
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables.Utils (emptyLedgerTables)
 
 newtype instance GenTx ByronSpecBlock = ByronSpecGenTx {
       unByronSpecGenTx :: ByronSpecGenTx
@@ -37,6 +38,11 @@ newtype instance Validated (GenTx ByronSpecBlock) = ValidatedByronSpecGenTx {
   deriving anyclass NoThunks
 
 type instance ApplyTxErr ByronSpecBlock = ByronSpecGenTxErr
+
+-- | This data family instance is not used anywhere but still required by the
+-- instance of @LedgerSupportsMempool ByronSpecBlock@
+newtype instance TxId (GenTx ByronSpecBlock) = TxId Int
+  deriving newtype NoThunks
 
 instance LedgerSupportsMempool ByronSpecBlock where
   applyTx cfg _wti _slot tx (TickedByronSpecLedgerState tip st) =
@@ -57,3 +63,5 @@ instance LedgerSupportsMempool ByronSpecBlock where
   txInBlockSize = const 0
 
   txForgetValidated = forgetValidatedByronSpecGenTx
+
+  getTransactionKeySets _ = emptyLedgerTables

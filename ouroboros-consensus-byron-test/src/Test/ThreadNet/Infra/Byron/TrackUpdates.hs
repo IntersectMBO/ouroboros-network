@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -41,6 +42,7 @@ import qualified Ouroboros.Consensus.Byron.Crypto.DSIGN as Crypto
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Ledger.Tables (EmptyMK)
 import           Ouroboros.Consensus.Node.ProtocolInfo (NumCoreNodes (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.NodeId (CoreNodeId (..))
@@ -88,7 +90,7 @@ mkUpdateLabels
   -> NodeJoinPlan
   -> NodeTopology
   -> Ref.Result
-  -> Byron.LedgerState ByronBlock
+  -> Byron.LedgerState ByronBlock EmptyMK
      -- ^ from 'nodeOutputFinalLedger'
   -> (ProtocolVersionUpdateLabel, SoftwareVersionUpdateLabel)
 mkUpdateLabels params numSlots genesisConfig nodeJoinPlan topology result

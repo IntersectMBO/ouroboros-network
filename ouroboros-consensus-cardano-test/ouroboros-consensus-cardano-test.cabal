@@ -39,6 +39,7 @@ library
 
   build-depends:
     , base                                                                                            >=4.14    && <4.17
+    , cardano-binary
     , cardano-crypto-class
     , cardano-crypto-wrapper
     , cardano-ledger-alonzo-test
@@ -52,6 +53,7 @@ library
     , containers
     , microlens
     , mtl
+    , nothunks
     , ouroboros-consensus                                                                             ^>=0.3
     , ouroboros-consensus-byron                                                                       ^>=0.4.0
     , ouroboros-consensus-byron-test                                                                  ==0.4.0.0
@@ -69,7 +71,7 @@ library
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts
+    -Wno-unticked-promoted-constructors -fno-ignore-asserts
 
 test-suite test
   type:             exitcode-stdio-1.0
@@ -79,6 +81,7 @@ test-suite test
     Test.Consensus.Cardano.ByronCompatibility
     Test.Consensus.Cardano.Golden
     Test.Consensus.Cardano.Serialisation
+    Test.Consensus.Cardano.Translation
     Test.ThreadNet.AllegraMary
     Test.ThreadNet.Cardano
     Test.ThreadNet.MaryAlonzo
@@ -88,14 +91,21 @@ test-suite test
     , base                              >=4.14    && <4.17
     , bytestring
     , cardano-crypto-class
+    , cardano-data
     , cardano-ledger-alonzo
+    , cardano-ledger-alonzo-test
+    , cardano-ledger-babbage-test
+    , cardano-ledger-binary
     , cardano-ledger-byron
+    , cardano-ledger-conway-test
     , cardano-ledger-core
     , cardano-ledger-shelley
+    , cardano-ledger-shelley-test
     , cardano-protocol-tpraos
     , cardano-slotting
     , cborg
     , containers
+    , diff-containers
     , filepath
     , microlens
     , ouroboros-consensus               ^>=0.3
@@ -118,4 +128,5 @@ test-suite test
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts -threaded -rtsopts
+    -Wno-unticked-promoted-constructors -fno-ignore-asserts -threaded
+    -rtsopts

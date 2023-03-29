@@ -74,6 +74,7 @@ import           Test.Util.Orphans.Arbitrary ()
 import           Test.Util.Slots (NumSlots (..))
 import           Test.Util.TestEnv
 
+
 -- | No Byron era, so our crypto can be trivial.
 type Crypto = MockCrypto ShortHash
 
@@ -250,7 +251,8 @@ prop_simple_shelleyAllegra_convergence TestSetup
       }
 
     testOutput :: TestOutput ShelleyAllegraBlock
-    testOutput = runTestNetwork setupTestConfig testConfigB TestConfigMB {
+    testOutput =
+        runTestNetwork setupTestConfig testConfigB TestConfigMB {
           nodeInfo = \(CoreNodeId nid) ->
             TestNodeInitialization {
                 tniCrucialTxs   =
@@ -263,21 +265,21 @@ prop_simple_shelleyAllegra_convergence TestSetup
                     setupD   -- unchanged
               , tniProtocolInfo =
                   protocolInfoShelleyBasedHardFork
-                    ProtocolParamsShelleyBased {
-                        shelleyBasedGenesis           = genesisShelley
-                      , shelleyBasedInitialNonce      = setupInitialNonce
-                      , shelleyBasedLeaderCredentials =
-                          [Shelley.mkLeaderCredentials
-                            (coreNodes !! fromIntegral nid)]
-                      }
-                    (SL.ProtVer majorVersion1 0)
-                    (SL.ProtVer majorVersion2 0)
-                    (SL.toFromByronTranslationContext genesisShelley)
-                    ProtocolTransitionParamsShelleyBased {
-                        transitionTranslationContext = ()
-                      , transitionTrigger            =
-                          TriggerHardForkAtVersion $ SL.getVersion majorVersion2
-                      }
+                        ProtocolParamsShelleyBased {
+                            shelleyBasedGenesis           = genesisShelley
+                          , shelleyBasedInitialNonce      = setupInitialNonce
+                          , shelleyBasedLeaderCredentials =
+                              [Shelley.mkLeaderCredentials
+                                (coreNodes !! fromIntegral nid)]
+                          }
+                        (SL.ProtVer majorVersion1 0)
+                        (SL.ProtVer majorVersion2 0)
+                        (SL.toFromByronTranslationContext genesisShelley)
+                        ProtocolTransitionParamsShelleyBased {
+                            transitionTranslationContext = ()
+                          , transitionTrigger            =
+                              TriggerHardForkAtVersion $ SL.getVersion majorVersion2
+                          }
               }
           , mkRekeyM = Nothing
           }

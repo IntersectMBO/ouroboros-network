@@ -9,7 +9,9 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE UndecidableInstances       #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 -- | 'Arbitrary' instances intended for serialisation roundtrip tests for
 -- 'CardanoBlock' and its related types.
 --
@@ -38,6 +40,7 @@ import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Serialisation (Some (..))
 import           Ouroboros.Consensus.Protocol.Praos.Translate ()
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos)
+import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Ledger.Block ()
 import           Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()

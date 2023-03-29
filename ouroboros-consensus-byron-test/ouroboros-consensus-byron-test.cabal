@@ -43,6 +43,7 @@ library
     , cardano-ledger-binary:{cardano-ledger-binary, testlib}
     , cardano-ledger-byron
     , cardano-ledger-byron-test
+    , cardano-slotting
     , containers                                              >=0.5     && <0.7
     , hedgehog-quickcheck
     , mtl                                                     >=2.2     && <2.3
@@ -59,7 +60,7 @@ library
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts
+    -Wno-unticked-promoted-constructors -fno-ignore-asserts
 
 test-suite test
   type:             exitcode-stdio-1.0
@@ -67,6 +68,7 @@ test-suite test
   main-is:          Main.hs
   other-modules:
     Test.Consensus.Byron.Golden
+    Test.Consensus.Byron.LedgerTables
     Test.Consensus.Byron.Serialisation
     Test.ThreadNet.Byron
     Test.ThreadNet.DualByron
@@ -104,4 +106,5 @@ test-suite test
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts -threaded -rtsopts
+    -Wno-unticked-promoted-constructors -fno-ignore-asserts -threaded
+    -rtsopts

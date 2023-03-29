@@ -203,7 +203,7 @@ forgeDualByronBlock
   => TopLevelConfig DualByronBlock
   -> BlockNo                              -- ^ Current block number
   -> SlotNo                               -- ^ Current slot number
-  -> TickedLedgerState DualByronBlock     -- ^ Ledger
+  -> TickedLedgerState DualByronBlock mk  -- ^ Ledger
   -> [Validated (GenTx DualByronBlock)]   -- ^ Txs to add in the block
   -> PBftIsLeader PBftByronCrypto         -- ^ Leader proof ('IsLeader')
   -> DualByronBlock
