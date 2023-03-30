@@ -27,9 +27,9 @@ library
                         cborg                         >=0.2.8    && <0.3,
                         bytestring                    >=0.10     && <0.12,
                         contra-tracer                 >=0.1      && <0.2,
-                        io-classes                    >=0.3      && <0.4,
+                        io-classes                    >=0.3      && <0.6,
                         network-mux                   >=0.3      && <0.4,
-                        strict-stm                    >=0.2      && <0.3,
+                        strict-stm                    >=0.2      && <0.6,
                         tdigest                       >=0.2.1.1  && <0.3,
                         text                          >=1.2.4    && <2.1,
 

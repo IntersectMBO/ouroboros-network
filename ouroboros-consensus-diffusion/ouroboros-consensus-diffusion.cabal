@@ -88,7 +88,7 @@ library
     , filepath
     , fs-api
     , hashable
-    , io-classes                   ^>=0.3
+    , io-classes                   ^>=0.3     || ^>=0.5
     , mtl
     , ouroboros-consensus          ==0.3.1.0
     , ouroboros-network            ^>=0.4.0.1

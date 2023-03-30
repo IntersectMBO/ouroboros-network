@@ -93,7 +93,7 @@ library
                      , ouroboros-network-api
                                       ^>=0.1
                      , ouroboros-network-testing
-                     , strict-stm     ^>=0.2
+                     , strict-stm     >=0.2      && <0.6
                      , typed-protocols
                      , typed-protocols-cborg
                                       ^>=0.1

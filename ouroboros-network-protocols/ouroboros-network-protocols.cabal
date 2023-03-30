@@ -94,11 +94,11 @@ library
                        TypeFamilies,
                        TypeInType
 
-  build-depends:       base              >=4.14 && <4.17,
-                       bytestring        >=0.10 && <0.12,
+  build-depends:       base              >=4.14  && <4.17,
+                       bytestring        >=0.10  && <0.12,
                        cborg             >=0.2.1 && <0.3,
 
-                       io-classes       ^>=0.3,
+                       io-classes        >=0.3   && <0.6,
                        ouroboros-network-api,
                        serialise,
                        typed-protocols   >=0.1 && <1.0,
