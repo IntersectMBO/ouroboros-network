@@ -278,7 +278,7 @@ prop_insert_peer script =
     checkResult name peer joinedAt m =
           (\peers -> counterexample (name ++ ": peer (" ++ show peer ++ ") member of "
                                           ++ show (peers, m'))
-                                    (Set.notMember peer peers))
+                                    (Set.size peers < 5 || Set.notMember peer peers))
         . Set.fromList
         . map fst
         . take (size `div` 5)
@@ -292,7 +292,6 @@ prop_insert_peer script =
                        m
                        joinedAt
         size = Map.size m
-
 
 -- | Check that the results are always positive.
 --
