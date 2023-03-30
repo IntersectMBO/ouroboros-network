@@ -31,8 +31,10 @@ let
       (pkgs.python3.withPackages (p: [ p.beautifulsoup4 p.html5lib ]))
     ];
 
-    tools = {
-      # IDE tools
+    tools = builtins.mapAttrs (name: ver: {
+      version = ver;
+      index-state = localConfig.tools-index-state;
+    }) { # IDE tools
       ghcid = "0.8.7";
       hasktags = "0.71.2";
       haskell-language-server = "1.8.0.0";

@@ -1,7 +1,14 @@
 { sources }:
 # our packages overlay
 pkgs: _:
-with pkgs; {
+with pkgs;
+let
+  tool = name: version: other:
+    haskell-nix.tool localConfig.ghcVersion name ({
+      version = version;
+      index-state = localConfig.tools-index-state;
+    } // other);
+in {
   ouroborosNetworkHaskellPackages = import ./ouroboros-network.nix {
     inherit config pkgs lib stdenv haskell-nix buildPackages;
     inherit (sources) CHaP;
@@ -16,26 +23,13 @@ with pkgs; {
 
   network-docs = callPackage ./network-docs.nix { };
 
-  cabal =
-    haskell-nix.tool localConfig.ghcVersion "cabal" { version = "latest"; };
+  cabal = tool "cabal" "latest" { };
 
-  # can be changed back to haskell-nix.tool when we bump our index-state
-  stylish-haskell = (haskell-nix.cabalProject {
-    src = pkgs.fetchFromGitHub {
-      owner = "haskell";
-      repo = "stylish-haskell";
-      rev = "v0.14.4.0";
-      sha256 = "sha256-e5p2P54JabZsb4G1oTRI71hKzVdqd9TgYBwEXa63egg=";
-    };
-    cabalProjectLocal = ''
-      allow-older: ghc-lib-parser:base
-    '';
-    compiler-nix-name = localConfig.ghcVersion;
-    inherit (ouroborosNetworkHaskellPackages) index-state;
-  }).stylish-haskell.components.exes.stylish-haskell;
+  stylish-haskell = tool "stylish-haskell" "0.14.4.0" {
+    cabalProjectLocal = "allow-older: ghc-lib-parser:base";
+  };
 
-  cabal-fmt =
-    haskell-nix.tool localConfig.ghcVersion "cabal-fmt" { version = "latest"; };
+  cabal-fmt = tool "cabal-fmt" "latest" { };
 
   scriv = pkgs.callPackage ./scriv.nix { };
 

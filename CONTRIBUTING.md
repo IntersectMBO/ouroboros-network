@@ -29,8 +29,8 @@ optimization:  0
 -- building non optimised code helps building quicker but some of the tests
 -- will take much longer to run.
 documentation: False
--- documentation is build by the CI, you will get feedback if your haddocks are
--- unparsapble.
+-- documentation is built by the CI, you will get feedback if your haddocks are
+-- unparsable.
 tests:         True
 benchmarks:    True
 
@@ -142,11 +142,10 @@ to be asked to also update the standalone documentation (written in `tex`).
 
 ### Building technical documentation
 
-There are three documents in three directories:
+There are two documents in two directories:
 
 * `./doc/network-design`
 * `./doc/network-spec`
-* `./ouroboros-consensus/docs/report/`
 
 Either go to one of the directories and run `pdflatex` & `bibtex` (there's a
 `Makefile` or a script to do that).  Note that in you need to install a `tex`
@@ -166,7 +165,7 @@ on different architectures), while top level code (e.g. the diffusion layer) is
 only tested in simulation).  We use [`QuickCheck`], if you are new to property
 based testing please check out one of original John Hughes tutorials, e.g. [How
 to Specify it!](https://www.youtube.com/watch?v=G0NUOst-53U).  We combine
-`QuickCheck` with an in-house build [`io-sim`] library.  As a consequence
+`QuickCheck` with an in-house built [`io-sim`] library.  As a consequence
 almost all of our code is written in polymorphic way using `io-classes` which
 comes with [`io-sim`]: `io-classes` expose a very similar API that the `base`,
 `async`, `stm` and `time` packages provides.
@@ -192,7 +191,7 @@ comes with [`io-sim`]: `io-classes` expose a very similar API that the `base`,
 The network & consensus have slightly different style guides, see
 
 * [network style guide](./docs/StyleGuide.md)
-* [consensus style guide](./ouroboros-consensus/docs/StyleGuide.md)
+* [consensus style guide](https://github.com/input-output-hk/ouroboros-consensus/blob/main/docs/StyleGuide.md)
 
 ### Git History
 
@@ -238,19 +237,6 @@ email, etc.).
 ### Changelogs
 
 We maintain changelogs for all our packages.
-
-### Updating dependencies
-
-To get access to newer version of packages published on [Hackage] just update
-`Hackages`'s `index-state` in `cabal.project`
-
-Some of our dependencies are only available from [Cardano Haskell Packages
-(CHaP)][CHaP].  To update such dependencies one needs to update its
-`index-state` and run:
-
-```
-nix flake lock --update-input CHaP
-```
 
 ## Roles and Responsibilities
 
@@ -310,13 +296,13 @@ This forces the changes to go through the normal pull request review process
 
 Note that we never merge release branches back to `master`.
 
-## Updating dependencies
+## Updating dependencies (`index-state`)
 
 Our Haskell packages come from two package repositories:
 - Hackage
 - [CHaP](https://github.com/input-output-hk/cardano-haskell-packages) (which is essentially another Hackage)
 
-The "index state" of each repository is pinned to a particular time in
+The `index-state` of each repository is pinned to a particular time in
 `cabal.project`.  This tells Cabal to treat the repository as if it was
 the specified time, ensuring reproducibility.  If you want to use a package
 version from repository X which was added after the pinned index state
@@ -345,6 +331,11 @@ If you fail to do this you may get an error like this from Nix:
 ```
 error: Unknown index-state 2021-08-08T00:00:00Z, the latest index-state I know about is 2021-08-06T00:00:00Z. You may need to update to a newer hackage.nix.
 ```
+
+The `index-state` of the tools is pinned in `./nix/local-config.nix` to ensure
+that an incompatible change in the set of packages available in Hackage doesn't
+break the shell. From time to time, this `index-state` should be updated
+manually.
 
 ### Use of `source-repository-package`s
 
