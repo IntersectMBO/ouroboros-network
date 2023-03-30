@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -15,6 +16,7 @@
 module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     LgrDB
   , lgrBackingStore
+  , lgrFlushLock
     -- opaque
   , LedgerDB'
   , LgrDbSerialiseConstraints
@@ -40,7 +42,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     -- * Reading ledger tables
   , getLedgerTablesAtFor
     -- * Flush lock
-  , withReadLock
+  , acquireLDBReadView
     -- * Re-exports
   , LedgerDB.AnnLedgerError (..)
   , LedgerDB.DiskPolicy (..)
@@ -57,6 +59,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode))
+import           Control.Exception (assert)
 import           Control.Monad.Trans.Class
 import           Control.Tracer
 import           Data.Foldable (foldl')
@@ -88,13 +91,12 @@ import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog hiding (flush)
 import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
 import           Ouroboros.Consensus.Storage.LedgerDB.Stream
 import           Ouroboros.Consensus.Storage.Serialisation
+import           Ouroboros.Consensus.Util
 import           Ouroboros.Consensus.Util.Args
 import           Ouroboros.Consensus.Util.IOLike
-import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as Lock
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           System.FS.API (SomeHasFS (..), createDirectoryIfMissing)
 import           System.FS.API.Types (FsError, mkFsPath)
-
 
 -- | Thin wrapper around the ledger database
 data LgrDB m blk = LgrDB {
@@ -116,7 +118,7 @@ data LgrDB m blk = LgrDB {
     , lgrBackingStore :: !(LedgerBackingStore m (ExtLedgerState blk))
       -- ^ Handle to the ledger's backing store, containing the parts that grow
       -- too big for in-memory residency
-    , lgrFlushLock    :: !(Lock.RAWLock m ())
+    , lgrFlushLock    :: !(LedgerDBLock m)
       -- ^ The flush lock to the 'BackingStore'. This lock is crucial when it
       -- comes to keeping the data in memory consistent with the data on-disk.
       --
@@ -239,7 +241,7 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
     let dbPrunedToImmDBTip = LedgerDB.prune (SecurityParam 0) db
     (varDB, varPrevApplied) <-
       (,) <$> newTVarIO dbPrunedToImmDBTip <*> newTVarIO Set.empty
-    flushLock <- Lock.new ()
+    flushLock <- mkLedgerDBLock
     return (
         LgrDB {
             varDB           = varDB
@@ -296,7 +298,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
 mkLgrDB :: StrictTVar m (LedgerDB' blk)
         -> StrictTVar m (Set (RealPoint blk))
         -> LedgerBackingStore m (ExtLedgerState blk)
-        -> Lock.RAWLock m ()
+        -> LedgerDBLock m
         -> (RealPoint blk -> m blk)
         -> LgrDbArgs Identity m blk
         -> LgrDB m blk
@@ -336,7 +338,7 @@ takeSnapshot ::
      )
   => LgrDB m blk -> m (Maybe (LedgerDB.DiskSnapshot, RealPoint blk))
 takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
-    withWriteLock lgrDB $ do
+    withWriteLock (lgrFlushLock lgrDB) $ do
       flush lgrDB
 
       -- CRITICAL: Snapshots are taken from the last flushed state and not from
@@ -532,20 +534,6 @@ wrapFailure _ k = catch k rethrow
     rethrow err = throwIO $ LgrDbFailure @blk err
 
 {-------------------------------------------------------------------------------
-  Flush lock operations
--------------------------------------------------------------------------------}
-
--- | Acquire the ledger DB read lock and hold it while performing an action
-withReadLock :: IOLike m => LgrDB m blk -> m a -> m a
-withReadLock lgrDB m =
-    Lock.withReadAccess (lgrFlushLock lgrDB) (\() -> m)
-
--- | Acquire the ledger DB write lock and hold it while performing an action
-withWriteLock :: IOLike m => LgrDB m blk -> m a -> m a
-withWriteLock lgrDB m =
-    Lock.withWriteAccess (lgrFlushLock lgrDB) (\() -> (,) () <$> m)
-
-{-------------------------------------------------------------------------------
  Getting tables
 -------------------------------------------------------------------------------}
 
@@ -571,3 +559,30 @@ getLedgerTablesAtFor pt keys lgr@LgrDB{ varDB, lgrBackingStore } = do
       case eValues of
         Right v -> pure $ Right v
         Left _  -> getLedgerTablesAtFor pt keys lgr
+
+acquireLDBReadView ::
+     forall a b m blk.
+     (IOLike m, LedgerSupportsProtocol blk)
+  => StaticEither b () (Point blk)
+  -> LgrDB m blk
+  -> STM m a
+  -> m (a, StaticEither b (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)
+                       (Either (Point blk) (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)))
+acquireLDBReadView p ldb stm =
+  withReadLock (lgrFlushLock ldb) $ do
+    (a, ldb') <- atomically $ do
+      a <- stm
+      (a,) <$> getCurrent ldb
+    (a,) <$> case p of
+      StaticLeft () -> StaticLeft <$> acquire ldb'
+      StaticRight actualPoint -> StaticRight <$>
+        case LedgerDB.rollback actualPoint ldb' of
+          Nothing    -> pure $ Left $ castPoint $ getTip $ LedgerDB.anchor ldb'
+          Just ldb'' -> Right <$> acquire ldb''
+ where
+   acquire :: LedgerDB' blk -> m (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)
+   acquire l = do
+     let (LedgerBackingStore bs) = lgrBackingStore ldb
+     (slot, vh) <- bsValueHandle bs
+     assert (slot == changelogDiffAnchor (LedgerDB.ledgerDbChangelog l)) $
+       pure (LedgerBackingStoreValueHandle slot vh, l)

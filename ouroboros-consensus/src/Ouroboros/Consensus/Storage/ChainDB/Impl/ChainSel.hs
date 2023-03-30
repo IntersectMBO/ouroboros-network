@@ -3,11 +3,8 @@
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE MultiWayIf           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
-{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Operations involving chain selection: the initial chain selection and
@@ -71,6 +68,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
                      (LookupBlockInfo)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Paths as Paths
+import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
@@ -451,19 +449,18 @@ chainSelectionForBlock
   -> InvalidBlockPunishment m
   -> m (Point blk)
 chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
-  LgrDB.withReadLock cdbLgrDB $ do
-    -- We will read a copy of the ledger DB on the next line, so we have to make
-    -- sure the changelog it contains is not flushed during chain selection.
+    ((invalid, succsOf, lookupBlockInfo, curChain, tipPoint), _, ldb) <-
+      LgrDB.getLedgerDBView
+        cdb
+        ( (,,,,) <$> (forgetFingerprint <$> readTVar cdbInvalid)
+                 <*> VolatileDB.filterByPredecessor  cdbVolatileDB
+                 <*> VolatileDB.getBlockInfo         cdbVolatileDB
+                 <*> Query.getCurrentChain           cdb
+                 <*> Query.getTipPoint               cdb
+        )
 
-    (invalid, succsOf, lookupBlockInfo, curChain, tipPoint, ledgerDB)
-      <- atomically $ (,,,,,)
-          <$> (forgetFingerprint <$> readTVar cdbInvalid)
-          <*> VolatileDB.filterByPredecessor  cdbVolatileDB
-          <*> VolatileDB.getBlockInfo         cdbVolatileDB
-          <*> Query.getCurrentChain           cdb
-          <*> Query.getTipPoint               cdb
-          <*> (K <$> LgrDB.getCurrent  cdbLgrDB)
-    let curChainAndLedger :: ChainAndLedger blk
+    let ledgerDB = K ldb
+        curChainAndLedger :: ChainAndLedger blk
         curChainAndLedger =
           -- The current chain we're working with here is not longer than @k@
           -- blocks (see 'getCurrentChain' and 'cdbChain'), which is easier to
@@ -570,7 +567,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
           -- If there are no suffixes after @b@, just use the suffix just
           -- containing @b@ as the sole candidate.
           Nothing              ->
-            return $ (AF.fromOldestFirst curHead [hdr]) NE.:| []
+            return $ AF.fromOldestFirst curHead [hdr] NE.:| []
           Just suffixesAfterB' ->
             -- We can start with an empty cache, because we're only looking
             -- up the headers /after/ b, so they won't be on the current

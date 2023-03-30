@@ -1,14 +1,15 @@
-{-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE DeriveAnyClass           #-}
-{-# LANGUAGE DeriveGeneric            #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE FlexibleInstances        #-}
-{-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE StandaloneDeriving       #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE UndecidableInstances     #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | A 'DbChangelog' is a data structure that holds a sequence of "virtual"
 -- ledger states by internally maintaining 3 sequences:
@@ -42,6 +43,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (
   , FlushPolicy (..)
   , flush
   , flushIntoBackingStore
+    -- * Lock
+  , LedgerDBLock (..)
+  , mkLedgerDBLock
+  , withReadLock
+  , withWriteLock
   ) where
 
 import           Cardano.Slotting.Slot
@@ -49,7 +55,6 @@ import qualified Control.Exception as Exn
 import           Data.Bifunctor (bimap)
 import           Data.SOP.Functors (Product2 (..))
 import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
@@ -59,6 +64,8 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingSto
 import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq hiding (empty,
                      extend)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiffSeq as DS
+import           Ouroboros.Consensus.Util.IOLike
+import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as Lock
 import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
@@ -133,9 +140,9 @@ deriving instance (Show     (LedgerTables l SeqDiffMK), Show     (l EmptyMK))
 newtype DbChangelogState l = DbChangelogState {unDbChangelogState :: l EmptyMK}
   deriving (Generic)
 
-deriving instance Eq       (l EmptyMK) => Eq       (DbChangelogState l)
-deriving instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
-deriving instance Show     (l EmptyMK) => Show     (DbChangelogState l)
+deriving         instance Eq       (l EmptyMK) => Eq       (DbChangelogState l)
+deriving newtype instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
+deriving         instance Show     (l EmptyMK) => Show     (DbChangelogState l)
 
 instance GetTip l => AS.Anchorable (WithOrigin SlotNo) (DbChangelogState l) (DbChangelogState l) where
   asAnchor = id
@@ -406,3 +413,26 @@ flushIntoBackingStore (LedgerBackingStore backingStore) dblog =
       => SeqDiffMK k v
       -> DiffMK k v
     prj (SeqDiffMK sq) = DiffMK (DS.cumulativeDiff sq)
+
+{-------------------------------------------------------------------------------
+  LedgerDB lock
+-------------------------------------------------------------------------------}
+
+-- | A lock to prevent the LedgerDB (i.e. a 'DbChangelog') from getting out of
+-- sync with the 'BackingStore'. Whenever we need to hold a consistent view of
+-- the database.
+newtype LedgerDBLock m = LedgerDBLock (Lock.RAWLock m ())
+  deriving newtype NoThunks
+
+mkLedgerDBLock :: IOLike m => m (LedgerDBLock m)
+mkLedgerDBLock = LedgerDBLock <$> Lock.new ()
+
+-- | Acquire the ledger DB read lock and hold it while performing an action
+withReadLock :: IOLike m => LedgerDBLock m -> m a -> m a
+withReadLock (LedgerDBLock lock) m =
+    Lock.withReadAccess lock (\() -> m)
+
+-- | Acquire the ledger DB write lock and hold it while performing an action
+withWriteLock :: IOLike m => LedgerDBLock m -> m a -> m a
+withWriteLock (LedgerDBLock lock) m =
+    Lock.withWriteAccess lock (\() -> (,) () <$> m)

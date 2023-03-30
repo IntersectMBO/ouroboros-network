@@ -391,10 +391,6 @@ data ChainDB m blk = ChainDB {
       --
       -- 'False' when the database is closed.
     , isOpen             :: STM m Bool
-
-      -- | Perform a monadic operation holding the read lock on the DB
-      -- changelog. See the haddocks for 'lgrFlushLock' for more context.
-    , withLgrReadLock :: forall a. m a -> m a
     }
 
 getCurrentTip :: (Monad (STM m), HasHeader (Header blk))
