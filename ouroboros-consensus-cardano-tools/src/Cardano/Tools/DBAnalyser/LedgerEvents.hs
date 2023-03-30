@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NoImplicitPrelude     #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -24,6 +25,8 @@ module Cardano.Tools.DBAnalyser.LedgerEvents (
   ) where
 
 import           Cardano.Ledger.Coin (Coin (..), DeltaCoin (..))
+import           Cardano.Ledger.Conway.Rules (ConwayNewEpochEvent)
+import qualified Cardano.Ledger.Conway.Rules as Conway
 import qualified Cardano.Ledger.Core as Ledger
 import qualified Cardano.Ledger.Credential as Ledger
 import           Cardano.Ledger.Crypto (StandardCrypto)
@@ -32,8 +35,9 @@ import           Cardano.Ledger.Shelley.API (InstantaneousRewards (..), KeyHash)
 import           Cardano.Ledger.Shelley.Core (EraCrypto)
 import           Cardano.Ledger.Shelley.Rules (RupdEvent (..),
                      ShelleyEpochEvent (..), ShelleyMirEvent (..),
-                     ShelleyNewEpochEvent (..), ShelleyPoolreapEvent (..),
+                     ShelleyNewEpochEvent, ShelleyPoolreapEvent (..),
                      ShelleyTickEvent (..))
+import qualified Cardano.Ledger.Shelley.Rules as Shelley
 import           Cardano.Prelude hiding (All)
 import           Cardano.Slotting.Slot (EpochNo (..))
 import           Control.State.Transition (Event)
@@ -42,7 +46,8 @@ import           Data.SOP.Strict (All, K (..), hcmap, hcollapse)
 import qualified Data.Set as Set
 import qualified Data.Strict.Maybe as Strict
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
-import           Ouroboros.Consensus.Cardano.Block (HardForkBlock)
+import           Ouroboros.Consensus.Cardano.Block (AllegraEra, AlonzoEra,
+                     BabbageEra, ConwayEra, HardForkBlock, MaryEra, ShelleyEra)
 import           Ouroboros.Consensus.HardFork.Combinator.AcrossEras
                      (getOneEraLedgerEvent)
 import           Ouroboros.Consensus.Ledger.Abstract (AuxLedgerEvent,
@@ -141,13 +146,10 @@ type EventsConstraints era =
   , Event (Ledger.EraRule "RUPD" era) ~ RupdEvent (EraCrypto era)
   )
 
-instance
-  ( EraCrypto ledgerera ~ StandardCrypto
+toLedgerEventShelley :: ( EraCrypto ledgerera ~ StandardCrypto
   , EventsConstraints ledgerera
-  ) =>
-  ConvertLedgerEvent (ShelleyBlock p ledgerera)
-  where
-  toLedgerEvent evt =
+  ) => WrapLedgerEvent (ShelleyBlock p ledgerera) -> Maybe LedgerEvent
+toLedgerEventShelley evt =
     case unwrapLedgerEvent evt of
       LETotalRewards e m ->
         Just $ LedgerTotalRewards e m
@@ -165,6 +167,26 @@ instance
         Nothing
       ShelleyLedgerEventTICK {} ->
         Nothing
+
+
+instance ConvertLedgerEvent (ShelleyBlock p (ShelleyEra StandardCrypto)) where
+  toLedgerEvent = toLedgerEventShelley
+
+instance ConvertLedgerEvent (ShelleyBlock p (MaryEra StandardCrypto)) where
+  toLedgerEvent = toLedgerEventShelley
+
+instance ConvertLedgerEvent (ShelleyBlock p (AllegraEra StandardCrypto)) where
+  toLedgerEvent = toLedgerEventShelley
+
+instance ConvertLedgerEvent (ShelleyBlock p (AlonzoEra StandardCrypto)) where
+  toLedgerEvent = toLedgerEventShelley
+
+instance ConvertLedgerEvent (ShelleyBlock p (BabbageEra StandardCrypto)) where
+  toLedgerEvent = toLedgerEventShelley
+
+instance ConvertLedgerEvent (ShelleyBlock p (ConwayEra StandardCrypto)) where
+  -- TODO: do something with conway epoch events
+  toLedgerEvent = const Nothing
 
 
 --------------------------------------------------------------------------------
@@ -242,7 +264,7 @@ pattern LERestraintRewards ::
   AuxLedgerEvent (LedgerState (ShelleyBlock p ledgerera))
 pattern LERestraintRewards e m creds <-
   ShelleyLedgerEventTICK
-    (TickNewEpochEvent (RestrainedRewards e m creds))
+    (TickNewEpochEvent (Shelley.RestrainedRewards e m creds))
 
 pattern LETotalRewards ::
   ( EraCrypto ledgerera ~ StandardCrypto
@@ -254,7 +276,7 @@ pattern LETotalRewards ::
   AuxLedgerEvent (LedgerState (ShelleyBlock p ledgerera))
 pattern LETotalRewards e m <-
   ShelleyLedgerEventTICK
-    (TickNewEpochEvent (TotalRewardEvent e m))
+    (TickNewEpochEvent (Shelley.TotalRewardEvent e m))
 
 pattern LEDeltaReward ::
   ( EraCrypto ledgerera ~ StandardCrypto
@@ -267,7 +289,7 @@ pattern LEDeltaReward ::
   AuxLedgerEvent (LedgerState (ShelleyBlock p ledgerera))
 pattern LEDeltaReward e m <-
   ShelleyLedgerEventTICK
-    (TickNewEpochEvent (DeltaRewardEvent (RupdEvent e m)))
+    (TickNewEpochEvent (Shelley.DeltaRewardEvent (RupdEvent e m)))
 
 pattern LEIncrementalReward ::
   ( EraCrypto ledgerera ~ StandardCrypto
@@ -295,7 +317,7 @@ pattern LEMirTransfer ::
 pattern LEMirTransfer rp tp rtt ttr <-
   ShelleyLedgerEventTICK
     ( TickNewEpochEvent
-        ( MirEvent
+        ( Shelley.MirEvent
             ( MirTransfer
                 (InstantaneousRewards rp tp rtt ttr)
               )
@@ -316,7 +338,7 @@ pattern LERetiredPools ::
 pattern LERetiredPools r u e <-
   ShelleyLedgerEventTICK
     ( TickNewEpochEvent
-        ( EpochEvent
+        ( Shelley.EpochEvent
             ( PoolReapEvent
                 (RetiredPools r u e)
               )

@@ -29,7 +29,7 @@ import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.RewardUpdate as SL
 import           Cardano.Tools.DBAnalyser.HasAnalysis
 import           Cardano.Tools.DBAnalyser.LedgerEvents (EventsConstraints,
-                     toLedgerEvent)
+                     toLedgerEvent, ConvertLedgerEvent)
 import qualified Data.Aeson as Aeson
 import           Data.Foldable (foldl', toList)
 import qualified Data.Map.Strict as Map
@@ -63,8 +63,7 @@ import           Text.Builder (decimal)
 instance ( ShelleyCompatible proto era
          , PerEraAnalysis era
          , ProtoCrypto proto ~ StandardCrypto
-         , AuxLedgerEvent (LedgerState (ShelleyBlock proto era)) ~ ShelleyLedgerEvent era
-         , EventsConstraints era
+         , ConvertLedgerEvent (ShelleyBlock proto era)
          ) => HasAnalysis (ShelleyBlock proto era) where
 
   countTxOutputs blk = case Shelley.shelleyBlockRaw blk of
