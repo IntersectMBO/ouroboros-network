@@ -499,12 +499,12 @@ pattern CardanoNodeToClientVersion11 =
     HardForkNodeToClientEnabled
       HardForkSpecificNodeToClientVersion2
       (  EraNodeToClientEnabled ByronNodeToClientVersion1
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion6
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion6
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion6
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion6
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion6
-      :* EraNodeToClientEnabled ShelleyNodeToClientVersion6
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion7
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion7
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion7
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion7
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion7
+      :* EraNodeToClientEnabled ShelleyNodeToClientVersion7
       :* Nil
       )
 

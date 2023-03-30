@@ -31,8 +31,11 @@ module Ouroboros.Consensus.Shelley.Ledger.Query (
 
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..), encodeListLen,
                      enforceSize)
+import           Cardano.Ledger.Coin (Coin)
 import           Cardano.Ledger.Compactible (Compactible (fromCompact))
+import           Cardano.Ledger.Credential (StakeCredential)
 import           Cardano.Ledger.Crypto (Crypto)
+import           Cardano.Ledger.DPState (lookupDepositDState)
 import qualified Cardano.Ledger.EpochBoundary as SL
 import           Cardano.Ledger.Keys (KeyHash, KeyRole (..))
 import qualified Cardano.Ledger.Shelley.API as SL
@@ -210,6 +213,11 @@ data instance BlockQuery (ShelleyBlock proto era) :: Type -> Type where
     -> BlockQuery (ShelleyBlock proto era)
                   (SL.PoolDistr (EraCrypto era))
 
+  GetStakeDelegDeposits
+    :: Set (StakeCredential (EraCrypto era))
+    -> BlockQuery (ShelleyBlock proto era)
+                  (Map (StakeCredential (EraCrypto era)) Coin)
+
   -- WARNING: please add new queries to the end of the list and stick to this
   -- order in all other pattern matches on queries. This helps in particular
   -- with the en/decoders, as we want the CBOR tags to be ordered.
@@ -343,6 +351,14 @@ instance (ShelleyCompatible proto era, ProtoCrypto proto ~ crypto) => QueryLedge
         GetPoolDistr mPoolIds ->
           let stakeSet = SL.ssStakeSet . SL.esSnapshots $ getEpochState st in
           SL.calculatePoolDistr' (maybe (const True) (flip Set.member) mPoolIds) stakeSet
+        GetStakeDelegDeposits stakeCreds ->
+          let lookupDeposit =
+                lookupDepositDState (SL.dpsDState $ SL.lsDPState $ SL.esLState $ SL.nesEs st)
+              lookupInsert acc cred =
+                case lookupDeposit cred of
+                  Nothing      -> acc
+                  Just deposit -> Map.insert cred deposit acc
+          in Set.foldl' lookupInsert Map.empty stakeCreds
     where
       lcfg    = configLedger $ getExtLedgerCfg cfg
       globals = shelleyLedgerGlobals lcfg
@@ -471,6 +487,13 @@ instance SameDepIndex (BlockQuery (ShelleyBlock proto era)) where
     = Nothing
   sameDepIndex (GetPoolDistr _) _
     = Nothing
+  sameDepIndex (GetStakeDelegDeposits stakeCreds) (GetStakeDelegDeposits stakeCreds')
+    | stakeCreds == stakeCreds'
+    = Just Refl
+    | otherwise
+    = Nothing
+  sameDepIndex (GetStakeDelegDeposits _) _
+    = Nothing
 
 deriving instance Eq   (BlockQuery (ShelleyBlock proto era) result)
 deriving instance Show (BlockQuery (ShelleyBlock proto era) result)
@@ -499,6 +522,7 @@ instance ShelleyCompatible proto era => ShowQuery (BlockQuery (ShelleyBlock prot
       GetPoolState {}                            -> show
       GetStakeSnapshots {}                       -> show
       GetPoolDistr {}                            -> show
+      GetStakeDelegDeposits {}                   -> show
 
 -- | Is the given query supported by the given 'ShelleyNodeToClientVersion'?
 querySupportedVersion :: BlockQuery (ShelleyBlock proto era) result -> ShelleyNodeToClientVersion -> Bool
@@ -525,6 +549,7 @@ querySupportedVersion = \case
     GetPoolState {}                            -> (>= v6)
     GetStakeSnapshots {}                       -> (>= v6)
     GetPoolDistr {}                            -> (>= v6)
+    GetStakeDelegDeposits {}                   -> (>= v7)
     -- WARNING: when adding a new query, a new @ShelleyNodeToClientVersionX@
     -- must be added. See #2830 for a template on how to do this.
   where
@@ -534,12 +559,13 @@ querySupportedVersion = \case
     v4 = ShelleyNodeToClientVersion4
     v5 = ShelleyNodeToClientVersion5
     v6 = ShelleyNodeToClientVersion6
+    v7 = ShelleyNodeToClientVersion7
 
 {-------------------------------------------------------------------------------
   Auxiliary
 -------------------------------------------------------------------------------}
 
--- | /Note/ - This query is deprecated starting with Conway era
+-- | /Note/ - This query will be deprecated starting with Conway era
 getProposedPPUpdates ::
      ShelleyBasedEra era
   => SL.NewEpochState era -> SL.ProposedPPUpdates era
@@ -618,6 +644,8 @@ encodeShelleyQuery query = case query of
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 20 <> toCBOR poolId
     GetPoolDistr poolids ->
       CBOR.encodeListLen 2 <> CBOR.encodeWord8 21 <> toCBOR poolids
+    GetStakeDelegDeposits stakeCreds ->
+      CBOR.encodeListLen 2 <> CBOR.encodeWord8 22 <> toCBOR stakeCreds
 
 decodeShelleyQuery ::
      forall era proto. ShelleyBasedEra era
@@ -648,6 +676,7 @@ decodeShelleyQuery = do
       (2, 19) -> SomeSecond . GetPoolState <$> fromCBOR
       (2, 20) -> SomeSecond . GetStakeSnapshots <$> fromCBOR
       (2, 21) -> SomeSecond . GetPoolDistr <$> fromCBOR
+      (2, 22) -> SomeSecond . GetStakeDelegDeposits <$> fromCBOR
       _       -> fail $
         "decodeShelleyQuery: invalid (len, tag): (" <>
         show len <> ", " <> show tag <> ")"
@@ -678,6 +707,7 @@ encodeShelleyResult query = case query of
     GetPoolState {}                            -> LC.toEraCBOR @era
     GetStakeSnapshots {}                       -> toCBOR
     GetPoolDistr {}                            -> LC.toEraCBOR @era
+    GetStakeDelegDeposits {}                   -> LC.toEraCBOR @era
 
 decodeShelleyResult ::
      forall proto era result. ShelleyCompatible proto era
@@ -706,6 +736,7 @@ decodeShelleyResult query = case query of
     GetPoolState {}                            -> LC.fromEraCBOR @era
     GetStakeSnapshots {}                       -> fromCBOR
     GetPoolDistr {}                            -> LC.fromEraCBOR @era
+    GetStakeDelegDeposits {}                   -> LC.fromEraCBOR @era
 
 -- | The stake snapshot returns information about the mark, set, go ledger snapshots for a pool,
 -- plus the total active stake for each snapshot that can be used in a 'sigma' calculation.

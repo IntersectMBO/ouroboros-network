@@ -31,6 +31,9 @@ data ShelleyNodeToClientVersion =
 
     -- | New queries introduced: GetPoolDistr, GetPoolState, GetStakeSnapshots
   | ShelleyNodeToClientVersion6
+
+    -- | New queries introduced: GetStakeDelegDeposits
+  | ShelleyNodeToClientVersion7
   deriving (Show, Eq, Ord, Enum, Bounded)
 
 instance HasNetworkProtocolVersion (ShelleyBlock proto era) where
@@ -50,6 +53,7 @@ instance SupportedNetworkProtocolVersion (ShelleyBlock proto era) where
       , (NodeToClientV_12, ShelleyNodeToClientVersion5)
       , (NodeToClientV_13, ShelleyNodeToClientVersion5)
       , (NodeToClientV_14, ShelleyNodeToClientVersion6)
+      , (NodeToClientV_15, ShelleyNodeToClientVersion7)
       ]
 
   latestReleasedNodeVersion = latestReleasedNodeVersionDefault
