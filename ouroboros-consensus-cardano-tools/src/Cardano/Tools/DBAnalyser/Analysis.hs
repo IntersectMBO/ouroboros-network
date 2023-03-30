@@ -24,7 +24,6 @@ import           Control.Monad.Except
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Foldable (foldl')
 import           Data.List (intercalate)
-import qualified Data.Map.Diff.Strict.Internal as Diff
 import qualified Data.Map.Strict as Map
 import qualified Data.Text.IO as Text.IO
 import           Data.Word (Word16, Word64)
