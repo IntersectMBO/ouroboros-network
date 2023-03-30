@@ -61,6 +61,7 @@ library
     , bytestring                    >=0.10  && <0.12
     , cardano-binary
     , cardano-crypto-class
+    , cardano-crypto-praos
     , cardano-data
     , cardano-ledger-allegra
     , cardano-ledger-alonzo

@@ -127,6 +127,7 @@ import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Protocol.Translate (TranslateProto)
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
+import           Ouroboros.Consensus.Protocol.Praos.Translate(translateKeyHash)
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Ouroboros.Consensus.Shelley.ShelleyHFC
 import           Ouroboros.Consensus.TypeFamilyWrappers
@@ -784,9 +785,6 @@ translateNewEpochState
 translateBlocksMade :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => BaseTypes.BlocksMade c1 -> BaseTypes.BlocksMade c2
 translateBlocksMade BaseTypes.BlocksMade {unBlocksMade} =
   BaseTypes.BlocksMade $ Map.mapKeysMonotonic translateKeyHash unBlocksMade
-
-translateKeyHash :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => SL.KeyHash 'SL.StakePool c1 -> SL.KeyHash 'SL.StakePool c2
-translateKeyHash (SL.KeyHash hash) = SL.KeyHash hash
 
 translateEpochState :: SL.EpochState (BabbageEra c1) -> SL.EpochState (BabbageEra c2)
 translateEpochState = undefined

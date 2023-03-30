@@ -70,7 +70,7 @@ import           Data.SOP.Counting (Exactly (Exactly), exactlyWeakenNonEmpty,
 import           Data.SOP.Index (Index (..))
 import           Data.SOP.OptNP (NonEmptyOptNP, OptNP (OptSkip))
 import qualified Data.SOP.OptNP as OptNP
-import           Data.SOP.Strict (K (K), NP (Nil, (:*)))
+import           Data.SOP.Strict (K (K), fn, hap, type (-.->), NP (Nil, (:*)))
 import           Data.Word (Word16, Word64)
 import           Ouroboros.Consensus.Block (BlockConfig, BlockForging,
                      BlockProtocol, NestedCtxt (NestedCtxt), SlotNo (SlotNo),

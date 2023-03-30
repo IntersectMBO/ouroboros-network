@@ -111,13 +111,13 @@ type CardanoShelleyEras c1 c2 =
 -- Here we use layout and adjacency to make it obvious that we haven't
 -- miscounted.
 
-pattern TagByron   :: f ByronBlock                               -> NS f (CardanoEras c1 c2)
+pattern TagByron   :: f ByronBlock                                 -> NS f (CardanoEras c1 c2)
 pattern TagShelley :: f (ShelleyBlock (TPraos c1) (ShelleyEra c1)) -> NS f (CardanoEras c1 c2)
 pattern TagAllegra :: f (ShelleyBlock (TPraos c1) (AllegraEra c1)) -> NS f (CardanoEras c1 c2)
 pattern TagMary    :: f (ShelleyBlock (TPraos c1) (MaryEra    c1)) -> NS f (CardanoEras c1 c2)
 pattern TagAlonzo  :: f (ShelleyBlock (TPraos c1) (AlonzoEra  c1)) -> NS f (CardanoEras c1 c2)
-pattern TagBabbage :: f (ShelleyBlock (Praos  c1)  (BabbageEra c1)) -> NS f (CardanoEras c1 c2)
-pattern TagConway  :: f (ShelleyBlock (Praos  c2)  (ConwayEra  c2)) -> NS f (CardanoEras c1 c2)
+pattern TagBabbage :: f (ShelleyBlock (Praos  c1) (BabbageEra c1)) -> NS f (CardanoEras c1 c2)
+pattern TagConway  :: f (ShelleyBlock (Praos  c2) (ConwayEra  c2)) -> NS f (CardanoEras c1 c2)
 
 pattern TagByron   x =                   Z x
 pattern TagShelley x =                S (Z x)

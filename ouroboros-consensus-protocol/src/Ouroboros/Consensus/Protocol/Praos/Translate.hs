@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -6,18 +7,21 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Consensus.Protocol.Praos.Translate () where
+module Ouroboros.Consensus.Protocol.Praos.Translate (translateKeyHash) where
 
 import           Cardano.Crypto.DSIGN (VerKeyDSIGN)
 import           Cardano.Crypto.VRF (VerKeyVRF)
 import qualified Cardano.Ledger.Chain as SL
-import           Cardano.Ledger.Crypto (ADDRHASH, HASH)
+import           Cardano.Ledger.Crypto (ADDRHASH, Crypto (DSIGN), HASH)
+import           Cardano.Ledger.Keys (KeyHash)
 import qualified Cardano.Ledger.PoolDistr as SL
+import           Cardano.Ledger.Shelley.API (KeyRole (BlockIssuer))
 import qualified Cardano.Protocol.TPraos.API as SL
 import qualified Cardano.Protocol.TPraos.Rules.Prtcl as SL
 import qualified Cardano.Protocol.TPraos.Rules.Tickn as SL
 import           Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
+import           Data.Word (Word64)
 import           Ouroboros.Consensus.Protocol.Praos (ConsensusConfig (..),
                      Praos, PraosParams (..), PraosState (..),
                      Ticked (TickedPraosLedgerView))
@@ -27,6 +31,8 @@ import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..),
                      TPraosState (tpraosStateChainDepState, tpraosStateLastSlot))
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Protocol.Translate (TranslateProto (..))
+import           Unsafe.Coerce (unsafeCoerce)
+import Cardano.Ledger.Keys (KeyHash(KeyHash))
 
 {-------------------------------------------------------------------------------
   Translation from transitional Praos
@@ -105,28 +111,51 @@ instance
 
 -- FIXME this instance overlaps with the "degenerate instance" defined in Translate module
 instance
-  ( HASH c1 ~ HASH c2,
-    ADDRHASH c1 ~ ADDRHASH c2,
-    VerKeyDSIGN c1 ~ VerKeyDSIGN c2
+  ( DSIGN c1 ~ DSIGN c2,
+    HASH c1 ~ HASH c2,
+    ADDRHASH c1 ~ ADDRHASH c2
   ) =>
   TranslateProto (Praos c1) (Praos c2)
   where
-  translateConsensusConfig = id
+  translateConsensusConfig PraosConfig {praosParams, praosEpochInfo}
+    = PraosConfig{ praosParams, praosEpochInfo}
 
   translateTickedLedgerView (TickedPraosLedgerView LedgerView{lvPoolDistr, lvMaxHeaderSize, lvMaxBodySize, lvProtocolVersion }) =
-      TickedPraosLedgerView LedgerView { lvPoolDistr = translatedPoolDistr lvPoolDistr, lvMaxBodySize, lvMaxHeaderSize, lvProtocolVersion}
+      TickedPraosLedgerView LedgerView { lvPoolDistr = translatedPoolDistr lvPoolDistr
+                                       , lvMaxBodySize
+                                       , lvMaxHeaderSize
+                                       , lvProtocolVersion}
 
-  translateChainDepState = id
+  translateChainDepState
+    PraosState {praosStateLastSlot, praosStateOCertCounters,
+                praosStateEvolvingNonce, praosStateCandidateNonce,
+                praosStateEpochNonce, praosStateLabNonce,
+                praosStateLastEpochBlockNonce}
+    = PraosState { praosStateLastSlot
+                 , praosStateOCertCounters = translateOCertCounters praosStateOCertCounters
+                 , praosStateEvolvingNonce
+                 , praosStateCandidateNonce
+                 , praosStateEpochNonce
+                 , praosStateLabNonce
+                 , praosStateLastEpochBlockNonce
+                 }
 
-translatedPoolDistr ::   forall c1 c2.  (VerKeyVRF c1 ~ VerKeyVRF c2  ) => SL.PoolDistr c1 -> SL.PoolDistr c2
+translateOCertCounters :: (DSIGN c1 ~ DSIGN c2, ADDRHASH c1 ~ ADDRHASH c2) => Map.Map (KeyHash 'BlockIssuer c1) Word64 -> Map.Map (KeyHash 'BlockIssuer c2) Word64
+translateOCertCounters = Map.mapKeysMonotonic translateKeyHash
+
+
+translatedPoolDistr :: forall c1 c2 . (DSIGN c1 ~ DSIGN c2, ADDRHASH c1 ~ ADDRHASH c2) => SL.PoolDistr c1 -> SL.PoolDistr c2
 translatedPoolDistr poolDistr = coercePoolDistr poolDistr
   where
       coercePoolDistr :: SL.PoolDistr c1 -> SL.PoolDistr c2
       coercePoolDistr (SL.PoolDistr m) =
             SL.PoolDistr
-              . Map.mapKeysMonotonic coerce
+              . Map.mapKeysMonotonic translateKeyHash
               . Map.map coerceIndividualPoolStake
               $ m
       coerceIndividualPoolStake :: SL.IndividualPoolStake c1 -> SL.IndividualPoolStake c2
       coerceIndividualPoolStake (SL.IndividualPoolStake stake vrf) =
-            SL.IndividualPoolStake stake $ coerce vrf
+            SL.IndividualPoolStake stake $ unsafeCoerce vrf
+
+translateKeyHash :: (DSIGN c1 ~ DSIGN c2, ADDRHASH c1 ~ ADDRHASH c2) => KeyHash keyRole c1 -> KeyHash keyRole  c2
+translateKeyHash (KeyHash hash) = KeyHash hash
