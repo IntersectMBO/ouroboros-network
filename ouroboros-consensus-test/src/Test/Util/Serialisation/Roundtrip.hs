@@ -545,20 +545,20 @@ prop_estimateBlockSize ccfg (WithVersion version (Coherent blk))
          <> show actualBlockSize <> " > "
          <> show expectedBlockSize)
       (property False)
-  | actualBlockSize < expectedBlockSize - allowedUnderestimate
+  | actualBlockSize < expectedBlockSize - allowedOverestimate
   = counterexample
-      ("actualBlockSize < expectedBlockSize - allowedUnderestimate: "
+      ("actualBlockSize < expectedBlockSize - allowedOverestimate: "
          <> show actualBlockSize <> " > "
          <> show expectedBlockSize <> " - "
-         <> show allowedUnderestimate)
+         <> show allowedOverestimate)
       (property False)
   | otherwise
   = classify (actualBlockSize == expectedBlockSize) "exact"
-  $ classify (actualBlockSize <  expectedBlockSize) "underestimate"
+  $ classify (actualBlockSize <  expectedBlockSize) "overestimate"
   $ property True
   where
-    allowedUnderestimate :: SizeInBytes
-    allowedUnderestimate = 10
+    allowedOverestimate :: SizeInBytes
+    allowedOverestimate = 10
 
     actualBlockSize :: SizeInBytes
     actualBlockSize =
