@@ -83,6 +83,7 @@ import System.Directory (removeFile)
 import System.IO.Error (isDoesNotExistErrorType, ioeGetErrorType)
 -- import Test.Crypto.Util
 import Data.Primitive
+import GHC.TypeLits (Nat)
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
@@ -157,7 +158,7 @@ hoistLock :: forall m n. (forall a. m a -> n a) -> Lock m -> Lock n
 hoistLock hoist (Lock acquire release) =
   Lock (hoist acquire) (\() -> hoist (release ()))
 
-testCrypto :: forall c n kes
+testCrypto :: forall c (n :: Nat) kes
             . kes ~ KES c
            => MonadKES IO c
            => (forall s. MonadKES (IOSim s) c)
@@ -176,16 +177,19 @@ testCrypto :: forall c n kes
 testCrypto proxyC lock tracer ioManager =
   testGroup name
     [ testGroup "IO"
-      [ testProperty "one key through chain" (testOneKeyThroughChainIO proxyC lock ioManager)
-      , testProperty "concurrent pushes" (testConcurrentPushes proxyC (Proxy @IO) (Proxy @n) lock ioSnocket ioMkAddr)
+      [ testProperty "one key through chain" $
+          testOneKeyThroughChainIO proxyC lock ioManager
+      , testProperty "concurrent pushes" $
+          testConcurrentPushesIO proxyC (Proxy @n) lock ioManager
       ]
     , testGroup "IOSim"
-      [ testProperty "one key through chain" (testOneKeyThroughChainIOSim proxyC)
-      -- , testProperty "concurrent pushes" (testConcurrentPushes proxyC (Proxy @IO) (Proxy @n) lock ioSnocket ioMkAddr)
+      [ testProperty "one key through chain" $
+          testOneKeyThroughChainIOSim proxyC
+      , testProperty "concurrent pushes" $
+          testConcurrentPushesIOSim proxyC (Proxy @n)
       ]
     ]
   where
-    ioSnocket = socketSnocket ioManager
     ioMkAddr i = SockAddrUnix $ "./local" ++ show i
     
     name = Text.unpack .
@@ -522,19 +526,115 @@ testOneKeyThroughChain p
       log <- takeMVar traceMVar
       return $ (counterexample $ unlines log) prop
 
+testConcurrentPushesIO :: forall c (n :: Nat)
+                          . MonadKES IO c
+                       => ContextDSIGN (DSIGN c) ~ ()
+                       => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                       => Show (SignKeyWithPeriodKES (KES c))
+                       => UnsoundKESSignAlgorithm IO (KES c)
+                       => Proxy c
+                       -> Proxy n
+                       -> Lock IO
+                       -> IOManager
+                       -> Word32
+                       -> Word32
+                       -> PinnedSizedBytes (SeedSizeKES (KES c) * n)
+                       -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+                       -> Integer
+                       -> Word
+                       -> Word
+                       -> Property
+testConcurrentPushesIO proxyCrypto proxyN
+    lock
+    ioManager
+    controlAddressSeed
+    serviceAddressSeed
+    seedKESPSB
+    seedDSIGNPSB
+    genesisTimestamp
+    nodeDelay
+    controlDelay =
+  controlAddressSeed /= serviceAddressSeed ==>
+  ioProperty . withLock lock $ do
+      result <- testConcurrentPushes
+                  proxyCrypto
+                  proxyN
+                  ioSnocket
+                  ioMkAddr
+                  controlAddressSeed
+                  serviceAddressSeed
+                  seedKESPSB
+                  seedDSIGNPSB
+                genesisTimestamp
+                nodeDelay
+                controlDelay
+      cleanUp controlAddressSeed
+      cleanUp serviceAddressSeed
+      return result
+  where
+    ioSnocket = socketSnocket ioManager
+    ioMkAddrName i = "./local" ++ show i
+    ioMkAddr i = SockAddrUnix $ ioMkAddrName i
+
+    cleanUp seed = do
+        catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
+                  (removeFile $ ioMkAddrName seed)
+                  (\_ -> return ())
+
+testConcurrentPushesIOSim :: forall c (n :: Nat) k
+                          . (forall s. MonadKES (IOSim s) c)
+                         => ContextDSIGN (DSIGN c) ~ ()
+                         => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                         => Show (SignKeyWithPeriodKES (KES c))
+                         => (forall s. UnsoundKESSignAlgorithm (IOSim s) k)
+                         => KES c ~ k
+                         => Proxy c
+                         -> Proxy n
+                         -> Word32
+                         -> Word32
+                         -> PinnedSizedBytes (SeedSizeKES (KES c) * n)
+                         -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+                         -> Integer
+                         -> Word
+                         -> Word
+                         -> Property
+testConcurrentPushesIOSim proxyCrypto proxyN
+    controlAddressSeed
+    serviceAddressSeed
+    seedKESPSB
+    seedDSIGNPSB
+    genesisTimestamp
+    nodeDelay
+    controlDelay =
+  controlAddressSeed /= serviceAddressSeed ==>
+  iosimProperty $
+    SimSnocket.withSnocket
+      nullTracer
+      (toBearerInfo absNoAttenuation)
+      mempty $ \snocket _observe -> do
+        testConcurrentPushes
+            proxyCrypto
+            proxyN
+            snocket
+            (TestAddress . (fromIntegral :: Word32 -> Int))
+            controlAddressSeed
+            serviceAddressSeed
+            seedKESPSB
+            seedDSIGNPSB
+          genesisTimestamp
+          nodeDelay
+          controlDelay
+
 testConcurrentPushes :: forall c m n fd addr
                       . MonadKES m c
                      => MonadNetworking m fd
-                     => MonadProperty m
                      => MonadTimer m
                      => DSIGN.Signable (DSIGN c) (OCertSignable c)
                      => ContextDSIGN (DSIGN c) ~ ()
                      => Show (SignKeyWithPeriodKES (KES c))
                      => UnsoundKESSignAlgorithm m (KES c)
                      => Proxy c
-                     -> Proxy m
                      -> Proxy n
-                     -> Lock m
                      -> Snocket m fd addr
                      -> (Word32 -> addr)
                      -> Word32
@@ -544,9 +644,8 @@ testConcurrentPushes :: forall c m n fd addr
                      -> Integer
                      -> Word
                      -> Word
-                     -> Property
-testConcurrentPushes proxyCrypto proxyM proxyN
-    lock
+                     -> m Property
+testConcurrentPushes proxyCrypto proxyN
     snocket
     mkAddress
     controlAddressSeed
@@ -556,8 +655,7 @@ testConcurrentPushes proxyCrypto proxyM proxyN
     genesisTimestamp
     nodeDelay
     controlDelay =
-  controlAddressSeed /= serviceAddressSeed ==>
-  mProperty . withLock lock $ do
+  do
     traceMVar <- newMVar []
     let controlAddress = mkAddress controlAddressSeed
     let serviceAddress = mkAddress serviceAddressSeed
