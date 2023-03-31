@@ -177,7 +177,7 @@ data ChainDB m blk = ChainDB {
       -- Note that the ValueHandle should be closed by the caller of this
       -- function.
     , getLedgerDBViewAtPoint ::
-           Point blk
+           Maybe (Point blk)
         -> m ( Either
                (Point blk)
                ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)

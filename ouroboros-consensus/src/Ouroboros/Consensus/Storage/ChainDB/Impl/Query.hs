@@ -128,7 +128,7 @@ getTipHeader CDB{..} = do
 getTipPoint
   :: forall m blk. (IOLike m, HasHeader (Header blk))
   => ChainDbEnv m blk -> STM m (Point blk)
-getTipPoint CDB{..} =
+getTipPoint CDB{..} = do
     (castPoint . AF.headPoint) <$> readTVar cdbChain
 
 getBlockComponent ::
@@ -239,14 +239,18 @@ getLedgerBackingStoreValueHandle CDB{..} rreg seP = do
 getLedgerDBViewAtPoint ::
      (IOLike m, LedgerSupportsProtocol blk)
   => ChainDbEnv m blk
-  -> Point blk
+  -> Maybe (Point blk)
   -> m ( Either
            (Point blk)
            ( BackingStore.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
            , LedgerDB.LedgerDB' blk
            )
        )
-getLedgerDBViewAtPoint CDB{..} p = do
+getLedgerDBViewAtPoint CDB{..} Nothing = do
+  s <- acquireLDBReadView (StaticLeft ()) cdbLgrDB
+  pure $ case s of
+    StaticLeft v -> Right v
+getLedgerDBViewAtPoint CDB{..} (Just p) = do
   s <- acquireLDBReadView (StaticRight p) cdbLgrDB
   pure $ case s of
     StaticRight v -> v

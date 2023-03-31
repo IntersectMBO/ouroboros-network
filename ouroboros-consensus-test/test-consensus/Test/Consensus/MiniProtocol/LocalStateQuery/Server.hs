@@ -43,9 +43,10 @@ import           Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (LgrDB,
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
+                     (mkLedgerDBLock)
 import           Ouroboros.Consensus.Util (StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
-import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAWLock
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Network.Mock.Chain (Chain (..))
 import qualified Ouroboros.Network.Mock.Chain as Chain
@@ -219,7 +220,7 @@ initLgrDB k chain = do
         backingStoreInitialiser
         (SomeHasFS (simHasFS v))
         (ExtLedgerStateTables NoTestLedgerTables)
-    rawLock <- RAWLock.new ()
+    rawLock <- mkLedgerDBLock
     reg <- unsafeNewRegistry
     let lgrDB = mkLgrDB varDB varPrevApplied backingStore rawLock resolve (args reg)
     LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0 noopTrace

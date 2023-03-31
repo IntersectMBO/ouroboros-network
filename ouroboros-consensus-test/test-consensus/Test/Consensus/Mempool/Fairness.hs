@@ -19,7 +19,7 @@ import           Control.Monad (forever, void)
 import qualified Control.Tracer as Tracer
 import           Data.Foldable (asum)
 import qualified Data.List as List
-import           Data.List.NonEmpty (singleton)
+import           Data.List.NonEmpty hiding (length)
 import           Data.Void (Void, vacuous)
 import           Data.Word (Word32)
 import           Ouroboros.Consensus.Config.SecurityParam as Consensus
@@ -209,7 +209,7 @@ remover mempool total = do
         -- transactions.
         threadDelay 1000
         gtx <- atomically $ getATxFromTheMempool
-        Mempool.removeTxs mempool (singleton $ Mempool.txId gtx)
+        Mempool.removeTxs mempool (Mempool.txId gtx :| [])
         loop (unGenTx gtx:txs) (n-1)
       where
         getATxFromTheMempool =

@@ -449,7 +449,7 @@ chainSelectionForBlock
   -> m (Point blk)
 chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
     (invalid, succsOf, lookupBlockInfo, curChain, tipPoint, ledgerDB) <-
-      withReadLock (LgrDB.lgrFlushLock cdbLgrDB) $ atomically
+      atomically
         ( (,,,,,) <$> (forgetFingerprint <$> readTVar cdbInvalid)
                  <*> VolatileDB.filterByPredecessor  cdbVolatileDB
                  <*> VolatileDB.getBlockInfo         cdbVolatileDB

@@ -783,10 +783,11 @@ reproMempoolForge numBlks env = do
             let slot = blockSlot blk
             (ticked, durTick) <- timed $ IOLike.evaluate $
               applyChainTick lCfg slot (ledgerState $ LedgerDB.current ldb)
+            vh <- lbsValueHandle bstore
             ((), durSnap) <- timed $ do
-              snap <- Mempool.getSnapshotFor mempool (castPoint $ getTip $ LedgerDB.current ldb) slot ticked
-
-              pure $ length . Mempool.snapshotTxs <$> snap `seq` Mempool.snapshotState <$> snap `seq` ()
+              snap <- Mempool.getSnapshotFor mempool slot ticked ldb vh
+              pure $ length (Mempool.snapshotTxs snap) `seq` Mempool.snapshotState snap `seq` ()
+            lbsvhClose vh
 
             let sizes = HasAnalysis.blockTxSizes blk
             traceWith tracer $

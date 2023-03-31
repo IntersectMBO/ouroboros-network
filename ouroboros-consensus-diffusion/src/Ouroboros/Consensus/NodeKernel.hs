@@ -303,7 +303,7 @@ forkBlockForging IS{..} blockForging =
       -- 'getPastLedger', we switched to a fork where 'bcPrevPoint' is no longer
       -- on our chain. When that happens, we simply give up on the chance to
       -- produce a block.
-      eLedgerDBView <- lift $ ChainDB.getLedgerDBViewAtPoint chainDB bcPrevPoint
+      eLedgerDBView <- lift $ ChainDB.getLedgerDBViewAtPoint chainDB (Just bcPrevPoint)
 
       -- before 'earlyExit' we need to 'lbsvhClose' this value handle. Once we
       -- get a snapshot we can just close it.

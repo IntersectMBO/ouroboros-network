@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.BackingStore (
   , LedgerBackingStore (..)
   , LedgerBackingStore'
   , LedgerBackingStoreValueHandle (..)
+  , lbsValueHandle
   , lbsvhClose
   ) where
 
@@ -152,6 +153,13 @@ newtype LedgerBackingStore m l = LedgerBackingStore
       (LedgerTables l DiffMK)
     )
   deriving newtype (NoThunks)
+
+lbsValueHandle ::
+     IOLike m
+  => LedgerBackingStore m l
+  -> m (LedgerBackingStoreValueHandle m l)
+lbsValueHandle (LedgerBackingStore bstore) =
+  uncurry LedgerBackingStoreValueHandle <$> bsValueHandle bstore
 
 -- | A handle to the backing store for the ledger tables
 data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle

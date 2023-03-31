@@ -564,8 +564,7 @@ acquireLDBReadView ::
        )
 acquireLDBReadView p ldb =
   withReadLock (lgrFlushLock ldb) $ do
-    ldb' <- atomically $ do
-      getCurrent ldb
+    ldb' <- atomically $ getCurrent ldb
     case p of
       StaticLeft () -> StaticLeft <$> acquire ldb'
       StaticRight actualPoint -> StaticRight <$>
