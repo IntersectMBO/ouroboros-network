@@ -387,19 +387,22 @@ testOneKeyThroughChainIO p
     nodeDelay
     controlDelay =
   controlAddressSeed /= serviceAddressSeed ==>
-  ioProperty . withLock lock $
-    testOneKeyThroughChain
-      p
-      ioSnocket
-      ioMkAddr
-      controlAddressSeed
-      serviceAddressSeed
-      seedKESPSB
-      seedDSIGNPSB
-    genesisTimestamp
-    certN
-    nodeDelay
-    controlDelay
+  ioProperty . withLock lock $ do
+      result <- testOneKeyThroughChain
+                  p
+                  ioSnocket
+                  ioMkAddr
+                  controlAddressSeed
+                  serviceAddressSeed
+                  seedKESPSB
+                  seedDSIGNPSB
+                genesisTimestamp
+                certN
+                nodeDelay
+                controlDelay
+      cleanUp controlAddressSeed
+      cleanUp serviceAddressSeed
+      return result
   where
     ioSnocket = socketSnocket ioManager
     ioMkAddrName i = "./local" ++ show i

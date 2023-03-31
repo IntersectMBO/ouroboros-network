@@ -4,6 +4,7 @@
 {-#LANGUAGE NumericUnderscores #-}
 {-#LANGUAGE OverloadedStrings #-}
 {-#LANGUAGE MultiParamTypeClasses #-}
+{-#LANGUAGE DataKinds #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -21,6 +22,7 @@ import Cardano.KESAgent.OCert (KESPeriod (..), KES, OCert (..))
 import Cardano.KESAgent.RefCounting (CRef, withCRefValue, newCRef, acquireCRef, releaseCRef)
 import Cardano.KESAgent.Evolution (getCurrentKESPeriodWith, updateKESTo)
 import Cardano.KESAgent.Classes (MonadKES, MonadNetworking)
+import Cardano.KESAgent.Protocol (KESProtocol)
 
 import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..), forgetSignKeyKES)
 
@@ -35,13 +37,14 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Maybe (fromJust)
 import Ouroboros.Network.Snocket (Snocket (..), Accept (..), Accepted (..))
 import Ouroboros.Network.RawBearer
+import Network.TypedProtocol.Core (Peer (..), PeerRole (..))
 
 import Control.Monad.Class.MonadTime (MonadTime (..))
 import Control.Monad.Class.MonadMVar (MVar, newEmptyMVar, newMVar, withMVar, tryTakeMVar, putMVar, readMVar)
 import Control.Monad.Class.MonadSTM (atomically)
-import Control.Monad.Class.MonadAsync (concurrently)
+import Control.Monad.Class.MonadAsync (concurrently, concurrently_)
 import Control.Monad.Class.MonadTimer (threadDelay)
-import Control.Monad.Class.MonadThrow (SomeException, bracket, throwIO, catch)
+import Control.Monad.Class.MonadThrow (SomeException, bracket, throwIO, catch, finally)
 import Control.Concurrent.Class.MonadSTM.TChan (newTChan, writeTChan, readTChan)
 
 {-HLINT ignore "Use underscore" -}
@@ -221,72 +224,82 @@ runAgent proxy options tracer = do
           threadDelay 100_0000
           checkEvolution
 
-  let runService =
-        let s = agentSnocket options
-        in void $ bracket
-          (open s (addrFamily s $ agentServiceAddr options))
-          (\fd -> do
-              close s fd
-              traceWith tracer AgentServiceSocketClosed
-          )
-          (\fd -> do
-            bind s fd (agentServiceAddr options)
-            listen s fd
-            traceWith tracer AgentListeningOnServiceSocket
+  let runListener :: addr
+                  -> AgentTrace
+                  -> AgentTrace
+                  -> AgentTrace
+                  -> (String -> AgentTrace)
+                  -> (DriverTrace -> AgentTrace)
+                  -> Peer (KESProtocol m c) (pr :: PeerRole) st m a
+                  -> m ()
+      runListener
+        addr
+        tListeningOnSocket
+        tSocketClosed
+        tClientConnected
+        tSocketError
+        tDriverTrace
+        peer =
+          let s = agentSnocket options
+          in void $ bracket
+            (open s (addrFamily s addr))
+            (\fd -> do
+                close s fd
+                traceWith tracer tSocketClosed
+            )
+            (\fd -> do
+              bind s fd addr
+              listen s fd
+              traceWith tracer tListeningOnSocket
 
-            let loop :: Accept m fd addr -> m ()
-                loop a = do
-                  accepted <- runAccept a
-                  case accepted of
-                    (AcceptFailure e, next) ->
-                      throwIO e
-                    (Accepted fd' addr', next) -> do
-                      traceWith tracer AgentServiceClientConnected
-                      bearer <- toRawBearer fd'
-                      void $ runPeerWithDriver
-                        (driver bearer $ AgentServiceDriverTrace >$< tracer)
-                        (kesPusher currentKey (Just <$> nextKey))
-                        ()
-                      close s fd'
-                      loop next
-            
-            (accept s fd >>= loop) `catch` \(e :: SomeException)-> do
-              traceWith tracer $ AgentServiceSocketError (show e)
-              throwIO e
-          )
+              let handleConnection fd' = do
+                    traceWith tracer tClientConnected
+                    bearer <- toRawBearer fd'
+                    void $ runPeerWithDriver
+                      (driver bearer $ tDriverTrace >$< tracer)
+                      peer
+                      ()
+
+              let loop :: Accept m fd addr -> m ()
+                  loop a = do
+                    accepted <- runAccept a
+                    case accepted of
+                      (AcceptFailure e, next) -> do
+                        throwIO e
+                      (Accepted fd' addr', next) ->
+                        concurrently_
+                          (loop next)
+                          (handleConnection fd'
+                            `finally`
+                            close s fd' >> traceWith tracer tSocketClosed
+                          )
+              
+              (accept s fd >>= loop) `catch` \(e :: SomeException) -> do
+                traceWith tracer $ tSocketError (show e)
+                throwIO e
+            )
+
+
+
+
+  let runService =
+        runListener
+          (agentServiceAddr options)
+          AgentListeningOnServiceSocket
+          AgentServiceSocketClosed
+          AgentServiceClientConnected
+          AgentServiceSocketError
+          AgentServiceDriverTrace
+          (kesPusher currentKey (Just <$> nextKey))
 
   let runControl =
-        let s = agentSnocket options
-        in void $ bracket
-          (open s (addrFamily s $ agentServiceAddr options))
-          (\fd -> do
-              close s fd
-              traceWith tracer AgentControlSocketClosed
-          )
-          (\fd -> do
-            bind s fd (agentControlAddr options)
-            listen s fd
-            traceWith tracer AgentListeningOnControlSocket
-
-            let loop :: Accept m fd addr -> m ()
-                loop a = do
-                  accepted <- runAccept a
-                  case accepted of
-                    (AcceptFailure e, next) ->
-                      throwIO e
-                    (Accepted fd' addr', next) -> do
-                      traceWith tracer AgentControlClientConnected
-                      bearer <- toRawBearer fd'
-                      void $ runPeerWithDriver
-                        (driver bearer $ AgentControlDriverTrace >$< tracer)
-                        (kesReceiver pushKey)
-                        ()
-                      close s fd'
-                      loop next
-            
-            (accept s fd >>= loop) `catch` \(e :: SomeException)-> do
-              traceWith tracer $ AgentControlSocketError (show e)
-              throwIO e
-          )
+        runListener
+          (agentControlAddr options)
+          AgentListeningOnControlSocket
+          AgentControlSocketClosed
+          AgentControlClientConnected
+          AgentControlSocketError
+          AgentControlDriverTrace
+          (kesReceiver pushKey)
 
   void $ runService `concurrently` runControl `concurrently` runEvolution

@@ -16,8 +16,8 @@ maintainer:         tobias@well-typed.com
 -- extra-source-files:
 
 common project-config
-    ghc-options:
-        -with-rtsopts -threaded
+     ghc-options:
+         -threaded -with-rtsopts
 
 library
     import: project-config
@@ -80,7 +80,7 @@ test-suite kes-agent-tests
                  , cardano-crypto-class
                  , cardano-crypto-tests
                  , contra-tracer
-                 , directory >=1.3.7.1 && <1.4.0.0
+                 , directory >=1.3.6.1 && <1.4.0.0
                  , ghc-prim
                  , io-classes
                  , io-sim

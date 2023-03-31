@@ -10,8 +10,8 @@ repository cardano-haskell-packages
     d4a35cd3121aa00d18544bb0ac01c3e1691d618f462c46129271bccf39f7e8ee
 
 -- run `nix flake lock --update-input hackageNix` after updating index-state.
-index-state: 2023-01-01T00:00:00Z
-index-state: cardano-haskell-packages 2023-01-01T00:00:00Z
+index-state: 2023-03-22T00:00:00Z
+index-state: cardano-haskell-packages 2023-03-22T00:00:00Z
 
 packages:
   kes-agent
@@ -65,7 +65,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/ouroboros-network
-  tag: 53b2ef05b77c73088e540e9f97f628dd3f059fbe
+  tag: cf44dd297e2799b004e90340cf6d7888ad94cfde
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     ouroboros-network-framework
@@ -77,7 +77,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/io-sim
-  tag: f51e620b9ae7301764518def49251859a37568d8
+  tag: acdcffb81f3cd5220bb7c698eee7ce09a71dfe7d
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     io-sim
