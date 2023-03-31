@@ -14,7 +14,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Query (
   , getIsValid
   , getLedgerBackingStoreValueHandle
   , getLedgerDB
-  , getLedgerDBView
+  , getLedgerDBViewAtPoint
   , getMaxSlotNo
   , getTipBlock
   , getTipHeader
@@ -212,10 +212,10 @@ getLedgerBackingStoreValueHandle :: forall b m blk.
          )
        )
 getLedgerBackingStoreValueHandle CDB{..} rreg seP = do
-  ((), view) <- acquireLDBReadView seP cdbLgrDB (pure ())
+  view <- acquireLDBReadView seP cdbLgrDB
   case view of
-    StaticLeft (vh, ldb) -> StaticLeft <$> allocateInReg vh ldb
-    StaticRight (Left p) -> pure (StaticRight (Left p))
+    StaticRight (Left p)          -> pure (StaticRight (Left p))
+    StaticLeft (vh, ldb)          -> StaticLeft          <$> allocateInReg vh ldb
     StaticRight (Right (vh, ldb)) -> StaticRight . Right <$> allocateInReg vh ldb
   where
     allocateInReg ::
@@ -231,23 +231,25 @@ getLedgerBackingStoreValueHandle CDB{..} rreg seP = do
         rreg
         (const $ pure vh)
         (const $ BackingStore.bsvhClose vh')
-      pure $ ( vh
-             , ldb
-             , void $ RR.release key
-             )
+      pure ( vh
+           , ldb
+           , void $ RR.release key
+           )
 
-getLedgerDBView ::
+getLedgerDBViewAtPoint ::
      (IOLike m, LedgerSupportsProtocol blk)
   => ChainDbEnv m blk
-  -> STM m a
-  -> m ( a
-       , BackingStore.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
-       , LedgerDB.LedgerDB' blk
+  -> Point blk
+  -> m ( Either
+           (Point blk)
+           ( BackingStore.LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+           , LedgerDB.LedgerDB' blk
+           )
        )
-getLedgerDBView CDB{..} stm = do
-  s <- acquireLDBReadView (StaticLeft ()) cdbLgrDB stm
-  case s of
-    (a, StaticLeft (vh, ldb)) -> pure (a, vh, ldb)
+getLedgerDBViewAtPoint CDB{..} p = do
+  s <- acquireLDBReadView (StaticRight p) cdbLgrDB
+  pure $ case s of
+    StaticRight v -> v
 
 {-------------------------------------------------------------------------------
   Unifying interface over the immutable DB and volatile DB, but independent

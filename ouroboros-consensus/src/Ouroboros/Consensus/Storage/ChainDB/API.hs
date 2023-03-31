@@ -171,6 +171,19 @@ data ChainDB m blk = ChainDB {
       -- | Return the LedgerDB containing the last @k@ ledger states.
     , getLedgerDB        :: STM m (LedgerDB' blk)
 
+      -- | Acquire a value handle and ledger DB truncated to the specified point
+      -- if the provided point exists on the db.
+      --
+      -- Note that the ValueHandle should be closed by the caller of this
+      -- function.
+    , getLedgerDBViewAtPoint ::
+           Point blk
+        -> m ( Either
+               (Point blk)
+               ( LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+               , LedgerDB.LedgerDB' blk
+               )
+                                  )
       -- | Get block at the tip of the chain, if one exists
       --
       -- Returns 'Nothing' if the database is empty.

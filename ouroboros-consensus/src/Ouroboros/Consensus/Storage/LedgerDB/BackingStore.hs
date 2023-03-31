@@ -26,6 +26,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.BackingStore (
   , LedgerBackingStore (..)
   , LedgerBackingStore'
   , LedgerBackingStoreValueHandle (..)
+  , lbsvhClose
   ) where
 
 import           Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
@@ -161,5 +162,8 @@ data LedgerBackingStoreValueHandle m l = LedgerBackingStoreValueHandle
     )
   deriving stock    (Generic)
   deriving anyclass (NoThunks)
+
+lbsvhClose :: LedgerBackingStoreValueHandle m l -> m ()
+lbsvhClose (LedgerBackingStoreValueHandle _ vh) = bsvhClose vh
 
 type LedgerBackingStore' m blk = LedgerBackingStore m (ExtLedgerState blk)

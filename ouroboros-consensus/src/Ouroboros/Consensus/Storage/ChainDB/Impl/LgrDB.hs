@@ -43,6 +43,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , getLedgerTablesAtFor
     -- * Flush lock
   , acquireLDBReadView
+  , flushLgrDB
     -- * Re-exports
   , LedgerDB.AnnLedgerError (..)
   , LedgerDB.DiskPolicy (..)
@@ -217,10 +218,10 @@ openDB :: forall m blk.
        --
        -- The block may be in the immutable DB or in the volatile DB; the ledger
        -- DB does not know where the boundary is at any given point.
-       -> m (LgrDB m blk, Word64)
+       -> m (LgrDB m blk, (Word64, Word64))
 openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock = do
     createDirectoryIfMissing hasFS True (mkFsPath [])
-    (db, replayed, lgrBackingStore) <- initFromDisk args replayTracer immutableDB
+    (db, replayCounters, lgrBackingStore) <- initFromDisk args replayTracer lgrDiskPolicy immutableDB
     -- When initializing the ledger DB from disk we:
     --
     -- - Look for the newest valid snapshot, say 'Lbs', which corresponds to the
@@ -254,7 +255,7 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
           , hasFS           = lgrHasFS
           , tracer          = lgrTracer
           }
-      , replayed
+      , replayCounters
       )
 
 initFromDisk
@@ -267,12 +268,14 @@ initFromDisk
      )
   => LgrDbArgs Identity m blk
   -> Tracer m (LedgerDB.ReplayGoal blk -> LedgerDB.TraceReplayEvent blk)
+  -> LedgerDB.DiskPolicy
   -> ImmutableDB m blk
-  -> m (LedgerDB' blk, Word64, LedgerBackingStore m (ExtLedgerState blk))
+  -> m (LedgerDB' blk, (Word64, Word64), LedgerBackingStore m (ExtLedgerState blk))
 initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
              replayTracer
+             policy
              immutableDB = wrapFailure (Proxy @blk) $ do
-    (_initLog, db, replayed, backingStore) <-
+    (_initLog, db, replayCounters, backingStore) <-
       LedgerDB.initialize
         replayTracer
         lgrTracer
@@ -281,10 +284,11 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
         decodeExtLedgerState'
         decode
         (LedgerDB.configLedgerDb lgrTopLevelConfig)
+        policy
         lgrGenesis
         (streamAPI immutableDB)
         lgrBackingStoreSelector
-    return (db, replayed, backingStore)
+    return (db, replayCounters, backingStore)
   where
     ccfg = configCodec lgrTopLevelConfig
 
@@ -337,28 +341,15 @@ takeSnapshot ::
      , LedgerSupportsProtocol blk
      )
   => LgrDB m blk -> m (Maybe (LedgerDB.DiskSnapshot, RealPoint blk))
-takeSnapshot lgrDB = wrapFailure (Proxy @blk) $ do
-    withWriteLock (lgrFlushLock lgrDB) $ do
-      flush lgrDB
-
-      -- CRITICAL: Snapshots are taken from the last flushed state and not from
-      -- the tip of the immutable db. See 'flush'.
-      --
-      -- In particular, the diffs for the immutable part have been flushed to
-      -- disk at this point and therefore it is that same state the one that we
-      -- should take a snapshot from. Usually it is the Immutable tip but
-      -- nothing prevents another thread from flushing again and therefore
-      -- moving the immutable tip. This *SHOULD* not happen because the write
-      -- lock is held here, but to be on the safe side, we take a snapshot from
-      -- the last flushed state which we know will be accurate.
-      ledgerDB <- LedgerDB.lastFlushedState
-                  <$> atomically (getCurrent lgrDB)
-      LedgerDB.takeSnapshot
-        (LedgerDB.LedgerDBSnapshotEvent >$< tracer)
-        hasFS
-        lgrBackingStore
-        encodeExtLedgerState'
-        ledgerDB
+takeSnapshot lgrDB = wrapFailure (Proxy @blk) $
+  withReadLock (lgrFlushLock lgrDB) $ do
+    state <- LedgerDB.lastFlushedState <$> atomically (getCurrent lgrDB)
+    LedgerDB.takeSnapshot
+      (LedgerDB.LedgerDBSnapshotEvent >$< tracer)
+      hasFS
+      lgrBackingStore
+      encodeExtLedgerState'
+      state
   where
     LgrDB{ cfg, tracer, hasFS, lgrBackingStore } = lgrDB
 
@@ -385,8 +376,8 @@ getDiskPolicy = diskPolicy
 --
 -- PRECONDITION: The 'flushLock' write lock must be held before calling this
 -- function
-flush :: (IOLike m, LedgerSupportsProtocol blk) => LgrDB m blk -> m ()
-flush LgrDB { varDB, lgrBackingStore } = do
+flushLgrDB :: (IOLike m, LedgerSupportsProtocol blk) => LgrDB m blk -> m ()
+flushLgrDB LgrDB { varDB, lgrBackingStore } = do
     toFlush <- atomically $ do
       db <- readTVar varDB
       let (toFlush, db') = LedgerDB.flush FlushAllImmutable db
@@ -561,26 +552,30 @@ getLedgerTablesAtFor pt keys lgr@LgrDB{ varDB, lgrBackingStore } = do
         Left _  -> getLedgerTablesAtFor pt keys lgr
 
 acquireLDBReadView ::
-     forall a b m blk.
+     forall b m blk.
      (IOLike m, LedgerSupportsProtocol blk)
   => StaticEither b () (Point blk)
   -> LgrDB m blk
-  -> STM m a
-  -> m (a, StaticEither b (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)
-                       (Either (Point blk) (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)))
-acquireLDBReadView p ldb stm =
+  -> m (StaticEither b
+        (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)
+        (Either
+          (Point blk)
+          (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk))
+       )
+acquireLDBReadView p ldb =
   withReadLock (lgrFlushLock ldb) $ do
-    (a, ldb') <- atomically $ do
-      a <- stm
-      (a,) <$> getCurrent ldb
-    (a,) <$> case p of
+    ldb' <- atomically $ do
+      getCurrent ldb
+    case p of
       StaticLeft () -> StaticLeft <$> acquire ldb'
       StaticRight actualPoint -> StaticRight <$>
         case LedgerDB.rollback actualPoint ldb' of
           Nothing    -> pure $ Left $ castPoint $ getTip $ LedgerDB.anchor ldb'
           Just ldb'' -> Right <$> acquire ldb''
  where
-   acquire :: LedgerDB' blk -> m (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)
+   acquire ::
+        LedgerDB' blk
+     -> m (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)
    acquire l = do
      let (LedgerBackingStore bs) = lgrBackingStore ldb
      (slot, vh) <- bsValueHandle bs

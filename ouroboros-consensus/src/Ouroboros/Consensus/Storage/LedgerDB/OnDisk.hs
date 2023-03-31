@@ -46,8 +46,6 @@ import           System.FS.API.Types
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Ledger.Inspect
-import           Ouroboros.Consensus.Ledger.SupportsProtocol
 import           Ouroboros.Consensus.Util.CBOR (ReadIncrementalErr)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -83,15 +81,9 @@ type NextBlock blk = LDB.NextItem blk
   Deprecated functions
 -------------------------------------------------------------------------------}
 
-{-# DEPRECATED initLedgerDB "Use Ouroboros.Consensus.Storage.LedgerDB (initLedgerDB)" #-}
+{-# DEPRECATED initLedgerDB "initLedgerDB will throw an error if used. Use Ouroboros.Consensus.Storage.LedgerDB (initialize)" #-}
 initLedgerDB ::
-     forall m blk. (
-         IOLike m
-       , LedgerSupportsProtocol blk
-       , CanSerializeLedgerTables (LedgerState blk)
-       , InspectLedger blk
-       , HasCallStack
-       )
+     forall m blk. HasCallStack
   => Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (TraceEvent blk)
   -> SomeHasFS m
@@ -103,7 +95,10 @@ initLedgerDB ::
   -> StreamAPI m blk blk
   -> LDB.BackingStoreSelector m
   -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
-initLedgerDB = LDB.initialize
+initLedgerDB _ _ _ _ _ _ =
+  error "initLedgerDB can no longer be used as the new initialization uses \
+        \ the DiskPolicy. Wherever this was called it should now call \
+        \ Ouroboros.Consensus.Storage.LedgerDB.initialize"
 
 {-# DEPRECATED takeSnapshot "Use Ouroboros.Consensus.Storage.LedgerDB (takeSnapshot)" #-}
 takeSnapshot ::

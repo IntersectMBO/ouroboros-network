@@ -76,6 +76,9 @@ data DiskPolicy = DiskPolicy {
       --
       -- See also 'defaultDiskPolicy'
     , onDiskShouldTakeSnapshot :: TimeSinceLast DiffTime -> Word64 -> Bool
+
+      -- | Should we flush the differences up to the immutable tip?
+    , onDiskShouldFlush        :: Word64 -> Bool
     }
   deriving NoThunks via OnlyCheckWhnf DiskPolicy
 
@@ -89,6 +92,9 @@ defaultDiskPolicy (SecurityParam k) requestedInterval = DiskPolicy {..}
   where
     onDiskNumSnapshots :: Word
     onDiskNumSnapshots = 2
+
+    onDiskShouldFlush :: Word64 -> Bool
+    onDiskShouldFlush = (>= 50)
 
     onDiskShouldTakeSnapshot ::
          TimeSinceLast DiffTime

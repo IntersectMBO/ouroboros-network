@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -47,6 +48,8 @@ import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore.Impl
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.InMemory as BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB as LMDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
+import           Ouroboros.Consensus.Storage.LedgerDB.DiskPolicy
+                     (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.Query
@@ -128,10 +131,11 @@ initialize ::
   -> (forall s. Decoder s (ExtLedgerState blk EmptyMK))
   -> (forall s. Decoder s (HeaderHash blk))
   -> LedgerDB.LedgerDbCfg (ExtLedgerState blk)
+  -> DiskPolicy
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
   -> BackingStoreSelector m
-  -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
+  -> m (InitLog blk, LedgerDB' blk, (Word64, Word64), LedgerBackingStore' m blk)
 initialize replayTracer
            tracer
            hasFS
@@ -139,6 +143,7 @@ initialize replayTracer
            decLedger
            decHash
            cfg
+           policy
            getGenesisLedger
            streamAPI
            bss =
@@ -154,7 +159,7 @@ initialize replayTracer
                    -> [DiskSnapshot]
                    -> m ( InitLog   blk
                         , LedgerDB' blk
-                        , Word64
+                        , (Word64, Word64)
                         , LedgerBackingStore' m blk
                         )
     tryNewestFirst acc [] = do
@@ -170,15 +175,16 @@ initialize replayTracer
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
                             cfg
+                            policy
                             backingStore
                             streamAPI
                             initDb
       case eDB of
         Left err -> error $ "Invariant violation: invalid immutable chain " <> show err
-        Right (db, replayed) ->
+        Right (db, replayCounters) ->
           return ( acc InitFromGenesis
                  , db
-                 , replayed
+                 , replayCounters
                  , backingStore
                  )
 
@@ -217,6 +223,7 @@ initialize replayTracer
               eDB <- runExceptT $ replayStartingWith
                                     tracer'
                                     cfg
+                                    policy
                                     backingStore
                                     streamAPI
                                     initDb
@@ -225,8 +232,8 @@ initialize replayTracer
                   traceWith tracer . LedgerDBSnapshotEvent . InvalidSnapshot s $ err
                   when (diskSnapshotIsTemporary s) $ deleteSnapshot hasFS s
                   tryNewestFirst (acc . InitFailure s err) ss
-                Right (db, replayed) ->
-                  return (acc (InitFromSnapshot s pt), db, replayed, backingStore)
+                Right (db, replayCounters) ->
+                  return (acc (InitFromSnapshot s pt), db, replayCounters, backingStore)
 
 
 -- | Replay all blocks in the Immutable database using the 'StreamAPI' provided
@@ -247,31 +254,34 @@ replayStartingWith ::
        )
   => Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
   -> LedgerDbCfg (ExtLedgerState blk)
+  -> DiskPolicy
   -> LedgerBackingStore' m blk
   -> StreamAPI m blk blk
   -> LedgerDB' blk
-  -> ExceptT (SnapshotFailure blk) m (LedgerDB' blk, Word64)
-replayStartingWith tracer cfg backingStore streamAPI initDb = do
-    (\(a, b, _) -> (a, b)) <$> streamAll streamAPI (castPoint (tip initDb))
+  -> ExceptT (SnapshotFailure blk) m (LedgerDB' blk, (Word64, Word64))
+replayStartingWith tracer cfg policy backingStore streamAPI initDb = do
+    (\(a, b, c) -> (a, (b, c))) <$> streamAll streamAPI (castPoint (tip initDb))
         InitFailureTooRecent
         (initDb, 0, 0)
         push
   where
+    DiskPolicy { onDiskShouldFlush } = policy
+
     push :: blk -> (LedgerDB' blk, Word64, Word64) -> m (LedgerDB' blk, Word64, Word64)
-    push blk (!db, !replayed, !sinceLast) = do
+    push blk (!db, !replayed, !sinceFlush) = do
         !db' <- LedgerDB.push cfg (ReapplyVal blk) (readKeySets backingStore) db
 
         -- It's OK to flush without a lock here, since the `LgrDB` has not
         -- finishined initializing: only this thread has access to the backing
         -- store.
         (db'', sinceLast') <-
-          if sinceLast == 100
+          if onDiskShouldFlush sinceFlush
           then do
             let (toFlush, toKeep) =
                   LedgerDB.flush FlushAllImmutable db'
             flushIntoBackingStore backingStore toFlush
             pure (toKeep, 0)
-          else pure (db', sinceLast + 1)
+          else pure (db', sinceFlush + 1)
 
         let replayed' :: Word64
             !replayed' = replayed + 1

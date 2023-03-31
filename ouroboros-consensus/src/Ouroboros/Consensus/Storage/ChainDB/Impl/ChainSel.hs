@@ -68,7 +68,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Paths
                      (LookupBlockInfo)
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Paths as Paths
-import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as LgrDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
@@ -449,18 +448,17 @@ chainSelectionForBlock
   -> InvalidBlockPunishment m
   -> m (Point blk)
 chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
-    ((invalid, succsOf, lookupBlockInfo, curChain, tipPoint), _, ldb) <-
-      LgrDB.getLedgerDBView
-        cdb
-        ( (,,,,) <$> (forgetFingerprint <$> readTVar cdbInvalid)
+    (invalid, succsOf, lookupBlockInfo, curChain, tipPoint, ledgerDB) <-
+      withReadLock (LgrDB.lgrFlushLock cdbLgrDB) $ atomically
+        ( (,,,,,) <$> (forgetFingerprint <$> readTVar cdbInvalid)
                  <*> VolatileDB.filterByPredecessor  cdbVolatileDB
                  <*> VolatileDB.getBlockInfo         cdbVolatileDB
                  <*> Query.getCurrentChain           cdb
                  <*> Query.getTipPoint               cdb
+                 <*> (K <$> LgrDB.getCurrent cdbLgrDB)
         )
 
-    let ledgerDB = K ldb
-        curChainAndLedger :: ChainAndLedger blk
+    let curChainAndLedger :: ChainAndLedger blk
         curChainAndLedger =
           -- The current chain we're working with here is not longer than @k@
           -- blocks (see 'getCurrentChain' and 'cdbChain'), which is easier to

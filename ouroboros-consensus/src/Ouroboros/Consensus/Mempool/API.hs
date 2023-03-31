@@ -1,9 +1,7 @@
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Exposes the @'Mempool'@ datatype which captures the public API of the
 -- Mempool. Also exposes all the types used to interact with said API.
@@ -38,14 +36,17 @@ module Ouroboros.Consensus.Mempool.API (
   ) where
 
 import qualified Data.List.NonEmpty as NE
-import           Ouroboros.Consensus.Block (ChainHash, Point, SlotNo)
+import           Ouroboros.Consensus.Block (ChainHash, SlotNo)
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.Capacity hiding
                      (MempoolCapacityBytes, MempoolCapacityBytesOverride,
                      MempoolSize, computeMempoolCapacity, (<=))
 import qualified Ouroboros.Consensus.Mempool.Capacity as Cap
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
+import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 
@@ -187,11 +188,12 @@ data Mempool m blk = Mempool {
       --
       -- This does not update the state of the mempool.
     , getSnapshotFor ::
-           Point blk -- ^ Point of the ledger state before ticking
-        -> SlotNo    -- ^ The current slot in which we want the snapshot
+           SlotNo    -- ^ The current slot in which we want the snapshot
         -> TickedLedgerState blk DiffMK
                      -- ^ The ledger state ticked to the given slot number
-        -> m (Maybe (MempoolSnapshot blk))
+        -> LedgerDB' blk
+        -> LedgerBackingStoreValueHandle m (ExtLedgerState blk)
+        -> m (MempoolSnapshot blk)
 
       -- | Get the mempool's capacity in bytes.
       --

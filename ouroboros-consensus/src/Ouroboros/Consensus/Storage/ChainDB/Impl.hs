@@ -1,9 +1,7 @@
-{-# LANGUAGE DisambiguateRecordFields #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE PatternSynonyms          #-}
-{-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Consensus.Storage.ChainDB.Impl (
     -- * Initialization
@@ -49,7 +47,8 @@ import qualified Ouroboros.Consensus.Fragment.Validated as VF
 import           Ouroboros.Consensus.HardFork.Abstract
 import           Ouroboros.Consensus.Ledger.Inspect
 import           Ouroboros.Consensus.Ledger.SupportsProtocol
-import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import           Ouroboros.Consensus.Storage.ChainDB.API
+                     (ChainDB (getLedgerDBViewAtPoint))
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as API
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs,
                      defaultArgs)
@@ -136,10 +135,10 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
               immutableDbTipPoint
               (contramap TraceLedgerReplayEvent tracer)
       traceWith tracer $ TraceOpenEvent StartedOpeningLgrDB
-      (lgrDB, replayed) <- LgrDB.openDB argsLgrDb
-                            lgrReplayTracer
-                            immutableDB
-                            (Query.getAnyKnownBlock immutableDB volatileDB)
+      (lgrDB, replayCounters) <- LgrDB.openDB argsLgrDb
+                                 lgrReplayTracer
+                                 immutableDB
+                                 (Query.getAnyKnownBlock immutableDB volatileDB)
       traceWith tracer $ TraceOpenEvent OpenedLgrDB
 
       varInvalid      <- newTVarIO (WithFingerprint Map.empty (Fingerprint 0))
@@ -217,10 +216,12 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
             , getIsInvalidBlock     = getEnvSTM  h Query.getIsInvalidBlock
             , closeDB               = closeDB h
             , isOpen                = isOpen  h
-            , getLedgerBackingStoreValueHandle = \rreg p -> getEnv h $ \env' -> do
+            , getLedgerBackingStoreValueHandle = \rreg p -> getEnv h $ \env' ->
                 Query.getLedgerBackingStoreValueHandle env' rreg p
             , getLedgerTablesAtFor  = \pt keys ->
                 getEnv h (LgrDB.getLedgerTablesAtFor pt keys . cdbLgrDB)
+            , getLedgerDBViewAtPoint = \pt ->
+                getEnv h $ \env' -> Query.getLedgerDBViewAtPoint env' pt
             }
           testing = Internal
             { intCopyToImmutableDB       = getEnv  h Background.copyToImmutableDB
@@ -234,7 +235,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
         (castPoint $ AF.anchorPoint chain)
         (castPoint $ AF.headPoint   chain)
 
-      when launchBgTasks $ Background.launchBgTasks env replayed
+      when launchBgTasks $ Background.launchBgTasks env replayCounters
 
       return (chainDB, testing, env)
 

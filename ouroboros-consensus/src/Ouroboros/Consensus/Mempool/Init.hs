@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
 -- | Creating a mempool
 module Ouroboros.Consensus.Mempool.Init (
@@ -13,6 +13,7 @@ import           Control.Tracer
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.HeaderValidation
 import           Ouroboros.Consensus.Ledger.Abstract
+import           Ouroboros.Consensus.Ledger.Extended (LedgerTables (..))
 import           Ouroboros.Consensus.Ledger.SupportsMempool
 import           Ouroboros.Consensus.Mempool.API hiding (MempoolCapacityBytes,
                      MempoolCapacityBytesOverride, MempoolSize,
@@ -21,6 +22,11 @@ import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
 import           Ouroboros.Consensus.Mempool.Query
 import           Ouroboros.Consensus.Mempool.Update
+import           Ouroboros.Consensus.Storage.LedgerDB
+                     (LedgerDB (ledgerDbChangelog))
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
+                     (changelogDiffs)
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
@@ -111,7 +117,29 @@ mkMempool mpEnv = Mempool
     , removeTxs      = implRemoveTxs mpEnv
     , syncWithLedger = fst <$> implSyncWithLedger mpEnv
     , getSnapshot    = snapshotFromIS <$> readTMVar istate
-    , getSnapshotFor = implGetSnapshotFor mpEnv
+    , getSnapshotFor = \slot st ldb (LedgerBackingStoreValueHandle s vh) ->
+        let BackingStoreValueHandle {
+                bsvhClose
+              , bsvhRangeRead
+              , bsvhRead
+              } = vh
+        in implGetSnapshotFor mpEnv slot st
+            (unExtLedgerStateTables $ changelogDiffs $ ledgerDbChangelog ldb)
+            (LedgerBackingStoreValueHandle s $
+             BackingStoreValueHandle {
+                  bsvhClose
+                , bsvhRangeRead = \(RangeQuery prev count) ->
+                      fmap unExtLedgerStateTables
+                    . bsvhRangeRead
+                    $ RangeQuery
+                       (fmap ExtLedgerStateTables prev)
+                       count
+                , bsvhRead =
+                      fmap unExtLedgerStateTables
+                    . bsvhRead
+                    . ExtLedgerStateTables
+                }
+            )
     , getCapacity    = isCapacity <$> readTMVar istate
     , getTxSize      = txSize
     }

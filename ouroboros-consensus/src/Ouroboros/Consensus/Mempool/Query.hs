@@ -6,18 +6,20 @@ module Ouroboros.Consensus.Mempool.Query (
   , pureGetSnapshotFor
   ) where
 
-import           Ouroboros.Consensus.Block.Abstract (Point, SlotNo, castHash,
+import           Data.Foldable
+import           Ouroboros.Consensus.Block.Abstract (SlotNo, castHash,
                      pointHash)
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables.Utils
 import           Ouroboros.Consensus.Mempool.API hiding (MempoolCapacityBytes,
                      MempoolCapacityBytesOverride, MempoolSize,
                      TraceEventMempool, computeMempoolCapacity)
 import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
 import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
+import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
-                     (PointNotFound (PointNotFound))
 import           Ouroboros.Consensus.Util.IOLike
 
 implGetSnapshotFor ::
@@ -26,30 +28,36 @@ implGetSnapshotFor ::
      , HasTxId (GenTx blk)
      )
   => MempoolEnv m blk
-  -> Point blk -- ^ The point on the ledger database where we want to acquire a
-               -- snapshot on
   -> SlotNo -- ^ Get snapshot for this slot number (usually the current slot)
   -> TickedLedgerState blk DiffMK -- ^ The ledger state at 'pt' ticked to 'slot'
-  -> m (Maybe (MempoolSnapshot blk))
-implGetSnapshotFor mpEnv pt slot ticked = do
+  -> LedgerTables (LedgerState blk) SeqDiffMK
+  -> LedgerBackingStoreValueHandle m (LedgerState blk)
+  -> m (MempoolSnapshot blk)
+implGetSnapshotFor mpEnv slot ticked chlog (LedgerBackingStoreValueHandle vhSlot vh) = do
   is <- atomically $ readTMVar istate
   if pointHash (isTip is) == castHash (getTipHash ticked) &&
      isSlotNo is == slot
     then
       -- We are looking for a snapshot exactly for the ledger state we already
       -- have cached, then just return it.
-      pure . Just . snapshotFromIS $ is
+      pure . snapshotFromIS $ is
     else do
-      -- We need to revalidate the transactions.
-      let txs = [ txForgetValidated . TxSeq.txTicketTx $ tx
-                | tx <- TxSeq.toList $ isTxs is
-                ]
-          go = do
-            mTbs <- getLedgerTablesAtFor ldgrInterface pt txs
-            case mTbs of
-              Right tbs            -> pure $ Just $ getSnap is tbs
-              Left PointNotFound{} -> pure Nothing
-      go
+      let keys = foldl' (zipLedgerTables (<>)) emptyLedgerTables
+               $ map getTransactionKeySets
+               $ [ txForgetValidated . TxSeq.txTicketTx $ tx
+                 | tx <- TxSeq.toList $ isTxs is
+                 ]
+      values <- bsvhRead vh keys
+      let eTbs = forwardTableKeySets' vhSlot chlog $ UnforwardedReadSets {
+                  ursSeqNo  = vhSlot
+                , ursValues = values
+                , ursKeys   = keys
+                }
+      pure $ getSnap is $ case eTbs of
+        Right tbs -> tbs
+        Left e -> error $ "Critical error, value handle and changelog \
+                          \ should be in the same slot thanks to the RAWLock. \
+                          \ Seeing this means the RAWLock has failed! " <> show e
   where
     getSnap is tbs = pureGetSnapshotFor
                        capacityOverride
@@ -59,7 +67,6 @@ implGetSnapshotFor mpEnv pt slot ticked = do
                        (ForgeInKnownSlot slot ticked)
     MempoolEnv { mpEnvStateVar         = istate
                , mpEnvLedgerCfg        = cfg
-               , mpEnvLedger           = ldgrInterface
                , mpEnvCapacityOverride = capacityOverride
                } = mpEnv
 
@@ -79,7 +86,7 @@ pureGetSnapshotFor _ _ _ _ ForgeInUnknownSlot{} =
   error "Tried to get a snapshot for unknown slot"
 pureGetSnapshotFor capacityOverride cfg values is (ForgeInKnownSlot slot st) =
   snapshotFromIS $
-    if (pointHash (isTip is) == castHash (getTipHash st) && isSlotNo is == slot)
+    if pointHash (isTip is) == castHash (getTipHash st) && isSlotNo is == slot
     then is
     else fst $ revalidateTxsFor
                  capacityOverride
