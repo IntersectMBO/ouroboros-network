@@ -17,7 +17,6 @@
                 -Wno-incomplete-uni-patterns
                 -Wno-incomplete-record-updates
                 -Wno-overlapping-patterns #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
 module Ouroboros.Consensus.Cardano.Node (
     CardanoHardForkConstraints
   , MaxMajorProtVer (..)
@@ -50,7 +49,9 @@ module Ouroboros.Consensus.Cardano.Node (
 
 import           Cardano.Binary (DecoderError (..), enforceSize)
 import           Cardano.Chain.Slotting (EpochSlots)
+import           Cardano.Ledger.Address (Addr (..))
 import qualified Cardano.Ledger.BaseTypes as SL
+import           Cardano.Ledger.Crypto (Crypto (..))
 import qualified Cardano.Ledger.Era as Core
 import qualified Cardano.Ledger.Shelley.API as SL
 import           Cardano.Prelude (cborError)
@@ -70,10 +71,10 @@ import           Data.SOP.Counting (Exactly (Exactly), exactlyWeakenNonEmpty,
 import           Data.SOP.Index (Index (..))
 import           Data.SOP.OptNP (NonEmptyOptNP, OptNP (OptSkip))
 import qualified Data.SOP.OptNP as OptNP
-import           Data.SOP.Strict (K (K), fn, hap, type (-.->), NP (Nil, (:*)))
+import           Data.SOP.Strict (K (K), NP (Nil, (:*)), fn, hap, type (-.->))
 import           Data.Word (Word16, Word64)
-import           Ouroboros.Consensus.Block (BlockConfig, BlockForging,
-                     BlockProtocol, NestedCtxt (NestedCtxt), SlotNo (SlotNo),
+import           Ouroboros.Consensus.Block (BlockForging, BlockProtocol,
+                     NestedCtxt (NestedCtxt), SlotNo (SlotNo),
                      SomeSecond (SomeSecond))
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
@@ -85,19 +86,13 @@ import           Ouroboros.Consensus.Byron.Node
                      (ProtocolParamsByron (ProtocolParamsByron, byronGenesis, byronLeaderCredentials, byronMaxTxCapacityOverrides),
                      byronBlockForging, protocolClientInfoByron,
                      protocolInfoByron)
-import           Ouroboros.Consensus.Cardano.Block (AllegraEra, AlonzoEra,
-                     BabbageEra, BlockConfig (CardanoBlockConfig), CardanoBlock,
-                     CardanoEras, CardanoShelleyEras,
-                     CodecConfig (CardanoCodecConfig), ConwayEra, EraCrypto,
-                     HardForkBlock (BlockAllegra, BlockAlonzo, BlockBabbage, BlockByron, BlockConway, BlockMary, BlockShelley),
-                     Header (HeaderAllegra, HeaderAlonzo, HeaderBabbage, HeaderByron, HeaderConway, HeaderMary, HeaderShelley),
-                     LedgerState, MaryEra, ShelleyBasedEra, ShelleyEra,
-                     StandardCrypto, StorageConfig (CardanoStorageConfig))
+import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.Block ()
 import           Ouroboros.Consensus.Cardano.CanHardFork
-                     (ByronPartialLedgerConfig (ByronPartialLedgerConfig, byronLedgerConfig, byronTriggerHardFork),
-                     CardanoHardForkConstraints,
-                     ShelleyPartialLedgerConfig (ShelleyPartialLedgerConfig, shelleyLedgerConfig, shelleyTriggerHardFork),
-                     TriggerHardFork (..))
+import           Ouroboros.Consensus.Cardano.CanHardFork ()
+import           Ouroboros.Consensus.Cardano.Translations (translateCredentials,
+                     translateHotKey, translateInitialFunds,
+                     translateShelleyGenesis, translateStaking)
 import           Ouroboros.Consensus.Config (SecurityParam (SecurityParam),
                      TopLevelConfig (..), configCodec, configStorage)
 import           Ouroboros.Consensus.HardFork.Combinator
@@ -134,12 +129,16 @@ import           Ouroboros.Consensus.Node.ProtocolInfo (ProtocolClientInfo (..),
                      ProtocolInfo (..))
 import           Ouroboros.Consensus.Node.Run
                      (SerialiseNodeToNodeConstraints (estimateBlockSize))
+import           Ouroboros.Consensus.Protocol.BatchCompatibleCrypto
+                     (BatchCompatibleCrypto)
 import qualified Ouroboros.Consensus.Protocol.Ledger.HotKey as HotKey
-import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosParams (..))
+import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosCrypto,
+                     PraosParams (..))
 import           Ouroboros.Consensus.Protocol.Praos.Common
                      (praosCanBeLeaderOpCert)
 import           Ouroboros.Consensus.Protocol.TPraos (TPraos, TPraosParams (..))
 import qualified Ouroboros.Consensus.Protocol.TPraos as Shelley
+import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Ledger (LedgerState (..),
                      ShelleyBlock, ShelleyCompatible)
 import qualified Ouroboros.Consensus.Shelley.Ledger as Shelley
@@ -156,33 +155,6 @@ import           Ouroboros.Consensus.Shelley.Node (MaxMajorProtVer (..),
                      registerInitialFunds, validateGenesis)
 import           Ouroboros.Consensus.Shelley.Node.Common (ShelleyEraWithCrypto,
                      shelleyBlockIssuerVKey, translateShelleyLeaderCredentials)
-import Ouroboros.Consensus.Shelley.HFEras()
-
-import           Cardano.Ledger.Address (BootstrapAddress (..), RewardAcnt (..))
-import qualified Cardano.Ledger.BaseTypes as SL
-import           Cardano.Ledger.CompactAddress (Addr (..))
-import           Cardano.Ledger.Core (PParams (..))
-import           Cardano.Ledger.Credential (StakeReference (..))
-import           Cardano.Ledger.Crypto (Crypto (..))
-import           Cardano.Ledger.Keys (GenDelegPair (..))
-import           Cardano.Ledger.PoolParams (PoolParams (..))
-import           Cardano.Ledger.Shelley.API (Credential (..))
-import           Cardano.Slotting.Time (SystemStart (SystemStart))
-import           Data.Coerce (coerce)
-import qualified Data.Set as Set
-import           Ouroboros.Consensus.Cardano.Block
-import           Ouroboros.Consensus.Cardano.Block ()
-import           Ouroboros.Consensus.Cardano.CanHardFork
-import           Ouroboros.Consensus.Cardano.CanHardFork ()
-import           Ouroboros.Consensus.Protocol.BatchCompatibleCrypto
-                     (BatchCompatibleCrypto)
-import           Ouroboros.Consensus.Protocol.Ledger.HotKey (HotKey (..))
-import           Ouroboros.Consensus.Protocol.Praos (Praos, PraosCrypto,
-                     PraosParams (..))
-import           Ouroboros.Consensus.Protocol.Praos.Common
-                     (praosCanBeLeaderOpCert, translateCanBeLeader)
-import           Ouroboros.Consensus.Protocol.Praos.Crypto
-                     (CanConvertVRF (convertVKey))
 import           Ouroboros.Consensus.Shelley.Node.Praos
                      (ProtocolParamsBabbage (..), ProtocolParamsConway (..))
 import qualified Ouroboros.Consensus.Shelley.Node.Praos as Praos
@@ -1154,114 +1126,6 @@ register
                                    $ st
                                  }
 
-
-translateHotKey :: (KES c1 ~ KES c2) => HotKey.HotKey c1 m -> HotKey.HotKey c2 m
-translateHotKey HotKey.HotKey {evolve, getInfo, isPoisoned, sign_} =
-  HotKey.HotKey {evolve, getInfo, isPoisoned, sign_}
-
-translateCredentials :: (DSIGN c1 ~ DSIGN c2, KES c1 ~ KES c2, CanConvertVRF (VRF c1) (VRF c2)) => ShelleyLeaderCredentials c1 -> ShelleyLeaderCredentials c2
-translateCredentials
-  ShelleyLeaderCredentials {shelleyLeaderCredentialsInitSignKey,
-                            shelleyLeaderCredentialsCanBeLeader, shelleyLeaderCredentialsLabel}
-  = ShelleyLeaderCredentials { shelleyLeaderCredentialsInitSignKey
-                             , shelleyLeaderCredentialsCanBeLeader = translateCanBeLeader shelleyLeaderCredentialsCanBeLeader
-                             , shelleyLeaderCredentialsLabel}
-
-
-translateShelleyGenesis ::
-  forall c1 c2 .
-  (ADDRHASH c1 ~ ADDRHASH c2, HASH c1 ~ HASH c2)
-  => ShelleyGenesis c1 -> ShelleyGenesis c2
-translateShelleyGenesis
-  ShelleyGenesis {sgSystemStart, sgNetworkMagic, sgNetworkId,
-                  sgActiveSlotsCoeff, sgSecurityParam, sgEpochLength,
-                  sgSlotsPerKESPeriod, sgMaxKESEvolutions, sgSlotLength,
-                  sgUpdateQuorum, sgMaxLovelaceSupply, sgProtocolParams, sgGenDelegs,
-                  sgInitialFunds, sgStaking}
-  = ShelleyGenesis {sgSystemStart, sgNetworkMagic, sgNetworkId,
-                  sgActiveSlotsCoeff, sgSecurityParam, sgEpochLength,
-                  sgSlotsPerKESPeriod, sgMaxKESEvolutions, sgSlotLength,
-                  sgUpdateQuorum, sgMaxLovelaceSupply, sgProtocolParams = translatePParams sgProtocolParams, sgGenDelegs = translateGenDelegs sgGenDelegs,
-                  sgInitialFunds = translateInitialFunds sgInitialFunds, sgStaking = translateStaking sgStaking}
-
-translateStaking ::
-  forall c1 c2 .
-  (ADDRHASH c1 ~ ADDRHASH c2, HASH c1 ~ HASH c2)
-  => ShelleyGenesisStaking c1 -> ShelleyGenesisStaking c2
-translateStaking ShelleyGenesisStaking {sgsPools, sgsStake} = ShelleyGenesisStaking { sgsPools = translateStakingPools sgsPools, sgsStake = translateStake sgsStake }
-  where
-    translateStake :: ListMap.ListMap (SL.KeyHash 'SL.Staking c1) (SL.KeyHash 'SL.StakePool c1) -> ListMap.ListMap (SL.KeyHash 'SL.Staking c2) (SL.KeyHash 'SL.StakePool c2)
-    translateStake = ListMap.foldrWithKey translateStakingPair mempty
-
-    translateStakingPair ::
-      (SL.KeyHash 'SL.Staking c1, SL.KeyHash 'SL.StakePool c1)
-      -> ListMap.ListMap (SL.KeyHash 'SL.Staking c2) (SL.KeyHash 'SL.StakePool c2)
-      -> ListMap.ListMap (SL.KeyHash 'SL.Staking c2) (SL.KeyHash 'SL.StakePool c2)
-    translateStakingPair (stakeKey, stakePool) (ListMap.ListMap stakes) = ListMap.ListMap $ (coerce stakeKey, coerce stakePool) : stakes
-
-translateStakingPools ::
-  forall c1 c2 .
-  (ADDRHASH c1 ~ ADDRHASH c2, HASH c1 ~ HASH c2)
-  => ListMap.ListMap (SL.KeyHash 'SL.StakePool c1) (SL.PoolParams c1)
-  -> ListMap.ListMap (SL.KeyHash 'SL.StakePool c2) (SL.PoolParams c2)
-translateStakingPools = ListMap.foldrWithKey f mempty
- where
-   f :: (SL.KeyHash 'SL.StakePool c1, SL.PoolParams c1)
-     -> ListMap.ListMap (SL.KeyHash 'SL.StakePool c2) (SL.PoolParams c2)
-     -> ListMap.ListMap (SL.KeyHash 'SL.StakePool c2) (SL.PoolParams c2)
-   f (kh, params) (ListMap.ListMap ps) = ListMap.ListMap $ (coerce kh, translatePoolParams params) : ps
-
-   translatePoolParams :: SL.PoolParams c1 -> SL.PoolParams c2
-   translatePoolParams
-     PoolParams {ppId, ppVrf, ppPledge, ppCost, ppMargin, ppRewardAcnt,
-                 ppOwners, ppRelays, ppMetadata}
-     = PoolParams {ppId = coerce ppId, ppVrf = coerce ppVrf, ppPledge, ppCost, ppMargin, ppRewardAcnt = translateRewardAcnt ppRewardAcnt,
-                 ppOwners = Set.map coerce ppOwners, ppRelays, ppMetadata}
-
-   translateRewardAcnt :: SL.RewardAcnt c1 -> SL.RewardAcnt c2
-   translateRewardAcnt (RewardAcnt net cre) = RewardAcnt net (translateCredential cre)
-
-translateCredential ::
-  forall c1 c2 r .
-  (ADDRHASH c1 ~ ADDRHASH c2)
-  => SL.Credential r c1 -> SL.Credential r c2
-translateCredential (ScriptHashObj sh) = ScriptHashObj $ coerce sh
-translateCredential (KeyHashObj kh)    = KeyHashObj $ coerce kh
-
-translateInitialFunds ::
-  forall c1 c2 .
-  (ADDRHASH c1 ~ ADDRHASH c2)
-  => ListMap.ListMap (SL.Addr c1) SL.Coin -> ListMap.ListMap (SL.Addr c2) SL.Coin
-translateInitialFunds = ListMap.mapKeys translateAddr
-  where
-    translateAddr :: SL.Addr c1 -> SL.Addr c2
-    translateAddr (Addr net cre sr) = Addr net (translateCredential cre) (translateStakeReference sr)
-    translateAddr (AddrBootstrap ba) = AddrBootstrap (translateBootstrap ba)
-
-    translateStakeReference :: SL.StakeReference c1 -> SL.StakeReference c2
-    translateStakeReference (StakeRefBase cre) = StakeRefBase (translateCredential cre)
-    translateStakeReference (StakeRefPtr ptr) = StakeRefPtr ptr
-    translateStakeReference StakeRefNull = StakeRefNull
-
-    translateBootstrap :: BootstrapAddress c1 -> BootstrapAddress c2
-    translateBootstrap (BootstrapAddress ad) = BootstrapAddress ad
-
-translateGenDelegs ::
-  forall c1 c2 .
-  (HASH c1 ~ HASH c2, ADDRHASH c1 ~ ADDRHASH c2 )
-  => Map.Map (SL.KeyHash 'SL.Genesis c1) (SL.GenDelegPair c1)
-  -> Map.Map (SL.KeyHash 'SL.Genesis c2) (SL.GenDelegPair c2)
-translateGenDelegs = Map.map g . Map.mapKeysMonotonic f
- where
-  g :: SL.GenDelegPair c1 -> SL.GenDelegPair c2
-  g GenDelegPair {genDelegKeyHash, genDelegVrfHash} =
-    GenDelegPair {genDelegKeyHash = coerce genDelegKeyHash, genDelegVrfHash = coerce genDelegVrfHash}
-
-  f :: SL.KeyHash 'SL.Genesis c1 -> SL.KeyHash 'SL.Genesis c2
-  f = coerce
-
-translatePParams :: PParams (ShelleyEra c1) -> PParams (ShelleyEra c2)
-translatePParams (PParams pph) = PParams (coerce pph)
 
 protocolClientInfoCardano
   :: forall c1 c2.

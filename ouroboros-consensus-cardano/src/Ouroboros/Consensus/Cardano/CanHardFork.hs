@@ -29,61 +29,10 @@ import qualified Cardano.Chain.Genesis as CC.Genesis
 import qualified Cardano.Chain.Update as CC.Update
 import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
 import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
-import           Control.Monad
-import           Control.Monad.Except (runExcept, throwError)
-import           Data.Coerce (coerce)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (listToMaybe, mapMaybe)
-import           Data.Proxy
-import           Data.SOP.Strict (NP (..), hpure, unComp, (:.:) (..))
-import           Data.Word
-import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks)
-
-import           Cardano.Crypto.DSIGN (Ed25519DSIGN)
-import           Cardano.Crypto.Hash.Blake2b (Blake2b_224, Blake2b_256)
-
-import qualified Cardano.Chain.Common as CC
-import qualified Cardano.Chain.Genesis as CC.Genesis
-import qualified Cardano.Chain.Update as CC.Update
-
-import           Ouroboros.Consensus.Block
-import           Ouroboros.Consensus.Forecast
-import           Ouroboros.Consensus.HardFork.History (Bound (boundSlot),
-                     addSlots)
-import           Ouroboros.Consensus.HardFork.Simple
-import           Ouroboros.Consensus.Ledger.Abstract
-import           Ouroboros.Consensus.TypeFamilyWrappers
-import           Ouroboros.Consensus.Util (eitherToMaybe)
-import           Ouroboros.Consensus.Util.RedundantConstraints
-
-import           Ouroboros.Consensus.HardFork.Combinator
-import           Ouroboros.Consensus.HardFork.Combinator.State.Types
-import           Ouroboros.Consensus.HardFork.Combinator.Util.InPairs
-                     (RequiringBoth (..), ignoringBoth)
-import           Ouroboros.Consensus.HardFork.Combinator.Util.Tails (Tails (..),
-                     hcpure)
-import qualified Ouroboros.Consensus.HardFork.Combinator.Util.Tails as Tails
-
-import           Ouroboros.Consensus.Byron.Ledger
-import qualified Ouroboros.Consensus.Byron.Ledger.Inspect as Byron.Inspect
-import           Ouroboros.Consensus.Byron.Node ()
-import           Ouroboros.Consensus.Protocol.Abstract
-import           Ouroboros.Consensus.Protocol.PBFT (PBft, PBftCrypto)
-import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
-import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
-import           Ouroboros.Consensus.Protocol.TPraos
-
-import           Ouroboros.Consensus.Shelley.Ledger
-import           Ouroboros.Consensus.Shelley.Node ()
-import           Ouroboros.Consensus.Shelley.ShelleyHFC
-
 import           Cardano.Ledger.Crypto (ADDRHASH, Crypto, DSIGN, HASH)
 import qualified Cardano.Ledger.Era as SL
-import Cardano.Ledger.Alonzo.Core(Tx)
 import           Cardano.Ledger.Mary.Translation ()
 import qualified Cardano.Ledger.Shelley.API as SL
-import qualified Cardano.Ledger.BaseTypes as BaseTypes
 import           Cardano.Ledger.Shelley.Translation
                      (toFromByronTranslationContext)
 import qualified Cardano.Protocol.TPraos.API as SL
@@ -96,9 +45,8 @@ import qualified Data.Map.Strict as Map
 import           Data.Maybe (listToMaybe, mapMaybe)
 import           Data.Proxy
 import           Data.SOP.InPairs (RequiringBoth (..), ignoringBoth)
-import           Data.SOP.Strict (hpure, unComp, (:.:) (..))
+import           Data.SOP.Strict (NP (..), unComp, (:.:) (..))
 import           Data.SOP.Tails (Tails (..))
-import qualified Data.SOP.Tails as Tails
 import           Data.Word
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
@@ -107,6 +55,9 @@ import           Ouroboros.Consensus.Byron.Ledger
 import qualified Ouroboros.Consensus.Byron.Ledger.Inspect as Byron.Inspect
 import           Ouroboros.Consensus.Byron.Node ()
 import           Ouroboros.Consensus.Cardano.Block
+import           Ouroboros.Consensus.Cardano.Translations
+                     (translateNewEpochState, translateTx, translateTxId,
+                     translateValidatedTx)
 import           Ouroboros.Consensus.Forecast
 import           Ouroboros.Consensus.HardFork.Combinator
 import           Ouroboros.Consensus.HardFork.Combinator.State.Types
@@ -122,18 +73,17 @@ import           Ouroboros.Consensus.Protocol.PBFT.State (PBftState)
 import qualified Ouroboros.Consensus.Protocol.PBFT.State as PBftState
 import           Ouroboros.Consensus.Protocol.Praos (Praos)
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
+import           Ouroboros.Consensus.Protocol.Praos.Crypto (CanConvertVRF, VRF)
 import           Ouroboros.Consensus.Protocol.TPraos
 import qualified Ouroboros.Consensus.Protocol.TPraos as TPraos
 import           Ouroboros.Consensus.Protocol.Translate (TranslateProto)
 import           Ouroboros.Consensus.Shelley.Ledger
 import           Ouroboros.Consensus.Shelley.Node ()
-import           Ouroboros.Consensus.Protocol.Praos.Translate(translateKeyHash)
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
 import           Ouroboros.Consensus.Shelley.ShelleyHFC
 import           Ouroboros.Consensus.TypeFamilyWrappers
 import           Ouroboros.Consensus.Util (eitherToMaybe)
 import           Ouroboros.Consensus.Util.RedundantConstraints
-import Ouroboros.Consensus.Protocol.Praos.Crypto (VRF, CanConvertVRF)
 
 {-------------------------------------------------------------------------------
   Figure out the transition point for Byron
@@ -775,20 +725,6 @@ translateLedgerStateBabbageToConwayWrapper =
         , shelleyLedgerTransition = st
         }
 
-translateNewEpochState :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => SL.NewEpochState (BabbageEra c1) -> SL.NewEpochState (BabbageEra c2)
-translateNewEpochState
-  SL.NewEpochState {nesEL, nesBprev, nesBcur, nesEs, nesRu, nesPd,
-                 stashedAVVMAddresses}
-  = SL.NewEpochState {nesEL, nesBprev = translateBlocksMade nesBprev, nesBcur = translateBlocksMade nesBcur, nesEs = translateEpochState nesEs, nesRu = undefined , nesPd=undefined ,
-                 stashedAVVMAddresses}
-
-translateBlocksMade :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => BaseTypes.BlocksMade c1 -> BaseTypes.BlocksMade c2
-translateBlocksMade BaseTypes.BlocksMade {unBlocksMade} =
-  BaseTypes.BlocksMade $ Map.mapKeysMonotonic translateKeyHash unBlocksMade
-
-translateEpochState :: SL.EpochState (BabbageEra c1) -> SL.EpochState (BabbageEra c2)
-translateEpochState = undefined
-
 getConwayTranslationContext ::
      WrapLedgerConfig (ShelleyBlock (Praos c) (ConwayEra c))
   -> SL.TranslationContext (ConwayEra c)
@@ -826,12 +762,3 @@ translateValidatedTxBabbageToConwayWrapper ctxt = InjectValidatedTx $
   transPraosValidatedTx (WrapValidatedGenTx x) = case x of
     ShelleyValidatedTx txid vtx -> WrapValidatedGenTx $
       ShelleyValidatedTx (translateTxId txid) (translateValidatedTx vtx)
-
-translateTx :: Tx (BabbageEra c1) -> Tx (BabbageEra c2)
-translateTx = undefined
-
-translateValidatedTx :: SL.Validated (Tx (BabbageEra c1)) -> SL.Validated (Tx (BabbageEra c2))
-translateValidatedTx = undefined
-
-translateTxId :: SL.TxId c1 -> SL.TxId c2
-translateTxId = undefined
