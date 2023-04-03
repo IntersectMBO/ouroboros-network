@@ -51,6 +51,10 @@ packages: ./cardano-ping
 tests: True
 benchmarks: True
 
+constraints:
+  -- Nix doesn't pick this version by default even if it can.
+  cardano-ledger-alonzo-test >= 1.0.0.0
+
 package cardano-ping
   flags: +asserts
 
