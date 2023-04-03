@@ -40,13 +40,14 @@ import           Cardano.Ledger.Address (Addr (..), BootstrapAddress (..),
 import           Cardano.Ledger.Alonzo.Core (Tx)
 import           Cardano.Ledger.BaseTypes (BlocksMade (..))
 import qualified Cardano.Ledger.BaseTypes as BaseTypes
-import           Cardano.Ledger.Core (PParams (..))
+import           Cardano.Ledger.Core (PParams (..), translateEra)
 import           Cardano.Ledger.Credential (StakeReference (..))
 import           Cardano.Ledger.Crypto (Crypto (..))
 import           Cardano.Ledger.Keys (GenDelegPair (..))
 import           Cardano.Ledger.Mary.Translation ()
 import           Cardano.Ledger.PoolParams (PoolParams (..))
-import           Cardano.Ledger.Shelley.API (Credential (..))
+import           Cardano.Ledger.Shelley.API (Credential (..), EpochState (..),
+                     LedgerState (..))
 import qualified Cardano.Ledger.Shelley.API as SL
 import           Cardano.Ledger.Shelley.API.Types (NewEpochState (..))
 import           Data.Coerce (coerce)
@@ -66,6 +67,7 @@ import           Ouroboros.Consensus.Shelley.HFEras ()
 import           Ouroboros.Consensus.Shelley.Node (ShelleyGenesis (..),
                      ShelleyGenesisStaking (..), ShelleyLeaderCredentials (..))
 import           Ouroboros.Consensus.Shelley.Protocol.Praos ()
+import           Unsafe.Coerce (unsafeCoerce)
 
 
 translateHotKey :: (KES c1 ~ KES c2) => HotKey.HotKey c1 m -> HotKey.HotKey c2 m
@@ -179,7 +181,7 @@ translateNewEpochState :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => S
 translateNewEpochState
   SL.NewEpochState {nesEL, nesBprev, nesBcur, nesEs, nesRu, nesPd,
                  stashedAVVMAddresses}
-  = SL.NewEpochState {nesEL, nesBprev = translateBlocksMade nesBprev, nesBcur = translateBlocksMade nesBcur, nesEs = translateEpochState nesEs, nesRu = undefined , nesPd = undefined ,
+  = SL.NewEpochState {nesEL, nesBprev = translateBlocksMade nesBprev, nesBcur = translateBlocksMade nesBcur, nesEs = translateEpochState nesEs, nesRu = unsafeCoerce nesRu , nesPd = unsafeCoerce nesPd,
                  stashedAVVMAddresses}
 
 translateBlocksMade :: (ADDRHASH c1 ~  ADDRHASH c2, DSIGN c1 ~ DSIGN c2) => BaseTypes.BlocksMade c1 -> BaseTypes.BlocksMade c2
@@ -187,13 +189,26 @@ translateBlocksMade BaseTypes.BlocksMade {unBlocksMade} =
   BaseTypes.BlocksMade $ Map.mapKeysMonotonic translateKeyHash unBlocksMade
 
 translateEpochState :: SL.EpochState (BabbageEra c1) -> SL.EpochState (BabbageEra c2)
-translateEpochState = undefined
+translateEpochState
+  EpochState {esAccountState, esSnapshots, esLState, esPrevPp, esPp,
+              esNonMyopic}
+  = EpochState { esAccountState
+               , esSnapshots = unsafeCoerce esSnapshots
+               , esLState = translateLedgerState esLState
+               , esPrevPp = unsafeCoerce esPrevPp
+               , esPp = unsafeCoerce esPp
+               , esNonMyopic= unsafeCoerce esNonMyopic
+               }
+
+translateLedgerState :: SL.LedgerState (BabbageEra c1) -> SL.LedgerState (BabbageEra c2)
+translateLedgerState LedgerState {lsUTxOState, lsDPState} =
+  LedgerState {lsUTxOState = unsafeCoerce lsUTxOState , lsDPState = unsafeCoerce lsDPState}
 
 translateTx :: Tx (BabbageEra c1) -> Tx (BabbageEra c2)
-translateTx = undefined
+translateTx = unsafeCoerce
 
 translateValidatedTx :: SL.Validated (Tx (BabbageEra c1)) -> SL.Validated (Tx (BabbageEra c2))
-translateValidatedTx = undefined
+translateValidatedTx = unsafeCoerce
 
 translateTxId :: SL.TxId c1 -> SL.TxId c2
-translateTxId = undefined
+translateTxId = unsafeCoerce
