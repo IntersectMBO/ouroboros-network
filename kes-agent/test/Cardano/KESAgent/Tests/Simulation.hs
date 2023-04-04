@@ -1,21 +1,22 @@
 -- TODO: replace psbFromBytes with something non-deprecated and remove this pragma
-{-#OPTIONS_GHC -Wno-deprecations#-}
+{-# OPTIONS_GHC -Wno-deprecations#-}
 
-{-#LANGUAGE DataKinds #-}
-{-#LANGUAGE DerivingStrategies #-}
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE FlexibleInstances #-}
-{-#LANGUAGE GeneralizedNewtypeDeriving #-}
-{-#LANGUAGE ImpredicativeTypes #-}
-{-#LANGUAGE LambdaCase #-}
-{-#LANGUAGE MultiParamTypeClasses #-}
-{-#LANGUAGE NoStarIsType #-}
-{-#LANGUAGE OverloadedStrings #-}
-{-#LANGUAGE QuantifiedConstraints #-}
-{-#LANGUAGE ScopedTypeVariables #-}
-{-#LANGUAGE TypeApplications #-}
-{-#LANGUAGE TypeFamilies #-}
-{-#LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoStarIsType #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Cardano.KESAgent.Tests.Simulation
 ( tests
@@ -41,7 +42,7 @@ import Control.Monad.Class.MonadMVar
   , modifyMVar_
   )
 import Control.Monad.Class.MonadST (MonadST, withLiftST)
-import Control.Monad.Class.MonadThrow (MonadThrow, MonadCatch, bracket, catch, SomeException, catchJust)
+import Control.Monad.Class.MonadThrow (MonadThrow, MonadCatch, bracket, catch, SomeException, catchJust, finally, throwIO)
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadSay (say)
 import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay, DiffTime)
@@ -153,10 +154,6 @@ mkLock = do
     { acquireLock = takeMVar var
     , releaseLock = putMVar var
     }
-
-hoistLock :: forall m n. (forall a. m a -> n a) -> Lock m -> Lock n
-hoistLock hoist (Lock acquire release) =
-  Lock (hoist acquire) (\() -> hoist (release ()))
 
 testCrypto :: forall c kes
             . kes ~ KES c
@@ -274,6 +271,69 @@ instance Show PrettyBS where
 
 {- HLINT ignore "Eta reduce" -}
 
+data TestNetworkConfig m addr =
+  TestNetworkConfig
+    { tnControlAddress :: addr
+    , tnServiceAddress :: addr
+    , tnCleanup :: m ()
+    , tnShow :: String
+    }
+
+instance Show (TestNetworkConfig m a) where
+  show = tnShow
+
+forallTnShow :: (forall s. TestNetworkConfig (IOSim s) (TestAddress Int)) -> String
+forallTnShow = tnShow
+
+instance Show IOSimTestNetworkConfig where
+  show = forallTnShow . unIOSimTestNetworkConfig
+
+instance Arbitrary (TestNetworkConfig IO SockAddr) where
+  arbitrary = do
+    (c, s) <- arbitrary `suchThat` \(c, s) -> c /= s
+    pure $
+      TestNetworkConfig
+        (mkAddr c)
+        (mkAddr s)
+        (cleanup c >>
+         cleanup s
+        )
+        ("TestNetworkConfig " ++ show c ++ " " ++ show s)
+    where
+      mkAddrName i = "./local" ++ show i
+
+      mkAddr :: Word -> SockAddr
+      mkAddr i = SockAddrUnix $ mkAddrName i
+
+      cleanup seed = do
+        -- putStrLn $ "rm " ++ mkAddrName seed
+        (removeFile $ mkAddrName seed) `catch`
+          (\e ->
+            if isDoesNotExistErrorType (ioeGetErrorType e)
+              then do
+                putStrLn $ mkAddrName seed ++ " does not exist"
+              else do
+                throwIO e
+          )
+
+newtype IOSimTestNetworkConfig =
+  IOSimTestNetworkConfig {
+    unIOSimTestNetworkConfig :: forall s. TestNetworkConfig (IOSim s) (TestAddress Int)
+  }
+
+instance Arbitrary IOSimTestNetworkConfig where
+  arbitrary = do
+    (c, s) <- arbitrary `suchThat` \(c, s) -> c /= s
+    pure . IOSimTestNetworkConfig $
+      TestNetworkConfig
+        (mkAddr c)
+        (mkAddr s)
+        (return ())
+        ("TestNetworkConfig " ++ show c ++ " " ++ show s)
+    where
+      mkAddr :: Word -> TestAddress Int
+      mkAddr = TestAddress . fromIntegral
+
 runTestNetwork :: forall c m fd addr
                 . MonadKES m c
                => MonadNetworking m fd
@@ -285,8 +345,7 @@ runTestNetwork :: forall c m fd addr
                -> (forall a. (Show a, TracePretty a) => Tracer m a)
                -> Snocket m fd addr
                -> Integer
-               -> addr -- | control address
-               -> addr -- | service address
+               -> TestNetworkConfig m addr
                -> DiffTime
                   -- | control clients: socket address, startup delay, script
                -> [(DiffTime, ControlClientScript m c)]
@@ -294,10 +353,12 @@ runTestNetwork :: forall c m fd addr
                -> [(DiffTime, NodeScript m c)]
                -> m Property
 runTestNetwork p tracer snocket genesisTimestamp
-               controlAddress serviceAddress
+               config
                agentDelay senders receivers = do
     propertyVar <- newEmptyMVar :: m (MVar m Property)
     timeVar <- newMVar (fromInteger genesisTimestamp) :: m (MVar m NominalDiffTime)
+    let controlAddress = tnControlAddress config
+    let serviceAddress = tnServiceAddress config
 
     let agentOptions  :: AgentOptions m fd addr
         agentOptions = AgentOptions
@@ -375,6 +436,7 @@ runTestNetwork p tracer snocket genesisTimestamp
             -- ...until this one finishes
             (watch propertyVar)
           )
+          `finally` tnCleanup config
 
     case output of
         Left () -> error "TIMEOUT"
@@ -391,8 +453,7 @@ testOneKeyThroughChainIO :: forall c
                        => Proxy c
                        -> Lock IO
                        -> IOManager
-                       -> Word32
-                       -> Word32
+                       -> TestNetworkConfig IO SockAddr
                        -> PinnedSizedBytes (SeedSizeKES (KES c))
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
@@ -404,8 +465,7 @@ testOneKeyThroughChainIO :: forall c
 testOneKeyThroughChainIO p
     lock
     ioManager
-    controlAddressSeed
-    serviceAddressSeed
+    config
     seedKESPSB
     seedDSIGNPSB
     genesisTimestamp
@@ -413,33 +473,20 @@ testOneKeyThroughChainIO p
     agentDelay
     nodeDelay
     controlDelay =
-  controlAddressSeed /= serviceAddressSeed ==>
-  ioProperty . withLock lock $ do
-      result <- testOneKeyThroughChain
-                  p
-                  ioSnocket
-                  ioMkAddr
-                  controlAddressSeed
-                  serviceAddressSeed
-                  seedKESPSB
-                  seedDSIGNPSB
-                  genesisTimestamp
-                  certN
-                  agentDelay
-                  nodeDelay
-                  controlDelay
-      cleanUp controlAddressSeed
-      cleanUp serviceAddressSeed
-      return result
+  ioProperty . withLock lock $
+      testOneKeyThroughChain
+        p
+        ioSnocket
+        config
+        seedKESPSB
+        seedDSIGNPSB
+        genesisTimestamp
+        certN
+        agentDelay
+        nodeDelay
+        controlDelay
   where
     ioSnocket = socketSnocket ioManager
-    ioMkAddrName i = "./local" ++ show i
-    ioMkAddr i = SockAddrUnix $ ioMkAddrName i
-
-    cleanUp seed = do
-        catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
-                  (removeFile $ ioMkAddrName seed)
-                  (\_ -> return ())
 
 testOneKeyThroughChainIOSim :: forall c kes
                              . KES c ~ kes
@@ -450,8 +497,7 @@ testOneKeyThroughChainIOSim :: forall c kes
                             => Show (SignKeyWithPeriodKES  kes)
                             => (forall s. VersionedProtocol (KESProtocol (IOSim s) c))
                             => Proxy c
-                            -> Word32
-                            -> Word32
+                            -> IOSimTestNetworkConfig
                             -> PinnedSizedBytes (SeedSizeKES (KES c))
                             -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                             -> Integer
@@ -461,8 +507,7 @@ testOneKeyThroughChainIOSim :: forall c kes
                             -> Word
                             -> Property
 testOneKeyThroughChainIOSim p
-    controlAddressSeed
-    serviceAddressSeed
+    config
     seedKESPSB
     seedDSIGNPSB
     genesisTimestamp
@@ -470,7 +515,6 @@ testOneKeyThroughChainIOSim p
     agentDelay
     nodeDelay
     controlDelay =
-  controlAddressSeed /= serviceAddressSeed ==>
   iosimProperty $
     SimSnocket.withSnocket
       nullTracer
@@ -479,9 +523,7 @@ testOneKeyThroughChainIOSim p
         testOneKeyThroughChain
           p
           snocket
-          (TestAddress . (fromIntegral :: Word32 -> Int))
-          controlAddressSeed
-          serviceAddressSeed
+          (unIOSimTestNetworkConfig config)
           seedKESPSB
           seedDSIGNPSB
           genesisTimestamp
@@ -500,9 +542,7 @@ testOneKeyThroughChain :: forall c m fd addr
                        => UnsoundKESSignAlgorithm m (KES c)
                        => Proxy c
                        -> Snocket m fd addr
-                       -> (Word32 -> addr)
-                       -> Word32
-                       -> Word32
+                       -> TestNetworkConfig m addr
                        -> PinnedSizedBytes (SeedSizeKES (KES c))
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
@@ -513,9 +553,7 @@ testOneKeyThroughChain :: forall c m fd addr
                        -> m Property
 testOneKeyThroughChain p
     snocket
-    mkAddress
-    controlAddressSeed
-    serviceAddressSeed
+    config
     seedKESPSB
     seedDSIGNPSB
     genesisTimestamp
@@ -527,8 +565,6 @@ testOneKeyThroughChain p
     traceMVar <- newMVar []
 
     -- convert quickcheck-generated inputs into things we can use
-    let controlAddress = mkAddress controlAddressSeed
-    let serviceAddress = mkAddress serviceAddressSeed
     let agentDelayDT = (picosecondsToDiffTime $ fromIntegral agentDelay * 1000000)
     let nodeDelayDT = (picosecondsToDiffTime $ fromIntegral nodeDelay * 1000000)
     let controlDelayDT = (picosecondsToDiffTime $ fromIntegral controlDelay * 1000000)
@@ -561,8 +597,7 @@ testOneKeyThroughChain p
         (mvarPrettyTracer traceMVar)
         snocket
         genesisTimestamp
-        controlAddress
-        serviceAddress
+        config
         agentDelayDT
         [(controlDelayDT, controlScript)]
         [(nodeDelayDT, nodeScript)]
@@ -578,8 +613,7 @@ testConcurrentPushesIO :: forall c
                        => Proxy c
                        -> Lock IO
                        -> IOManager
-                       -> Word32
-                       -> Word32
+                       -> TestNetworkConfig IO SockAddr
                        -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
@@ -589,39 +623,25 @@ testConcurrentPushesIO :: forall c
 testConcurrentPushesIO proxyCrypto
     lock
     ioManager
-    controlAddressSeed
-    serviceAddressSeed
+    config
     controlDelaysAndSeedsKESPSB
     seedDSIGNPSB
     genesisTimestamp
     agentDelay
     nodeDelay =
-  controlAddressSeed /= serviceAddressSeed ==>
   not (null controlDelaysAndSeedsKESPSB) ==>
   ioProperty . withLock lock $ do
-      result <- testConcurrentPushes
-                  proxyCrypto
-                  ioSnocket
-                  ioMkAddr
-                  controlAddressSeed
-                  serviceAddressSeed
-                  controlDelaysAndSeedsKESPSB
-                  seedDSIGNPSB
-                  genesisTimestamp
-                  agentDelay
-                  nodeDelay
-      cleanUp controlAddressSeed
-      cleanUp serviceAddressSeed
-      return result
+      testConcurrentPushes
+        proxyCrypto
+        ioSnocket
+        config
+        controlDelaysAndSeedsKESPSB
+        seedDSIGNPSB
+        genesisTimestamp
+        agentDelay
+        nodeDelay
   where
     ioSnocket = socketSnocket ioManager
-    ioMkAddrName i = "./local" ++ show i
-    ioMkAddr i = SockAddrUnix $ ioMkAddrName i
-
-    cleanUp seed = do
-        catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
-                  (removeFile $ ioMkAddrName seed)
-                  (\_ -> return ())
 
 testConcurrentPushesIOSim :: forall c k
                           . (forall s. MonadKES (IOSim s) c)
@@ -631,8 +651,7 @@ testConcurrentPushesIOSim :: forall c k
                          => (forall s. UnsoundKESSignAlgorithm (IOSim s) k)
                          => KES c ~ k
                          => Proxy c
-                         -> Word32
-                         -> Word32
+                         -> IOSimTestNetworkConfig
                          -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
                          -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                          -> Integer
@@ -640,14 +659,12 @@ testConcurrentPushesIOSim :: forall c k
                          -> Word
                          -> Property
 testConcurrentPushesIOSim proxyCrypto
-    controlAddressSeed
-    serviceAddressSeed
+    config
     controlDelaysAndSeedsKESPSB
     seedDSIGNPSB
     genesisTimestamp
     agentDelay
     nodeDelay =
-  controlAddressSeed /= serviceAddressSeed ==>
   not (null controlDelaysAndSeedsKESPSB) ==>
   iosimProperty $
     SimSnocket.withSnocket
@@ -657,9 +674,7 @@ testConcurrentPushesIOSim proxyCrypto
         testConcurrentPushes
             proxyCrypto
             snocket
-            (TestAddress . (fromIntegral :: Word32 -> Int))
-            controlAddressSeed
-            serviceAddressSeed
+            (unIOSimTestNetworkConfig config)
             controlDelaysAndSeedsKESPSB
             seedDSIGNPSB
             genesisTimestamp
@@ -676,9 +691,7 @@ testConcurrentPushes :: forall c m n fd addr
                      => UnsoundKESSignAlgorithm m (KES c)
                      => Proxy c
                      -> Snocket m fd addr
-                     -> (Word32 -> addr)
-                     -> Word32
-                     -> Word32
+                     -> TestNetworkConfig m addr
                      -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
                      -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                      -> Integer
@@ -687,9 +700,7 @@ testConcurrentPushes :: forall c m n fd addr
                      -> m Property
 testConcurrentPushes proxyCrypto
     snocket
-    mkAddress
-    controlAddressSeed
-    serviceAddressSeed
+    config
     controlDelaysAndSeedsKESPSB
     seedDSIGNPSB
     genesisTimestamp
@@ -697,8 +708,6 @@ testConcurrentPushes proxyCrypto
     nodeDelay =
   do
     traceMVar <- newMVar []
-    let controlAddress = mkAddress controlAddressSeed
-    let serviceAddress = mkAddress serviceAddressSeed
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
     let (controlDelays, seedsKESRaw) = unzip controlDelaysAndSeedsKESPSB
@@ -737,8 +746,7 @@ testConcurrentPushes proxyCrypto
       (mvarPrettyTracer traceMVar)
       snocket
       genesisTimestamp
-      controlAddress
-      serviceAddress
+      config
       (delayFromWord agentDelay)
       [ (delayFromWord controlDelay, controlScript sko)
       | (controlDelay, sko) <- zip controlDelays expectedSKOs

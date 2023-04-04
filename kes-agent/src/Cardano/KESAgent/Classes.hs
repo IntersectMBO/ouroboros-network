@@ -45,7 +45,7 @@ class ( MonadAsync m
       , MonadMLock m
       ) => MonadMemoryEffects m
 
-deriving anyclass instance
+deriving anyclass instance {-# OVERLAPPING #-}
       ( MonadAsync m
       , MonadByteStringMemory m
       , MonadCatch m
@@ -74,7 +74,7 @@ class ( Crypto c
       , MonadMemoryEffects m
       ) => MonadKES m c
 
-deriving anyclass instance
+deriving anyclass instance {-# OVERLAPPING #-}
       ( Crypto c
       , Typeable c
       , ContextKES (KES c) ~ ()
@@ -90,6 +90,6 @@ deriving anyclass instance
 class ( ToRawBearer m fd
       ) => MonadNetworking m fd
 
-deriving anyclass instance
+deriving anyclass instance {-# OVERLAPPING #-}
       ( ToRawBearer m fd
       ) => MonadNetworking m fd
