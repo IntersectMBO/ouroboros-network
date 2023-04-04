@@ -282,16 +282,17 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule (replayed, flushed) = do
       copyToImmutableDB cdb >>= scheduleGC'
 
       now <- getMonotonicTime
-      let distance' = prevSnapshotNum + numToWrite
-          elapsed   = (\prev -> now `diffTime` prev) <$> prevSnapshotTime
+      let distance'     = prevSnapshotNum + numToWrite
+          elapsed       = (\prev -> now `diffTime` prev) <$> prevSnapshotTime
+          prevFlushNum' = prevFlushNum + 1
 
       counters' <-
-        if onDiskShouldFlush prevFlushNum
+        if onDiskShouldFlush prevFlushNum'
         then do
           withWriteLock (LgrDB.lgrFlushLock cdbLgrDB) $
             LgrDB.flushLgrDB cdbLgrDB
           pure (counters { prevFlushNum = 0 })
-        else pure counters
+        else pure counters { prevFlushNum = prevFlushNum' }
 
       if onDiskShouldTakeSnapshot elapsed distance' then do
         updateLedgerSnapshots cdb
