@@ -21,7 +21,6 @@
 module Cardano.KESAgent.Tests.Simulation
 ( tests
 , Lock, withLock, mkLock
-, elaborateTracer
 , mvarPrettyTracer
 )
 where
@@ -132,12 +131,6 @@ tests lock tracer ioManager =
       Proxy lock tracer ioManager
   ]
 
-traceShowTee :: Show a => String -> IO a -> IO a
-traceShowTee prefix a = do
-  result <- a
-  traceShowM result
-  return result
-
 data Lock (m :: Type -> Type) =
   Lock
     { acquireLock :: m ()
@@ -192,16 +185,6 @@ testCrypto proxyC lock tracer ioManager =
            unVersionIdentifier .
            versionIdentifier $ (Proxy @(KESProtocol IO c))
 
-{-# NOINLINE elaborateTracerLock #-}
-elaborateTracerLock :: MVar IO ()
-elaborateTracerLock = unsafePerformIO $ newMVar ()
-
-elaborateTracer :: TracePretty a => Tracer IO a
-elaborateTracer = Tracer $ \x -> withMVar elaborateTracerLock $ \() -> do
-  t <- getPOSIXTime
-  putStrLn $ printf "%015.4f %s" (realToFrac t :: Double) (tracePretty x)
-  hFlush stdout
-
 mvarPrettyTracer :: (MonadTime m, MonadMVar m)
                  => MVar m [String]
                  -> (forall a. (Show a, TracePretty a) => Tracer m a)
@@ -241,27 +224,36 @@ instance TracePretty ServiceClientTrace where
 instance TracePretty DriverTrace where
   tracePretty x = drop (strLength "Driver") (show x)
 
--- | Bundles the operations a control client can perform
+-- | The operations a control client can perform: sending keys, and waiting.
 data ControlClientHooks m c =
   ControlClientHooks
     { sendKey :: (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
     , controlClientWait :: DiffTime -> m ()
     }
 
+-- | A control client script is just a monadic action that runs an arbitrary
+-- number of actions.
+type ControlClientScript m c =
+  ControlClientHooks m c -> m ()
+
+-- | The operations a control client can perform: reporting a property (this
+-- will be forwarded to the test result), and waiting.
 data NodeHooks m c =
   NodeHooks
     { reportProperty :: Property -> m ()
     , nodeWait :: DiffTime -> m ()
     }
 
+-- | A node script actually consists of two parts: the 'runNodeScript' action
+-- runs concurrently in the background, allowing the node script to simulate
+-- other activity, such as evolving keys, losing keys, etc.; the 'keyReceived'
+-- action is invoked every time the node receives a key + opcert bundle.
+-- Hook actions can be triggered from either script, as the use case requires.
 data NodeScript m c =
   NodeScript
     { runNodeScript :: NodeHooks m c -> m ()
     , keyReceived :: NodeHooks m c -> (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
     }
-
-type ControlClientScript m c =
-  ControlClientHooks m c -> m ()
 
 newtype PrettyBS = PrettyBS { unPrettyBS :: ByteString }
   deriving newtype Eq
@@ -271,17 +263,47 @@ instance Show PrettyBS where
 
 {- HLINT ignore "Eta reduce" -}
 
+-- | Configuration for a test network.
 data TestNetworkConfig m addr =
   TestNetworkConfig
     { tnControlAddress :: addr
     , tnServiceAddress :: addr
+
+      -- | This can be used to release residual system resources; it will run
+      -- in a 'finally', after the main test payload has finished and all
+      -- network activity has ceased (or should have ceased).
     , tnCleanup :: m ()
+      -- | We need this so we can provide a 'Show' instance without having to demand
+      -- @instance Show addr@
     , tnShow :: String
     }
 
 instance Show (TestNetworkConfig m a) where
   show = tnShow
 
+-- | Kludgy workaround, because we can't have
+-- @instance Arbitrary (forall s. TestNetworkConfig (IOSim s) (TestAddress Int))@
+-- directly, so we use a newtype wrapper to convince GHC that this is what we want.
+newtype IOSimTestNetworkConfig =
+  IOSimTestNetworkConfig {
+    unIOSimTestNetworkConfig :: forall s. TestNetworkConfig (IOSim s) (TestAddress Int)
+  }
+
+instance Arbitrary IOSimTestNetworkConfig where
+  arbitrary = do
+    (c, s) <- arbitrary `suchThat` \(c, s) -> c /= s
+    pure . IOSimTestNetworkConfig $
+      TestNetworkConfig
+        (mkAddr c)
+        (mkAddr s)
+        (return ())
+        ("TestNetworkConfig " ++ show c ++ " " ++ show s)
+    where
+      mkAddr :: Word -> TestAddress Int
+      mkAddr = TestAddress . fromIntegral
+
+
+-- | This is a bit of a kludge so that we can write @instance Show IOSimTestNetworkConfig@.
 forallTnShow :: (forall s. TestNetworkConfig (IOSim s) (TestAddress Int)) -> String
 forallTnShow = tnShow
 
@@ -316,24 +338,11 @@ instance Arbitrary (TestNetworkConfig IO SockAddr) where
                 throwIO e
           )
 
-newtype IOSimTestNetworkConfig =
-  IOSimTestNetworkConfig {
-    unIOSimTestNetworkConfig :: forall s. TestNetworkConfig (IOSim s) (TestAddress Int)
-  }
-
-instance Arbitrary IOSimTestNetworkConfig where
-  arbitrary = do
-    (c, s) <- arbitrary `suchThat` \(c, s) -> c /= s
-    pure . IOSimTestNetworkConfig $
-      TestNetworkConfig
-        (mkAddr c)
-        (mkAddr s)
-        (return ())
-        ("TestNetworkConfig " ++ show c ++ " " ++ show s)
-    where
-      mkAddr :: Word -> TestAddress Int
-      mkAddr = TestAddress . fromIntegral
-
+-- | Run a test network, consisting of one Agent, and an arbitrary number of scripted
+-- control clients and nodes.
+-- Control clients and nodes are defined as scripts (see 'NodeScript' and
+-- 'ControlClientScript'), each with a startup delay, which allows us to randomize the
+-- timing of the network components starting up and doing their things.
 runTestNetwork :: forall c m fd addr
                 . MonadKES m c
                => MonadNetworking m fd
@@ -347,9 +356,9 @@ runTestNetwork :: forall c m fd addr
                -> Integer
                -> TestNetworkConfig m addr
                -> DiffTime
-                  -- | control clients: socket address, startup delay, script
+                  -- | control clients: startup delay, script
                -> [(DiffTime, ControlClientScript m c)]
-                  -- | nodes: socket address, startup delay, script
+                  -- | nodes: startup delay, script
                -> [(DiffTime, NodeScript m c)]
                -> m Property
 runTestNetwork p tracer snocket genesisTimestamp
@@ -368,9 +377,12 @@ runTestNetwork p tracer snocket genesisTimestamp
                           , agentServiceAddr = serviceAddress
                           , agentSnocket = snocket
                           }
+
+        -- Run the single agent.
         agent :: HasCallStack => Tracer m AgentTrace -> m ()
         agent tracer = runAgent p agentOptions tracer
 
+        -- Run one node.
         node :: HasCallStack
              => Tracer m ServiceClientTrace
              -> MVar m Property
@@ -382,6 +394,9 @@ runTestNetwork p tracer snocket genesisTimestamp
                         , nodeWait = threadDelay
                         }
           threadDelay startupDelay
+          -- The node consists of two threads: the first runs the main or
+          -- background activity, the second runs the networking bits and
+          -- calls into 'keyReceived' upon receiving a key from the Agent.
           concurrently_
             (runNodeScript script hooks)
             (
@@ -398,9 +413,9 @@ runTestNetwork p tracer snocket genesisTimestamp
                 `catch` (\(e :: SomeException) -> traceWith tracer $ ServiceClientAbnormalTermination ("NODE: " ++ show e))
             )
 
-        nodes tracer mvar = forConcurrently_ receivers $ node tracer mvar
-        controlClients tracer = forConcurrently_ senders $ controlClient tracer
-
+        -- | Run one control client script. The script may perform multiple
+        -- interactions with the agent; a new control client will be spun up
+        -- for each interaction.
         controlClient :: HasCallStack
                       => Tracer m ControlClientTrace
                       -> (DiffTime, ControlClientScript m c)
@@ -421,6 +436,14 @@ runTestNetwork p tracer snocket genesisTimestamp
             , controlClientWait = threadDelay
             }
 
+        -- | Run all the nodes.
+        nodes tracer mvar = forConcurrently_ receivers $ node tracer mvar
+
+        -- | Run all the control clients.
+        controlClients tracer = forConcurrently_ senders $ controlClient tracer
+
+        -- | This is our watchdog; it will terminate as soon as property is
+        -- pushed to the shared MVar.
         watch :: HasCallStack => MVar m a -> m a
         watch mvar = do
           takeMVar mvar
@@ -430,9 +453,10 @@ runTestNetwork p tracer snocket genesisTimestamp
           (threadDelay $ 5 + maximum (agentDelay : (map fst senders ++ map fst receivers)))
           (race
             -- run these to "completion"
-            (agent tracer `concurrently_`
+            ( agent tracer `concurrently_`
               nodes tracer propertyVar `concurrently_`
-              controlClients tracer)
+              controlClients tracer
+            )
             -- ...until this one finishes
             (watch propertyVar)
           )
@@ -565,9 +589,6 @@ testOneKeyThroughChain p
     traceMVar <- newMVar []
 
     -- convert quickcheck-generated inputs into things we can use
-    let agentDelayDT = (picosecondsToDiffTime $ fromIntegral agentDelay * 1000000)
-    let nodeDelayDT = (picosecondsToDiffTime $ fromIntegral nodeDelay * 1000000)
-    let controlDelayDT = (picosecondsToDiffTime $ fromIntegral controlDelay * 1000000)
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
     expectedSK <- genKeyKES @m @(KES c) seedKES
@@ -598,9 +619,9 @@ testOneKeyThroughChain p
         snocket
         genesisTimestamp
         config
-        agentDelayDT
-        [(controlDelayDT, controlScript)]
-        [(nodeDelayDT, nodeScript)]
+        (delayFromWord agentDelay)
+        [(delayFromWord controlDelay, controlScript)]
+        [(delayFromWord nodeDelay, nodeScript)]
       log <- takeMVar traceMVar
       return $ (counterexample $ unlines log) prop
 
@@ -732,7 +753,6 @@ testConcurrentPushes proxyCrypto
 
     let nodeScript =
           NodeScript
-
             { keyReceived = \hooks (resultSKPVar, resultOC) -> do
                 received <- withCRefValue resultSKPVar $ \resultSKP -> do
                                 skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
