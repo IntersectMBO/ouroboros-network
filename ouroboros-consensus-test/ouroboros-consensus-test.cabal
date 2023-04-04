@@ -344,6 +344,7 @@ benchmark bench-mempool
   main-is:          Main.hs
   other-modules:
     Bench.Consensus.Mempool
+    Bench.Consensus.Mempool.Params
     Bench.Consensus.Mempool.TestBlock
     Bench.Consensus.MempoolWithMockedLedgerItf
 
@@ -351,12 +352,15 @@ benchmark bench-mempool
     , aeson
     , base
     , bytestring
+    , cardano-binary
     , cardano-slotting
     , cassava
     , containers
     , contra-tracer
     , deepseq
     , diff-containers
+    , directory
+    , fs-api
     , nothunks
     , ouroboros-consensus       ^>=0.3.1
     , ouroboros-consensus-test
@@ -365,6 +369,7 @@ benchmark bench-mempool
     , tasty
     , tasty-bench
     , tasty-hunit
+    , temporary
     , text
     , transformers
     , tree-diff
@@ -375,6 +380,7 @@ benchmark bench-mempool
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
     -Wno-unticked-promoted-constructors -rtsopts -with-rtsopts=-A32m
+    -threaded
 
   -- We use this option to avoid skewed results due to changes in cache-line
   -- alignment. See

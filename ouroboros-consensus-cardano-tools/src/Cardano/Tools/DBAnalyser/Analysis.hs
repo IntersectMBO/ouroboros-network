@@ -703,16 +703,6 @@ reproMempoolForge numBlks env = do
 
     ref <- IOLike.newTVarIO (LedgerDB.mkWithAnchor initLedger)
 
-    let getLedgerTablesAtFor pt keys = do
-          lgrDb <- IOLike.atomically $ IOLike.readTVar ref
-          case LedgerDB.rollback pt lgrDb of
-            Nothing -> pure $ Left $ PointNotFound pt
-            Just l  -> do
-              eValues <-
-                getLedgerTablesFor l keys (readKeySets bstore)
-              case eValues of
-                  Right v -> pure $ Right v
-                  Left _  -> getLedgerTablesAtFor pt keys
     mempool <- Mempool.openMempoolWithoutSyncThread
       Mempool.LedgerInterface {
           Mempool.getCurrentLedgerState = ledgerState . LedgerDB.current <$> IOLike.readTVar ref
@@ -720,7 +710,8 @@ reproMempoolForge numBlks env = do
             let keys = ExtLedgerStateTables
                   $ foldl' (zipLedgerTables (<>)) emptyLedgerTables
                   $ map getTransactionKeySets txs
-            fmap unExtLedgerStateTables <$> getLedgerTablesAtFor pt keys
+            lgrDb <- IOLike.atomically $ IOLike.readTVar ref
+            fmap unExtLedgerStateTables <$> getLedgerTablesAtFor pt keys lgrDb bstore
       }
       lCfg
       -- one megabyte should generously accomodate two blocks' worth of txs

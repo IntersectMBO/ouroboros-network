@@ -86,6 +86,8 @@ import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog hiding (flush)
 import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
+                     (PointNotFound, readKeySets)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets as ReadsKeySets
 import           Ouroboros.Consensus.Storage.LedgerDB.Stream
 import           Ouroboros.Consensus.Storage.Serialisation
 import           Ouroboros.Consensus.Util.Args
@@ -561,13 +563,6 @@ getLedgerTablesAtFor ::
   -> m (Either
         (PointNotFound blk)
         (LedgerTables (ExtLedgerState blk) ValuesMK))
-getLedgerTablesAtFor pt keys lgr@LgrDB{ varDB, lgrBackingStore } = do
-  lgrDb <- atomically $ readTVar varDB
-  case LedgerDB.rollback pt lgrDb of
-    Nothing -> pure $ Left $ PointNotFound pt
-    Just l  -> do
-      eValues <-
-        getLedgerTablesFor l keys (readKeySets lgrBackingStore)
-      case eValues of
-        Right v -> pure $ Right v
-        Left _  -> getLedgerTablesAtFor pt keys lgr
+getLedgerTablesAtFor pt keys LgrDB{ varDB, lgrBackingStore } = do
+  lgrDb <- readTVarIO varDB
+  ReadsKeySets.getLedgerTablesAtFor pt keys lgrDb lgrBackingStore

@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | How to rewind, read and forward a set of keys through a db changelog,
@@ -9,6 +10,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets (
     -- * Read
   , KeySetsReader
   , PointNotFound (..)
+  , getLedgerTablesAtFor
   , getLedgerTablesFor
   , readKeySets
   , readKeySetsWith
@@ -23,11 +25,13 @@ module Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets (
 import           Cardano.Slotting.Slot
 import           Data.Map.Diff.Strict.Internal (unsafeApplyDiffForKeys)
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Ledger.Basics (IsLedger)
 import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.Query (rollback)
 import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
@@ -113,6 +117,29 @@ withHydratedLedgerState st dbch urs f =
 
 -- | The requested point is not found on the ledger db
 data PointNotFound blk = PointNotFound !(Point blk) deriving (Eq, Show)
+
+getLedgerTablesAtFor ::
+     ( HeaderHash l ~ HeaderHash blk
+     , HasHeader blk
+     , IsLedger l
+     , HasTickedLedgerTables l
+     , IOLike m
+     , StandardHash l
+     )
+  => Point blk
+  -> LedgerTables l KeysMK
+  -> LedgerDB l
+  -> LedgerBackingStore m l
+  -> m (Either (PointNotFound blk) (LedgerTables l ValuesMK))
+getLedgerTablesAtFor pt keys lgrDb lbs =
+  case rollback pt lgrDb of
+    Nothing -> pure $ Left $ PointNotFound pt
+    Just l  -> do
+      eValues <-
+        getLedgerTablesFor l keys (readKeySets lbs)
+      case eValues of
+        Right v -> pure $ Right v
+        Left _  -> getLedgerTablesAtFor pt keys lgrDb lbs
 
 -- | Read and forward the values up to the tip of the given ledger db. Returns
 -- Left if the anchor moved. If Left is returned, then the caller was just

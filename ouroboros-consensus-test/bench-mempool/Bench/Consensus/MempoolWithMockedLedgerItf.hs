@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns   #-}
 
 -- | Mempool with a mocked ledger interface
 module Bench.Consensus.MempoolWithMockedLedgerItf (
@@ -8,25 +7,33 @@ module Bench.Consensus.MempoolWithMockedLedgerItf (
   , MempoolWithMockedLedgerItf (getMempool)
   , getTxs
   , openMempoolWithMockedLedgerItf
-  , setLedgerState
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict (StrictTVar,
-                     atomically, newTVarIO, readTVar, readTVarIO, writeTVar)
+import           Bench.Consensus.Mempool.Params
+                     (InitialMempoolAndModelParams (..))
+import           Control.Concurrent.Class.MonadSTM.Strict
+                     (MonadSTM (atomically))
 import           Control.DeepSeq (NFData (rnf))
-import           Control.Tracer (Tracer)
+import           Control.Tracer (Tracer, nullTracer)
 import           Data.Foldable (foldMap')
 import           Ouroboros.Consensus.HeaderValidation as Header
-import           Ouroboros.Consensus.Ledger.Basics (LedgerState, ValuesMK)
-import qualified Ouroboros.Consensus.Ledger.Basics as Ledger
+import           Ouroboros.Consensus.Ledger.Basics (LedgerState)
 import qualified Ouroboros.Consensus.Ledger.SupportsMempool as Ledger
+import qualified Ouroboros.Consensus.Ledger.Tables as Ledger
 import qualified Ouroboros.Consensus.Ledger.Tables.Utils as Ledger
 import           Ouroboros.Consensus.Mempool (Mempool)
 import qualified Ouroboros.Consensus.Mempool as Mempool
+import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets as LedgerDB
+import qualified Ouroboros.Consensus.Storage.LedgerDB.Update as LedgerDB
+import           System.Directory (getTemporaryDirectory)
+import           System.FS.API (SomeHasFS (SomeHasFS))
+import           System.FS.API.Types (MountPoint (MountPoint))
+import           System.FS.IO (ioHasFS)
+import           System.IO.Temp (createTempDirectory)
 
 data MempoolWithMockedLedgerItf m blk = MempoolWithMockedLedgerItf {
       getLedgerInterface :: !(Mempool.LedgerInterface m blk)
-    , getLedgerStateTVar :: !(StrictTVar m (LedgerState blk ValuesMK))
     , getMempool         :: !(Mempool m blk)
     }
 
@@ -41,51 +48,65 @@ instance NFData (MempoolWithMockedLedgerItf m blk) where
   -- benchmarks, maybe this definition is enough.
   rnf MempoolWithMockedLedgerItf {} = ()
 
-data InitialMempoolAndModelParams blk = MempoolAndModelParams {
-      immpInitialState :: !(Ledger.LedgerState blk ValuesMK)
-    , immpLedgerConfig :: !(Ledger.LedgerConfig blk)
-    }
-
 openMempoolWithMockedLedgerItf ::
      ( Ledger.LedgerSupportsMempool blk
      , Ledger.HasTxId (Ledger.GenTx blk)
      , Header.ValidateEnvelope blk
+     , Ledger.CanSerializeLedgerTables (LedgerState blk)
      )
   => Mempool.MempoolCapacityBytesOverride
   -> Tracer IO (Mempool.TraceEventMempool blk)
   -> (Ledger.GenTx blk -> Mempool.TxSizeInBytes)
-  -> InitialMempoolAndModelParams blk
+  -> InitialMempoolAndModelParams IO blk
     -- ^ Initial ledger state for the mocked Ledger DB interface.
   -> IO (MempoolWithMockedLedgerItf IO blk)
 openMempoolWithMockedLedgerItf capacityOverride tracer txSizeImpl params = do
-    currentLedgerStateTVar <- newTVarIO (immpInitialState params)
+    -- Set up a backing store with initial values
+    sysTmpDir <- getTemporaryDirectory
+    tmpDir <- createTempDirectory sysTmpDir "mempool-bench"
+    let lbsi = LedgerDB.newBackingStoreInitialiser nullTracer bss
+        sfhs = SomeHasFS $ ioHasFS $ MountPoint tmpDir
+        values = Ledger.projectLedgerTables initialState
+    lbs <- LedgerDB.newBackingStore lbsi sfhs values
+
+    -- Set up an empty changelog and populate it by applying blocks
+    let ldb0 = LedgerDB.mkWithAnchor $ Ledger.forgetLedgerTables initialState
+    ldb <- LedgerDB.pushMany
+              (const $ pure ())
+              ldbcfg
+              (fmap LedgerDB.ReapplyVal blks)
+              (LedgerDB.readKeySets lbs)
+              ldb0
+
+    -- Create a ledger interface, mimicking @getLedgerTablesAtFor@ from the
+    -- @ChainDB.Impl.LgrDB@ module.
     let ledgerItf = Mempool.LedgerInterface {
-            Mempool.getCurrentLedgerState = Ledger.forgetLedgerTables <$>
-              readTVar currentLedgerStateTVar
-          , Mempool.getLedgerTablesAtFor = \_pt txs -> do
+            Mempool.getCurrentLedgerState = pure $ LedgerDB.current ldb
+          , Mempool.getLedgerTablesAtFor = \pt txs -> do
               let keys = foldMap' Ledger.getTransactionKeySets txs
-              st <- readTVarIO currentLedgerStateTVar
-              let values = Ledger.restrictValues st keys
-              pure (Right values)
+              LedgerDB.getLedgerTablesAtFor pt keys ldb lbs
           }
+
+    -- Open a mempool
     mempool <- Mempool.openMempoolWithoutSyncThread
                    ledgerItf
-                   (immpLedgerConfig params)
+                   lcfg
                    capacityOverride
                    tracer
                    txSizeImpl
     pure MempoolWithMockedLedgerItf {
         getLedgerInterface = ledgerItf
-      , getLedgerStateTVar = currentLedgerStateTVar
       , getMempool         = mempool
     }
+  where
+    MempoolAndModelParams {
+        immpInitialState         = initialState
+      , immpLedgerConfig         = ldbcfg
+      , immpBackingStoreSelector = bss
+      , immpBlocks               = blks
+      } = params
 
-setLedgerState ::
-     MempoolWithMockedLedgerItf IO blk
-  -> LedgerState blk ValuesMK
-  -> IO ()
-setLedgerState MempoolWithMockedLedgerItf {getLedgerStateTVar} newSt =
-  atomically $ writeTVar getLedgerStateTVar newSt
+    lcfg = LedgerDB.ledgerDbCfg ldbcfg
 
 getTxs ::
      (Ledger.LedgerSupportsMempool blk)
