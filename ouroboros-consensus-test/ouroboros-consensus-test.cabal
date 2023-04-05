@@ -193,7 +193,6 @@ test-suite test-consensus
     , random
     , serialise
     , tasty
-    , tasty-expected-failure
     , tasty-hunit
     , tasty-quickcheck
     , temporary
