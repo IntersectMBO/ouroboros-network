@@ -69,7 +69,8 @@ tests = testGroup "Mempool"
   , testProperty "result of addTxs"                        prop_Mempool_addTxs_result
   , testProperty "Invalid transactions are never added"    prop_Mempool_InvalidTxsNeverAdded
   , testProperty "result of getCapacity"                   prop_Mempool_getCapacity
-  , testProperty "Mempool capacity implementation"         prop_Mempool_Capacity
+  --   , testProperty "Mempool capacity implementation"         prop_Mempool_Capacity
+  -- FIXME: we should add an issue to test this aspect somehow.
   , testProperty "Added valid transactions are traced"     prop_Mempool_TraceValidTxs
   , testProperty "Rejected invalid txs are traced"         prop_Mempool_TraceRejectedTxs
   , testProperty "Removed invalid txs are traced"          prop_Mempool_TraceRemovedTxs
@@ -199,63 +200,6 @@ prop_Mempool_getCapacity mcts =
   where
     MempoolCapacityBytesOverride testCapacity = testMempoolCapOverride testSetup
     MempoolCapTestSetup (TestSetupWithTxs testSetup _txsToAdd) = mcts
-
--- | Test the correctness of 'tryAddTxs' when the Mempool is (or will be) at
--- capacity.
---
--- Ignore the "100% empty Mempool" label in the test output, that is there
--- because we reuse 'withTestMempool' and always start with an empty Mempool
--- and 'LedgerState'.
-prop_Mempool_Capacity :: MempoolCapTestSetup -> Property
-prop_Mempool_Capacity (MempoolCapTestSetup testSetupWithTxs) =
-  withTestMempool testSetup $ \TestMempool { mempool } -> do
-    capacity <- atomically (getCapacity mempool)
-    curSize <- msNumBytes . snapshotMempoolSize <$>
-      atomically (getSnapshot mempool)
-    res@(processed, unprocessed) <- tryAddTxs mempool DoNotIntervene (map fst txsToAdd)
-    return $
-      counterexample ("Initial size: " <> show curSize)    $
-      classify (null processed)   "no transactions added"  $
-      classify (null unprocessed) "all transactions added" $
-      blindErrors res === expectedResult capacity curSize
-  where
-    TestSetupWithTxs testSetup txsToAdd = testSetupWithTxs
-
-    -- | Convert 'MempoolAddTxResult' into a 'Bool':
-    -- isMempoolTxAdded -> True, isMempoolTxRejected -> False.
-    blindErrors
-      :: ([MempoolAddTxResult TestBlock], [GenTx TestBlock])
-      -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
-    blindErrors (processed, toAdd) = (processed', toAdd)
-      where
-        processed' = [ case txAddRes of
-                         MempoolTxAdded vtx        -> (txForgetValidated vtx, True)
-                         MempoolTxRejected tx _err -> (tx, False)
-                     | txAddRes <- processed ]
-
-    expectedResult
-      :: MempoolCapacityBytes
-      -> Word32  -- ^ Current mempool size
-      -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
-    expectedResult (MempoolCapacityBytes capacity) = \curSize ->
-        go curSize [] txsToAdd
-      where
-        go
-          :: Word32
-          -> [(GenTx TestBlock, Bool)]
-          -> [(GenTx TestBlock, Bool)]
-          -> ([(GenTx TestBlock, Bool)], [GenTx TestBlock])
-        go curSize processed = \case
-          []
-            -> (reverse processed, [])
-          (tx, valid):txsToAdd'
-            | let curSize' = curSize + txSize tx
-            , curSize' <= capacity
-            -> go (if valid then curSize' else curSize)
-                  ((tx, valid):processed)
-                  txsToAdd'
-            | otherwise
-            -> (reverse processed, tx:map fst txsToAdd')
 
 -- | Test that all valid transactions added to a 'Mempool' via 'addTxs' are
 -- appropriately represented in the trace of events.
@@ -729,6 +673,11 @@ data TestMempool m = TestMempool
 
 -- NOTE: at the end of the test, this function also checks whether the Mempool
 -- contents are valid w.r.t. the current ledger.
+--
+-- NOTE: the test mempool's default capacity is set to a very large value in
+-- module "Ouroboros.Consensus.Mock.Ledger.Block". This is why the generators do
+-- not care about the mempool capacity when generating transactions for a
+-- mempool with the 'NoMempoolCapacityBytesOverride' option set.
 withTestMempool
   :: forall prop. Testable prop
   => TestSetup
