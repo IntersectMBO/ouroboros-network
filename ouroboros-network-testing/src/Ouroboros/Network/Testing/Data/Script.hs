@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia       #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Ouroboros.Network.Testing.Data.Script
   ( -- * Test scripts
@@ -20,6 +21,7 @@ module Ouroboros.Network.Testing.Data.Script
     -- * Timed scripts
   , ScriptDelay (..)
   , TimedScript
+  , singletonTimedScript
   , playTimedScript
     -- * Pick scripts
   , PickScript
@@ -127,6 +129,11 @@ instance Arbitrary a => Arbitrary (Script a) where
 --
 
 type TimedScript a = Script (a, ScriptDelay)
+
+-- | Timed script which consists of a single element.
+--
+singletonTimedScript :: a -> TimedScript a
+singletonTimedScript = singletonScript . (,NoDelay)
 
 data ScriptDelay = NoDelay | ShortDelay | LongDelay | Delay DiffTime
   deriving (Eq, Show)
