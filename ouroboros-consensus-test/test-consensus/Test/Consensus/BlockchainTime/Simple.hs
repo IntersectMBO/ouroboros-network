@@ -37,6 +37,7 @@
 module Test.Consensus.BlockchainTime.Simple (tests) where
 
 import           Control.Applicative (Alternative (..))
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import qualified Control.Monad.Class.MonadSTM.Internal as LazySTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Except
@@ -358,6 +359,7 @@ newtype OverrideDelay m a = OverrideDelay {
            , MonadCatch
            , MonadMask
            , MonadMonotonicTime
+           , MonadMVar
            , MonadTime
            , MonadThread
            , MonadFork
