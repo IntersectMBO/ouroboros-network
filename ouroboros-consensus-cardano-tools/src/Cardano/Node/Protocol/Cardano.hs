@@ -33,7 +33,6 @@ import           Cardano.Api.Any
 import           Cardano.Api.Protocol.Types
 
 import           Cardano.Ledger.BaseTypes (natVersion)
-import           Cardano.Ledger.Conway.Genesis (cgGenDelegs)
 import           Cardano.Ledger.Shelley.Translation
                      (toFromByronTranslationContext)
 
@@ -310,7 +309,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
         }
         -- Babbage to Conway hard fork parameters
         Consensus.ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = cgGenDelegs conwayGenesis,
+          transitionTranslationContext = conwayGenesis,
           transitionTrigger =
              case npcTestConwayHardForkAtEpoch of
                 Nothing -> Consensus.TriggerHardForkAtVersion

@@ -42,8 +42,7 @@ import qualified Cardano.Crypto.Hash.Class as CryptoClass
 import           Cardano.Crypto.Raw (Raw)
 import qualified Cardano.Ledger.Alonzo.Genesis as SL (AlonzoGenesis)
 import qualified Cardano.Ledger.BaseTypes as SL (natVersion)
-import qualified Cardano.Ledger.Conway.Genesis as SL
-                     (ConwayGenesis (cgGenDelegs))
+import qualified Cardano.Ledger.Conway.Genesis as SL (ConwayGenesis)
 import qualified Cardano.Ledger.Core as Core
 import           Cardano.Ledger.Crypto
 import qualified Cardano.Ledger.Shelley.Translation as SL
@@ -253,7 +252,7 @@ instance Aeson.FromJSON CardanoConfig where
         :* f "TestMaryHardForkAtEpoch"    4 (\_ -> ())
         :* f "TestAlonzoHardForkAtEpoch"  5 ((\(_, ag, _) -> ag))
         :* f "TestBabbageHardForkAtEpoch" 7 (\_ -> ())
-        :* f "TestConwayHardForkAtEpoch"  9 (\(_, _, cg) -> SL.cgGenDelegs cg)
+        :* f "TestConwayHardForkAtEpoch"  9 (\(_, _, cg) -> cg)
         :* Nil
 
       let isBad :: NP ShelleyTransitionArguments xs -> Bool
