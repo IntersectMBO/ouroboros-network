@@ -166,6 +166,10 @@ implTryAddTx istate cfg txSize wti tx = do
 -- | Craft a 'TryAddTx' value containing the resulting state if applicable, the
 -- tracing event and the result of adding this transaction. See the
 -- documentation of 'implTryAddTx' for some more context.
+--
+-- It returns 'NoSpaceLeft' only when the current mempool size is bigger or
+-- equal than then mempool capacity. Otherwise it will validate the transaction
+-- and add it to the mempool if there is at least one byte free on the mempool.
 pureTryAddTx
   :: ( LedgerSupportsMempool blk
      , HasTxId (GenTx blk)
@@ -181,12 +185,10 @@ pureTryAddTx
      -- ^ The current internal state of the mempool.
   -> TryAddTx blk
 pureTryAddTx cfg txSize wti tx is
-  | let size    = txSize tx
-        curSize = msNumBytes  $ isMempoolSize is
-  , curSize + size > getMempoolCapacityBytes (isCapacity is)
-  = NoSpaceLeft
-  | otherwise
-  = case eVtx of
+  | let curSize = msNumBytes  $ isMempoolSize is
+  , curSize < getMempoolCapacityBytes (isCapacity is)
+  = -- We add the transaction if there is at least one byte free left in the mempool.
+  case eVtx of
       -- We only extended the ValidationResult with a single transaction
       -- ('tx'). So if it's not in 'vrInvalid', it must be in 'vrNewValid'.
       Right vtx ->
@@ -210,6 +212,8 @@ pureTryAddTx cfg txSize wti tx is
                err
                (isMempoolSize is)
               )
+  | otherwise
+  = NoSpaceLeft
     where
       (eVtx, vr) = extendVRNew cfg txSize wti tx $ validationResultFromIS is
       is'        = internalStateFromVR vr
