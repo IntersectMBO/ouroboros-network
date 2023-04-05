@@ -20,7 +20,6 @@ import           Cardano.Api.Any
 import           Cardano.Api.Protocol.Types
 import qualified Cardano.Chain.Update as Byron
 import           Cardano.Ledger.BaseTypes (natVersion)
-import           Cardano.Ledger.Conway.Genesis (cgGenDelegs)
 import           Cardano.Ledger.Shelley.Translation
                      (toFromByronTranslationContext)
 import qualified Cardano.Node.Protocol.Alonzo as Alonzo
@@ -305,7 +304,7 @@ mkSomeConsensusProtocolCardano NodeByronProtocolConfiguration {
         }
         -- Babbage to Conway hard fork parameters
         Consensus.ProtocolTransitionParamsShelleyBased {
-          transitionTranslationContext = cgGenDelegs conwayGenesis,
+          transitionTranslationContext = conwayGenesis,
           transitionTrigger =
              case npcTestConwayHardForkAtEpoch of
                 Nothing -> Consensus.TriggerHardForkAtVersion

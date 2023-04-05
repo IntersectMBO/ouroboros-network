@@ -14,6 +14,7 @@ import           Cardano.Chain.ProtocolConstants (kEpochSlots)
 import           Cardano.Chain.Slotting (unEpochSlots)
 import qualified Cardano.Chain.Update as CC.Update
 import qualified Cardano.Ledger.BaseTypes as SL
+import qualified Cardano.Ledger.Conway.Genesis as SL
 import qualified Cardano.Ledger.Shelley.API as SL
 import qualified Cardano.Ledger.Shelley.Core as SL
 import qualified Cardano.Ledger.Shelley.Translation as SL
@@ -550,7 +551,7 @@ mkProtocolCardanoAndHardForkTxs
             transitionTranslationContext =
               -- Note that this is effectively a no-op, which is fine for
               -- testing, at least for now.
-              SL.GenDelegs $ sgGenDelegs genesisShelley
+              SL.ConwayGenesis $ SL.GenDelegs $ sgGenDelegs genesisShelley
           , transitionTrigger            =
               TriggerHardForkAtVersion $ SL.getVersion conwayMajorVersion
           }
