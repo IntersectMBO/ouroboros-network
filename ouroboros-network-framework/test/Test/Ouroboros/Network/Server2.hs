@@ -3148,7 +3148,8 @@ withNameTraceEvents = fmap wnEvent
               @()
               @(WithName (Name SimAddr) b)
 
-withTimeNameTraceEvents :: forall b. Typeable b => SimTrace ()
+withTimeNameTraceEvents :: forall b. Typeable b
+                        => SimTrace ()
                         -> Trace (SimResult ()) (WithTime b)
 withTimeNameTraceEvents = fmap (\(WithTime t (WithName _ e)) -> WithTime t e)
           . Trace.filter ((MainServer ==) . wnName . wtEvent)

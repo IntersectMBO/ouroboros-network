@@ -88,7 +88,7 @@ withPeerSelectionActions
   toPeerAddr
   dnsSemaphore
   dnsActions
-  readTargets
+  readPeerSelectionTargets
   readLocalRootPeers
   readPublicRootPeers
   peerSharing
@@ -100,14 +100,14 @@ withPeerSelectionActions
   k = do
     localRootsVar <- newTVarIO mempty
     let peerSelectionActions = PeerSelectionActions {
-            readPeerSelectionTargets = readTargets,
+            readPeerSelectionTargets,
             readLocalRootPeers = readTVar localRootsVar,
             readNewInboundConnection = readNewInboundConnections,
             peerSharing,
             peerConnToPeerSharing,
-            requestPublicRootPeers = requestPublicRootPeers,
+            requestPublicRootPeers,
             requestBigLedgerPeers,
-            requestPeerShare = requestPeerShare,
+            requestPeerShare,
             peerStateActions
           }
     withAsync
