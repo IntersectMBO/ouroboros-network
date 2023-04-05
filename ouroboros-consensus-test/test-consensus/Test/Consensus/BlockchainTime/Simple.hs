@@ -25,6 +25,7 @@ import           Test.Tasty hiding (after)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck hiding (Fixed)
 
+import           Control.Monad.Class.MonadMVar (MonadMVar)
 import qualified Control.Monad.Class.MonadSTM.Internal as LazySTM
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.IOSim
@@ -333,6 +334,7 @@ newtype OverrideDelay m a = OverrideDelay {
            , MonadCatch
            , MonadMask
            , MonadMonotonicTime
+           , MonadMVar
            , MonadTime
            , MonadThread
            , MonadFork
