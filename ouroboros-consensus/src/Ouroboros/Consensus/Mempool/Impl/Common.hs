@@ -38,7 +38,7 @@ module Ouroboros.Consensus.Mempool.Impl.Common (
   ) where
 
 import           Control.Exception (assert)
-import           Control.Monad.Class.MonadMVar (MVar, newEmptyMVar)
+import           Control.Monad.Class.MonadMVar (MVar, newMVar)
 import           Control.Monad.Trans.Except (runExcept)
 import           Control.Tracer
 import           Data.Maybe (isNothing)
@@ -60,7 +60,7 @@ import qualified Ouroboros.Consensus.Mempool.TxSeq as TxSeq
 import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Consensus.Util (repeatedly)
-import           Ouroboros.Consensus.Util.IOLike hiding (newEmptyMVar)
+import           Ouroboros.Consensus.Util.IOLike hiding (newEmptyMVar, newMVar)
 {-------------------------------------------------------------------------------
   Internal State
 -------------------------------------------------------------------------------}
@@ -205,8 +205,8 @@ initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
     let (slot, st') = tickLedgerState cfg (ForgeInUnknownSlot st)
     isVar <- newTVarIO $ initInternalState capacityOverride TxSeq.zeroTicketNo slot st'
-    addTxRemoteFifo <- newEmptyMVar
-    addTxAllFifo    <- newEmptyMVar
+    addTxRemoteFifo <- newMVar ()
+    addTxAllFifo    <- newMVar ()
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg
