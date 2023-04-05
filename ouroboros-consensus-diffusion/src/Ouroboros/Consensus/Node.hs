@@ -701,17 +701,20 @@ stdChainSyncTimeout = do
     -- f = 0.05
     -- The timeout is randomly picked per bearer to avoid all bearers
     -- going down at the same time in case of a long streak of empty
-    -- slots. TODO: workaround until peer selection governor.
-    mustReplyTimeout <- Just <$> randomElem [90, 135, 180, 224, 269]
+    -- slots.
+    -- To avoid global synchronosation the timeout is picked uniformly
+    -- from the interval 135 - 269, corresponds to the a 99.9% to
+    -- 99.9999% thresholds.
+    -- TODO: The timeout should be drawn at random everytime chainsync
+    --       enters the must reply state. A static per connection timeout
+    --       leads to selection preassure for connections with a large
+    --       timeout, see #4244.
+    mustReplyTimeout <- Just <$> realToFrac <$> randomRIO (135,269 :: Double)
     return NTN.ChainSyncTimeout
       { canAwaitTimeout  = shortWait
       , intersectTimeout = shortWait
       , mustReplyTimeout
       }
-  where
-    randomElem xs = do
-      ix <- randomRIO (0, length xs - 1)
-      return $ xs !! ix
 
 stdVersionDataNTN :: NetworkMagic
                   -> DiffusionMode
