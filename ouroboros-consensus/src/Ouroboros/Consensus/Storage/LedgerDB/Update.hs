@@ -1,20 +1,15 @@
 {-# LANGUAGE ConstraintKinds          #-}
 {-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE DeriveAnyClass           #-}
 {-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE FunctionalDependencies   #-}
 {-# LANGUAGE GADTs                    #-}
-{-# LANGUAGE MultiParamTypeClasses    #-}
-{-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE QuantifiedConstraints    #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE StandaloneDeriving       #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE UndecidableInstances     #-}
 
@@ -51,6 +46,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.Update (
   , PushStart (..)
   , Pushing (..)
   , UpdateLedgerDbTraceEvent (..)
+  , advanceImmutableSeq
   ) where
 
 import           Control.Monad.Except hiding (ap)
@@ -59,12 +55,15 @@ import           Data.Functor.Identity
 import           Data.Kind (Constraint, Type)
 import           Data.Word
 import           GHC.Generics
+import           GHC.Stack (HasCallStack)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (DbChangelog)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DbChangelog as DbChangelog
+import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq hiding (empty,
+                     extend)
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.Query as Query
 import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
@@ -72,6 +71,7 @@ import           Ouroboros.Consensus.Util
 import           Ouroboros.Network.AnchoredSeq (Anchorable (..),
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredSeq as AS
+import           Prelude hiding (splitAt)
 
 {-------------------------------------------------------------------------------
   Apply blocks
@@ -115,7 +115,7 @@ toRealPoint (Weaken ap)      = toRealPoint ap
 -- | Apply block to the current ledger state
 --
 -- We take in the entire 'LedgerDB' because we record that as part of errors.
-applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
+applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c, HasCallStack)
            => LedgerCfg l
            -> Ap m l blk c
            -> KeySetsReader m l
@@ -142,8 +142,8 @@ applyBlock cfg ap ksReader db = case ap of
     l = Query.current db
 
     withValues :: blk -> (l ValuesMK -> m (l DiffMK)) -> m (l DiffMK)
-    withValues b f =
-      withKeysReadSets l ksReader (ledgerDbChangelog db) (getBlockKeySets b) f
+    withValues b =
+      withKeysReadSets l ksReader (ledgerDbChangelog db) (getBlockKeySets b)
 
 {-------------------------------------------------------------------------------
   Resolving blocks maybe from disk
@@ -302,7 +302,7 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-push :: forall m c l blk. (ApplyBlock l blk, Monad m, StandardHash l, c)
+push :: forall m c l blk. (ApplyBlock l blk, Monad m, StandardHash l, c, HasCallStack)
      => LedgerDbCfg l
      -> Ap m l blk c -> KeySetsReader m l -> LedgerDB l -> m (LedgerDB l)
 push cfg ap ksReader db =
@@ -311,11 +311,11 @@ push cfg ap ksReader db =
 
 -- | Push a bunch of blocks (oldest first)
 pushMany ::
-     forall m c l blk . (ApplyBlock l blk, Monad m, StandardHash l, c)
+     forall m c l blk . (ApplyBlock l blk, Monad m, StandardHash l, c, HasCallStack)
   => (Pushing blk -> m ())
   -> LedgerDbCfg l
   -> [Ap m l blk c] -> KeySetsReader m l -> LedgerDB l -> m (LedgerDB l)
-pushMany trace cfg aps ksReader initDb = (repeatedlyM pushAndTrace) aps initDb
+pushMany trace cfg aps ksReader = repeatedlyM pushAndTrace aps
   where
     pushAndTrace ap db = do
       let pushing = Pushing . toRealPoint $ ap
@@ -323,7 +323,7 @@ pushMany trace cfg aps ksReader initDb = (repeatedlyM pushAndTrace) aps initDb
       push cfg ap ksReader db
 
 -- | Switch to a fork
-switch :: (ApplyBlock l blk, Monad m, StandardHash l, c)
+switch :: (ApplyBlock l blk, Monad m, StandardHash l, c, HasCallStack)
        => LedgerDbCfg l
        -> Word64          -- ^ How many blocks to roll back
        -> (UpdateLedgerDbTraceEvent blk -> m ())
@@ -344,7 +344,7 @@ switch cfg numRollbacks trace newBlocks ksReader db =
         (firstBlock:_) -> do
           let start   = PushStart . toRealPoint $ firstBlock
               goal    = PushGoal  . toRealPoint . last $ newBlocks
-          Right <$> pushMany (trace . (StartedPushingBlockToTheLedgerDb start goal))
+          Right <$> pushMany (trace . StartedPushingBlockToTheLedgerDb start goal)
                                      cfg
                                      newBlocks
                                      ksReader
@@ -408,3 +408,40 @@ switch' cfg n bs bk db =
     case runIdentity $ switch cfg n (const $ pure ()) (map pureBlock bs) bk db of
       Left  ExceededRollback{} -> Nothing
       Right db'                -> Just db'
+
+{-------------------------------------------------------------------------------
+  Reconciling a flushed LedgerDB
+-------------------------------------------------------------------------------}
+
+-- | At some points, we can find that a value of the LedgerDB that we have been
+-- using to perform some validation is no longer in sync with the backing store
+-- as a background thread has flushed some differences into the backing store,
+-- but we don't want to read the new state and revalidate again. In these cases,
+-- we can use this function to advance the validated state.
+--
+-- The principle is simple: the background flush can only have acted up until
+-- the immutable tip, so we can just drop states from the beginning of the new
+-- sequence of diffs and immutable states until we reach the anchor that the
+-- flushed state points to, as we are guaranteed that those will be immutable
+-- states.
+advanceImmutableSeq ::
+     (HasLedgerTables l, GetTip l, HasCallStack)
+  => LedgerDB l
+  -> LedgerDB l
+  -> LedgerDB l
+advanceImmutableSeq
+  (LedgerDB (DbChangelog.DbChangelog _ origDiffs origImm origVol))
+  (LedgerDB (DbChangelog.DbChangelog flushedAnch _ _ _)) =
+  let
+    (dropping, imm') = case AS.splitAfterMeasure flushedAnch (const True) origImm of
+      Just v  -> v
+      Nothing ->
+        error "Critical error: a state has been flushed that was not an \
+              \ immutable state in some value that we were holding in memory. \
+              \ This means something went horribly wrong, and in fact we could \
+              \ have rolled back more than k if this value ended up being used."
+    diffs' = mapLedgerTables splitDiffs origDiffs
+    splitDiffs :: (Ord k, Eq v) => SeqDiffMK k v -> SeqDiffMK k v
+    splitDiffs (SeqDiffMK sq) = SeqDiffMK $ snd $ splitAt (AS.length dropping) sq
+  in
+  LedgerDB (DbChangelog.DbChangelog flushedAnch diffs' imm' origVol)

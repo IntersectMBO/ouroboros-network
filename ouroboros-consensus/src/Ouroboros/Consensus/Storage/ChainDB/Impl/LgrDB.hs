@@ -43,6 +43,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
   , getLedgerTablesAtFor
     -- * Flush lock
   , acquireLDBReadView
+  , acquireLDBReadView'
   , flushLgrDB
     -- * Re-exports
   , LedgerDB.AnnLedgerError (..)
@@ -60,7 +61,6 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
 import           Codec.CBOR.Decoding (Decoder)
 import           Codec.CBOR.Encoding (Encoding)
 import           Codec.Serialise (Serialise (decode))
-import           Control.Exception (assert)
 import           Control.Monad.Trans.Class
 import           Control.Tracer
 import           Data.Foldable (foldl')
@@ -192,8 +192,8 @@ defaultArgs lgrHasFS diskPolicy bss = LgrDbArgs {
 
 -- | Open the ledger DB
 --
--- In addition to the ledger DB also returns the number of immutable blocks
--- that were replayed.
+-- In addition to the ledger DB also returns the number of immutable blocks that
+-- were replayed, and the distance in number of blocks since the last flush.
 openDB :: forall m blk.
           ( IOLike m
           , LedgerSupportsProtocol blk
@@ -396,6 +396,7 @@ data ValidateResult blk =
 
 validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          => LgrDB m blk
+         -> LedgerBackingStoreValueHandle m (ExtLedgerState blk)
          -> LedgerDB' blk
             -- ^ This is used as the starting point for validation, not the one
             -- in the 'LgrDB'.
@@ -404,7 +405,7 @@ validate :: forall m blk. (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
          -> (LedgerDB.UpdateLedgerDbTraceEvent blk -> m ())
          -> [Header blk]
          -> m (ValidateResult blk)
-validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
+validate LgrDB{..} (LedgerBackingStoreValueHandle s vh) ledgerDB blockCache numRollbacks trace = \hdrs -> do
     aps <- mkAps hdrs <$> atomically (readTVar varPrevApplied)
     res <- fmap rewrap $ LedgerDB.defaultResolveWithErrors resolveBlock $
              LedgerDB.switch
@@ -412,7 +413,7 @@ validate LgrDB{..} ledgerDB blockCache numRollbacks trace = \hdrs -> do
                numRollbacks
                (lift . lift . trace)
                aps
-               (lift . lift . readKeySets lgrBackingStore)
+               (lift . lift . readKeySetsWith (fmap (s,) . bsvhRead vh))
                ledgerDB
     atomically $ modifyTVar varPrevApplied $
       addPoints (validBlockPoints res (map headerRealPoint hdrs))
@@ -563,9 +564,28 @@ acquireLDBReadView ::
           (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk))
        )
 acquireLDBReadView p ldb =
+  snd <$> acquireLDBReadView' p ldb (pure ())
+
+acquireLDBReadView' ::
+     forall a b m blk.
+     (IOLike m, LedgerSupportsProtocol blk, HasCallStack)
+  => StaticEither b () (Point blk)
+  -> LgrDB m blk
+  -> STM m a
+     -- ^ STM operation that we want to run in the same atomic block as the
+     -- acquisition of the LedgerDB
+  -> m ( a
+       , StaticEither b
+           (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk)
+           (Either
+            (Point blk)
+            (LedgerBackingStoreValueHandle m (ExtLedgerState blk), LedgerDB' blk))
+       )
+acquireLDBReadView' p ldb stm =
   withReadLock (lgrFlushLock ldb) $ do
-    ldb' <- atomically $ getCurrent ldb
-    case p of
+    (a, ldb') <- atomically $ do
+      (,) <$> stm <*> getCurrent ldb
+    (a,) <$> case p of
       StaticLeft () -> StaticLeft <$> acquire ldb'
       StaticRight actualPoint -> StaticRight <$>
         case LedgerDB.rollback actualPoint ldb' of
@@ -578,5 +598,11 @@ acquireLDBReadView p ldb =
    acquire l = do
      let (LedgerBackingStore bs) = lgrBackingStore ldb
      (slot, vh) <- bsValueHandle bs
-     assert (slot == changelogDiffAnchor (LedgerDB.ledgerDbChangelog l)) $
-       pure (LedgerBackingStoreValueHandle slot vh, l)
+     if slot == changelogDiffAnchor (LedgerDB.ledgerDbChangelog l)
+       then pure (LedgerBackingStoreValueHandle slot vh, l)
+       else error ("Critical error: Value handles are created at "
+                   <> show slot
+                   <> " while the db changelog is at "
+                   <> show (changelogDiffAnchor (LedgerDB.ledgerDbChangelog l))
+                   <> ". There is either a race condition or a logic bug"
+                  )

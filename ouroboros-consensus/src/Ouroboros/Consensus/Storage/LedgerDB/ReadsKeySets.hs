@@ -22,6 +22,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets (
 
 import           Cardano.Slotting.Slot
 import           Data.Map.Diff.Strict.Internal (unsafeApplyDiffForKeys)
+import           GHC.Stack (HasCallStack)
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
@@ -41,9 +42,8 @@ data RewoundTableKeySets l =
 
 rewindTableKeySets ::
      DbChangelog l -> LedgerTables l KeysMK -> RewoundTableKeySets l
-rewindTableKeySets dblog =
-      RewoundTableKeySets
-        (changelogDiffAnchor dblog)
+rewindTableKeySets =
+      RewoundTableKeySets . changelogDiffAnchor
 
 {-------------------------------------------------------------------------------
   Read
@@ -73,7 +73,7 @@ readKeySetsWith readKeys (RewoundTableKeySets _seqNo rew) = do
 
 withKeysReadSets ::
   forall m l mk1 a.
-  ( HasLedgerTables l, Monad m
+  ( HasLedgerTables l, Monad m, HasCallStack
   )
   => l mk1
   -> KeySetsReader m l
@@ -105,14 +105,14 @@ withHydratedLedgerState ::
   -> DbChangelog l
   -> UnforwardedReadSets l
   -> (l ValuesMK -> a)
-  -> Either (WithOrigin SlotNo, WithOrigin SlotNo) a
+  -> Either RewindReadFwdError a
 withHydratedLedgerState st dbch urs f =
           f
       .   withLedgerTables st
       <$> forwardTableKeySets dbch urs
 
 -- | The requested point is not found on the ledger db
-data PointNotFound blk = PointNotFound !(Point blk) deriving (Eq, Show)
+newtype PointNotFound blk = PointNotFound (Point blk) deriving (Eq, Show)
 
 -- | Read and forward the values up to the tip of the given ledger db. Returns
 -- Left if the anchor moved. If Left is returned, then the caller was just
@@ -123,7 +123,7 @@ getLedgerTablesFor ::
   => LedgerDB l
   -> LedgerTables l KeysMK
   -> KeySetsReader m l
-  -> m (Either (WithOrigin SlotNo, WithOrigin SlotNo) (LedgerTables l ValuesMK))
+  -> m (Either RewindReadFwdError (LedgerTables l ValuesMK))
 getLedgerTablesFor db keys ksRead = do
   let aks = rewindTableKeySets (ledgerDbChangelog db) keys
   urs <- ksRead aks
@@ -146,15 +146,20 @@ data UnforwardedReadSets l = UnforwardedReadSets {
   , ursKeys   :: !(LedgerTables l KeysMK)
   }
 
+data RewindReadFwdError = RewindReadFwdError {
+    rrfBackingStoreAt :: !(WithOrigin SlotNo)
+  , rrfDbChangelogAt  :: !(WithOrigin SlotNo)
+  } deriving Show
+
 forwardTableKeySets' ::
      HasLedgerTables l
   => WithOrigin SlotNo
   -> LedgerTables l SeqDiffMK
   -> UnforwardedReadSets l
-  -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
+  -> Either RewindReadFwdError
             (LedgerTables l ValuesMK)
 forwardTableKeySets' seqNo chdiffs = \(UnforwardedReadSets seqNo' values keys) ->
-    if seqNo /= seqNo' then Left (seqNo, seqNo') else
+    if seqNo /= seqNo' then Left $ RewindReadFwdError seqNo' seqNo else
     Right
       $ zipLedgerTables3 forward values keys chdiffs
   where
@@ -171,7 +176,7 @@ forwardTableKeySets ::
      HasLedgerTables l
   => DbChangelog l
   -> UnforwardedReadSets l
-  -> Either (WithOrigin SlotNo, WithOrigin SlotNo)
+  -> Either RewindReadFwdError
             (LedgerTables l ValuesMK)
 forwardTableKeySets dblog =
   forwardTableKeySets' (changelogDiffAnchor dblog) (changelogDiffs dblog)

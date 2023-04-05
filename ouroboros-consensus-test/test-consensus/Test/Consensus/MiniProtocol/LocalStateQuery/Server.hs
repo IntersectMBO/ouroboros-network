@@ -223,7 +223,10 @@ initLgrDB k chain = do
     rawLock <- mkLedgerDBLock
     reg <- unsafeNewRegistry
     let lgrDB = mkLgrDB varDB varPrevApplied backingStore rawLock resolve (args reg)
-    LgrDB.validate lgrDB genesisLedgerDB BlockCache.empty 0 noopTrace
+    seP <- LgrDB.acquireLDBReadView (StaticLeft ()) lgrDB
+    let vh = case seP of
+          StaticLeft (v, _) -> v
+    LgrDB.validate lgrDB vh genesisLedgerDB BlockCache.empty 0 noopTrace
       (map getHeader (Chain.toOldestFirst chain)) >>= \case
         LgrDB.ValidateExceededRollBack _ ->
           error "impossible: rollback was 0"

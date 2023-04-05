@@ -432,7 +432,7 @@ flushIntoBackingStore (LedgerBackingStore backingStore) dblog =
 --   transactional variable and also open a 'BackingStoreValueHandle'. This is
 --   the case for ledger state queries and for the forging loop.
 --
--- - Read lock to ensure two operations are in sync: On the above situation, we
+-- - Read lock to ensure two operations are in sync: in the above situation, we
 --   relied on the 'BackingStoreValueHandle' functionality, but sometimes we
 --   won't access the values through a value handle, and instead we might use
 --   the LMDB environment (as it is the case for 'lmdbCopy'). In these cases, we

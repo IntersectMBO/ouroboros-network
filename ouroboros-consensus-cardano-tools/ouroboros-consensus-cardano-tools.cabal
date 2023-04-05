@@ -68,7 +68,6 @@ library
     , cborg
     , containers
     , contra-tracer
-    , diff-containers
     , directory
     , filepath
     , fs-api
