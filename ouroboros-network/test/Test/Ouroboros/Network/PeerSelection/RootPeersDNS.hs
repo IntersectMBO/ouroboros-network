@@ -646,6 +646,10 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
 -- resolved ip addresses to the correct group where the domain address was
 -- (in the initial configuration specification). This property tests whether
 -- after a successful DNS lookup the result list is updated correctly.
+--
+-- Correctly means: Updates in the right place and does not overwrite the
+-- previous state.
+--
 prop_local_updatesDomainsCorrectly :: MockRoots
                                    -> Script DNSTimeout
                                    -> Script DNSLookupDelay
@@ -663,6 +667,21 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
 
         r = foldl' (\(b, (t, x)) (t', y) ->
                     case (x, y) of
+                      -- Last result groups value, Current result groups value
+                      (TraceLocalRootGroups lrpg, TraceLocalRootGroups lrpg') ->
+                        let -- Get all IPs present in last group at position
+                            -- 'index'
+                            ipsAtIndex = Map.keys
+                                       $ foldMap snd lrpg
+
+                            -- Get all IPs present in current group at position
+                            -- 'index'
+                            ipsAtIndex' = Map.keys
+                                        $ foldMap snd lrpg'
+
+                            arePreserved = all (`elem` ipsAtIndex') ipsAtIndex
+
+                         in (arePreserved && b, (t', y))
                       -- Last DNS lookup result   , Current result groups value
                       (TraceLocalRootResult da res, TraceLocalRootGroups lrpg) ->
                             -- create and index db for each group
@@ -699,7 +718,6 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
               (True, head tr)
               (tail tr)
      in property (fst r)
-
 
 -- | The 'localRootPeersProvider' monitors each domain address for DNS
 -- resolving. It then should update the local result group correctly, but it
