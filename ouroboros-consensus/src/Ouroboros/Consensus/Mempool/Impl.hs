@@ -23,7 +23,7 @@ module Ouroboros.Consensus.Mempool.Impl (
   ) where
 
 import           Control.Monad.Except
-import           Control.Monad.Class.MonadMVar (MVar, newEmptyMVar)
+import           Control.Monad.Class.MonadMVar (MVar, newMVar)
 import           Data.Typeable
 
 import           Control.Tracer
@@ -41,7 +41,7 @@ import           Ouroboros.Consensus.Mempool.Impl.Pure
 import           Ouroboros.Consensus.Mempool.Impl.Types
 import           Ouroboros.Consensus.Mempool.TxSeq (TicketNo, zeroTicketNo)
 import           Ouroboros.Consensus.Util (whenJust)
-import           Ouroboros.Consensus.Util.IOLike hiding (newEmptyMVar)
+import           Ouroboros.Consensus.Util.IOLike hiding (newMVar)
 import           Ouroboros.Consensus.Util.ResourceRegistry
 import           Ouroboros.Consensus.Util.STM (Watcher (..), forkLinkedWatcher)
 
@@ -168,8 +168,8 @@ initMempoolEnv ledgerInterface cfg capacityOverride tracer txSize = do
     st <- atomically $ getCurrentLedgerState ledgerInterface
     let (slot, st') = tickLedgerState cfg (ForgeInUnknownSlot st)
     isVar <- newTVarIO $ initInternalState capacityOverride zeroTicketNo slot st'
-    addTxRemoteFifo <- newEmptyMVar
-    addTxAllFifo    <- newEmptyMVar
+    addTxRemoteFifo <- newMVar ()
+    addTxAllFifo    <- newMVar ()
     return MempoolEnv
       { mpEnvLedger           = ledgerInterface
       , mpEnvLedgerCfg        = cfg
