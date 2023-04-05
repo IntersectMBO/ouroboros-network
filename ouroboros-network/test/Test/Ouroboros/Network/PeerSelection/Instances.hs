@@ -64,13 +64,13 @@ instance Arbitrary IsLedgerPeer where
 
 instance Arbitrary PeerSelectionTargets where
   arbitrary = do
-    targetNumberOfKnownPeers       <-            min 10000 . getNonNegative <$> arbitrary
+    targetNumberOfKnownPeers       <- getNonNegative <$> resize 1000 arbitrary
     targetNumberOfRootPeers        <- choose (0, min 100  targetNumberOfKnownPeers)
     targetNumberOfEstablishedPeers <- choose (0, min 1000 targetNumberOfKnownPeers)
     targetNumberOfActivePeers      <- choose (0, min 100  targetNumberOfEstablishedPeers)
 
     targetNumberOfKnownBigLedgerPeers
-      <- min 10000 . getNonNegative <$> arbitrary
+      <- getNonNegative <$> resize 1000 arbitrary
     targetNumberOfEstablishedBigLedgerPeers
       <- choose (0 , min 1000 targetNumberOfKnownBigLedgerPeers)
     targetNumberOfActiveBigLedgerPeers
