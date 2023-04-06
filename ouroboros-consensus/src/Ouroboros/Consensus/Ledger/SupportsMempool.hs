@@ -69,6 +69,10 @@ class ( UpdateLedger blk
   txInvariant = const True
 
   -- | Apply an unvalidated transaction
+  --
+  -- The mempool expects that the ledger checks the sanity of the transaction'
+  -- size. The mempool implementation will add any valid transaction as long as
+  -- there is at least one byte free in the mempool.
   applyTx :: LedgerConfig blk
           -> WhetherToIntervene
           -> SlotNo -- ^ Slot number of the block containing the tx
