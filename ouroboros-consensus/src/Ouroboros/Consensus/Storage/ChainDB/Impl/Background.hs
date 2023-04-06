@@ -4,7 +4,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -65,8 +64,6 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
 import           Ouroboros.Consensus.Storage.LedgerDB (TimeSinceLast (..))
-import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
-                     (withWriteLock)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util ((.:))
 import           Ouroboros.Consensus.Util.Condense
@@ -89,17 +86,17 @@ launchBgTasks
      , LgrDbSerialiseConstraints blk
      )
   => ChainDbEnv m blk
-  -> (Word64, Word64)
+  -> Word64
      -- ^ Number of replayed blocks, and blocks since last flush
   -> m ()
-launchBgTasks cdb@CDB{..} replayCounters = do
+launchBgTasks cdb@CDB{..} replayCounter = do
     !addBlockThread <- launch "ChainDB.addBlockRunner" $
       addBlockRunner cdb
     gcSchedule <- newGcSchedule
     !gcThread <- launch "ChainDB.gcScheduleRunner" $
       gcScheduleRunner gcSchedule $ garbageCollect cdb
     !copyAndSnapshotThread <- launch "ChainDB.copyAndSnapshotRunner" $
-      copyAndSnapshotRunner cdb gcSchedule replayCounters
+      copyAndSnapshotRunner cdb gcSchedule replayCounter
     atomically $ writeTVar cdbKillBgThreads $
       sequence_ [addBlockThread, gcThread, copyAndSnapshotThread]
   where
@@ -199,8 +196,8 @@ copyToImmutableDB CDB{..} = withCopyLock $ do
 
     withCopyLock :: forall a. HasCallStack => m a -> m a
     withCopyLock = bracket_
-      (fmap mustBeUnlocked $ tryTakeMVar cdbCopyLock)
-      (putMVar  cdbCopyLock ())
+      (mustBeUnlocked <$> tryTakeMVar cdbCopyLock)
+      (putMVar cdbCopyLock ())
 
     mustBeUnlocked :: forall b. HasCallStack => Maybe b -> b
     mustBeUnlocked = fromMaybe
@@ -210,13 +207,11 @@ copyToImmutableDB CDB{..} = withCopyLock $ do
   Snapshotting
 -------------------------------------------------------------------------------}
 
-data SnapAndFlushCounters = SnapAndFlushCounters {
+data SnapCounters = SnapCounters {
       -- | When was the last time we made a snapshot
       prevSnapshotTime     :: !(TimeSinceLast Time)
       -- | How many blocks have we processed since the last snapshot
     , prevSnapshotDistance :: !Word64
-      -- | How many blocks have we processed sinde the last flush
-    , prevFlushDistance    :: !Word64
     }
 
 -- | Copy blocks from the VolatileDB to ImmutableDB and take snapshots of the
@@ -253,32 +248,24 @@ copyAndSnapshotRunner
      )
   => ChainDbEnv m blk
   -> GcSchedule m
-  -> (Word64, Word64) -- ^ Number of immutable blocks replayed on ledger DB startup
+  -> Word64 -- ^ Number of immutable blocks replayed on ledger DB startup
   -> m Void
-copyAndSnapshotRunner cdb@CDB{..} gcSchedule (replayed, flushed) = do
-    flushed' <-
-      if onDiskShouldFlush flushed
-      then do
-        withWriteLock (LgrDB.lgrFlushLock cdbLgrDB) (LgrDB.flushLgrDB cdbLgrDB)
-        pure 0
-      else
-        pure flushed
+copyAndSnapshotRunner cdb@CDB{..} gcSchedule replayed = do
     if onDiskShouldTakeSnapshot NoSnapshotTakenYet replayed then do
       updateLedgerSnapshots cdb
       now <- getMonotonicTime
-      loop $ SnapAndFlushCounters (TimeSinceLast now) 0 flushed'
+      loop $ SnapCounters (TimeSinceLast now) 0
     else
-      loop $ SnapAndFlushCounters NoSnapshotTakenYet replayed flushed'
+      loop $ SnapCounters NoSnapshotTakenYet replayed
   where
     SecurityParam k      = configSecurityParam cdbTopLevelConfig
     LgrDB.DiskPolicy{..} = LgrDB.getDiskPolicy cdbLgrDB
 
-    loop :: SnapAndFlushCounters -> m Void
+    loop :: SnapCounters -> m Void
     loop counters = do
-      let SnapAndFlushCounters {
+      let SnapCounters {
               prevSnapshotTime
             , prevSnapshotDistance
-            , prevFlushDistance
           } = counters
       -- Wait for the chain to grow larger than @k@
       numToWrite <- atomically $ do
@@ -294,27 +281,17 @@ copyAndSnapshotRunner cdb@CDB{..} gcSchedule (replayed, flushed) = do
 
       now <- getMonotonicTime
       let prevSnapshotDistance' = prevSnapshotDistance + numToWrite
-          prevFlushDistance'    = prevFlushDistance    + numToWrite
           elapsed               =
               (\prev -> now `diffTime` prev) <$> prevSnapshotTime
-
-      counters' <-
-        if onDiskShouldFlush prevFlushDistance'
-        then do
-          withWriteLock (LgrDB.lgrFlushLock cdbLgrDB) $
-            LgrDB.flushLgrDB cdbLgrDB
-          pure counters { prevFlushDistance = 0 }
-        else
-          pure counters { prevFlushDistance = prevFlushDistance' }
 
       if onDiskShouldTakeSnapshot elapsed prevSnapshotDistance'
       then do
         updateLedgerSnapshots cdb
-        loop $ counters' { prevSnapshotTime     = TimeSinceLast now
-                         , prevSnapshotDistance = 0
-                         }
+        loop $ counters { prevSnapshotTime     = TimeSinceLast now
+                        , prevSnapshotDistance = 0
+                        }
       else
-        loop $ counters' { prevSnapshotDistance = prevSnapshotDistance' }
+        loop $ counters { prevSnapshotDistance = prevSnapshotDistance' }
 
     scheduleGC' :: WithOrigin SlotNo -> m ()
     scheduleGC' Origin             = return ()

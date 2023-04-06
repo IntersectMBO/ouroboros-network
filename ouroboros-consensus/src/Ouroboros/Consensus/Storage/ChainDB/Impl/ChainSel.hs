@@ -72,9 +72,9 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.Query as Query
 import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
+import           Ouroboros.Consensus.Storage.LedgerDB (DiskPolicy (..))
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
-import           Ouroboros.Consensus.Storage.LedgerDB.Update
-                     (advanceImmutableSeq)
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import           Ouroboros.Consensus.Storage.VolatileDB (VolatileDB)
 import qualified Ouroboros.Consensus.Storage.VolatileDB as VolatileDB
 import           Ouroboros.Consensus.Util (StaticEither (..), whenJust)
@@ -731,51 +731,64 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
       -> ChainSwitchType
       -> m (Point blk)
     switchTo vChainDiff varTentativeHeader chainSwitchType = do
-        traceWith addBlockTracer $
-            ChangingSelection
-          $ castPoint
-          $ AF.headPoint
-          $ getSuffix
+        traceWith addBlockTracer
+          . ChangingSelection
+          . castPoint
+          . AF.headPoint
+          . getSuffix
           $ getChainDiff vChainDiff
-        (curChain, newChain, events, prevTentativeHeader) <- atomically $ do
-          curChain  <- readTVar         cdbChain -- Not Query.getCurrentChain!
-          curLedger <- LgrDB.getCurrent cdbLgrDB
-          case Diff.apply curChain chainDiff of
-            -- Impossible, as described in the docstring
-            Nothing       ->
-              error "chainDiff doesn't fit onto current chain"
-            Just newChain -> do
-              writeTVar cdbChain newChain
-              LgrDB.setCurrent cdbLgrDB (advanceImmutableSeq newLedger curLedger)
+        let lock =
+              if onDiskShouldFlush
+                (LgrDB.diskPolicy cdbLgrDB)
+                (flushableLength (SecurityParam k) newLedger)
+              then withWriteLock (LgrDB.lgrFlushLock cdbLgrDB)
+              else id
+        (curChain, newChain, events, prevTentativeHeader) <-
+          lock $ do
+           (curChain, newChain, events, prevTentativeHeader, mDiffs) <-
+            atomically $ do
+              curChain  <- readTVar         cdbChain -- Not Query.getCurrentChain!
+              curLedger <- LgrDB.getCurrent cdbLgrDB
+              case Diff.apply curChain chainDiff of
+                -- Impossible, as described in the docstring
+                Nothing       ->
+                  error "chainDiff doesn't fit onto current chain"
+                Just newChain -> do
+                  writeTVar cdbChain newChain
+                  mDiffs <- LgrDB.setCurrent cdbLgrDB newLedger
 
-              -- Inspect the new ledger for potential problems
-              let events :: [LedgerEvent blk]
-                  events = inspectLedger
-                             cdbTopLevelConfig
-                             (ledgerState $ LgrDB.current curLedger)
-                             (ledgerState $ LgrDB.current newLedger)
+                  -- Inspect the new ledger for potential problems
+                  let events :: [LedgerEvent blk]
+                      events = inspectLedger
+                                 cdbTopLevelConfig
+                                 (ledgerState $ LgrDB.current curLedger)
+                                 (ledgerState $ LgrDB.current newLedger)
 
-              -- Clear the tentative header
-              prevTentativeHeader <- swapTVar varTentativeHeader SNothing
+                  -- Clear the tentative header
+                  prevTentativeHeader <- swapTVar varTentativeHeader SNothing
 
-              case chainSwitchType of
-                -- When adding blocks, the intersection point of the old and new
-                -- tentative/selected chain is not receding, in which case
-                -- `fhSwitchFork` is unnecessary. In the case of pipelining a
-                -- block, it would even result in rolling back by one block and
-                -- rolling forward again.
-                AddingBlocks      -> pure ()
-                SwitchingToAFork -> do
-                  -- Update the followers
-                  --
-                  -- 'Follower.switchFork' needs to know the intersection point
-                  -- (@ipoint@) between the old and the current chain.
-                  let ipoint = castPoint $ Diff.getAnchorPoint chainDiff
-                  followerHandles <- Map.elems <$> readTVar cdbFollowers
-                  forM_ followerHandles $ \followerHandle ->
-                    fhSwitchFork followerHandle ipoint newChain
+                  case chainSwitchType of
+                    -- When adding blocks, the intersection point of the old and new
+                    -- tentative/selected chain is not receding, in which case
+                    -- `fhSwitchFork` is unnecessary. In the case of pipelining a
+                    -- block, it would even result in rolling back by one block and
+                    -- rolling forward again.
+                    AddingBlocks      -> pure ()
+                    SwitchingToAFork -> do
+                      -- Update the followers
+                      --
+                      -- 'Follower.switchFork' needs to know the intersection point
+                      -- (@ipoint@) between the old and the current chain.
+                      let ipoint = castPoint $ Diff.getAnchorPoint chainDiff
+                      followerHandles <- Map.elems <$> readTVar cdbFollowers
+                      forM_ followerHandles $ \followerHandle ->
+                        fhSwitchFork followerHandle ipoint newChain
 
-              return (curChain, newChain, events, prevTentativeHeader)
+                  return (curChain, newChain, events, prevTentativeHeader, mDiffs)
+
+           forM_ mDiffs $ flushIntoBackingStore (LgrDB.lgrBackingStore cdbLgrDB)
+
+           pure (curChain, newChain, events, prevTentativeHeader)
 
         let mkTraceEvent = case chainSwitchType of
               AddingBlocks     -> AddedToCurrentChain

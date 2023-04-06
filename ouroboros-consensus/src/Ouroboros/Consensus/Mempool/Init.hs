@@ -22,8 +22,6 @@ import           Ouroboros.Consensus.Mempool.Capacity
 import           Ouroboros.Consensus.Mempool.Impl.Common
 import           Ouroboros.Consensus.Mempool.Query
 import           Ouroboros.Consensus.Mempool.Update
-import           Ouroboros.Consensus.Storage.LedgerDB
-                     (LedgerDB (ledgerDbChangelog))
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
                      (changelogDiffs)
@@ -124,7 +122,7 @@ mkMempool mpEnv = Mempool
               , bsvhRead
               } = vh
         in implGetSnapshotFor mpEnv slot st
-            (unExtLedgerStateTables $ changelogDiffs $ ledgerDbChangelog ldb)
+            (unExtLedgerStateTables $ changelogDiffs ldb)
             (LedgerBackingStoreValueHandle s $
              BackingStoreValueHandle {
                   bsvhClose

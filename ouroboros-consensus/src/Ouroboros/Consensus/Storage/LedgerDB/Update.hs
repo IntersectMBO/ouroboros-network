@@ -7,7 +7,6 @@
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE QuantifiedConstraints    #-}
 {-# LANGUAGE RankNTypes               #-}
-{-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies             #-}
@@ -60,10 +59,9 @@ import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Ledger.Abstract
 import           Ouroboros.Consensus.Ledger.Extended
-import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (DbChangelog)
+import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
+                     (DbChangelogToFlush)
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DbChangelog as DbChangelog
-import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq hiding (empty,
-                     extend)
 import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB.Query as Query
 import           Ouroboros.Consensus.Storage.LedgerDB.ReadsKeySets
@@ -143,7 +141,7 @@ applyBlock cfg ap ksReader db = case ap of
 
     withValues :: blk -> (l ValuesMK -> m (l DiffMK)) -> m (l DiffMK)
     withValues b =
-      withKeysReadSets l ksReader (ledgerDbChangelog db) (getBlockKeySets b)
+      withKeysReadSets l ksReader db (getBlockKeySets b)
 
 {-------------------------------------------------------------------------------
   Resolving blocks maybe from disk
@@ -230,18 +228,15 @@ volatileStatesBimap ::
   -> LedgerDB l
   -> AnchoredSeq (WithOrigin SlotNo) a b
 volatileStatesBimap f g =
-      AS.bimap (f . DbChangelog.unDbChangelogState) (g . DbChangelog.unDbChangelogState)
+      AS.bimap f g
     . DbChangelog.changelogVolatileStates
-    . ledgerDbChangelog
 
 -- | Prune ledger states until at we have at most @k@ in the LedgerDB, excluding
 -- the one stored at the anchor.
 prune ::
-     (GetTip l, StandardHash l)
+     GetTip l
   => SecurityParam -> LedgerDB l -> LedgerDB l
-prune k db = db {
-      ledgerDbChangelog = DbChangelog.pruneVolatilePart k (ledgerDbChangelog db)
-    }
+prune = DbChangelog.pruneVolatilePart
 
  -- NOTE: we must inline 'prune' otherwise we get unexplained thunks in
  -- 'LedgerDB' and thus a space leak. Alternatively, we could disable the
@@ -254,17 +249,15 @@ prune k db = db {
 
 -- | Push an updated ledger state
 pushLedgerState ::
-     (IsLedger l, HasLedgerTables l, StandardHash l)
+     (IsLedger l, HasLedgerTables l)
   => SecurityParam
   -> l DiffMK -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
-pushLedgerState secParam currentNew' db@LedgerDB{..}  =
-    prune secParam $ db {
-        ledgerDbChangelog   =
-          DbChangelog.extend
-            ledgerDbChangelog
-            currentNew'
-      }
+pushLedgerState secParam currentNew' db =
+    prune secParam $
+      DbChangelog.extend
+      db
+      currentNew'
 
 {-------------------------------------------------------------------------------
   Internal: rolling back
@@ -278,11 +271,9 @@ rollback ::
   => Word64
   -> LedgerDB l
   -> Maybe (LedgerDB l)
-rollback n db@LedgerDB{..}
+rollback n db
     | n <= Query.maxRollback db
-    = Just db {
-          ledgerDbChangelog   = DbChangelog.rollbackN (fromIntegral n) ledgerDbChangelog
-        }
+    = Just $ DbChangelog.rollbackN (fromIntegral n) db
     | otherwise
     = Nothing
 
@@ -302,7 +293,7 @@ data ExceededRollback = ExceededRollback {
     , rollbackRequested :: Word64
     }
 
-push :: forall m c l blk. (ApplyBlock l blk, Monad m, StandardHash l, c, HasCallStack)
+push :: forall m c l blk. (ApplyBlock l blk, Monad m, c, HasCallStack)
      => LedgerDbCfg l
      -> Ap m l blk c -> KeySetsReader m l -> LedgerDB l -> m (LedgerDB l)
 push cfg ap ksReader db =
@@ -311,7 +302,7 @@ push cfg ap ksReader db =
 
 -- | Push a bunch of blocks (oldest first)
 pushMany ::
-     forall m c l blk . (ApplyBlock l blk, Monad m, StandardHash l, c, HasCallStack)
+     forall m c l blk . (ApplyBlock l blk, Monad m, c, HasCallStack)
   => (Pushing blk -> m ())
   -> LedgerDbCfg l
   -> [Ap m l blk c] -> KeySetsReader m l -> LedgerDB l -> m (LedgerDB l)
@@ -323,7 +314,7 @@ pushMany trace cfg aps ksReader = repeatedlyM pushAndTrace aps
       push cfg ap ksReader db
 
 -- | Switch to a fork
-switch :: (ApplyBlock l blk, Monad m, StandardHash l, c, HasCallStack)
+switch :: (ApplyBlock l blk, Monad m, c, HasCallStack)
        => LedgerDbCfg l
        -> Word64          -- ^ How many blocks to roll back
        -> (UpdateLedgerDbTraceEvent blk -> m ())
@@ -353,11 +344,8 @@ switch cfg numRollbacks trace newBlocks ksReader db =
 -- | Isolates the prefix of the changelog that should be flushed
 flush ::
      (GetTip l, HasLedgerTables l)
-  => DbChangelog.FlushPolicy -> LedgerDB l -> (DbChangelog l, LedgerDB l)
-flush policy db = do
-    (l, db { ledgerDbChangelog = r })
-  where
-    (l, r) = DbChangelog.flush policy (ledgerDbChangelog db)
+  => DbChangelog.FlushPolicy -> LedgerDB l -> (DbChangelogToFlush l, LedgerDB l)
+flush = DbChangelog.flush
 
 {-------------------------------------------------------------------------------
   Trace events
@@ -392,16 +380,16 @@ data UpdateLedgerDbTraceEvent blk =
 pureBlock :: blk -> Ap m l blk ()
 pureBlock = ReapplyVal
 
-push' :: (ApplyBlock l blk, StandardHash l)
+push' :: ApplyBlock l blk
       => LedgerDbCfg l -> blk -> KeySetsReader Identity l -> LedgerDB l -> LedgerDB l
 push' cfg b bk = runIdentity . push cfg (pureBlock b) bk
 
-pushMany' :: (ApplyBlock l blk, StandardHash l)
+pushMany' :: ApplyBlock l blk
           => LedgerDbCfg l -> [blk] -> KeySetsReader Identity l -> LedgerDB l -> LedgerDB l
 pushMany' cfg bs bk =
   runIdentity . pushMany (const $ pure ()) cfg (map pureBlock bs) bk
 
-switch' :: (ApplyBlock l blk, StandardHash l)
+switch' :: ApplyBlock l blk
         => LedgerDbCfg l
         -> Word64 -> [blk] -> KeySetsReader Identity l -> LedgerDB l -> Maybe (LedgerDB l)
 switch' cfg n bs bk db =
@@ -425,23 +413,8 @@ switch' cfg n bs bk db =
 -- flushed state points to, as we are guaranteed that those will be immutable
 -- states.
 advanceImmutableSeq ::
-     (HasLedgerTables l, GetTip l, HasCallStack)
+     ()
   => LedgerDB l
   -> LedgerDB l
   -> LedgerDB l
-advanceImmutableSeq
-  (LedgerDB (DbChangelog.DbChangelog _ origDiffs origImm origVol))
-  (LedgerDB (DbChangelog.DbChangelog flushedAnch _ _ _)) =
-  let
-    (dropping, imm') = case AS.splitAfterMeasure flushedAnch (const True) origImm of
-      Just v  -> v
-      Nothing ->
-        error "Critical error: a state has been flushed that was not an \
-              \ immutable state in some value that we were holding in memory. \
-              \ This means something went horribly wrong, and in fact we could \
-              \ have rolled back more than k if this value ended up being used."
-    diffs' = mapLedgerTables splitDiffs origDiffs
-    splitDiffs :: (Ord k, Eq v) => SeqDiffMK k v -> SeqDiffMK k v
-    splitDiffs (SeqDiffMK sq) = SeqDiffMK $ snd $ splitAt (AS.length dropping) sq
-  in
-  LedgerDB (DbChangelog.DbChangelog flushedAnch diffs' imm' origVol)
+advanceImmutableSeq = undefined

@@ -7,19 +7,26 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+
 -- | A 'DbChangelog' is a data structure that holds a sequence of "virtual"
--- ledger states by internally maintaining 3 sequences:
+-- ledger states by internally maintaining:
 --
--- - Two sequences of in-memory ledger states, the volatile and the immutable
---   parts of the chain.
+-- - A sequence of in-memory ledger states the volatile part of the chain.
 --
--- - A sequence of differences that are associated with each ledger state. These
---   differences are defined with respect to a 'BackingStore' that provides the
---   set of values at the anchor of the sequence.
+-- - A ledger state that is the last flushed state. Usually this will coincide
+-- - with the immutable tip, but this is not necessarily the case.
+--
+-- - A sequence of differences that are associated with each ledger state and
+--   represent the delta between the associated ledger state and its predecesor.
+--   These differences are defined with respect to a 'BackingStore' that
+--   provides the set of values at the anchor of the sequence, i.e. at the last
+--   flushed state.
 --
 -- This design is based on the technical report "Storing the Cardano ledger
 -- state on disk: analysis and design options" by Duncan Coutts and Douglas
@@ -29,7 +36,6 @@
 module Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (
     -- * The DbChangelog
     DbChangelog (..)
-  , DbChangelogState (..)
     -- * Construction
   , empty
     -- * Updates
@@ -40,9 +46,11 @@ module Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (
   , rollbackToAnchor
   , rollbackToPoint
     -- * Flush
+  , DbChangelogToFlush (..)
   , FlushPolicy (..)
   , flush
   , flushIntoBackingStore
+  , flushableLength
     -- * Lock
   , LedgerDBLock (..)
   , mkLedgerDBLock
@@ -53,7 +61,10 @@ module Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (
 import           Cardano.Slotting.Slot
 import qualified Control.Exception as Exn
 import           Data.Bifunctor (bimap)
+import           Data.Semigroup (Sum (..))
 import           Data.SOP.Functors (Product2 (..))
+import           Data.SOP.Strict (K, unK)
+import           Data.Word
 import           GHC.Generics (Generic)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
@@ -63,6 +74,7 @@ import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq hiding (empty,
                      extend)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.DiffSeq as DiffSeq
 import qualified Ouroboros.Consensus.Storage.LedgerDB.DiffSeq as DS
 import           Ouroboros.Consensus.Util.IOLike
 import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as Lock
@@ -109,23 +121,28 @@ import           Prelude hiding (splitAt)
 --
 -- As said above, this @DbChangelog@ has to be coupled with a @BackingStore@
 -- which provides the pointers to the on-disk data.
---
--- INVARIANT: the head of 'changelogImmutableStates' is the anchor of
--- 'changelogVolatileStates'.
 data DbChangelog l = DbChangelog {
-    changelogDiffAnchor      :: !(WithOrigin SlotNo)
-  , changelogDiffs           :: !(LedgerTables l SeqDiffMK)
-  , changelogImmutableStates ::
+    -- | The last flushed ledger state.
+    --
+    -- We need to keep track of this one as this will be the state written to
+    -- disk when we make a snapshot
+    changelogAnchor         :: !(l EmptyMK)
+
+    -- | The sequence of differences between the last flushed state
+    -- ('changelogAnchor') and the tip of the volatile sequence
+    -- ('changelogVolatileStates').
+  , changelogDiffs          :: !(LedgerTables l SeqDiffMK)
+
+    -- | The volatile sequence of states.
+    --
+    -- The anchor of this sequence is the immutable tip, so whenever we flush,
+    -- we should do so up until that point. The length of this sequence will be
+    -- @k@ except in abnormal circumstances like rollbacks or data corruption.
+  , changelogVolatileStates ::
       !(AnchoredSeq
           (WithOrigin SlotNo)
-          (DbChangelogState l)
-          (DbChangelogState l)
-       )
-  , changelogVolatileStates  ::
-      !(AnchoredSeq
-          (WithOrigin SlotNo)
-          (DbChangelogState l)
-          (DbChangelogState l)
+          (l EmptyMK)
+          (l EmptyMK)
        )
   }
   deriving (Generic)
@@ -137,16 +154,19 @@ deriving instance (NoThunks (LedgerTables l SeqDiffMK), NoThunks (l EmptyMK))
 deriving instance (Show     (LedgerTables l SeqDiffMK), Show     (l EmptyMK))
                =>  Show     (DbChangelog l)
 
-newtype DbChangelogState l = DbChangelogState {unDbChangelogState :: l EmptyMK}
-  deriving (Generic)
-
-deriving         instance Eq       (l EmptyMK) => Eq       (DbChangelogState l)
-deriving newtype instance NoThunks (l EmptyMK) => NoThunks (DbChangelogState l)
-deriving         instance Show     (l EmptyMK) => Show     (DbChangelogState l)
-
-instance GetTip l => AS.Anchorable (WithOrigin SlotNo) (DbChangelogState l) (DbChangelogState l) where
+instance GetTip l => AS.Anchorable (WithOrigin SlotNo) (l EmptyMK) (l EmptyMK) where
   asAnchor = id
-  getAnchorMeasure _ = getTipSlot . unDbChangelogState
+  getAnchorMeasure _ = getTipSlot
+
+instance ( IsLedger l
+         , HeaderHash (K @MapKind (DbChangelog l)) ~ HeaderHash l
+         ) => GetTip (K (DbChangelog l)) where
+  getTip = castPoint
+         . getTip
+         . either id id
+         . AS.head
+         . changelogVolatileStates
+         . unK
 
 {-------------------------------------------------------------------------------
   Construction
@@ -157,10 +177,9 @@ empty ::
   => l EmptyMK -> DbChangelog l
 empty anchor =
     DbChangelog {
-        changelogDiffAnchor      = getTipSlot anchor
-      , changelogDiffs           = pureLedgerTables (SeqDiffMK DS.empty)
-      , changelogImmutableStates = AS.Empty (DbChangelogState anchor)
-      , changelogVolatileStates  = AS.Empty (DbChangelogState anchor)
+        changelogAnchor         = anchor
+      , changelogDiffs          = pureLedgerTables (SeqDiffMK DS.empty)
+      , changelogVolatileStates = AS.Empty anchor
       }
 
 {-------------------------------------------------------------------------------
@@ -172,27 +191,26 @@ extend ::
   => DbChangelog l -> l DiffMK -> DbChangelog l
 extend dblog newState =
     DbChangelog {
-        changelogDiffAnchor
-      , changelogDiffs           =
+        changelogAnchor
+      , changelogDiffs          =
           zipLedgerTables ext changelogDiffs tablesDiff
-      , changelogImmutableStates
-      , changelogVolatileStates  =
-          changelogVolatileStates AS.:> DbChangelogState l'
+      , changelogVolatileStates =
+          changelogVolatileStates AS.:> l'
       }
   where
     DbChangelog {
-        changelogDiffAnchor
+        changelogAnchor
       , changelogDiffs
-      , changelogImmutableStates
       , changelogVolatileStates
       } = dblog
 
     l'         = forgetLedgerTables  newState
     tablesDiff = projectLedgerTables newState
 
-    slot = case getTipSlot l' of
-      Origin -> error "impossible! extendDbChangelog"
-      At s   -> s
+    slot =
+      fromWithOrigin
+        (error "impossible! extending with an state at Origin")
+        (getTipSlot l')
 
     ext ::
          (Ord k, Eq v)
@@ -203,37 +221,27 @@ extend dblog newState =
       SeqDiffMK $ DS.extend sq slot d
 
 pruneVolatilePart ::
-     (GetTip l, StandardHash l)
+     GetTip l
   => SecurityParam -> DbChangelog l -> DbChangelog l
 pruneVolatilePart (SecurityParam k) dblog =
-    Exn.assert (AS.length imm' + AS.length vol' == AS.length imm + AS.length vol) $
     DbChangelog {
-        changelogDiffAnchor
+        changelogAnchor
       , changelogDiffs
-      , changelogImmutableStates = imm'
-      , changelogVolatileStates  = vol'
+      , changelogVolatileStates = vol'
       }
   where
     DbChangelog {
-        changelogDiffAnchor
+        changelogAnchor
       , changelogDiffs
-      , changelogImmutableStates
-      , changelogVolatileStates
+      , changelogVolatileStates = vol
       } = dblog
-
-    imm = changelogImmutableStates
-    vol = changelogVolatileStates
 
     nvol = AS.length vol
 
-    (imm', vol') =
-      if toEnum nvol <= k then (imm, vol) else
-      let (l, r) = AS.splitAt (nvol - fromEnum k) vol
-      in case AS.join (\e a -> getTip (unDbChangelogState a) ==
-                               either (getTip . unDbChangelogState)
-                                      (getTip . unDbChangelogState) e) imm l of
-        Nothing     -> error "Critical inconsistency! The immutable and volatile ledger databases don't fit together"
-        Just joined -> (joined, r)
+    vol' =
+      if toEnum nvol <= k
+      then vol
+      else snd $ AS.splitAt (nvol - fromEnum k) vol
 
 -- | Roll back the volatile states up to the specified point.
 rollbackToPoint ::
@@ -243,27 +251,23 @@ rollbackToPoint ::
      )
   => Point l -> DbChangelog l -> Maybe (DbChangelog l)
 rollbackToPoint pt dblog = do
-    let vol = changelogVolatileStates
     vol' <-
       AS.rollback
         (pointSlot pt)
-        ((== pt) . getTip . unDbChangelogState . either id id)
+        ((== pt) . getTip . either id id)
         vol
-    let ndropped                  = AS.length vol - AS.length vol'
-        diffs'                    =
-          mapLedgerTables (trunc ndropped) changelogDiffs
+    let ndropped = AS.length vol - AS.length vol'
+        diffs'   = mapLedgerTables (trunc ndropped) changelogDiffs
     Exn.assert (ndropped >= 0) $ pure DbChangelog {
-          changelogDiffAnchor
+          changelogAnchor
         , changelogDiffs           = diffs'
-        , changelogImmutableStates
         , changelogVolatileStates  = vol'
         }
   where
     DbChangelog {
-        changelogDiffAnchor
+        changelogAnchor
       , changelogDiffs
-      , changelogImmutableStates
-      , changelogVolatileStates
+      , changelogVolatileStates = vol
       } = dblog
 
 rollbackToAnchor ::
@@ -271,22 +275,19 @@ rollbackToAnchor ::
   => DbChangelog l -> DbChangelog l
 rollbackToAnchor dblog =
     DbChangelog {
-        changelogDiffAnchor
+        changelogAnchor
       , changelogDiffs           = diffs'
-      , changelogImmutableStates
       , changelogVolatileStates  = AS.Empty (AS.anchor vol)
       }
   where
     DbChangelog {
-        changelogDiffAnchor
+        changelogAnchor
       , changelogDiffs
-      , changelogImmutableStates
-      , changelogVolatileStates
+      , changelogVolatileStates = vol
       } = dblog
 
-    vol                       = changelogVolatileStates
-    ndropped                  = AS.length vol
-    diffs'                    =
+    ndropped = AS.length vol
+    diffs'   =
       mapLedgerTables (trunc ndropped) changelogDiffs
 
 trunc ::
@@ -300,16 +301,14 @@ rollbackN ::
   => Int -> DbChangelog l -> DbChangelog l
 rollbackN n dblog =
     DbChangelog {
-        changelogDiffAnchor
-      , changelogDiffs           = mapLedgerTables (trunc n) changelogDiffs
-      , changelogImmutableStates
-      , changelogVolatileStates  = AS.dropNewest n changelogVolatileStates
+        changelogAnchor
+      , changelogDiffs          = mapLedgerTables (trunc n) changelogDiffs
+      , changelogVolatileStates = AS.dropNewest n changelogVolatileStates
       }
   where
     DbChangelog {
-        changelogDiffAnchor
+        changelogAnchor
       , changelogDiffs
-      , changelogImmutableStates
       , changelogVolatileStates
       } = dblog
 
@@ -318,42 +317,46 @@ immutableTipSlot ::
   => DbChangelog l -> WithOrigin SlotNo
 immutableTipSlot =
       getTipSlot
-    . either unDbChangelogState unDbChangelogState
-    . AS.head
-    . changelogImmutableStates
+    . AS.anchor
+    . changelogVolatileStates
 
 {-------------------------------------------------------------------------------
   Flushing
 -------------------------------------------------------------------------------}
 
+flushableLength :: HasLedgerTables l => SecurityParam -> DbChangelog l -> Word64
+flushableLength (SecurityParam k) =
+    (\(Sum x) -> x - k)
+  . foldLedgerTables f
+  . changelogDiffs
+ where
+   f :: (Ord k, Eq v)
+     => SeqDiffMK k v
+     -> Sum Word64
+   f (SeqDiffMK sq) = Sum $ fromIntegral $ DiffSeq.length sq
+
 -- | The flush policy
-data FlushPolicy =
+newtype FlushPolicy =
     -- | Always flush everything older than the immutable tip
-    FlushAllImmutable
+    FlushAllImmutable SecurityParam
 
 -- | "Flush" the 'DbChangelog' by splitting it into two 'DbChangelogs', one that
 -- contains the diffs that should be flushed into the Backing store (see
 -- 'flushIntoBackingStore') and one to be considered as the new 'DbChangelog'.
 flush ::
-     forall l.
      (GetTip l, HasLedgerTables l)
   => FlushPolicy
   -> DbChangelog l
-  -> (DbChangelog l, DbChangelog l)
-flush FlushAllImmutable dblog =
+  -> (DbChangelogToFlush l, DbChangelog l)
+flush (FlushAllImmutable (SecurityParam k)) dblog =
       (ldblog, rdblog)
   where
     DbChangelog {
-        changelogDiffAnchor
-      , changelogDiffs
-      , changelogImmutableStates
+        changelogDiffs
       , changelogVolatileStates
       } = dblog
 
-    imm = changelogImmutableStates
-    vol = changelogVolatileStates
-
-    immTip = AS.anchor vol
+    immTip = AS.anchor changelogVolatileStates
 
     -- TODO: #4371 by point, not by count, so sequences can be ragged
     splitSeqDiff ::
@@ -362,27 +365,39 @@ flush FlushAllImmutable dblog =
       -> (SeqDiffMK k v, SeqDiffMK k v)
     splitSeqDiff (SeqDiffMK sq) =
         bimap SeqDiffMK SeqDiffMK
-      $ splitAt (AS.length imm) sq
+      $ splitAtFromEnd (fromIntegral k) sq
 
-    lr :: LedgerTables l (Product2 SeqDiffMK SeqDiffMK)
     lr = mapLedgerTables (uncurry Pair2 . splitSeqDiff) changelogDiffs
-
     l = mapLedgerTables (\(Pair2 x _) -> x) lr
     r = mapLedgerTables (\(Pair2 _ y) -> y) lr
 
-    ldblog = DbChangelog {
-        changelogDiffAnchor
-      , changelogDiffs           = l
-      , changelogImmutableStates = imm
-      , changelogVolatileStates  = AS.Empty immTip
+    prj ::
+         (Ord k, Eq v)
+      => SeqDiffMK k v
+      -> DiffMK k v
+    prj (SeqDiffMK sq) = DiffMK (DS.cumulativeDiff sq)
+
+    ldblog = DbChangelogToFlush {
+        toFlushDiffs = mapLedgerTables prj l
+      , toFlushSlot  =
+            fromWithOrigin (error "Flushing a DbChangelog at origin should never happen")
+          $ getTipSlot immTip
       }
 
     rdblog = DbChangelog {
-        changelogDiffAnchor      = getTipSlot (unDbChangelogState immTip)
-      , changelogDiffs           = r
-      , changelogImmutableStates = AS.Empty immTip
-      , changelogVolatileStates  = vol
+        changelogAnchor = immTip
+      , changelogDiffs  = r
+      , changelogVolatileStates
       }
+
+-- | A simplified 'DbChangelog' that should be used for flushing.
+data DbChangelogToFlush l = DbChangelogToFlush {
+    -- | The set of differences that should be flushed into the 'BackingStore'
+    toFlushDiffs :: !(LedgerTables l DiffMK)
+    -- | At which slot the diffs were split. This must be the slot of the state
+    -- considered as "last flushed" in the kept 'DbChangelog'
+  , toFlushSlot  :: !SlotNo
+  }
 
 -- | Flush **all the changes in this DbChangelog** into the backing store
 --
@@ -397,22 +412,12 @@ flush FlushAllImmutable dblog =
 -- of the changelog. If not, the @slot@ that we flush to the backing store will
 -- not match the actual tip of the diffs that we flush to the backing store.
 flushIntoBackingStore ::
-     (Applicative m, HasLedgerTables l, GetTip l)
-  => LedgerBackingStore m l -> DbChangelog l -> m ()
+  LedgerBackingStore m l -> DbChangelogToFlush l -> m ()
 flushIntoBackingStore (LedgerBackingStore backingStore) dblog =
-    case immutableTipSlot dblog of
-      Origin  -> pure ()   -- the diff is necessarily empty
-      At slot ->
-        BackingStore.bsWrite
-          backingStore
-          slot
-          (mapLedgerTables prj $ changelogDiffs dblog)
-  where
-    prj ::
-         (Ord k, Eq v)
-      => SeqDiffMK k v
-      -> DiffMK k v
-    prj (SeqDiffMK sq) = DiffMK (DS.cumulativeDiff sq)
+  BackingStore.bsWrite
+    backingStore
+    (toFlushSlot dblog)
+    (toFlushDiffs dblog)
 
 {-------------------------------------------------------------------------------
   LedgerDB lock

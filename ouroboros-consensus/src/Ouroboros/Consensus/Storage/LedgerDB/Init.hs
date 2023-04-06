@@ -92,7 +92,7 @@ data InitLog blk =
 
 data TraceLedgerDBEvent blk =
     LedgerDBSnapshotEvent (TraceSnapshotEvent blk)
-  | BackingStoreEvent (BackingStoreTrace)
+  | BackingStoreEvent BackingStoreTrace
   deriving (Show, Eq, Generic)
 
 -- | Initialize the ledger DB from the most recent snapshot on disk
@@ -135,7 +135,7 @@ initialize ::
   -> m (ExtLedgerState blk ValuesMK) -- ^ Genesis ledger state
   -> StreamAPI m blk blk
   -> BackingStoreSelector m
-  -> m (InitLog blk, LedgerDB' blk, (Word64, Word64), LedgerBackingStore' m blk)
+  -> m (InitLog blk, LedgerDB' blk, Word64, LedgerBackingStore' m blk)
 initialize replayTracer
            tracer
            hasFS
@@ -159,7 +159,7 @@ initialize replayTracer
                    -> [DiskSnapshot]
                    -> m ( InitLog   blk
                         , LedgerDB' blk
-                        , (Word64, Word64)
+                        , Word64
                         , LedgerBackingStore' m blk
                         )
     tryNewestFirst acc [] = do
@@ -181,10 +181,10 @@ initialize replayTracer
                             initDb
       case eDB of
         Left err -> error $ "Invariant violation: invalid immutable chain " <> show err
-        Right (db, replayCounters) ->
+        Right (db, replayCounter) ->
           return ( acc InitFromGenesis
                  , db
-                 , replayCounters
+                 , replayCounter
                  , backingStore
                  )
 
@@ -243,8 +243,6 @@ initialize replayTracer
 --
 -- Note we do flush differences into the 'BackingStore' as we go, but we don't
 -- take snapshots of the in-memory parts.
---
--- TODO: #4402 expose the flushing frequence as a configuration
 replayStartingWith ::
      forall m blk. (
          IOLike m
@@ -258,30 +256,34 @@ replayStartingWith ::
   -> LedgerBackingStore' m blk
   -> StreamAPI m blk blk
   -> LedgerDB' blk
-  -> ExceptT (SnapshotFailure blk) m (LedgerDB' blk, (Word64, Word64))
+  -> ExceptT (SnapshotFailure blk) m (LedgerDB' blk, Word64)
 replayStartingWith tracer cfg policy backingStore streamAPI initDb = do
-    (\(a, b, c) -> (a, (b, c))) <$> streamAll streamAPI (castPoint (tip initDb))
-        InitFailureTooRecent
-        (initDb, 0, 0)
-        push
+   streamAll streamAPI (castPoint (tip initDb))
+     InitFailureTooRecent
+     (initDb, 0)
+     push
   where
     DiskPolicy { onDiskShouldFlush } = policy
 
-    push :: blk -> (LedgerDB' blk, Word64, Word64) -> m (LedgerDB' blk, Word64, Word64)
-    push blk (!db, !replayed, !sinceFlush) = do
+    secParam = ledgerDbCfgSecParam cfg
+
+    push :: blk -> (LedgerDB' blk, Word64) -> m (LedgerDB' blk, Word64)
+    push blk (!db, !replayed) = do
         !db' <- LedgerDB.push cfg (ReapplyVal blk) (readKeySets backingStore) db
 
         -- It's OK to flush without a lock here, since the `LgrDB` has not
         -- finishined initializing: only this thread has access to the backing
         -- store.
-        (db'', sinceLast') <-
-          if onDiskShouldFlush sinceFlush
+        db'' <-
+          if onDiskShouldFlush (flushableLength secParam db')
           then do
             let (toFlush, toKeep) =
-                  LedgerDB.flush FlushAllImmutable db'
+                  LedgerDB.flush
+                    (FlushAllImmutable secParam)
+                    db'
             flushIntoBackingStore backingStore toFlush
-            pure (toKeep, 0)
-          else pure (db', sinceFlush + 1)
+            pure toKeep
+          else pure db'
 
         let replayed' :: Word64
             !replayed' = replayed + 1
@@ -293,7 +295,7 @@ replayStartingWith tracer cfg policy backingStore streamAPI initDb = do
                        (ledgerState (current db''))
 
         traceWith tracer (ReplayedBlock (blockRealPoint blk) events)
-        return (db'', replayed', sinceLast')
+        return (db'', replayed')
 
 {-------------------------------------------------------------------------------
   BackingStore utilities
@@ -302,7 +304,10 @@ replayStartingWith tracer cfg policy backingStore streamAPI initDb = do
 type BackingStoreInitializer m l =
      SomeHasFS m
   -> InitFrom (LedgerTables l ValuesMK)
-  -> m (BackingStore m (LedgerTables l KeysMK) (LedgerTables l ValuesMK) (LedgerTables l DiffMK))
+  -> m (BackingStore m
+         (LedgerTables l KeysMK)
+         (LedgerTables l ValuesMK)
+         (LedgerTables l DiffMK))
 
 -- | Overwrite the ChainDB tables with the snapshot's tables
 restoreBackingStore ::
@@ -311,8 +316,9 @@ restoreBackingStore ::
   -> SomeHasFS m
   -> DiskSnapshot
   -> m (LedgerBackingStore m l)
-restoreBackingStore bsi someHasFs snapshot = do
-    LedgerBackingStore <$> bsi someHasFs (InitFromCopy (BackingStore.BackingStorePath loadPath))
+restoreBackingStore bsi someHasFs snapshot =
+        LedgerBackingStore
+    <$> bsi someHasFs (InitFromCopy (BackingStore.BackingStorePath loadPath))
   where
     loadPath = snapshotToTablesPath snapshot
 
@@ -323,9 +329,8 @@ newBackingStore ::
   -> SomeHasFS m
   -> LedgerTables l ValuesMK
   -> m (LedgerBackingStore m l)
-newBackingStore bsi someHasFS tables = do
+newBackingStore bsi someHasFS tables =
     LedgerBackingStore <$> bsi someHasFS (InitFromValues Origin tables)
-  where
 
 newBackingStoreInitialiser ::
      ( IOLike m
@@ -406,7 +411,7 @@ decorateReplayTracerWithGoal
   :: Point blk -- ^ Tip of the ImmutableDB
   -> Tracer m (TraceReplayEvent blk)
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
-decorateReplayTracerWithGoal immTip = contramap ($ (ReplayGoal immTip))
+decorateReplayTracerWithGoal immTip = contramap ($ ReplayGoal immTip)
 
 -- | Add the block at which a replay started.
 --
@@ -415,7 +420,7 @@ decorateReplayTracerWithStart
   :: Point blk -- ^ Starting point of the replay
   -> Tracer m (ReplayGoal blk -> TraceReplayEvent blk)
   -> Tracer m (ReplayStart blk -> ReplayGoal blk -> TraceReplayEvent blk)
-decorateReplayTracerWithStart start = contramap ($ (ReplayStart start))
+decorateReplayTracerWithStart start = contramap ($ ReplayStart start)
 
 -- | Which point the replay started from
 newtype ReplayStart blk = ReplayStart (Point blk) deriving (Eq, Show)

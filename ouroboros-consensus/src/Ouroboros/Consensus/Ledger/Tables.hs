@@ -44,6 +44,7 @@ module Ouroboros.Consensus.Ledger.Tables (
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Control.Exception as Exn
+import           Control.Monad (replicateM)
 import           Data.Kind (Constraint, Type)
 import           Data.Map.Diff.Strict (Diff)
 import           Data.Map.Strict (Map)
@@ -532,7 +533,7 @@ valuesMKDecoder = do
       else do
         mapLen <- CBOR.decodeMapLen
         ret    <- traverseLedgerTables (go mapLen) codecLedgerTables
-        Exn.assert ((getSum (foldLedgerTables (\_ -> Sum 1) ret)) == numTables)
+        Exn.assert (getSum (foldLedgerTables (\_ -> Sum 1) ret) == numTables)
           $ return ret
  where
   go :: Ord k
@@ -541,7 +542,7 @@ valuesMKDecoder = do
      -> CBOR.Decoder s (ValuesMK k v)
   go len (CodecMK _encK _encV decK decV) =
         ValuesMK . Map.fromList
-    <$> sequence (replicate len ((,) <$> decK <*> decV))
+    <$> replicateM len ((,) <$> decK <*> decV)
 
 {-------------------------------------------------------------------------------
   Special classes of ledger states

@@ -1,4 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | How to rewind, read and forward a set of keys through a db changelog,
 -- and use it to apply a function that expects a hydrated state as input.
@@ -24,11 +23,12 @@ import           Cardano.Slotting.Slot
 import           Data.Map.Diff.Strict.Internal (unsafeApplyDiffForKeys)
 import           GHC.Stack (HasCallStack)
 import           Ouroboros.Consensus.Block.Abstract
+import           Ouroboros.Consensus.Ledger.Basics (GetTip, getTipSlot)
 import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 import           Ouroboros.Consensus.Storage.LedgerDB.DiffSeq
-import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB (LedgerDB (..))
+import           Ouroboros.Consensus.Storage.LedgerDB.LedgerDB
 import           Ouroboros.Consensus.Util.IOLike
 
 {-------------------------------------------------------------------------------
@@ -41,9 +41,10 @@ data RewoundTableKeySets l =
       !(LedgerTables l KeysMK)
 
 rewindTableKeySets ::
-     DbChangelog l -> LedgerTables l KeysMK -> RewoundTableKeySets l
+     GetTip l
+  => DbChangelog l -> LedgerTables l KeysMK -> RewoundTableKeySets l
 rewindTableKeySets =
-      RewoundTableKeySets . changelogDiffAnchor
+      RewoundTableKeySets . getTipSlot . changelogAnchor
 
 {-------------------------------------------------------------------------------
   Read
@@ -51,14 +52,14 @@ rewindTableKeySets =
 
 type KeySetsReader m l = RewoundTableKeySets l -> m (UnforwardedReadSets l)
 
-readKeySets :: forall m l.
+readKeySets ::
      IOLike m
   => LedgerBackingStore m l
   -> KeySetsReader m l
 readKeySets (LedgerBackingStore backingStore) rew = do
     readKeySetsWith (bsRead backingStore) rew
 
-readKeySetsWith :: forall m l.
+readKeySetsWith ::
      Monad m
   => (LedgerTables l KeysMK -> m (WithOrigin SlotNo, LedgerTables l ValuesMK))
   -> RewoundTableKeySets l
@@ -72,9 +73,7 @@ readKeySetsWith readKeys (RewoundTableKeySets _seqNo rew) = do
     }
 
 withKeysReadSets ::
-  forall m l mk1 a.
-  ( HasLedgerTables l, Monad m, HasCallStack
-  )
+  (HasLedgerTables l, GetTip l, Monad m, HasCallStack)
   => l mk1
   -> KeySetsReader m l
   -> DbChangelog l
@@ -82,7 +81,7 @@ withKeysReadSets ::
   -> (l ValuesMK -> m a)
   -> m a
 withKeysReadSets st ksReader dbch ks f = do
-      let aks = rewindTableKeySets dbch ks :: RewoundTableKeySets l
+      let aks = rewindTableKeySets dbch ks
       urs <- ksReader aks
       case withHydratedLedgerState st dbch urs f of
         Left err ->
@@ -100,7 +99,7 @@ withKeysReadSets st ksReader dbch ks f = do
         Right res -> res
 
 withHydratedLedgerState ::
-     HasLedgerTables l
+     (GetTip l, HasLedgerTables l)
   => l mk1
   -> DbChangelog l
   -> UnforwardedReadSets l
@@ -119,18 +118,19 @@ newtype PointNotFound blk = PointNotFound (Point blk) deriving (Eq, Show)
 -- unlucky and scheduling of events happened to move the backing store. Reading
 -- again the LedgerDB and calling this function must eventually succeed.
 getLedgerTablesFor ::
-     (Monad m, HasLedgerTables l)
+     (Monad m, HasLedgerTables l, GetTip l)
   => LedgerDB l
   -> LedgerTables l KeysMK
   -> KeySetsReader m l
   -> m (Either RewindReadFwdError (LedgerTables l ValuesMK))
 getLedgerTablesFor db keys ksRead = do
-  let aks = rewindTableKeySets (ledgerDbChangelog db) keys
+  let aks = rewindTableKeySets db keys
   urs <- ksRead aks
-  pure $ forwardTableKeySets (ledgerDbChangelog db) urs
+  pure $ forwardTableKeySets db urs
 
 trivialKeySetsReader :: (Monad m, LedgerTablesAreTrivial l) => KeySetsReader m l
-trivialKeySetsReader (RewoundTableKeySets s _) = pure $ UnforwardedReadSets s trivialLedgerTables trivialLedgerTables
+trivialKeySetsReader (RewoundTableKeySets s _) =
+  pure $ UnforwardedReadSets s trivialLedgerTables trivialLedgerTables
 
 {-------------------------------------------------------------------------------
   Forward
@@ -146,6 +146,8 @@ data UnforwardedReadSets l = UnforwardedReadSets {
   , ursKeys   :: !(LedgerTables l KeysMK)
   }
 
+-- | The DbChangelog and the BackingStore got out of sync. This is a critical
+-- error, we cannot recover from this.
 data RewindReadFwdError = RewindReadFwdError {
     rrfBackingStoreAt :: !(WithOrigin SlotNo)
   , rrfDbChangelogAt  :: !(WithOrigin SlotNo)
@@ -159,9 +161,9 @@ forwardTableKeySets' ::
   -> Either RewindReadFwdError
             (LedgerTables l ValuesMK)
 forwardTableKeySets' seqNo chdiffs = \(UnforwardedReadSets seqNo' values keys) ->
-    if seqNo /= seqNo' then Left $ RewindReadFwdError seqNo' seqNo else
-    Right
-      $ zipLedgerTables3 forward values keys chdiffs
+    if seqNo /= seqNo'
+    then Left $ RewindReadFwdError seqNo' seqNo
+    else Right $ zipLedgerTables3 forward values keys chdiffs
   where
     forward ::
          (Ord k, Eq v)
@@ -173,10 +175,12 @@ forwardTableKeySets' seqNo chdiffs = \(UnforwardedReadSets seqNo' values keys) -
       ValuesMK $ unsafeApplyDiffForKeys values keys (cumulativeDiff diffs)
 
 forwardTableKeySets ::
-     HasLedgerTables l
+     (GetTip l, HasLedgerTables l)
   => DbChangelog l
   -> UnforwardedReadSets l
   -> Either RewindReadFwdError
             (LedgerTables l ValuesMK)
 forwardTableKeySets dblog =
-  forwardTableKeySets' (changelogDiffAnchor dblog) (changelogDiffs dblog)
+  forwardTableKeySets'
+    (getTipSlot $ changelogAnchor dblog)
+    (changelogDiffs dblog)

@@ -33,7 +33,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl (
   , openDBInternal
   ) where
 
-import           Control.Monad (when)
+import           Control.Monad (when, forM_)
 import           Control.Monad.Trans.Class (lift)
 import           Control.Tracer
 import           Data.Functor ((<&>))
@@ -71,6 +71,7 @@ import           Ouroboros.Consensus.Util.STM (Fingerprint (..),
 import           Ouroboros.Consensus.Util.TentativeState
                      (TentativeState (NoLastInvalidTentative))
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
 
 {-------------------------------------------------------------------------------
   Initialization
@@ -135,7 +136,7 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
               immutableDbTipPoint
               (contramap TraceLedgerReplayEvent tracer)
       traceWith tracer $ TraceOpenEvent StartedOpeningLgrDB
-      (lgrDB, replayCounters) <- LgrDB.openDB argsLgrDb
+      (lgrDB, replayCounter) <- LgrDB.openDB argsLgrDb
                                  lgrReplayTracer
                                  immutableDB
                                  (Query.getAnyKnownBlock immutableDB volatileDB)
@@ -162,7 +163,9 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
           K ledger = VF.validatedLedger   chainAndLedger
           cfg    = Args.cdbTopLevelConfig args
 
-      atomically $ LgrDB.setCurrent lgrDB ledger
+      mDiffs <- atomically $ LgrDB.setCurrent lgrDB ledger
+      forM_ mDiffs $ flushIntoBackingStore (LgrDB.lgrBackingStore lgrDB)
+
       varChain           <- newTVarIO chain
       varTentativeState  <- newTVarIO NoLastInvalidTentative
       varTentativeHeader <- newTVarIO SNothing
@@ -235,11 +238,11 @@ openDBInternal args launchBgTasks = runWithTempRegistry $ do
         (castPoint $ AF.anchorPoint chain)
         (castPoint $ AF.headPoint   chain)
 
-      when launchBgTasks $ Background.launchBgTasks env replayCounters
+      when launchBgTasks $ Background.launchBgTasks env replayCounter
 
       return (chainDB, testing, env)
 
-    _ <- lift $ allocate (Args.cdbRegistry args) (\_ -> return $ chainDB) API.closeDB
+    _ <- lift $ allocate (Args.cdbRegistry args) (\_ -> return chainDB) API.closeDB
 
     return ((chainDB, testing), env)
   where

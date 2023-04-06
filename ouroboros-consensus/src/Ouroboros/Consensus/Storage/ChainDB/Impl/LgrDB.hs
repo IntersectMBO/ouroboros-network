@@ -15,6 +15,7 @@
 -- | Thin wrapper around the LedgerDB
 module Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB (
     LgrDB
+  , diskPolicy
   , lgrBackingStore
   , lgrFlushLock
     -- opaque
@@ -85,7 +86,8 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.BlockCache as BlockCac
 import           Ouroboros.Consensus.Storage.Common
 import           Ouroboros.Consensus.Storage.ImmutableDB (ImmutableDB)
 import qualified Ouroboros.Consensus.Storage.ImmutableDB as ImmutableDB
-import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB')
+import           Ouroboros.Consensus.Storage.LedgerDB (LedgerDB',
+                     configLedgerDb, ledgerDbCfgSecParam)
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog hiding (flush)
@@ -218,10 +220,10 @@ openDB :: forall m blk.
        --
        -- The block may be in the immutable DB or in the volatile DB; the ledger
        -- DB does not know where the boundary is at any given point.
-       -> m (LgrDB m blk, (Word64, Word64))
+       -> m (LgrDB m blk, Word64)
 openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer immutableDB getBlock = do
     createDirectoryIfMissing hasFS True (mkFsPath [])
-    (db, replayCounters, lgrBackingStore) <- initFromDisk args replayTracer lgrDiskPolicy immutableDB
+    (db, replayCounter, lgrBackingStore) <- initFromDisk args replayTracer lgrDiskPolicy immutableDB
     -- When initializing the ledger DB from disk we:
     --
     -- - Look for the newest valid snapshot, say 'Lbs', which corresponds to the
@@ -255,7 +257,7 @@ openDB args@LgrDbArgs { lgrHasFS = lgrHasFS@(SomeHasFS hasFS), .. } replayTracer
           , hasFS           = lgrHasFS
           , tracer          = lgrTracer
           }
-      , replayCounters
+      , replayCounter
       )
 
 initFromDisk
@@ -270,12 +272,12 @@ initFromDisk
   -> Tracer m (LedgerDB.ReplayGoal blk -> LedgerDB.TraceReplayEvent blk)
   -> LedgerDB.DiskPolicy
   -> ImmutableDB m blk
-  -> m (LedgerDB' blk, (Word64, Word64), LedgerBackingStore m (ExtLedgerState blk))
+  -> m (LedgerDB' blk, Word64, LedgerBackingStore m (ExtLedgerState blk))
 initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
              replayTracer
              policy
              immutableDB = wrapFailure (Proxy @blk) $ do
-    (_initLog, db, replayCounters, backingStore) <-
+    (_initLog, db, replayCounter, backingStore) <-
       LedgerDB.initialize
         replayTracer
         lgrTracer
@@ -288,7 +290,7 @@ initFromDisk LgrDbArgs { lgrHasFS = hasFS, .. }
         lgrGenesis
         (streamAPI immutableDB)
         lgrBackingStoreSelector
-    return (db, replayCounters, backingStore)
+    return (db, replayCounter, backingStore)
   where
     ccfg = configCodec lgrTopLevelConfig
 
@@ -325,8 +327,34 @@ getCurrent LgrDB{..} = readTVar varDB
 -- | PRECONDITION: The new 'LedgerDB' must be the result of calling either
 -- 'LedgerDB.ledgerDbSwitch' or 'LedgerDB.ledgerDbPushMany' on the current
 -- 'LedgerDB'.
-setCurrent :: IOLike m => LgrDB m blk -> LedgerDB' blk -> STM m ()
-setCurrent LgrDB{..} = writeTVar $! varDB
+--
+-- Note that setting the current ledger DB will imply flushing if appropriate so
+-- that the logic that updates the DB is in fact the one responsible of flushing
+-- differences.
+setCurrent ::
+     ( IsLedger (ExtLedgerState blk)
+     , IOLike m
+     , HasLedgerTables (LedgerState blk)
+     , ConsensusProtocol (BlockProtocol blk)
+     )
+  => LgrDB m blk
+  -> LedgerDB' blk
+  -> STM m (Maybe (DbChangelogToFlush (ExtLedgerState blk)))
+setCurrent LgrDB {varDB, cfg, diskPolicy} ldb =
+  let secParam = ledgerDbCfgSecParam $ configLedgerDb cfg in
+  if LedgerDB.onDiskShouldFlush
+    diskPolicy
+    (flushableLength secParam ldb)
+  then do
+    let (toFlush, db') =
+          LedgerDB.flush
+            (FlushAllImmutable secParam)
+            ldb
+    writeTVar varDB db'
+    pure (Just toFlush)
+  else do
+    writeTVar varDB ldb
+    pure Nothing
 
 currentPoint :: forall blk. UpdateLedger blk => LedgerDB' blk -> Point blk
 currentPoint = castPoint
@@ -377,10 +405,13 @@ getDiskPolicy = diskPolicy
 -- PRECONDITION: The 'flushLock' write lock must be held before calling this
 -- function
 flushLgrDB :: (IOLike m, LedgerSupportsProtocol blk) => LgrDB m blk -> m ()
-flushLgrDB LgrDB { varDB, lgrBackingStore } = do
+flushLgrDB LgrDB { varDB, lgrBackingStore, cfg } = do
     toFlush <- atomically $ do
       db <- readTVar varDB
-      let (toFlush, db') = LedgerDB.flush FlushAllImmutable db
+      let (toFlush, db') =
+            LedgerDB.flush
+              (FlushAllImmutable (ledgerDbCfgSecParam $ configLedgerDb cfg))
+              db
       writeTVar varDB db'
       pure toFlush
     flushIntoBackingStore lgrBackingStore toFlush
@@ -598,11 +629,11 @@ acquireLDBReadView' p ldb stm =
    acquire l = do
      let (LedgerBackingStore bs) = lgrBackingStore ldb
      (slot, vh) <- bsValueHandle bs
-     if slot == changelogDiffAnchor (LedgerDB.ledgerDbChangelog l)
+     if slot == getTipSlot (changelogAnchor l)
        then pure (LedgerBackingStoreValueHandle slot vh, l)
        else error ("Critical error: Value handles are created at "
                    <> show slot
                    <> " while the db changelog is at "
-                   <> show (changelogDiffAnchor (LedgerDB.ledgerDbChangelog l))
+                   <> show (getTipSlot $ changelogAnchor l)
                    <> ". There is either a race condition or a logic bug"
                   )
