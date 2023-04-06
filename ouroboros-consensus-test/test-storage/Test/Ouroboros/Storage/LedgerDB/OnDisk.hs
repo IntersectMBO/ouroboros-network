@@ -1069,7 +1069,7 @@ runDB standalone@DB{..} cmd =
         (toFlush, bs) <- atomically $ do
           (_, db) <- readTVar dbState
           bs <- readTVar dbBackingStore
-          let (toFlush, db') = flush DbChangelog.FlushAllImmutable db
+          let (toFlush, db') = flush (DbChangelog.FlushAllImmutable dbSecParam) db
           modifyTVar dbState (\(rs, _) -> (rs, db'))
           pure (toFlush, bs)
         DbChangelog.flushIntoBackingStore bs toFlush

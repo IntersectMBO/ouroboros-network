@@ -20,6 +20,7 @@ module Test.Consensus.MiniProtocol.LocalStateQuery.Server (tests) where
 
 import           Cardano.Crypto.DSIGN.Mock
 import           Control.Monad.IOSim (runSimOrThrow)
+import Control.Monad (forM_)
 import           Control.Tracer (nullTracer)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -44,7 +45,7 @@ import qualified Ouroboros.Consensus.Storage.ChainDB.Impl.LgrDB as LgrDB
 import           Ouroboros.Consensus.Storage.LedgerDB
 import qualified Ouroboros.Consensus.Storage.LedgerDB as LedgerDB
 import           Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
-                     (mkLedgerDBLock)
+                     (mkLedgerDBLock, flushIntoBackingStore)
 import           Ouroboros.Consensus.Util (StaticEither (..))
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry
@@ -233,7 +234,8 @@ initLgrDB k chain = do
         LgrDB.ValidateLedgerError _ ->
           error "impossible: there were no invalid blocks"
         LgrDB.ValidateSuccessful ledgerDB' -> do
-          atomically $ LgrDB.setCurrent lgrDB ledgerDB'
+          mDiffs <- atomically $ LgrDB.setCurrent lgrDB ledgerDB'
+          forM_ mDiffs $ flushIntoBackingStore backingStore
           return lgrDB
   where
     resolve :: RealPoint TestBlock -> m TestBlock
