@@ -28,7 +28,7 @@ Uncomment the section that is right (remove the HTML comment wrapper).
   This function was replaced by `addTx`.
 - Add a `addTx` function to the mempool API. This function tries to add a single
   transaction and blocks if the mempool can not accept the given transaction. 
-  This means that entry to a mempool is now a (per-node) FIFO. This also ensure
+  This means that entry to a mempool is now a (per-peer) FIFO. This also ensure
   that transactions will always progress, irrespective of size.
   The refactoring introduces two FIFO queues. Remote clients have to queue in both
   of them, whereas local clients only have to queue in the local clients' queue. 
