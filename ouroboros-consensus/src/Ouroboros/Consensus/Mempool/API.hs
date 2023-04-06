@@ -72,6 +72,36 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSizeInBytes)
 -- * It supports wallets that submit dependent transactions (where later
 --   transaction depends on outputs from earlier ones).
 --
+-- The mempool provides fairness guarantees for the case of multiple threads
+-- performing 'addTx' concurrently. Implementations of this interface must
+-- provide this guarantee, and users of this interface may rely on it.
+-- Specifically, multiple threads that continuously use 'addTx' will, over
+-- time, get a share of the mempool resource (measured by the number of txs
+-- only, not their sizes) roughly proportional to their \"weight\". The weight
+-- depends on the 'AddTxOnBehalfOf': either acting on behalf of remote peers
+-- ('AddTxForRemotePeer') or on behalf of a local client
+-- ('AddTxForLocalClient'). The weighting for threads acting on behalf of
+-- remote peers is the same for all remote peers, so all remote peers will get
+-- a roughly equal share of the resource. The weighting for local clients is
+-- the same for all local clients but /may/ be higher than the weighting for
+-- remote peers. The weighting is not unboundedly higher however, so there is
+-- still (weighted) fairness between remote peers and local clients. Thus
+-- local clients will also get a roughly equal share of the resource, but that
+-- share may be strictly greater than the share for each remote peer.
+-- Furthermore, this implies local clients cannot starve remote peers, despite
+-- their higher weighting.
+--
+-- This fairness specification in terms of weighting is deliberately
+-- non-specific, which allows multiple strategies. The existing default
+-- strategy (for the implementation in "Ouroboros.Consensus.Mempool") is as
+-- follows. The design uses two FIFOs, to give strictly in-order behaviour.
+-- All remote peers get equal weight and all local clients get equal weight.
+-- The relative weight between remote and local is that if there are N remote
+-- peers and M local clients, each local client gets weight 1/(M+1), while all
+-- of the N remote peers together also get total weight 1/(M+1). This means
+-- individual remote peers get weight 1/(N * (M+1)). Intuitively: a single local
+-- client has the same weight as all the remote peers put together.
+--
 data Mempool m blk = Mempool {
       -- | Add a single transaction to the mempool.
       --
@@ -254,6 +284,8 @@ addLocalTxs mempool = mapM (addTx mempool AddTxForLocalClient)
 --
 -- 1. how certain errors are treated: we want to be helpful to local clients.
 -- 2. priority of service: local clients are prioritised over remote peers.
+--
+-- See 'Mempool' for a discussion of fairness and priority.
 --
 data AddTxOnBehalfOf = AddTxForRemotePeer | AddTxForLocalClient
 
