@@ -114,7 +114,7 @@ mkMempool mpEnv = Mempool
     }
    where MempoolEnv{ mpEnvStateVar = istate
                    , mpEnvAddTxsRemoteFifo = remoteFifo
-                   , mpEnvAddTxsAllFifo    = allFifo
+                   , mpEnvAddTxsAllFifo = allFifo
                    , mpEnvLedgerCfg = cfg
                    , mpEnvTxSize = txSize
                    , mpEnvTracer = trcr

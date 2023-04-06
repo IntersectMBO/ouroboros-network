@@ -54,16 +54,18 @@ implAddTx ::
      )
   => StrictTVar m (InternalState blk)
      -- ^ The InternalState TVar.
-  -> MVar m () -- ^ The FIFO for remote peers
-  -> MVar m () -- ^ The FIFO for all remote peers and local clients
+  -> MVar m ()
+      -- ^ The FIFO for remote peers
+  -> MVar m ()
+      -- ^ The FIFO for all remote peers and local clients
   -> LedgerConfig blk
      -- ^ The configuration of the ledger.
   -> (GenTx blk -> TxSizeInBytes)
      -- ^ The function to calculate the size of a
      -- transaction.
   -> Tracer m (TraceEventMempool blk)
-     -- ^ The tracer.
   -> AddTxOnBehalfOf
+     -- ^ Whether we're acting on behalf of a remote peer or a local client.
   -> GenTx blk
      -- ^ The transaction to add to the mempool.
   -> m (MempoolAddTxResult blk)
