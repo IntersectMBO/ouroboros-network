@@ -42,10 +42,10 @@ library
     , cardano-ledger-conway-test
     , cardano-ledger-core:{cardano-ledger-core, testlib}
     , cardano-ledger-mary
-    , cardano-ledger-shelley
     , cardano-ledger-shelley-ma-test
     , cardano-ledger-shelley-test
-    , cardano-protocol-tpraos
+    , cardano-ledger-shelley:{cardano-ledger-shelley, testlib}
+    , cardano-protocol-tpraos:{cardano-protocol-tpraos, testlib}                                      >=1.0.1  && <1.1
     , cardano-strict-containers
     , containers                                                                                      >=0.5    && <0.7
     , generic-random

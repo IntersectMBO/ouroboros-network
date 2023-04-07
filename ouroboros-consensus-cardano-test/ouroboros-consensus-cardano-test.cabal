@@ -90,6 +90,7 @@ test-suite test
     , cardano-crypto-class
     , cardano-ledger-alonzo
     , cardano-ledger-byron
+    , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-ledger-shelley
     , cardano-protocol-tpraos
