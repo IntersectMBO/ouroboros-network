@@ -17,7 +17,7 @@ module Bench.Consensus.Mempool.TestBlock (
   , PayloadDependentState (TestPLDS)
     -- * Transactions
   , Token (Token)
-  , Tx (Tx)
+  , Tx (Tx, consumed, produced)
   , mkSimpleGenesisTx
   , mkSimpleTx
   , mkTx
@@ -67,7 +67,7 @@ data Tx = Tx {
 
 newtype Token = Token { unToken :: Int  }
   deriving stock (Show, Eq, Ord, Generic)
-  deriving newtype (ToCBOR, FromCBOR, Num)
+  deriving newtype (ToCBOR, FromCBOR, Num, Enum)
   deriving anyclass (NoThunks, ToExpr, Serialise, NFData)
 
 mkTx ::
