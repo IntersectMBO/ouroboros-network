@@ -60,7 +60,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.DbChangelog (
 
 import           Cardano.Slotting.Slot
 import qualified Control.Exception as Exn
-import           Data.Bifunctor (bimap)
+import           Data.Bifunctor (bimap, first)
 import           Data.Semigroup (Sum (..))
 import           Data.SOP.Functors (Product2 (..))
 import           Data.SOP.Strict (K, unK)
@@ -347,7 +347,7 @@ flush ::
      (GetTip l, HasLedgerTables l)
   => FlushPolicy
   -> DbChangelog l
-  -> (DbChangelogToFlush l, DbChangelog l)
+  -> (Maybe (DbChangelogToFlush l), DbChangelog l)
 flush (FlushAllImmutable (SecurityParam k)) dblog =
       (ldblog, rdblog)
   where
@@ -364,8 +364,10 @@ flush (FlushAllImmutable (SecurityParam k)) dblog =
       => SeqDiffMK k v
       -> (SeqDiffMK k v, SeqDiffMK k v)
     splitSeqDiff (SeqDiffMK sq) =
-        bimap SeqDiffMK SeqDiffMK
-      $ splitAtFromEnd (fromIntegral k) sq
+        bimap (maybe emptyMK SeqDiffMK) SeqDiffMK
+      $ if DiffSeq.length sq > fromIntegral k
+        then first Just $ splitAtFromEnd (fromIntegral k) sq
+        else (Nothing, sq)
 
     lr = mapLedgerTables (uncurry Pair2 . splitSeqDiff) changelogDiffs
     l = mapLedgerTables (\(Pair2 x _) -> x) lr
@@ -377,7 +379,10 @@ flush (FlushAllImmutable (SecurityParam k)) dblog =
       -> DiffMK k v
     prj (SeqDiffMK sq) = DiffMK (DS.cumulativeDiff sq)
 
-    ldblog = DbChangelogToFlush {
+    ldblog =
+      if foldLedgerTables (\(SeqDiffMK sq) -> Sum $ DiffSeq.length sq) l == 0
+      then Nothing
+      else Just $ DbChangelogToFlush {
         toFlushDiffs = mapLedgerTables prj l
       , toFlushSlot  =
             fromWithOrigin (error "Flushing a DbChangelog at origin should never happen")

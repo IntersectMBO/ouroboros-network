@@ -373,7 +373,7 @@ storeLedgerStateAt slotNo aenv = do
         then do
           let (toFlush, toKeep) =
                 LedgerDB.flush (FlushAllImmutable secParam) ldb'
-          flushIntoBackingStore bstore toFlush
+          maybe (pure ()) (flushIntoBackingStore bstore) toFlush
           pure toKeep
         else pure ldb'
       when (unBlockNo (blockNo blk) `mod` 1000 == 0) $ reportProgress blk
@@ -464,7 +464,7 @@ checkNoThunksEvery
       then do
         let (toFlush, toKeep) =
                 LedgerDB.flush (FlushAllImmutable secParam) intermediateLedgerDB
-        flushIntoBackingStore bstore toFlush
+        maybe (pure ()) (flushIntoBackingStore bstore) toFlush
         pure toKeep
       else pure intermediateLedgerDB
 
@@ -516,7 +516,7 @@ traceLedgerProcessing
       then do
         let (toFlush, toKeep) =
                     LedgerDB.flush (FlushAllImmutable secParam) ldb'
-        flushIntoBackingStore bstore toFlush
+        maybe (pure ()) (flushIntoBackingStore bstore) toFlush
         pure toKeep
       else pure ldb'
 
@@ -610,8 +610,11 @@ benchmarkLedgerOps mOutfile AnalysisEnv {db, registry, initLedger, cfg, limit, b
           then do
               let (toFlush, toKeep) =
                     LedgerDB.flush (FlushAllImmutable secParam) ldb'
-              ((), tFlush) <- time $ flushIntoBackingStore bstore toFlush
-              pure (toKeep, tFlush)
+              case toFlush of
+                Nothing -> pure (toKeep, 0)
+                Just v -> do
+                  ((), tFlush) <- time $ flushIntoBackingStore bstore v
+                  pure (toKeep, tFlush)
           else pure (ldb', 0)
 
         currentRtsStats <- GC.getRTSStats
@@ -844,7 +847,7 @@ reproMempoolForge numBlks env = do
             then do
               let (toFlush, toKeep) =
                     LedgerDB.flush (FlushAllImmutable secParam) ldb'
-              flushIntoBackingStore bstore toFlush
+              maybe (pure ()) (flushIntoBackingStore bstore) toFlush
               pure toKeep
             else pure ldb'
 

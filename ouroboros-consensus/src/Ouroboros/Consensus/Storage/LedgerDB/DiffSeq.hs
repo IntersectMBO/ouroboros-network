@@ -269,7 +269,7 @@ append (UnsafeDiffSeq ft1) (UnsafeDiffSeq ft2) =
   where
     sl1R      = imSlotNoR $ measure ft1
     sl2L      = imSlotNoL $ measure ft2
-    invariant = case (noSlotBoundsIntersect <$> sl1R <*> sl2L) of
+    invariant = case noSlotBoundsIntersect <$> sl1R <*> sl2L of
       SNothing -> True
       SJust v  -> v
 

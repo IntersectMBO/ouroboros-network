@@ -344,7 +344,7 @@ switch cfg numRollbacks trace newBlocks ksReader db =
 -- | Isolates the prefix of the changelog that should be flushed
 flush ::
      (GetTip l, HasLedgerTables l)
-  => DbChangelog.FlushPolicy -> LedgerDB l -> (DbChangelogToFlush l, LedgerDB l)
+  => DbChangelog.FlushPolicy -> LedgerDB l -> (Maybe (DbChangelogToFlush l), LedgerDB l)
 flush = DbChangelog.flush
 
 {-------------------------------------------------------------------------------

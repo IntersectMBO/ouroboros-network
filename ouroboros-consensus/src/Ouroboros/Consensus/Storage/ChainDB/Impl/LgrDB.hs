@@ -350,8 +350,11 @@ setCurrent LgrDB {varDB, cfg, diskPolicy} ldb =
           LedgerDB.flush
             (FlushAllImmutable secParam)
             ldb
-    writeTVar varDB db'
-    pure (Just toFlush)
+    case toFlush of
+      Nothing -> pure Nothing
+      Just v -> do
+        writeTVar varDB db'
+        pure $ Just v
   else do
     writeTVar varDB ldb
     pure Nothing
@@ -412,9 +415,12 @@ flushLgrDB LgrDB { varDB, lgrBackingStore, cfg } = do
             LedgerDB.flush
               (FlushAllImmutable (ledgerDbCfgSecParam $ configLedgerDb cfg))
               db
-      writeTVar varDB db'
-      pure toFlush
-    flushIntoBackingStore lgrBackingStore toFlush
+      case toFlush of
+        Nothing -> pure Nothing
+        Just _ -> do
+          writeTVar varDB db'
+          pure toFlush
+    maybe (pure ()) (flushIntoBackingStore lgrBackingStore) toFlush
 
 {-------------------------------------------------------------------------------
   Validation

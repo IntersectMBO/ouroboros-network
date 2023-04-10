@@ -1070,9 +1070,12 @@ runDB standalone@DB{..} cmd =
           (_, db) <- readTVar dbState
           bs <- readTVar dbBackingStore
           let (toFlush, db') = flush (DbChangelog.FlushAllImmutable dbSecParam) db
-          modifyTVar dbState (\(rs, _) -> (rs, db'))
-          pure (toFlush, bs)
-        DbChangelog.flushIntoBackingStore bs toFlush
+          case toFlush of
+            Nothing -> pure (toFlush, bs)
+            Just _ -> do
+              modifyTVar dbState (\(rs, _) -> (rs, db'))
+              pure (toFlush, bs)
+        maybe (pure ()) (DbChangelog.flushIntoBackingStore bs) toFlush
         pure Flushed
     go hasFS Snap = do
         (bs, anc) <- atomically $ do

@@ -281,7 +281,7 @@ replayStartingWith tracer cfg policy backingStore streamAPI initDb = do
                   LedgerDB.flush
                     (FlushAllImmutable secParam)
                     db'
-            flushIntoBackingStore backingStore toFlush
+            maybe (pure ()) (flushIntoBackingStore backingStore) toFlush
             pure toKeep
           else pure db'
 
