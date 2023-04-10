@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-mock
-version:            0.3.1.0
+version:            0.4.1.0
 synopsis:           Mock ledger integration in the Ouroboros consensus layer
 description:        Mock ledger integration in the Ouroboros consensus layer.
 license:            Apache-2.0
@@ -61,7 +61,7 @@ library
     , hashable
     , mtl                     >=2.2    && <2.3
     , nothunks
-    , ouroboros-consensus     ^>=0.3.1
+    , ouroboros-consensus     ^>=0.4.1
     , ouroboros-network-api
     , ouroboros-network-mock
     , serialise               >=0.2    && <0.3
