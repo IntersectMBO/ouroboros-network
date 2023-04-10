@@ -210,6 +210,7 @@ library
     Ouroboros.Consensus.Storage.LedgerDB.BackingStore.InMemory
     Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB
     Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB.Bridge
+    Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB.Status
     Ouroboros.Consensus.Storage.LedgerDB.BackingStore.Trivial
     Ouroboros.Consensus.Storage.LedgerDB.DbChangelog
     Ouroboros.Consensus.Storage.LedgerDB.DiffSeq
