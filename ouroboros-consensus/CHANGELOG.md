@@ -13,6 +13,48 @@ process](./docs/ReleaseProcess.md).
 
 # Changelog entries
 
+<a id='changelog-0.4.1.0'></a>
+## 0.4.1.0 — 2023-04-10
+
+### Patch
+
+- `ouroboros-consensus` and `ouroboros-consensus-diffusion`: Since the
+  filesystem API that lives in `ouroboros-consensus` will live in the `fs-api`
+  package for now on, start depending on `fs-api`, and change imports
+  accordingly.
+
+- Collapse all imports into one group in every file.
+- Adapt to relocation of SOP-related `Util` modules.
+
+### Non-Breaking
+
+- Move `Util` modules that are related only to SOP to `Data.SOP`. Deprecate the
+  following modules:
+
+  - `Ouroboros.Consensus.HardFork.Combinator.Util.DerivingVia` ->
+    `Ouroboros.Consensus.HardFork.Lifting`
+  - `Ouroboros.Consensus.HardFork.Combinator.Util.Functors` ->
+    `Data.SOP.Functors`
+  - `Ouroboros.Consensus.HardFork.Combinator.Util.InPairs` ->
+    `Data.SOP.InPairs`
+  - `Ouroboros.Consensus.HardFork.Combinator.Util.Match` ->
+    `Data.SOP.Match`
+  - `Ouroboros.Consensus.HardFork.Combinator.Util.Telescope` ->
+    `Data.SOP.Telescope`
+  - `Ouroboros.Consensus.Util.Counting` ->
+    `Data.SOP.Counting`
+  - `Ouroboros.Consensus.Util.OptNP` ->
+    `Data.SOP.OptNP`
+  - `Ouroboros.Consensus.Util.SOP` -> split into `Data.SOP.Index`,
+    `Data.SOP.Lenses`, `Data.SOP.NonEmpty` and some functions moved to
+    `Data.SOP.Strict`
+
+### Breaking
+
+- `ouroboros-consensus`: Move the filesystem API that lives under
+  `Ouroboros.Consensus.Storage.FS` and `Ouroboros.Consensus.Storage.IO` to a new
+  package called `fs-api`. The original modules become deprecated.
+
 <a id='changelog-0.3.1.0'></a>
 ## 0.3.1.0 — 2023-03-07
 
