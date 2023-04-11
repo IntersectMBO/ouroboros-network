@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-byronspec
-version:            0.4.0.0
+version:            0.4.0.1
 synopsis:
   ByronSpec ledger integration in the Ouroboros consensus layer
 
@@ -49,7 +49,7 @@ library
     , containers                 >=0.5   && <0.7
     , mtl                        >=2.2   && <2.3
     , nothunks
-    , ouroboros-consensus        ^>=0.3
+    , ouroboros-consensus        ^>=0.4
     , serialise                  >=0.2   && <0.3
     , small-steps
     , transformers

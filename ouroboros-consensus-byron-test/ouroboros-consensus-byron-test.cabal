@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-byron-test
-version:            0.4.0.0
+version:            0.4.0.1
 synopsis:           Test infrastructure for Byron
 description:        Test infrastructure for Byron.
 license:            Apache-2.0
@@ -46,10 +46,10 @@ library
     , containers                                              >=0.5     && <0.7
     , hedgehog-quickcheck
     , mtl                                                     >=2.2     && <2.3
-    , ouroboros-consensus                                     ^>=0.3
+    , ouroboros-consensus                                     ^>=0.4
     , ouroboros-consensus-byron                               ^>=0.4.0
-    , ouroboros-consensus-byronspec                           ==0.4.0.0
-    , ouroboros-consensus-test                                ^>=0.3
+    , ouroboros-consensus-byronspec                           ==0.4.0.1
+    , ouroboros-consensus-test                                ^>=0.4
     , ouroboros-network-api
     , QuickCheck
     , serialise                                               >=0.2     && <0.3
@@ -87,11 +87,11 @@ test-suite test
     , filepath
     , hedgehog-quickcheck
     , mtl
-    , ouroboros-consensus             ^>=0.3
+    , ouroboros-consensus             ^>=0.4
     , ouroboros-consensus-byron       ^>=0.4.0
     , ouroboros-consensus-byron-test
-    , ouroboros-consensus-byronspec   ==0.4.0.0
-    , ouroboros-consensus-test        ^>=0.3
+    , ouroboros-consensus-byronspec   ==0.4.0.1
+    , ouroboros-consensus-test        ^>=0.4
     , ouroboros-network-mock
     , QuickCheck
     , small-steps

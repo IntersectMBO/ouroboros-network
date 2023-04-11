@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-shelley-test
-version:            0.4.0.0
+version:            0.4.0.1
 synopsis:           Test infrastructure for Shelley
 description:        Test infrastructure for Shelley.
 license:            Apache-2.0
@@ -51,10 +51,10 @@ library
     , generic-random
     , microlens
     , mtl                                                                                             >=2.2    && <2.3
-    , ouroboros-consensus                                                                             ^>=0.3
-    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.3
+    , ouroboros-consensus                                                                             ^>=0.4
+    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.4
     , ouroboros-consensus-shelley                                                                     ^>=0.4.0
-    , ouroboros-consensus-test                                                                        ^>=0.3
+    , ouroboros-consensus-test                                                                        ^>=0.4
     , ouroboros-network-api
     , QuickCheck
     , quiet                                                                                           >=0.2    && <0.3
@@ -91,11 +91,11 @@ test-suite test
     , containers
     , filepath
     , microlens
-    , ouroboros-consensus               ^>=0.3
-    , ouroboros-consensus-protocol      ^>=0.3
+    , ouroboros-consensus               ^>=0.4
+    , ouroboros-consensus-protocol      ^>=0.4
     , ouroboros-consensus-shelley       ^>=0.4.0
     , ouroboros-consensus-shelley-test
-    , ouroboros-consensus-test          ^>=0.3
+    , ouroboros-consensus-test          ^>=0.4
     , QuickCheck
     , tasty
     , tasty-quickcheck

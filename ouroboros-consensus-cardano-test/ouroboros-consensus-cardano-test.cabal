@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-cardano-test
-version:            0.4.0.0
+version:            0.4.0.1
 synopsis:
   Test of the instantation of the Ouroboros consensus layer used by Cardano
 
@@ -52,15 +52,15 @@ library
     , containers
     , microlens
     , mtl
-    , ouroboros-consensus                                                                             ^>=0.3
+    , ouroboros-consensus                                                                             ^>=0.4
     , ouroboros-consensus-byron                                                                       ^>=0.4.0
-    , ouroboros-consensus-byron-test                                                                  ==0.4.0.0
+    , ouroboros-consensus-byron-test                                                                  ==0.4.0.1
     , ouroboros-consensus-cardano                                                                     ^>=0.4.0
-    , ouroboros-consensus-diffusion                                                                   ^>=0.3
-    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.3
+    , ouroboros-consensus-diffusion                                                                   ^>=0.4
+    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.4
     , ouroboros-consensus-shelley                                                                     ^>=0.4.0
-    , ouroboros-consensus-shelley-test                                                                ==0.4.0.0
-    , ouroboros-consensus-test                                                                        ^>=0.3
+    , ouroboros-consensus-shelley-test                                                                ==0.4.0.1
+    , ouroboros-consensus-test                                                                        ^>=0.4
     , ouroboros-network-api
     , QuickCheck
 
@@ -99,15 +99,15 @@ test-suite test
     , containers
     , filepath
     , microlens
-    , ouroboros-consensus               ^>=0.3
+    , ouroboros-consensus               ^>=0.4
     , ouroboros-consensus-byron         ^>=0.4.0
-    , ouroboros-consensus-byron-test    ==0.4.0.0
+    , ouroboros-consensus-byron-test    ==0.4.0.1
     , ouroboros-consensus-cardano       ^>=0.4.0
     , ouroboros-consensus-cardano-test
-    , ouroboros-consensus-protocol      ^>=0.3
+    , ouroboros-consensus-protocol      ^>=0.4
     , ouroboros-consensus-shelley       ^>=0.4.0
-    , ouroboros-consensus-shelley-test  ==0.4.0.0
-    , ouroboros-consensus-test          ^>=0.3
+    , ouroboros-consensus-shelley-test  ==0.4.0.1
+    , ouroboros-consensus-test          ^>=0.4
     , ouroboros-network-api
     , QuickCheck
     , sop-core

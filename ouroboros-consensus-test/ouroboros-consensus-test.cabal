@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-test
-version:            0.3.1.0
+version:            0.4.1.0
 synopsis:           Tests of the consensus layer
 description:        Tests of the consensus layer.
 license:            Apache-2.0
@@ -103,8 +103,8 @@ library
     , mtl                            >=2.2    && <2.3
     , nothunks
     , optparse-applicative
-    , ouroboros-consensus            ^>=0.3.1
-    , ouroboros-consensus-diffusion  ^>=0.3.1
+    , ouroboros-consensus            ^>=0.4.1
+    , ouroboros-consensus-diffusion  ^>=0.4.1
     , ouroboros-network
     , ouroboros-network-api
     , ouroboros-network-framework
@@ -178,9 +178,9 @@ test-suite test-consensus
     , io-sim
     , mtl
     , nothunks
-    , ouroboros-consensus                                                 ^>=0.3.1
-    , ouroboros-consensus-diffusion                                       ^>=0.3.1
-    , ouroboros-consensus-mock                                            ==0.3.1.0
+    , ouroboros-consensus                                                 ^>=0.4.1
+    , ouroboros-consensus-diffusion                                       ^>=0.4.1
+    , ouroboros-consensus-mock                                            ==0.4.1.0
     , ouroboros-consensus-test
     , ouroboros-network
     , ouroboros-network-api
@@ -259,7 +259,7 @@ test-suite test-storage
     , io-sim
     , mtl
     , nothunks
-    , ouroboros-consensus       ^>=0.3.1
+    , ouroboros-consensus       ^>=0.4.1
     , ouroboros-consensus-test
     , ouroboros-network-api
     , ouroboros-network-mock
@@ -296,7 +296,7 @@ test-suite test-infra
 
   build-depends:
     , base                      >=4.14    && <4.17
-    , ouroboros-consensus       ==0.3.1.0
+    , ouroboros-consensus       ==0.4.1.0
     , ouroboros-consensus-test
     , QuickCheck
     , tasty
@@ -328,7 +328,7 @@ benchmark bench-mempool
     , contra-tracer
     , deepseq
     , nothunks
-    , ouroboros-consensus       ^>=0.3.1
+    , ouroboros-consensus       ^>=0.4.1
     , ouroboros-consensus-test
     , serialise                 >=0.2    && <0.3
     , strict-stm
