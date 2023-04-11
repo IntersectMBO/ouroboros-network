@@ -23,6 +23,8 @@ import           Data.Functor ((<&>))
 import           Data.Functor.Identity (Identity (..))
 import qualified Data.Map.Strict as Map
 import           Data.Maybe.Strict (StrictMaybe (..))
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
 import           Ouroboros.Consensus.Storage.ChainDB.API (BlockComponent (..),
@@ -111,9 +113,10 @@ newFollower h registry chainType blockComponent = getEnv h $ \CDB{..} -> do
           -- 'closeAllFollowers' will empty that map already.
           followerState <- atomically $ readTVar varFollower
           closeFollowerState followerState
-      , fhSwitchFork = \ipoint newChain -> modifyTVar varFollower $
-          switchFork ipoint newChain
+      , fhSwitchFork = \ipoint oldPoints -> modifyTVar varFollower $
+          switchFork ipoint oldPoints
       }
+
 
 makeNewFollower ::
      forall m blk b.
@@ -516,67 +519,30 @@ forward registry varFollower blockComponent CDB{..} = \pts -> do
           FollowerInit                  -> return ()
           FollowerInMem _               -> return ()
 
--- | Update the given 'FollowerState' to account for switching the current
--- chain to the given fork (which might just be an extension of the
--- current chain).
---
--- PRECONDITION: the intersection point must be within the fragment bounds
--- of the new chain
+-- | Switches the follower to the new fork, by checking whether the follower is
+-- following an old fork, and updating the follower state to rollback to the
+-- intersection point if it is.
 switchFork ::
-     forall m blk b. (HasHeader blk, HasHeader (Header blk))
-  => Point blk  -- ^ Intersection point between old and new chain
-  -> AnchoredFragment (Header blk)  -- ^ The new chain
-  -> FollowerState m blk b -> FollowerState m blk b
-switchFork ipoint newChain followerState =
-    assert (AF.withinFragmentBounds (castPoint ipoint) newChain) $
-      case followerState of
-        -- If the follower is still in the initial state, switching to a fork
-        -- won't affect it.
-        FollowerInit             -> followerState
-        -- If the follower is still reading from the ImmutableDB, switching to a
-        -- fork won't affect it.
-        FollowerInImmutableDB {} -> followerState
-        FollowerInMem rollState  ->
-            case pointSlot followerPoint `compare` pointSlot ipoint of
-              -- If the follower point is more recent than the intersection point,
-              -- we have to roll back the follower to the intersection point.
-              GT -> FollowerInMem $ RollBackTo ipoint
+     forall m blk b. HasHeader blk
+  => Point blk
+  -- ^ Intersection point between the new and the old chain.
+  -> Set (Point blk)
+  -- ^ Set of points that are in the old chain and not in the
+  -- new chain.
+  -> FollowerState m blk b
+  -> FollowerState m blk b
+switchFork ipoint oldPoints =
+  \case
+    -- Roll back to the intersection point if and only if the position of the
+    -- follower is not in the new chain, but was part of the volatile DB. By the
+    -- invariant that the follower state is always in the current chain, it then
+    -- should be in `oldPoints`.
+    FollowerInMem (RollBackTo pt)
+      | pt `Set.member` oldPoints -> FollowerInMem (RollBackTo ipoint)
+    FollowerInMem (RollForwardFrom pt)
+      | pt `Set.member` oldPoints -> FollowerInMem (RollBackTo ipoint)
+    followerState -> followerState
 
-              -- The follower point and the intersection point are in the same
-              -- slot. We have to be careful here, because one (or both) of them
-              -- could be an EBB.
-              EQ
-                | pointHash followerPoint == pointHash ipoint
-                  -- The same point, so no rollback needed.
-                -> followerState
-                | Just pointAfterRollStatePoint <- headerPoint <$>
-                    AF.successorBlock (castPoint followerPoint) newChain
-                , pointAfterRollStatePoint == ipoint
-                  -- The point after the follower point is the intersection
-                  -- point. It must be that the follower point is an EBB and
-                  -- that the intersection point is a regular block in the
-                  -- same slot. As the follower point is older than the
-                  -- intersection point, no rollback is needed.
-                -> followerState
-                | otherwise
-                  -- Either the intersection point is the EBB before the
-                  -- follower point (referring to the regular block in the same
-                  -- slot), in which case we need to roll back, as the
-                  -- intersection point is older than the follower point. Or,
-                  -- we're dealing with two blocks (could be two EBBs) in the
-                  -- same slot with a different hash, in which case we'll have
-                  -- to rollback to the intersection point.
-                -> FollowerInMem $ RollBackTo ipoint
-
-              -- The follower point is older than the intersection point, so we
-              -- can keep rolling forward. Note that this does not mean the
-              -- follower point is still on the current fragment, as headers older
-              -- than @k@ might have been moved from the fragment to the
-              -- ImmutableDB. This will be noticed when the next instruction is
-              -- requested; we'll switch to the 'FollowerInImmutableDB' state.
-              LT -> followerState
-          where
-            followerPoint = followerRollStatePoint rollState
 
 -- | Close all open block and header 'Follower's.
 closeAllFollowers ::

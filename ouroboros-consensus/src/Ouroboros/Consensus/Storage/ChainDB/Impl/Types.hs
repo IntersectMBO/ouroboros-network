@@ -63,6 +63,7 @@ module Ouroboros.Consensus.Storage.ChainDB.Impl.Types (
 import           Control.Tracer
 import           Data.Map.Strict (Map)
 import           Data.Maybe.Strict (StrictMaybe (..))
+import           Data.Set (Set)
 import           Data.Typeable
 import           Data.Void (Void)
 import           Data.Word (Word64)
@@ -338,7 +339,7 @@ newtype FollowerKey = FollowerKey Word
 data FollowerHandle m blk = FollowerHandle
   { fhChainType  :: ChainType
     -- ^ Whether we follow the tentative chain.
-  , fhSwitchFork :: Point blk -> AnchoredFragment (Header blk) -> STM m ()
+  , fhSwitchFork :: Point blk -> Set (Point blk) -> STM m ()
     -- ^ When we have switched to a fork, all open 'Follower's must be notified.
   , fhClose      :: m ()
     -- ^ When closing the ChainDB, we must also close all open 'Follower's, as

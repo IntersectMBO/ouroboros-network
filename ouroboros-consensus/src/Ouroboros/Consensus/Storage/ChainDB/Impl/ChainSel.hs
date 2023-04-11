@@ -85,6 +85,7 @@ import           Ouroboros.Consensus.Util.TentativeState
 import           Ouroboros.Network.AnchoredFragment (Anchor, AnchoredFragment,
                      AnchoredSeq (..))
 import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Network.AnchoredSeq as AS
 
 -- | Perform the initial chain selection based on the tip of the ImmutableDB
 -- and the contents of the VolatileDB.
@@ -760,8 +761,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
                   -- (@ipoint@) between the old and the current chain.
                   let ipoint = castPoint $ Diff.getAnchorPoint chainDiff
                   followerHandles <- Map.elems <$> readTVar cdbFollowers
-                  forM_ followerHandles $ \followerHandle ->
-                    fhSwitchFork followerHandle ipoint newChain
+                  forM_ followerHandles $ switchFollowerToFork curChain newChain ipoint
 
               return (curChain, newChain, events, prevTentativeHeader)
 
@@ -776,6 +776,18 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
 
         return $ castPoint $ AF.headPoint newChain
       where
+        -- Given the current chain and the new chain as chain fragments, and the
+        -- intersection point (an optimization, since it has already been
+        -- computed when calling this function), returns a function that updates
+        -- the state of a follower via its handle.
+        switchFollowerToFork curChain newChain ipoint =
+          let insertPoint h points = Set.insert (headerPoint h) points
+              oldPoints = AS.foldr insertPoint Set.empty
+                        $ Diff.getSuffix
+                        $ Diff.diff newChain curChain
+          in assert (AF.withinFragmentBounds (castPoint ipoint) newChain) $
+             \followerHandle -> fhSwitchFork followerHandle ipoint oldPoints
+
         ValidatedChainDiff chainDiff newLedger = vChainDiff
 
     -- | We have a new block @b@ that doesn't fit onto the current chain, but
@@ -966,7 +978,8 @@ chainSelection chainSelEnv chainDiffs =
                 LastInvalidTentative (selectView bcfg tentativeHeader)
               forTentativeFollowers $ \followerHandle -> do
                 let curTipPoint = castPoint $ AF.headPoint curChain
-                fhSwitchFork followerHandle curTipPoint curChain
+                    oldPoints = Set.singleton $ headerPoint tentativeHeader
+                fhSwitchFork followerHandle curTipPoint oldPoints
             traceWith pipeliningTracer $ TrapTentativeHeader tentativeHeader
           where
             forTentativeFollowers f = getTentativeFollowers >>= mapM_ f
