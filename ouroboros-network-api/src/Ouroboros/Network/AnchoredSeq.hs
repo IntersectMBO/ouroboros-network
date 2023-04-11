@@ -22,6 +22,7 @@ module Ouroboros.Network.AnchoredSeq
   , last
   , toNewestFirst
   , toOldestFirst
+  , foldr
   , fromNewestFirst
   , fromOldestFirst
   , splitAt
@@ -55,7 +56,8 @@ module Ouroboros.Network.AnchoredSeq
   , filterWithStopSpec
   ) where
 
-import           Prelude hiding (filter, head, last, length, map, null, splitAt)
+import           Prelude hiding (filter, foldr, head, last, length, map, null,
+                     splitAt)
 
 import           Data.Coerce (coerce)
 import           Data.FingerTree.Strict (Measured (measure), StrictFingerTree)
@@ -67,6 +69,9 @@ import           Data.Proxy (Proxy (..))
 import           Data.Word (Word64)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
+import           Prelude hiding (filter, foldr, head, last, length, map, null,
+                     splitAt)
+import qualified Prelude as Prelude
 
 {-------------------------------------------------------------------------------
   AnchoredSeq
@@ -266,7 +271,7 @@ toOldestFirst = coerce . Foldable.toList . unanchorSeq
 -- newest-to-oldest order. The last element in the list will be the one after
 -- the given anchor.
 fromNewestFirst :: Anchorable v a b => a -> [b] -> AnchoredSeq v a b
-fromNewestFirst a = foldr (flip (:>)) (Empty a)
+fromNewestFirst a = Prelude.foldr (flip (:>)) (Empty a)
 
 -- | \( O(n) \). Make an 'AnchoredSeq' from a list of elements in
 -- oldest-to-newest order. The first element in the list will be the one after
@@ -661,6 +666,10 @@ selectOffsets offsets = go relativeOffsets
       = head s' : go offs s'
       | otherwise
       = []
+
+-- | \( O(n) \). Right fold over the items in the sequence, excluding the anchor.
+foldr :: (a -> b -> b) -> b -> AnchoredSeq v anchor a -> b
+foldr f z af = Prelude.foldr (\a b -> f (unMeasuredWith a) b) z (unanchorSeq af)
 
 -- | \( O(n) \). Variation on 'filterWithStop' without a stop condition.
 filter ::
