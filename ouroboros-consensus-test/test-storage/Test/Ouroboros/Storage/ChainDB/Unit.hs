@@ -17,8 +17,7 @@ import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.Maybe (isJust)
-import           Ouroboros.Consensus.Block.Abstract (Point, blockPoint,
-                     blockSlot)
+import           Ouroboros.Consensus.Block.Abstract (blockSlot)
 import           Ouroboros.Consensus.Block.RealPoint
                      (pointToWithOriginRealPoint)
 import           Ouroboros.Consensus.Config (TopLevelConfig,
@@ -36,7 +35,7 @@ import           Ouroboros.Consensus.Storage.ImmutableDB.Chunks as ImmutableDB
 import           Ouroboros.Consensus.Util.IOLike
 import           Ouroboros.Consensus.Util.ResourceRegistry (closeRegistry,
                      unsafeNewRegistry)
-import           Ouroboros.Network.Block (ChainUpdate (..))
+import           Ouroboros.Network.Block (ChainUpdate (..), Point, blockPoint)
 import qualified Ouroboros.Network.Mock.Chain as Mock
 import qualified Test.Ouroboros.Storage.ChainDB.Model as Model
 import           Test.Ouroboros.Storage.ChainDB.Model (Model)
@@ -47,7 +46,6 @@ import           Test.Ouroboros.Storage.ChainDB.StateMachine (AllComponents,
                      close, mkTestCfg, open)
 import           Test.Ouroboros.Storage.TestBlock
 import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.ExpectedFailure (expectFailBecause)
 import           Test.Tasty.HUnit (Assertion, assertFailure, testCase)
 import           Test.Util.ChainDB (MinimalChainDbArgs (..), emptyNodeDBs,
                      fromMinimalChainDbArgs, nodeDBsVol)
@@ -59,10 +57,13 @@ tests = testGroup "Unit tests"
     [ testCase "model" $ runModelIO followerInstructionOnEmptyChain
     , testCase "system" $ runSystemIO followerInstructionOnEmptyChain
     ]
+  , testGroup "Follower switches to new chain"
+    [ testCase "model" $ runModelIO followerSwitchesToNewChain
+    , testCase "system" $ runSystemIO followerSwitchesToNewChain
+    ]
   , testGroup (ouroborosNetworkIssue 4183)
     [ testCase "model" $ runModelIO ouroboros_network_4183
-    , expectFailBecause "Issue not fixed"
-      $ testCase "system" $ runSystemIO ouroboros_network_4183
+    , testCase "system" $ runSystemIO ouroboros_network_4183
     ]
   , testGroup (ouroborosNetworkIssue 3999)
     [ testCase "model" $ runModelIO ouroboros_network_3999
@@ -79,10 +80,43 @@ followerInstructionOnEmptyChain = do
     Left _      -> failWith $ "ChainDbError"
 
 
+-- | Test that a follower starts following the newly selected fork.
+-- The chain constructed in this example looks like:
+--
+--     G --- b1 --- b2
+--            \
+--             \--- b3 -- b4
+--
+followerSwitchesToNewChain
+  :: (Block m ~ TestBlock, SupportsUnitTest m, MonadError TestFailure m) => m ()
+followerSwitchesToNewChain =
+  let fork i = TestBody i True
+  in do
+    b1 <- addBlock $ firstBlock 0 $ fork 0
+    b2 <- addBlock $ mkNextBlock b1 1 $ fork 0
+    f <- newFollower
+    followerForward f [blockPoint b2] >>= \case
+      Right (Just pt) -> assertEqual (blockPoint b2) pt "Expected to be at b2"
+      _               -> failWith "Expecting a success"
+    b3 <- addBlock $ mkNextBlock b1 2 $ fork 1
+    void $ addBlock $ mkNextBlock b1 3 $ fork 1 -- b4
+    followerInstruction f >>= \case
+      Right (Just (RollBack actual))
+        -- Expect to rollback to the intersection point between [b1, b2] and
+        -- [b1, b3, b4]
+        -> assertEqual (blockPoint b1) actual "Rollback to wrong point"
+      _ -> failWith "Expecting a rollback"
+    followerInstruction f >>= \case
+      Right (Just (AddBlock actual))
+        -> assertEqual b3 (extractBlock actual) "Instructed to add wrong block"
+      _ -> failWith "Expecting instruction to add a block"
+
+
 ouroborosNetworkIssue :: Int -> String
 ouroborosNetworkIssue n
   | n <= 0 = error "Issue number should be positive"
   | otherwise = "https://github.com/input-output-hk/ouroboros-network/issues/" <> show n
+
 
 ouroboros_network_4183 :: (
     Block m ~ TestBlock
@@ -149,7 +183,6 @@ ouroboros_network_3999 = do
   where
     fork i = TestBody i True
 
-    extractBlock (blk, _, _, _, _, _, _, _, _, _, _) = blk
     iteratorNextBlock it = fmap extractBlock <$> iteratorNext it
 
     inclusiveFrom      = StreamFromInclusive . blockRealPoint
@@ -166,6 +199,10 @@ streamAssertSuccess from to = stream from to >>= \case
     Left err -> failWith $ "Should be able to create iterator: " <> show err
     Right (Left err) -> failWith $ "Range should be valid: " <> show err
     Right (Right iteratorId) -> pure iteratorId
+
+
+extractBlock :: AllComponents blk -> blk
+extractBlock (blk, _, _, _, _, _, _, _, _, _, _) = blk
 
 
 -- | Helper function to run the test against the model and translate to something
