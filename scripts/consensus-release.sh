@@ -7,6 +7,9 @@ function increment_version {
   local delimiter=.
   local array=($(echo "$1" | tr $delimiter '\n'))
   array[$2]=$((array[$2]+1))
+  for i in $(seq $(($2 + 1)) 3); do
+    array[$i]=0
+  done
   echo $(local IFS=$delimiter ; echo "${array[*]}")
 }
 
