@@ -1,14 +1,17 @@
 # Consensus Changelog
 
-The Consensus packages are organized in two bundles: the packages that are
-ledger-agnostic and the packages that are Cardano specific. For each of these
-bundles we keep a separate `CHANGELOG.md` file, and the version number of all
-the packages in each bundle moves in lockstep. We use symlinks to unify the
-`changelog.d` directory in each of the bundles.
+The Consensus packages are organized in four bundles: the packages that are
+ledger-agnostic, the packages that are Cardano specific, and their testing
+bundles respectively. For each of these bundles we keep a separate
+`CHANGELOG.md` file, and the version number of all the packages in each bundle
+moves in lockstep. We use symlinks to unify the `changelog.d` directory in each
+of the bundles.
 
 The two Changelogs can be found here:
 - [ledger-agnostic bundle](./ouroboros-consensus/CHANGELOG.md)
+- [ledger-agnostic testing bundle](./ouroboros-consensus-test/CHANGELOG.md)
 - [Cardano-specific bundle](./ouroboros-consensus-cardano/CHANGELOG.md)
+- [Cardano-specific testing bundle](./ouroboros-consensus-cardano-test/CHANGELOG.md)
 
 If you have any doubts, please consult the [release
 process](./ouroboros-consensus/docs/ReleaseProcess.md).
