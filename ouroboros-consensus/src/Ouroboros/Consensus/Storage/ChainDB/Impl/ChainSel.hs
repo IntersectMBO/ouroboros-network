@@ -781,8 +781,7 @@ chainSelectionForBlock cdb@CDB{..} blockCache hdr punish = do
         -- computed when calling this function), returns a function that updates
         -- the state of a follower via its handle.
         switchFollowerToFork curChain newChain ipoint =
-          let insertPoint h points = Set.insert (headerPoint h) points
-              oldPoints = AS.foldr insertPoint Set.empty
+          let oldPoints = Set.fromList . fmap headerPoint . AS.toOldestFirst
                         $ Diff.getSuffix
                         $ Diff.diff newChain curChain
           in assert (AF.withinFragmentBounds (castPoint ipoint) newChain) $

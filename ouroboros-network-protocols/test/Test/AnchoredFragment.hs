@@ -70,7 +70,6 @@ tests = testGroup "AnchoredFragment"
   , testProperty "successorBlock"                     prop_successorBlock
   , testProperty "pointOnFragment"                    prop_pointOnFragment
   , testProperty "selectPoints"                       prop_selectPoints
-  , testProperty "foldr"                              prop_foldr
   , testProperty "splitAfterPoint"                    prop_splitAfterPoint
   , testProperty "splitBeforePoint"                   prop_splitBeforePoint
   , testProperty "sliceRange"                         prop_sliceRange
@@ -223,14 +222,6 @@ prop_selectPoints (TestBlockAnchoredFragment c) =
     AF.selectPoints [1,1]   c === AF.selectPointsSpec [1,1]   c
   where
     offsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
-
-prop_foldr :: TestJoinableAnchoredFragments -> Property
-prop_foldr (TestJoinableAnchoredFragments a b) =
-  case AS.join (\_ _ -> True) a b of
-    Just c  -> AS.foldr fn 0 c === AS.foldr fn 0 a + AS.foldr fn 0 b
-    Nothing -> error "TestJoinableAnchoredFragments: should be joinable"
-  where
-    fn block acc = headerBlockNo (blockHeader block) + acc
 
 prop_splitAfterPoint :: TestAnchoredFragmentAndPoint -> Property
 prop_splitAfterPoint (TestAnchoredFragmentAndPoint c pt) =
