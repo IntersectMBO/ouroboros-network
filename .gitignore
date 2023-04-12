@@ -1,61 +1,39 @@
+# GHC
 .ghcid
-doc/network.aux
-doc/network.bbl
-doc/network.blg
-doc/network.log
-doc/network.out
-doc/network.pdf
-doc/network.toc
-doc/messages.cddl.incl
-doc/protocols.aux
-doc/protocols.bbl
-doc/protocols.blg
-doc/protocols.log
-doc/protocols.out
-doc/protocols.pdf
-doc/protocols.toc
-
 .ghc.environment.*
+*.tix
+haddocks/
+
+# cabal
 /cabal.project.local*
 /cabal.project.local~
 !cabal.project.local.github-pages
 dist-newstyle/
 dist/
+
 *.swp
 *.swo
 *~
 \#*
-*_flymake.hs
-result
-result-[0-9]*
 **/tags
 **/TAGS
+
+# nix
+result
+result-[0-9]*
 .stack-to-nix.cache
 .nix-shell-cabal.project
+.envrc
 
+# stack
 .stack-work/
 stack.yaml.lock
-*.tix
+stack.yaml.local.lock
+stack.yaml.local
 
 db-byron-proxy-*
 index-byron-proxy-*
 launch-*
-
-# Local development
-stack.yaml.local.lock
-stack.yaml.local
-.envrc
-
-# latex files
-doc/*.fdb_latexmk
-doc/*.fls
-doc/*.synctex.gz
-
-haddocks/
-
-# Visual Studio Code
-/.vscode
-
 
 # This project doesn't currently use hlint.  To avoid spurious warnings
 # generate an hlint config to suppress all hlint warnings:
@@ -77,7 +55,13 @@ haddocks/
 /docs/**/*.pdf
 /docs/**/*.synctex.gz
 /docs/**/*.toc
+
+# emacs
 .auctex-auto
+*_flymake.hs
+
+# Visual Studio Code
+/.vscode
 
 # Ignore directory used by .github/bin/check-dependencies
 /tmp

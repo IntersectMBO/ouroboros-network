@@ -9,8 +9,8 @@ Changelog for the following packages:
 
 # Changelog entries
 
-<a id='changelog-0.4.1.0'></a>
-## 0.4.1.0 — 2023-04-10
+<a id='changelog-0.4.0.0'></a>
+## 0.4.0.0 — 2023-04-10
 
 ### Patch
 
