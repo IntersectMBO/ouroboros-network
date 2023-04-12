@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name:          ouroboros-consensus-tutorials
-version:       0.4.1.0
+version:       0.4.0.0
 synopsis:
   Tutorials for the consensus layer for the Ouroboros blockchain protocol
 
@@ -39,7 +39,7 @@ library
     , hashable
     , mtl
     , nothunks
-    , ouroboros-consensus    ==0.4.1.0
+    , ouroboros-consensus    ==0.4.0.0
     , ouroboros-network-api
     , serialise
 

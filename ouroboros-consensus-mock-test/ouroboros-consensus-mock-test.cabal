@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-mock-test
-version:            0.4.1.0
+version:            0.4.0.0
 synopsis:
   Tests of the mock ledger integration in the Ouroboros consensus layer
 
@@ -36,9 +36,9 @@ library
     , bytestring                >=0.10    && <0.12
     , cardano-crypto-class
     , containers                >=0.5     && <0.7
-    , ouroboros-consensus       ^>=0.4.1
-    , ouroboros-consensus-mock  ==0.4.1.0
-    , ouroboros-consensus-test  ==0.4.1.0
+    , ouroboros-consensus       ^>=0.4.0
+    , ouroboros-consensus-mock  ==0.4.0.0
+    , ouroboros-consensus-test  ==0.4.0.0
     , QuickCheck
     , serialise                 >=0.2     && <0.3
 
@@ -65,10 +65,10 @@ test-suite test
     , bytestring
     , cborg
     , containers
-    , ouroboros-consensus            ^>=0.4.1
-    , ouroboros-consensus-mock       ==0.4.1.0
+    , ouroboros-consensus            ^>=0.4.0
+    , ouroboros-consensus-mock       ==0.4.0.0
     , ouroboros-consensus-mock-test
-    , ouroboros-consensus-test       ==0.4.1.0
+    , ouroboros-consensus-test       ==0.4.0.0
     , ouroboros-network-mock
     , QuickCheck
     , serialise
