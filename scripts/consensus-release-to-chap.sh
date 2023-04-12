@@ -35,7 +35,7 @@ cardano_test_packages=$(pkgs_in_bundle ouroboros-consensus-cardano-test)
 cardano_test_last_version=$(last_version ouroboros-consensus-cardano-test)
 
 if [[ ! $(git tag -l "release-consensus-$consensus_last_version") || ! $(git tag -l "release-consensus-test-$consensus_test_last_version") || ! $(git tag -l "release-cardano-$cardano_last_version") || ! $(git tag -l "release-cardano-test-$cardano_test_last_version") ]]; then
-    echo "There are no tags pushed for the versions! Checkout the commit after bors merged the release PR and run ./scripts/consensus-push-tags.sh"
+    echo "There are no tags pushed for the versions! Checkout the commit after bors merged the release PR and run ./scripts/consensus-tag-releases.sh"
     exit 1
 fi
 
@@ -43,7 +43,7 @@ if [[ ! -d chap ]]; then
   git clone git@github.com:input-output-hk/cardano-haskell-packages chap
 else
   ( cd chap
-    git checkout master
+    git checkout main
     git pull
   )
 fi
@@ -60,25 +60,25 @@ fi
 
   if [[ ! -d _sources/ouroboros-consensus/$consensus_last_version ]]; then
       for f in $consensus_packages; do
-          ./scripts/add-from-github https://github.com/input-output-hk/ouroboros-network release-consensus-$consensus_last_version $f
+          ./scripts/add-from-github.sh https://github.com/input-output-hk/ouroboros-network release-consensus-$consensus_last_version $f
       done
   fi
 
   if [[ ! -d _sources/ouroboros-consensus-test/$consensus_test_last_version ]]; then
       for f in $consensus_test_packages; do
-          ./scripts/add-from-github https://github.com/input-output-hk/ouroboros-network release-consensus-$consensus_test_last_version $f
+          ./scripts/add-from-github.sh https://github.com/input-output-hk/ouroboros-network release-consensus-$consensus_test_last_version $f
       done
   fi
 
   if [[ ! -d _sources/ouroboros-consensus-cardano/$cardano_last_version ]]; then
       for f in $cardano_packages; do
-          ./scripts/add-from-github https://github.com/input-output-hk/ouroboros-network release-consensus-cardano-$cardano_last_version $f
+          ./scripts/add-from-github.sh https://github.com/input-output-hk/ouroboros-network release-cardano-$cardano_last_version $f
       done
   fi
 
   if [[ ! -d _sources/ouroboros-consensus-cardano-test/$cardano_test_last_version ]]; then
       for f in $cardano_test_packages; do
-          ./scripts/add-from-github https://github.com/input-output-hk/ouroboros-network release-consensus-cardano-test-$cardano_test_last_version $f
+          ./scripts/add-from-github.sh https://github.com/input-output-hk/ouroboros-network release-cardano-test-$cardano_test_last_version $f
       done
   fi
 
