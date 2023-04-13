@@ -229,9 +229,10 @@ handshakeReqEnc versions query =
     encodeWithModeAndQuery :: Word -> Word32 -> Bool -> CBOR.Encoding
     encodeWithModeAndQuery vn magic mode =
           CBOR.encodeWord vn
-       <> CBOR.encodeListLen 2
+       <> CBOR.encodeListLen 4
        <> CBOR.encodeInt (fromIntegral magic)
        <> CBOR.encodeBool mode
+       <> CBOR.encodeInt 0 -- NoPeerSharing
        <> CBOR.encodeBool query
 
 handshakeReq :: [NodeVersion] -> Bool -> ByteString
@@ -337,6 +338,7 @@ handshakeDec = do
         _len <- CBOR.decodeListLen
         magic <- CBOR.decodeWord32
         mode <- CBOR.decodeBool
+        _peerSharing <- CBOR.decodeWord32
         _query <- CBOR.decodeBool
         return $ Right $ vnFun magic mode
 
