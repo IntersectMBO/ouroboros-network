@@ -7,6 +7,9 @@ function increment_version {
   local delimiter=.
   local array=($(echo "$1" | tr $delimiter '\n'))
   array[$2]=$((array[$2]+1))
+  for i in $(seq $(($2 + 1)) 3); do
+    array[$i]=0
+  done
   echo $(local IFS=$delimiter ; echo "${array[*]}")
 }
 
@@ -258,6 +261,16 @@ else
     fi
 fi
 
+echo "Checking that the versions are consistent with the contents of the changelog directories"
 ./scripts/ci/check-consensus-release.sh
 
-echo "Succesfully created release. You should now inspect the current branch (${branch%?}) and if everything looks right, push it to GitHub, open a PR and get it merged!"
+echo "Checking that CHaP would be able to build these packages (this will take a while!)"
+./scripts/check-consensus-builds-with-chap.sh
+
+if [[ -z $? ]]; then
+  echo "Succesfully created release. You should now inspect the current branch (${branch%?}) and if everything looks right, push it to GitHub, open a PR and get it merged!"
+else
+  echo "Your release seem to depend on changes that are not visible in CHaP/Hackage"
+  echo "Maybe you added a function to a separate package or are using a package that is not in those indices?"
+  echo "I created the branch ${branch%?} but it is probably wrong, so you should delete it, check the error above and re-run this script. I will leave the branch just in case."
+fi

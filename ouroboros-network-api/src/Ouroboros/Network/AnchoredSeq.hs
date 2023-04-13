@@ -22,7 +22,6 @@ module Ouroboros.Network.AnchoredSeq
   , last
   , toNewestFirst
   , toOldestFirst
-  , foldr
   , fromNewestFirst
   , fromOldestFirst
   , splitAt
@@ -666,10 +665,6 @@ selectOffsets offsets = go relativeOffsets
       = head s' : go offs s'
       | otherwise
       = []
-
--- | \( O(n) \). Right fold over the items in the sequence, excluding the anchor.
-foldr :: (a -> b -> b) -> b -> AnchoredSeq v anchor a -> b
-foldr f z af = Prelude.foldr (\a b -> f (unMeasuredWith a) b) z (unanchorSeq af)
 
 -- | \( O(n) \). Variation on 'filterWithStop' without a stop condition.
 filter ::

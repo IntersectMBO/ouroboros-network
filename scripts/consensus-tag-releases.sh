@@ -37,15 +37,15 @@ if [[ ! $(git tag -l "release-consensus-test-$consensus_test_last_version") ]]; 
 fi
 
 if [[ ! $(git tag -l "release-consensus-cardano-$cardano_last_version") ]]; then
-    t="release-consensus-cardano-$cardano_last_version"
+    t="release-cardano-$cardano_last_version"
     git tag $t HEAD
     tags+=($t)
 fi
 
 if [[ ! $(git tag -l "release-consensus-cardano-$cardano_last_version") ]]; then
-    t="release-consensus-cardano-test-$cardano_test_last_version"
+    t="release-cardano-test-$cardano_test_last_version"
     git tag $t HEAD
     tags+=($t)
 fi
 
-printf "Tagged the release. Please push the following tags to origin:\n%s" "$tags"
+printf "Tagged the release. Please push the following tags to origin:\n%s" "${tags[*]}"

@@ -65,3 +65,8 @@ launch-*
 
 # Ignore directory used by .github/bin/check-dependencies
 /tmp
+
+# ignore dirs created by consensus release scripts
+/chap
+/dist-chap
+cabal.project.consensus
