@@ -21,7 +21,6 @@ import           Text.Show.Functions ()
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
                      AnchoredSeq (Empty), anchorPoint)
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import qualified Ouroboros.Network.AnchoredSeq as AS
 import           Ouroboros.Network.Block
 import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Network.Mock.ConcreteBlock
