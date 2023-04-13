@@ -13,6 +13,18 @@ process](../ouroboros-consensus/docs/ReleaseProcess.md).
 
 # Changelog entries
 
+<a id='changelog-0.4.0.1'></a>
+## 0.4.0.1 — 2023-04-13
+
+### Patch
+
+- `ouroboros-consensus-cardano`: Since the filesystem API that lives in
+  `ouroboros-consensus` will live in the `fs-api` package for now on, start
+  depending on `fs-api`, and change imports accordingly.
+
+- Collapse all imports into one group in every file.
+- Adapt to relocation of SOP-related `Util` modules.
+
 <a id='changelog-0.4.0.0'></a>
 ## 0.4.0.0 — 2023-03-07
 
