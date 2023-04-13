@@ -66,7 +66,7 @@ fi
 
   if [[ ! -d _sources/ouroboros-consensus-test/$consensus_test_last_version ]]; then
       for f in $consensus_test_packages; do
-          ./scripts/add-from-github.sh https://github.com/input-output-hk/ouroboros-network release-consensus-$consensus_test_last_version $f
+          ./scripts/add-from-github.sh https://github.com/input-output-hk/ouroboros-network release-consensus-test-$consensus_test_last_version $f
       done
   fi
 
