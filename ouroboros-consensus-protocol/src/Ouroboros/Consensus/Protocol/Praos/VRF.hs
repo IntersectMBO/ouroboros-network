@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE EmptyDataDecls             #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
@@ -8,7 +9,6 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | This module implements VRF range extension as described in
 -- https://iohk.io/en/research/library/papers/on-uc-secure-range-extension-and-batch-verification-for-ecvrf/

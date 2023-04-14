@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-shelley
-version:            0.4.0.1
+version:            0.4.1.0
 synopsis:           Shelley ledger integration in the Ouroboros consensus layer
 description:
   Shelley ledger integration in the Ouroboros consensus layer.
@@ -80,20 +80,20 @@ library
     , microlens
     , mtl                           >=2.2   && <2.3
     , nothunks
-    , ouroboros-consensus           ^>=0.4
-    , ouroboros-consensus-protocol  ^>=0.4
+    , ouroboros-consensus           ^>=0.5
+    , ouroboros-consensus-protocol  ^>=0.5
     , ouroboros-network-api
     , serialise                     >=0.2   && <0.3
     , small-steps
     , text                          >=1.2   && <1.3
     , vector-map
 
-  -- cardano-ledger
   default-language: Haskell2010
   ghc-options:
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts

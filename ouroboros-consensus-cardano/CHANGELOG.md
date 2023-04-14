@@ -13,6 +13,14 @@ process](../ouroboros-consensus/docs/ReleaseProcess.md).
 
 # Changelog entries
 
+<a id='changelog-0.4.1.0'></a>
+## 0.4.1.0 — 2023-04-14
+
+### Non-Breaking
+
+- Updated dependencies in `ouroboros-consensus` and
+  `ouroboros-consensus-protocol` as they are no longer part of the same bundle.
+
 <a id='changelog-0.4.0.1'></a>
 ## 0.4.0.1 — 2023-04-10
 

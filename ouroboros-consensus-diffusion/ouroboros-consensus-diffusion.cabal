@@ -21,6 +21,11 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
+flag asserts
+  description: Enable assertions
+  manual:      False
+  default:     False
+
 library
   hs-source-dirs:     src
   exposed-modules:
@@ -42,7 +47,6 @@ library
     , Ouroboros.Consensus.Node.Run
     , Ouroboros.Consensus.Node.NetworkProtocolVersion
 
-  default-language:   Haskell2010
   other-extensions:
     BangPatterns
     ConstraintKinds
@@ -79,8 +83,8 @@ library
     ViewPatterns
 
   build-depends:
-    , base                         >=4.14     && <4.17
-    , bytestring                   >=0.10     && <0.12
+    , base                         >=4.14 && <4.17
+    , bytestring                   >=0.10 && <0.12
     , cborg
     , containers
     , contra-tracer
@@ -90,18 +94,24 @@ library
     , hashable
     , io-classes                   ^>=0.3
     , mtl
-    , ouroboros-consensus          ==0.4.0.0
-    , ouroboros-network            ^>=0.4.0.1
+    , ouroboros-consensus          ^>=0.5
+    , ouroboros-network            ^>=0.4
     , ouroboros-network-api        ^>=0.1
     , ouroboros-network-framework  ^>=0.3
     , ouroboros-network-protocols  ^>=0.3
     , random
-    , serialise                    >=0.2      && <0.3
+    , serialise                    >=0.2  && <0.3
     , text
     , time
     , typed-protocols
 
+  -- unreleased yet so this package is not buildable
+  default-language:   Haskell2010
   ghc-options:
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts

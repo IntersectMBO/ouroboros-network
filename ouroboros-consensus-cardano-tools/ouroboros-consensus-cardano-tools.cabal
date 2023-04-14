@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-cardano-tools
-version:            0.4.0.1
+version:            0.4.1.0
 synopsis:           Programmatically synthesize and analyse a ChainDB
 description:        Programmatically synthesize and analyse a ChainDB.
 license:            Apache-2.0
@@ -74,12 +74,12 @@ library
     , microlens
     , mtl
     , nothunks
-    , ouroboros-consensus            ^>=0.4
-    , ouroboros-consensus-byron      ^>=0.4.0
-    , ouroboros-consensus-cardano    ^>=0.4.0
+    , ouroboros-consensus            ^>=0.5
+    , ouroboros-consensus-byron      ^>=0.4.1
+    , ouroboros-consensus-cardano    ^>=0.4.1
     , ouroboros-consensus-diffusion  ^>=0.4
-    , ouroboros-consensus-protocol   ^>=0.4
-    , ouroboros-consensus-shelley    ^>=0.4.0
+    , ouroboros-consensus-protocol   ^>=0.5
+    , ouroboros-consensus-shelley    ^>=0.4.1
     , ouroboros-network-api
     , serialise
     , text
@@ -107,6 +107,7 @@ library
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
@@ -118,10 +119,10 @@ executable db-analyser
     , base                               >=4.14   && <4.17
     , cardano-crypto-wrapper
     , optparse-applicative
-    , ouroboros-consensus                ^>=0.4
-    , ouroboros-consensus-byron          ^>=0.4.0
+    , ouroboros-consensus                ^>=0.5
+    , ouroboros-consensus-byron          ^>=0.4.1
     , ouroboros-consensus-cardano-tools
-    , ouroboros-consensus-shelley        ^>=0.4.0
+    , ouroboros-consensus-shelley        ^>=0.4.1
 
   other-modules:    DBAnalyser.Parsers
   default-language: Haskell2010
@@ -129,7 +130,8 @@ executable db-analyser
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -threaded -rtsopts "-with-rtsopts=-T -I0 -N2 -A16m"
+    -Wno-unticked-promoted-constructors -threaded -rtsopts
+    "-with-rtsopts=-T -I0 -N2 -A16m"
 
 executable db-synthesizer
   hs-source-dirs:   app
@@ -138,7 +140,7 @@ executable db-synthesizer
   build-depends:
     , base                               >=4.14 && <4.17
     , optparse-applicative
-    , ouroboros-consensus                ^>=0.4
+    , ouroboros-consensus                ^>=0.5
     , ouroboros-consensus-cardano-tools
 
   other-modules:    DBSynthesizer.Parsers
@@ -146,7 +148,8 @@ executable db-synthesizer
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -O2 -threaded -rtsopts "-with-rtsopts=-N -I0 -A16m"
+    -Wno-unticked-promoted-constructors -O2 -threaded -rtsopts
+    "-with-rtsopts=-N -I0 -A16m"
 
 test-suite test
   type:             exitcode-stdio-1.0
@@ -163,4 +166,5 @@ test-suite test
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -threaded -rtsopts "-with-rtsopts=-N -I0 -A16m"
+    -Wno-unticked-promoted-constructors -threaded -rtsopts
+    "-with-rtsopts=-N -I0 -A16m"

@@ -1,16 +1,9 @@
 # Changelog for ouroboros-consensus-test
 
-Changelog for the following packages:
-
-- `ouroboros-consensus-test`
-- `ouroboros-consensus-mock`
-- `ouroboros-consensus-mock-test`
-- `ouroboros-consensus-tutorials`
-
 # Changelog entries
 
-<a id='changelog-0.4.0.0'></a>
-## 0.4.0.0 — 2023-04-10
+<a id='changelog-0.5.0.0'></a>
+## 0.5.0.0 — 2023-04-14
 
 ### Patch
 
@@ -31,3 +24,6 @@ Changelog for the following packages:
 - `ouroboros-consensus-test`: Move the simulated file system that lives under
   `Test.Util.FS.Sim` to a new package called `fs-sim`. The original modules
   become deprecated.
+  
+- `mock`, `mock-test` and `tutorials` have become subcomponents of
+  `ouroboros-consensus-test`.

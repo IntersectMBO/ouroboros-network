@@ -1,10 +1,12 @@
 {-# LANGUAGE DataKinds               #-}
 {-# LANGUAGE DeriveAnyClass          #-}
 {-# LANGUAGE DeriveGeneric           #-}
+{-# LANGUAGE EmptyDataDecls          #-}
 {-# LANGUAGE FlexibleInstances       #-}
 {-# LANGUAGE MultiParamTypeClasses   #-}
 {-# LANGUAGE NamedFieldPuns          #-}
 {-# LANGUAGE OverloadedStrings       #-}
+{-# LANGUAGE PatternGuards           #-}
 {-# LANGUAGE RankNTypes              #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE StandaloneDeriving      #-}
@@ -13,7 +15,6 @@
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# LANGUAGE ViewPatterns            #-}
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module Ouroboros.Consensus.Protocol.Praos (
     ConsensusConfig (..)

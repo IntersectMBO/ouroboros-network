@@ -31,17 +31,11 @@ packages: ./cardano-ping
           ./ouroboros-network-protocols
           ./ouroboros-network-testing
           ./ouroboros-consensus
-          ./ouroboros-consensus-tutorials
           ./ouroboros-consensus-byron
-          ./ouroboros-consensus-byron-test
-          ./ouroboros-consensus-byronspec
           ./ouroboros-consensus-cardano
           ./ouroboros-consensus-cardano-test
-          ./ouroboros-consensus-mock
-          ./ouroboros-consensus-mock-test
           ./ouroboros-consensus-protocol
           ./ouroboros-consensus-shelley
-          ./ouroboros-consensus-shelley-test
           ./ouroboros-consensus-test
           ./ouroboros-consensus-cardano-tools
           ./ouroboros-consensus-diffusion

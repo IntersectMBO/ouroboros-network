@@ -3,8 +3,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
-
 -- | A view of the chain synchronisation protocol from the point of view of the
 -- server.
 --

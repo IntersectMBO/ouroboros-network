@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-test
-version:            0.4.0.0
+version:            0.5.0.0
 synopsis:           Tests of the consensus layer
 description:        Tests of the consensus layer.
 license:            Apache-2.0
@@ -19,8 +19,29 @@ source-repository head
   type:     git
   location: https://github.com/input-output-hk/ouroboros-network
 
+flag asserts
+  description: Enable assertions
+  manual:      False
+  default:     False
+
+common common-lib
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
+common common-test
+  import:      common-lib
+  ghc-options: -threaded -rtsopts
+
 library
-  hs-source-dirs:   src
+  import:          common-lib
+  hs-source-dirs:  src
   exposed-modules:
     Test.ThreadNet.General
     Test.ThreadNet.Network
@@ -103,7 +124,7 @@ library
     , mtl                            >=2.2    && <2.3
     , nothunks
     , optparse-applicative
-    , ouroboros-consensus            ^>=0.4.0
+    , ouroboros-consensus            ^>=0.5.0
     , ouroboros-consensus-diffusion  ^>=0.4.0
     , ouroboros-network
     , ouroboros-network-api
@@ -126,17 +147,95 @@ library
     , typed-protocols
     , utf8-string
 
-  default-language: Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts
+library mock
+  import:          common-lib
+  visibility:      private
+  hs-source-dirs:  mock
+  exposed-modules:
+    Ouroboros.Consensus.Mock.Ledger
+    Ouroboros.Consensus.Mock.Ledger.Address
+    Ouroboros.Consensus.Mock.Ledger.Block
+    Ouroboros.Consensus.Mock.Ledger.Block.BFT
+    Ouroboros.Consensus.Mock.Ledger.Block.PBFT
+    Ouroboros.Consensus.Mock.Ledger.Block.Praos
+    Ouroboros.Consensus.Mock.Ledger.Block.PraosRule
+    Ouroboros.Consensus.Mock.Ledger.Forge
+    Ouroboros.Consensus.Mock.Ledger.Stake
+    Ouroboros.Consensus.Mock.Ledger.State
+    Ouroboros.Consensus.Mock.Ledger.UTxO
+    Ouroboros.Consensus.Mock.Node
+    Ouroboros.Consensus.Mock.Node.Abstract
+    Ouroboros.Consensus.Mock.Node.BFT
+    Ouroboros.Consensus.Mock.Node.PBFT
+    Ouroboros.Consensus.Mock.Node.Praos
+    Ouroboros.Consensus.Mock.Node.PraosRule
+    Ouroboros.Consensus.Mock.Node.Serialisation
+    Ouroboros.Consensus.Mock.Protocol.LeaderSchedule
+    Ouroboros.Consensus.Mock.Protocol.Praos
+
+  build-depends:
+    , base                    >=4.14   && <4.17
+    , bimap                   >=0.4    && <0.5
+    , bytestring              >=0.10   && <0.12
+    , cardano-binary
+    , cardano-crypto-class
+    , cardano-slotting
+    , cborg                   >=0.2.2  && <0.3
+    , containers              >=0.5    && <0.7
+    , deepseq
+    , hashable
+    , mtl                     >=2.2    && <2.3
+    , nothunks
+    , ouroboros-consensus     ^>=0.5.0
+    , ouroboros-network-api
+    , ouroboros-network-mock
+    , serialise               >=0.2    && <0.3
+    , time
+
+library mock-test
+  import:          common-lib
+  visibility:      private
+  hs-source-dirs:  mock-test
+  exposed-modules:
+    Test.Consensus.Ledger.Mock.Generators
+    Test.ThreadNet.TxGen.Mock
+    Test.ThreadNet.Util.HasCreator.Mock
+    Test.ThreadNet.Util.SimpleBlock
+
+  build-depends:
+    , base                      >=4.14   && <4.17
+    , bytestring                >=0.10   && <0.12
+    , cardano-crypto-class
+    , containers                >=0.5    && <0.7
+    , mock
+    , ouroboros-consensus       ^>=0.5.0
+    , ouroboros-consensus-test
+    , QuickCheck
+    , serialise                 >=0.2    && <0.3
+
+library tutorials
+  import:         common-lib
+  visibility:     private
+  hs-source-dirs: tutorials
+  other-modules:
+    Ouroboros.Consensus.Tutorial.Simple
+    Ouroboros.Consensus.Tutorial.WithEpoch
+
+  build-depends:
+    , base                   >=4.14   && <4.17
+    , containers
+    , hashable
+    , mtl
+    , nothunks
+    , ouroboros-consensus    ^>=0.5.0
+    , ouroboros-network-api
+    , serialise
 
 test-suite test-consensus
-  type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-consensus
-  main-is:          Main.hs
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-consensus
+  main-is:        Main.hs
   other-modules:
     Test.Consensus.BlockchainTime.Simple
     Test.Consensus.HardFork.Combinator
@@ -159,7 +258,7 @@ test-suite test-consensus
 
   build-depends:
     , async
-    , base                                                                >=4.14    && <4.17
+    , base                                                                >=4.14   && <4.17
     , binary
     , bytestring
     , cardano-binary
@@ -176,11 +275,11 @@ test-suite test-consensus
     , hashable
     , io-classes
     , io-sim
+    , mock
     , mtl
     , nothunks
-    , ouroboros-consensus                                                 ^>=0.4.0
+    , ouroboros-consensus                                                 ^>=0.5.0
     , ouroboros-consensus-diffusion                                       ^>=0.4.0
-    , ouroboros-consensus-mock                                            ==0.4.0.0
     , ouroboros-consensus-test
     , ouroboros-network
     , ouroboros-network-api
@@ -201,17 +300,11 @@ test-suite test-consensus
     , tree-diff
     , typed-protocols
 
-  default-language: Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts -threaded -rtsopts
-
 test-suite test-storage
-  type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-storage
-  main-is:          Main.hs
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-storage
+  main-is:        Main.hs
   other-modules:
     Test.Ouroboros.Storage
     Test.Ouroboros.Storage.ChainDB
@@ -259,7 +352,7 @@ test-suite test-storage
     , io-sim
     , mtl
     , nothunks
-    , ouroboros-consensus       ^>=0.4.0
+    , ouroboros-consensus       ^>=0.5.0
     , ouroboros-consensus-test
     , ouroboros-network-api
     , ouroboros-network-mock
@@ -276,17 +369,11 @@ test-suite test-storage
     , tree-diff
     , vector
 
-  default-language: Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts
-
 test-suite test-infra
-  type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-infra
-  main-is:          Main.hs
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-infra
+  main-is:        Main.hs
   other-modules:
     Ouroboros.Consensus.Util.Tests
     Test.ThreadNet.Util.Tests
@@ -295,19 +382,39 @@ test-suite test-infra
     Test.Util.Split.Tests
 
   build-depends:
-    , base                      >=4.14    && <4.17
-    , ouroboros-consensus       ==0.4.0.0
+    , base                      >=4.14   && <4.17
+    , ouroboros-consensus       ^>=0.5.0
     , ouroboros-consensus-test
     , QuickCheck
     , tasty
     , tasty-quickcheck
 
-  default-language: Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -fno-ignore-asserts
+test-suite test-mock
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-mock
+  main-is:        Main.hs
+  other-modules:
+    Test.Consensus.Ledger.Mock
+    Test.ThreadNet.BFT
+    Test.ThreadNet.LeaderSchedule
+    Test.ThreadNet.PBFT
+    Test.ThreadNet.Praos
+
+  build-depends:
+    , base                      >=4.14   && <4.17
+    , bytestring
+    , cborg
+    , containers
+    , mock
+    , mock-test
+    , ouroboros-consensus       ^>=0.5.0
+    , ouroboros-consensus-test
+    , ouroboros-network-mock
+    , QuickCheck
+    , serialise
+    , tasty
+    , tasty-quickcheck
 
 benchmark bench-mempool
   type:             exitcode-stdio-1.0
@@ -328,7 +435,7 @@ benchmark bench-mempool
     , contra-tracer
     , deepseq
     , nothunks
-    , ouroboros-consensus       ^>=0.4.0
+    , ouroboros-consensus       ^>=0.5.0
     , ouroboros-consensus-test
     , serialise                 >=0.2    && <0.3
     , strict-stm

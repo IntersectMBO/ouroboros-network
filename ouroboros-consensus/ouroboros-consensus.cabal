@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus
-version:            0.4.0.0
+version:            0.5.0.0
 synopsis:           Consensus layer for the Ouroboros blockchain protocol
 description:        Consensus layer for the Ouroboros blockchain protocol.
 license:            Apache-2.0
@@ -254,7 +254,6 @@ library
     Ouroboros.Consensus.Util.TraceSize
     Ouroboros.Consensus.Util.Versioned
 
-  default-language: Haskell2010
   other-extensions:
     BangPatterns
     ConstraintKinds
@@ -331,16 +330,12 @@ library
     , typed-protocols
     , vector                       >=0.12  && <0.13
 
-  if os(windows)
-    build-depends:
-
-  else
-    build-depends:
-
+  default-language: Haskell2010
   ghc-options:
     -Wall -Wcompat -Wincomplete-uni-patterns
     -Wincomplete-record-updates -Wpartial-fields -Widentities
     -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts

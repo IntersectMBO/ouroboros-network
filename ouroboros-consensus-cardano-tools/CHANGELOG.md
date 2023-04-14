@@ -1,6 +1,11 @@
-# CHANGELOG
+# Changelog for ouroboros-consensus-cardano-tools
 
-This package is part of a bundle of packages. Please consult `CHANGELOG.md` in
-the package `ouroboros-consensus-cardano-test` at the same version as this
-package to see the current changelog that applies also to this package.
+# Changelog entries
+
+<a id='changelog-0.4.1.0'></a>
+## 0.4.1.0 — 2023-04-14
+
+### Non-breaking
+
+- Extract `ouroboros-consensus-cardano-tools` from the bundle of packages.
 

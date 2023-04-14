@@ -14,12 +14,11 @@ import           Control.Monad.IO.Class (liftIO)
 import           Data.FileEmbed (makeRelativeToProject)
 import           Language.Haskell.TH.Syntax (Exp, Q, liftData)
 import           System.Environment (lookupEnv)
-import           System.FilePath ((</>))
 
 -- | A TH function to get the path corresponding to the golden output
 -- directory relative to the package root directory.
 getGoldenDir :: Q Exp
-getGoldenDir = getRelPath ("test" </> "golden")
+getGoldenDir = getRelPath "golden"
 
 -- | A TH function to get the path corresponding to the given 'FilePath' which
 -- is relative to the package root directory.
