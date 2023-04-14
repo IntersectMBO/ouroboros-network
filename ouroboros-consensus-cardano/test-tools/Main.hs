@@ -10,8 +10,8 @@ import           Test.Tasty.HUnit
 
 
 nodeConfig, chainDB :: FilePath
-nodeConfig  = "test/disk/config/config.json"
-chainDB     = "test/disk/chaindb"
+nodeConfig  = "test-tools/disk/config/config.json"
+chainDB     = "test-tools/disk/chaindb"
 
 
 testSynthOptionsCreate :: DBSynthesizerOptions
@@ -41,7 +41,7 @@ testNodeCredentials =
         credCertFile  = Nothing
       , credVRFFile   = Nothing
       , credKESFile   = Nothing
-      , credBulkFile  = Just "test/disk/config/bulk-creds-k2.json"
+      , credBulkFile  = Just "test-tools/disk/config/bulk-creds-k2.json"
     }
 
 testAnalyserConfig :: DBAnalyserConfig

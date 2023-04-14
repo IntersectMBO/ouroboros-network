@@ -31,14 +31,11 @@ packages: ./cardano-ping
           ./ouroboros-network-protocols
           ./ouroboros-network-testing
           ./ouroboros-consensus
-          ./ouroboros-consensus-byron
-          ./ouroboros-consensus-cardano
-          ./ouroboros-consensus-cardano-test
-          ./ouroboros-consensus-protocol
-          ./ouroboros-consensus-shelley
-          ./ouroboros-consensus-test
-          ./ouroboros-consensus-cardano-tools
           ./ouroboros-consensus-diffusion
+          ./ouroboros-consensus-protocol
+          ./ouroboros-consensus-cardano
+          ./ouroboros-consensus-test
+          ./ouroboros-consensus-cardano-test
           ./ntp-client
           ./cardano-client
 
@@ -67,12 +64,6 @@ package ouroboros-consensus-diffusion
   flags: +asserts
 
 package ouroboros-consensus-protocol
-  flags: +asserts
-
-package ouroboros-consensus-byron
-  flags: +asserts
-
-package ouroboros-consensus-shelley
   flags: +asserts
 
 package ouroboros-consensus-cardano

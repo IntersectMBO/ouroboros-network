@@ -107,7 +107,7 @@ library byron-test
     , hedgehog-quickcheck
     , mtl                                                     >=2.2    && <2.3
     , ouroboros-consensus                                     ^>=0.5
-    , ouroboros-consensus-byron                               ^>=0.4.1
+    , ouroboros-consensus-cardano:{byron}                     ^>=0.4.1
     , ouroboros-consensus-test                                ^>=0.5
     , ouroboros-network-api
     , QuickCheck
@@ -143,7 +143,7 @@ test-suite test-byron
     , hedgehog-quickcheck
     , mtl
     , ouroboros-consensus        ^>=0.5
-    , ouroboros-consensus-byron  ^>=0.4.1
+    , ouroboros-consensus-cardano:{byron}  ^>=0.4.1
     , ouroboros-consensus-test   ^>=0.5
     , ouroboros-network-mock
     , QuickCheck
@@ -188,7 +188,7 @@ library shelley-test
     , mtl                                                                                             >=2.2    && <2.3
     , ouroboros-consensus                                                                             ^>=0.5
     , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
-    , ouroboros-consensus-shelley                                                                     ^>=0.4.1
+    , ouroboros-consensus-cardano:{shelley}                                                                    ^>=0.4.1
     , ouroboros-consensus-test                                                                        ^>=0.5
     , ouroboros-network-api
     , QuickCheck
@@ -222,7 +222,7 @@ test-suite test-shelley
     , microlens
     , ouroboros-consensus           ^>=0.5
     , ouroboros-consensus-protocol  ^>=0.5
-    , ouroboros-consensus-shelley   ^>=0.4.1
+    , ouroboros-consensus-cardano:{shelley}   ^>=0.4.1
     , ouroboros-consensus-test      ^>=0.5
     , QuickCheck
     , shelley-test
@@ -262,11 +262,9 @@ library cardano-test
     , microlens
     , mtl
     , ouroboros-consensus                                                                             ^>=0.5
-    , ouroboros-consensus-byron                                                                       ^>=0.4.1
-    , ouroboros-consensus-cardano                                                                     ^>=0.4.1
-    , ouroboros-consensus-diffusion                                                                   ^>=0.3
+    , ouroboros-consensus-cardano:{byron, shelley, cardano}                                                                    ^>=0.4.1
+    , ouroboros-consensus-diffusion                                                                   ^>=0.4
     , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
-    , ouroboros-consensus-shelley                                                                     ^>=0.4.1
     , ouroboros-consensus-test                                                                        ^>=0.5
     , ouroboros-network-api
     , QuickCheck
@@ -304,10 +302,8 @@ test-suite test-cardano
     , filepath
     , microlens
     , ouroboros-consensus           ^>=0.5
-    , ouroboros-consensus-byron     ^>=0.4.1
-    , ouroboros-consensus-cardano   ^>=0.4.1
+    , ouroboros-consensus-cardano:{byron, shelley, cardano}   ^>=0.4.1
     , ouroboros-consensus-protocol  ^>=0.5
-    , ouroboros-consensus-shelley   ^>=0.4.1
     , ouroboros-consensus-test      ^>=0.5
     , ouroboros-network-api
     , QuickCheck

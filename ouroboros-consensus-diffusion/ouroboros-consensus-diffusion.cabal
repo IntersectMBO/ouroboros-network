@@ -105,7 +105,6 @@ library
     , time
     , typed-protocols
 
-  -- unreleased yet so this package is not buildable
   default-language:   Haskell2010
   ghc-options:
     -Wall -Wcompat -Wincomplete-uni-patterns

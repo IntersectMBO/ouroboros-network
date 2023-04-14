@@ -125,7 +125,7 @@ library
     , nothunks
     , optparse-applicative
     , ouroboros-consensus            ^>=0.5.0
-    , ouroboros-consensus-diffusion  ^>=0.3.0
+    , ouroboros-consensus-diffusion  ^>=0.4.0
     , ouroboros-network
     , ouroboros-network-api
     , ouroboros-network-framework
@@ -279,7 +279,7 @@ test-suite test-consensus
     , mtl
     , nothunks
     , ouroboros-consensus                                                 ^>=0.5.0
-    , ouroboros-consensus-diffusion                                       ^>=0.3.0
+    , ouroboros-consensus-diffusion                                       ^>=0.4.0
     , ouroboros-consensus-test
     , ouroboros-network
     , ouroboros-network-api
