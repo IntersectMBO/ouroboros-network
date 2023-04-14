@@ -35,7 +35,7 @@ fd -p ouroboros-consensus \
     -E ouroboros-consensus-test/src/Test/Util/FS/Sim/Pure.hs \
     -E ouroboros-consensus-test/src/Test/Util/FS/Sim/STM.hs \
     -E ouroboros-consensus-test/src/Test/Util/Blob.hs \
-    -E ouroboros-consensus-cardano-tools/app/DBAnalyser/Parsers.hs \
+    -E ouroboros-consensus-cardano/app/DBAnalyser/Parsers.hs \
     -X stylish-haskell \
     -c .stylish-haskell.yaml -i
 

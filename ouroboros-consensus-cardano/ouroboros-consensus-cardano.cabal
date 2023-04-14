@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-cardano
-version:            0.4.1.0
+version:            0.5.0.0
 synopsis:
   The instantation of the Ouroboros consensus layer used by Cardano
 
@@ -44,9 +44,9 @@ common common-test
   ghc-options: -threaded -rtsopts
 
 library cardano
-  import: common-lib
-  hs-source-dirs:   cardano
-  visibility: public
+  import:          common-lib
+  hs-source-dirs:  cardano
+  visibility:      public
   exposed-modules:
     Ouroboros.Consensus.Cardano
     Ouroboros.Consensus.Cardano.Block
@@ -57,8 +57,9 @@ library cardano
     Ouroboros.Consensus.Cardano.ShelleyBased
 
   build-depends:
-    , base                          >=4.14    && <4.17
-    , bytestring                    >=0.10    && <0.12
+    , base                          >=4.14  && <4.17
+    , byron
+    , bytestring                    >=0.10  && <0.12
     , cardano-binary
     , cardano-crypto-class
     , cardano-data
@@ -68,20 +69,19 @@ library cardano
     , cardano-prelude
     , cardano-protocol-tpraos
     , cardano-slotting
-    , cborg                         >=0.2.2   && <0.3
-    , containers                    >=0.5     && <0.7
-    , mtl                           >=2.2     && <2.3
+    , cborg                         >=0.2.2 && <0.3
+    , containers                    >=0.5   && <0.7
+    , mtl                           >=2.2   && <2.3
     , nothunks
     , ouroboros-consensus           ^>=0.5
-    , byron
     , ouroboros-consensus-protocol  ^>=0.5
     , shelley
-    , these                         >=1.1     && <1.2
+    , these                         >=1.1   && <1.2
 
 library byron
-  import: common-lib
-  hs-source-dirs:   byron
-  visibility: public
+  import:          common-lib
+  hs-source-dirs:  byron
+  visibility:      public
   exposed-modules:
     Ouroboros.Consensus.Byron.Crypto.DSIGN
     Ouroboros.Consensus.Byron.EBBs
@@ -124,9 +124,9 @@ library byron
     , text                    >=1.2   && <1.3
 
 library shelley
-  import: common-lib
-  visibility: public
-  hs-source-dirs:   shelley
+  import:          common-lib
+  visibility:      public
+  hs-source-dirs:  shelley
   exposed-modules:
     Ouroboros.Consensus.Shelley.Crypto
     Ouroboros.Consensus.Shelley.Eras
@@ -188,9 +188,9 @@ library shelley
     , vector-map
 
 library cardano-tools
-  import: common-lib
-  visibility: public
-  hs-source-dirs:   cardano-tools
+  import:          common-lib
+  visibility:      public
+  hs-source-dirs:  cardano-tools
   exposed-modules:
     Cardano.Api.Any
     Cardano.Api.Protocol.Types
@@ -211,9 +211,11 @@ library cardano-tools
 
   build-depends:
     , aeson
-    , base                           >=4.14   && <4.17
+    , base                           >=4.14 && <4.17
     , base16-bytestring              >=1.0
+    , byron
     , bytestring
+    , cardano
     , cardano-crypto
     , cardano-crypto-class
     , cardano-crypto-wrapper
@@ -240,13 +242,11 @@ library cardano-tools
     , mtl
     , nothunks
     , ouroboros-consensus            ^>=0.5
-    , byron
-    , cardano
     , ouroboros-consensus-diffusion  ^>=0.4
     , ouroboros-consensus-protocol   ^>=0.5
-    , shelley
     , ouroboros-network-api
     , serialise
+    , shelley
     , text
     , text-builder
     , transformers
@@ -271,12 +271,12 @@ executable db-analyser
   hs-source-dirs:   app
   main-is:          db-analyser.hs
   build-depends:
-    , base                               >=4.14   && <4.17
-    , cardano-crypto-wrapper
-    , optparse-applicative
-    , ouroboros-consensus                ^>=0.5
+    , base                    >=4.14 && <4.17
     , byron
+    , cardano-crypto-wrapper
     , cardano-tools
+    , optparse-applicative
+    , ouroboros-consensus     ^>=0.5
     , shelley
 
   other-modules:    DBAnalyser.Parsers
@@ -293,10 +293,10 @@ executable db-synthesizer
   main-is:          db-synthesizer.hs
   default-language: Haskell2010
   build-depends:
-    , base                               >=4.14 && <4.17
-    , optparse-applicative
-    , ouroboros-consensus                ^>=0.5
+    , base                  >=4.14 && <4.17
     , cardano-tools
+    , optparse-applicative
+    , ouroboros-consensus   ^>=0.5
 
   other-modules:    DBSynthesizer.Parsers
   ghc-options:
@@ -312,7 +312,7 @@ test-suite test
   main-is:          Main.hs
   default-language: Haskell2010
   build-depends:
-    , base                               >=4.14 && <4.17
+    , base           >=4.14 && <4.17
     , cardano-tools
     , tasty
     , tasty-hunit
