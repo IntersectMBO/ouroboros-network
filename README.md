@@ -83,6 +83,14 @@ arguments it will specify what arguments it needs.
 
 # Ouroboros-Consensus
 
+![consensus](https://img.shields.io/badge/ouroboros--consensus-0.5.0.0-blue)
+![diffusion](https://img.shields.io/badge/ouroboros--consensus--diffusion-0.3.0.0-blue)
+![protocol](https://img.shields.io/badge/ouroboros--consensus--protocol-0.5.0.0-blue)
+![byron](https://img.shields.io/badge/ouroboros--consensus--byron-0.4.1.0-blue)
+![shelley](https://img.shields.io/badge/ouroboros--consensus--shelley-0.4.1.0-blue)
+![cardano](https://img.shields.io/badge/ouroboros--consensus--cardano-0.4.1.0-blue)
+![cardano-tools](https://img.shields.io/badge/ouroboros--consensus--cardano--tools-0.4.1.0-blue)
+
 Consensus layer of the family Ouroboros blockchain protocols.
 
 ## Ouroboros-Consensus Documentation
