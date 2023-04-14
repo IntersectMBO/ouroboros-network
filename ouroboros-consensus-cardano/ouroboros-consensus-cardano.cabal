@@ -267,6 +267,33 @@ library cardano-tools
     Cardano.Node.Protocol.Shelley
     Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint
 
+executable db-converter
+  hs-source-dirs:   app
+  main-is:          db-converter.hs
+  build-depends:
+    , base                           >=4.14 && <4.17
+    , byron
+    , bytestring
+    , cardano-binary
+    , cardano-ledger-byron
+    , directory
+    , filepath
+    , mtl
+    , optparse-generic
+    , ouroboros-consensus            ^>=0.5
+    , ouroboros-consensus-diffusion  ^>=0.4
+    , ouroboros-network-api
+    , resourcet
+    , streaming
+    , text
+
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
+
 executable db-analyser
   hs-source-dirs:   app
   main-is:          db-analyser.hs
