@@ -91,7 +91,7 @@ executable db-converter
     , optparse-generic
     , ouroboros-consensus            ^>=0.5
     , ouroboros-consensus-byron
-    , ouroboros-consensus-diffusion  ^>=0.4
+    , ouroboros-consensus-diffusion  ^>=0.3
     , ouroboros-network-api
     , resourcet
     , streaming

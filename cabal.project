@@ -63,7 +63,10 @@ package ouroboros-network
 package ouroboros-consensus
   flags: +asserts
 
-package ouroboros-consensus-mock
+package ouroboros-consensus-diffusion
+  flags: +asserts
+
+package ouroboros-consensus-protocol
   flags: +asserts
 
 package ouroboros-consensus-byron

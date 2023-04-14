@@ -264,7 +264,7 @@ library cardano-test
     , ouroboros-consensus                                                                             ^>=0.5
     , ouroboros-consensus-byron                                                                       ^>=0.4.1
     , ouroboros-consensus-cardano                                                                     ^>=0.4.1
-    , ouroboros-consensus-diffusion                                                                   ^>=0.4
+    , ouroboros-consensus-diffusion                                                                   ^>=0.3
     , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
     , ouroboros-consensus-shelley                                                                     ^>=0.4.1
     , ouroboros-consensus-test                                                                        ^>=0.5

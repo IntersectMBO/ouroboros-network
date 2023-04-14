@@ -77,7 +77,7 @@ library
     , ouroboros-consensus            ^>=0.5
     , ouroboros-consensus-byron      ^>=0.4.1
     , ouroboros-consensus-cardano    ^>=0.4.1
-    , ouroboros-consensus-diffusion  ^>=0.4
+    , ouroboros-consensus-diffusion  ^>=0.3
     , ouroboros-consensus-protocol   ^>=0.5
     , ouroboros-consensus-shelley    ^>=0.4.1
     , ouroboros-network-api
