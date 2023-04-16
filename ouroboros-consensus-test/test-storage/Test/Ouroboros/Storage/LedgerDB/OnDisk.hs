@@ -74,8 +74,8 @@ import           System.FS.Sim.STM
 import           System.Random (getStdRandom, randomR)
 import           Test.Ouroboros.Storage.LedgerDB.InMemory ()
 import           Test.Ouroboros.Storage.LedgerDB.OrphanArbitrary ()
-import qualified Test.QuickCheck as QC
 import           Test.QuickCheck (Gen)
+import qualified Test.QuickCheck as QC
 import qualified Test.QuickCheck.Monadic as QC
 import qualified Test.QuickCheck.Random as QC
 import           Test.StateMachine hiding (showLabelledExamples)
@@ -573,7 +573,7 @@ runMock cmd initMock =
     push :: TestBlock -> StateT MockLedger (Except (ExtValidationError TestBlock)) ()
     push b = do
         ls <- State.get
-        l' <- State.lift $ tickThenApply (ledgerDbCfg cfg) b (cur ls)
+        l' <- lrResult <$> State.lift (tickThenApply (ledgerDbCfg cfg) b (cur ls))
         State.put ((b, l'):ls)
 
     switch :: Word64

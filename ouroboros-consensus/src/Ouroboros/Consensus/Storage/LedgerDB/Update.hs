@@ -115,7 +115,7 @@ toRealPoint (Weaken ap)      = toRealPoint ap
 applyBlock :: forall m c l blk. (ApplyBlock l blk, Monad m, c)
            => LedgerCfg l
            -> Ap m l blk c
-           -> LedgerDB l -> m l
+           -> LedgerDB l -> m (LedgerResult l l)
 applyBlock cfg ap db = case ap of
     ReapplyVal b ->
       return $
@@ -252,9 +252,9 @@ ledgerDbPrune (SecurityParam k) db = db {
 pushLedgerState ::
      GetTip l
   => SecurityParam
-  -> l -- ^ Updated ledger state
+  -> LedgerResult l l -- ^ Updated ledger state
   -> LedgerDB l -> LedgerDB l
-pushLedgerState secParam current' db@LedgerDB{..}  =
+pushLedgerState secParam LedgerResult{lrResult = current'} db@LedgerDB{..}  =
     ledgerDbPrune secParam $ db {
         ledgerDbCheckpoints = ledgerDbCheckpoints AS.:> Checkpoint current'
       }
@@ -386,4 +386,3 @@ ledgerDbSwitch' cfg n bs db =
     case runIdentity $ ledgerDbSwitch cfg n (const $ pure ()) (map pureBlock bs) db of
       Left  ExceededRollback{} -> Nothing
       Right db'                -> Just db'
-

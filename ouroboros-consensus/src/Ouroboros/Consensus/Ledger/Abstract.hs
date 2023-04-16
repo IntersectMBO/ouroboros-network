@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
@@ -39,7 +40,7 @@ import           GHC.Stack (HasCallStack)
 import           Ouroboros.Consensus.Block.Abstract
 import           Ouroboros.Consensus.Ledger.Basics
 import           Ouroboros.Consensus.Ticked
-import           Ouroboros.Consensus.Util (repeatedly, repeatedlyM, (..:))
+import           Ouroboros.Consensus.Util (foldlM', repeatedly, repeatedlyM, (..:))
 
 -- | " Validated " transaction or block
 --
@@ -162,26 +163,35 @@ tickThenApply ::
   => LedgerCfg l
   -> blk
   -> l
-  -> Except (LedgerErr l) l
-tickThenApply = fmap lrResult ..: tickThenApplyLedgerResult
+  -> Except (LedgerErr l) (LedgerResult l l)
+tickThenApply = tickThenApplyLedgerResult
 
 tickThenReapply ::
      ApplyBlock l blk
   => LedgerCfg l
   -> blk
   -> l
-  -> l
-tickThenReapply = lrResult ..: tickThenReapplyLedgerResult
+  -> LedgerResult l l
+tickThenReapply = tickThenReapplyLedgerResult
 
 foldLedger ::
      ApplyBlock l blk
-  => LedgerCfg l -> [blk] -> l -> Except (LedgerErr l) l
-foldLedger = repeatedlyM . tickThenApply
+  => LedgerCfg l -> [blk] -> l -> Except (LedgerErr l) (LedgerResult l l)
+foldLedger cfg blocks l = foldlM' go (pureLedgerResult l) blocks
+ where
+   go LedgerResult{lrResult = l', lrEvents = evs} b = do
+     LedgerResult{lrResult, lrEvents} <- tickThenApply cfg b l'
+     pure $ LedgerResult{lrResult, lrEvents = evs <> lrEvents}
 
 refoldLedger ::
      ApplyBlock l blk
-  => LedgerCfg l -> [blk] -> l -> l
-refoldLedger = repeatedly . tickThenReapply
+  => LedgerCfg l -> [blk] -> l -> LedgerResult l l
+refoldLedger cfg blocks l = foldr go (pureLedgerResult l) blocks
+ where
+   go b LedgerResult{lrResult = l', lrEvents = evs} =
+     let LedgerResult{lrResult, lrEvents} = tickThenReapply cfg b l'
+     in LedgerResult{lrResult, lrEvents = evs <> lrEvents}
+
 
 {-------------------------------------------------------------------------------
   Short-hand

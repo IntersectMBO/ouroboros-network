@@ -140,7 +140,7 @@ prop_pushExpectedLedger :: ChainSetup -> Property
 prop_pushExpectedLedger setup@ChainSetup{..} =
     classify (chainSetupSaturated setup) "saturated" $
       conjoin [
-          l === refoldLedger cfg (expectedChain o) testInitLedger
+          l === lrResult (refoldLedger cfg (expectedChain o) testInitLedger)
         | (o, l) <- ledgerDbSnapshots csPushed
         ]
   where
@@ -206,7 +206,7 @@ prop_switchExpectedLedger :: SwitchSetup -> Property
 prop_switchExpectedLedger setup@SwitchSetup{..} =
     classify (switchSetupSaturated setup) "saturated" $
       conjoin [
-          l === refoldLedger cfg (expectedChain o) testInitLedger
+          l === lrResult (refoldLedger cfg (expectedChain o) testInitLedger)
         | (o, l) <- ledgerDbSnapshots ssSwitched
         ]
   where

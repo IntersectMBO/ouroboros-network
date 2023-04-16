@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns         #-}
 
 -- | Model implementation of the chain DB
 --
@@ -759,7 +760,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
                (invalid <> mkInvalid b (ValidationError e))
 
         -- Valid block according to the ledger
-        Right ledger'
+        Right (lrResult -> ledger')
 
           -- But the block has been recorded as an invalid block. It must be
           -- that it exceeded the clock skew in the past.
@@ -821,7 +822,7 @@ validate cfg Model { currentSlot, maxClockSkew, initLedger, invalid } chain =
       []    -> Map.empty
       b:bs' -> case runExcept (tickThenApply (ExtLedgerCfg cfg) b ledger) of
         Left e        -> mkInvalid b (ValidationError e)
-        Right ledger'
+        Right (lrResult -> ledger')
           | blockSlot b > SlotNo (unSlotNo currentSlot + maxClockSkew)
           -> mkInvalid b (InFutureExceedsClockSkew (blockRealPoint b)) <>
              findInvalidBlockInTheFuture ledger' bs'

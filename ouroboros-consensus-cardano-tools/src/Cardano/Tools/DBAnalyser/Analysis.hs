@@ -348,7 +348,7 @@ storeLedgerStateAt slotNo (AnalysisEnv { db, registry, initLedger, cfg, limit, l
     process :: ExtLedgerState blk -> blk -> IO (NextStep, ExtLedgerState blk)
     process oldLedger blk = do
       let ledgerCfg = ExtLedgerCfg cfg
-          newLedger = tickThenReapply ledgerCfg blk oldLedger
+          newLedger = lrResult $ tickThenReapply ledgerCfg blk oldLedger
       when (blockSlot blk >= slotNo) $ storeLedgerState blk newLedger
       when (blockSlot blk > slotNo) $ issueWarning blk
       when ((unBlockNo $ blockNo blk) `mod` 1000 == 0) $ reportProgress blk
@@ -722,7 +722,7 @@ reproMempoolForge numBlks env = do
           -- since it currently matches the call in the forging thread, which is
           -- the primary intention of this Analysis. Maybe GHC's CSE is already
           -- doing this sharing optimization?
-          IOLike.atomically $ IOLike.writeTVar ref $! tickThenReapply elCfg blk st
+          IOLike.atomically $ IOLike.writeTVar ref $! lrResult (tickThenReapply elCfg blk st)
 
           -- this flushes blk from the mempool, since every tx in it is now on the chain
           void $ Mempool.syncWithLedger mempool
