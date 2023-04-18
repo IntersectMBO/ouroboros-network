@@ -7,7 +7,9 @@
 module Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB.Status (
     -- * Status
     Status (..)
+  , StatusLock
     -- * Locks
+  , new
   , withReadAccess
   , withWriteAccess
   ) where
@@ -23,6 +25,9 @@ import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAW
   Status
 -------------------------------------------------------------------------------}
 
+-- | A 'RAWLock' for 'Status'.
+newtype StatusLock m = StatusLock { getStatusLock :: RAWLock m Status }
+
 -- | Whether a resource is open or closed.
 --
 -- Resources that we keep track of are: (i) the full LMDB backing store, and
@@ -35,6 +40,10 @@ data Status = Open | Closed
   Locks
 -------------------------------------------------------------------------------}
 
+-- | Create a new 'StatusLock'.
+new :: IOLike m => Status -> m (StatusLock m)
+new st = StatusLock <$> RAW.new st
+
 -- | A variant of 'RAW.withWriteAccess' that throws an exception if @'Status' ==
 -- 'Closed'@.
 --
@@ -43,16 +52,16 @@ data Status = Open | Closed
 -- known to be 'Open', or an exception would have been thrown.
 withWriteAccess ::
      (IOLike m, Exception e)
-  => RAWLock m Status
+  => StatusLock m
   -> e                -- ^ The exception to throw
   -> m (Status, a)    -- ^ Action to perform, possibly updating the 'Status'
   -> m a
-withWriteAccess rawLock exc k =
-  RAW.withWriteAccess rawLock $ \case
-    Open  -> k
+withWriteAccess lock exc k =
+  RAW.withWriteAccess (getStatusLock lock) $ \case
+    Open   -> k
     Closed -> throwIO exc
 
--- | A variant of 'Raw.withReadAccess' that throws an exception if @'Status' ==
+-- | A variant of 'RAW.withReadAccess' that throws an exception if @'Status' ==
 -- 'Closed'@.
 --
 -- Note: contrary to 'RAW.withReadAccess', the action to perform with the
@@ -60,11 +69,11 @@ withWriteAccess rawLock exc k =
 -- 'Open', or an exception would have been thrown.
 withReadAccess ::
      (IOLike m, Exception e)
-  => RAWLock m Status
+  => StatusLock m
   -> e                -- ^ The exception to throw
   -> m a              -- ^ Action to perform
   -> m a
-withReadAccess rawLock exc k =
-  RAW.withReadAccess rawLock $ \case
+withReadAccess lock exc k =
+  RAW.withReadAccess (getStatusLock lock) $ \case
     Open   -> k
     Closed -> throwIO exc

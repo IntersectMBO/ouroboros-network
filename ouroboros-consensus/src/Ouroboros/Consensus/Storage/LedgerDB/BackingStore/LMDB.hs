@@ -29,7 +29,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB (
 import           Cardano.Slotting.Slot (SlotNo, WithOrigin (At))
 import qualified Codec.Serialise as S (Serialise (..))
 import qualified Control.Concurrent.Class.MonadSTM.TVar as IOLike
-import           Control.Monad (unless, void, when)
+import           Control.Monad (forM_, unless, void, when)
 import qualified Control.Monad.Class.MonadSTM as IOLike
 import           Control.Monad.IO.Class (MonadIO (liftIO))
 import qualified Control.Tracer as Trace
@@ -49,11 +49,11 @@ import           Ouroboros.Consensus.Ledger.Tables
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore as HD
 import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB.Bridge as Bridge
 import           Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB.Status
+                     (Status (..), StatusLock)
+import qualified Ouroboros.Consensus.Storage.LedgerDB.BackingStore.LMDB.Status as Status
 import           Ouroboros.Consensus.Util (foldlM', unComp2, (:..:) (..))
 import           Ouroboros.Consensus.Util.IOLike (Exception (..), IOLike,
                      MonadCatch (..), MonadThrow (..), bracket)
-import           Ouroboros.Consensus.Util.MonadSTM.RAWLock (RAWLock)
-import qualified Ouroboros.Consensus.Util.MonadSTM.RAWLock as RAW
 import qualified System.FS.API as FS
 import qualified System.FS.API.Types as FS
 
@@ -91,12 +91,19 @@ data Db m l = Db {
   , dbFilePath      :: !FilePath
   , dbTracer        :: !(Trace.Tracer m TraceLMDB)
     -- | Status of the LMDB backing store. When 'Closed', all backing store
-    -- (value handle) operations should fail.
-  , dbStatus        :: !(RAWLock m Status)
-    -- | Map of open value handles to cleanup functions. When closing the
-    -- backing store, these cleanup functions are used to ensure all value
-    -- handles are closed.
-  , dbOpenHandles   :: !(IOLike.TVar m (Map Int (m ())))
+    -- (value handle) operations will fail.
+  , dbStatusLock    :: !(StatusLock m)
+    -- | Map of open value handles to cleanup actions. When closing the backing
+    -- store, these cleanup actions are used to ensure all value handles cleaned
+    -- up.
+    --
+    -- Note: why not use 'bsvhClose' here? We would get nested lock acquisition
+    -- on 'dbStatusLock', which causes a deadlock:
+    -- * 'bsClose' acquires a write lock
+    -- * 'bsvhClose' is called on a value handle
+    -- * 'bsvhClose' tries to acquire a read lock, but it has to wait for
+    --   'bsClose' to give up its write lock
+  , dbOpenHandles   :: !(IOLike.TVar m (Map Int (Cleanup m)))
   , dbNextId        :: !(IOLike.TVar m Int)
   }
 
@@ -401,7 +408,7 @@ newLMDBBackingStoreInitialiser dbTracer limits sfs initFrom = do
    createOrGetDB = do
 
      dbOpenHandles <- IOLike.newTVarIO Map.empty
-     dbStatus      <- RAW.new Open
+     dbStatusLock  <- Status.new Open
 
      let path = FS.mkFsPath ["tables"]
 
@@ -432,7 +439,7 @@ newLMDBBackingStoreInitialiser dbTracer limits sfs initFrom = do
                , dbBackingTables
                , dbFilePath
                , dbTracer
-               , dbStatus
+               , dbStatusLock
                , dbOpenHandles
                , dbNextId
                }
@@ -450,25 +457,25 @@ newLMDBBackingStoreInitialiser dbTracer limits sfs initFrom = do
    mkBackingStore :: Db m l -> LMDBBackingStore l m
    mkBackingStore db =
        let bsClose :: m ()
-           bsClose = withWriteAccess dbStatus DbErrClosed $ do
+           bsClose = Status.withWriteAccess dbStatusLock DbErrClosed $ do
              Trace.traceWith dbTracer $ TDBClosing dbFilePath
              openHandles <- IOLike.readTVarIO dbOpenHandles
-             sequence_ openHandles
+             forM_ openHandles runCleanup
              IOLike.atomically $ IOLike.writeTVar dbOpenHandles mempty
              liftIO $ LMDB.closeEnvironment dbEnv
              Trace.traceWith dbTracer $ TDBClosed dbFilePath
              pure (Closed, ())
 
-           bsCopy shfs bsp = withReadAccess dbStatus DbErrClosed $ do
+           bsCopy shfs bsp = Status.withReadAccess dbStatusLock DbErrClosed $ do
              let HD.BackingStorePath to0 = bsp
              to <- guardDbDir DirMustNotExist shfs to0
              lmdbCopy dbTracer dbEnv to
 
-           bsValueHandle = withReadAccess dbStatus DbErrClosed $ do
+           bsValueHandle = Status.withReadAccess dbStatusLock DbErrClosed $ do
              mkLMDBBackingStoreValueHandle db
 
            bsWrite :: SlotNo -> LedgerTables l DiffMK -> m ()
-           bsWrite slot diffs = withReadAccess dbStatus DbErrClosed $ do
+           bsWrite slot diffs = Status.withReadAccess dbStatusLock DbErrClosed $ do
              oldSlot <- liftIO $ LMDB.readWriteTransaction dbEnv $ withDbStateRW dbState $ \s@DbState{dbsSeq} -> do
                unless (dbsSeq <= At slot) $ liftIO . throwIO $ DbErrNonMonotonicSeq (At slot) dbsSeq
                void $ zipLedgerTables3A writeLMDBTable dbBackingTables codecLedgerTables diffs
@@ -486,7 +493,7 @@ newLMDBBackingStoreInitialiser dbTracer limits sfs initFrom = do
            , dbState
            , dbBackingTables
            , dbFilePath
-           , dbStatus
+           , dbStatusLock
            , dbOpenHandles
            } = db
 
@@ -516,27 +523,29 @@ mkLMDBBackingStoreValueHandle db = do
   mbInitSlot <- liftIO $ TrH.submitReadOnly trh $ readDbStateMaybeNull dbState
   initSlot <- liftIO $ maybe (throwIO DbErrUnableToReadSeqNo) (pure . dbsSeq) mbInitSlot
 
-  vhStatus <- RAW.new Open
+  vhStatusLock <- Status.new Open
 
   let
-    cleanup :: m ()
-    cleanup = do
+    -- | Clean up a backing store value handle by committing its transaction
+    -- handle.
+    cleanup :: Cleanup m
+    cleanup = Cleanup $ do
       liftIO $ TrH.commit trh
 
     bsvhClose :: m ()
     bsvhClose =
-      withReadAccess dbStatus DbErrClosed $ do
-      withWriteAccess vhStatus (DbErrNoValueHandle vhId) $ do
+      Status.withReadAccess dbStatusLock DbErrClosed $ do
+      Status.withWriteAccess vhStatusLock (DbErrNoValueHandle vhId) $ do
         Trace.traceWith tracer TVHClosing
-        cleanup
+        runCleanup cleanup
         IOLike.atomically $ IOLike.modifyTVar' dbOpenHandles (Map.delete vhId)
         Trace.traceWith tracer TVHClosed
         pure (Closed, ())
 
     bsvhRead :: LedgerTables l KeysMK -> m (LedgerTables l ValuesMK)
     bsvhRead keys =
-      withReadAccess dbStatus DbErrClosed $ do
-      withReadAccess vhStatus (DbErrNoValueHandle vhId) $ do
+      Status.withReadAccess dbStatusLock DbErrClosed $ do
+      Status.withReadAccess vhStatusLock (DbErrNoValueHandle vhId) $ do
         Trace.traceWith tracer TVHReadStarted
         res <- liftIO $ TrH.submitReadOnly trh (zipLedgerTables3A readLMDBTable dbBackingTables codecLedgerTables keys)
         Trace.traceWith tracer TVHReadEnded
@@ -546,8 +555,8 @@ mkLMDBBackingStoreValueHandle db = do
          HD.RangeQuery (LedgerTables l KeysMK)
       -> m (LedgerTables l ValuesMK)
     bsvhRangeRead rq =
-      withReadAccess dbStatus DbErrClosed $ do
-      withReadAccess vhStatus (DbErrNoValueHandle vhId) $ do
+      Status.withReadAccess dbStatusLock DbErrClosed $ do
+      Status.withReadAccess vhStatusLock (DbErrNoValueHandle vhId) $ do
         Trace.traceWith tracer TVHRangeReadStarted
 
         let
@@ -587,8 +596,11 @@ mkLMDBBackingStoreValueHandle db = do
       , dbOpenHandles
       , dbBackingTables
       , dbNextId
-      , dbStatus
+      , dbStatusLock
       } = db
+
+-- | A monadic action used for cleaning up resources.
+newtype Cleanup m = Cleanup { runCleanup :: m () }
 
 {-------------------------------------------------------------------------------
  Tracing
