@@ -149,6 +149,7 @@ chainSyncForkExperiment run (ChainProducerStateForkTest cps chain) = do
   let server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
+        id
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
 
@@ -210,6 +211,7 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
   let server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
+        id
       client :: ChainSyncClientPipelined Block (Point Block) (Tip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
@@ -567,6 +569,7 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
+        id
 
       client :: ChainSyncClient Block (Point Block) (Tip Block) m ()
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
@@ -635,6 +638,7 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
+        id
 
       client :: ChainSyncClientPipelined Block (Point Block) (Tip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))

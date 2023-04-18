@@ -310,7 +310,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
     varChainProducerState <- uncheckedNewTVarM $ initChainProducerState Genesis
     let server :: ChainSyncServer (Header TestBlock) (Point TestBlock)
                                   (Tip TestBlock) m ()
-        server = chainSyncServerExample () varChainProducerState
+        server = chainSyncServerExample () varChainProducerState getHeader
 
     -- Schedule updates of the client and server chains
     varLastUpdate <- uncheckedNewTVarM 0
@@ -339,7 +339,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
           atomically $ do
             chainProducerState <- readTVar varChainProducerState
             case CPS.applyChainUpdates
-                   (map (fmap TestHeader) (toChainUpdates chainUpdates))
+                   (toChainUpdates chainUpdates)
                    chainProducerState of
               Just chainProducerState' ->
                 writeTVar varChainProducerState chainProducerState'
@@ -397,8 +397,7 @@ runChainSync securityParam (ClientUpdates clientUpdates)
       candidateFragment <- readTVar varFinalCandidates >>= readTVar . (Map.! serverId)
       mbResult      <- readTVar varClientResult
       return ChainSyncOutcome {
-          finalServerChain = testHeader <$> finalServerChain
-        , syncedFragment   = AF.mapAnchoredFragment testHeader candidateFragment
+        syncedFragment   = AF.mapAnchoredFragment testHeader candidateFragment
         , ..
         }
   where

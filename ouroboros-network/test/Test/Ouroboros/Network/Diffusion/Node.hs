@@ -58,14 +58,15 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.DNS (Domain, TTL)
 
-import           Ouroboros.Network.Mock.Chain (Chain, toOldestFirst)
+import           Ouroboros.Network.Mock.Chain (Chain, toAnchoredFragment,
+                     toOldestFirst)
 import           Ouroboros.Network.Mock.ConcreteBlock (Block (..),
                      BlockHeader (..),
                      convertSlotToTimeForTestsAssumingNoHardFork)
 import           Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
 import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (MaxSlotNo (..), Point,
+import           Ouroboros.Network.Block (MaxSlotNo (..),
                      maxSlotNoFromWithOrigin, pointSlot)
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
@@ -107,6 +108,8 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSharing
                      (PeerSharingRegistry (PeerSharingRegistry))
+import           Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
+                     getBlockPointSet)
 import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
 import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
@@ -138,7 +141,7 @@ data Arguments m = Arguments
     , aDiffusionMode        :: DiffusionMode
     , aKeepAliveInterval    :: DiffTime
     , aPingPongInterval     :: DiffTime
-    , aShouldChainSyncExit  :: Block -> m Bool
+    , aShouldChainSyncExit  :: BlockHeader -> m Bool
     , aChainSyncEarlyExit   :: Bool
 
     , aPeerSelectionTargets :: PeerSelectionTargets
@@ -179,14 +182,15 @@ run :: forall resolver m.
        , Eq (Async m Void)
        )
     => Node.BlockGeneratorArgs Block StdGen
-    -> Node.LimitsAndTimeouts Block
+    -> Node.LimitsAndTimeouts BlockHeader Block
     -> Interfaces m
     -> Arguments m
     -> Diff.P2P.TracersExtra NtNAddr NtNVersion NtNVersionData
                              NtCAddr NtCVersion NtCVersionData
                              ResolverException m
+    -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> m Void
-run blockGeneratorArgs limits ni na tracersExtra =
+run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
@@ -260,7 +264,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
               , Diff.P2P.daPeerSharingRegistry    = peerSharingRegistry
               }
 
-        let apps = Node.applications @_ @BlockHeader (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs
+        let apps = Node.applications (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs blockHeader
 
         withAsync
            (Diff.P2P.runM interfaces
@@ -276,12 +280,10 @@ run blockGeneratorArgs limits ni na tracersExtra =
     blockFetch :: NodeKernel BlockHeader Block m
                -> m Void
     blockFetch nodeKernel = do
-      blockHeapVar <- LazySTM.newTVarIO Set.empty
-
       blockFetchLogic
         nullTracer
-        nullTracer
-        (blockFetchPolicy blockHeapVar nodeKernel)
+        tracerBlockFetch
+        (blockFetchPolicy nodeKernel)
         (nkFetchClientRegistry nodeKernel)
         (BlockFetchConfiguration {
           bfcMaxConcurrencyBulkSync = 1,
@@ -291,25 +293,24 @@ run blockGeneratorArgs limits ni na tracersExtra =
           bfcSalt                   = 0
         })
 
-    blockFetchPolicy :: LazySTM.TVar m (Set (Point Block))
-                     -> NodeKernel BlockHeader Block m
+    blockFetchPolicy :: NodeKernel BlockHeader Block m
                      -> BlockFetchConsensusInterface NtNAddr BlockHeader Block m
-    blockFetchPolicy blockHeapVar nodeKernel =
+    blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {
           readCandidateChains    = readTVar (nkClientChains nodeKernel)
                                    >>= traverse (readTVar
-                                       >=> (return . toAnchoredFragmentHeader)),
+                                       >=> (return . toAnchoredFragment)),
           readCurrentChain       = readTVar (nkChainProducerState nodeKernel)
                                    >>= (return . toAnchoredFragmentHeader . chainState),
           readFetchMode          = return FetchModeBulkSync,
-          readFetchedBlocks      = flip Set.member <$> LazySTM.readTVar blockHeapVar,
+          readFetchedBlocks      = flip Set.member <$> getBlockPointSet (nkChainDB nodeKernel),
           readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
                                    map (maxSlotNoFromWithOrigin . pointSlot) .
                                    Set.elems <$>
-                                   LazySTM.readTVar blockHeapVar,
-          mkAddFetchedBlock        = \_enablePipelining -> do
-              pure $ \p _b ->
-                atomically (LazySTM.modifyTVar' blockHeapVar (Set.insert p)),
+                                   getBlockPointSet (nkChainDB nodeKernel),
+          mkAddFetchedBlock        = \_enablePipelining ->
+              pure $ \_p b ->
+                atomically (addBlock b (nkChainDB nodeKernel)),
 
           plausibleCandidateChain,
           compareCandidateChains,
@@ -394,7 +395,7 @@ run blockGeneratorArgs limits ni na tracersExtra =
       , Diff.P2P.daBulkChurnInterval     = 300
       }
 
-    appArgs :: Node.AppArgs Block m
+    appArgs :: Node.AppArgs BlockHeader Block m
     appArgs = Node.AppArgs
       { Node.aaLedgerPeersConsensusInterface
                                         = iLedgerPeersConsensusInterface ni

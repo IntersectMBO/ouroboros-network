@@ -30,6 +30,7 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 import           GHC.Generics (Generic)
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
@@ -37,7 +38,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime
 import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Char8 as BSC
-import           Data.Coerce (coerce)
 import           Data.Hashable (Hashable)
 import           Data.IP (IP (..), fromIPv4w, fromIPv6w, toIPv4, toIPv4w,
                      toIPv6, toIPv6w)
@@ -55,14 +55,13 @@ import           Data.Monoid.Synchronisation
 import           Network.Socket (PortNumber)
 
 import           Ouroboros.Network.AnchoredFragment (Anchor (..))
-import           Ouroboros.Network.Block (HasHeader, SlotNo)
+import           Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import qualified Ouroboros.Network.Block as Block
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.Protocol.Handshake.Unversioned
 import           Ouroboros.Network.Snocket (TestAddress (..))
 
-import           Ouroboros.Network.Mock.Chain (Chain)
 import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Network.Mock.ConcreteBlock (Block)
 import qualified Ouroboros.Network.Mock.ConcreteBlock as ConcreteBlock
@@ -75,10 +74,13 @@ import           Test.Ouroboros.Network.Orphans ()
 
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
+import           Ouroboros.Network.Mock.Chain (Chain (..))
 import           Ouroboros.Network.NodeToNode ()
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..),
                      newPeerSharingRegistry)
+import qualified Test.Ouroboros.Network.Diffusion.Node.ChainDB as ChainDB
+import           Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
                      oneof)
 
@@ -235,7 +237,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
 data NodeKernel header block m = NodeKernel {
       -- | upstream chains
       nkClientChains
-        :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain block))),
+        :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain header))),
 
       -- | chain producer state
       nkChainProducerState
@@ -243,7 +245,9 @@ data NodeKernel header block m = NodeKernel {
 
       nkFetchClientRegistry :: FetchClientRegistry NtNAddr header block m,
 
-      nkPeerSharingRegistry :: PeerSharingRegistry NtNAddr m
+      nkPeerSharingRegistry :: PeerSharingRegistry NtNAddr m,
+
+      nkChainDB :: ChainDB block m
     }
 
 newNodeKernel :: MonadSTM m => m (NodeKernel header block m)
@@ -252,15 +256,16 @@ newNodeKernel = NodeKernel
             <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
             <*> newFetchClientRegistry
             <*> newPeerSharingRegistry
+            <*> ChainDB.newChainDB
 
 -- | Register a new upstream chain-sync client.
 --
 registerClientChains :: MonadSTM m
                      => NodeKernel header block m
                      -> NtNAddr
-                     -> m (StrictTVar m (Chain block))
+                     -> m (StrictTVar m (Chain header))
 registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
-    chainVar <- newTVar Chain.Genesis
+    chainVar <- newTVar Genesis
     modifyTVar nkClientChains (Map.insert peerAddr chainVar)
     return chainVar
 
@@ -310,20 +315,6 @@ withSlotTime slotDuration k = do
           atomically $ writeTVar slotVar next
           go (succ next)
 
-
--- | Chain selection as a 'Monoid'.
---
-newtype SelectChain block = SelectChain { getSelectedChain :: Chain block }
-
-instance HasHeader block => Semigroup (SelectChain block) where
-    (<>) = (coerce :: (     Chain block ->       Chain block ->       Chain block)
-                   -> SelectChain block -> SelectChain block -> SelectChain block)
-           Chain.selectChain
-
-instance HasHeader block => Monoid (SelectChain block) where
-    mempty = SelectChain Chain.Genesis
-
-
 -- | Node kernel erros.
 --
 data NodeKernelError = UnexpectedSlot !SlotNo !SlotNo
@@ -341,7 +332,7 @@ withNodeKernelThread
      , MonadTimer         m
      , MonadThrow         m
      , MonadThrow    (STM m)
-     , HasHeader block
+     , HasFullHeader block
      )
   => BlockGeneratorArgs block seed
   -> (NodeKernel header block m -> Async m Void -> m a)
@@ -357,7 +348,7 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
     blockProducerThread :: NodeKernel header block m
                         -> (SlotNo -> STM m SlotNo)
                         -> m Void
-    blockProducerThread NodeKernel { nkClientChains, nkChainProducerState }
+    blockProducerThread NodeKernel { nkChainProducerState, nkChainDB }
                         waitForSlot
                       = loop (Block.SlotNo 1) bgaSeed
       where
@@ -386,9 +377,21 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
                         (Just block, seed')
                           |    Block.blockPoint block
                             >= Chain.headPoint chainState
-                          -> let chainState' = Chain.addBlock block chainState in
+                          -> do
+                             -- Forged a block add it to our ChainDB this will
+                             -- make the new block available for computing
+                             -- longestChain
+                             ChainDB.addBlock block nkChainDB
+
+                             -- Get possibly new longest chain
+                             longestChain <-
+                               LazySTM.readTVar (cdbLongestChainVar nkChainDB)
+
+                             -- Switch to it and update our current state so we
+                             -- can serve other nodes through block fetch.
+                             let cps' = switchFork longestChain cps
                              writeTVar nkChainProducerState
-                                       cps { chainState = chainState' }
+                                       cps' { chainState = longestChain }
                           >> return (succ nextSlot, seed')
                         (_, seed')
                           -> return (succ nextSlot, seed')
@@ -398,15 +401,24 @@ withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bg
                -- chain selection
                --
             <> FirstToFinish
-                 ( do chains <- readTVar nkClientChains
-                            >>= traverse readTVar
-                      cps <- readTVar nkChainProducerState
-                      let candidateChain = getSelectedChain
-                                         $ foldMap SelectChain chains
-                                        <> SelectChain (chainState cps)
-                          cps' = switchFork candidateChain cps
-                      check $ Chain.headPoint (chainState cps)
-                           /= Chain.headPoint candidateChain
+                 ( do
+                      -- Get our current chain
+                      cps@ChainProducerState { chainState } <-
+                        readTVar nkChainProducerState
+                      -- Get what ChainDB sees as the longest chain
+                      longestChain <-
+                        LazySTM.readTVar (cdbLongestChainVar nkChainDB)
+
+                      -- Only update the chain if it's different than our current
+                      -- one, else retry
+                      check $ Chain.headPoint chainState
+                           /= Chain.headPoint longestChain
+
+                      -- If it's different, switch to it and update our current
+                      -- state so we can serve other nodes through block fetch.
+                      let cps' = switchFork longestChain cps
+                      writeTVar nkChainProducerState
+                                cps' { chainState = longestChain }
                       writeTVar nkChainProducerState cps'
                       -- do not update 'nextSlot'; This stm branch might run
                       -- multiple times within the current slot.

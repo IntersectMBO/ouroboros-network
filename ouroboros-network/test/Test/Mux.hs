@@ -142,7 +142,7 @@ demo chain0 updates delay = do
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
                         AsServer ChainSync.StIdle m ()
-        producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar)
+        producerPeer = ChainSync.chainSyncServerPeer (ChainSync.chainSyncServerExample () producerVar id)
 
     clientBearer <- Mx.getBearer Mx.makeQueueChannelBearer
                       (-1)

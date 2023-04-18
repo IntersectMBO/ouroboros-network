@@ -135,7 +135,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
                         (consumerClient done target consumerVar)))
 
         server :: ChainSync.ChainSyncServer block (Point block) (Tip block) IO ()
-        server = ChainSync.chainSyncServerExample () producerVar
+        server = ChainSync.chainSyncServerExample () producerVar id
 
         responderApp
           :: OuroborosApplication ResponderMode Socket.SockAddr

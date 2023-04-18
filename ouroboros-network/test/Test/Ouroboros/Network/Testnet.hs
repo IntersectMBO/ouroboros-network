@@ -70,6 +70,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Ouroboros.Network.BlockFetch (TraceFetchClientState (..))
+import           Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
@@ -157,6 +159,8 @@ tests =
                    prop_inbound_governor_trace_coverage
     , testProperty "inbound governor transitions coverage"
                    prop_inbound_governor_transitions_coverage
+    , testProperty "fetch client state trace coverage"
+                   prop_fetch_client_state_trace_coverage
     ]
   , testGroup "hot diffusion script"
     [ testProperty "target active public"
@@ -177,7 +181,7 @@ tracerDiffusionSimWithTimeName = tracerWithTime tracer
     tracer = dynamicTracer
 
 
--- | This test coverage of ServerTrace constructors, namely accept errors.
+-- | This test coverage of ConnectionManagerTrace constructors.
 --
 prop_connection_manager_trace_coverage :: AbsBearerInfo
                                        -> DiffusionScript
@@ -250,7 +254,7 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
    in tabulate "connection manager transitions" transitionsSeenNames
       True
 
--- | This test coverage of ServerTrace constructors, namely accept errors.
+-- | This test coverage of InboundGovernorTrace constructors.
 --
 prop_inbound_governor_trace_coverage :: AbsBearerInfo
                                      -> DiffusionScript
@@ -318,6 +322,54 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
    -- TODO: Add checkCoverage here
    in tabulate "inbound governor transitions" transitionsSeenNames
       True
+
+-- | This test coverage of TraceFetchClientState BlockHeader constructors,
+-- namely accept errors.
+--
+prop_fetch_client_state_trace_coverage :: AbsBearerInfo
+                                       -> DiffusionScript
+                                       -> Property
+prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                iosimTracer
+                                tracerDiffusionSimWithTimeName
+
+      events :: [TraceFetchClientState BlockHeader]
+      events = mapMaybe (\case DiffusionFetchTrace st ->
+                                    Just st
+                               _ -> Nothing
+                        )
+             . Trace.toList
+             . fmap (\(WithTime _ (WithName _ b)) -> b)
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . Trace.fromList (MainReturn (Time 0) () [])
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 125000
+             . traceEvents
+             $ runSimTrace sim
+
+      transitionsSeenNames = map traceFetchClientStateMap events
+
+   -- TODO: Add checkCoverage here
+   in tabulate "fetch client state trace" transitionsSeenNames
+      True
+  where
+    traceFetchClientStateMap :: TraceFetchClientState BlockHeader
+                             -> String
+    traceFetchClientStateMap AddedFetchRequest{}   = "AddedFetchRequest"
+    traceFetchClientStateMap AcknowledgedFetchRequest{} =
+      "AcknowledgedFetchRequest"
+    traceFetchClientStateMap SendFetchRequest{}    = "SendFetchRequest"
+    traceFetchClientStateMap StartedFetchBatch{}   = "StartedFetchBatch"
+    traceFetchClientStateMap CompletedBlockFetch{} = "CompletedBlockFetch"
+    traceFetchClientStateMap CompletedFetchBatch{} = "CompletedFetchBatch"
+    traceFetchClientStateMap RejectedFetchBatch{}  = "RejectedFetchBatch"
+    traceFetchClientStateMap (ClientTerminating n) = "ClientTerminating "
+                                                   ++ show n
 
 -- | Unit test which covers issue #4177
 --
