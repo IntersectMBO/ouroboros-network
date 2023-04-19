@@ -1,5 +1,9 @@
 # Revision history for ouroboros-network-protocols
 
+## 0.4.0.0 -- 2023-04-19
+
+- Release
+
 ## 0.3.0.0 -- 2023-02-24
 
 ### Breaking
