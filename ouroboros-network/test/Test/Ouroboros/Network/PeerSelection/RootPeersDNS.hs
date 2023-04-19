@@ -24,7 +24,6 @@ import           Data.Foldable (foldl', toList)
 import           Data.Functor (void)
 import           Data.IP (fromHostAddress, toIPv4w, toSockAddr)
 import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.List.Trace as Trace
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
@@ -72,8 +71,6 @@ tests =
                       prop_local_resolvesDomainsCorrectly
        , testProperty "updates domains correctly"
                       prop_local_updatesDomainsCorrectly
-       , testProperty "localRootPeersProvider has single source of truth"
-                      prop_local_singleSourceOfTruth
        ]
     , testGroup "publicRootPeersProvider"
        [ testProperty "resolves domains correctly"
@@ -653,6 +650,10 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
 -- resolved ip addresses to the correct group where the domain address was
 -- (in the initial configuration specification). This property tests whether
 -- after a successful DNS lookup the result list is updated correctly.
+--
+-- Correctly means: Updates in the right place and does not overwrite the
+-- previous state.
+--
 prop_local_updatesDomainsCorrectly :: MockRoots
                                    -> Script DNSTimeout
                                    -> Script DNSLookupDelay
@@ -670,6 +671,21 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
 
         r = foldl' (\(b, (t, x)) (t', y) ->
                     case (x, y) of
+                      -- Last result groups value, Current result groups value
+                      (TraceLocalRootGroups lrpg, TraceLocalRootGroups lrpg') ->
+                        let -- Get all IPs present in last group at position
+                            -- 'index'
+                            ipsAtIndex = Map.keys
+                                       $ foldMap snd lrpg
+
+                            -- Get all IPs present in current group at position
+                            -- 'index'
+                            ipsAtIndex' = Map.keys
+                                        $ foldMap snd lrpg'
+
+                            arePreserved = all (`elem` ipsAtIndex') ipsAtIndex
+
+                         in (arePreserved && b, (t', y))
                       -- Last DNS lookup result   , Current result groups value
                       (TraceLocalRootResult da res, TraceLocalRootGroups lrpg) ->
                             -- create and index db for each group
@@ -706,54 +722,6 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
               (True, head tr)
               (tail tr)
      in property (fst r)
-
-
--- | The 'localRootPeersProvider' monitors each domain address for DNS
--- resolving. It then should update the local result group correctly, but it
--- should only update the single source of truth and not some cached version.
---
--- This test follows #3638 and checks this doesn't happen.
---
--- The way we test for this is to look at TraceLocalRootGroups results and check
--- if they are monotonic i.e. the most recent value of TraceLocalRootGroups has
--- to be subset or equal to the last values of TraceLocalRootGroups. Since we
--- only do fixed DNS resolution, the single source of truth should be only
--- increasing on not decreasing.
---
-prop_local_singleSourceOfTruth :: MockRoots
-                               -> Script DNSTimeout
-                               -> Script DNSLookupDelay
-                               -> Property
-prop_local_singleSourceOfTruth mockRoots
-                               dnsTimeoutScript
-                               dnsLookupDelayScript =
-    let sim = runSimTrace
-            $ mockLocalRootPeersProvider tracerTraceLocalRoots
-                                         mockRoots
-                                         dnsTimeoutScript
-                                         dnsLookupDelayScript
-
-        sourceOfTruth =
-            Trace.toList
-          $ fmap unSolo
-          $ traceSelectTraceEventsDynamic
-              @_ @(Solo (Seq (Int, Map SockAddr PeerAdvertise)))
-          $ sim
-
-        simTrace = map snd
-                 $ selectLocalRootGroupsEvents
-                 $ selectLocalRootPeersEvents
-                 $ selectRootPeerDNSTraceEvents
-                 $ sim
-
-     in foldr
-          (\(sot, st) r ->
-              counterexample (show sot ++ " is different from " ++ show st)
-              (sot == st)
-            .&&. r
-          )
-          (property True)
-          (zip sourceOfTruth simTrace)
 
 --
 -- Public Root Peers Provider Tests
