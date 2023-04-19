@@ -2,13 +2,17 @@
 
 ## next version
 
+## 0.4.0.0 - 2023-04-19
+
 ### Non breaking
 
 - Fix interop problems between NonP2P and P2P nodes (PR #4465)
+- Fix incorrect transition order (issue #4370)
 
 ### Breaking
 
 - Removed `TrImpossibleConnection` trace (PR #4385)
+- Peer Sharing integration
 
 ## 0.3.0.0 -- 2023-01-25
 
