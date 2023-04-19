@@ -21,7 +21,6 @@ index-state:
   , cardano-haskell-packages 2023-04-05T21:25:44Z
 
 packages: ./cardano-ping
-          ./ouroboros-network-testing
           ./monoidal-synchronisation
           ./network-mux
           ./ouroboros-network

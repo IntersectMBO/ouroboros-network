@@ -4,17 +4,15 @@
 module Ouroboros.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
-  , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
+  , nodeToClientVersionCodec
   ) where
 
+import qualified Codec.CBOR.Term as CBOR
 import           Data.Bits (clearBit, setBit, testBit)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Typeable (Typeable)
-
-import qualified Codec.CBOR.Term as CBOR
-
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
@@ -35,9 +33,10 @@ data NodeToClientVersion
     | NodeToClientV_13
     -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
     | NodeToClientV_14
-    -- ^ added @GetPoolDistr, @GetPoolState, @GetSnapshots
+    -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
     | NodeToClientV_15
-    -- ^ enabled @CardanoNodeToClientVersion11@, i.e., Conway
+    -- ^ enabled @CardanoNodeToClientVersion11@, i.e., Conway and
+    -- @GetStakeDelegDeposits@
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -74,9 +73,9 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
                            , Nothing)
 
-
-nodeToClientVersionBit :: Int
-nodeToClientVersionBit = 15
+      -- The 16th bit to distinguish `NodeToNodeVersion` and `NodeToClientVersion`.
+      nodeToClientVersionBit :: Int
+      nodeToClientVersionBit = 15
 
 
 -- | Version data for NodeToClient protocol v1
