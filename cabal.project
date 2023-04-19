@@ -34,8 +34,6 @@ packages: ./cardano-ping
           ./ouroboros-consensus-diffusion
           ./ouroboros-consensus-protocol
           ./ouroboros-consensus-cardano
-          ./ouroboros-consensus-test
-          ./ouroboros-consensus-cardano-test
           ./ntp-client
           ./cardano-client
 

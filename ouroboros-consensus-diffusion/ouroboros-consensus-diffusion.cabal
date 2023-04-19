@@ -26,7 +26,24 @@ flag asserts
   manual:      False
   default:     False
 
+common common-lib
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+    cpp-options: -DENABLE_ASSERTIONS
+
+common common-test
+  import:      common-lib
+  ghc-options: -threaded -rtsopts
+
 library
+  import:             common-lib
   hs-source-dirs:     src
   exposed-modules:
     Ouroboros.Consensus.Network.NodeToClient
@@ -105,12 +122,150 @@ library
     , time
     , typed-protocols
 
-  default-language:   Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -Wno-unticked-promoted-constructors
+library diffusion-testlib
+  import:          common-lib
+  hs-source-dirs:  diffusion-testlib
+  visibility:      public
+  exposed-modules:
+    Test.ThreadNet.General
+    Test.ThreadNet.Network
+    Test.ThreadNet.Ref.PBFT
+    Test.ThreadNet.Rekeying
+    Test.ThreadNet.TxGen
+    Test.ThreadNet.Util
+    Test.ThreadNet.Util.Expectations
+    Test.ThreadNet.Util.HasCreator
+    Test.ThreadNet.Util.NodeJoinPlan
+    Test.ThreadNet.Util.NodeRestarts
+    Test.ThreadNet.Util.NodeToNodeVersion
+    Test.ThreadNet.Util.NodeTopology
+    Test.ThreadNet.Util.Seed
 
-  if flag(asserts)
-    ghc-options: -fno-ignore-asserts
+  build-depends:
+    , base                                                          >=4.14  && <4.17
+    , bytestring                                                    >=0.10  && <0.12
+    , cborg                                                         >=0.2.2 && <0.3
+    , containers                                                    >=0.5   && <0.7
+    , contra-tracer
+    , fgl
+    , fs-sim
+    , graphviz
+    , io-classes
+    , io-sim
+    , mtl                                                           >=2.2   && <2.3
+    , ouroboros-consensus-diffusion
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
+    , ouroboros-network
+    , ouroboros-network-api
+    , ouroboros-network-framework
+    , ouroboros-network-mock
+    , ouroboros-network-protocols
+    , QuickCheck
+    , quiet                                                         >=0.2   && <0.3
+    , random
+    , text                                                          >=1.2   && <1.3
+    , typed-protocols
+
+library mock-test
+  import:          common-lib
+  visibility:      public
+  hs-source-dirs:  mock-test
+  exposed-modules:
+    Test.Consensus.Ledger.Mock.Generators
+    Test.ThreadNet.TxGen.Mock
+    Test.ThreadNet.Util.HasCreator.Mock
+    Test.ThreadNet.Util.SimpleBlock
+
+  build-depends:
+    , base                                                                        >=4.14   && <4.17
+    , bytestring                                                                  >=0.10   && <0.12
+    , cardano-crypto-class
+    , containers                                                                  >=0.5    && <0.7
+    , diffusion-testlib
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib, mock-testlib}  ^>=0.5.0
+    , QuickCheck
+    , serialise                                                                   >=0.2    && <0.3
+
+test-suite test-infra
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-infra
+  main-is:        Main.hs
+  other-modules:
+    Ouroboros.Consensus.Util.Tests
+    Test.ThreadNet.Util.Tests
+    Test.Util.ChainUpdates.Tests
+    Test.Util.Schedule.Tests
+    Test.Util.Split.Tests
+
+  build-depends:
+    , base                                                          >=4.14 && <4.17
+    , diffusion-testlib
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
+    , QuickCheck
+    , tasty
+    , tasty-quickcheck
+
+test-suite test-mock
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-mock
+  main-is:        Main.hs
+  other-modules:
+    Test.Consensus.Ledger.Mock
+    Test.ThreadNet.BFT
+    Test.ThreadNet.LeaderSchedule
+    Test.ThreadNet.PBFT
+    Test.ThreadNet.Praos
+
+  build-depends:
+    , base                                                                        >=4.14 && <4.17
+    , bytestring
+    , cborg
+    , containers
+    , diffusion-testlib
+    , mock-test
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib, mock-testlib}
+    , ouroboros-network-mock
+    , QuickCheck
+    , serialise
+    , tasty
+    , tasty-quickcheck
+
+test-suite test-consensus
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-consensus
+  main-is:        Main.hs
+  other-modules:
+    Test.Consensus.HardFork.Combinator
+    Test.Consensus.HardFork.Combinator.A
+    Test.Consensus.HardFork.Combinator.B
+    Test.Consensus.Node
+
+  build-depends:
+    , base                                                          >=4.14 && <4.17
+    , binary
+    , bytestring
+    , cardano-slotting
+    , containers
+    , diffusion-testlib
+    , directory
+    , fs-api
+    , fs-sim
+    , io-classes
+    , io-sim
+    , mtl
+    , nothunks
+    , ouroboros-consensus-diffusion
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
+    , ouroboros-network-api
+    , ouroboros-network-mock
+    , QuickCheck
+    , quiet
+    , serialise
+    , tasty
+    , tasty-hunit
+    , tasty-quickcheck
+    , temporary
+    , time

@@ -22,19 +22,19 @@ fd -p ouroboros-consensus \
     -E ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Telescope.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/DerivingVia.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Tails.hs \
-    -E ouroboros-consensus-test/src/Test/Util/Classify.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/API.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/API/Types.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/CRC.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/Handle.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/IO.hs \
     -E ouroboros-consensus/src/Ouroboros/Consensus/Storage/IO.hs \
-    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/Error.hs \
-    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/FsTree.hs \
-    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/MockFS.hs \
-    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/Pure.hs \
-    -E ouroboros-consensus-test/src/Test/Util/FS/Sim/STM.hs \
-    -E ouroboros-consensus-test/src/Test/Util/Blob.hs \
+    -E ouroboros-consensus/consensus-testlib/Test/Util/Classify.hs \
+    -E ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/Error.hs \
+    -E ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/FsTree.hs \
+    -E ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/MockFS.hs \
+    -E ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/Pure.hs \
+    -E ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/STM.hs \
+    -E ouroboros-consensus/consensus-testlib/Test/Util/Blob.hs \
     -E ouroboros-consensus-cardano/app/DBAnalyser/Parsers.hs \
     -X stylish-haskell \
     -c .stylish-haskell.yaml -i
@@ -56,18 +56,18 @@ grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/C
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Telescope.hs    >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/DerivingVia.hs  >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/HardFork/Combinator/Util/Tails.hs        >/dev/null 2>&1
-grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/Classify.hs                       >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/API.hs            >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/API/Types.hs      >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/CRC.hs            >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/Handle.hs         >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/FS/IO.hs             >/dev/null 2>&1
 grep "module.*DEPRECATED" ouroboros-consensus/src/Ouroboros/Consensus/Storage/IO.hs                >/dev/null 2>&1
-grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/Error.hs                   >/dev/null 2>&1
-grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/FsTree.hs                  >/dev/null 2>&1
-grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/MockFS.hs                  >/dev/null 2>&1
-grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/Pure.hs                    >/dev/null 2>&1
-grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/FS/Sim/STM.hs                     >/dev/null 2>&1
-grep "module.*DEPRECATED" ouroboros-consensus-test/src/Test/Util/Blob.hs                           >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/consensus-testlib/Test/Util/Classify.hs                       >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/Error.hs                   >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/FsTree.hs                  >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/MockFS.hs                  >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/Pure.hs                    >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/consensus-testlib/Test/Util/FS/Sim/STM.hs                     >/dev/null 2>&1
+grep "module.*DEPRECATED" ouroboros-consensus/consensus-testlib/Test/Util/Blob.hs                           >/dev/null 2>&1
 
 fd -p ouroboros-consensus -e cabal -x cabal-fmt -i

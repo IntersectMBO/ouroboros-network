@@ -1,20 +1,20 @@
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 -- | Generators suitable for serialisation. Note that these are not guaranteed
 -- to be semantically correct at all, only structurally correct.
-module Test.Consensus.Protocol.Serialisation.Generators where
+module Test.Consensus.Protocol.Serialisation.Generators () where
 
 import           Cardano.Crypto.KES (signedKES)
 import           Cardano.Crypto.VRF (evalCertified)
-import           Cardano.Ledger.Crypto (Crypto)
 import           Cardano.Protocol.TPraos.BHeader (HashHeader, PrevHash (..))
 import           Cardano.Protocol.TPraos.OCert (KESPeriod (KESPeriod),
                      OCert (OCert))
 import           Cardano.Slotting.Block (BlockNo (BlockNo))
 import           Cardano.Slotting.Slot (SlotNo (SlotNo),
                      WithOrigin (At, Origin))
-import           Data.ByteString (ByteString)
 import           Ouroboros.Consensus.Protocol.Praos (PraosState (PraosState))
 import qualified Ouroboros.Consensus.Protocol.Praos as Praos
 import           Ouroboros.Consensus.Protocol.Praos.Header (Header (Header),

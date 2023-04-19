@@ -28,8 +28,28 @@ flag asserts
   manual:      False
   default:     False
 
+common common-lib
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
+common common-test
+  import:      common-lib
+  ghc-options: -threaded -rtsopts
+
+common common-exe
+  import:      common-lib
+  ghc-options: -threaded -rtsopts "-with-rtsopts=-N -I0 -A16m"
+
 library
-  hs-source-dirs:   cardano byron shelley cardano-tools
+  import:          common-lib
+  hs-source-dirs:  cardano byron shelley cardano-tools
   exposed-modules:
     Cardano.Api.Any
     Cardano.Api.Protocol.Types
@@ -164,19 +184,278 @@ library
     , transformers-except
     , vector-map
 
-  default-language: Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -Wno-unticked-promoted-constructors
+library byronspec
+  import:          common-lib
+  visibility:      private
+  hs-source-dirs:  byronspec
+  exposed-modules:
+    Ouroboros.Consensus.ByronSpec.Ledger
+    Ouroboros.Consensus.ByronSpec.Ledger.Accessors
+    Ouroboros.Consensus.ByronSpec.Ledger.Block
+    Ouroboros.Consensus.ByronSpec.Ledger.Conversions
+    Ouroboros.Consensus.ByronSpec.Ledger.Forge
+    Ouroboros.Consensus.ByronSpec.Ledger.Genesis
+    Ouroboros.Consensus.ByronSpec.Ledger.GenTx
+    Ouroboros.Consensus.ByronSpec.Ledger.Ledger
+    Ouroboros.Consensus.ByronSpec.Ledger.Mempool
+    Ouroboros.Consensus.ByronSpec.Ledger.Orphans
+    Ouroboros.Consensus.ByronSpec.Ledger.Rules
 
-  if flag(asserts)
-    ghc-options: -fno-ignore-asserts
+  build-depends:
+    , base                       >=4.14  && <4.17
+    , bimap                      >=0.4   && <0.5
+    , byron-spec-chain
+    , byron-spec-ledger
+    , cardano-ledger-binary
+    , cardano-ledger-byron-test
+    , cborg                      >=0.2.2 && <0.3
+    , containers                 >=0.5   && <0.7
+    , mtl                        >=2.2   && <2.3
+    , nothunks
+    , ouroboros-consensus        ^>=0.5
+    , serialise                  >=0.2   && <0.3
+    , small-steps
+    , transformers
+
+library byron-test
+  import:          common-lib
+  visibility:      private
+  hs-source-dirs:  byron-test
+  exposed-modules:
+    Ouroboros.Consensus.ByronDual.Ledger
+    Ouroboros.Consensus.ByronDual.Node
+    Ouroboros.Consensus.ByronDual.Node.Serialisation
+    Test.Consensus.Byron.Examples
+    Test.Consensus.Byron.Generators
+    Test.ThreadNet.Infra.Byron
+    Test.ThreadNet.Infra.Byron.Genesis
+    Test.ThreadNet.Infra.Byron.ProtocolInfo
+    Test.ThreadNet.Infra.Byron.TrackUpdates
+    Test.ThreadNet.TxGen.Byron
+
+  build-depends:
+    , base                                                          >=4.14 && <4.17
+    , byron-spec-ledger
+    , byronspec
+    , bytestring                                                    >=0.10 && <0.12
+    , cardano-crypto-class
+    , cardano-crypto-test
+    , cardano-crypto-wrapper
+    , cardano-ledger-binary:{cardano-ledger-binary, testlib}
+    , cardano-ledger-byron
+    , cardano-ledger-byron-test
+    , containers                                                    >=0.5  && <0.7
+    , hedgehog-quickcheck
+    , mtl                                                           >=2.2  && <2.3
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-diffusion:diffusion-testlib
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}  ^>=0.5
+    , ouroboros-network-api
+    , QuickCheck
+    , serialise                                                     >=0.2  && <0.3
+
+test-suite test-byron
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-byron
+  main-is:        Main.hs
+  other-modules:
+    Test.Consensus.Byron.Golden
+    Test.Consensus.Byron.Serialisation
+    Test.ThreadNet.Byron
+    Test.ThreadNet.DualByron
+
+  build-depends:
+    , base                                                          >=4.14 && <4.17
+    , binary-search
+    , byron-spec-chain
+    , byron-spec-ledger
+    , byron-test
+    , byronspec
+    , bytestring
+    , cardano-crypto-class
+    , cardano-crypto-wrapper
+    , cardano-ledger-binary
+    , cardano-ledger-byron
+    , cardano-ledger-byron-test
+    , cborg
+    , containers
+    , filepath
+    , hedgehog-quickcheck
+    , mtl
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-diffusion:diffusion-testlib
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}  ^>=0.5
+    , ouroboros-network-mock
+    , QuickCheck
+    , small-steps
+    , small-steps-test
+    , tasty
+    , tasty-quickcheck
+
+library shelley-test
+  import:          common-lib
+  visibility:      private
+  hs-source-dirs:  shelley-test
+  exposed-modules:
+    Test.Consensus.Shelley.Examples
+    Test.Consensus.Shelley.Generators
+    Test.Consensus.Shelley.MockCrypto
+    Test.ThreadNet.Infra.Alonzo
+    Test.ThreadNet.Infra.Shelley
+    Test.ThreadNet.TxGen.Shelley
+
+  build-depends:
+    , base                                                                                            >=4.14  && <4.17
+    , bytestring                                                                                      >=0.10  && <0.12
+    , cardano-crypto-class
+    , cardano-data
+    , cardano-ledger-allegra
+    , cardano-ledger-alonzo
+    , cardano-ledger-alonzo-test
+    , cardano-ledger-babbage
+    , cardano-ledger-babbage-test
+    , cardano-ledger-conway-test
+    , cardano-ledger-core:{cardano-ledger-core, testlib}
+    , cardano-ledger-mary
+    , cardano-ledger-shelley-ma-test
+    , cardano-ledger-shelley-test
+    , cardano-ledger-shelley:{cardano-ledger-shelley, testlib}
+    , cardano-protocol-tpraos:{cardano-protocol-tpraos, testlib}                                      >=1.0.1 && <1.1
+    , cardano-strict-containers
+    , containers                                                                                      >=0.5   && <0.7
+    , generic-random
+    , microlens
+    , mtl                                                                                             >=2.2   && <2.3
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-diffusion:diffusion-testlib
+    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}                                    ^>=0.5
+    , ouroboros-network-api
+    , QuickCheck
+    , quiet                                                                                           >=0.2   && <0.3
+    , small-steps
+
+test-suite test-shelley
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-shelley
+  main-is:        Main.hs
+  other-modules:
+    Test.Consensus.Shelley.Coherence
+    Test.Consensus.Shelley.Golden
+    Test.Consensus.Shelley.Serialisation
+    Test.ThreadNet.Shelley
+
+  build-depends:
+    , base                                                          >=4.14 && <4.17
+    , bytestring
+    , cardano-crypto-class
+    , cardano-ledger-alonzo
+    , cardano-ledger-alonzo-test
+    , cardano-ledger-core
+    , cardano-ledger-shelley
+    , cardano-protocol-tpraos
+    , cardano-slotting
+    , cborg
+    , containers
+    , filepath
+    , microlens
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-diffusion:diffusion-testlib
+    , ouroboros-consensus-protocol                                  ^>=0.5
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}  ^>=0.5
+    , QuickCheck
+    , shelley-test
+    , tasty
+    , tasty-quickcheck
+
+library cardano-test
+  import:          common-lib
+  visibility:      private
+  hs-source-dirs:  cardano-test
+  exposed-modules:
+    Test.Consensus.Cardano.Examples
+    Test.Consensus.Cardano.Generators
+    Test.Consensus.Cardano.MockCrypto
+    Test.ThreadNet.Infra.ShelleyBasedHardFork
+    Test.ThreadNet.Infra.TwoEras
+    Test.ThreadNet.TxGen.Allegra
+    Test.ThreadNet.TxGen.Alonzo
+    Test.ThreadNet.TxGen.Babbage
+    Test.ThreadNet.TxGen.Cardano
+    Test.ThreadNet.TxGen.Mary
+
+  build-depends:
+    , base                                                                                            >=4.14 && <4.17
+    , byron-test
+    , cardano-crypto-class
+    , cardano-crypto-wrapper
+    , cardano-ledger-alonzo-test
+    , cardano-ledger-byron
+    , cardano-ledger-conway-test
+    , cardano-ledger-core:{cardano-ledger-core, testlib}
+    , cardano-ledger-shelley
+    , cardano-protocol-tpraos
+    , cardano-slotting
+    , cardano-strict-containers
+    , containers
+    , microlens
+    , mtl
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-diffusion:{ouroboros-consensus-diffusion, diffusion-testlib}                ^>=0.4
+    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}                                    ^>=0.5
+    , ouroboros-network-api
+    , QuickCheck
+    , shelley-test
+
+test-suite test-cardano
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-cardano
+  main-is:        Main.hs
+  other-modules:
+    Test.Consensus.Cardano.ByronCompatibility
+    Test.Consensus.Cardano.Golden
+    Test.Consensus.Cardano.Serialisation
+    Test.ThreadNet.AllegraMary
+    Test.ThreadNet.Cardano
+    Test.ThreadNet.MaryAlonzo
+    Test.ThreadNet.ShelleyAllegra
+
+  build-depends:
+    , base                                                          >=4.14 && <4.17
+    , byron-test
+    , bytestring
+    , cardano-crypto-class
+    , cardano-ledger-alonzo
+    , cardano-ledger-byron
+    , cardano-ledger-conway
+    , cardano-ledger-core
+    , cardano-ledger-shelley
+    , cardano-protocol-tpraos
+    , cardano-slotting
+    , cardano-test
+    , cborg
+    , containers
+    , filepath
+    , microlens
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-diffusion:diffusion-testlib
+    , ouroboros-consensus-protocol                                  ^>=0.5
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}  ^>=0.5
+    , ouroboros-network-api
+    , QuickCheck
+    , shelley-test
+    , sop-core
+    , tasty
+    , tasty-quickcheck
 
 executable db-converter
-  hs-source-dirs:   app
-  main-is:          db-converter.hs
+  import:         common-exe
+  hs-source-dirs: app
+  main-is:        db-converter.hs
   build-depends:
     , base                           >=4.14 && <4.17
     , bytestring
@@ -194,16 +473,10 @@ executable db-converter
     , streaming
     , text
 
-  default-language: Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -Wno-unticked-promoted-constructors
-
 executable db-analyser
-  hs-source-dirs:   app
-  main-is:          db-analyser.hs
+  import:         common-exe
+  hs-source-dirs: app
+  main-is:        db-analyser.hs
   build-depends:
     , base                         >=4.14 && <4.17
     , cardano-crypto-wrapper
@@ -211,47 +484,27 @@ executable db-analyser
     , ouroboros-consensus          ^>=0.5
     , ouroboros-consensus-cardano
 
-  other-modules:    DBAnalyser.Parsers
-  default-language: Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -Wno-unticked-promoted-constructors -threaded -rtsopts
-    "-with-rtsopts=-T -I0 -N2 -A16m"
+  other-modules:  DBAnalyser.Parsers
 
 executable db-synthesizer
-  hs-source-dirs:   app
-  main-is:          db-synthesizer.hs
-  default-language: Haskell2010
+  import:         common-exe
+  hs-source-dirs: app
+  main-is:        db-synthesizer.hs
   build-depends:
     , base                         >=4.14 && <4.17
     , optparse-applicative
     , ouroboros-consensus          ^>=0.5
     , ouroboros-consensus-cardano
 
-  other-modules:    DBSynthesizer.Parsers
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -Wno-unticked-promoted-constructors -O2 -threaded -rtsopts
-    "-with-rtsopts=-N -I0 -A16m"
+  other-modules:  DBSynthesizer.Parsers
 
-test-suite test
-  type:             exitcode-stdio-1.0
-  hs-source-dirs:   test-tools
-  main-is:          Main.hs
-  default-language: Haskell2010
+test-suite test-tools
+  import:         common-test
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test-tools
+  main-is:        Main.hs
   build-depends:
     , base                         >=4.14 && <4.17
     , ouroboros-consensus-cardano
     , tasty
     , tasty-hunit
-
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -Wno-unticked-promoted-constructors -threaded -rtsopts
-    "-with-rtsopts=-N -I0 -A16m"
