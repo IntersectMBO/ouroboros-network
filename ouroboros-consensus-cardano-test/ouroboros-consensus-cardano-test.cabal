@@ -107,7 +107,7 @@ library byron-test
     , hedgehog-quickcheck
     , mtl                                                     >=2.2    && <2.3
     , ouroboros-consensus                                     ^>=0.5
-    , ouroboros-consensus-cardano:byron                       ^>=0.5.0
+    , ouroboros-consensus-cardano                             ^>=0.5.0
     , ouroboros-consensus-test                                ^>=0.5
     , ouroboros-network-api
     , QuickCheck
@@ -125,7 +125,7 @@ test-suite test-byron
     Test.ThreadNet.DualByron
 
   build-depends:
-    , base                               >=4.14   && <4.17
+    , base                         >=4.14   && <4.17
     , binary-search
     , byron-spec-chain
     , byron-spec-ledger
@@ -142,9 +142,9 @@ test-suite test-byron
     , filepath
     , hedgehog-quickcheck
     , mtl
-    , ouroboros-consensus                ^>=0.5
-    , ouroboros-consensus-cardano:byron  ^>=0.5.0
-    , ouroboros-consensus-test           ^>=0.5
+    , ouroboros-consensus          ^>=0.5
+    , ouroboros-consensus-cardano  ^>=0.5.0
+    , ouroboros-consensus-test     ^>=0.5
     , ouroboros-network-mock
     , QuickCheck
     , small-steps
@@ -187,7 +187,7 @@ library shelley-test
     , microlens
     , mtl                                                                                             >=2.2    && <2.3
     , ouroboros-consensus                                                                             ^>=0.5
-    , ouroboros-consensus-cardano:shelley                                                             ^>=0.5.0
+    , ouroboros-consensus-cardano                                                                     ^>=0.5.0
     , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
     , ouroboros-consensus-test                                                                        ^>=0.5
     , ouroboros-network-api
@@ -207,7 +207,7 @@ test-suite test-shelley
     Test.ThreadNet.Shelley
 
   build-depends:
-    , base                                 >=4.14   && <4.17
+    , base                          >=4.14   && <4.17
     , bytestring
     , cardano-crypto-class
     , cardano-ledger-alonzo
@@ -220,10 +220,10 @@ test-suite test-shelley
     , containers
     , filepath
     , microlens
-    , ouroboros-consensus                  ^>=0.5
-    , ouroboros-consensus-cardano:shelley  ^>=0.5.0
-    , ouroboros-consensus-protocol         ^>=0.5
-    , ouroboros-consensus-test             ^>=0.5
+    , ouroboros-consensus           ^>=0.5
+    , ouroboros-consensus-cardano   ^>=0.5.0
+    , ouroboros-consensus-protocol  ^>=0.5
+    , ouroboros-consensus-test      ^>=0.5
     , QuickCheck
     , shelley-test
     , tasty
@@ -262,7 +262,7 @@ library cardano-test
     , microlens
     , mtl
     , ouroboros-consensus                                                                             ^>=0.5
-    , ouroboros-consensus-cardano:{byron, cardano, shelley}                                           ^>=0.5.0
+    , ouroboros-consensus-cardano                                                                     ^>=0.5.0
     , ouroboros-consensus-diffusion                                                                   ^>=0.4
     , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
     , ouroboros-consensus-test                                                                        ^>=0.5
@@ -285,7 +285,7 @@ test-suite test-cardano
     Test.ThreadNet.ShelleyAllegra
 
   build-depends:
-    , base                                                   >=4.14   && <4.17
+    , base                          >=4.14   && <4.17
     , byron-test
     , bytestring
     , cardano-crypto-class
@@ -301,10 +301,10 @@ test-suite test-cardano
     , containers
     , filepath
     , microlens
-    , ouroboros-consensus                                    ^>=0.5
-    , ouroboros-consensus-cardano:{byron, cardano, shelley}  ^>=0.5.0
-    , ouroboros-consensus-protocol                           ^>=0.5
-    , ouroboros-consensus-test                               ^>=0.5
+    , ouroboros-consensus           ^>=0.5
+    , ouroboros-consensus-cardano   ^>=0.5.0
+    , ouroboros-consensus-protocol  ^>=0.5
+    , ouroboros-consensus-test      ^>=0.5
     , ouroboros-network-api
     , QuickCheck
     , shelley-test

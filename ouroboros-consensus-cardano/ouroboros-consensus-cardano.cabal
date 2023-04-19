@@ -28,61 +28,25 @@ flag asserts
   manual:      False
   default:     False
 
-common common-lib
-  default-language: Haskell2010
-  ghc-options:
-    -Wall -Wcompat -Wincomplete-uni-patterns
-    -Wincomplete-record-updates -Wpartial-fields -Widentities
-    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
-    -Wno-unticked-promoted-constructors
-
-  if flag(asserts)
-    ghc-options: -fno-ignore-asserts
-
-common common-test
-  import:      common-lib
-  ghc-options: -threaded -rtsopts
-
-library cardano
-  import:          common-lib
-  hs-source-dirs:  cardano
-  visibility:      public
+library
+  hs-source-dirs:   cardano byron shelley cardano-tools
   exposed-modules:
-    Ouroboros.Consensus.Cardano
-    Ouroboros.Consensus.Cardano.Block
-    Ouroboros.Consensus.Cardano.ByronHFC
-    Ouroboros.Consensus.Cardano.CanHardFork
-    Ouroboros.Consensus.Cardano.Condense
-    Ouroboros.Consensus.Cardano.Node
-    Ouroboros.Consensus.Cardano.ShelleyBased
-
-  build-depends:
-    , base                          >=4.14  && <4.17
-    , byron
-    , bytestring                    >=0.10  && <0.12
-    , cardano-binary
-    , cardano-crypto-class
-    , cardano-data
-    , cardano-ledger-byron
-    , cardano-ledger-core
-    , cardano-ledger-shelley
-    , cardano-prelude
-    , cardano-protocol-tpraos
-    , cardano-slotting
-    , cborg                         >=0.2.2 && <0.3
-    , containers                    >=0.5   && <0.7
-    , mtl                           >=2.2   && <2.3
-    , nothunks
-    , ouroboros-consensus           ^>=0.5
-    , ouroboros-consensus-protocol  ^>=0.5
-    , shelley
-    , these                         >=1.1   && <1.2
-
-library byron
-  import:          common-lib
-  hs-source-dirs:  byron
-  visibility:      public
-  exposed-modules:
+    Cardano.Api.Any
+    Cardano.Api.Protocol.Types
+    Cardano.Node.Protocol
+    Cardano.Node.Protocol.Types
+    Cardano.Node.Types
+    Cardano.Tools.DBAnalyser.Analysis
+    Cardano.Tools.DBAnalyser.Block.Byron
+    Cardano.Tools.DBAnalyser.Block.Cardano
+    Cardano.Tools.DBAnalyser.Block.Shelley
+    Cardano.Tools.DBAnalyser.HasAnalysis
+    Cardano.Tools.DBAnalyser.Run
+    Cardano.Tools.DBAnalyser.Types
+    Cardano.Tools.DBSynthesizer.Forging
+    Cardano.Tools.DBSynthesizer.Orphans
+    Cardano.Tools.DBSynthesizer.Run
+    Cardano.Tools.DBSynthesizer.Types
     Ouroboros.Consensus.Byron.Crypto.DSIGN
     Ouroboros.Consensus.Byron.EBBs
     Ouroboros.Consensus.Byron.Ledger
@@ -102,32 +66,13 @@ library byron
     Ouroboros.Consensus.Byron.Node
     Ouroboros.Consensus.Byron.Node.Serialisation
     Ouroboros.Consensus.Byron.Protocol
-
-  build-depends:
-    , base                    >=4.14  && <4.17
-    , bytestring              >=0.10  && <0.12
-    , cardano-crypto
-    , cardano-crypto-class
-    , cardano-crypto-wrapper
-    , cardano-ledger-binary
-    , cardano-ledger-byron
-    , cardano-prelude
-    , cborg                   >=0.2.2 && <0.3
-    , containers              >=0.5   && <0.7
-    , cryptonite              >=0.25  && <0.31
-    , formatting              >=6.3   && <7.2
-    , mtl                     >=2.2   && <2.3
-    , nothunks
-    , ouroboros-consensus     ^>=0.5
-    , ouroboros-network-api
-    , serialise               >=0.2   && <0.3
-    , text                    >=1.2   && <1.3
-
-library shelley
-  import:          common-lib
-  visibility:      public
-  hs-source-dirs:  shelley
-  exposed-modules:
+    Ouroboros.Consensus.Cardano
+    Ouroboros.Consensus.Cardano.Block
+    Ouroboros.Consensus.Cardano.ByronHFC
+    Ouroboros.Consensus.Cardano.CanHardFork
+    Ouroboros.Consensus.Cardano.Condense
+    Ouroboros.Consensus.Cardano.Node
+    Ouroboros.Consensus.Cardano.ShelleyBased
     Ouroboros.Consensus.Shelley.Crypto
     Ouroboros.Consensus.Shelley.Eras
     Ouroboros.Consensus.Shelley.HFEras
@@ -154,104 +99,6 @@ library shelley
     Ouroboros.Consensus.Shelley.Protocol.TPraos
     Ouroboros.Consensus.Shelley.ShelleyHFC
 
-  build-depends:
-    , base                          >=4.14  && <4.17
-    , base-deriving-via
-    , bytestring                    >=0.10  && <0.12
-    , cardano-binary
-    , cardano-crypto-class
-    , cardano-data
-    , cardano-ledger-allegra
-    , cardano-ledger-alonzo
-    , cardano-ledger-babbage
-    , cardano-ledger-binary
-    , cardano-ledger-conway
-    , cardano-ledger-core
-    , cardano-ledger-mary
-    , cardano-ledger-shelley
-    , cardano-protocol-tpraos
-    , cardano-slotting
-    , cardano-strict-containers
-    , cborg                         >=0.2.2 && <0.3
-    , containers                    >=0.5   && <0.7
-    , deepseq
-    , measures
-    , microlens
-    , mtl                           >=2.2   && <2.3
-    , nothunks
-    , ouroboros-consensus           ^>=0.5
-    , ouroboros-consensus-protocol  ^>=0.5
-    , ouroboros-network-api
-    , serialise                     >=0.2   && <0.3
-    , small-steps
-    , text                          >=1.2   && <1.3
-    , vector-map
-
-library cardano-tools
-  import:          common-lib
-  visibility:      public
-  hs-source-dirs:  cardano-tools
-  exposed-modules:
-    Cardano.Api.Any
-    Cardano.Api.Protocol.Types
-    Cardano.Node.Protocol
-    Cardano.Node.Protocol.Types
-    Cardano.Node.Types
-    Cardano.Tools.DBAnalyser.Analysis
-    Cardano.Tools.DBAnalyser.Block.Byron
-    Cardano.Tools.DBAnalyser.Block.Cardano
-    Cardano.Tools.DBAnalyser.Block.Shelley
-    Cardano.Tools.DBAnalyser.HasAnalysis
-    Cardano.Tools.DBAnalyser.Run
-    Cardano.Tools.DBAnalyser.Types
-    Cardano.Tools.DBSynthesizer.Forging
-    Cardano.Tools.DBSynthesizer.Orphans
-    Cardano.Tools.DBSynthesizer.Run
-    Cardano.Tools.DBSynthesizer.Types
-
-  build-depends:
-    , aeson
-    , base                           >=4.14 && <4.17
-    , base16-bytestring              >=1.0
-    , byron
-    , bytestring
-    , cardano
-    , cardano-crypto
-    , cardano-crypto-class
-    , cardano-crypto-wrapper
-    , cardano-ledger-allegra
-    , cardano-ledger-alonzo
-    , cardano-ledger-babbage
-    , cardano-ledger-binary
-    , cardano-ledger-byron
-    , cardano-ledger-conway
-    , cardano-ledger-core
-    , cardano-ledger-mary
-    , cardano-ledger-shelley
-    , cardano-prelude
-    , cardano-protocol-tpraos
-    , cardano-slotting
-    , cardano-strict-containers
-    , cborg
-    , containers
-    , contra-tracer
-    , directory
-    , filepath
-    , fs-api
-    , microlens
-    , mtl
-    , nothunks
-    , ouroboros-consensus            ^>=0.5
-    , ouroboros-consensus-diffusion  ^>=0.4
-    , ouroboros-consensus-protocol   ^>=0.5
-    , ouroboros-network-api
-    , serialise
-    , shelley
-    , text
-    , text-builder
-    , transformers
-    , transformers-except
-
   other-modules:
     Cardano.Api.Key
     Cardano.Api.KeysByron
@@ -267,12 +114,71 @@ library cardano-tools
     Cardano.Node.Protocol.Shelley
     Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint
 
+  build-depends:
+    , aeson
+    , base                           >=4.14  && <4.17
+    , base-deriving-via
+    , base16-bytestring              >=1.0
+    , bytestring                     >=0.10  && <0.12
+    , cardano-binary
+    , cardano-crypto
+    , cardano-crypto-class
+    , cardano-crypto-wrapper
+    , cardano-data
+    , cardano-ledger-allegra
+    , cardano-ledger-alonzo
+    , cardano-ledger-babbage
+    , cardano-ledger-binary
+    , cardano-ledger-byron
+    , cardano-ledger-conway
+    , cardano-ledger-core
+    , cardano-ledger-mary
+    , cardano-ledger-shelley
+    , cardano-prelude
+    , cardano-protocol-tpraos
+    , cardano-slotting
+    , cardano-strict-containers
+    , cborg                          >=0.2.2 && <0.3
+    , containers                     >=0.5   && <0.7
+    , contra-tracer
+    , cryptonite                     >=0.25  && <0.31
+    , deepseq
+    , directory
+    , filepath
+    , formatting                     >=6.3   && <7.2
+    , fs-api
+    , measures
+    , microlens
+    , mtl                            >=2.2   && <2.3
+    , nothunks
+    , ouroboros-consensus            ^>=0.5
+    , ouroboros-consensus-diffusion  ^>=0.4
+    , ouroboros-consensus-protocol   ^>=0.5
+    , ouroboros-network-api
+    , serialise                      >=0.2   && <0.3
+    , small-steps
+    , text                           >=1.2   && <1.3
+    , text-builder
+    , these                          >=1.1   && <1.2
+    , transformers
+    , transformers-except
+    , vector-map
+
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -Wcompat -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wpartial-fields -Widentities
+    -Wredundant-constraints -Wmissing-export-lists -Wunused-packages
+    -Wno-unticked-promoted-constructors
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
 executable db-converter
   hs-source-dirs:   app
   main-is:          db-converter.hs
   build-depends:
     , base                           >=4.14 && <4.17
-    , byron
     , bytestring
     , cardano-binary
     , cardano-ledger-byron
@@ -281,6 +187,7 @@ executable db-converter
     , mtl
     , optparse-generic
     , ouroboros-consensus            ^>=0.5
+    , ouroboros-consensus-cardano
     , ouroboros-consensus-diffusion  ^>=0.4
     , ouroboros-network-api
     , resourcet
@@ -298,13 +205,11 @@ executable db-analyser
   hs-source-dirs:   app
   main-is:          db-analyser.hs
   build-depends:
-    , base                    >=4.14 && <4.17
-    , byron
+    , base                         >=4.14 && <4.17
     , cardano-crypto-wrapper
-    , cardano-tools
     , optparse-applicative
-    , ouroboros-consensus     ^>=0.5
-    , shelley
+    , ouroboros-consensus          ^>=0.5
+    , ouroboros-consensus-cardano
 
   other-modules:    DBAnalyser.Parsers
   default-language: Haskell2010
@@ -320,10 +225,10 @@ executable db-synthesizer
   main-is:          db-synthesizer.hs
   default-language: Haskell2010
   build-depends:
-    , base                  >=4.14 && <4.17
-    , cardano-tools
+    , base                         >=4.14 && <4.17
     , optparse-applicative
-    , ouroboros-consensus   ^>=0.5
+    , ouroboros-consensus          ^>=0.5
+    , ouroboros-consensus-cardano
 
   other-modules:    DBSynthesizer.Parsers
   ghc-options:
@@ -339,8 +244,8 @@ test-suite test
   main-is:          Main.hs
   default-language: Haskell2010
   build-depends:
-    , base           >=4.14 && <4.17
-    , cardano-tools
+    , base                         >=4.14 && <4.17
+    , ouroboros-consensus-cardano
     , tasty
     , tasty-hunit
 
