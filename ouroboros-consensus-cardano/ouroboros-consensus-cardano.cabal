@@ -49,24 +49,8 @@ common common-exe
 
 library
   import:          common-lib
-  hs-source-dirs:  cardano byron shelley cardano-tools
+  hs-source-dirs:  cardano byron shelley
   exposed-modules:
-    Cardano.Api.Any
-    Cardano.Api.Protocol.Types
-    Cardano.Node.Protocol
-    Cardano.Node.Protocol.Types
-    Cardano.Node.Types
-    Cardano.Tools.DBAnalyser.Analysis
-    Cardano.Tools.DBAnalyser.Block.Byron
-    Cardano.Tools.DBAnalyser.Block.Cardano
-    Cardano.Tools.DBAnalyser.Block.Shelley
-    Cardano.Tools.DBAnalyser.HasAnalysis
-    Cardano.Tools.DBAnalyser.Run
-    Cardano.Tools.DBAnalyser.Types
-    Cardano.Tools.DBSynthesizer.Forging
-    Cardano.Tools.DBSynthesizer.Orphans
-    Cardano.Tools.DBSynthesizer.Run
-    Cardano.Tools.DBSynthesizer.Types
     Ouroboros.Consensus.Byron.Crypto.DSIGN
     Ouroboros.Consensus.Byron.EBBs
     Ouroboros.Consensus.Byron.Ledger
@@ -119,27 +103,10 @@ library
     Ouroboros.Consensus.Shelley.Protocol.TPraos
     Ouroboros.Consensus.Shelley.ShelleyHFC
 
-  other-modules:
-    Cardano.Api.Key
-    Cardano.Api.KeysByron
-    Cardano.Api.KeysPraos
-    Cardano.Api.KeysShelley
-    Cardano.Api.OperationalCertificate
-    Cardano.Api.SerialiseTextEnvelope
-    Cardano.Api.SerialiseUsing
-    Cardano.Node.Protocol.Alonzo
-    Cardano.Node.Protocol.Byron
-    Cardano.Node.Protocol.Cardano
-    Cardano.Node.Protocol.Conway
-    Cardano.Node.Protocol.Shelley
-    Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint
-
   build-depends:
-    , aeson
-    , base                           >=4.14  && <4.17
+    , base                          >=4.14  && <4.17
     , base-deriving-via
-    , base16-bytestring              >=1.0
-    , bytestring                     >=0.10  && <0.12
+    , bytestring                    >=0.10  && <0.12
     , cardano-binary
     , cardano-crypto
     , cardano-crypto-class
@@ -155,33 +122,25 @@ library
     , cardano-ledger-mary
     , cardano-ledger-shelley
     , cardano-prelude
-    , cardano-protocol-tpraos        >=1.0.1 && <1.1
+    , cardano-protocol-tpraos       >=1.0.1 && <1.1
     , cardano-slotting
     , cardano-strict-containers
-    , cborg                          >=0.2.2 && <0.3
-    , containers                     >=0.5   && <0.7
-    , contra-tracer
-    , cryptonite                     >=0.25  && <0.31
+    , cborg                         >=0.2.2 && <0.3
+    , containers                    >=0.5   && <0.7
+    , cryptonite                    >=0.25  && <0.31
     , deepseq
-    , directory
-    , filepath
-    , formatting                     >=6.3   && <7.2
-    , fs-api
+    , formatting                    >=6.3   && <7.2
     , measures
     , microlens
-    , mtl                            >=2.2   && <2.3
+    , mtl                           >=2.2   && <2.3
     , nothunks
-    , ouroboros-consensus            ^>=0.5
-    , ouroboros-consensus-diffusion  ^>=0.4
-    , ouroboros-consensus-protocol   ^>=0.5
+    , ouroboros-consensus           ^>=0.5
+    , ouroboros-consensus-protocol  ^>=0.5
     , ouroboros-network-api
-    , serialise                      >=0.2   && <0.3
+    , serialise                     >=0.2   && <0.3
     , small-steps
-    , text                           >=1.2   && <1.3
-    , text-builder
-    , these                          >=1.1   && <1.2
-    , transformers
-    , transformers-except
+    , text                          >=1.2   && <1.3
+    , these                         >=1.1   && <1.2
     , vector-map
 
 library byronspec
@@ -452,6 +411,84 @@ test-suite cardano-test
     , tasty
     , tasty-quickcheck
 
+library cardano-tools
+  import:          common-lib
+  hs-source-dirs:  cardano-tools
+  visibility:      public
+  exposed-modules:
+    Cardano.Api.Any
+    Cardano.Api.Protocol.Types
+    Cardano.Node.Protocol
+    Cardano.Node.Protocol.Types
+    Cardano.Node.Types
+    Cardano.Tools.DBAnalyser.Analysis
+    Cardano.Tools.DBAnalyser.Block.Byron
+    Cardano.Tools.DBAnalyser.Block.Cardano
+    Cardano.Tools.DBAnalyser.Block.Shelley
+    Cardano.Tools.DBAnalyser.HasAnalysis
+    Cardano.Tools.DBAnalyser.Run
+    Cardano.Tools.DBAnalyser.Types
+    Cardano.Tools.DBSynthesizer.Forging
+    Cardano.Tools.DBSynthesizer.Orphans
+    Cardano.Tools.DBSynthesizer.Run
+    Cardano.Tools.DBSynthesizer.Types
+
+  other-modules:
+    Cardano.Api.Key
+    Cardano.Api.KeysByron
+    Cardano.Api.KeysPraos
+    Cardano.Api.KeysShelley
+    Cardano.Api.OperationalCertificate
+    Cardano.Api.SerialiseTextEnvelope
+    Cardano.Api.SerialiseUsing
+    Cardano.Node.Protocol.Alonzo
+    Cardano.Node.Protocol.Byron
+    Cardano.Node.Protocol.Cardano
+    Cardano.Node.Protocol.Conway
+    Cardano.Node.Protocol.Shelley
+    Cardano.Tools.DBAnalyser.Analysis.BenchmarkLedgerOps.SlotDataPoint
+
+  build-depends:
+    , aeson
+    , base                           >=4.14  && <4.17
+    , base16-bytestring              >=1.0
+    , bytestring                     >=0.10  && <0.12
+    , cardano-crypto
+    , cardano-crypto-class
+    , cardano-crypto-wrapper
+    , cardano-ledger-allegra
+    , cardano-ledger-alonzo
+    , cardano-ledger-babbage
+    , cardano-ledger-binary
+    , cardano-ledger-byron
+    , cardano-ledger-conway
+    , cardano-ledger-core
+    , cardano-ledger-mary
+    , cardano-ledger-shelley
+    , cardano-prelude
+    , cardano-protocol-tpraos        >=1.0.1 && <1.1
+    , cardano-slotting
+    , cardano-strict-containers
+    , cborg                          >=0.2.2 && <0.3
+    , containers                     >=0.5   && <0.7
+    , contra-tracer
+    , directory
+    , filepath
+    , fs-api
+    , microlens
+    , mtl                            >=2.2   && <2.3
+    , nothunks
+    , ouroboros-consensus            ^>=0.5
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-diffusion  ^>=0.4
+    , ouroboros-consensus-protocol   ^>=0.5
+    , ouroboros-network-api
+    , serialise                      >=0.2   && <0.3
+    , text                           >=1.2   && <1.3
+    , text-builder
+    , transformers
+    , transformers-except
+
 executable db-converter
   import:         common-exe
   hs-source-dirs: app
@@ -482,7 +519,7 @@ executable db-analyser
     , cardano-crypto-wrapper
     , optparse-applicative
     , ouroboros-consensus
-    , ouroboros-consensus-cardano
+    , ouroboros-consensus-cardano:{ouroboros-consensus-cardano, cardano-tools}
 
   other-modules:  DBAnalyser.Parsers
 
@@ -492,9 +529,9 @@ executable db-synthesizer
   main-is:        db-synthesizer.hs
   build-depends:
     , base
+    , cardano-tools
     , optparse-applicative
     , ouroboros-consensus
-    , ouroboros-consensus-cardano
 
   other-modules:  DBSynthesizer.Parsers
 
@@ -505,6 +542,6 @@ test-suite tools-test
   main-is:        Main.hs
   build-depends:
     , base
-    , ouroboros-consensus-cardano
+    , cardano-tools
     , tasty
     , tasty-hunit
