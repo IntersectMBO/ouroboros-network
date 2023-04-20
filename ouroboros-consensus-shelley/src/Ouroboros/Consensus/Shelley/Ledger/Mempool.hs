@@ -20,7 +20,7 @@
 
 -- | Shelley mempool integration
 module Ouroboros.Consensus.Shelley.Ledger.Mempool (
-    GenTx ( ShelleyTx )
+    GenTx (ShelleyTx)
   , SL.ApplyTxError (..)
   , TxId (..)
   , Validated (..)

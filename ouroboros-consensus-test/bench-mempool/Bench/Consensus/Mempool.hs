@@ -10,6 +10,7 @@
 module Bench.Consensus.Mempool (
     -- * Commands
     MempoolCmd (..)
+  , mkSimpleTryAdd
     -- ** Queries on commands
   , txsAdded
   , txsAddedInCmds
@@ -31,10 +32,14 @@ import           Ouroboros.Consensus.Mempool (Mempool (..))
   Commands
 -------------------------------------------------------------------------------}
 
-data MempoolCmd blk = TryAdd [Ledger.GenTx blk]
+newtype MempoolCmd blk = TryAdd [Ledger.GenTx blk]
   deriving (Generic)
 
+deriving stock instance Show (Ledger.GenTx blk) => Show (MempoolCmd blk)
 deriving anyclass instance (NFData (Ledger.GenTx blk)) => NFData (MempoolCmd blk)
+
+mkSimpleTryAdd :: Ledger.GenTx blk -> MempoolCmd blk
+mkSimpleTryAdd gtx = TryAdd [gtx]
 
 txsAdded :: MempoolCmd blk -> [Ledger.GenTx blk]
 txsAdded (TryAdd xs) = xs

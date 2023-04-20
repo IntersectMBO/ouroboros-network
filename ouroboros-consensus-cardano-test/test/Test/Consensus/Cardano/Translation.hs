@@ -36,6 +36,7 @@ import qualified Data.ListMap as ListMap
 import           Data.Map.Diff.Strict (Diff)
 import qualified Data.Map.Diff.Strict.Internal as Diff
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (fromMaybe)
 import           Data.SOP.InPairs (RequiringBoth, provideBoth)
 import           Ouroboros.Consensus.BlockchainTime.WallClock.Types
                      (slotLengthFromSec)
@@ -75,7 +76,6 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 import           Test.Util.Time (dawnOfTime)
-import Data.Maybe (fromMaybe)
 
 -- Definitions to make the signatures a bit less unwieldy
 type Crypto = MockCryptoCompatByron

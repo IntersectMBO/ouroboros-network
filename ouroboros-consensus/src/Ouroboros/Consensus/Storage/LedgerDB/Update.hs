@@ -40,6 +40,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.Update (
   , flush
   , prune
   , push
+  , pushMany
   , switch
   , volatileStatesBimap
     -- * Pure API
