@@ -53,7 +53,7 @@ let
           packages.strict-stm.components.library.configureFlags = lib.mkForce
             (if checkTVarInvariant then [ "-f checktvarinvariant" ] else [ ]);
         }
-        {
+        ({ pkgs, ... }: {
           # Apply profiling arg to all library components in the build:
           enableLibraryProfiling = profiling;
 
@@ -66,10 +66,10 @@ let
             lib.mkForce [ "--no-create" ];
 
           packages.cardano-crypto-praos.components.library.pkgconfig =
-            lib.mkForce [ [ libsodium-vrf ] ];
+            lib.mkForce [ [ pkgs.libsodium-vrf ] ];
           packages.cardano-crypto-class.components.library.pkgconfig =
-            lib.mkForce [[ libsodium-vrf secp256k1 ]];
-        }
+            lib.mkForce [[ pkgs.libsodium-vrf pkgs.secp256k1 ]];
+        })
 
         # Options specific to the windows cross-compiled build:
         ({ pkgs, ... }:
