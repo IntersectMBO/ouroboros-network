@@ -395,16 +395,16 @@ library consensus-testlib
     Test.Util.WithEq
 
   build-depends:
-    , base                           >=4.14  && <4.17
+    , base
     , base16-bytestring
     , binary
-    , bytestring                     >=0.10  && <0.12
+    , bytestring
     , cardano-crypto-class
     , cardano-ledger-binary:testlib
     , cardano-prelude
     , cardano-strict-containers
-    , cborg                          >=0.2.2 && <0.3
-    , containers                     >=0.5   && <0.7
+    , cborg
+    , containers
     , contra-tracer
     , deepseq
     , directory
@@ -414,7 +414,7 @@ library consensus-testlib
     , fs-sim
     , generics-sop
     , io-sim
-    , mtl                            >=2.2   && <2.3
+    , mtl
     , nothunks
     , optparse-applicative
     , ouroboros-consensus
@@ -422,9 +422,9 @@ library consensus-testlib
     , ouroboros-network-mock
     , QuickCheck
     , quickcheck-state-machine
-    , quiet                          >=0.2   && <0.3
+    , quiet
     , random
-    , serialise                      >=0.2   && <0.3
+    , serialise
     , sop-core
     , tasty
     , tasty-golden
@@ -434,10 +434,10 @@ library consensus-testlib
     , tree-diff
     , utf8-string
 
-library mock-testlib
+library mock-ledger
   import:          common-lib
   visibility:      public
-  hs-source-dirs:  mock-testlib
+  hs-source-dirs:  mock-ledger
   exposed-modules:
     Ouroboros.Consensus.Mock.Ledger
     Ouroboros.Consensus.Mock.Ledger.Address
@@ -461,22 +461,22 @@ library mock-testlib
     Ouroboros.Consensus.Mock.Protocol.Praos
 
   build-depends:
-    , base                    >=4.14  && <4.17
-    , bimap                   >=0.4   && <0.5
-    , bytestring              >=0.10  && <0.12
+    , base
+    , bimap
+    , bytestring
     , cardano-binary
     , cardano-crypto-class
     , cardano-slotting
-    , cborg                   >=0.2.2 && <0.3
-    , containers              >=0.5   && <0.7
+    , cborg
+    , containers
     , deepseq
     , hashable
-    , mtl                     >=2.2   && <2.3
+    , mtl
     , nothunks
     , ouroboros-consensus
     , ouroboros-network-api
     , ouroboros-network-mock
-    , serialise               >=0.2   && <0.3
+    , serialise
     , time
 
 library tutorials
@@ -488,7 +488,7 @@ library tutorials
     Ouroboros.Consensus.Tutorial.WithEpoch
 
   build-depends:
-    , base                   >=4.14 && <4.17
+    , base
     , containers
     , hashable
     , mtl
@@ -497,10 +497,10 @@ library tutorials
     , ouroboros-network-api
     , serialise
 
-test-suite test-consensus
+test-suite consensus-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-consensus
+  hs-source-dirs: consensus-test
   main-is:        Main.hs
   other-modules:
     Test.Consensus.BlockchainTime.Simple
@@ -520,7 +520,7 @@ test-suite test-consensus
 
   build-depends:
     , async
-    , base                                                                >=4.14 && <4.17
+    , base
     , cardano-binary
     , cardano-crypto-class
     , cardano-slotting
@@ -534,7 +534,7 @@ test-suite test-consensus
     , hashable
     , io-classes
     , io-sim
-    , mock-testlib
+    , mock-ledger
     , mtl
     , nothunks
     , ouroboros-consensus
@@ -555,10 +555,10 @@ test-suite test-consensus
     , tree-diff
     , typed-protocols
 
-test-suite test-storage
+test-suite storage-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-storage
+  hs-source-dirs: storage-test
   main-is:        Main.hs
   other-modules:
     Test.Ouroboros.Storage
@@ -590,7 +590,7 @@ test-suite test-storage
     Test.Ouroboros.Storage.VolatileDB.StateMachine
 
   build-depends:
-    , base                      >=4.14  && <4.17
+    , base
     , bifunctors
     , binary
     , bytestring
@@ -624,9 +624,9 @@ test-suite test-storage
     , tree-diff
     , vector
 
-benchmark bench-mempool
+benchmark mempool-bench
   type:             exitcode-stdio-1.0
-  hs-source-dirs:   bench-mempool
+  hs-source-dirs:   mempool-bench
   main-is:          Main.hs
   other-modules:
     Bench.Consensus.Mempool
@@ -645,7 +645,7 @@ benchmark bench-mempool
     , deepseq
     , nothunks
     , ouroboros-consensus
-    , serialise            >=0.2 && <0.3
+    , serialise
     , strict-stm
     , tasty
     , tasty-bench

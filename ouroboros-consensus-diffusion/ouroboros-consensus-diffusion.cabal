@@ -1,7 +1,7 @@
 cabal-version:      3.0
 name:               ouroboros-consensus-diffusion
 version:            0.4.0.0
-synopsis:           Integration for the Ouroboros blockchain protocol
+synopsis:           Integration for the Ouroboros Network layer
 description:
   Top level integration for consensus & network layers of the Ouroboros blockchain protocol.
 
@@ -100,25 +100,25 @@ library
     ViewPatterns
 
   build-depends:
-    , base                         >=4.14 && <4.17
-    , bytestring                   >=0.10 && <0.12
-    , cborg
-    , containers
+    , base                         >=4.14   && <4.17
+    , bytestring                   >=0.10   && <0.12
+    , cborg                        ^>=0.2.2
+    , containers                   >=0.5    && <0.7
     , contra-tracer
     , deepseq
     , filepath
     , fs-api
     , hashable
     , io-classes                   ^>=0.3
-    , mtl
+    , mtl                          ^>=2.2
     , ouroboros-consensus          ^>=0.5
     , ouroboros-network            ^>=0.4
     , ouroboros-network-api        ^>=0.1
     , ouroboros-network-framework  ^>=0.3
     , ouroboros-network-protocols  ^>=0.3
     , random
-    , serialise                    >=0.2  && <0.3
-    , text
+    , serialise                    ^>=0.2
+    , text                         >=1.2    && <1.3
     , time
     , typed-protocols
 
@@ -142,17 +142,17 @@ library diffusion-testlib
     Test.ThreadNet.Util.Seed
 
   build-depends:
-    , base                                                          >=4.14  && <4.17
-    , bytestring                                                    >=0.10  && <0.12
-    , cborg                                                         >=0.2.2 && <0.3
-    , containers                                                    >=0.5   && <0.7
+    , base
+    , bytestring
+    , cborg
+    , containers
     , contra-tracer
     , fgl
     , fs-sim
     , graphviz
     , io-classes
     , io-sim
-    , mtl                                                           >=2.2   && <2.3
+    , mtl
     , ouroboros-consensus-diffusion
     , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
     , ouroboros-network
@@ -161,15 +161,15 @@ library diffusion-testlib
     , ouroboros-network-mock
     , ouroboros-network-protocols
     , QuickCheck
-    , quiet                                                         >=0.2   && <0.3
+    , quiet                                                         >=0.2 && <0.3
     , random
-    , text                                                          >=1.2   && <1.3
+    , text
     , typed-protocols
 
-library mock-test
+library mock-testlib
   import:          common-lib
   visibility:      public
-  hs-source-dirs:  mock-test
+  hs-source-dirs:  mock-testlib
   exposed-modules:
     Test.Consensus.Ledger.Mock.Generators
     Test.ThreadNet.TxGen.Mock
@@ -177,19 +177,19 @@ library mock-test
     Test.ThreadNet.Util.SimpleBlock
 
   build-depends:
-    , base                                                                        >=4.14   && <4.17
-    , bytestring                                                                  >=0.10   && <0.12
+    , base
+    , bytestring
     , cardano-crypto-class
-    , containers                                                                  >=0.5    && <0.7
+    , containers
     , diffusion-testlib
-    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib, mock-testlib}  ^>=0.5.0
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib, mock-ledger}
     , QuickCheck
-    , serialise                                                                   >=0.2    && <0.3
+    , serialise
 
-test-suite test-infra
+test-suite infra-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-infra
+  hs-source-dirs: infra-test
   main-is:        Main.hs
   other-modules:
     Ouroboros.Consensus.Util.Tests
@@ -199,17 +199,17 @@ test-suite test-infra
     Test.Util.Split.Tests
 
   build-depends:
-    , base                                                          >=4.14 && <4.17
+    , base
     , diffusion-testlib
     , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
     , QuickCheck
     , tasty
     , tasty-quickcheck
 
-test-suite test-mock
+test-suite mock-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-mock
+  hs-source-dirs: mock-test
   main-is:        Main.hs
   other-modules:
     Test.Consensus.Ledger.Mock
@@ -219,23 +219,23 @@ test-suite test-mock
     Test.ThreadNet.Praos
 
   build-depends:
-    , base                                                                        >=4.14 && <4.17
+    , base
     , bytestring
     , cborg
     , containers
     , diffusion-testlib
-    , mock-test
-    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib, mock-testlib}
+    , mock-testlib
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib, mock-ledger}
     , ouroboros-network-mock
     , QuickCheck
     , serialise
     , tasty
     , tasty-quickcheck
 
-test-suite test-consensus
+test-suite consensus-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-consensus
+  hs-source-dirs: consensus-test
   main-is:        Main.hs
   other-modules:
     Test.Consensus.HardFork.Combinator
@@ -244,7 +244,7 @@ test-suite test-consensus
     Test.Consensus.Node
 
   build-depends:
-    , base                                                          >=4.14 && <4.17
+    , base
     , binary
     , bytestring
     , cardano-slotting

@@ -155,7 +155,7 @@ library
     , cardano-ledger-mary
     , cardano-ledger-shelley
     , cardano-prelude
-    , cardano-protocol-tpraos
+    , cardano-protocol-tpraos        >=1.0.1 && <1.1
     , cardano-slotting
     , cardano-strict-containers
     , cborg                          >=0.2.2 && <0.3
@@ -217,10 +217,10 @@ library byronspec
     , small-steps
     , transformers
 
-library byron-test
+library byron-testlib
   import:          common-lib
   visibility:      private
-  hs-source-dirs:  byron-test
+  hs-source-dirs:  byron-testlib
   exposed-modules:
     Ouroboros.Consensus.ByronDual.Ledger
     Ouroboros.Consensus.ByronDual.Node
@@ -234,30 +234,30 @@ library byron-test
     Test.ThreadNet.TxGen.Byron
 
   build-depends:
-    , base                                                          >=4.14 && <4.17
+    , base
     , byron-spec-ledger
     , byronspec
-    , bytestring                                                    >=0.10 && <0.12
+    , bytestring
     , cardano-crypto-class
     , cardano-crypto-test
     , cardano-crypto-wrapper
     , cardano-ledger-binary:{cardano-ledger-binary, testlib}
     , cardano-ledger-byron
     , cardano-ledger-byron-test
-    , containers                                                    >=0.5  && <0.7
+    , containers
     , hedgehog-quickcheck
-    , mtl                                                           >=2.2  && <2.3
+    , mtl
     , ouroboros-consensus-cardano
     , ouroboros-consensus-diffusion:diffusion-testlib
-    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}  ^>=0.5
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
     , ouroboros-network-api
     , QuickCheck
-    , serialise                                                     >=0.2  && <0.3
+    , serialise
 
-test-suite test-byron
+test-suite byron-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-byron
+  hs-source-dirs: byron-test
   main-is:        Main.hs
   other-modules:
     Test.Consensus.Byron.Golden
@@ -266,11 +266,11 @@ test-suite test-byron
     Test.ThreadNet.DualByron
 
   build-depends:
-    , base                                                          >=4.14 && <4.17
+    , base
     , binary-search
     , byron-spec-chain
     , byron-spec-ledger
-    , byron-test
+    , byron-testlib
     , byronspec
     , bytestring
     , cardano-crypto-class
@@ -285,7 +285,7 @@ test-suite test-byron
     , mtl
     , ouroboros-consensus-cardano
     , ouroboros-consensus-diffusion:diffusion-testlib
-    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}  ^>=0.5
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
     , ouroboros-network-mock
     , QuickCheck
     , small-steps
@@ -293,10 +293,10 @@ test-suite test-byron
     , tasty
     , tasty-quickcheck
 
-library shelley-test
+library shelley-testlib
   import:          common-lib
   visibility:      private
-  hs-source-dirs:  shelley-test
+  hs-source-dirs:  shelley-testlib
   exposed-modules:
     Test.Consensus.Shelley.Examples
     Test.Consensus.Shelley.Generators
@@ -306,8 +306,8 @@ library shelley-test
     Test.ThreadNet.TxGen.Shelley
 
   build-depends:
-    , base                                                                                            >=4.14  && <4.17
-    , bytestring                                                                                      >=0.10  && <0.12
+    , base
+    , bytestring
     , cardano-crypto-class
     , cardano-data
     , cardano-ledger-allegra
@@ -321,25 +321,25 @@ library shelley-test
     , cardano-ledger-shelley-ma-test
     , cardano-ledger-shelley-test
     , cardano-ledger-shelley:{cardano-ledger-shelley, testlib}
-    , cardano-protocol-tpraos:{cardano-protocol-tpraos, testlib}                                      >=1.0.1 && <1.1
+    , cardano-protocol-tpraos:{cardano-protocol-tpraos, testlib}
     , cardano-strict-containers
-    , containers                                                                                      >=0.5   && <0.7
+    , containers
     , generic-random
     , microlens
-    , mtl                                                                                             >=2.2   && <2.3
+    , mtl
     , ouroboros-consensus-cardano
     , ouroboros-consensus-diffusion:diffusion-testlib
-    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
-    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}                                    ^>=0.5
+    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
     , ouroboros-network-api
     , QuickCheck
-    , quiet                                                                                           >=0.2   && <0.3
+    , quiet                                                                                           >=0.2 && <0.3
     , small-steps
 
-test-suite test-shelley
+test-suite shelley-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-shelley
+  hs-source-dirs: shelley-test
   main-is:        Main.hs
   other-modules:
     Test.Consensus.Shelley.Coherence
@@ -348,7 +348,7 @@ test-suite test-shelley
     Test.ThreadNet.Shelley
 
   build-depends:
-    , base                                                          >=4.14 && <4.17
+    , base
     , bytestring
     , cardano-crypto-class
     , cardano-ledger-alonzo
@@ -363,17 +363,17 @@ test-suite test-shelley
     , microlens
     , ouroboros-consensus-cardano
     , ouroboros-consensus-diffusion:diffusion-testlib
-    , ouroboros-consensus-protocol                                  ^>=0.5
-    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}  ^>=0.5
+    , ouroboros-consensus-protocol
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
     , QuickCheck
-    , shelley-test
+    , shelley-testlib
     , tasty
     , tasty-quickcheck
 
-library cardano-test
+library cardano-testlib
   import:          common-lib
   visibility:      private
-  hs-source-dirs:  cardano-test
+  hs-source-dirs:  cardano-testlib
   exposed-modules:
     Test.Consensus.Cardano.Examples
     Test.Consensus.Cardano.Generators
@@ -387,8 +387,8 @@ library cardano-test
     Test.ThreadNet.TxGen.Mary
 
   build-depends:
-    , base                                                                                            >=4.14 && <4.17
-    , byron-test
+    , base
+    , byron-testlib
     , cardano-crypto-class
     , cardano-crypto-wrapper
     , cardano-ledger-alonzo-test
@@ -403,17 +403,17 @@ library cardano-test
     , microlens
     , mtl
     , ouroboros-consensus-cardano
-    , ouroboros-consensus-diffusion:{ouroboros-consensus-diffusion, diffusion-testlib}                ^>=0.4
-    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}  ^>=0.5
-    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}                                    ^>=0.5
+    , ouroboros-consensus-diffusion:{ouroboros-consensus-diffusion, diffusion-testlib}
+    , ouroboros-consensus-protocol:{ouroboros-consensus-protocol, ouroboros-consensus-protocol-test}
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
     , ouroboros-network-api
     , QuickCheck
-    , shelley-test
+    , shelley-testlib
 
-test-suite test-cardano
+test-suite cardano-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-cardano
+  hs-source-dirs: cardano-test
   main-is:        Main.hs
   other-modules:
     Test.Consensus.Cardano.ByronCompatibility
@@ -425,8 +425,8 @@ test-suite test-cardano
     Test.ThreadNet.ShelleyAllegra
 
   build-depends:
-    , base                                                          >=4.14 && <4.17
-    , byron-test
+    , base
+    , byron-testlib
     , bytestring
     , cardano-crypto-class
     , cardano-ledger-alonzo
@@ -436,18 +436,18 @@ test-suite test-cardano
     , cardano-ledger-shelley
     , cardano-protocol-tpraos
     , cardano-slotting
-    , cardano-test
+    , cardano-testlib
     , cborg
     , containers
     , filepath
     , microlens
     , ouroboros-consensus-cardano
     , ouroboros-consensus-diffusion:diffusion-testlib
-    , ouroboros-consensus-protocol                                  ^>=0.5
-    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}  ^>=0.5
+    , ouroboros-consensus-protocol
+    , ouroboros-consensus:{ouroboros-consensus, consensus-testlib}
     , ouroboros-network-api
     , QuickCheck
-    , shelley-test
+    , shelley-testlib
     , sop-core
     , tasty
     , tasty-quickcheck
@@ -457,7 +457,7 @@ executable db-converter
   hs-source-dirs: app
   main-is:        db-converter.hs
   build-depends:
-    , base                           >=4.14 && <4.17
+    , base
     , bytestring
     , cardano-binary
     , cardano-ledger-byron
@@ -465,9 +465,9 @@ executable db-converter
     , filepath
     , mtl
     , optparse-generic
-    , ouroboros-consensus            ^>=0.5
+    , ouroboros-consensus
     , ouroboros-consensus-cardano
-    , ouroboros-consensus-diffusion  ^>=0.4
+    , ouroboros-consensus-diffusion
     , ouroboros-network-api
     , resourcet
     , streaming
@@ -478,10 +478,10 @@ executable db-analyser
   hs-source-dirs: app
   main-is:        db-analyser.hs
   build-depends:
-    , base                         >=4.14 && <4.17
+    , base
     , cardano-crypto-wrapper
     , optparse-applicative
-    , ouroboros-consensus          ^>=0.5
+    , ouroboros-consensus
     , ouroboros-consensus-cardano
 
   other-modules:  DBAnalyser.Parsers
@@ -491,20 +491,20 @@ executable db-synthesizer
   hs-source-dirs: app
   main-is:        db-synthesizer.hs
   build-depends:
-    , base                         >=4.14 && <4.17
+    , base
     , optparse-applicative
-    , ouroboros-consensus          ^>=0.5
+    , ouroboros-consensus
     , ouroboros-consensus-cardano
 
   other-modules:  DBSynthesizer.Parsers
 
-test-suite test-tools
+test-suite tools-test
   import:         common-test
   type:           exitcode-stdio-1.0
-  hs-source-dirs: test-tools
+  hs-source-dirs: tools-test
   main-is:        Main.hs
   build-depends:
-    , base                         >=4.14 && <4.17
+    , base
     , ouroboros-consensus-cardano
     , tasty
     , tasty-hunit
