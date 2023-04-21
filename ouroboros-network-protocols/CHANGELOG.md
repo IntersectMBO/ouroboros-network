@@ -1,5 +1,13 @@
 # Revision history for ouroboros-network-protocols
 
+## Next version
+
+### Breaking
+
+- Add CBORCodec type and refactor code
+
+### Non-Breaking
+
 ## 0.3.0.0 -- 2023-02-24
 
 ### Breaking

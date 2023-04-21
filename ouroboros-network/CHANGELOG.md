@@ -6,6 +6,10 @@
 
 - Fix interop problems between NonP2P and P2P nodes (PR #4465)
 
+### Breaking
+
+- Add CBORCodec Tuple and refactor code to use it
+
 ## 0.4.0.1 -- 2023-02-24
 
 ### Non-Breaking
