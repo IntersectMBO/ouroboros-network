@@ -18,7 +18,7 @@ index-state:
   -- Bump this if you need newer packages from Hackage
   , hackage.haskell.org 2023-03-29T00:00:00Z
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2023-04-05T21:25:44Z
+  , cardano-haskell-packages 2023-04-24T15:34:01Z
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
@@ -29,21 +29,6 @@ packages: ./cardano-ping
           ./ouroboros-network-mock
           ./ouroboros-network-protocols
           ./ouroboros-network-testing
-          ./ouroboros-consensus
-          ./ouroboros-consensus-tutorials
-          ./ouroboros-consensus-byron
-          ./ouroboros-consensus-byron-test
-          ./ouroboros-consensus-byronspec
-          ./ouroboros-consensus-cardano
-          ./ouroboros-consensus-cardano-test
-          ./ouroboros-consensus-mock
-          ./ouroboros-consensus-mock-test
-          ./ouroboros-consensus-protocol
-          ./ouroboros-consensus-shelley
-          ./ouroboros-consensus-shelley-test
-          ./ouroboros-consensus-test
-          ./ouroboros-consensus-cardano-tools
-          ./ouroboros-consensus-diffusion
           ./ntp-client
           ./cardano-client
 
@@ -64,18 +49,3 @@ package network-mux
 
 package ouroboros-network
   flags: +asserts +cddl
-
-package ouroboros-consensus
-  flags: +asserts
-
-package ouroboros-consensus-mock
-  flags: +asserts
-
-package ouroboros-consensus-byron
-  flags: +asserts
-
-package ouroboros-consensus-shelley
-  flags: +asserts
-
-package ouroboros-consensus-cardano
-  flags: +asserts

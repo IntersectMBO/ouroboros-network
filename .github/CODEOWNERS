@@ -1,8 +1,8 @@
 # Note: later rules override earlier rules.
 
 # Default
-#                                  Marcin Armando Nick                                          "Higher ups"
-*                                  @coot  @bolt12 @nfrisby                                      @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+#                                  Marcin Armando                                       "Higher ups"
+*                                  @coot  @bolt12                                       @input-output-hk/network-superowners
 
 # Network Team
 
@@ -26,32 +26,12 @@ cardano-ping                       @coot                                        
 scripts/haddocs.sh                 @coot                                                                                               @input-output-hk/network-superowners
 scripts/install.ps1                @coot @karknu                                                                                       @input-output-hk/network-superowners
 
-# Consensus Team
-
-ouroboros-consensus-byron-test/    @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-byron/         @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-byronspec/     @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-cardano-test/  @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-cardano-tools/ @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-cardano/       @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-diffusion/     @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-mock-test/     @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-mock/          @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-protocol/      @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-shelley-test/  @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-shelley/       @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-test/          @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus-tutorials/     @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-ouroboros-consensus/               @nfrisby @dnadales                                           @input-output-hk/consensus-superowners
-
-scripts/check-stylish.sh           @nfrisby                                                     @input-output-hk/consensus-superowners
-
 # CICD
 
-bors.toml                                                               @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-nix/                                                                    @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-*.nix                                                                   @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-.github/workflows/                 @coot @newhoggy @Jasagredo           @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+bors.toml                                                               @input-output-hk/devops @input-output-hk/network-superowners
+nix/                                                                    @input-output-hk/devops @input-output-hk/network-superowners
+*.nix                                                                   @input-output-hk/devops @input-output-hk/network-superowners
+.github/workflows/                 @coot @newhoggy                      @input-output-hk/devops @input-output-hk/network-superowners
 
-cabal.project.local.github-pages   @coot @newhoggy                      @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
-.github/workflows/github-page.yml  @coot @newhoggy                      @input-output-hk/devops @input-output-hk/consensus-superowners @input-output-hk/network-superowners
+cabal.project.local.github-pages   @coot @newhoggy                      @input-output-hk/devops @input-output-hk/network-superowners
+.github/workflows/github-page.yml  @coot @newhoggy                      @input-output-hk/devops @input-output-hk/network-superowners
