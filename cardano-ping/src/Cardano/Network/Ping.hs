@@ -83,8 +83,8 @@ nodeToClientVersionBit = 15
 data LogMsg = LogMsg ByteString
             | LogEnd
 
-logger :: StrictTMVar IO LogMsg -> Bool -> IO ()
-logger msgQueue json = go True
+logger :: StrictTMVar IO LogMsg -> Bool -> Bool -> IO ()
+logger msgQueue json query = go True
   where
     go first = do
       msg <- atomically $ takeTMVar  msgQueue
@@ -98,7 +98,7 @@ logger msgQueue json = go True
 
           LBS.Char.putStr bs'
           go False
-        LogEnd -> when json $ IO.putStrLn "] }"
+        LogEnd -> when (json && not query) $ IO.putStrLn "] }"
 
 supportedNodeToNodeVersions :: Word32 -> [NodeVersion]
 supportedNodeToNodeVersions magic =
@@ -448,9 +448,11 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
             eprint $ printf "%s Version negotiation error %s\n" peerStr err
           Right version -> do
             unless pingOptsQuiet $ printf "%s Negotiated version %s\n" peerStr (show version)
-            keepAlive bearer timeoutfn peerStr version (tdigest []) 0
-            -- send terminating message
-            _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
+            unless pingOptsHandshakeQuery $ do
+              keepAlive bearer timeoutfn peerStr version (tdigest []) 0
+              -- send terminating message
+              _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
+              return ()
             -- protocol idle timeout
             MT.threadDelay 5
 
