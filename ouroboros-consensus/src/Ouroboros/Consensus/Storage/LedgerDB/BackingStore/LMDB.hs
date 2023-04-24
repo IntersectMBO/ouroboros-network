@@ -94,6 +94,7 @@ data Db m l = Db {
   }
 
 newtype LMDBLimits = MkLMDBLimits {unLMDBLimits :: LMDB.Limits}
+  deriving (Show, Eq)
 
 {-# COMPLETE LMDBLimits #-}
 -- | Configuration to use for LMDB backing store initialisation.

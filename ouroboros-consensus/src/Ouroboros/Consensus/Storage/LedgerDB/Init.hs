@@ -17,6 +17,7 @@ module Ouroboros.Consensus.Storage.LedgerDB.Init (
   , restoreBackingStore
     -- * Trace
   , ReplayGoal (..)
+  , TraceBackingStoreInitEvent (..)
   , TraceLedgerDBEvent (..)
   , TraceReplayEvent (..)
   , decorateReplayTracerWithGoal
@@ -89,8 +90,15 @@ data InitLog blk =
 
 data TraceLedgerDBEvent blk =
     LedgerDBSnapshotEvent (TraceSnapshotEvent blk)
-  | BackingStoreEvent (BackingStoreTrace)
+  | BackingStoreEvent BackingStoreTrace
+  | BackingStoreInitEvent TraceBackingStoreInitEvent
   deriving (Show, Eq, Generic)
+
+-- | A trace event for the backing store that we have initialised.
+data TraceBackingStoreInitEvent =
+    BackingStoreInitialisedLMDB LMDB.LMDBLimits
+  | BackingStoreInitialisedInMemory
+  deriving (Show, Eq)
 
 -- | Initialize the ledger DB from the most recent snapshot on disk
 --
@@ -150,6 +158,11 @@ initialize replayTracer
       => BackingStoreInitializer m l
     lbsi = newBackingStoreInitialiser (BackingStoreEvent >$< tracer) bss
 
+    bsiTrace :: TraceBackingStoreInitEvent
+    bsiTrace = case bss of
+      InMemoryBackingStore    -> BackingStoreInitialisedInMemory
+      LMDBBackingStore limits -> BackingStoreInitialisedLMDB limits
+
     tryNewestFirst :: (InitLog blk -> InitLog blk)
                    -> [DiskSnapshot]
                    -> m ( InitLog   blk
@@ -167,6 +180,7 @@ initialize replayTracer
                              reg
                              (\_ -> newBackingStore lbsi hasFS (projectLedgerTables genesisLedger))
                              (\(LedgerBackingStore bs) -> bsClose bs)
+      traceWith (BackingStoreInitEvent `contramap` tracer) bsiTrace
       eDB <- runExceptT $ replayStartingWith
                             replayTracer'
                             cfg
@@ -210,6 +224,7 @@ initialize replayTracer
                   reg
                   (\_ -> restoreBackingStore lbsi hasFS s)
                   (\(LedgerBackingStore bs) -> bsClose bs)
+              traceWith (BackingStoreInitEvent `contramap` tracer) bsiTrace
               traceWith replayTracer $
                 ReplayFromSnapshot s pt (ReplayStart initialPoint)
               let tracer' = decorateReplayTracerWithStart initialPoint replayTracer
