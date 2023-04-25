@@ -16,11 +16,11 @@ _description of the pull request, if it fixes a particular issue it should link 
 # Checklist
 
 - Branch
+    - [ ] Updated changelog files.
     - [ ] Commit sequence broadly makes sense
     - [ ] Commits have useful messages
     - [ ] The documentation has been properly updated
     - [ ] New tests are added if needed and existing tests are updated
-    - [ ] If this branch changes Network and has any consequences for downstream repositories or end users, said changes must be documented in [`interface-CHANGELOG.md`](../docs/interface-CHANGELOG.md)
     - [ ] If serialization changes, user-facing consequences (e.g. replay from genesis) are confirmed to be intentional.
 - Pull Request
     - [ ] Self-reviewed the diff
