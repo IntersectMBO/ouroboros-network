@@ -1,11 +1,9 @@
 {-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE MonoLocalBinds       #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# OPTIONS_GHC -fno-strictness #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Node () where
 
@@ -22,7 +20,7 @@ import           Ouroboros.Consensus.HardFork.Combinator.Ledger.PeerSelection ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.InitStorage ()
 import           Ouroboros.Consensus.HardFork.Combinator.Node.Metrics ()
 import           Ouroboros.Consensus.HardFork.Combinator.Serialisation
-import           Ouroboros.Consensus.Ledger.SupportsMempool
+import           Ouroboros.Consensus.Ledger.Tables
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
 import           Ouroboros.Consensus.Node.Run
 
@@ -59,7 +57,7 @@ getSameConfigValue getValue blockConfig = getSameValue values
 instance ( CanHardFork xs
            -- Instances that must be defined for specific values of @b@:
          , LedgerTablesCanHardFork xs
-         , LedgerSupportsMempool (HardForkBlock xs)
+         , HasTickedLedgerTables (LedgerState (HardForkBlock xs))
          , SupportedNetworkProtocolVersion (HardForkBlock xs)
          , SerialiseHFC xs
          ) => RunNode (HardForkBlock xs)
