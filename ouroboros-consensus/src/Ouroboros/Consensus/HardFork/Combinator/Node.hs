@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -fno-strictness #-}
 
 module Ouroboros.Consensus.HardFork.Combinator.Node () where
 
