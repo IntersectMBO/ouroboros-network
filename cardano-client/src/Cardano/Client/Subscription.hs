@@ -6,26 +6,20 @@
 module Cardano.Client.Subscription
   ( subscribe
   , MuxMode (..)
-  , ClientCodecs
   , ConnectionId
   , LocalAddress
   , NodeToClientProtocols (..)
-  , BlockNodeToClientVersion
   , MuxPeer (..)
   , MuxTrace
   , RunMiniProtocol (..)
   , WithMuxBearer
   , ControlMessage (..)
-  , cChainSyncCodec
-  , cStateQueryCodec
-  , cTxSubmissionCodec
   ) where
 
-import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadSTM
 import qualified Data.ByteString.Lazy as BSL
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Proxy
 import           Data.Void (Void)
 
 import           Network.Mux.Trace (MuxTrace, WithMuxBearer)
@@ -45,43 +39,44 @@ import           Ouroboros.Network.Protocol.Handshake.Version (Versions,
                      foldMapVersions)
 import qualified Ouroboros.Network.Snocket as Snocket
 
-import           Ouroboros.Consensus.Block (CodecConfig)
-import           Ouroboros.Consensus.Network.NodeToClient (ClientCodecs,
-                     cChainSyncCodec, cStateQueryCodec, cTxSubmissionCodec,
-                     clientCodecs)
-import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-                     (BlockNodeToClientVersion, supportedNodeToClientVersions)
-import           Ouroboros.Consensus.Node.Run (RunNode)
-
-subscribe ::
-     RunNode blk
-  => Snocket.LocalSnocket
-  -> CodecConfig blk
+-- | Subscribe using `node-to-client` mini-protocol.
+--
+-- 'blockVersion' ought to be instantiated with `BlockNodeToClientVersion blk`.
+-- The callback receives `blockVersion` associated with each
+-- 'NodeToClientVersion' and can be used to create codecs with
+-- `Ouroboros.Consensus.Network.NodeToClient.clientCodecs`.
+--
+subscribe
+  :: forall blockVersion x y.
+     Snocket.LocalSnocket
   -> NetworkMagic
+  -> Map NodeToClientVersion blockVersion
+  -- ^ Use `supportedNodeToClientVersions` from `ouroboros-consensus`.
   -> NetworkClientSubcriptionTracers
   -> ClientSubscriptionParams ()
   -> (   NodeToClientVersion
-      -> ClientCodecs blk IO
+      -> blockVersion
       -> ConnectionId LocalAddress
       -> NodeToClientProtocols 'InitiatorMode BSL.ByteString IO x y)
   -> IO Void
-subscribe snocket codecConfig networkMagic tracers subscriptionParams protocols = do
+subscribe snocket networkMagic supportedVersions tracers subscriptionParams protocols = do
     networkState <- newNetworkMutableState
     ncSubscriptionWorker
       snocket
       tracers
       networkState
       subscriptionParams
-      (versionedProtocols codecConfig networkMagic
-        (\version codecs connectionId _ ->
-            protocols version codecs connectionId))
+      (versionedProtocols networkMagic supportedVersions
+        (\version blockVersion connectionId _ ->
+            protocols version blockVersion connectionId))
 
 versionedProtocols ::
-     forall blk m appType bytes a b. (MonadST m, RunNode blk)
-  => CodecConfig blk
-  -> NetworkMagic
+     forall m appType bytes blockVersion a b.
+     NetworkMagic
+  -> Map NodeToClientVersion blockVersion
+  -- ^ Use `supportedNodeToClientVersions` from `ouroboros-consensus`.
   -> (   NodeToClientVersion
-      -> ClientCodecs blk m
+      -> blockVersion
       -> ConnectionId LocalAddress
       -> STM m ControlMessage
       -> NodeToClientProtocols appType bytes m a b)
@@ -96,12 +91,11 @@ versionedProtocols ::
        NodeToClientVersion
        NodeToClientVersionData
        (OuroborosApplication appType LocalAddress bytes m a b)
-versionedProtocols codecConfig networkMagic callback =
-    foldMapVersions applyVersion $
-      Map.toList $ supportedNodeToClientVersions (Proxy @blk)
+versionedProtocols networkMagic supportedVersions callback =
+    foldMapVersions applyVersion $ Map.toList supportedVersions
   where
     applyVersion ::
-         (NodeToClientVersion, BlockNodeToClientVersion blk)
+         (NodeToClientVersion, blockVersion)
       -> Versions
            NodeToClientVersion
            NodeToClientVersionData
@@ -110,4 +104,4 @@ versionedProtocols codecConfig networkMagic callback =
       versionedNodeToClientProtocols
         version
         (NodeToClientVersionData networkMagic)
-        (callback version (clientCodecs codecConfig blockVersion version))
+        (callback version blockVersion)
