@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -25,11 +26,13 @@ import           Control.Tracer (Tracer (..), contramapM, traceWith)
 import           Data.Foldable (for_)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time.Clock (secondsToDiffTime)
 import           Ouroboros.Consensus.Block
 import           Ouroboros.Consensus.Config
+import           Ouroboros.Consensus.Fragment.InFuture (miracle)
 import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Consensus.Storage.ChainDB.API.Types.InvalidBlockPunishment as Punishment
@@ -56,6 +59,7 @@ tests = testGroup "FollowerPromptness"
 
 prop_followerPromptness :: FollowerPromptnessTestSetup -> Property
 prop_followerPromptness fpts =
+    label (bucket (length futureBlocks) (length allBlocks)) $
     counterexample ("Trace:\n" <> unlines (ppTrace <$> traceByTime)) $
     counterexample (condense fpts) $
     counterexample ("Instruction timings: " <> condense followerInstrTimings) $
@@ -63,9 +67,36 @@ prop_followerPromptness fpts =
            (null notPipelined)
       .&&. counterexample ("Not processed: " <> condense unprocessed)
            (null unprocessed)
+      .&&. counterexample ("Future blocks pipelined: " <> condense futureBlocksPipelined)
+           (null futureBlocksPipelined)
   where
     FollowerPromptnessOutcome{..} =
       runSimOrThrow $ runFollowerPromptnessTest fpts
+
+    bucket x y =
+      if | x == 0    -> "0%"
+         | x == y    -> "100%"
+         | otherwise -> "(0%, 100%)"
+
+    allBlocks = getAllBlocks $ chainUpdates fpts
+
+    futureBlocks = [ headerFieldHash hf
+                   | hf <- allBlocks,
+                     headerFieldSlot hf > staticNow fpts
+                   ]
+
+    -- Hashes of future blocks that were emitted as a follower
+    -- instruction. This should be empty since the future check is static. If
+    -- it weren't it might be the case that once-future blocks are pipelined
+    -- when they are adopted as part of the chain.
+    futureBlocksPipelined = futureBlocksFollowedUp followerInstrTimings
+
+    -- Hashes of future blocks that were followed up on in the
+    -- `followUpTimings` argument.
+    futureBlocksFollowedUp :: Map Time (Set TestHash) -> [TestHash]
+    futureBlocksFollowedUp followUpTimings =
+      let followUps = Set.unions followUpTimings
+      in filter (`Set.member` followUps) futureBlocks
 
     -- Hashes of tentative headers which were not immediately emitted as a
     -- follower instruction.
@@ -174,7 +205,10 @@ runFollowerPromptnessTest FollowerPromptnessTestSetup{..} = withRegistry \regist
               mcdbRegistry       = registry
           mcdbNodeDBs <- emptyNodeDBs
           let cdbArgs = fromMinimalChainDbArgs MinimalChainDbArgs{..}
-          pure $ cdbArgs { cdbTracer = cdbTracer }
+          pure $ cdbArgs {
+              cdbTracer = cdbTracer
+            , cdbCheckInFuture = miracle (pure staticNow) 10
+            }
         (_, (chainDB, ChainDBImpl.Internal{intAddBlockRunner})) <-
           allocate
             registry
@@ -194,6 +228,7 @@ data FollowerPromptnessTestSetup = FollowerPromptnessTestSetup {
     securityParam   :: SecurityParam
   , chainUpdates    :: [ChainUpdate]
   , artificialDelay :: DiffTime
+  , staticNow       :: SlotNo
   }
   deriving stock (Show)
 
@@ -210,12 +245,20 @@ instance Arbitrary FollowerPromptnessTestSetup where
       -- sufficiently often.
       chainUpdates    <- genChainUpdates TentativeChainBehavior securityParam 20
       artificialDelay <- secondsToDiffTime <$> chooseInteger (1, 10)
+      staticNow <- elements (headerFieldSlot <$> getAllBlocks chainUpdates)
       pure FollowerPromptnessTestSetup {..}
+
 
   shrink FollowerPromptnessTestSetup{..} =
       [ FollowerPromptnessTestSetup {
             chainUpdates = init chainUpdates
+          , staticNow = maximum (headerFieldSlot <$> getAllBlocks chainUpdates) - 1
           , ..
           }
       | not $ null chainUpdates
       ]
+
+getAllBlocks :: [ChainUpdate] -> [HeaderFields TestBlock]
+getAllBlocks = mapMaybe $ \case
+  (AddBlock blk) -> Just $ getHeaderFields blk
+  _              -> Nothing
