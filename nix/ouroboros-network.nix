@@ -56,19 +56,6 @@ let
         ({ pkgs, ... }: {
           # Apply profiling arg to all library components in the build:
           enableLibraryProfiling = profiling;
-
-          # Command-line options for test suites:
-          packages.ouroboros-consensus-byron-test.components.tests.test.testFlags =
-            lib.mkForce [ "--no-create" ];
-          packages.ouroboros-consensus-shelley-test.components.tests.test.testFlags =
-            lib.mkForce [ "--no-create" ];
-          packages.ouroboros-consensus-cardano-test.components.tests.test.testFlags =
-            lib.mkForce [ "--no-create" ];
-
-          packages.cardano-crypto-praos.components.library.pkgconfig =
-            lib.mkForce [ [ pkgs.libsodium-vrf ] ];
-          packages.cardano-crypto-class.components.library.pkgconfig =
-            lib.mkForce [[ pkgs.libsodium-vrf pkgs.secp256k1 ]];
         })
 
         # Options specific to the windows cross-compiled build:

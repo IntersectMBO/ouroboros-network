@@ -1,10 +1,8 @@
-# Introduction
-
-This repository contains the core components of the network & consensus code
-for  the Cardano node.  It is a dependency when building the node from the
-cardano-node repository.
-
 # Ouroboros-Network
+
+This repository contains the core components of the network code for the Cardano
+node. It is a dependency when building the node from the cardano-node
+repository.
 
 * `network-mux` - implementation of a general network multiplexer.
 * `ouroboros-network-api` - shared API between `network` and `consensus` components.
@@ -80,13 +78,3 @@ cabal run <DEMO_NAME> --
 After `--` you will need to pass arguments, when a demo is run without
 arguments it will specify what arguments it needs.
 </details>
-
-# Ouroboros-Consensus
-
-Consensus layer of the family Ouroboros blockchain protocols.
-
-## Ouroboros-Consensus Documentation
-
-The documentation for the consensus layer in hosted in
-[`ouroboros-consensus`](https://github.com/input-output-hk/ouroboros-consensus/).
-We will eventually migrate the consensus layer source code to this repository.

@@ -23,15 +23,6 @@ let
   haskellPackagesWithTVarCheck = recRecurseIntoAttrs
     (selectProjectPackages ouroborosNetworkHaskellPackagesWithTVarCheck);
 
-  validate-mainnet = import ./nix/validate-mainnet.nix {
-    inherit pkgs;
-    byron-db-converter =
-      haskellPackages.ouroboros-consensus-byron.components.exes.db-converter;
-    db-analyser =
-      haskellPackages.ouroboros-consensus-cardano.components.exes.db-analyser;
-    onlyImmutableDB = false;
-  };
-
   self = {
     inherit haskellPackages network-docs coveredProject;
 
@@ -51,22 +42,8 @@ let
       tests = collectChecks' haskellPackages;
       styles = recurseIntoAttrs {
         check-nixfmt = callPackage ./nix/check-nixfmt.nix { };
-        check-stylish = callPackage ./nix/check-stylish.nix { };
         check-stylish-network = callPackage ./nix/check-stylish-network.nix { };
       };
-    };
-
-    # These are not run on hydra, but will be built separately in a nightly
-    # build job.
-    nightly-checks = {
-      inherit validate-mainnet;
-      gnuparallel = pkgs.parallel;
-      glibcLocales = pkgs.glibcLocales;
-
-      Cardano =
-        haskellPackages.ouroboros-consensus-cardano-test.components.tests.test;
-      Shelley =
-        haskellPackages.ouroboros-consensus-shelley-test.components.tests.test;
     };
 
     nightly-checks.tvar-invariant-checks = recurseIntoAttrs {
