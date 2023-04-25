@@ -5,6 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+
 module Ouroboros.Network.AnchoredFragment
   ( -- * AnchoredFragment type and fundamental operations
     AnchoredFragment

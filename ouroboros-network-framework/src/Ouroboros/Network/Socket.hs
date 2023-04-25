@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 -- it is useful to have 'HasInitiator' constraint on 'connectToNode' & friends.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}

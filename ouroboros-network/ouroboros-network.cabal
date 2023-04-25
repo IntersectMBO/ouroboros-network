@@ -98,7 +98,7 @@ library
                        TypeApplications,
                        TypeFamilies,
                        TypeInType
-  build-depends:       base              >=4.14 && <4.17,
+  build-depends:       base              >=4.14 && <4.19,
                        async             >=2.2 && <2.3,
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
@@ -180,7 +180,7 @@ test-suite test
                        Test.PeerState
                        Test.Version
   default-language:    Haskell2010
-  build-depends:       base >=4.14 && <4.17,
+  build-depends:       base >=4.14 && <4.19,
                        bytestring,
                        QuickCheck,
                        aeson,
@@ -241,7 +241,7 @@ test-suite test
 executable demo-chain-sync
   hs-source-dirs:      demo
   main-is:             chain-sync.hs
-  build-depends:       base >=4.14 && <4.17,
+  build-depends:       base >=4.14 && <4.19,
                        async,
                        bytestring,
                        containers,
