@@ -52,7 +52,6 @@ module Ouroboros.Network.Block
   , legacyTip
   , toLegacyTip
   , encodeTip
-  , encodedTipSize
   , decodeTip
   , ChainUpdate (..)
   , MaxSlotNo (..)
@@ -62,7 +61,6 @@ module Ouroboros.Network.Block
   , genesisPoint
     -- * Serialisation
   , encodePoint
-  , encodedPointSize
   , encodeChainHash
   , decodePoint
   , decodeChainHash
@@ -82,7 +80,6 @@ import qualified Codec.CBOR.Read as Read
 import qualified Codec.CBOR.Write as Write
 import           Codec.Serialise (Serialise (..))
 import           Control.Monad (when)
-import           Control.Tracer (contramap)
 import qualified Data.ByteString.Base16.Lazy as B16
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.ByteString.Lazy.Char8 as BSC
@@ -92,7 +89,6 @@ import           Data.Typeable (Typeable)
 import           GHC.Generics (Generic)
 import           NoThunks.Class (NoThunks)
 
-import           Cardano.Ledger.Binary (Case (..), Size, szCases, szGreedy)
 import           Cardano.Slotting.Block
 import           Cardano.Slotting.Slot (SlotNo (..))
 
@@ -333,18 +329,6 @@ encodeTip encodeHeaderHash tip = mconcat
     tipBlockNo = fromWithOrigin (BlockNo 0)
                                 (getTipBlockNo tip)
 
--- TODO: add a test, which should compare with 'encodedTip', including various
--- instantiations of 'blk', e.g. 'ByronBlock, etc.  Thus this test should live
--- in 'ourobors-consensus'.
-encodedTipSize :: (Proxy (HeaderHash blk) -> Size)
-               -> (Proxy (Tip        blk) -> Size)
-encodedTipSize encodedHeaderHashSize tipProxy =
-    1
-  + encodedPointSize encodedHeaderHashSize (fst . toLegacyTip <$> tipProxy)
-  -- TODO: remove 'unBlockNo' when 'BlockNo' 'EncCBOR' instance will implement
-  -- 'encodedSizeExpr', also include a test in `cardano-ledger-byron`.
-  + szGreedy (unBlockNo . snd . toLegacyTip <$> tipProxy)
-
 decodeTip :: forall blk.
              (forall s. Decoder s (HeaderHash blk))
           -> (forall s. Decoder s (Tip        blk))
@@ -437,12 +421,6 @@ decodeChainHash decodeHash = do
       1 -> BlockHash <$> decodeHash
       _ -> fail "decodeChainHash: invalid tag"
 
--- TODO: remove 'unSlotNo', add a test.  This should be moved to
--- 'cardano-consensus' where similar tests exists (and all the infrastructure
--- to run them is in place).
-encodedSlotNoSize :: Proxy SlotNo -> Size
-encodedSlotNoSize = szGreedy . fmap unSlotNo
-
 encodePoint :: (HeaderHash block -> Encoding)
             -> (Point      block -> Encoding)
 encodePoint encodeHash (Point pt) = case pt of
@@ -451,23 +429,6 @@ encodePoint encodeHash (Point pt) = case pt of
            Enc.encodeListLen 2
         <> encode     (Point.blockPointSlot blk)
         <> encodeHash (Point.blockPointHash blk)
-
--- TODO: add a test (see 'encodedTipSize')
-encodedPointSize :: (Proxy (HeaderHash block) -> Size)
-                 -> (Proxy (Point      block) -> Size)
-encodedPointSize encodedHeaderHashSize pointProxy =
-    1
-    + szCases
-        [ Case "Origin" 1
-        , Case "At" $
-              1
-            + encodedSlotNoSize
-                (Point.blockPointSlot <$> blockProxy)
-            + encodedHeaderHashSize
-                (Point.blockPointHash <$> blockProxy)
-        ]
-  where
-    blockProxy = At `contramap` (getPoint <$> pointProxy)
 
 decodePoint :: (forall s. Decoder s (HeaderHash block))
             -> (forall s. Decoder s (Point      block))
