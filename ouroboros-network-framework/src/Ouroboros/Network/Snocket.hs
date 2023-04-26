@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DeriveFunctor         #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE GADTs                 #-}
@@ -102,6 +103,7 @@ import           Ouroboros.Network.IOManager
 newtype Accept m fd addr = Accept
   { runAccept :: m (Accepted fd addr, Accept m fd addr)
   }
+  deriving Functor
 
 instance Functor m => Bifunctor (Accept m) where
     bimap f g (Accept ac) = Accept (h <$> ac)
@@ -112,6 +114,10 @@ instance Functor m => Bifunctor (Accept m) where
 data Accepted fd addr where
     AcceptFailure :: !SomeException -> Accepted fd addr
     Accepted      :: !fd -> !addr -> Accepted fd addr
+
+instance Functor (Accepted fd) where
+    fmap f (Accepted fd addr)  = Accepted fd (f addr)
+    fmap _ (AcceptFailure err) = AcceptFailure err
 
 instance Bifunctor Accepted where
     bimap f g (Accepted fd addr)  = Accepted (f fd) (g addr)

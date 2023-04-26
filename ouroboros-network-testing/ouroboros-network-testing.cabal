@@ -61,7 +61,7 @@ library
   build-depends:       base              >=4.14 && <4.19,
                        containers,
                        contra-tracer,
-                       deque,
+                       deque            ^>=0.4,
                        io-classes       ^>=1.1,
                        io-sim,
                        psqueues          >=0.2.3 && <0.3,
