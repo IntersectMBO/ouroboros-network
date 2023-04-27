@@ -29,8 +29,8 @@ import           Control.Monad (unless)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime (Time (..))
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI (Time (..))
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
@@ -556,8 +556,8 @@ _unit_bracketSyncWithFetchClient step = do
     checkResult _                 = assertFailure "unexpected result"
 
     testSkeleton :: forall m a b.
-                    (MonadAsync m, MonadFork m, MonadMask m, MonadSTM m,
-                     MonadTimer m, MonadThrow m, MonadThrow (STM m))
+                    (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
+                     MonadSTM m, MonadTimer m, MonadThrow m, MonadThrow (STM m))
                  => ((forall c. m c -> m c) -> m a)
                  -> ((forall c. m c -> m c) -> m b)
                  -> m (Either (Either SomeException a)

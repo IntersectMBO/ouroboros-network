@@ -35,7 +35,7 @@ module Ouroboros.Network.Subscription.Ip
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer
 import           Data.Void (Void)
 import qualified Network.Socket as Socket
@@ -122,8 +122,8 @@ selectSockAddr _ _ = Nothing
 
 
 ipSubscriptionTarget :: forall m addr.
-                        ( MonadSTM  m
-                        , MonadTime m
+                        ( MonadMonotonicTime m
+                        , MonadSTM  m
                         , Ord addr
                         )
                      => Tracer m (SubscriptionTrace addr)

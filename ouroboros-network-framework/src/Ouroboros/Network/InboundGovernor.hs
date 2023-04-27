@@ -35,14 +35,15 @@ module Ouroboros.Network.InboundGovernor
   , TransitionTrace' (..)
   ) where
 
+import           Control.Applicative (Alternative)
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeAsyncException (..), assert)
 import           Control.Monad (foldM, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
@@ -85,7 +86,8 @@ import           Ouroboros.Network.Server.RateLimiting
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
 inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionData versionNumber m a b.
-                   ( MonadAsync    m
+                   ( Alternative (STM m)
+                   , MonadAsync    m
                    , MonadCatch    m
                    , MonadEvaluate m
                    , MonadThrow    m
@@ -469,7 +471,8 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
 -- 'InitiatorProtocolOnly' case.
 --
 runResponder :: forall (mode :: MuxMode) m a b.
-                 ( HasResponder mode ~ True
+                 ( Alternative (STM m)
+                 , HasResponder mode ~ True
                  , MonadAsync m
                  , MonadCatch m
                  , MonadThrow (STM m)

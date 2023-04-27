@@ -11,8 +11,8 @@ module Ouroboros.Network.Server.RateLimiting
 
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 
 import           Data.Typeable (Typeable)
@@ -98,7 +98,6 @@ getRateLimitDecision numberOfConnections
 runConnectionRateLimits
     :: ( MonadSTM   m
        , MonadDelay m
-       , MonadTime  m
        )
     => Tracer m AcceptConnectionsPolicyTrace
     -> STM m Int

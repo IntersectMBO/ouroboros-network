@@ -29,9 +29,9 @@ import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer (MonadTimer, registerDelay)
-import qualified Control.Monad.Class.MonadTimer as MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI (MonadTimer, registerDelay)
+import qualified Control.Monad.Class.MonadTimer.SI as MonadTimer
 
 
 -- | The type of the 'System.Timeout.timeout' function.
@@ -305,8 +305,8 @@ timeout monitorState delay action =
 
 
 monitoringThread :: (MonadFork m, MonadSTM m,
-                     MonadMonotonicTime m, MonadTimer m,
-                     MonadThrow (STM m))
+                     MonadMonotonicTime m,
+                     MonadTimer m, MonadThrow (STM m))
                  => MonitorState m -> m ()
 monitoringThread monitorState@MonitorState{deadlineResetVar} = do
   threadId <- myThreadId

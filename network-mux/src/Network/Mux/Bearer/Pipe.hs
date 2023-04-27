@@ -16,7 +16,7 @@ module Network.Mux.Bearer.Pipe (
   ) where
 
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import           System.IO (Handle, hFlush)

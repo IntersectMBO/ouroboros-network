@@ -16,7 +16,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Codec
   ) where
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import qualified Data.List.NonEmpty as NonEmpty
 
 import qualified Codec.CBOR.Decoding as CBOR

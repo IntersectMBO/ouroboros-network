@@ -22,7 +22,7 @@ module Cardano.Network.Ping
 import           Control.Exception (bracket)
 import           Control.Monad (replicateM, unless, when)
 import           Control.Concurrent.Class.MonadSTM.Strict ( MonadSTM(atomically), takeTMVar, StrictTMVar )
-import           Control.Monad.Class.MonadTime (UTCTime, diffTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), Time)
+import           Control.Monad.Class.MonadTime.SI (UTCTime, diffTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), Time)
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Aeson (Value, ToJSON(toJSON), object, encode, KeyValue((.=)))
 import           Data.Bits (clearBit, setBit, testBit)

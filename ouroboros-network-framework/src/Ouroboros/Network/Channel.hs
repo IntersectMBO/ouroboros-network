@@ -23,7 +23,7 @@ module Ouroboros.Network.Channel
 
 import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LBS
 import           Data.ByteString.Lazy.Internal (smallChunkSize)
@@ -290,8 +290,7 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
 -- This is intended for testing, as a crude approximation of network delays.
 -- More accurate models along these lines are of course possible.
 --
-delayChannel :: ( MonadTimer m
-                )
+delayChannel :: MonadDelay m
              => DiffTime
              -> Channel m a
              -> Channel m a

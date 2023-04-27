@@ -76,7 +76,7 @@ import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
 import           Control.Monad (unless, when)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import qualified Control.Monad.STM as STM
 import qualified Data.ByteString.Lazy as BL
 import           Data.Hashable

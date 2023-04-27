@@ -8,7 +8,7 @@ module Ouroboros.Network.PeerSelection.PeerMetric.Type
   ) where
 
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer)
 
 import           Cardano.Slotting.Slot (SlotNo (..))

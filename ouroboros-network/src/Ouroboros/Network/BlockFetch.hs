@@ -105,8 +105,8 @@ import           Data.Hashable (Hashable)
 import           Data.Void
 
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.Block
@@ -158,7 +158,6 @@ blockFetchLogic :: forall addr header block m.
                    , HasHeader block
                    , HeaderHash header ~ HeaderHash block
                    , MonadDelay m
-                   , MonadMonotonicTime m
                    , MonadSTM m
                    , Ord addr
                    , Hashable addr

@@ -51,7 +51,7 @@ import qualified Data.Set as Set
 import           Deque.Lazy (Deque)
 import qualified Deque.Lazy as Deque
 
-import           Control.Monad.Class.MonadTime (DiffTime, Time (..), addTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
 
 import           Test.QuickCheck

@@ -30,8 +30,8 @@ import qualified Control.Concurrent.Class.MonadSTM as Lazy
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer
 import qualified Data.IP as IP
 import           Data.Maybe (isJust)
@@ -89,7 +89,6 @@ withResolver port rs k = do
 dnsResolve :: forall a m s.
      ( MonadAsync m
      , MonadCatch m
-     , MonadTime  m
      , MonadTimer m
      )
     => Tracer m DnsTrace

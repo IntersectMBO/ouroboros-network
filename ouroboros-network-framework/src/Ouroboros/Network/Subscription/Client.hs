@@ -8,7 +8,7 @@ module Ouroboros.Network.Subscription.Client
   , clientSubscriptionWorker
   ) where
 
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer
 
 import           Data.Functor.Identity (Identity (..))

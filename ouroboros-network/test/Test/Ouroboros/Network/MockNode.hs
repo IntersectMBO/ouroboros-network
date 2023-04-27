@@ -29,8 +29,8 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import qualified Control.Monad.IOSim as Sim
 
 import           Ouroboros.Network.Block
@@ -66,8 +66,9 @@ partitionProbe
 --
 test_blockGenerator
   :: forall m.
-     ( MonadSTM m
+     ( MonadDelay m
      , MonadFork m
+     , MonadSTM m
      , MonadTime m
      , MonadTimer m
      )
@@ -127,10 +128,11 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
     slotDuration' :: DiffTime
     slotDuration' = fromIntegral slotDuration
 
-coreToRelaySim :: ( MonadSTM m
+coreToRelaySim :: ( MonadDelay m
                   , MonadFork m
-                  , MonadThrow m
+                  , MonadSTM m
                   , MonadSay m
+                  , MonadThrow m
                   , MonadTime m
                   , MonadTimer m
                   )
@@ -207,7 +209,8 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
       else mchain1 === Just chain
 
 -- Node graph: c → r → r
-coreToRelaySim2 :: ( MonadSTM m
+coreToRelaySim2 :: ( MonadDelay m
+                   , MonadSTM m
                    , MonadFork m
                    , MonadThrow m
                    , MonadSay m
@@ -304,7 +307,8 @@ instance Arbitrary TestNetworkGraph where
         [ TestNetworkGraph g cs' | cs' <- shrinkList (:[]) cs, not (null cs') ]
 
 networkGraphSim :: forall m.
-                  ( MonadSTM m
+                  ( MonadDelay m
+                  , MonadSTM m
                   , MonadFork m
                   , MonadThrow m
                   , MonadSay m

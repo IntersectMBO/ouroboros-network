@@ -6,7 +6,7 @@
 module Ouroboros.Network.Diffusion.Policies where
 
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import           Data.List (sortOn, unfoldr)
 import qualified Data.Map.Merge.Strict as Map

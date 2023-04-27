@@ -30,7 +30,7 @@ module Ouroboros.Network.PeerSelection.PeerMetric
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.IntPSQ (IntPSQ)

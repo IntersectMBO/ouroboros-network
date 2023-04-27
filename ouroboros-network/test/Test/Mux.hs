@@ -12,14 +12,15 @@ module Test.Mux (tests) where
 
 import           Codec.Serialise (Serialise (..))
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer
 
@@ -79,7 +80,9 @@ testProtocols chainSync =
 
 
 demo :: forall m block.
-        ( MonadAsync m
+        ( Alternative (STM m)
+        , MonadAsync m
+        , MonadDelay m
         , MonadCatch m
         , MonadFork m
         , MonadLabelledSTM m

@@ -10,7 +10,7 @@
 module Test.Ouroboros.Network.Diffusion.Policies where
 
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.IOSim (runSimOrThrow)
 import qualified Data.IntPSQ as Pq
 import           Data.List (foldl')
@@ -126,8 +126,8 @@ instance Arbitrary ArbitraryPolicyArguments where
            return (slotNo, SlotNo $ fromIntegral slotNo, (peer, Time 0))
 
        fetchedMetric :: [SockAddr]
-                    -> Int
-                    -> Gen (Int, SlotNo, ((SockAddr, SizeInBytes), Time))
+                     -> Int
+                     -> Gen (Int, SlotNo, ((SockAddr, SizeInBytes), Time))
        fetchedMetric peers slotNo = do
            peer <- elements peers
            fetched <- SizeInBytes <$> choose (1, 0xffff)

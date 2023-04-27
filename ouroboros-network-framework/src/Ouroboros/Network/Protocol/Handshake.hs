@@ -17,11 +17,9 @@ module Ouroboros.Network.Protocol.Handshake
   ) where
 
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR
@@ -111,7 +109,6 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
 runHandshakeClient
     :: ( MonadAsync m
        , MonadFork m
-       , MonadMonotonicTime m
        , MonadTimer m
        , MonadMask m
        , MonadThrow (STM m)
@@ -149,7 +146,6 @@ runHandshakeClient bearer
 runHandshakeServer
     :: ( MonadAsync m
        , MonadFork m
-       , MonadMonotonicTime m
        , MonadTimer m
        , MonadMask m
        , MonadThrow (STM m)

@@ -24,12 +24,13 @@ import qualified Data.List.NonEmpty as NonEmpty
 
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.Trans ()
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.Except
 import           Control.Tracer (Tracer (..), traceWith)
 

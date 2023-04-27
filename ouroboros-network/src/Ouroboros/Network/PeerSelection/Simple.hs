@@ -12,11 +12,13 @@ module Ouroboros.Network.PeerSelection.Simple
   ) where
 
 
+import           Control.Applicative (Alternative)
+import           Control.Concurrent.Class.MonadMVar (MonadMVar (..), takeMVar)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer)
 import           Data.Foldable (toList)
 
@@ -29,7 +31,6 @@ import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
-import           Control.Monad.Class.MonadMVar (MonadMVar (..), takeMVar)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
@@ -43,7 +44,8 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type
 
 withPeerSelectionActions
   :: forall peeraddr peerconn resolver exception m a.
-     ( MonadAsync m
+     ( Alternative (STM m)
+     , MonadAsync m
      , MonadDelay m
      , MonadThrow m
      , MonadMVar  m

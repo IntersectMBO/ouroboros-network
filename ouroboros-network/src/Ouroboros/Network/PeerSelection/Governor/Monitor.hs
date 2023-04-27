@@ -25,7 +25,7 @@ import           Control.Concurrent.JobPool (JobPool)
 import qualified Control.Concurrent.JobPool as JobPool
 import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           System.Random (randomR)
 
 import           Ouroboros.Network.ExitPolicy (ReconnectDelay)

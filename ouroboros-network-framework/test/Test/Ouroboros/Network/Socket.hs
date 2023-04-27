@@ -36,7 +36,7 @@ import           Control.Monad
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork hiding (ThreadId)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer (threadDelay)
+import           Control.Monad.Class.MonadTimer.SI (threadDelay)
 import           Control.Tracer
 
 import           Network.TypedProtocol.Core

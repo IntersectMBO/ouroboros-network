@@ -14,8 +14,8 @@ module Ouroboros.Network.KeepAlive
 import qualified Control.Concurrent.Class.MonadSTM as Lazy
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust)
@@ -40,8 +40,7 @@ instance Show peer => Show (TraceKeepAliveClient peer) where
 
 keepAliveClient
     :: forall m peer.
-       ( MonadMonotonicTime m
-       , MonadTimer m
+       ( MonadTimer m
        , Ord peer
        )
     => Tracer m (TraceKeepAliveClient peer)

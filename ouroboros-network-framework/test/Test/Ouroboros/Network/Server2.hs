@@ -19,6 +19,7 @@
 
 module Test.Ouroboros.Network.Server2 (tests) where
 
+import           Control.Applicative (Alternative)
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (AssertionFailed, SomeAsyncException (..))
@@ -29,8 +30,8 @@ import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST)
 import           Control.Monad.Class.MonadTest
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.Fix (MonadFix)
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
@@ -299,8 +300,9 @@ oneshotNextRequests ClientAndServerData {
 --
 
 type ConnectionManagerMonad m =
-       ( MonadAsync m, MonadCatch m, MonadEvaluate m, MonadFork m, MonadMask  m
-       , MonadST m, MonadTime m, MonadTimer m, MonadThrow m, MonadThrow (STM m)
+       ( Alternative (STM m), MonadAsync m, MonadCatch m, MonadEvaluate m,
+         MonadFork m, MonadMask  m, MonadST m, MonadTime m, MonadTimer m,
+         MonadThrow m, MonadThrow (STM m)
        )
 
 
@@ -312,6 +314,7 @@ withInitiatorOnlyConnectionManager
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
        , Serialise req, Typeable req
        , MonadAsync m
+       , MonadDelay m
        , MonadFix m
        , MonadLabelledSTM m
        , MonadTraceSTM m
@@ -471,6 +474,7 @@ withBidirectionalConnectionManager
 
        -- debugging
        , MonadAsync m
+       , MonadDelay m
        , MonadFix m
        , MonadLabelledSTM m
        , MonadTraceSTM m
@@ -677,7 +681,8 @@ reqRespTimeLimits = ProtocolTimeLimits { timeLimitForState }
 --
 runInitiatorProtocols
     :: forall muxMode m a b.
-       ( MonadAsync      m
+       ( Alternative (STM m)
+       , MonadAsync      m
        , MonadCatch      m
        , MonadSTM        m
        , MonadThrow (STM m)
@@ -730,6 +735,7 @@ unidirectionalExperiment
     :: forall peerAddr socket acc req resp m.
        ( ConnectionManagerMonad m
        , MonadAsync m
+       , MonadDelay m
        , MonadFix m
        , MonadLabelledSTM m
        , MonadTraceSTM m
@@ -837,6 +843,7 @@ bidirectionalExperiment
     :: forall peerAddr socket acc req resp m.
        ( ConnectionManagerMonad m
        , MonadAsync m
+       , MonadDelay m
        , MonadFix m
        , MonadLabelledSTM m
        , MonadTraceSTM m
@@ -1439,6 +1446,7 @@ multinodeExperiment
     :: forall peerAddr socket acc req resp m.
        ( ConnectionManagerMonad m
        , MonadAsync m
+       , MonadDelay m
        , MonadFix m
        , MonadLabelledSTM m
        , MonadTraceSTM m
@@ -2921,7 +2929,8 @@ unit_server_accept_error ioErrType =
 
 
 
-multiNodeSimTracer :: ( Monad m, MonadFix m, MonadTimer m, MonadLabelledSTM m
+multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
+                      , MonadDelay m, MonadTimer m, MonadLabelledSTM m
                       , MonadTraceSTM m, MonadMask m, MonadTime m
                       , MonadThrow (STM m), MonadSay m, MonadAsync m
                       , MonadEvaluate m, MonadFork m, MonadST m

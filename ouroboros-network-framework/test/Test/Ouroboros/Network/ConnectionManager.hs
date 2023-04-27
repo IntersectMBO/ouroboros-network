@@ -29,8 +29,8 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 
@@ -336,9 +336,7 @@ data FDState = FDState {
 
 newtype FD m = FD { fdState :: StrictTVar m FDState }
 
-makeFDBearer :: ( MonadDelay m
-                , MonadMonotonicTime m
-                )
+makeFDBearer :: MonadDelay m
              => MakeBearer m (FD m)
 makeFDBearer = MakeBearer $ \_ _ _ ->
       return MuxBearer {
@@ -402,7 +400,6 @@ instance Exception TestError
 mkSnocket :: forall m.
              ( MonadDelay m
              , MonadMask  m
-             , MonadMonotonicTime m
              , MonadSTM   m
              , MonadThrow (STM m)
              )
@@ -587,10 +584,10 @@ data Version = Version DataFlow
 -- a connection and connection manager thrown 'ConnectionManagerError'.
 --
 mkConnectionHandler :: forall m handlerTrace.
-                       ( MonadLabelledSTM m
+                       ( MonadDelay       m
+                       , MonadLabelledSTM m
                        , MonadCatch       m
-                       , MonadFork        m
-                       , MonadTimer       m
+                       , MonadThread      m
                        , MonadFail        m
                        )
                     => Snocket m (FD m) Addr

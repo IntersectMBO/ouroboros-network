@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -13,11 +14,12 @@ import           Data.Semigroup (Min (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.JobPool (Job (..))
 import           Control.Exception (SomeException, assert)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           System.Random (randomR)
 
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
@@ -36,7 +38,11 @@ import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeer
 -- peers/ according to 'policyPickWarmPeersToPromote' policy.
 --
 belowTarget :: forall peeraddr peerconn m.
-               (MonadDelay m, MonadSTM m, Ord peeraddr)
+               ( Alternative (STM m)
+               , MonadDelay m
+               , MonadSTM m
+               , Ord peeraddr
+               )
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
 belowTarget = belowTargetLocal <> belowTargetOther
@@ -323,7 +329,10 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
 -- /warm peers/, according to 'policyPickHotPeersToDemote'.
 --
 aboveTarget :: forall peeraddr peerconn m.
-               (MonadSTM m, Ord peeraddr)
+               ( Alternative (STM m)
+               , MonadSTM m
+               , Ord peeraddr
+               )
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
 aboveTarget = aboveTargetLocal <> aboveTargetOther

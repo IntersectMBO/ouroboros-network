@@ -28,7 +28,7 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (nullTracer)
 
 import           Network.TypedProtocol.Codec
@@ -124,6 +124,7 @@ instance Monoid (NodeChannels m block tip) where
 createOneWaySubscriptionChannels
   :: forall block tip m.
      ( MonadSTM m
+     , MonadDelay m
      , MonadTimer m
      )
   => DiffTime
@@ -147,7 +148,8 @@ createOneWaySubscriptionChannels trDelay1 trDelay2 = do
 --
 createTwoWaySubscriptionChannels
   :: forall block tip m.
-     ( MonadSTM m
+     ( MonadDelay m
+     , MonadSTM m
      , MonadTimer m
      )
   => DiffTime
@@ -162,6 +164,7 @@ createTwoWaySubscriptionChannels trDelay1 trDelay2 = do
 -- @slotDuration * blockSlot block@ time.
 blockGenerator :: forall block m.
                   ( HasHeader block
+                  , MonadDelay m
                   , MonadSTM m
                   , MonadFork m
                   , MonadTimer m
@@ -337,6 +340,7 @@ relayNode _nid initChain chans = do
 --
 forkCoreKernel :: forall block m.
                   ( HasFullHeader block
+                  , MonadDelay m
                   , MonadSTM m
                   , MonadFork m
                   , MonadTimer m
@@ -383,7 +387,8 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 -- occupied, it will replace it with its block.
 --
 coreNode :: forall m.
-        ( MonadSTM m
+        ( MonadDelay m
+        , MonadSTM m
         , MonadFork m
         , MonadThrow m
         , MonadTimer m

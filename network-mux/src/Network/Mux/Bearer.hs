@@ -20,7 +20,7 @@ module Network.Mux.Bearer
 
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer)
 
 import           Network.Socket (Socket)
@@ -66,7 +66,7 @@ makePipeChannelBearer = MakeBearer $ pureBearer (\_ -> pipeAsMuxBearer size)
     size = SDUSize 32_768
 
 makeQueueChannelBearer :: ( MonadSTM   m
-                          , MonadTime  m
+                          , MonadMonotonicTime m
                           , MonadThrow m
                           )
                        => MakeBearer m (QueueChannel m)

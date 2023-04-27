@@ -9,8 +9,8 @@ module Test.Ouroboros.Network.RateLimiting where
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (..), contramapM)
 import           Data.List (scanl')
@@ -155,7 +155,6 @@ instance Arbitrary (Arb ([Event], AcceptedConnectionsLimit)) where
 rateLimittingExperiment
     :: forall m.
        ( MonadAsync m
-       , MonadTime  m
        , MonadDelay m
        )
     => Tracer m (WithNumberOfConnections AcceptConnectionsPolicyTrace)

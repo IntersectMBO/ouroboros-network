@@ -24,7 +24,7 @@ module Ouroboros.Network.Protocol.Handshake.Codec
 
 import           Control.Monad (replicateM, unless)
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Either (partitionEithers)

@@ -31,6 +31,16 @@ let
       profiteur = "0.4.6.0";
       eventlog2html = "0.9.2";
       hp2pretty = "0.10";
+    } // {
+      haskell-language-server = rec {
+        src = haskell-nix.sources."hls-1.10";
+        cabalProject = __readFile (src + "/cabal.project");
+        cabalProjectLocal = ''
+          constraints: stm-hamt < 1.2.0.10
+        '';
+        sha256map."https://github.com/pepeiborra/ekg-json"."7a0af7a8fd38045fd15fb13445bdcc7085325460" =
+          "sha256-fVwKxGgM0S4Kv/4egVAAiAjV7QB5PBqMVMCfsv7otIQ=";
+      };
     };
 
     shellHook = ''

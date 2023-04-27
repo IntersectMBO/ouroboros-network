@@ -27,7 +27,7 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer, traceWith)
 import qualified Data.IP as IP
 import           Data.List (foldl')
@@ -204,7 +204,7 @@ long_PEER_LIST_LIFE_TIME = 1847 -- a prime number!
 --
 ledgerPeersThread :: forall m peerAddr.
                      ( MonadAsync m
-                     , MonadTime m
+                     , MonadMonotonicTime m
                      , Ord peerAddr
                      )
                   => StdGen
@@ -303,7 +303,7 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
 --
 withLedgerPeers :: forall peerAddr m a.
                    ( MonadAsync m
-                   , MonadTime m
+                   , MonadMonotonicTime m
                    , Ord peerAddr
                    )
                 => StdGen

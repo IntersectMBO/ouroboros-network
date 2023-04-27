@@ -10,7 +10,7 @@ import qualified Data.Set as Set
 import           Control.Concurrent.JobPool (Job (..))
 import           Control.Exception (SomeException, assert)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers

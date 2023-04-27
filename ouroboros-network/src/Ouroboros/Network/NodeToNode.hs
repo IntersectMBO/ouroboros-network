@@ -103,7 +103,7 @@ module Ouroboros.Network.NodeToNode
 import qualified Control.Concurrent.Async as Async
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime (DiffTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime)
 
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Term as CBOR

@@ -23,15 +23,16 @@ module Ouroboros.Network.ConnectionManager.Core
   , abstractState
   ) where
 
+import           Control.Applicative (Alternative)
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forM_, guard, when, (>=>))
 import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork, throwTo)
+import           Control.Monad.Class.MonadFork (throwTo)
 import           Control.Monad.Class.MonadThrow hiding (handle)
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.Fix
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldMap', traverse_)
@@ -528,15 +529,16 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
 --
 withConnectionManager
     :: forall (muxMode :: MuxMode) peerAddr socket handlerTrace handle handleError version versionData m a.
-       ( MonadLabelledSTM   m
+       ( Alternative (STM m)
+       , MonadLabelledSTM   m
        , MonadTraceSTM      m
        -- 'MonadFork' is only to get access to 'throwTo'
        , MonadFork          m
        , MonadAsync         m
+       , MonadDelay         m
        , MonadEvaluate      m
        , MonadFix           m
        , MonadMask          m
-       , MonadMonotonicTime m
        , MonadThrow    (STM m)
        , MonadTimer         m
 

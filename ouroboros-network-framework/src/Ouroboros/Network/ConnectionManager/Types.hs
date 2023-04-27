@@ -158,7 +158,7 @@ module Ouroboros.Network.ConnectionManager.Types
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime (DiffTime)
+import           Control.Monad.Class.MonadTime.SI (DiffTime)
 import           Control.Tracer (Tracer)
 import           Data.Functor (void)
 import           Data.List (sortOn)

@@ -15,7 +15,7 @@ module Ouroboros.Network.Protocol.BlockFetch.Codec
   ) where
 
 import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 
 import qualified Data.ByteString.Lazy as LBS
 

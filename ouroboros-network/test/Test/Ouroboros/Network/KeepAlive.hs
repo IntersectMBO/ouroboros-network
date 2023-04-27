@@ -14,8 +14,8 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim
 import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
@@ -99,6 +99,7 @@ runKeepAliveServer channel =
 runKeepAliveClientAndServer
     :: forall m peer header block.
         ( MonadAsync m
+        , MonadDelay m
         , MonadFork m
         , MonadMask m
         , MonadMonotonicTime m
@@ -138,6 +139,7 @@ prop_keepAlive_convergenceM
     :: forall m.
         ( Eq (Async m ())
         , MonadAsync m
+        , MonadDelay m
         , MonadFork m
         , MonadMask m
         , MonadMonotonicTime m

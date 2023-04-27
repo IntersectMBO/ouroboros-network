@@ -25,8 +25,8 @@ import           Data.Void
 
 import           Control.Exception (assert)
 import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 
 import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
@@ -49,7 +49,6 @@ fetchLogicIterations
      , HasHeader block
      , HeaderHash header ~ HeaderHash block
      , MonadDelay m
-     , MonadMonotonicTime m
      , MonadSTM m
      , Ord peer
      , Hashable peer

@@ -10,8 +10,8 @@ import           Data.Foldable (traverse_)
 import           Data.Int (Int64)
 
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer
 
 import qualified Network.Mux.Codec as Mx

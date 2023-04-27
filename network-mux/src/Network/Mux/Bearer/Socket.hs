@@ -12,8 +12,8 @@ import qualified Data.ByteString.Lazy as BL
 import           Data.Int
 
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer hiding (timeout)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import qualified Network.Socket as Socket
 #if !defined(mingw32_HOST_OS)

@@ -23,7 +23,7 @@ import           Text.Printf
 
 import           Control.Exception hiding (throwIO)
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTime.SI
 import           Data.Bifunctor (Bifunctor (..))
 import           Data.Word
 import           GHC.Generics (Generic (..))
