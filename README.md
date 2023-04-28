@@ -1,4 +1,8 @@
-# Ouroboros-Network
+# [Ouroboros-Network][ouroboros-network]
+
+[![Haskell CI](https://img.shields.io/github/actions/workflow/status/input-output-hk/ouroboros-network/build.yml?branch=master&label=Build&style=for-the-badge)](https://github.com/input-output-hk/ouroboros-network/actions/workflows/build.yml)
+[![Haddocks](https://img.shields.io/github/actions/workflow/status/input-output-hk/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://github.com/input-output-hk/ouroboros-network/actions/workflows/github-page.yml)
+[![handbook](https://img.shields.io/badge/policy-Cardano%20Engineering%20Handbook-informational?style=for-the-badge)](https://input-output-hk.github.io/cardano-engineering-handbook)
 
 This repository contains the core components of the network code for the Cardano
 node. It is a dependency when building the node from the cardano-node
@@ -72,7 +76,7 @@ the Cardano Shelley implementation:
   technical specifications of mini-protocols used by either _node-to-node_ and
   _node-to-client_ flavours of the protocol.
 
-* [Haddock documentation](https://input-output-hk.github.io/ouroboros-network/)
+* [Haddock documentation][ouroboros-network]
 
 - [Official Cardano Documentation](https://docs.cardano.org/en/latest/)
 
@@ -110,3 +114,4 @@ arguments it will specify what arguments it needs.
 </details>
 
 [ouroboros-consensus]: https://github.com/input-output-hk/ouroboros-consensus
+[ouroboros-network]: https://input-output-hk.github.io/ouroboros-network
