@@ -94,7 +94,7 @@ library
                        TypeFamilies,
                        TypeInType
 
-  build-depends:       base              >=4.14 && <4.17,
+  build-depends:       base              >=4.14 && <4.19,
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
 
@@ -156,7 +156,7 @@ library testlib
                        Test.ChainGenerators
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
-  build-depends:       base >=4.14 && <4.17,
+  build-depends:       base >=4.14 && <4.19,
                        bytestring,
                        cborg,
                        containers,
@@ -194,7 +194,7 @@ test-suite test
   other-modules:       Test.AnchoredFragment
                        Test.Chain
   default-language:    Haskell2010
-  build-depends:       base >=4.14 && <4.17,
+  build-depends:       base >=4.14 && <4.19,
                        QuickCheck,
                        tasty,
                        tasty-quickcheck,
@@ -216,7 +216,7 @@ test-suite cddl
   else
     buildable: False
   default-language:    Haskell2010
-  build-depends:       base >=4.14 && <4.17,
+  build-depends:       base >=4.14 && <4.19,
                        bytestring,
                        cborg,
                        containers,

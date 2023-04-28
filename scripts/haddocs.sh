@@ -99,7 +99,7 @@ haddock \
   --gen-index \
   --gen-contents \
   --quickjump \
-  --prolog ./scripts/prolog \
+  --prolog ./scripts/prologue \
   $(interface_options)
 
 # Assemble a toplevel `doc-index.json` from package level ones.

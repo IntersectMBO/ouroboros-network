@@ -1,0 +1,81 @@
+= Ouroboros-Network Repository Hackage Documentation
+
+[skip to module list](#module-list)
+
+This site contains Haskell documentation of __Ouroboros-Network__
+- networking component of the Haskell implementation of Ouroboros protocols.
+
+== Packages
+
+* __ouroboros-network-api__ - API shared by __ouroboros-network__ packages and
+    __ouroboros-consensus__, e.g. common types, APIs that are provided by the
+    consensus layar. Among others, it includes:
+
+     * /Block chain related data structures that the networking code needs
+       to be aware of:/
+
+          * __[Block](ouroboros-network-api/Ouroboros-Network-Block.html)__
+          * __[AnchoredFragment](ouroboros-network-api/Ouroboros-Network-AnchoredFragment.html)__
+
+
+* __ouroboros-network-framework__ - our instantiations and implementation
+  of servers, clients, abstractions for working with named pipes and unix
+  sockets.  These are higher level components, which don't dependent on
+  ouroboros protocols, but build a solid foundation for the networking
+  library.  Among others, it includes
+        * __[Inbound Governor](ouroboros-network-framework/Ouroboros-Network-InboundGovernor.html)__
+        * __[Server P2P](ouroboros-network-framework/Ouroboros-Network-Server2.html)__
+        * __[Server NonP2P](ouroboros-network-framework/Ouroboros-Network-Server-Socket.html)__
+        * __[Socket](ouroboros-network-framework/Ouroboros-Network-Socket.html)__
+        * __[Snocket](ouroboros-network-framework/Ouroboros-Network-Snocket.html)__
+        * __[Simulated Snocket](ouroboros-network-framework/Simulation-Network-Snocket.html)__
+
+* __ouroboros-network-protocols__ - /Implementations, type level
+  specifications, and APIs of all the protocols:/
+
+        * __[ChainSync](ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Type.html)__
+        * __[BlockFetch](ouroboros-network-protocols/Ouroboros-Network-Protocol-BlockFetch-Type.html)__
+        * __[TxSubmission2](ouroboros-network-protocols/Ouroboros-Network-Protocol-TxSubmission2-Type.html)__
+        * __[LocalTxSubmission](ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html)__
+        * __[LocalStateQuery](ouroboros-network-protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type.html)__
+        * __[LocalTxMonitor](ouroboros-network-potocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html)__
+
+    Note @Handshake@ mini-protocol is implemented in @ourboros-network-framework@:
+        * __[Handshake](ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html)__
+
+* __ouroboros-network__ - networking library which supports /Ouroboros family
+    of protocols/. It includes:
+
+     * /Network applications:/
+
+          * __[Block Fetch Application](ouroboros-network/Ouroboros-Network-BlockFetch.html)__
+          * __Tx Submission Applications__:
+
+              * __[inbound](ouroboros-network/Ouroboros-Network-TxSubmission-Inbound.html)__
+              * __[outbound](ouroboros-network/Ouroboros-Network-TxSubmission-Outbound.html)__
+  
+    * /APIs:/
+
+          * __[Data Diffusion](ouroboros-network/Ouroboros-Network-Diffusion.html)__ which combines all the pieces for supporting
+            a [node](https://github.com://input-output-hk/cardano-node)
+          * __[NodeToNode API](ouroboros-network/Ouroboros-Network-NodeToNode.html)__
+          * __[NodeToClient API](ouroboros-network/Ouroboros-Network-NodeToClient.html)__
+
+    * __[Peer Selection](ouroboros-network/Ouroboros-Network-PeerSelection-Governor.html)__ (aka outbound governor)
+
+* __cardano-client__ - a library which supports subscription mechanism via
+    @node-to-client@ protocol
+
+* __network-mux__ - an implementation of a network multiplexer.
+
+* __ntp-client__ - an implementation of an NTP client.
+
+* __cardano-ping__ - a library which implements a ping over @node-to-node@
+  and @node-to-client@ protocols.  Used by @cardano-cli ping@ command.
+
+* __ouroboros-network-mock__ - a mock chain, used for testing.
+
+* __ouroboros-network-testing__ - helpful functions for testing purposes.
+
+* __monoidal-synchronisation__ - synchronisation primitives (first to finish,
+    last to finish)

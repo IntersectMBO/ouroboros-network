@@ -6,6 +6,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 -- 'withInitiatorMode' has @HasInitiator muxMode ~ True@ constraint, which is
 -- not redundant at all!  It limits case analysis.

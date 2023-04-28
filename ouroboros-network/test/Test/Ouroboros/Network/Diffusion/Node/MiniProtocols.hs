@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeOperators       #-}
 
 -- orphaned 'ShowProxy PingPong' instance.
 {-# OPTIONS_GHC -Wno-orphans #-}

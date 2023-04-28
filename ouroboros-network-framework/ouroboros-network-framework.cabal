@@ -67,7 +67,7 @@ library
                        Simulation.Network.Snocket
 
   -- other-extensions:
-  build-depends:       base            >=4.12  && <4.17
+  build-depends:       base            >=4.12  && <4.19
                      , async           >=2.1   && <2.3
                      , bytestring      >=0.10  && <0.12
                      , cborg           >=0.2.1 && <0.3
@@ -125,7 +125,7 @@ library testlib
 
     other-modules:
 
-    build-depends:   base              >=4.14 && <4.17
+    build-depends:   base              >=4.14 && <4.19
                    , containers
 
                    , QuickCheck
@@ -158,7 +158,7 @@ test-suite test
                        Test.Ouroboros.Network.RateLimiting
                        Test.Simulation.Network.Snocket
 
-  build-depends:       base              >=4.14 && <4.17
+  build-depends:       base              >=4.14 && <4.19
                      , bytestring
                      , cborg
                      , containers
@@ -216,7 +216,7 @@ test-suite test
 executable demo-ping-pong
   hs-source-dirs:      demo test
   main-is:             ping-pong.hs
-  build-depends:       base >=4.14 && <4.17,
+  build-depends:       base >=4.14 && <4.19,
                        async,
                        bytestring,
                        directory,
@@ -243,7 +243,7 @@ executable demo-ping-pong
 executable demo-connection-manager
   hs-source-dirs:      demo test
   main-is:             connection-manager.hs
-  build-depends:       base >=4.14 && <4.17,
+  build-depends:       base >=4.14 && <4.19,
                        bytestring,
                        network,
                        optparse-applicative,

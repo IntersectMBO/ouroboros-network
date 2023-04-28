@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeOperators  #-}
 
 -- 'withInitiatorMode' and 'withResponderMode' are using redundant constraints.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}

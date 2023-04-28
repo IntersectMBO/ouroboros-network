@@ -124,6 +124,12 @@ prop_producer_sync2 (TestBlockChainAndUpdates chain0 us0) choices =
      in consumer == producerChain producer
   where
     -- apply update to producer
+    go :: Int
+       -> ChainProducerState Block
+       -> Chain Block
+       -> [Bool]
+       -> [ChainUpdate Block Block]
+       -> (ChainProducerState Block, Chain Block)
     go rid p c (False:bs) (u:us) =
       let Just p' = applyChainUpdate u p
        in go rid p' c bs us
