@@ -1,8 +1,42 @@
-# Ouroboros-Network
+# [Ouroboros-Network][ouroboros-network]
+
+[![Haskell CI](https://img.shields.io/github/actions/workflow/status/input-output-hk/ouroboros-network/build.yml?branch=master&label=Build&style=for-the-badge)](https://github.com/input-output-hk/ouroboros-network/actions/workflows/build.yml)
+[![Haddocks](https://img.shields.io/github/actions/workflow/status/input-output-hk/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://github.com/input-output-hk/ouroboros-network/actions/workflows/github-page.yml)
+[![handbook](https://img.shields.io/badge/policy-Cardano%20Engineering%20Handbook-informational?style=for-the-badge)](https://input-output-hk.github.io/cardano-engineering-handbook)
 
 This repository contains the core components of the network code for the Cardano
 node. It is a dependency when building the node from the cardano-node
 repository.
+
+The following graph shows the dependency tree.  The top level package is
+`ouroboros-consensus-diffusion` which is part of [ouroboros-consensus]
+
+```mermaid
+  flowchart TD
+    A[network-mux]                   --> B[network / Win32-network]
+    M[cardano-ping]                  --> A
+    D[ouroboros-network-framework]   --> A
+    D                                --> E[ouroboros-network-api]
+    E                                --> H[typed-protocols]
+    G                                --> H[typed-protocols]
+    G                                --> E
+    F[ouroboros-network]             --> D
+    F                                --> G[ouroboros-network-protocols]
+    I[ouroboros-consensus-diffusion] --> F
+    J[cardano-client]                --> F
+    K[ntp-client]                    --> B
+
+   click A "https://input-output-hk.github.io/ouroboros-network/network-mux/" _blank
+   click M "https://input-output-hk.github.io/ouroboros-network/cardano-ping/" _blank
+   click D "https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/" _blank
+   click E "https://input-output-hk.github.io/ouroboros-network/ouroboros-network-api/" _blank
+   click F "https://input-output-hk.github.io/ouroboros-network/ouroboros-network/" _blank
+   click G "https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/" _blank
+   click I "https://github.com/input-output-hk/ouroboros-consensus/" _blank
+   click J "https://input-output-hk.github.io/ouroboros-network/cardano-client/" _blank
+   click K "https://input-output-hk.github.io/ouroboros-network/ntp-client/" _blank
+   click H "https://github.com/input-output-hk/typed-protocols/" _blank
+```
 
 * `network-mux` - implementation of a general network multiplexer.
 * `ouroboros-network-api` - shared API between `network` and `consensus` components.
@@ -17,6 +51,10 @@ repository.
   of outbound governor.
 * `ouroboros-network-mock` & `ouroboros-network-testing` - shared testing code.
 * `ntp-client` - an `ntp` client (used by `cardano-wallet`).
+* `cardano-ping` - a library which implements the core functionality of
+  `cardano-cli ping` command.
+* `cardano-client` - a subscription for `node-to-client` which want to connect
+  to a `cardano-node`.
 
 Libraries:
 
@@ -42,7 +80,7 @@ the Cardano Shelley implementation:
   technical specifications of mini-protocols used by either _node-to-node_ and
   _node-to-client_ flavours of the protocol.
 
-* [Haddock documentation](https://input-output-hk.github.io/ouroboros-network/)
+* [Haddock documentation][ouroboros-network]
 
 - [Official Cardano Documentation](https://docs.cardano.org/en/latest/)
 
@@ -53,7 +91,7 @@ the Cardano Shelley implementation:
 
 The API consists of three layers:
 
-• mini-protocol api's, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol` (defined in `ouroboros-network-protocols` package); this hides heavy type machinery of session types.  One only needs the typed `Peer` type  when one is using `runPeer` or `runPeerPipelined` function and each protocol exposes a function to create it (e.g. `Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer`)
+• mini-protocol API's, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol` (defined in `ouroboros-network-protocols` package); this hides heavy type machinery of session types.  One only needs the typed `Peer` type  when one is using `runPeer` or `runPeerPipelined` function and each protocol exposes a function to create it (e.g. `Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer`)
 
 • callback `ptcl -> channel -> m ()` where `ptcl` is enumeration for each mini-protocol, this is either `NodeToNodeProtocols` or `NodeToClientProtocols`.  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator / responder (or client / server) callbacks.
 
@@ -78,3 +116,6 @@ cabal run <DEMO_NAME> --
 After `--` you will need to pass arguments, when a demo is run without
 arguments it will specify what arguments it needs.
 </details>
+
+[ouroboros-consensus]: https://github.com/input-output-hk/ouroboros-consensus
+[ouroboros-network]: https://input-output-hk.github.io/ouroboros-network
