@@ -4,6 +4,36 @@ This repository contains the core components of the network code for the Cardano
 node. It is a dependency when building the node from the cardano-node
 repository.
 
+The following graph shows the dependency tree.  The top level package is
+`ouroboros-consensus-diffusion` which is part of [ouroboros-consensus]
+
+```mermaid
+  flowchart TD
+    A[network-mux]                   --> B[network / Win32-network]
+    M[cardano-ping]                  --> A
+    D[ouroboros-network-framework]   --> A
+    D                                --> E[ouroboros-network-api]
+    E                                --> H[typed-protocols]
+    G                                --> H[typed-protocols]
+    G                                --> E
+    F[ouroboros-network]             --> D
+    F                                --> G[ouroboros-network-protocols]
+    I[ouroboros-consensus-diffusion] --> F
+    J[cardano-client]                --> F
+    K[ntp-client]                    --> B
+
+   click A "https://input-output-hk.github.io/ouroboros-network/network-mux/" _blank
+   click M "https://input-output-hk.github.io/ouroboros-network/cardano-ping/" _blank
+   click D "https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/" _blank
+   click E "https://input-output-hk.github.io/ouroboros-network/ouroboros-network-api/" _blank
+   click F "https://input-output-hk.github.io/ouroboros-network/ouroboros-network/" _blank
+   click G "https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/" _blank
+   click I "https://github.com/input-output-hk/ouroboros-consensus/" _blank
+   click J "https://input-output-hk.github.io/ouroboros-network/cardano-client/" _blank
+   click K "https://input-output-hk.github.io/ouroboros-network/ntp-client/" _blank
+   click H "https://github.com/input-output-hk/typed-protocols/" _blank
+```
+
 * `network-mux` - implementation of a general network multiplexer.
 * `ouroboros-network-api` - shared API between `network` and `consensus` components.
 * `ouroboros-network-framework` - low level network components, e.g. snockets,
@@ -78,3 +108,5 @@ cabal run <DEMO_NAME> --
 After `--` you will need to pass arguments, when a demo is run without
 arguments it will specify what arguments it needs.
 </details>
+
+[ouroboros-consensus]: https://github.com/input-output-hk/ouroboros-consensus
