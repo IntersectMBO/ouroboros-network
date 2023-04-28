@@ -1,5 +1,15 @@
 # Revision history for monoidal-synchronisation
 
+## 0.1.0.3
+
+### Non-breaking changes
+
+* Use `io-classes-1.1`
+
+### Non-breaking changes
+
+* `ghc-9.4` and `ghc-9.6` compatibility.
+
 ## 0.1.0.2
 
 * Version compatible with `ghc-9.2`
