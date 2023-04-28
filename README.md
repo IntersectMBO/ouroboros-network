@@ -51,6 +51,10 @@ The following graph shows the dependency tree.  The top level package is
   of outbound governor.
 * `ouroboros-network-mock` & `ouroboros-network-testing` - shared testing code.
 * `ntp-client` - an `ntp` client (used by `cardano-wallet`).
+* `cardano-ping` - a library which implements the core functionality of
+  `cardano-cli ping` command.
+* `cardano-client` - a subscription for `node-to-client` which want to connect
+  to a `cardano-node`.
 
 Libraries:
 
@@ -87,7 +91,7 @@ the Cardano Shelley implementation:
 
 The API consists of three layers:
 
-• mini-protocol api's, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol` (defined in `ouroboros-network-protocols` package); this hides heavy type machinery of session types.  One only needs the typed `Peer` type  when one is using `runPeer` or `runPeerPipelined` function and each protocol exposes a function to create it (e.g. `Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer`)
+• mini-protocol API's, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol` (defined in `ouroboros-network-protocols` package); this hides heavy type machinery of session types.  One only needs the typed `Peer` type  when one is using `runPeer` or `runPeerPipelined` function and each protocol exposes a function to create it (e.g. `Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer`)
 
 • callback `ptcl -> channel -> m ()` where `ptcl` is enumeration for each mini-protocol, this is either `NodeToNodeProtocols` or `NodeToClientProtocols`.  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator / responder (or client / server) callbacks.
 
