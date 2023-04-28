@@ -1,6 +1,14 @@
 # Revision history for ouroboros-network
 
-## next version
+## 0.6.0.0
+
+### Breaking changes
+
+* Use `io-classes-1.1`.
+
+### Non-breaking changes
+
+* `ghc-9.4` and `ghc-9.6` compatiblity.
 
 ## 0.5.0.0 -- 2023-04-19
 

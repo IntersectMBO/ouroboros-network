@@ -1,5 +1,10 @@
 # Revision history for ouroboros-network-api
 
+## 0.3.0.0 -- 2023-04-28
+
+* Removed `encoddedTipSize` and `encodedPointSize`.
+* `HeaderHash` is kind polymorphic.
+
 ## 0.2.0.0 -- 2023-04-19
 
 ### Breaking

@@ -1,11 +1,13 @@
 # Revision history for mux
 
-## Next version
+## 0.4.0.0 -- 2023-04-28
 
 ### Breaking
 
-* Renamed `MuxTraceShutdown` as `MuxTraceStopping`
+* Use `io-classes-1.1`.
+* Renamed `MuxTraceShutdown` as `MuxTraceStopping`.
 * Fixed a typo now the mux stopping exception carries message: `Mux stopping`.
+
 
 ## 0.3.0.0 -- 2023-01-25
 
