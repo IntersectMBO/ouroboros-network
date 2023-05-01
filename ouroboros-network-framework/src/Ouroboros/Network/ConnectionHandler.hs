@@ -178,6 +178,7 @@ makeConnectionHandler
     :: forall peerAddr muxMode socket versionNumber versionData m a b.
        ( Alternative (STM m)
        , MonadAsync m
+       , MonadDelay m
        , MonadFork  m
        , MonadLabelledSTM m
        , MonadThrow (STM m)
