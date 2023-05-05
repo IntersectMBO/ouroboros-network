@@ -25,7 +25,7 @@ import           Data.Typeable (Typeable)
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (AssertionFailed (..), throw)
-import           Control.Monad (unless)
+import           Control.Monad (unless, void)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadThrow
@@ -67,8 +67,8 @@ tests = testGroup "BlockFetch"
   , testProperty "static chains with overlap"
                  prop_blockFetchStaticWithOverlap
 
-  --, testCaseSteps "bracketSyncWithFetchClient"
-  --                unit_bracketSyncWithFetchClient
+  , testCaseSteps "bracketSyncWithFetchClient"
+                  unit_bracketSyncWithFetchClient
 
   --TODO: test where for any given delta-Q, check that we do achieve full
   -- pipelining to keep the server busy and get decent enough batching of
@@ -515,56 +515,150 @@ tracePropertyInFlight =
 -- Unit tests
 --
 
-_unit_bracketSyncWithFetchClient :: (String -> IO ()) -> Assertion
-_unit_bracketSyncWithFetchClient step = do
+unit_bracketSyncWithFetchClient :: (String -> IO ()) -> Assertion
+unit_bracketSyncWithFetchClient step = do
 
     step "Starting fetch before sync"
-    checkResult =<< testSkeleton
-      (\action -> threadDelay 0.1 >> action (threadDelay 0.2))
-      (\action -> threadDelay 0.2 >> action (threadDelay 0.2))
+
+    checkResultA =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> threadDelay 0.1 >> action (threadDelay 0.2))
+                            (\action -> threadDelay 0.2 >> action (threadDelay 0.2))
+                            (\action -> threadDelay 0.1 >> action (threadDelay 1.1))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
+
+    step "Start and kill fetch before sync"
+    checkResultB =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> action (threadDelay 3))
+                            (\_action -> threadDelay 3)
+                            (\action -> threadDelay 0.1 >> action (threadDelay 1.1))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
 
     step "Starting sync before fetch"
-    checkResult =<< testSkeleton
-      (\action -> threadDelay 0.2 >> action (threadDelay 0.2))
-      (\action -> threadDelay 0.1 >> action (threadDelay 0.2))
+    checkResultA =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> threadDelay 0.2 >> action (threadDelay 0.2))
+                            (\action -> threadDelay 0.1 >> action (threadDelay 0.2))
+                            (\action -> threadDelay 0.1 >> action (threadDelay 0.5))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
 
     step "Stopping fetch before sync"
-    checkResult =<< testSkeleton
-      (\action -> action (threadDelay 0.1))
-      (\action -> action (threadDelay 0.2))
+    checkResultC =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> action (threadDelay 0.1))
+                            (\action -> action (threadDelay 60))
+                            (\action -> threadDelay 0.1 >> action (threadDelay 1))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
 
     step "Stopping sync before fetch"
-    checkResult =<< testSkeleton
-      (\action -> action (threadDelay 0.2))
-      (\action -> action (threadDelay 0.1))
+    checkResultD =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> action (threadDelay 1.0))
+                            (\action -> action (threadDelay 0.1))
+                            (\action -> threadDelay 0 >> action (threadDelay 1.5))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
 
     step "Exception in fetch"
-    Left (Left _) <- testSkeleton
-      (\action -> action (threadDelay 0.1 >> throwIO AsyncCancelled))
-      (\action -> action (threadDelay 0.2))
+    checkResultB =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> action (threadDelay 0.1 >> throwIO AsyncCancelled))
+                            (\action -> action (threadDelay 0.2))
+                            (\action -> threadDelay 0.1 >> action (threadDelay 0.3))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
 
     step "Exception in sync"
-    Right (Left _) <- testSkeleton
-      (\action -> action (threadDelay 0.2))
-      (\action -> action (threadDelay 0.1 >> throwIO AsyncCancelled))
+    checkResultC =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> action (threadDelay 0.2))
+                            (\action -> action (threadDelay 0.1 >> throwIO AsyncCancelled))
+                            (\action -> threadDelay 0.1 >> action (threadDelay 0.3))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
+
+    step "Exception in keepalive"
+    checkResultE =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> action (threadDelay 0.2))
+                            (\action -> action (threadDelay 0.2))
+                            (\action -> action (threadDelay 0.1 >> throwIO AsyncCancelled))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
+
+
+    step "Keep alive kills fetch"
+    checkResultE =<< case runSimStrictShutdown (testSkeleton
+                            (\action -> threadDelay 0.1 >> action (threadDelay 60))
+                            (\action -> threadDelay 0.1 >> action (threadDelay 60))
+                            (\action -> threadDelay 0.1 >> action (threadDelay 1.3))) of
+                          Left e  -> error $ "sim failed with " <> show e
+                          Right r -> return r
+
+    step "Deadlock without keep alive"
+    case runSimStrictShutdown (testSkeleton
+           (\action -> threadDelay 0.1 >> action (threadDelay 60))
+           (\action -> threadDelay 0.1 >> action (threadDelay 60))
+           (\_action -> threadDelay 3.1 )) of
+         Left (FailureDeadlock _) -> return ()
+         Left e                   -> error $ "sim failed with " <> show e
+         Right _                  -> error "unexpected success"
+
+    step "Deadlock without fetch"
+    case runSimStrictShutdown (testSkeleton
+           (\_action -> threadDelay 3)
+           (\action -> threadDelay 0.1 >> action (threadDelay 60))
+           (\action -> threadDelay 0.1 >> action (threadDelay 1.3))) of
+         Left (FailureDeadlock _) -> return ()
+         Left e                   -> error $ "sim failed with " <> show e
+         Right _                  -> error "unexpected success"
+
 
     return ()
 
   where
-    checkResult (Left  (Right _)) = return ()
-    checkResult (Right (Right _)) = return ()
-    checkResult _                 = assertFailure "unexpected result"
+    dummyPolicy :: forall b h m. (MonadSTM m) => STM m (FetchClientPolicy h b m)
+    dummyPolicy =
+      let addFetchedBlock _ _ = return ()
+          forgeTime _ = return (read "2000-01-01 00:00:00 UTC")
+          bfSize _ = 1024
+          matchesHeader _ _ = True in
+      pure $ FetchClientPolicy
+          bfSize
+          matchesHeader
+          addFetchedBlock
+          forgeTime
 
-    testSkeleton :: forall m a b.
+
+    -- Fetch success
+    checkResultA (Right _, _) = return ()
+    checkResultA (Left e, _)  = assertFailure $ "unexpected fetch failure " ++ show e
+
+    -- Fetch Failure
+    checkResultB (Right _, _) = assertFailure "unexpected fetch success"
+    checkResultB (Left _, _)  = return ()
+
+    -- Fetch success and Sync failure
+    checkResultC (Right _, Left _)  = return ()
+    checkResultC (Right _, Right _) = assertFailure "unexpected sync success"
+    checkResultC (Left e, _)        = assertFailure $ "unexpected fetch failure " ++ show e
+
+    -- Fetch and Sync sucess
+    checkResultD (Right _, Right _) = return ()
+    checkResultD (Left e, _)        = assertFailure $ "unexpected fetch failure " ++ show e
+    checkResultD (Right _, Left e)  = assertFailure $ "unexpected sync failure " ++ show e
+
+    -- Fetch and Sync failure
+    checkResultE (Left _, Left _) = return ()
+    checkResultE _                = assertFailure "unexpected success"
+
+    testSkeleton :: forall m a b d.
                     (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
-                     MonadSTM m, MonadTimer m, MonadThrow m, MonadThrow (STM m))
+                     MonadSTM m, MonadThrow m, MonadThrow (STM m))
                  => ((forall c. m c -> m c) -> m a)
                  -> ((forall c. m c -> m c) -> m b)
-                 -> m (Either (Either SomeException a)
-                              (Either SomeException b))
-    testSkeleton withFetchTestAction withSyncTestAction = do
+                 -> ((forall c. m c -> m c) -> m d)
+                 -> m (Either SomeException a, Either SomeException b)
+    testSkeleton withFetchTestAction withSyncTestAction withKeepAliveTestAction = do
       registry <- newFetchClientRegistry
-      setFetchClientContext registry nullTracer (error "no policy")
+      setFetchClientContext registry nullTracer (const dummyPolicy)
 
       fetchStatePeerChainsVar <- newTVarIO Map.empty
 
@@ -584,6 +678,10 @@ _unit_bracketSyncWithFetchClient step = do
                                                 (Map.delete peer)))
                         body
 
+          keep :: m d
+          keep  = withKeepAliveTestAction $ \body ->
+                    bracketKeepAliveClient registry peer $ const body
+
           logic :: (Map String (PeerFetchStatus BlockHeader), Map String ())
                 -> m ()
           logic fingerprint = do
@@ -601,24 +699,38 @@ _unit_bracketSyncWithFetchClient step = do
 
             logic fingerprint'
 
-      withAsync     fetch $ \fetchAsync ->
-        withAsync   sync  $ \syncAsync  ->
-          withAsync (logic (Map.empty, Map.empty)) $ \logicAsync -> do
-            res <- atomically $ do
-              res <- pollSTM logicAsync
-              case res of
-                Nothing         -> waitEitherCatchSTM fetchAsync syncAsync
-                Just (Left  e)  -> throwIO e
-                Just (Right ()) -> error "impossible"
+      withAsync     keep  $ \keepAsync  ->
+        withAsync   fetch $ \fetchAsync ->
+          withAsync sync  $ \syncAsync  ->
+            withAsync (logic (Map.empty, Map.empty)) $ \logicAsync -> do
+              void $ atomically $ do
+                res <- pollSTM logicAsync
+                case res of
+                  Nothing         -> waitEitherCatchSTM fetchAsync syncAsync
+                  Just (Left  e)  -> throwIO e
+                  Just (Right ()) -> error "impossible"
 
-            threadDelay 0.1
-            -- give the logic thread a chance to detect any final problems
-            atomically $ do
-              x <- pollSTM logicAsync
-              case x of
-                Just (Left e) -> throwIO e
-                _             -> return ()
-            return res
+              threadDelay 0.1
+              -- give the logic thread a chance to detect any final problems
+              atomically $ do
+                x <- pollSTM logicAsync
+                case x of
+                  Just (Left e) -> throwIO e
+                  _             -> return ()
+
+              fetchRes <- waitCatch fetchAsync
+              syncRes  <- waitCatch syncAsync
+              void $ waitCatch keepAsync
+              atomically $ do
+                fr <- readTVar $ fcrFetchRegistry registry
+                sr <- readTVar $ fcrSyncRegistry  registry
+                dr <- readTVar $ fcrDqRegistry    registry
+                kr <- readTVar $ fcrKeepRegistry  registry
+                yr <- readTVar $ fcrDying         registry
+                if and [Map.null fr, Map.null sr, Map.null dr, Map.null kr, Set.null yr]
+                   then return ()
+                   else error "state leak"
+              return (fetchRes, syncRes)
 
 -- | Check that the client can terminate using `ControlMessage` mechanism.
 --
