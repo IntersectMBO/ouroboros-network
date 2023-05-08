@@ -29,19 +29,19 @@ jobs:
       # we need the LD_LIBRARY_PATH env var here because we ended up installing libsecp256k1 into /usr/local,
       # pkg-config, *does* return the proper location, but the library does not appear to be properly referenced.
       # FIXME: this is arguably a bug, and pkg-config should return the right values!
-      LD_LIBRARY_PATH: ${{ (matrix.os != 'windows-latest' && '/usr/local/lib') || '' }}
+      LD_LIBRARY_PATH: '/usr/local/lib'
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-    - uses: actions/checkout@v3
-
-    - uses: cachix/install-nix-action@v20
-
-    - name: Select build directory
-      run: |
-        CABAL_BUILDDIR="dist-newstyle"
-
-        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR"
-        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
+    - name: Checkout ouroboros-network repository
+      uses: actions/checkout@v3
 
     - name: Configure to use libsodium
       run: |
@@ -50,25 +50,17 @@ jobs:
           flags: -external-libsodium-vrf
         EOF
 
-    - name: Workaround runner image issue
-      # https://github.com/actions/runner-images/issues/7061
-      run: sudo chown -R $USER /usr/local/.ghcup
-
     - name: Install Haskell
       uses: haskell/actions/setup@v2
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: '3.6.2.0'
+        cabal-version: '3.10.1.0'
 
     - name: Install build environment
-      if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get -y install libsodium23 libsodium-dev
-        sudo apt-get -y install libsystemd0 libsystemd-dev
-        sudo apt-get -y remove --purge software-properties-common
-        sudo apt-get -y autoremove
+        sudo apt-get -y install libsodium-dev
 
     - name: Install secp256k1
       uses: input-output-hk/setup-secp256k1@v1
@@ -89,20 +81,12 @@ jobs:
         restore-keys: cache-haddock-${{ runner.os }}-${{ matrix.ghc }}-v1-${{ hashFiles('cabal-cache.cabal') }}-
 
     - name: Update Hackage index
-      run: cabal v2-update
+      run: cabal update
 
-    - name: Checkout ouroboros-network repository
-      uses: actions/checkout@v3
+    - name: Build plan
+      run: cabal --builddir="$CABAL_BUILDDIR" build --dry-run --enable-tests all
 
-    - name: Build dependencies
-      run: cabal --builddir="$CABAL_BUILDDIR" configure --enable-tests
-
-    - name: Use cabal.project.local.github-pages
-      run: |
-        cat ./cabal.project.local.github-pages >> ./cabal.project.local
-        cat ./cabal.project.local
-
-    - name: build Haddock documentation 🔧
+    - name: Build Haddock documentation 🔧
       run: |
         mkdir ./haddocks
         ./scripts/haddocs.sh ./haddocks
@@ -121,14 +105,11 @@ jobs:
           done
         done
 
-    - name: deploy to gh-pages 🚀
-      run: |
-        git config --local user.email "marcin.szamotulski@iohk.io"
-        git config --local user.name ${{ github.actor }}
-        git fetch origin gh-pages:gh-pages
-        git checkout gh-pages
-        cp -r ./haddocks/* ./
-        rm -rf haddocks
-        git add -A
-        git commit -m "Deployed haddocks" || true
-        git push https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git HEAD:gh-pages
+    - name: Upload artifacts
+      uses: actions/upload-pages-artifact@v1
+      with:
+        path: ./haddocks
+
+    - name: Deploy 🚀
+      id: deployment
+      uses: actions/deploy-pages@v2
