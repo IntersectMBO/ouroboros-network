@@ -1256,7 +1256,8 @@ withConnectionManager ConnectionManagerArguments {
                                        (NewConnectionInfo Inbound connId dataFlow handle)
                       NotInResponderMode -> return ()
                     case (dataFlow, outboundGovernorInfoChannel) of
-                      (Duplex, InResponderMode infoChannel) ->
+                      (Duplex, InResponderMode infoChannel) -> do
+                        traceWith tracer TrWrittenToOutboundGovernorChannel
                         atomically $ InfoChannel.writeMessage
                                        infoChannel
                                        (peerAddr, cmGetPeerSharing versionData)

@@ -851,6 +851,7 @@ data ConnectionManagerTrace peerAddr handlerTrace
   | TrState                        (Map peerAddr AbstractState)
   -- ^ traced on SIGUSR1 signal, installed in 'runDataDiffusion'
   | TrUnexpectedlyFalseAssertion   (AssertionLocation peerAddr)
+  | TrWrittenToOutboundGovernorChannel
   -- ^ This case is unexpected at call site.
   deriving Show
 
