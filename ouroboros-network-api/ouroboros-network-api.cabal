@@ -31,7 +31,9 @@ library
 
                        Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.ControlMessage
+                       Ouroboros.Network.Handshake
                        Ouroboros.Network.Handshake.Acceptable
+                       Ouroboros.Network.Handshake.Queryable
                        Ouroboros.Network.Magic
                        Ouroboros.Network.NodeToClient.Version
                        Ouroboros.Network.NodeToNode.Version

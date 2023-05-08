@@ -6,26 +6,44 @@ handshakeMessage
     = msgProposeVersions
     / msgAcceptVersion
     / msgRefuse
+    / msgQueryReply
 
 msgProposeVersions = [0, versionTable]
-msgAcceptVersion   = [1, versionNumber, nodeToClientVersionData]
+msgAcceptVersion   = [1, oldVersionNumber, oldNodeToClientVersionData]
+                   / [1, versionNumber, nodeToClientVersionData]
 msgRefuse          = [2, refuseReason]
+msgQueryReply      = [3, versionTable]
 
-versionTable = { * versionNumber => nodeToClientVersionData }
+; Entries must be sorted by version number. For testing, this is handled in `handshakeFix`.
+versionTable = { * oldVersionNumber => oldNodeToClientVersionData
+               , *    versionNumber =>    nodeToClientVersionData
+               }
+
+
+; Version 15 introduces the version query flag
+; as of version 2 (which is no longer supported) we set 15th bit to 1
+;               15
+versionNumber = 32783
 
 ; as of version 2 (which is no longer supported) we set 15th bit to 1
-;               9     / 10    / 11    / 12    / 13    / 14    / 15
-versionNumber = 32777 / 32778 / 32779 / 32780 / 32781 / 32782 / 32783
+;                  9     / 10    / 11    / 12    / 13    / 14
+oldVersionNumber = 32777 / 32778 / 32779 / 32780 / 32781 / 32782
 
-nodeToClientVersionData = networkMagic
+anyVersionNumber = versionNumber / oldVersionNumber
+
+; As of version 15
+nodeToClientVersionData = [networkMagic, query]
+
+oldNodeToClientVersionData = networkMagic
 
 networkMagic = uint
+query        = bool
 
 refuseReason
     = refuseReasonVersionMismatch
     / refuseReasonHandshakeDecodeError
     / refuseReasonRefused
 
-refuseReasonVersionMismatch      = [0, [ *versionNumber ] ]
-refuseReasonHandshakeDecodeError = [1, versionNumber, tstr]
-refuseReasonRefused              = [2, versionNumber, tstr]
+refuseReasonVersionMismatch      = [0, [ *anyVersionNumber ] ]
+refuseReasonHandshakeDecodeError = [1, anyVersionNumber, tstr]
+refuseReasonRefused              = [2, anyVersionNumber, tstr]

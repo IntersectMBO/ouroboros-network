@@ -6,22 +6,25 @@ handshakeMessage
     = msgProposeVersions
     / msgAcceptVersion
     / msgRefuse
+    / msgQueryReply
 
 msgProposeVersions = [0, versionTable]
 msgAcceptVersion   = [1, versionNumber, nodeToNodeVersionData]
 msgRefuse          = [2, refuseReason]
+msgQueryReply      = [3, versionTable]
 
 versionTable = { * versionNumber => nodeToNodeVersionData }
 
 versionNumber = 11
 
-nodeToNodeVersionData = [ networkMagic, initiatorAndResponderDiffusionMode, peerSharing ]
+nodeToNodeVersionData = [ networkMagic, initiatorAndResponderDiffusionMode, peerSharing, query ]
 
 ; range between 0 and 0xffffffff
 networkMagic = 0..4294967295
 initiatorAndResponderDiffusionMode = bool
 ; range between 0 and 2
 peerSharing = 0..2
+query = bool
 
 refuseReason
     = refuseReasonVersionMismatch

@@ -10,7 +10,8 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse)
+import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse,
+                     decodeQueryResult, encodeVersions)
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -24,18 +25,26 @@ handshakeServerPeer
      )
   => VersionDataCodec CBOR.Term vNumber vData
   -> (vData -> vData -> Accept vData)
+  -> (vData -> Bool)
   -> Versions vNumber vData r
   -> Peer (Handshake vNumber CBOR.Term)
           AsServer StPropose m
-          (Either (HandshakeProtocolError vNumber) (r, vNumber, vData))
-handshakeServerPeer codec@VersionDataCodec {encodeData} acceptVersion versions =
+          (Either
+            (HandshakeProtocolError vNumber)
+            (HandshakeResult r vNumber vData))
+handshakeServerPeer codec@VersionDataCodec {encodeData, decodeData} acceptVersion query versions =
     Await (ClientAgency TokPropose) $ \msg -> case msg of
       MsgProposeVersions vMap  ->
         case acceptOrRefuse codec acceptVersion versions vMap of
-          (Right r@(_, vNumber, agreedData)) ->
+          (Right (r, vNumber, agreedData)) ->
+            let (response, r') = if query agreedData then
+                    (MsgQueryReply $ encodeVersions encodeData versions, decodeQueryResult decodeData vMap)
+                  else
+                    (MsgAcceptVersion vNumber $ encodeData vNumber agreedData, HandshakeNegotiationResult r vNumber agreedData)
+            in
             Yield (ServerAgency TokConfirm)
-                  (MsgAcceptVersion vNumber (encodeData vNumber agreedData))
-                  (Done TokDone (Right r))
+                  response
+                  (Done TokDone (Right r'))
           (Left vReason) ->
             Yield (ServerAgency TokConfirm)
                   (MsgRefuse vReason)

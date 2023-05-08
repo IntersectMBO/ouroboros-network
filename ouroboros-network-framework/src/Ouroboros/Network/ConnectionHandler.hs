@@ -47,6 +47,8 @@ import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, contramap, traceWith)
 
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Map (Map)
+import           Data.Text (Text)
 import           Data.Typeable (Typeable)
 
 import           Network.Mux hiding (miniProtocolNum)
@@ -176,6 +178,7 @@ makeConnectionHandler
     :: forall peerAddr muxMode socket versionNumber versionData m a b.
        ( Alternative (STM m)
        , MonadAsync m
+       , MonadDelay m
        , MonadFork  m
        , MonadLabelledSTM m
        , MonadThrow (STM m)
@@ -277,7 +280,7 @@ makeConnectionHandler muxTracer singMuxMode
                 atomically $ writePromise (Left (HandleHandshakeClientError err))
                 traceWith tracer (TrHandshakeClientError err)
 
-              Right (app, versionNumber, agreedOptions) ->
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
                   traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
@@ -297,10 +300,14 @@ makeConnectionHandler muxTracer singMuxMode
                           hControlMessage = controlMessageBundle,
                           hVersionData    = agreedOptions
                         }
-                  atomically $ writePromise (Right (handle, (versionNumber, agreedOptions)))
+                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
                   runMux (WithMuxBearer connectionId `contramap` muxTracer)
                          mux bearer
+
+              Right (HandshakeQueryResult vMap) -> do
+                atomically $ writePromise (Right HandshakeConnectionQuery)
+                traceWith tracer $ TrHandshakeQuery vMap
 
 
     inboundConnectionHandler
@@ -345,7 +352,7 @@ makeConnectionHandler muxTracer singMuxMode
               Left !err -> do
                 atomically $ writePromise (Left (HandleHandshakeServerError err))
                 traceWith tracer (TrHandshakeServerError err)
-              Right (app, versionNumber, agreedOptions) ->
+              Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
                 unmask $ do
                   traceWith tracer (TrHandshakeSuccess versionNumber agreedOptions)
                   controlMessageBundle
@@ -365,10 +372,15 @@ makeConnectionHandler muxTracer singMuxMode
                           hControlMessage = controlMessageBundle,
                           hVersionData    = agreedOptions
                         }
-                  atomically $ writePromise (Right (handle, (versionNumber, agreedOptions)))
+                  atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                   bearer <- mkMuxBearer sduTimeout socket
                   runMux (WithMuxBearer connectionId `contramap` muxTracer)
                              mux bearer
+              Right (HandshakeQueryResult vMap) -> do
+                atomically $ writePromise (Right HandshakeConnectionQuery)
+                traceWith tracer $ TrHandshakeQuery vMap
+                -- Wait 20s for client to receive response, who should close the connection.
+                threadDelay 20
 
 
 
@@ -387,6 +399,7 @@ makeConnectionHandler muxTracer singMuxMode
 --
 data ConnectionHandlerTrace versionNumber versionData =
       TrHandshakeSuccess versionNumber versionData
+    | TrHandshakeQuery (Map versionNumber (Either Text versionData))
     | TrHandshakeClientError
         (HandshakeException versionNumber)
     | TrHandshakeServerError

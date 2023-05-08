@@ -16,6 +16,7 @@ import           Data.Typeable (Typeable)
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
+import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import           Ouroboros.Network.Magic
 
 
@@ -36,7 +37,8 @@ data NodeToClientVersion
     -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
     | NodeToClientV_15
     -- ^ enabled @CardanoNodeToClientVersion11@, i.e., Conway and
-    -- @GetStakeDelegDeposits@
+    -- @GetStakeDelegDeposits@.
+    --   added `query` to NodeToClientVersionData
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -80,26 +82,46 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 
 -- | Version data for NodeToClient protocol v1
 --
-newtype NodeToClientVersionData = NodeToClientVersionData
-  { networkMagic :: NetworkMagic }
+data NodeToClientVersionData = NodeToClientVersionData
+  { networkMagic :: !NetworkMagic
+  , query        :: !Bool
+  }
   deriving (Eq, Show, Typeable)
 
 instance Acceptable NodeToClientVersionData where
     acceptableVersion local remote
-      | local == remote
-      = Accept local
+      | networkMagic local == networkMagic remote
+      = Accept NodeToClientVersionData
+          { networkMagic  = networkMagic local
+          , query         = query local || query remote
+          }
       | otherwise =  Refuse $ T.pack $ "version data mismatch: "
                                     ++ show local
                                     ++ " /= " ++ show remote
 
+instance Queryable NodeToClientVersionData where
+    queryVersion = query
+
 nodeToClientCodecCBORTerm :: NodeToClientVersion -> CodecCBORTerm Text NodeToClientVersionData
-nodeToClientCodecCBORTerm _ = CodecCBORTerm {encodeTerm, decodeTerm}
+nodeToClientCodecCBORTerm v = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToClientVersionData -> CBOR.Term
-      encodeTerm NodeToClientVersionData { networkMagic } =
-        CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+      encodeTerm NodeToClientVersionData { networkMagic, query }
+        | v >= NodeToClientV_15
+        = CBOR.TList [CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
+        | otherwise
+        = CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
 
       decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
-      decodeTerm (CBOR.TInt x) | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData $ NetworkMagic $ fromIntegral x)
-                               | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
-      decodeTerm t             = Left $ T.pack $ "unknown encoding: " ++ show t
+      decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool query])
+        | v >= NodeToClientV_15
+        = decoder x query
+      decodeTerm (CBOR.TInt x)
+        | v < NodeToClientV_15
+        = decoder x False
+      decodeTerm t
+        = Left $ T.pack $ "unknown encoding: " ++ show t
+
+      decoder :: Int -> Bool -> Either Text NodeToClientVersionData
+      decoder x query | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
+                      | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x

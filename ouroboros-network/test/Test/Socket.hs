@@ -43,7 +43,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (cborTermVersionDataCodec, noTimeLimitsHandshake)
 import           Ouroboros.Network.Protocol.Handshake.Version
-                     (acceptableVersion)
+                     (acceptableVersion, queryVersion)
 import           Ouroboros.Network.Testing.Serialise
 import           Ouroboros.Network.Util.ShowProxy
 
@@ -163,13 +163,14 @@ demo chain0 updates = withIOManager $ \iocp -> do
       nodeToNodeHandshakeCodec
       noTimeLimitsHandshake
       (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
-      acceptableVersion
+      (HandshakeCallbacks acceptableVersion queryVersion)
       (simpleSingletonVersions
         NodeToNodeV_7
         (NodeToNodeVersionData {
           networkMagic  = NetworkMagic 0,
           diffusionMode = InitiatorAndResponderDiffusionMode,
-          peerSharing   = NoPeerSharing })
+          peerSharing   = NoPeerSharing,
+          query = False })
         (SomeResponderApplication responderApp))
       nullErrorPolicies
       $ \realProducerAddress _ -> do
@@ -182,13 +183,14 @@ demo chain0 updates = withIOManager $ \iocp -> do
           noTimeLimitsHandshake
           (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
           nullNetworkConnectTracers
-          acceptableVersion
+          (HandshakeCallbacks acceptableVersion queryVersion)
           (simpleSingletonVersions
             NodeToNodeV_7
             (NodeToNodeVersionData {
               networkMagic  = NetworkMagic 0,
               diffusionMode = InitiatorOnlyDiffusionMode,
-              peerSharing   = NoPeerSharing })
+              peerSharing   = NoPeerSharing,
+              query = False })
             initiatorApp)
           (Just consumerAddress)
           realProducerAddress)

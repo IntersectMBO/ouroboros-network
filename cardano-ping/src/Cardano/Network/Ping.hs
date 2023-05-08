@@ -23,6 +23,7 @@ import           Control.Exception (bracket)
 import           Control.Monad (replicateM, unless, when)
 import           Control.Concurrent.Class.MonadSTM.Strict ( MonadSTM(atomically), takeTMVar, StrictTMVar )
 import           Control.Monad.Class.MonadTime.SI (UTCTime, diffTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), Time)
+import           Control.Monad.Trans.Except
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.Aeson (Value, ToJSON(toJSON), object, encode, KeyValue((.=)))
 import           Data.Bits (clearBit, setBit, testBit)
@@ -53,6 +54,8 @@ data PingOpts = PingOpts
     -- ^ Number of messages to send to the server
   , pingOptsHost     :: Maybe String
     -- ^ The host to connect to
+  , pingOptsHandshakeQuery :: Bool
+    -- ^ Whether to send a query during the handshake to request the available protocol versions
   , pingOptsUnixSock :: Maybe String
     -- ^ The unix socket to connect to
   , pingOptsPort     :: String
@@ -80,8 +83,8 @@ nodeToClientVersionBit = 15
 data LogMsg = LogMsg ByteString
             | LogEnd
 
-logger :: StrictTMVar IO LogMsg -> Bool -> IO ()
-logger msgQueue json = go True
+logger :: StrictTMVar IO LogMsg -> Bool -> Bool -> IO ()
+logger msgQueue json query = go True
   where
     go first = do
       msg <- atomically $ takeTMVar  msgQueue
@@ -95,7 +98,7 @@ logger msgQueue json = go True
 
           LBS.Char.putStr bs'
           go False
-        LogEnd -> when json $ IO.putStrLn "] }"
+        LogEnd -> when (json && not query) $ IO.putStrLn "] }"
 
 supportedNodeToNodeVersions :: Word32 -> [NodeVersion]
 supportedNodeToNodeVersions magic =
@@ -103,6 +106,7 @@ supportedNodeToNodeVersions magic =
   , NodeToNodeVersionV8  magic False
   , NodeToNodeVersionV9  magic False
   , NodeToNodeVersionV10 magic False
+  , NodeToNodeVersionV11 magic False
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -113,6 +117,7 @@ supportedNodeToClientVersions magic =
   , NodeToClientVersionV12 magic
   , NodeToClientVersionV13 magic
   , NodeToClientVersionV14 magic
+  , NodeToClientVersionV15 magic
   ]
 
 data NodeVersion
@@ -122,6 +127,7 @@ data NodeVersion
   | NodeToClientVersionV12 Word32
   | NodeToClientVersionV13 Word32
   | NodeToClientVersionV14 Word32
+  | NodeToClientVersionV15 Word32
   | NodeToNodeVersionV1    Word32
   | NodeToNodeVersionV2    Word32
   | NodeToNodeVersionV3    Word32
@@ -132,6 +138,7 @@ data NodeVersion
   | NodeToNodeVersionV8    Word32 Bool
   | NodeToNodeVersionV9    Word32 Bool
   | NodeToNodeVersionV10   Word32 Bool
+  | NodeToNodeVersionV11   Word32 Bool
   deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
@@ -156,9 +163,9 @@ keepAliveDone _ =
       CBOR.encodeWord 2
 
 
-handshakeReqEnc :: [NodeVersion] -> CBOR.Encoding
-handshakeReqEnc [] = error "null version list"
-handshakeReqEnc versions =
+handshakeReqEnc :: [NodeVersion] -> Bool -> CBOR.Encoding
+handshakeReqEnc [] _ = error "null version list"
+handshakeReqEnc versions query =
       CBOR.encodeListLen 2
   <>  CBOR.encodeWord 0
   <>  CBOR.encodeMapLen (fromIntegral $ L.length versions)
@@ -185,6 +192,9 @@ handshakeReqEnc versions =
     encodeVersion (NodeToClientVersionV14 magic) =
           CBOR.encodeWord (14 `setBit` nodeToClientVersionBit)
       <>  CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV15 magic) =
+          CBOR.encodeWord (15 `setBit` nodeToClientVersionBit)
+      <>  nodeToClientDataWithQuery magic
     encodeVersion (NodeToNodeVersionV1 magic) =
           CBOR.encodeWord 1
       <>  CBOR.encodeInt (fromIntegral magic)
@@ -201,7 +211,13 @@ handshakeReqEnc versions =
     encodeVersion (NodeToNodeVersionV8  magic mode) = encodeWithMode 8  magic mode
     encodeVersion (NodeToNodeVersionV9  magic mode) = encodeWithMode 9  magic mode
     encodeVersion (NodeToNodeVersionV10 magic mode) = encodeWithMode 10 magic mode
+    encodeVersion (NodeToNodeVersionV11 magic mode) = encodeWithModeAndQuery 11 magic mode
 
+    nodeToClientDataWithQuery :: Word32 -> CBOR.Encoding
+    nodeToClientDataWithQuery magic
+      =  CBOR.encodeListLen 2
+      <> CBOR.encodeInt (fromIntegral magic)
+      <> CBOR.encodeBool query
 
     encodeWithMode :: Word -> Word32 -> Bool -> CBOR.Encoding
     encodeWithMode vn magic mode =
@@ -210,9 +226,18 @@ handshakeReqEnc versions =
       <>  CBOR.encodeInt (fromIntegral magic)
       <>  CBOR.encodeBool mode
 
-handshakeReq :: [NodeVersion] -> ByteString
-handshakeReq []       = LBS.empty
-handshakeReq versions = CBOR.toLazyByteString $ handshakeReqEnc versions
+    encodeWithModeAndQuery :: Word -> Word32 -> Bool -> CBOR.Encoding
+    encodeWithModeAndQuery vn magic mode =
+          CBOR.encodeWord vn
+       <> CBOR.encodeListLen 4
+       <> CBOR.encodeInt (fromIntegral magic)
+       <> CBOR.encodeBool mode
+       <> CBOR.encodeInt 0 -- NoPeerSharing
+       <> CBOR.encodeBool query
+
+handshakeReq :: [NodeVersion] -> Bool -> ByteString
+handshakeReq []       _     = LBS.empty
+handshakeReq versions query = CBOR.toLazyByteString $ handshakeReqEnc versions query
 
 data HandshakeFailure
   = UnknownVersionInRsp Word
@@ -239,12 +264,15 @@ keepAliveRspDec _ = do
     1 -> Right <$> CBOR.decodeWord16
     k -> return $ Left $ KeepAliveFailureKey k
 
-handshakeDec :: CBOR.Decoder s (Either HandshakeFailure NodeVersion)
+handshakeDec :: CBOR.Decoder s (Either HandshakeFailure [NodeVersion])
 handshakeDec = do
   _ <- CBOR.decodeListLen
   key <- CBOR.decodeWord
   case key of
-    1 -> decodeVersion
+    0 -> do
+      decodeVersions
+    1 -> do
+      fmap pure <$> decodeVersion
     2 -> do
       _ <- CBOR.decodeListLen
       tag <- CBOR.decodeWord
@@ -262,9 +290,22 @@ handshakeDec = do
           msg <- unpack <$> CBOR.decodeString
           return $ Left $ Refused vn msg
         _ -> return $ Left $ UnknownTag tag
+    3 -> do -- MsgQueryReply
+      decodeVersions
 
     k -> return $ Left $ UnknownKey k
   where
+    decodeVersions :: CBOR.Decoder s (Either HandshakeFailure [NodeVersion])
+    decodeVersions = do
+        len <- CBOR.decodeMapLen
+        runExceptT $ go len []
+      where
+        go :: Int -> [NodeVersion] -> ExceptT HandshakeFailure (CBOR.Decoder s) [NodeVersion]
+        go 0 acc = return acc
+        go i acc = do
+          version <- ExceptT decodeVersion
+          go (pred i) $ version:acc
+
     decodeVersion :: CBOR.Decoder s (Either HandshakeFailure NodeVersion)
     decodeVersion = do
       version <- CBOR.decodeWord
@@ -275,12 +316,14 @@ handshakeDec = do
         (8,  False) -> decodeWithMode NodeToNodeVersionV8
         (9,  False) -> decodeWithMode NodeToNodeVersionV9
         (10, False) -> decodeWithMode NodeToNodeVersionV10
+        (11, False) -> decodeWithModeAndQuery NodeToNodeVersionV11
         (9,  True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
         (10, True)  -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
         (11, True)  -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
         (12, True)  -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
         (13, True)  -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
         (14, True)  -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
+        (15, True) -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* CBOR.decodeBool)
         _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> Bool -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
@@ -288,6 +331,16 @@ handshakeDec = do
       _ <- CBOR.decodeListLen
       magic <- CBOR.decodeWord32
       Right . vnFun magic <$> CBOR.decodeBool
+
+    decodeWithModeAndQuery :: (Word32 -> Bool -> NodeVersion)
+                           -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
+    decodeWithModeAndQuery vnFun = do
+        _len <- CBOR.decodeListLen
+        magic <- CBOR.decodeWord32
+        mode <- CBOR.decodeBool
+        _peerSharing <- CBOR.decodeWord32
+        _query <- CBOR.decodeBool
+        return $ Right $ vnFun magic mode
 
 wrap :: MiniProtocolNum -> MiniProtocolDir -> LBS.ByteString -> MuxSDU
 wrap ptclNum ptclDir blob = MuxSDU
@@ -360,7 +413,7 @@ toStatPoint ts host cookie sample td =
     stddev' = fromMaybe 0 (stddev td)
 
 pingClient :: Tracer IO LogMsg -> Tracer IO String -> PingOpts -> [NodeVersion] -> AddrInfo -> IO ()
-pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount} versions peer = bracket
+pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pingOptsHandshakeQuery} versions peer = bracket
   (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
   Socket.close
   (\sd -> withTimeoutSerial $ \timeoutfn -> do
@@ -381,23 +434,59 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount} ve
     let timeout = 30
     bearer <- getBearer makeSocketBearer timeout nullTracer sd
 
-    !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions)
+    !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions pingOptsHandshakeQuery)
     (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum
     unless pingOptsQuiet $ printf "%s handshake rtt: %s\n" peerStr (show $ diffTime t1_e t1_s)
 
     case CBOR.deserialiseFromBytes handshakeDec msg of
       Left err -> eprint $ printf "%s Decoding error %s" peerStr (show err)
       Right (_, Left err) -> eprint $ printf "%s Protocol error %s" peerStr (show err)
-      Right (_, Right version) -> do
-        unless pingOptsQuiet $ printf "%s Negotiated version %s\n" peerStr (show version)
-        keepAlive bearer timeoutfn peerStr version (tdigest []) 0
-        -- send terminating message
-        _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
-        -- protocol idle timeout
-        MT.threadDelay 5
+      Right (_, Right recVersions) -> do
+        when (pingOptsHandshakeQuery && not pingOptsQuiet) $ printf "%s Queried versions %s\n" peerStr (show recVersions)
+        case acceptVersions recVersions of
+          Left err ->
+            eprint $ printf "%s Version negotiation error %s\n" peerStr err
+          Right version -> do
+            unless pingOptsQuiet $ printf "%s Negotiated version %s\n" peerStr (show version)
+            unless pingOptsHandshakeQuery $ do
+              keepAlive bearer timeoutfn peerStr version (tdigest []) 0
+              -- send terminating message
+              _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
+              return ()
+            -- protocol idle timeout
+            MT.threadDelay 5
 
   )
   where
+
+    acceptVersions :: [NodeVersion] -> Either String NodeVersion
+    acceptVersions recVersions =
+      let intersects = L.intersectBy isSameVersionAndMagic recVersions versions in
+      case intersects of
+          [] -> Left $ "No overlapping versions with " <> show versions
+          vs -> Right $ foldr1 max vs
+
+    isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
+    isSameVersionAndMagic v1 v2 = extract v1 == extract v2
+      where extract :: NodeVersion -> (Int, Word32)
+            extract (NodeToClientVersionV9 m)  = (-9, m)
+            extract (NodeToClientVersionV10 m) = (-10, m)
+            extract (NodeToClientVersionV11 m) = (-11, m)
+            extract (NodeToClientVersionV12 m) = (-12, m)
+            extract (NodeToClientVersionV13 m) = (-13, m)
+            extract (NodeToClientVersionV14 m) = (-14, m)
+            extract (NodeToClientVersionV15 m) = (-15, m)
+            extract (NodeToNodeVersionV1 m)    = (1, m)
+            extract (NodeToNodeVersionV2 m)    = (2, m)
+            extract (NodeToNodeVersionV3 m)    = (3, m)
+            extract (NodeToNodeVersionV4 m _)  = (4, m)
+            extract (NodeToNodeVersionV5 m _)  = (5, m)
+            extract (NodeToNodeVersionV6 m _)  = (6, m)
+            extract (NodeToNodeVersionV7 m _)  = (7, m)
+            extract (NodeToNodeVersionV8 m _)  = (8, m)
+            extract (NodeToNodeVersionV9 m _)  = (9, m)
+            extract (NodeToNodeVersionV10 m _) = (10, m)
+            extract (NodeToNodeVersionV11 m _) = (11, m)
 
     peerString :: IO String
     peerString =

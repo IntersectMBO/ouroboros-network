@@ -114,7 +114,7 @@ clientPingPong pipelined =
       noTimeLimitsHandshake
       unversionedProtocolDataCodec
       nullNetworkConnectTracers
-      acceptableVersion
+      (HandshakeCallbacks acceptableVersion queryVersion)
       (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr
@@ -157,7 +157,7 @@ serverPingPong =
       unversionedHandshakeCodec
       noTimeLimitsHandshake
       unversionedProtocolDataCodec
-      acceptableVersion
+      (HandshakeCallbacks acceptableVersion queryVersion)
       (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->
@@ -216,7 +216,7 @@ clientPingPong2 =
       noTimeLimitsHandshake
       unversionedProtocolDataCodec
       nullNetworkConnectTracers
-      acceptableVersion
+      (HandshakeCallbacks acceptableVersion queryVersion)
       (unversionedProtocol app)
       Nothing
       defaultLocalSocketAddr
@@ -272,7 +272,7 @@ serverPingPong2 =
       unversionedHandshakeCodec
       noTimeLimitsHandshake
       unversionedProtocolDataCodec
-      acceptableVersion
+      (HandshakeCallbacks acceptableVersion queryVersion)
       (unversionedProtocol (SomeResponderApplication app))
       nullErrorPolicies
       $ \_ serverAsync ->

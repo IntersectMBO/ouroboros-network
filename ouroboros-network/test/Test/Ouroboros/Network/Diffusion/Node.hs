@@ -220,6 +220,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     , haHandshakeCodec       = unversionedHandshakeCodec
                     , haVersionDataCodec     = ntnUnversionedDataCodec
                     , haAcceptVersion        = iAcceptVersion ni
+                    , haQueryVersion         = const False
                     , haTimeLimits           = timeLimitsHandshake
                     }
               , Diff.P2P.diNtnAddressType    = ntnAddressType
@@ -238,6 +239,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     , haHandshakeCodec       = unversionedHandshakeCodec
                     , haVersionDataCodec     = unversionedProtocolDataCodec
                     , haAcceptVersion        = \_ v -> Accept v
+                    , haQueryVersion         = const False
                     , haTimeLimits           = noTimeLimitsHandshake
                     }
               , Diff.P2P.diNtcGetFileDescriptor  = \_ -> pure (FileDescriptor (-1))

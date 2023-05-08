@@ -21,6 +21,7 @@ import           Ouroboros.Network.BlockFetch.ConsensusInterface
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
+import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
@@ -53,6 +54,7 @@ data NodeToNodeVersion
     --   This version is needed to support the new  Peer Sharing miniprotocol
     --   older versions that are negotiated will appear as not participating
     --   in Peer Sharing to newer versions.
+    -- * Adds `query` to NodeToClientVersionData.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -104,6 +106,7 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   { networkMagic  :: !NetworkMagic
   , diffusionMode :: !DiffusionMode
   , peerSharing   :: !PeerSharing
+  , query         :: !Bool
   }
   deriving (Show, Typeable, Eq)
   -- 'Eq' instance is not provided, it is not what we need in version
@@ -120,18 +123,21 @@ instance Acceptable NodeToNodeVersionData where
           { networkMagic  = networkMagic local
           , diffusionMode = diffusionMode local `min` diffusionMode remote
           , peerSharing   = peerSharing remote
+          , query         = query local || query remote
           }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
                        ++ show local
                        ++ " /= " ++ show remote
 
+instance Queryable NodeToNodeVersionData where
+    queryVersion = query
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
 nodeToNodeCodecCBORTerm version
   | version >= NodeToNodeV_11 =
     let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing }
+        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
           = CBOR.TList $
               [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
               , CBOR.TBool (case diffusionMode of
@@ -141,10 +147,11 @@ nodeToNodeCodecCBORTerm version
                              NoPeerSharing      -> 0
                              PeerSharingPrivate -> 1
                              PeerSharingPublic  -> 2)
+              , CBOR.TBool query
               ]
 
         decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing])
+        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
           | x >= 0
           , x <= 0xffffffff
           , peerSharing >= 0
@@ -159,7 +166,8 @@ nodeToNodeCodecCBORTerm version
                                   0 -> NoPeerSharing
                                   1 -> PeerSharingPrivate
                                   2 -> PeerSharingPublic
-                                  _ -> error "decodeTerm: impossible happened!"
+                                  _ -> error "decodeTerm: impossible happened!",
+                  query = query
                 }
           | x < 0 || x > 0xffffffff
           = Left $ T.pack $ "networkMagic out of bound: " <> show x
@@ -184,13 +192,14 @@ nodeToNodeCodecCBORTerm version
           , x <= 0xffffffff
           = Right
               NodeToNodeVersionData {
-                  networkMagic = NetworkMagic (fromIntegral x),
-                  diffusionMode = if diffusionMode
+                  networkMagic  = NetworkMagic (fromIntegral x)
+                , diffusionMode = if diffusionMode
                                   then InitiatorOnlyDiffusionMode
-                                  else InitiatorAndResponderDiffusionMode,
+                                  else InitiatorAndResponderDiffusionMode
                   -- By default older versions do not participate in Peer
                   -- Sharing, since they do not support the new miniprotocol
-                  peerSharing = NoPeerSharing
+                , peerSharing = NoPeerSharing
+                , query = False
                 }
           | otherwise
           = Left $ T.pack $ "networkMagic out of bound: " <> show x

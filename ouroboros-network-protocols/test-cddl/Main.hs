@@ -430,6 +430,7 @@ genNtNHandshake genVersion = oneof
                 , pure PeerSharingPrivate
                 , pure PeerSharingPublic
                 ]
+          <*> arbitrary
 
     genRefuseReason :: Gen (Handshake.RefuseReason NodeToNodeVersion)
     genRefuseReason = oneof
@@ -497,6 +498,7 @@ instance Arbitrary (AnyMessageAndAgency (Handshake NodeToClientVersion CBOR.Term
         genData :: Gen NodeToClientVersionData
         genData = NodeToClientVersionData
               <$> (NetworkMagic <$> arbitrary)
+              <*> arbitrary
 
         genRefuseReason :: Gen (Handshake.RefuseReason NodeToClientVersion)
         genRefuseReason = oneof
@@ -855,7 +857,7 @@ txSubmissionFix term =
 handshakeFix :: CBOR.Term -> CBOR.Term
 handshakeFix term =
     case term of
-      TList [TInt 0, TMap l] ->
+      TList [TInt x, TMap l] | x == 0 || x == 3 ->
         TList
           [ TInt 0
           , TMap (sortOn

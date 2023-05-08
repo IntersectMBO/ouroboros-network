@@ -21,6 +21,7 @@ module Ouroboros.Network.Protocol.Handshake.Type
     -- $simultanous-open
   , RefuseReason (..)
   , HandshakeProtocolError (..)
+  , HandshakeResult (..)
   ) where
 
 
@@ -90,6 +91,15 @@ instance Protocol (Handshake vNumber vParams) where
         -> Message (Handshake vNumber vParams) StConfirm StDone
 
       -- |
+      -- `MsgQueryReply` received as a response to 'MsgProposeVersions'.  It
+      -- is only sent when a version query was received. This will cause the
+      -- connection to terminate.
+      --
+      MsgQueryReply
+        :: Map vNumber vParams
+        -> Message (Handshake vNumber vParams) StConfirm StDone
+
+      -- |
       -- The remote end decides which version to use and sends chosen version.
       -- The server is allowed to modify version parameters.
       --
@@ -143,7 +153,14 @@ data HandshakeProtocolError vNumber
   = HandshakeError (RefuseReason vNumber)
   | NotRecognisedVersion vNumber
   | InvalidServerSelection vNumber Text
+  | QueryNotSupported
   deriving (Eq, Show)
+
+-- | The result of a handshake.
+--
+data HandshakeResult r vNumber vData
+  = HandshakeNegotiationResult r vNumber vData
+  | HandshakeQueryResult (Map vNumber (Either Text vData))
 
 instance (Typeable vNumber, Show vNumber)
     => Exception (HandshakeProtocolError vNumber)

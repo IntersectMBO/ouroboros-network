@@ -45,6 +45,9 @@ instance Acceptable UnversionedProtocolData where
   acceptableVersion UnversionedProtocolData
                     UnversionedProtocolData = Accept UnversionedProtocolData
 
+instance Queryable UnversionedProtocolData where
+  queryVersion UnversionedProtocolData = False
+
 
 unversionedProtocolDataCodec :: VersionDataCodec CBOR.Term UnversionedProtocol
                                                            UnversionedProtocolData
@@ -77,6 +80,9 @@ newtype DataFlowProtocolData =
 instance Acceptable DataFlowProtocolData where
   acceptableVersion (DataFlowProtocolData local) (DataFlowProtocolData remote) =
     Accept (DataFlowProtocolData $ local `min` remote)
+
+instance Queryable DataFlowProtocolData where
+  queryVersion (DataFlowProtocolData _) = False
 
 dataFlowProtocolDataCodec :: UnversionedProtocol -> CodecCBORTerm Text DataFlowProtocolData
 dataFlowProtocolDataCodec _ = CodecCBORTerm {encodeTerm, decodeTerm}

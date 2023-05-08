@@ -159,6 +159,11 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
         <> CBOR.encodeWord 2
         <> encodeRefuseReason versionNumberCodec vReason
 
+      encodeMsg (ServerAgency TokConfirm) (MsgQueryReply vs)
+        = CBOR.encodeListLen 2
+        <> CBOR.encodeWord 3
+        <> encodeVersions versionNumberCodec vs
+
       decodeMsg :: forall (pr :: PeerRole) s (st :: Handshake vNumber CBOR.Term).
                    PeerHasAgency pr st
                 -> CBOR.Decoder s (SomeMessage st)
@@ -185,6 +190,10 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
                 SomeMessage . MsgAcceptVersion vNumber <$> CBOR.decodeTerm
           (ServerAgency TokConfirm, 2, 2) ->
             SomeMessage . MsgRefuse <$> decodeRefuseReason versionNumberCodec
+          (ServerAgency TokConfirm, 3, 2) -> do
+            l  <- CBOR.decodeMapLen
+            vMap <- decodeVersions versionNumberCodec l
+            pure $ SomeMessage $ MsgQueryReply vMap
 
           (ClientAgency TokPropose, _, _) ->
             fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
