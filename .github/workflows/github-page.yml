@@ -31,17 +31,17 @@ jobs:
       # FIXME: this is arguably a bug, and pkg-config should return the right values!
       LD_LIBRARY_PATH: '/usr/local/lib'
 
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-    - uses: actions/checkout@v3
-
-    - uses: cachix/install-nix-action@v20
-
-    - name: Select build directory
-      run: |
-        CABAL_BUILDDIR="dist-newstyle"
-
-        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR"
-        echo "CABAL_BUILDDIR=$CABAL_BUILDDIR" >> $GITHUB_ENV
+    - name: Checkout ouroboros-network repository
+      uses: actions/checkout@v3
 
     - name: Configure to use libsodium
       run: |
@@ -83,13 +83,10 @@ jobs:
     - name: Update Hackage index
       run: cabal update
 
-    - name: Checkout ouroboros-network repository
-      uses: actions/checkout@v3
-
-    - name: Build dependencies
+    - name: Build plan
       run: cabal --builddir="$CABAL_BUILDDIR" build --dry-run --enable-tests all
 
-    - name: build Haddock documentation 🔧
+    - name: Build Haddock documentation 🔧
       run: |
         mkdir ./haddocks
         ./scripts/haddocs.sh ./haddocks
@@ -108,13 +105,11 @@ jobs:
           done
         done
 
-    - name: deploy to gh-pages 🚀
-      uses: peaceiris/actions-gh-pages@v3
+    - name: Upload artifacts
+      uses: actions/upload-pages-artifact@v1
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./haddocks
-        keep_files: true  # to keep the consensus report
-        force_orphan: true  # to trim down the size of the branch
-        user_name: ${{ github.actor }}
-        user_email: 'marcin.szamotulski@iohk.io'
-        commit_message: ${{ github.event.head_commit.message }}
+        path: ./haddocks
+
+    - name: Deploy 🚀
+      id: deployment
+      uses: actions/deploy-pages@v2
