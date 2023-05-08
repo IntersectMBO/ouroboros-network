@@ -1,5 +1,11 @@
 # Revision history for ouroboros-network
 
+## next version
+
+### Breaking changes
+
+* Added `DiffusionError` constructor of `Ouroboros.Network.Diffusion.Failure` which kind is now `Type`.
+
 ## 0.6.0.0
 
 ### Breaking changes

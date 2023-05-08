@@ -244,7 +244,7 @@ run Tracers
     traceException :: IO a -> IO a
     traceException f = catch f $ \(e :: SomeException) -> do
       traceWith dtDiffusionTracer (DiffusionErrored e)
-      throwIO e
+      throwIO (DiffusionError e)
 
     --
     -- We can't share portnumber with our server since we run separate
@@ -335,7 +335,7 @@ run Tracers
             -- Windows uses named pipes so can't take advantage of existing sockets
             Left _ -> do
               traceWith dtDiffusionTracer UnsupportedReadySocketCase
-              throwIO (UnsupportedReadySocket :: Failure RemoteAddress)
+              throwIO UnsupportedReadySocket
 #else
             Left sd -> do
               addr <- Snocket.getLocalAddr sn sd

@@ -814,7 +814,7 @@ runM Interfaces
                                (Nothing, Just _) -> return LookupReqAAAAOnly
                                (Just _, Just _)  -> return LookupReqAAndAAAA
                                _                 ->
-                                   throwIO (NoSocket :: Failure RemoteAddress)
+                                   throwIO NoSocket
 
           -- control channel for the server; only required in
           -- @'InitiatorResponderMode' :: 'MuxMode'@
@@ -1220,7 +1220,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
     -- related terms, as this is a local only service running over a unix
     -- socket / windows named pipe.
     handle (\e -> traceWith tracer (DiffusionErrored e)
-               >> throwIO e)
+               >> throwIO (DiffusionError e))
          $ withIOManager $ \iocp -> do
              let diNtnSnocket :: SocketSnocket
                  diNtnSnocket = Snocket.socketSnocket iocp
