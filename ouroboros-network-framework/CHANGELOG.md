@@ -1,5 +1,19 @@
 # Revision history for ouroboros-network-framework
 
+## 0.6.0.0 -- 2023-05-08
+
+### Breaking changes
+
+* Handshake support for querying:
+  * Use `ouroboros-network-api-0.4.0.0`
+  * Added `haQueryVersion` to `HandshakeArguments`
+  * `handshakeServerPeer` recieves extra argument `vData -> Bool`
+  * Added `MsgQueryReply` to `Handshake` mini-protocol.
+  * Added `Ouroboros.Network.Protocol.Handshake.Client.handshakeCleintPeerTestVersions`
+  * Added `HandshakeResult` and `HandshakeException` types.
+
+### Non-breaking changes
+
 ## 0.5.0.0 -- 2023-04-28
 
 ### Breaking changes
