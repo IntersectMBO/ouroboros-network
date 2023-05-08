@@ -45,7 +45,7 @@ withSockets tracer sn
             addresses k = go [] addresses
   where
     go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
-    go []   []       = throwIO (NoSocket :: Failure ntnAddr)
+    go []   []       = throwIO NoSocket
     go !acc []       =
       let acc' = NonEmpty.fromList (reverse acc)
       in (k $! (fst <$> acc')) $! (snd <$> acc')
@@ -96,7 +96,7 @@ withLocalSocket tracer getFileDescriptor sn localAddress k =
          -- Windows uses named pipes so can't take advantage of existing sockets
          Left _ -> traceWith tracer (UnsupportedReadySocketCase
                                        :: DiffusionTracer ntnAddr ntcAddr)
-                >> throwIO (UnsupportedReadySocket :: Failure ntnAddr)
+                >> throwIO UnsupportedReadySocket
 #else
          Left sd -> do
              addr <- Snocket.getLocalAddr sn sd
