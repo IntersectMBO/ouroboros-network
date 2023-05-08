@@ -556,7 +556,7 @@ peerSelectionGovernorLoop tracer
       <> Monitor.jobs                  jobPool st
       <> Monitor.targetPeers           actions st
       <> Monitor.localRoots            actions policy st
-      <> Monitor.inboundPeers         actions st
+      <> Monitor.inboundPeers          actions st
 
       -- All the alternative non-blocking internal decisions.
       <> RootPeers.belowTarget        actions blockedAt         st
