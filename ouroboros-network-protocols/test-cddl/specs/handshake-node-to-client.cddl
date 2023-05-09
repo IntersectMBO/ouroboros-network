@@ -20,18 +20,18 @@ versionTable = { * oldVersionNumber => oldNodeToClientVersionData
                }
 
 
-; Version 15 introduces the version query flag
+; Version 16 introduces the version query flag
 ; as of version 2 (which is no longer supported) we set 15th bit to 1
-;               15
-versionNumber = 32783
+;               16
+versionNumber = 32784
 
 ; as of version 2 (which is no longer supported) we set 15th bit to 1
-;                  9     / 10    / 11    / 12    / 13    / 14
-oldVersionNumber = 32777 / 32778 / 32779 / 32780 / 32781 / 32782
+;                  9     / 10    / 11    / 12    / 13    / 14    / 15
+oldVersionNumber = 32777 / 32778 / 32779 / 32780 / 32781 / 32782 / 32783
 
 anyVersionNumber = versionNumber / oldVersionNumber
 
-; As of version 15
+; As of version 16
 nodeToClientVersionData = [networkMagic, query]
 
 oldNodeToClientVersionData = networkMagic

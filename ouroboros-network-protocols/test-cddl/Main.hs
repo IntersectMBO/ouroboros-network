@@ -139,6 +139,7 @@ tests CDDLSpecs { cddlChainSync
                 , cddlLocalStateQuery
                 , cddlHandshakeNodeToNodeV7To10
                 , cddlHandshakeNodeToNodeV11
+                , cddlHandshakeNodeToNodeV12ToLast
                 , cddlHandshakeNodeToClient
                 , cddlPeerSharing
                 } =
@@ -152,6 +153,9 @@ tests CDDLSpecs { cddlChainSync
       , testProperty "NodeToNode.Handshake V11"
                                          (prop_encodeHandshakeNodeToNodeV11
                                                cddlHandshakeNodeToNodeV11)
+      , testProperty "NodeToNode.Handshake V12 to Last"
+                                         (prop_encodeHandshakeNodeToNodeV12ToLast
+                                               cddlHandshakeNodeToNodeV12ToLast)
       , -- If this fails whilst adding a new node-to-client version, ensure that
         -- all the necessary changes are included:
         --
@@ -213,36 +217,38 @@ tests CDDLSpecs { cddlChainSync
 newtype CDDLSpec ps = CDDLSpec BL.ByteString
 
 data CDDLSpecs = CDDLSpecs {
-    cddlHandshakeNodeToClient     :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
-    cddlHandshakeNodeToNodeV7To10 :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
-    cddlHandshakeNodeToNodeV11    :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
-    cddlChainSync                 :: CDDLSpec (ChainSync
-                                                 BlockHeader
-                                                 (Point BlockHeader)
-                                                 (Tip BlockHeader)),
-    cddlBlockFetch                :: CDDLSpec (BlockFetch Block (Point Block)),
-    cddlTxSubmission2             :: CDDLSpec (TxSubmission2 TxId Tx),
-    cddlKeepAlive                 :: CDDLSpec KeepAlive,
-    cddlLocalTxSubmission         :: CDDLSpec (LocalTxSubmission
-                                                 LocalTxSubmission.Tx
-                                                 LocalTxSubmission.Reject),
-    cddlLocalTxMonitor            :: CDDLSpec (LocalTxMonitor TxId Tx SlotNo),
-    cddlLocalStateQuery           :: CDDLSpec (LocalStateQuery
-                                                 Block (Point Block)
-                                                 LocalStateQuery.Query),
-    cddlPeerSharing               :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
+    cddlHandshakeNodeToClient        :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
+    cddlHandshakeNodeToNodeV7To10    :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
+    cddlHandshakeNodeToNodeV11       :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
+    cddlHandshakeNodeToNodeV12ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
+    cddlChainSync                    :: CDDLSpec (ChainSync
+                                                    BlockHeader
+                                                    (Point BlockHeader)
+                                                    (Tip BlockHeader)),
+    cddlBlockFetch                   :: CDDLSpec (BlockFetch Block (Point Block)),
+    cddlTxSubmission2                :: CDDLSpec (TxSubmission2 TxId Tx),
+    cddlKeepAlive                    :: CDDLSpec KeepAlive,
+    cddlLocalTxSubmission            :: CDDLSpec (LocalTxSubmission
+                                                    LocalTxSubmission.Tx
+                                                    LocalTxSubmission.Reject),
+    cddlLocalTxMonitor               :: CDDLSpec (LocalTxMonitor TxId Tx SlotNo),
+    cddlLocalStateQuery              :: CDDLSpec (LocalStateQuery
+                                                    Block (Point Block)
+                                                    LocalStateQuery.Query),
+    cddlPeerSharing                  :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
   }
 
 
 readCDDLSpecs :: IO CDDLSpecs
 readCDDLSpecs = do
-    dir <- bool (                                       "test-cddl" </> "specs") -- False
-                ("ouroboros-network-protocols-test" </> "test-cddl" </> "specs") -- True
-       <$> doesDirectoryExist "ouroboros-network-protocols-test"
+    dir <- bool (                                  "test-cddl" </> "specs") -- False
+                ("ouroboros-network-protocols" </> "test-cddl" </> "specs") -- True
+       <$> doesDirectoryExist "ouroboros-network-protocols"
     common                <- BL.readFile (dir </> "common.cddl")
     handshakeNodeToClient <- BL.readFile (dir </> "handshake-node-to-client.cddl")
-    handshakeNodeToNodeV7To10 <- BL.readFile (dir </> "handshake-node-to-node.cddl")
-    handshakeNodeToNodeV11    <- BL.readFile (dir </> "handshake-node-to-node-v11.cddl")
+    handshakeNodeToNodeV7To10    <- BL.readFile (dir </> "handshake-node-to-node.cddl")
+    handshakeNodeToNodeV11       <- BL.readFile (dir </> "handshake-node-to-node-v11.cddl")
+    handshakeNodeToNodeV12ToLast <- BL.readFile (dir </> "handshake-node-to-node-v12.cddl")
     chainSync             <- BL.readFile (dir </> "chain-sync.cddl")
     blockFetch            <- BL.readFile (dir </> "block-fetch.cddl")
     txSubmission2         <- BL.readFile (dir </> "tx-submission2.cddl")
@@ -254,24 +260,25 @@ readCDDLSpecs = do
     -- append common definitions; they must be appended since the first
     -- definition is the entry point for a cddl spec.
     return CDDLSpecs {
-        cddlHandshakeNodeToClient = CDDLSpec $ handshakeNodeToClient,
-        cddlHandshakeNodeToNodeV7To10 = CDDLSpec $ handshakeNodeToNodeV7To10,
-        cddlHandshakeNodeToNodeV11    = CDDLSpec $ handshakeNodeToNodeV11,
-        cddlChainSync             = CDDLSpec $ chainSync
-                                            <> common,
-        cddlBlockFetch            = CDDLSpec $ blockFetch
-                                            <> common,
-        cddlTxSubmission2         = CDDLSpec $ txSubmission2
-                                            <> common,
-        cddlKeepAlive             = CDDLSpec keepAlive,
-        cddlLocalTxSubmission     = CDDLSpec $ localTxSubmission
-                                            <> common,
-        cddlLocalTxMonitor        = CDDLSpec $ localTxMonitor
-                                            <> common,
-        cddlLocalStateQuery       = CDDLSpec $ localStateQuery
-                                            <> common,
-        cddlPeerSharing           = CDDLSpec $ peerSharing
-                                            <> common
+        cddlHandshakeNodeToClient        = CDDLSpec $ handshakeNodeToClient,
+        cddlHandshakeNodeToNodeV7To10    = CDDLSpec $ handshakeNodeToNodeV7To10,
+        cddlHandshakeNodeToNodeV11       = CDDLSpec $ handshakeNodeToNodeV11,
+        cddlHandshakeNodeToNodeV12ToLast = CDDLSpec $ handshakeNodeToNodeV12ToLast,
+        cddlChainSync                    = CDDLSpec $ chainSync
+                                                   <> common,
+        cddlBlockFetch                   = CDDLSpec $ blockFetch
+                                                   <> common,
+        cddlTxSubmission2                = CDDLSpec $ txSubmission2
+                                                   <> common,
+        cddlKeepAlive                    = CDDLSpec keepAlive,
+        cddlLocalTxSubmission            = CDDLSpec $ localTxSubmission
+                                                   <> common,
+        cddlLocalTxMonitor               = CDDLSpec $ localTxMonitor
+                                                   <> common,
+        cddlLocalStateQuery              = CDDLSpec $ localStateQuery
+                                                   <> common,
+        cddlPeerSharing                  = CDDLSpec $ peerSharing
+                                                   <> common
       }
 
 --
@@ -399,6 +406,11 @@ newtype NtNHandshakeV11 =
     (AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term))
     deriving Show
 
+newtype NtNHandshakeV12ToLast =
+  NtNHandshakeV12ToLast
+    (AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term))
+    deriving Show
+
 genNtNHandshake :: Gen NodeToNodeVersion
                 -> Gen (AnyMessageAndAgency (Handshake NodeToNodeVersion Term))
 genNtNHandshake genVersion = oneof
@@ -453,8 +465,13 @@ instance Arbitrary NtNHandshakeV7To10 where
 
 instance Arbitrary NtNHandshakeV11 where
   arbitrary = do
-    let genVersion = elements [NodeToNodeV_11 .. maxBound]
+    let genVersion = elements [NodeToNodeV_11]
     NtNHandshakeV11 <$> genNtNHandshake genVersion
+
+instance Arbitrary NtNHandshakeV12ToLast where
+  arbitrary = do
+    let genVersion = elements [NodeToNodeV_12 ..]
+    NtNHandshakeV12ToLast <$> genNtNHandshake genVersion
 
 
 prop_encodeHandshakeNodeToNodeV7To10
@@ -469,6 +486,13 @@ prop_encodeHandshakeNodeToNodeV11
     -> NtNHandshakeV11
     -> Property
 prop_encodeHandshakeNodeToNodeV11 spec (NtNHandshakeV11 x) =
+  validateEncoder spec nodeToNodeHandshakeCodec x
+
+prop_encodeHandshakeNodeToNodeV12ToLast
+    :: CDDLSpec            (Handshake NodeToNodeVersion CBOR.Term)
+    -> NtNHandshakeV12ToLast
+    -> Property
+prop_encodeHandshakeNodeToNodeV12ToLast spec (NtNHandshakeV12ToLast x) =
   validateEncoder spec nodeToNodeHandshakeCodec x
 
 -- TODO: add our regular tests for `Handshake NodeToClientVerision CBOR.Term`
