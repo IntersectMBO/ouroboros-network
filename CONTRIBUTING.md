@@ -269,8 +269,15 @@ and unofficially `aarch64`, on 32-bit platforms you might expect some issues.
 
 ## Releasing packages to CHaP
 
-When new versions of the packages are released, they should be included in [CHaP](https://github.com/input-output-hk/cardano-haskell-packages).
-See the CHaP README for [instructions](https://github.com/input-output-hk/cardano-haskell-packages#-from-github).
+New versions of packages are published on [CHaP].
+
+To release packages to [CHaP] one should use `./scritp/release-to-chap.sh`.  It
+will create a new branch in `cardano-haskell-packages` repo (pointed by
+`CARDANO_HASKELL_PACKAGES_DIR` environment variable or `/tmp/chap` if it's not
+defined).  Before merging that branch, run `./script/build-with-chap.sh`.  It
+will use the new branch in `cardano-haskell-packages` to restore the
+`ourobors-network` repository to the state published in `CHaP`.  One must
+resolve all compilation issues before merging the `CHaP` branch.
 
 ## Release Branches
 
