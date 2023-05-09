@@ -4,6 +4,7 @@ import Main.Utf8 (withUtf8)
 import Test.Tasty
 
 import Test.Ouroboros.Network.Driver qualified as Driver
+import Test.Ouroboros.Network.RawBearer qualified as RawBearer
 import Test.Ouroboros.Network.Server2.IO qualified as Server2
 import Test.Ouroboros.Network.Socket qualified as Socket
 import Test.Ouroboros.Network.Subscription qualified as Subscription
@@ -18,6 +19,7 @@ tests =
   , Server2.tests
   , Socket.tests
   , Subscription.tests
+  , RawBearer.tests
   ]
 
 

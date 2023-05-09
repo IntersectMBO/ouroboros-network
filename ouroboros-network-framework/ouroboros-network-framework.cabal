@@ -38,10 +38,10 @@ library
     Ouroboros.Network.Driver.Simple
     Ouroboros.Network.Driver.Stateful
     Ouroboros.Network.ErrorPolicy
+    Ouroboros.Network.IOManager
     Ouroboros.Network.InboundGovernor
     Ouroboros.Network.InboundGovernor.Event
     Ouroboros.Network.InboundGovernor.State
-    Ouroboros.Network.IOManager
     Ouroboros.Network.Mux
     Ouroboros.Network.MuxMode
     Ouroboros.Network.Protocol.Handshake
@@ -53,10 +53,10 @@ library
     Ouroboros.Network.Protocol.Handshake.Version
     Ouroboros.Network.RawBearer
     Ouroboros.Network.RethrowPolicy
-    Ouroboros.Network.Server2
     Ouroboros.Network.Server.ConnectionTable
     Ouroboros.Network.Server.RateLimiting
     Ouroboros.Network.Server.Socket
+    Ouroboros.Network.Server2
     Ouroboros.Network.Snocket
     Ouroboros.Network.Socket
     Ouroboros.Network.Subscription
@@ -127,6 +127,7 @@ library testlib
     Ouroboros.Network.ConnectionManager.Test.Timeouts
     Ouroboros.Network.ConnectionManager.Test.Utils
     Ouroboros.Network.InboundGovernor.Test.Utils
+    Ouroboros.Network.RawBearer.Test.Utils
     Ouroboros.Network.Test.Orphans
 
   other-modules:
@@ -171,13 +172,14 @@ test-suite sim-tests
   other-modules:
     Test.Ouroboros.Network.ConnectionManager
     Test.Ouroboros.Network.RateLimiting
+    Test.Ouroboros.Network.RawBearer
     Test.Ouroboros.Network.Server2.Sim
     Test.Ouroboros.Network.Socket
     Test.Ouroboros.Network.Subscription
-    Test.Ouroboros.Network.RawBearer
     Test.Simulation.Network.Snocket
 
   build-depends:
+    QuickCheck,
     base >=4.14 && <4.21,
     bytestring,
     cborg,
@@ -191,13 +193,11 @@ test-suite sim-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,
     ouroboros-network-testing,
     pretty-simple,
     psqueues,
-    QuickCheck,
     quickcheck-instances,
     quickcheck-monoids,
     quiet,
@@ -243,6 +243,7 @@ test-suite io-tests
   hs-source-dirs: io-tests
   other-modules:
     Test.Ouroboros.Network.Driver
+    Test.Ouroboros.Network.RawBearer
     Test.Ouroboros.Network.Server2.IO
     Test.Ouroboros.Network.Socket
     Test.Ouroboros.Network.Subscription
@@ -253,6 +254,7 @@ test-suite io-tests
     bytestring,
     containers,
     contra-tracer,
+    directory,
     dns,
     io-classes,
     io-sim,
@@ -276,9 +278,6 @@ test-suite io-tests
 
   if os(windows)
     build-depends: Win32-network <0.3
-  else
-    build-depends: directory
-
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   ghc-options:

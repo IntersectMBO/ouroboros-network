@@ -38,6 +38,7 @@ module Simulation.Network.Snocket
   , TimeoutDetail (..)
   , noAttenuation
   , FD
+  , makeFDRawBearer
   , makeFDBearer
   , GlobalAddressScheme (..)
   , AddressType (..)
@@ -49,26 +50,24 @@ import Prelude hiding (read)
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad.Class.MonadSay
+import Control.Monad (when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.ST.Unsafe (unsafeIOToST)
-import Control.Monad (when)
 import Control.Tracer (Tracer, contramap, contramapM, traceWith)
 
 import GHC.IO.Exception
 
 import Data.Bifoldable (bitraverse_)
-import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Typeable (Typeable)
-import Foreign.C.Error
 import Foreign.Marshal (copyBytes)
 import Foreign.Ptr (castPtr)
 import Numeric.Natural (Natural)
@@ -543,13 +542,30 @@ instance Show addr => Show (FD_ m addr) where
 --
 newtype FD m peerAddr = FD { fdVar :: StrictTVar m (FD_ m peerAddr) }
 
-instance ( MonadST m
-         , MonadThrow m
-         , MonadSay m
-         , MonadLabelledSTM m
-         , Show addr
-         ) => ToRawBearer m (FD m (TestAddress addr)) where
-  toRawBearer = makeRawFDBearer
+data FDRawBearerSendTrace
+  = SendingBytes Int
+  | SentBytes Int
+  deriving (Show, Eq)
+
+data FDRawBearerRecvTrace
+  = ReceivingBytes Int
+  | ReceivedBytes Int
+  | ReadingFromBuffer Int
+  | ReadingFromSocket Int
+  | CheckingBuffer
+  | BufferSize Int
+  | UpdateBuffer
+      Int -- ^ take
+      Int -- ^ keep
+  | BufferUpdated
+  | EndOfStream
+  | Copying
+  deriving (Show, Eq)
+
+data FDRawBearerTrace
+  = TraceSend FDRawBearerSendTrace
+  | TraceRecv FDRawBearerRecvTrace
+  deriving (Show, Eq)
 
 -- | Make a 'RawBearer' from an 'FD'. Since this is only used for testing, we
 -- can bypass the requirement of moving raw bytes directly between file
@@ -557,67 +573,71 @@ instance ( MonadST m
 -- plain old 'ByteString' under the hood. This allows us to use the
 -- 'AttenuatedChannel' inside the `FD_`, even though its send and receive
 -- methods do not have the right format.
-makeRawFDBearer :: forall addr m.
+makeFDRawBearer :: forall m addr.
                    ( MonadST m
-                   , MonadLabelledSTM m
                    , MonadThrow m
-                   , MonadSay m
+                   , MonadLabelledSTM m
                    , Show addr
                    )
-                => FD m (TestAddress addr)
-                -> m (RawBearer m)
-makeRawFDBearer (FD {fdVar}) = do
-    (bufVar :: StrictTMVar m LBS.ByteString) <- newTMVarIO LBS.empty
-    return RawBearer
-              { send = \src srcSize -> do
-                  labelTVarIO fdVar "sender"
-                  say $ "Sending " ++ show srcSize ++ " bytes"
-                  fd_ <- readTVarIO fdVar
-                  case fd_ of
-                    FDConnected _ conn -> do
-                      bs <- withLiftST $ \liftST ->
-                        liftST . unsafeIOToST $ BS.packCStringLen (castPtr src, srcSize)
-                      let bsl = LBS.fromStrict bs
-                      acWrite (connChannelLocal conn) bsl
-                      say $ "Sent " ++ show srcSize ++ " bytes"
-                      return srcSize
-                    _ ->
-                      throwIO (invalidError fd_)
-              , recv = \dst size -> do
-                  labelTVarIO fdVar "receiver"
-                  let size64 = fromIntegral size
-                  say $ "Receiving " ++ show size ++ " bytes"
-                  fd_ <- readTVarIO fdVar
-                  case fd_ of
-                    FDConnected _ conn -> do
-                      say $ "Checking buffer"
-                      bytesFromBuffer <- atomically $ takeTMVar bufVar
-                      say $ "Buffer: " ++ show bytesFromBuffer
-                      (lhs, rhs) <- if not (LBS.null bytesFromBuffer) then do
-                        say $ "Reading up to " ++ show size ++ " bytes from buffer"
-                        return (LBS.take size64 bytesFromBuffer, LBS.drop size64 bytesFromBuffer)
-                      else do
-                        bytesRead <- acRead (connChannelLocal conn)
-                        say $ "Received " ++ show (LBS.length $ LBS.take size64 bytesRead) ++ " or more bytes"
-                        return (LBS.take size64 bytesRead, LBS.drop size64 bytesRead)
-                      say $ "Updating buffer; use: " ++ show lhs ++ " keep: " ++ show (LBS.take 10 rhs) ++
-                            if (LBS.length . LBS.take 11 $ rhs) == 11 then "..." else ""
-                      atomically $ putTMVar bufVar rhs
-                      say $ "Receive: buffer updated"
-                      if LBS.null lhs then do
-                        say $ "Receive: End of stream"
-                        return 0
-                      else do
-                        say $ "Receive: copying."
-                        let bs = LBS.toStrict lhs
-                        withLiftST $ \liftST ->
-                          liftST . unsafeIOToST $ BS.useAsCStringLen bs $ \(src, srcSize) -> do
-                            copyBytes dst (castPtr src) srcSize
-                            return srcSize
-                    _ ->
-                      throwIO (invalidError fd_)
-              }
+                => Tracer m FDRawBearerTrace
+                -> MakeRawBearer m (FD m (TestAddress addr))
+makeFDRawBearer tracer = MakeRawBearer go
   where
+    traceSend = traceWith tracer . TraceSend
+
+    traceRecv = traceWith tracer . TraceRecv
+
+    go (FD {fdVar}) = do
+      (bufVar :: StrictTMVar m LBS.ByteString) <- newTMVarIO LBS.empty
+      return RawBearer
+                { send = \src srcSize -> do
+                    labelTVarIO fdVar "sender"
+                    traceSend $ SendingBytes srcSize
+                    fd_ <- readTVarIO fdVar
+                    case fd_ of
+                      FDConnected _ conn -> do
+                        bs <- stToIO . unsafeIOToST $ BS.packCStringLen (castPtr src, srcSize)
+                        let bsl = LBS.fromStrict bs
+                        acWrite (connChannelLocal conn) bsl
+                        traceSend $ SentBytes srcSize
+                        return srcSize
+                      _ ->
+                        throwIO (invalidError fd_)
+                , recv = \dst size -> do
+                    labelTVarIO fdVar "receiver"
+                    let size64 = fromIntegral size
+                    traceRecv $ ReceivingBytes size
+                    fd_ <- readTVarIO fdVar
+                    case fd_ of
+                      FDConnected _ conn -> do
+                        traceRecv CheckingBuffer
+                        bytesFromBuffer <- atomically $ takeTMVar bufVar
+                        traceRecv $ BufferSize (fromIntegral $ LBS.length bytesFromBuffer)
+                        (lhs, rhs) <- if not (LBS.null bytesFromBuffer)
+                          then do
+                            traceRecv $ ReadingFromBuffer size
+                            return (LBS.take size64 bytesFromBuffer, LBS.drop size64 bytesFromBuffer)
+                          else do
+                            traceRecv $ ReadingFromSocket size
+                            bytesRead <- acRead (connChannelLocal conn)
+                            traceRecv $ ReceivedBytes (fromIntegral . LBS.length $ LBS.take size64 bytesRead)
+                            return (LBS.take size64 bytesRead, LBS.drop size64 bytesRead)
+                        traceRecv $ UpdateBuffer (fromIntegral $ LBS.length lhs) (fromIntegral $ LBS.length rhs)
+                        atomically $ putTMVar bufVar rhs
+                        traceRecv $ BufferUpdated
+                        if LBS.null lhs then do
+                          traceRecv EndOfStream
+                          return 0
+                        else do
+                          traceRecv Copying
+                          let bs = LBS.toStrict lhs
+                          stToIO . unsafeIOToST $ BS.useAsCStringLen bs $ \(src, srcSize) -> do
+                              copyBytes dst (castPtr src) srcSize
+                              return srcSize
+                      _ ->
+                        throwIO (invalidError fd_)
+                }
+
     invalidError :: FD_ m (TestAddress addr) -> IOError
     invalidError fd_ = IOError
       { ioe_handle      = Nothing
