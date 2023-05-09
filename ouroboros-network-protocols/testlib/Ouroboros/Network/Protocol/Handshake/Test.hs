@@ -834,7 +834,7 @@ prop_query_version_NodeToNode_ST
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_11)
+                    (>= NodeToNodeV_12)
                     (\(ArbitraryNodeToNodeVersionData vd) -> ArbitraryNodeToNodeVersionData $ vd {NTN.query = True})
 
 -- | Run 'prop_query_version' in the IO monad.
@@ -851,7 +851,7 @@ prop_query_version_NodeToNode_IO
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_11)
+                    (>= NodeToNodeV_12)
                     (\(ArbitraryNodeToNodeVersionData vd) -> ArbitraryNodeToNodeVersionData $ vd {NTN.query = True})
 
 -- | Run 'prop_query_version' with SimNet.
@@ -868,7 +868,7 @@ prop_query_version_NodeToNode_SimNet
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_11)
+                    (>= NodeToNodeV_12)
                     (\(ArbitraryNodeToNodeVersionData vd) -> ArbitraryNodeToNodeVersionData $ vd {NTN.query = True})
 
 -- | Run 'prop_query_version' in the simulation monad.
@@ -885,7 +885,7 @@ prop_query_version_NodeToClient_ST
                     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                     clientVersions
                     serverVersions
-                    (>= NodeToClientV_15)
+                    (>= NodeToClientV_16)
                     (\vd -> vd {NTC.query = True})
 
 -- | Run 'prop_query_version' in the IO monad.
@@ -902,7 +902,7 @@ prop_query_version_NodeToClient_IO
                     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                     clientVersions
                     serverVersions
-                    (>= NodeToClientV_15)
+                    (>= NodeToClientV_16)
                     (\vd -> vd {NTC.query = True})
 
 -- | Run 'prop_query_version' with SimNet.
@@ -919,7 +919,7 @@ prop_query_version_NodeToClient_SimNet
                     (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
                     clientVersions
                     serverVersions
-                    (>= NodeToClientV_15)
+                    (>= NodeToClientV_16)
                     (\vd -> vd {NTC.query = True})
 
 
