@@ -128,6 +128,7 @@ data NodeVersion
   | NodeToClientVersionV13 Word32
   | NodeToClientVersionV14 Word32
   | NodeToClientVersionV15 Word32
+  | NodeToClientVersionV16 Word32
   | NodeToNodeVersionV1    Word32
   | NodeToNodeVersionV2    Word32
   | NodeToNodeVersionV3    Word32
@@ -139,6 +140,7 @@ data NodeVersion
   | NodeToNodeVersionV9    Word32 Bool
   | NodeToNodeVersionV10   Word32 Bool
   | NodeToNodeVersionV11   Word32 Bool
+  | NodeToNodeVersionV12   Word32 Bool
   deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
@@ -194,6 +196,9 @@ handshakeReqEnc versions query =
       <>  CBOR.encodeInt (fromIntegral magic)
     encodeVersion (NodeToClientVersionV15 magic) =
           CBOR.encodeWord (15 `setBit` nodeToClientVersionBit)
+      <>  CBOR.encodeInt (fromIntegral magic)
+    encodeVersion (NodeToClientVersionV16 magic) =
+          CBOR.encodeWord (16 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
     encodeVersion (NodeToNodeVersionV1 magic) =
           CBOR.encodeWord 1
@@ -211,7 +216,8 @@ handshakeReqEnc versions query =
     encodeVersion (NodeToNodeVersionV8  magic mode) = encodeWithMode 8  magic mode
     encodeVersion (NodeToNodeVersionV9  magic mode) = encodeWithMode 9  magic mode
     encodeVersion (NodeToNodeVersionV10 magic mode) = encodeWithMode 10 magic mode
-    encodeVersion (NodeToNodeVersionV11 magic mode) = encodeWithModeAndQuery 11 magic mode
+    encodeVersion (NodeToNodeVersionV11 magic mode) = encodeWithMode 11 magic mode
+    encodeVersion (NodeToNodeVersionV12 magic mode) = encodeWithMode 12 magic mode
 
     nodeToClientDataWithQuery :: Word32 -> CBOR.Encoding
     nodeToClientDataWithQuery magic
@@ -220,20 +226,25 @@ handshakeReqEnc versions query =
       <> CBOR.encodeBool query
 
     encodeWithMode :: Word -> Word32 -> Bool -> CBOR.Encoding
-    encodeWithMode vn magic mode =
-          CBOR.encodeWord vn
-      <>  CBOR.encodeListLen 2
-      <>  CBOR.encodeInt (fromIntegral magic)
-      <>  CBOR.encodeBool mode
-
-    encodeWithModeAndQuery :: Word -> Word32 -> Bool -> CBOR.Encoding
-    encodeWithModeAndQuery vn magic mode =
+    encodeWithMode vn magic mode
+      | vn >= 12 =
           CBOR.encodeWord vn
        <> CBOR.encodeListLen 4
        <> CBOR.encodeInt (fromIntegral magic)
        <> CBOR.encodeBool mode
        <> CBOR.encodeInt 0 -- NoPeerSharing
        <> CBOR.encodeBool query
+      | vn >= 11 =
+          CBOR.encodeWord vn
+       <> CBOR.encodeListLen 4
+       <> CBOR.encodeInt (fromIntegral magic)
+       <> CBOR.encodeBool mode
+       <> CBOR.encodeInt 0 -- NoPeerSharing
+      | otherwise =
+          CBOR.encodeWord vn
+      <>  CBOR.encodeListLen 2
+      <>  CBOR.encodeInt (fromIntegral magic)
+      <>  CBOR.encodeBool mode
 
 handshakeReq :: [NodeVersion] -> Bool -> ByteString
 handshakeReq []       _     = LBS.empty
@@ -476,6 +487,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
             extract (NodeToClientVersionV13 m) = (-13, m)
             extract (NodeToClientVersionV14 m) = (-14, m)
             extract (NodeToClientVersionV15 m) = (-15, m)
+            extract (NodeToClientVersionV16 m) = (-16, m)
             extract (NodeToNodeVersionV1 m)    = (1, m)
             extract (NodeToNodeVersionV2 m)    = (2, m)
             extract (NodeToNodeVersionV3 m)    = (3, m)
@@ -487,6 +499,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
             extract (NodeToNodeVersionV9 m _)  = (9, m)
             extract (NodeToNodeVersionV10 m _) = (10, m)
             extract (NodeToNodeVersionV11 m _) = (11, m)
+            extract (NodeToNodeVersionV12 m _) = (12, m)
 
     peerString :: IO String
     peerString =
