@@ -216,6 +216,7 @@ data CDDLSpecs = CDDLSpecs {
     cddlHandshakeNodeToClient     :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
     cddlHandshakeNodeToNodeV7To10 :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
     cddlHandshakeNodeToNodeV11    :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
+    cddlHandshakeNodeToNodeV12    :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
     cddlChainSync                 :: CDDLSpec (ChainSync
                                                  BlockHeader
                                                  (Point BlockHeader)
@@ -236,13 +237,14 @@ data CDDLSpecs = CDDLSpecs {
 
 readCDDLSpecs :: IO CDDLSpecs
 readCDDLSpecs = do
-    dir <- bool (                                       "test-cddl" </> "specs") -- False
-                ("ouroboros-network-protocols-test" </> "test-cddl" </> "specs") -- True
-       <$> doesDirectoryExist "ouroboros-network-protocols-test"
+    dir <- bool (                                  "test-cddl" </> "specs") -- False
+                ("ouroboros-network-protocols" </> "test-cddl" </> "specs") -- True
+       <$> doesDirectoryExist "ouroboros-network-protocols"
     common                <- BL.readFile (dir </> "common.cddl")
     handshakeNodeToClient <- BL.readFile (dir </> "handshake-node-to-client.cddl")
     handshakeNodeToNodeV7To10 <- BL.readFile (dir </> "handshake-node-to-node.cddl")
     handshakeNodeToNodeV11    <- BL.readFile (dir </> "handshake-node-to-node-v11.cddl")
+    handshakeNodeToNodeV12    <- BL.readFile (dir </> "handshake-node-to-node-v12.cddl")
     chainSync             <- BL.readFile (dir </> "chain-sync.cddl")
     blockFetch            <- BL.readFile (dir </> "block-fetch.cddl")
     txSubmission2         <- BL.readFile (dir </> "tx-submission2.cddl")
@@ -254,24 +256,25 @@ readCDDLSpecs = do
     -- append common definitions; they must be appended since the first
     -- definition is the entry point for a cddl spec.
     return CDDLSpecs {
-        cddlHandshakeNodeToClient = CDDLSpec $ handshakeNodeToClient,
+        cddlHandshakeNodeToClient     = CDDLSpec $ handshakeNodeToClient,
         cddlHandshakeNodeToNodeV7To10 = CDDLSpec $ handshakeNodeToNodeV7To10,
         cddlHandshakeNodeToNodeV11    = CDDLSpec $ handshakeNodeToNodeV11,
-        cddlChainSync             = CDDLSpec $ chainSync
-                                            <> common,
-        cddlBlockFetch            = CDDLSpec $ blockFetch
-                                            <> common,
-        cddlTxSubmission2         = CDDLSpec $ txSubmission2
-                                            <> common,
-        cddlKeepAlive             = CDDLSpec keepAlive,
-        cddlLocalTxSubmission     = CDDLSpec $ localTxSubmission
-                                            <> common,
-        cddlLocalTxMonitor        = CDDLSpec $ localTxMonitor
-                                            <> common,
-        cddlLocalStateQuery       = CDDLSpec $ localStateQuery
-                                            <> common,
-        cddlPeerSharing           = CDDLSpec $ peerSharing
-                                            <> common
+        cddlHandshakeNodeToNodeV12    = CDDLSpec $ handshakeNodeToNodeV12,
+        cddlChainSync                 = CDDLSpec $ chainSync
+                                                <> common,
+        cddlBlockFetch                = CDDLSpec $ blockFetch
+                                                <> common,
+        cddlTxSubmission2             = CDDLSpec $ txSubmission2
+                                                <> common,
+        cddlKeepAlive                 = CDDLSpec keepAlive,
+        cddlLocalTxSubmission         = CDDLSpec $ localTxSubmission
+                                                <> common,
+        cddlLocalTxMonitor            = CDDLSpec $ localTxMonitor
+                                                <> common,
+        cddlLocalStateQuery           = CDDLSpec $ localStateQuery
+                                                <> common,
+        cddlPeerSharing               = CDDLSpec $ peerSharing
+                                                <> common
       }
 
 --
