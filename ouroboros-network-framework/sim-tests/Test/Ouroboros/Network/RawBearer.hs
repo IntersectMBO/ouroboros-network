@@ -47,7 +47,7 @@ tests = testGroup "Ouroboros.Network.RawBearer" $
 
 onlyIf :: Bool -> a -> Maybe a
 onlyIf False = const Nothing
-onlyIf True = Just
+onlyIf True  = Just
 
 prop_raw_bearer_send_and_receive_inet :: Message -> Property
 prop_raw_bearer_send_and_receive_inet msg =
