@@ -22,6 +22,8 @@ import           Control.Monad.ST.Unsafe (unsafeIOToST)
 import           Control.Tracer (nullTracer)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import           Data.Maybe (catMaybes)
+import           Data.Word (Word32)
 import           Foreign.Marshal (copyBytes, free, mallocBytes)
 import           Foreign.Ptr (castPtr, plusPtr)
 import qualified Network.Socket as Socket
@@ -34,10 +36,31 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.RawBearer"
-  [ testProperty "raw bearer send receive simulated socket" prop_raw_bearer_send_and_receive_iosim
-  , testProperty "raw bearer send receive unix socket" prop_raw_bearer_send_and_receive_unix
+tests = testGroup "Ouroboros.Network.RawBearer" $
+  catMaybes
+  [ Just $ testProperty "raw bearer send receive simulated socket" prop_raw_bearer_send_and_receive_iosim
+  , onlyIf (Socket.isSupportedSockAddr (Socket.SockAddrUnix "dummy")) $
+    testProperty "raw bearer send receive unix socket" prop_raw_bearer_send_and_receive_unix
+  , onlyIf (Socket.isSupportedSockAddr (Socket.SockAddrInet 10000 localhost)) $
+    testProperty "raw bearer send receive inet socket" prop_raw_bearer_send_and_receive_inet
   ]
+
+onlyIf :: Bool -> a -> Maybe a
+onlyIf False = const Nothing
+onlyIf True = Just
+
+prop_raw_bearer_send_and_receive_inet :: Message -> Property
+prop_raw_bearer_send_and_receive_inet msg =
+  ioProperty $ withIOManager $ \iomgr -> do
+    let clientAddr = Socket.SockAddrInet 10000 localhost
+    let serverAddr = Socket.SockAddrInet 10001 localhost
+    rawBearerSendAndReceive
+      (socketSnocket iomgr)
+      clientAddr serverAddr
+      msg
+
+localhost :: Word32
+localhost = Socket.tupleToHostAddress (127, 0, 0, 1)
 
 prop_raw_bearer_send_and_receive_unix :: Message -> Property
 prop_raw_bearer_send_and_receive_unix msg =
