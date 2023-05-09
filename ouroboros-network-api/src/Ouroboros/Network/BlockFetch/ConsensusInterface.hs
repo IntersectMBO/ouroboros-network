@@ -164,18 +164,14 @@ data WhetherReceivingTentativeBlocks
 -------------------------------------------------------------------------------}
 
 -- | A new type used to emphasize the precondition of
--- 'Ouroboros.Network.BlockFetch.headerForgeUTCTime' and
--- 'Ouroboros.Network.BlockFetch.blockForgeUTCTime' at each call site.
+-- 'Ouroboros.Network.BlockFetch.ConsensusInterface.headerForgeUTCTime' and
+-- 'Ouroboros.Network.BlockFetch.ConsensusInterface.blockForgeUTCTime' at each
+-- call site.
 --
 -- At time of writing, the @a@ is either a header or a block. The headers are
 -- literally from Consensus (ie provided by ChainSync). Blocks, on the other
 -- hand, are indirectly from Consensus: they were fetched only because we
 -- favored the corresponding header that Consensus provided.
---
--- NOTE: We define it here so that it can be used consistently throughout the
--- implementation; definiting it only in
--- 'Ouroboros.Network.BlockFetch.BlockFetchConsensusInterface' would be too
--- late.
 newtype FromConsensus a = FromConsensus {unFromConsensus :: a}
   deriving (Functor)
 
