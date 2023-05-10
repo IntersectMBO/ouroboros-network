@@ -16,7 +16,7 @@
           #lib.io.github_push
           github
           #default_branch: true
-          #branch: "staging|trying"
+          #branch: "gh-readonly-queue/.*"
         },
         {
           #lib.io.github_pr

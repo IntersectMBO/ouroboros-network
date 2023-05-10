@@ -6,10 +6,9 @@ concurrency:
 
 on:
   pull_request:
+  merge_group:
   push:
-    branches:
-      - 'staging'
-      - 'trying'
+    branches: ['main']
 
 jobs:
   check-cabal-files:
