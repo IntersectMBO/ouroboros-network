@@ -17,12 +17,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10.7"]
+        ghc: ["9.2.7"]
         os: [ubuntu-latest]
 
     env:
-      # current ref from: 27.02.2022
-      SECP_CACHE_VERSION: "2022-12-29"
+      CABAL_BUILDDIR: "dist-newstyle"
 
     permissions:
       pages: write
@@ -43,16 +42,6 @@ jobs:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: '3.10.1.0'
 
-    - name: Install build environment
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install libsodium-dev
-
-    - name: Set up temp directory
-      run: |
-        echo 'TMPDIR=${{ runner.temp }}'  >> $GITHUB_ENV
-        echo 'TMP=${{ runner.temp }}'     >> $GITHUB_ENV
-
     - uses: actions/cache@v3
       name: Cache cabal store
       with:
@@ -64,7 +53,7 @@ jobs:
       run: cabal update
 
     - name: Build plan
-      run: cabal build --dry-run --enable-tests all
+      run: cabal --builddir="$CABAL_BUILDDIR" build --dry-run --enable-tests all
 
     - name: Build Haddock documentation 🔧
       run: |

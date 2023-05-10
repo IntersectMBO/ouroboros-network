@@ -16,10 +16,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Workaround runner image issue
-      # https://github.com/actions/runner-images/issues/7061
-      run: sudo chown -R $USER /usr/local/.ghcup
-
     - name: Install Haskell
       uses: input-output-hk/setup-haskell@v1
       id: setup-haskell
@@ -44,8 +40,12 @@ jobs:
         os: [windows-latest]
 
     env:
-      # Modify this value to "invalidate" the cabal cache.
+      # Modify this value to "invalidate" all cabal caches.
       CABAL_CACHE_VERSION: "2022-12-30"
+      # Modify this value to "invalidate" the cabal store cache only.
+      CACHE_VERSION: "20220919"
+      # Modify this value to "invalidate" the dist-newstyle cache only.
+      DIST_CACHE_VERSION: "20221122"
 
     steps:
 
@@ -57,7 +57,6 @@ jobs:
         cabal-version: "3.10.1.0"
         pacman-packages: >
           mingw-w64-x86_64-pkg-config
-          mingw-w64-x86_64-libsodium
           mingw-w64-x86_64-openssl
           mingw-w64-x86_64-sed
           base-devel
@@ -71,9 +70,9 @@ jobs:
       id: cache-keys
       shell: bash
       run: |
-        echo "weeknum=$(/usr/bin/date -u "+%W")" >> $GITHUB_OUTPUT
-        echo "CACHE_VERSION=20220919" >> $GITHUB_OUTPUT
-        echo "DIST_CACHE_VERSION=20221122" >> $GITHUB_OUTPUT
+        echo "weeknum=$(/usr/bin/date -u "+%W")" >> $env:GITHUB_OUTPUT
+        echo "CACHE_VERSION=$CACHE_VERSION" >> $env:GITHUB_OUTPUT
+        echo "DIST_CACHE_VERSION=$DIST_CACHE_VERSION" >> $env:GITHUB_OUTPUT
 
     - uses: actions/checkout@v3
 
@@ -136,11 +135,7 @@ jobs:
 
     # We don't run cddl in GitHub actions (only on Hydra).
     # - name: ouroboros-network-protocols [cddl]
-    #   run: |
-    #     # The tests call out to msys2 commands. We generally do not want to mix toolchains, so
-    #     # we are very deliberate about only adding msys64 to the path where absolutely necessary.
-    #     ${{ (runner.os == 'Windows' && '$env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)') || '' }}
-    #     cabal run ouroboros-network-protocols-test:cddl
+    #   run: cabal run ouroboros-network-protocols-test:cddl
 
     - name: ouroboros-network [test]
       run: cabal run ouroboros-network:test
