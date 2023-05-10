@@ -1,5 +1,17 @@
 # Revision history for ouroboros-network-api
 
+## 0.4.0.0 -- 2023-05-08
+
+### Breakin changes
+
+* Added `NodeToNodeV_12` and `NodeToClientV_16` which support handshake query.
+* Added `query` flag to `NodeToClientVersionData` and `NodeToNodeVersionData`.
+* Introduced `HandshakeCallbacks` record.
+
+### Non-breaking changes
+
+* Added `Querable` type class.
+
 ## 0.3.0.0 -- 2023-04-28
 
 * Removed `encoddedTipSize` and `encodedPointSize`.
