@@ -24,7 +24,7 @@ jobs:
       uses: input-output-hk/setup-haskell@v1
       id: setup-haskell
       with:
-        cabal-version: "3.8.1.0"
+        cabal-version: "3.10.1.0"
 
     - uses: actions/checkout@v3
 
@@ -39,18 +39,13 @@ jobs:
       fail-fast: false
       matrix:
         # Currently Hydra/Cicero build with 8.10.7
-        ghc: ["9.2.5"]
+        ghc: ["9.2.7"]
         # This is the only OS that Hydra/Cicero cannot run.
         os: [windows-latest]
 
     env:
       # Modify this value to "invalidate" the cabal cache.
       CABAL_CACHE_VERSION: "2022-12-30"
-
-      # current ref from: 27.02.2022
-      SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
-
-      SECP_CACHE_VERSION: "2022-12-30"
 
     steps:
 
@@ -59,7 +54,7 @@ jobs:
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: "3.8.1.0"
+        cabal-version: "3.10.1.0"
         pacman-packages: >
           mingw-w64-x86_64-pkg-config
           mingw-w64-x86_64-libsodium
@@ -81,12 +76,6 @@ jobs:
         echo "DIST_CACHE_VERSION=20221122" >> $GITHUB_OUTPUT
 
     - uses: actions/checkout@v3
-
-    - name: Install secp256k1
-      uses: input-output-hk/setup-secp256k1@v1
-      with:
-        git-ref: ${{ env.SECP256K1_REF }}
-        cache-version: ${{ env.SECP_CACHE_VERSION }}
 
     - name: "Configure cabal.project.local"
       run: |
