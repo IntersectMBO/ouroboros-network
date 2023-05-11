@@ -68,6 +68,8 @@ import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.IOSim
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
@@ -78,8 +80,6 @@ import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Pretty.Simple (pPrint)
-import Control.Monad.Class.MonadTime.SI
-import Control.Monad.IOSim
 
 -- Exactly as named.
 unfHydra :: Int
