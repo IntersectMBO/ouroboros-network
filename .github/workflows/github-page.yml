@@ -3,6 +3,7 @@ name: "Haddock documentation"
 on:
   schedule:
     - cron:  '0 0 * * *'
+  workflow_dispatch:
 
 jobs:
   haddocks:
