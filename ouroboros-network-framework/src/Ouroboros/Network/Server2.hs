@@ -49,12 +49,13 @@ import           Foreign.C.Error
 #endif
 
 import           Ouroboros.Network.ConnectionHandler
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (InboundGovernorInfoChannel)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.InboundGovernor
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket
-import Ouroboros.Network.ConnectionManager.InformationChannel (InboundGovernorInfoChannel)
 
 
 --

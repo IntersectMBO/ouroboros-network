@@ -57,11 +57,11 @@ import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 
-import           Ouroboros.Network.Testing.Data.Script (
-                     PickScript, Script (..), ScriptDelay (..), TimedScript,
-                     arbitraryPickScript, arbitraryScriptOf, initScript',
-                     interpretPickScript, playTimedScript, prop_shrink_Script,
-                     singletonScript, stepScript)
+import           Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
+                     ScriptDelay (..), TimedScript, arbitraryPickScript,
+                     arbitraryScriptOf, initScript', interpretPickScript,
+                     playTimedScript, prop_shrink_Script, singletonScript,
+                     stepScript)
 import           Ouroboros.Network.Testing.Utils (arbitrarySubset,
                      prop_shrink_nonequal, prop_shrink_valid)
 

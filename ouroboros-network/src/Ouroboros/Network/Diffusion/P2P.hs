@@ -81,14 +81,14 @@ import           Data.List (nub)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (InformationChannel (..), newInformationChannel, InboundGovernorInfoChannel, OutboundGovernorInfoChannel)
+                     (InboundGovernorInfoChannel, InformationChannel (..),
+                     OutboundGovernorInfoChannel, newInformationChannel)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
 import           Ouroboros.Network.Diffusion.Utils
 import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.InboundGovernor (
-                     InboundGovernorTrace (..),
+import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
                      RemoteTransitionTrace)
 import           Ouroboros.Network.IOManager
 import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
