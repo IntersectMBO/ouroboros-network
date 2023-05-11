@@ -1619,6 +1619,33 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
               (EstablishedPeers.toSet . Governor.establishedPeers)
               events
 
+          trJoinKillSig :: Signal JoinedOrKilled
+          trJoinKillSig =
+              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+            . Signal.selectEvents
+                (\case TrJoiningNetwork -> Just Joined
+                       TrKillingNode    -> Just Killed
+                       _                -> Nothing
+                )
+            . selectDiffusionSimulationTrace
+            $ events
+
+          -- Signal.keyedUntil receives 2 functions one that sets start of the
+          -- set signal, one that ends it and another that stops all.
+          --
+          -- In this particular case we want a signal that is keyed beginning
+          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
+          -- with the periods when a node was alive.
+          trIsNodeAlive :: Signal Bool
+          trIsNodeAlive =
+                not . Set.null
+            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
+                                                      Set.empty)
+                                  (fromJoinedOrKilled Set.empty
+                                                      (Set.singleton ()))
+                                  (const False)
+                                  trJoinKillSig
+
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
             selectDiffusionPeerSelectionState Governor.activePeers events
@@ -1654,7 +1681,8 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
 
           promotionOpportunities :: Signal (Set NtNAddr)
           promotionOpportunities =
-            (\local established active recentFailures ->
+            (\local established active recentFailures isAlive ->
+              if isAlive then
                 Set.unions
                   [ -- There are no opportunities if we're at or above target
                     if Set.size groupActive >= target
@@ -1665,10 +1693,13 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
                   , let groupActive      = group `Set.intersection` active
                         groupEstablished = group `Set.intersection` established
                   ]
+                        else
+              Set.empty
             ) <$> govLocalRootPeersSig
               <*> govEstablishedPeersSig
               <*> govActivePeersSig
               <*> govActiveFailuresSig
+              <*> trIsNodeAlive
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
