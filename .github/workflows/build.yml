@@ -62,12 +62,6 @@ jobs:
           libtool
           make
 
-    - name: "cache keys: weeknum"
-      id: cache-keys
-      shell: bash
-      run: |
-        echo "weeknum=$(/usr/bin/date -u "+%W")" >> $env:GITHUB_OUTPUT
-
     - uses: actions/checkout@v3
 
     - name: "Configure cabal.project.local"
@@ -101,7 +95,7 @@ jobs:
         path: |
           dist-newstyle
           !dist-newstyle/**/.git
-        key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
+        key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project') }}
         restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - name: Build dependencies
