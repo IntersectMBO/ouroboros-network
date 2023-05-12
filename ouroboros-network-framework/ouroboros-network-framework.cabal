@@ -82,7 +82,7 @@ library
                      , quiet
 
                      , cardano-prelude
-                     , contra-tracer
+                     , iog-contra-tracer
 
                      , io-classes     ^>=1.1
                      , si-timers
@@ -176,7 +176,7 @@ test-suite test
                      , tasty
                      , tasty-quickcheck
 
-                     , contra-tracer
+                     , iog-contra-tracer
 
                      , io-sim
                      , io-classes
@@ -221,7 +221,7 @@ executable demo-ping-pong
                        bytestring,
                        directory,
 
-                       contra-tracer,
+                       iog-contra-tracer,
 
                        ouroboros-network-api,
                        ouroboros-network-framework,
@@ -249,7 +249,7 @@ executable demo-connection-manager
                        optparse-applicative,
                        random,
 
-                       contra-tracer,
+                       iog-contra-tracer,
 
                        io-classes,
                        network-mux,

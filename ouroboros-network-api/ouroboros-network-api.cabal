@@ -63,7 +63,7 @@ library
 
                        cardano-slotting,
                        cardano-strict-containers,
-                       contra-tracer,
+                       iog-contra-tracer,
 
                        io-classes       ^>=1.1,
                        network-mux      ^>=0.4,

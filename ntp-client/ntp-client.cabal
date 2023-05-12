@@ -27,7 +27,7 @@ library
                       , base            >=4.14 && <4.19
                       , binary          >=0.8 && <0.11
                       , bytestring      >=0.10 && <0.12
-                      , contra-tracer   >=0.1 && <0.2
+                      , iog-contra-tracer
                       , network         >= 3.1.2 && <3.2
                       , stm             >=2.4 && <2.6
                       , time            >=1.9.1 && <1.14
@@ -69,7 +69,7 @@ executable demo-ntp-client
      buildable: False
   build-depends:        async           >=2.2 && <2.3
                       , base            >=4.14 && <4.19
-                      , contra-tracer   >=0.1 && <0.2
+                      , iog-contra-tracer
                       , Win32-network   >=0.1 && <0.2
                       , ntp-client
   default-language:   Haskell2010

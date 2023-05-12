@@ -48,7 +48,7 @@ library
                        io-classes     ^>=1.1,
                        strict-stm,
                        si-timers,
-                       contra-tracer   >=0.1 && <0.2,
+                       iog-contra-tracer,
                        monoidal-synchronisation
                                        >=0.1 && <0.2,
 
@@ -129,7 +129,7 @@ test-suite test
                        si-timers,
                        strict-stm,
                        io-sim,
-                       contra-tracer,
+                       iog-contra-tracer,
                        network-mux,
                        Win32-network,
 
@@ -170,7 +170,7 @@ executable mux-demo
   build-depends:       base >=4.14 && <4.19,
                        network-mux,
                        io-classes,
-                       contra-tracer,
+                       iog-contra-tracer,
                        stm,
 
                        bytestring,

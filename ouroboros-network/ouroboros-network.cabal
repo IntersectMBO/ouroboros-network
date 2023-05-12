@@ -114,7 +114,7 @@ library
                        cardano-prelude,
                        cardano-slotting,
                        cardano-strict-containers,
-                       contra-tracer,
+                       iog-contra-tracer,
                        monoidal-synchronisation,
 
                        io-classes       ^>=1.1,
@@ -204,7 +204,7 @@ test-suite test
 
                        cardano-prelude,
                        cardano-slotting,
-                       contra-tracer,
+                       iog-contra-tracer,
                        nothunks,
 
                        io-classes,
@@ -249,7 +249,7 @@ executable demo-chain-sync
                        serialise,
                        stm,
 
-                       contra-tracer,
+                       iog-contra-tracer,
 
                        typed-protocols,
                        ouroboros-network-api,
