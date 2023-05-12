@@ -6,10 +6,7 @@ concurrency:
 
 on:
   pull_request:
-  push:
-    branches:
-      - 'staging'
-      - 'trying'
+  merge_group:
 
 jobs:
   check-git-dependencies:
@@ -25,7 +22,5 @@ jobs:
         shell: bash
 
     steps:
-
     - uses: actions/checkout@v3
-
     - run: ./scripts/ci/check-git-dependencies.sh

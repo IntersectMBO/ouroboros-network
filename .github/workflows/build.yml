@@ -7,8 +7,6 @@ concurrency:
 on:
   pull_request:
   merge_group:
-  push:
-    branches: ['main']
 
 jobs:
   check-cabal-files:
@@ -28,7 +26,6 @@ jobs:
 
   build:
     runs-on: ${{ matrix.os }}
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
 
     strategy:
       fail-fast: false
@@ -65,14 +62,6 @@ jobs:
           libtool
           make
 
-    - name: "[OUTPUT] cache keys: version, weeknum"
-      id: cache-keys
-      shell: bash
-      run: |
-        echo "weeknum=$(/usr/bin/date -u "+%W")" >> $env:GITHUB_OUTPUT
-        echo "CACHE_VERSION=$CACHE_VERSION" >> $env:GITHUB_OUTPUT
-        echo "DIST_CACHE_VERSION=$DIST_CACHE_VERSION" >> $env:GITHUB_OUTPUT
-
     - uses: actions/checkout@v3
 
     - name: "Configure cabal.project.local"
@@ -93,12 +82,12 @@ jobs:
         cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -L .github/workflows/jq-install-plan | sort | uniq > dependencies.txt
 
-    - uses: actions/cache@v3
-      name: "Cache `cabal store`"
+    - uses: actions/cache/restore@v3
+      name: "Restore cache: `cabal store`"
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
-        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
-        restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+        restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - uses: actions/cache@v3
       name: "Cache `dist-newstyle`"
@@ -106,11 +95,17 @@ jobs:
         path: |
           dist-newstyle
           !dist-newstyle/**/.git
-        key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
-        restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+        key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project') }}
+        restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - name: Build dependencies
       run: cabal build --only-dependencies all -j
+
+    - uses: actions/cache/save@v3
+      name: "Save cache: `cabal store`"
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
 
     - name: Build projects [build]
       run: cabal build all -j
