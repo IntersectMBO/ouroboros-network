@@ -25,7 +25,7 @@ library
                         aeson                         >=2.1.1.0  && <3,
                         cborg                         >=0.2.8    && <0.3,
                         bytestring                    >=0.10     && <0.12,
-                        contra-tracer                 >=0.1      && <0.2,
+                        iog-contra-tracer,
 
                         io-classes                   ^>=1.1,
                         si-timers,

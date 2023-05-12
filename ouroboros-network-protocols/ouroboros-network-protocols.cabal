@@ -168,7 +168,7 @@ library testlib
                        tasty-quickcheck,
                        text,
 
-                       contra-tracer,
+                       iog-contra-tracer,
 
                        io-classes,
                        io-sim,
