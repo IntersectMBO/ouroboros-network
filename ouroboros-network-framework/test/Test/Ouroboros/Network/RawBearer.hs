@@ -39,6 +39,7 @@ tests :: TestTree
 tests = testGroup "Ouroboros.Network.RawBearer" $
   catMaybes
   [ Just $ testProperty "raw bearer send receive simulated socket" prop_raw_bearer_send_and_receive_iosim
+  , Just $ testProperty "raw bearer send receive local socket" prop_raw_bearer_send_and_receive_local
   , onlyIf (Socket.isSupportedSockAddr (Socket.SockAddrUnix "dummy")) $
     testProperty "raw bearer send receive unix socket" prop_raw_bearer_send_and_receive_unix
   , onlyIf (Socket.isSupportedSockAddr (Socket.SockAddrInet 10000 localhost)) $
@@ -58,6 +59,28 @@ prop_raw_bearer_send_and_receive_inet msg =
       (socketSnocket iomgr)
       clientAddr serverAddr
       msg
+
+prop_raw_bearer_send_and_receive_local :: Message -> Property
+prop_raw_bearer_send_and_receive_local msg =
+  ioProperty $ withIOManager $ \iomgr -> do
+    let clientName = "local_socket_client.test"
+    let serverName = "local_socket_server.test"
+    cleanUp clientName
+    cleanUp serverName
+    let clientAddr = LocalAddress clientName
+    let serverAddr = LocalAddress serverName
+    rawBearerSendAndReceive
+      (localSnocket iomgr)
+      clientAddr serverAddr
+      msg `finally` do
+        cleanUp clientName
+        cleanUp serverName
+  where
+    cleanUp name = do
+        catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
+                  (removeFile name)
+                  (\_ -> return ())
+
 
 localhost :: Word32
 localhost = Socket.tupleToHostAddress (127, 0, 0, 1)
