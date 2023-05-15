@@ -49,15 +49,15 @@ data NodeToNodeVersion
     | NodeToNodeV_11
     -- ^ Changes:
     --
-    -- * Enable @CardanoNodeToNodeVersion7@, i.e., Conway
     -- * Adds a new extra parameter to handshake: PeerSharing
     --   This version is needed to support the new  Peer Sharing miniprotocol
     --   older versions that are negotiated will appear as not participating
     --   in Peer Sharing to newer versions.
+    -- * Adds `query` to NodeToClientVersionData.
     | NodeToNodeV_12
     -- ^ Changes:
     --
-    -- * Adds `query` to NodeToClientVersionData.
+    -- * Enable @CardanoNodeToNodeVersion7@, i.e., Conway
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -140,7 +140,7 @@ instance Queryable NodeToNodeVersionData where
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
 nodeToNodeCodecCBORTerm version
-  | version >= NodeToNodeV_12 =
+  | version >= NodeToNodeV_11 =
     let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
         encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
           = CBOR.TList $
@@ -173,46 +173,6 @@ nodeToNodeCodecCBORTerm version
                                   2 -> PeerSharingPublic
                                   _ -> error "decodeTerm: impossible happened!",
                   query = query
-                }
-          | x < 0 || x > 0xffffffff
-          = Left $ T.pack $ "networkMagic out of bound: " <> show x
-          | otherwise -- peerSharing < 0 || peerSharing > 2
-          = Left $ T.pack $ "peerSharing out of bound: " <> show peerSharing
-        decodeTerm _ t
-          = Left $ T.pack $ "unknown encoding: " ++ show t
-     in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
-  | version >= NodeToNodeV_11 =
-    let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing }
-          = CBOR.TList $
-              [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-              , CBOR.TBool (case diffusionMode of
-                             InitiatorOnlyDiffusionMode         -> True
-                             InitiatorAndResponderDiffusionMode -> False)
-              , CBOR.TInt (case peerSharing of
-                             NoPeerSharing      -> 0
-                             PeerSharingPrivate -> 1
-                             PeerSharingPublic  -> 2)
-              ]
-
-        decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing])
-          | x >= 0
-          , x <= 0xffffffff
-          , peerSharing >= 0
-          , peerSharing <= 2
-          = Right
-              NodeToNodeVersionData {
-                  networkMagic = NetworkMagic (fromIntegral x),
-                  diffusionMode = if diffusionMode
-                                  then InitiatorOnlyDiffusionMode
-                                  else InitiatorAndResponderDiffusionMode,
-                  peerSharing = case peerSharing of
-                                  0 -> NoPeerSharing
-                                  1 -> PeerSharingPrivate
-                                  2 -> PeerSharingPublic
-                                  _ -> error "decodeTerm: impossible happened!",
-                  query = False
                 }
           | x < 0 || x > 0xffffffff
           = Left $ T.pack $ "networkMagic out of bound: " <> show x

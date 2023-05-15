@@ -138,8 +138,7 @@ tests CDDLSpecs { cddlChainSync
                 , cddlKeepAlive
                 , cddlLocalStateQuery
                 , cddlHandshakeNodeToNodeV7To10
-                , cddlHandshakeNodeToNodeV11
-                , cddlHandshakeNodeToNodeV12ToLast
+                , cddlHandshakeNodeToNodeV11ToLast
                 , cddlHandshakeNodeToClient
                 , cddlPeerSharing
                 } =
@@ -150,12 +149,9 @@ tests CDDLSpecs { cddlChainSync
       [ testProperty "NodeToNode.Handshake V7 to V10"
                                          (prop_encodeHandshakeNodeToNodeV7To10
                                                cddlHandshakeNodeToNodeV7To10)
-      , testProperty "NodeToNode.Handshake V11"
-                                         (prop_encodeHandshakeNodeToNodeV11
-                                               cddlHandshakeNodeToNodeV11)
-      , testProperty "NodeToNode.Handshake V12 to Last"
-                                         (prop_encodeHandshakeNodeToNodeV12ToLast
-                                               cddlHandshakeNodeToNodeV12ToLast)
+      , testProperty "NodeToNode.Handshake V11 to Last"
+                                         (prop_encodeHandshakeNodeToNodeV11ToLast
+                                               cddlHandshakeNodeToNodeV11ToLast)
       , -- If this fails whilst adding a new node-to-client version, ensure that
         -- all the necessary changes are included:
         --
@@ -189,7 +185,7 @@ tests CDDLSpecs { cddlChainSync
                                            cddlHandshakeNodeToNodeV7To10)
       , testCase "NodeToNode.Handshake V11"
                                      (unit_decodeHandshakeNodeToNode
-                                           cddlHandshakeNodeToNodeV11)
+                                           cddlHandshakeNodeToNodeV11ToLast)
       , testCase "NodeToClient.Handshake"
                                      (unit_decodeHandshakeNodeToClient
                                            cddlHandshakeNodeToClient)
@@ -219,8 +215,7 @@ newtype CDDLSpec ps = CDDLSpec BL.ByteString
 data CDDLSpecs = CDDLSpecs {
     cddlHandshakeNodeToClient        :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
     cddlHandshakeNodeToNodeV7To10    :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
-    cddlHandshakeNodeToNodeV11       :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
-    cddlHandshakeNodeToNodeV12ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
+    cddlHandshakeNodeToNodeV11ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
     cddlChainSync                    :: CDDLSpec (ChainSync
                                                     BlockHeader
                                                     (Point BlockHeader)
@@ -247,8 +242,7 @@ readCDDLSpecs = do
     common                <- BL.readFile (dir </> "common.cddl")
     handshakeNodeToClient <- BL.readFile (dir </> "handshake-node-to-client.cddl")
     handshakeNodeToNodeV7To10    <- BL.readFile (dir </> "handshake-node-to-node.cddl")
-    handshakeNodeToNodeV11       <- BL.readFile (dir </> "handshake-node-to-node-v11.cddl")
-    handshakeNodeToNodeV12ToLast <- BL.readFile (dir </> "handshake-node-to-node-v12.cddl")
+    handshakeNodeToNodeV11ToLast <- BL.readFile (dir </> "handshake-node-to-node-v11.cddl")
     chainSync             <- BL.readFile (dir </> "chain-sync.cddl")
     blockFetch            <- BL.readFile (dir </> "block-fetch.cddl")
     txSubmission2         <- BL.readFile (dir </> "tx-submission2.cddl")
@@ -262,8 +256,7 @@ readCDDLSpecs = do
     return CDDLSpecs {
         cddlHandshakeNodeToClient        = CDDLSpec $ handshakeNodeToClient,
         cddlHandshakeNodeToNodeV7To10    = CDDLSpec $ handshakeNodeToNodeV7To10,
-        cddlHandshakeNodeToNodeV11       = CDDLSpec $ handshakeNodeToNodeV11,
-        cddlHandshakeNodeToNodeV12ToLast = CDDLSpec $ handshakeNodeToNodeV12ToLast,
+        cddlHandshakeNodeToNodeV11ToLast = CDDLSpec $ handshakeNodeToNodeV11ToLast,
         cddlChainSync                    = CDDLSpec $ chainSync
                                                    <> common,
         cddlBlockFetch                   = CDDLSpec $ blockFetch
@@ -399,15 +392,8 @@ newtype NtNHandshakeV7To10 =
     (AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term))
     deriving Show
 
--- | Newtype for testing Handshake CDDL Specification from version 11 onward.
---
-newtype NtNHandshakeV11 =
-  NtNHandshakeV11
-    (AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term))
-    deriving Show
-
-newtype NtNHandshakeV12ToLast =
-  NtNHandshakeV12ToLast
+newtype NtNHandshakeV11ToLast =
+  NtNHandshakeV11ToLast
     (AnyMessageAndAgency (Handshake NodeToNodeVersion CBOR.Term))
     deriving Show
 
@@ -463,15 +449,10 @@ instance Arbitrary NtNHandshakeV7To10 where
     let genVersion = elements [minBound .. NodeToNodeV_10]
     NtNHandshakeV7To10 <$> genNtNHandshake genVersion
 
-instance Arbitrary NtNHandshakeV11 where
-  arbitrary = do
-    let genVersion = elements [NodeToNodeV_11]
-    NtNHandshakeV11 <$> genNtNHandshake genVersion
-
-instance Arbitrary NtNHandshakeV12ToLast where
+instance Arbitrary NtNHandshakeV11ToLast where
   arbitrary = do
     let genVersion = elements [NodeToNodeV_12 ..]
-    NtNHandshakeV12ToLast <$> genNtNHandshake genVersion
+    NtNHandshakeV11ToLast <$> genNtNHandshake genVersion
 
 
 prop_encodeHandshakeNodeToNodeV7To10
@@ -481,18 +462,11 @@ prop_encodeHandshakeNodeToNodeV7To10
 prop_encodeHandshakeNodeToNodeV7To10 spec (NtNHandshakeV7To10 x) =
   validateEncoder spec nodeToNodeHandshakeCodec x
 
-prop_encodeHandshakeNodeToNodeV11
+prop_encodeHandshakeNodeToNodeV11ToLast
     :: CDDLSpec            (Handshake NodeToNodeVersion CBOR.Term)
-    -> NtNHandshakeV11
+    -> NtNHandshakeV11ToLast
     -> Property
-prop_encodeHandshakeNodeToNodeV11 spec (NtNHandshakeV11 x) =
-  validateEncoder spec nodeToNodeHandshakeCodec x
-
-prop_encodeHandshakeNodeToNodeV12ToLast
-    :: CDDLSpec            (Handshake NodeToNodeVersion CBOR.Term)
-    -> NtNHandshakeV12ToLast
-    -> Property
-prop_encodeHandshakeNodeToNodeV12ToLast spec (NtNHandshakeV12ToLast x) =
+prop_encodeHandshakeNodeToNodeV11ToLast spec (NtNHandshakeV11ToLast x) =
   validateEncoder spec nodeToNodeHandshakeCodec x
 
 -- TODO: add our regular tests for `Handshake NodeToClientVerision CBOR.Term`
