@@ -36,10 +36,10 @@ data NodeToClientVersion
     | NodeToClientV_14
     -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
     | NodeToClientV_15
+    -- ^ added `query` to NodeToClientVersionData
+    | NodeToClientV_16
     -- ^ enabled @CardanoNodeToClientVersion11@, i.e., Conway and
     -- @GetStakeDelegDeposits@.
-    | NodeToClientV_16
-    -- ^ added `query` to NodeToClientVersionData
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -110,17 +110,17 @@ nodeToClientCodecCBORTerm v = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToClientVersionData -> CBOR.Term
       encodeTerm NodeToClientVersionData { networkMagic, query }
-        | v >= NodeToClientV_16
+        | v >= NodeToClientV_15
         = CBOR.TList [CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
         | otherwise
         = CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
 
       decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
       decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool query])
-        | v >= NodeToClientV_16
+        | v >= NodeToClientV_15
         = decoder x query
       decodeTerm (CBOR.TInt x)
-        | v < NodeToClientV_16
+        | v < NodeToClientV_15
         = decoder x False
       decodeTerm t
         = Left $ T.pack $ "unknown encoding: " ++ show t

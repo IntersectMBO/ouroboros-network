@@ -1,8 +1,16 @@
 # Revision history for ouroboros-network-protocols
 
+## 0.5.0.2 -- 2023-05-15
+
+## Non-breaking changes
+
+* Updated to use `ouroboros-network-api-0.5.0.0`.
+
 ## 0.5.0.1 -- 2023-05-08
 
-* Updated to newer version of `ouroboros-network-api`.
+## Non-breaking changes
+
+* Updated to use `ouroboros-network-api-0.4.0.0`.
 
 ## 0.5.0.0 -- 2023-04-28
 

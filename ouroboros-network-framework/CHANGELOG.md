@@ -1,5 +1,9 @@
 # Revision history for ouroboros-network-framework
 
+## 0.6.0.1 -- 2023-05-15
+
+* Updated to use `ouroboros-network-api-0.5.0.0`.
+
 ## 0.6.0.0 -- 2023-05-08
 
 ### Breaking changes

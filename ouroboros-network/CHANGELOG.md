@@ -1,5 +1,11 @@
 # Revision history for ouroboros-network
 
+## 0.7.0.1
+
+### Non-breaking changes
+
+* Updated to use `ouroboros-network-api-0.5.0.0`.
+
 ## 0.7.0.0
 
 ### Breaking changes
