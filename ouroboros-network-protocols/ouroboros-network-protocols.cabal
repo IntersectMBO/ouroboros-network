@@ -100,7 +100,8 @@ library
                        io-classes       ^>=1.1,
                        si-timers,
 
-                       ouroboros-network-api,
+                       ouroboros-network-api
+                                        ^>=0.4,
                        serialise,
                        typed-protocols   >=0.1.0.4 && <1.0,
                        typed-protocols-cborg
