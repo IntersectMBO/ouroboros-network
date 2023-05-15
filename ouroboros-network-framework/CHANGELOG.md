@@ -9,6 +9,7 @@
 ### Non-breaking changes
 
 * `ghc-9.4` and `ghc-9.6` compatibility.
+* RawBearer API (typeclass and instances) added.
 
 ## 0.4.0.0 -- 2023-04-19
 
