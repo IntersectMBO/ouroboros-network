@@ -25,8 +25,11 @@ class ToRawBearer m fd where
   toRawBearer :: fd -> m (RawBearer m)
 
 instance ToRawBearer IO Socket where
-  toRawBearer s =
-    return RawBearer
+  toRawBearer = return . socketToRawBearer
+
+socketToRawBearer :: Socket -> RawBearer IO
+socketToRawBearer s =
+    RawBearer
       { send = Socket.sendBuf s
       , recv = Socket.recvBuf s
       }

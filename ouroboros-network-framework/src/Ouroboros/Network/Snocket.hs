@@ -366,7 +366,7 @@ newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
     deriving Show via Quiet LocalSocket
 
 instance ToRawBearer IO LocalSocket where
-  toRawBearer = toRawBearer . getLocalHandle
+  toRawBearer = return . socketToRawBearer . getLocalHandle
 #endif
 
 makeLocalBearer :: MakeBearer IO LocalSocket
