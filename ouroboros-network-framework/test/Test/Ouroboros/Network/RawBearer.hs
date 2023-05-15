@@ -127,8 +127,7 @@ instance Arbitrary Message where
   shrink = filter (not . BS.null . messageBytes) . fmap (Message . BS.pack) . shrink . BS.unpack . messageBytes
   arbitrary = Message . BS.pack <$> listOf1 arbitrary
 
-newtype TestError =
-  TestError String
+newtype TestError = TestError String
   deriving (Show)
 
 instance Exception TestError where

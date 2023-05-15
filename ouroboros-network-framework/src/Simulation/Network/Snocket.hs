@@ -588,13 +588,14 @@ makeRawFDBearer (FD {fdVar}) = do
                       say $ "Checking buffer"
                       bytesFromBuffer <- atomically $ takeTMVar bufVar
                       say $ "Buffer: " ++ show bytesFromBuffer
-                      (lhs, rhs) <- if not (LBS.null bytesFromBuffer) then do
-                        say $ "Reading up to " ++ show size ++ " bytes from buffer"
-                        return (LBS.take size64 bytesFromBuffer, LBS.drop size64 bytesFromBuffer)
-                      else do
-                        bytesRead <- acRead (connChannelLocal conn)
-                        say $ "Received " ++ show (LBS.length $ LBS.take size64 bytesRead) ++ " or more bytes"
-                        return (LBS.take size64 bytesRead, LBS.drop size64 bytesRead)
+                      (lhs, rhs) <- if not (LBS.null bytesFromBuffer)
+                        then do
+                          say $ "Reading up to " ++ show size ++ " bytes from buffer"
+                          return (LBS.take size64 bytesFromBuffer, LBS.drop size64 bytesFromBuffer)
+                        else do
+                          bytesRead <- acRead (connChannelLocal conn)
+                          say $ "Received " ++ show (LBS.length $ LBS.take size64 bytesRead) ++ " or more bytes"
+                          return (LBS.take size64 bytesRead, LBS.drop size64 bytesRead)
                       say $ "Updating buffer; use: " ++ show lhs ++ " keep: " ++ show (LBS.take 10 rhs) ++
                             if (LBS.length . LBS.take 11 $ rhs) == 11 then "..." else ""
                       atomically $ putTMVar bufVar rhs
