@@ -1,6 +1,16 @@
 # Revision history for ouroboros-network-api
 
+## 0.5.0.0 -- 2023-05-15
+
+* Swapped `NodeToClientV_15` with `NodeToClientV_16`, e.g. handshake query
+  comes with `V_15` and Conway with `V_16`.
+* Swapped `NodeToNodeV_11` with `NodeToNodeV_12`, e.g. handshake query moved to
+  `V_11` and Conway moved to `V_12`.  `V_11` also comes with handshake support
+  for peer sharing.
+
 ## 0.4.0.0 -- 2023-05-08
+
+Depracated release, use `0.5` instead.
 
 ### Breakin changes
 
