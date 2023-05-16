@@ -223,6 +223,7 @@ test-suite test
                        strict-stm,
                        typed-protocols,
                        typed-protocols-examples,
+                       with-utf8,
 
   if os(windows)
     build-depends:     Win32-network                 <0.2.0.0,
