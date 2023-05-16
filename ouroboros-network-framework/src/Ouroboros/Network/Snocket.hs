@@ -20,6 +20,7 @@ module Ouroboros.Network.Snocket
   , AddressFamily (..)
   , Snocket (..)
   , makeSocketBearer
+  , makeLocalRawBearer 
     -- ** Socket based Snockets
   , SocketSnocket
   , socketSnocket
@@ -357,17 +358,20 @@ data LocalSocket = LocalSocket { getLocalHandle :: !LocalHandle
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
 
-instance ToRawBearer IO LocalSocket where
-  toRawBearer = return . win32HandleToRawBearer . getLocalHandle
+localSocketToRawBearer :: LocalSocket -> RawBearer IO
+localSocketToRawBearer = win32HandleToRawBearer . getLocalHandle
 
 #else
 newtype LocalSocket  = LocalSocket { getLocalHandle :: LocalHandle }
     deriving (Eq, Generic)
     deriving Show via Quiet LocalSocket
 
-instance ToRawBearer IO LocalSocket where
-  toRawBearer = return . socketToRawBearer . getLocalHandle
+localSocketToRawBearer :: LocalSocket -> RawBearer IO
+localSocketToRawBearer = socketToRawBearer . getLocalHandle
 #endif
+
+makeLocalRawBearer :: MakeRawBearer IO LocalSocket
+makeLocalRawBearer = MakeRawBearer (return . localSocketToRawBearer)
 
 makeLocalBearer :: MakeBearer IO LocalSocket
 #if defined(mingw32_HOST_OS)
