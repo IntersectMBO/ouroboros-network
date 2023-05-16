@@ -57,6 +57,7 @@ prop_raw_bearer_send_and_receive_inet msg =
     let serverAddr = Socket.SockAddrInet 10001 localhost
     rawBearerSendAndReceive
       (socketSnocket iomgr)
+      makeSocketRawBearer
       clientAddr serverAddr
       msg
 
@@ -71,6 +72,7 @@ prop_raw_bearer_send_and_receive_local msg =
     let serverAddr = LocalAddress serverName
     rawBearerSendAndReceive
       (localSnocket iomgr)
+      makeLocalRawBearer
       clientAddr serverAddr
       msg `finally` do
         cleanUp clientName
@@ -96,6 +98,7 @@ prop_raw_bearer_send_and_receive_unix msg =
     let serverAddr = Socket.SockAddrUnix serverName
     rawBearerSendAndReceive
       (socketSnocket iomgr)
+      makeSocketRawBearer
       clientAddr serverAddr
       msg `finally` do
         cleanUp clientName
@@ -116,6 +119,7 @@ prop_raw_bearer_send_and_receive_iosim clientInt serverInt msg =
       mempty $ \snocket _observe -> do
         rawBearerSendAndReceive
           snocket
+          (makeFDRawBearer nullTracer)
           (TestAddress clientInt)
           (TestAddress serverInt)
           msg
@@ -136,17 +140,16 @@ rawBearerSendAndReceive :: forall m fd addr
                          . ( MonadST m
                            , MonadThrow m
                            , MonadAsync m
-                           -- , MonadTimer m
                            , MonadMVar m
                            , MonadSay m
-                           , ToRawBearer m fd
                            )
                         => Snocket m fd addr
+                        -> MakeRawBearer m fd
                         -> addr
                         -> addr
                         -> Message
                         -> m Property
-rawBearerSendAndReceive snocket clientAddr serverAddr msg =
+rawBearerSendAndReceive snocket mkrb clientAddr serverAddr msg =
   withLiftST $ \liftST -> do
     let io = liftST . unsafeIOToST
     let size = BS.length (messageBytes msg)
@@ -156,7 +159,7 @@ rawBearerSendAndReceive snocket clientAddr serverAddr msg =
                     say "sender: connecting"
                     connect snocket s serverAddr
                     say "sender: connected"
-                    bearer <- toRawBearer s
+                    bearer <- getRawBearer mkrb s
                     bracket (io $ mallocBytes size) (io . free) $ \srcBuf -> do
                       io $ BS.useAsCStringLen (messageBytes msg)
                             (uncurry (copyBytes srcBuf))
@@ -184,7 +187,7 @@ rawBearerSendAndReceive snocket clientAddr serverAddr msg =
                     labelThisThread "accept"
                     say "receiver: connection accepted"
                     flip finally (say "receiver: closing connection" >> close snocket s' >> say "receiver: connection closed") $ do
-                      bearer <- toRawBearer s'
+                      bearer <- getRawBearer mkrb s'
                       retval <- bracket (io $ mallocBytes size) (io . free) $ \dstBuf -> do
                         let go _ 0 = do
                               say "receiver: done receiving"

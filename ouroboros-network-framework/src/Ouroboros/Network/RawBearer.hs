@@ -21,11 +21,12 @@ data RawBearer m =
     , recv :: Ptr Word8 -> Int -> m Int
     }
 
-class ToRawBearer m fd where
-  toRawBearer :: fd -> m (RawBearer m)
+newtype MakeRawBearer m fd = MakeRawBearer {
+  getRawBearer :: fd -> m (RawBearer m)
+}
 
-instance ToRawBearer IO Socket where
-  toRawBearer = return . socketToRawBearer
+makeSocketRawBearer :: MakeRawBearer IO Socket
+makeSocketRawBearer = MakeRawBearer (return . socketToRawBearer)
 
 socketToRawBearer :: Socket -> RawBearer IO
 socketToRawBearer s =
@@ -35,6 +36,9 @@ socketToRawBearer s =
       }
 
 #if defined(mingw32_HOST_OS)
+
+win32MakeRawBearer :: MakeRawBearer IO Win32.HANDLE
+win32MakeRawBearer = MakeRawBearer (return . win32HandleToRawBearer)
 
 -- | We cannot declare an @instance ToRawBearer Win32.HANDLE@, because
 -- 'Win32.Handle' is just a type alias for @Ptr ()@. So instead, we provide
