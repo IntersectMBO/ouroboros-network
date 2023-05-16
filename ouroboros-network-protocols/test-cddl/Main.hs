@@ -21,7 +21,8 @@
 
 module Main (main) where
 
-import           Control.Monad.Except
+import           Control.Monad (forM, forM_)
+import           Control.Monad.Except (ExceptT (..), runExceptT)
 
 import qualified Codec.CBOR.Read as CBOR
 import           Codec.CBOR.Term (Term (..))
