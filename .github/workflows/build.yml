@@ -30,8 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Currently Hydra/Cicero build with 8.10.7
-        ghc: ["8.10.7", "9.2.7"]
+        ghc: ["8.10.7", "9.2.7", "9.6.1"]
         # This is the only OS that Hydra/Cicero cannot run.
         os: [windows-latest]
 
