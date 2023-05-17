@@ -166,6 +166,8 @@ rawBearerSendAndReceive snocket mkrb clientAddr serverAddr msg =
                       let go _ 0 = do
                             say "sender: done"
                             return ()
+                          go _ n | n < 0 = do
+                            error "sender: negative byte count"
                           go buf n = do
                             say $ "sender: " ++ show n ++ " bytes left"
                             bytesSent <- send bearer buf n
@@ -192,6 +194,8 @@ rawBearerSendAndReceive snocket mkrb clientAddr serverAddr msg =
                         let go _ 0 = do
                               say "receiver: done receiving"
                               return ()
+                            go _ n | n < 0 = do
+                              error "receiver: negative byte count"
                             go buf n = do
                               say $ "receiver: " ++ show n ++ " bytes left"
                               bytesReceived <- recv bearer buf n
