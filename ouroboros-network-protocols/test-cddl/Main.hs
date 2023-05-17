@@ -183,7 +183,7 @@ tests CDDLSpecs { cddlChainSync
       [ testCase "NodeToNode.Handshake V7 to V10"
                                      (unit_decodeHandshakeNodeToNode
                                            cddlHandshakeNodeToNodeV7To10)
-      , testCase "NodeToNode.Handshake V11"
+      , testCase "NodeToNode.Handshake V11 to Last"
                                      (unit_decodeHandshakeNodeToNode
                                            cddlHandshakeNodeToNodeV11ToLast)
       , testCase "NodeToClient.Handshake"
@@ -451,7 +451,7 @@ instance Arbitrary NtNHandshakeV7To10 where
 
 instance Arbitrary NtNHandshakeV11ToLast where
   arbitrary = do
-    let genVersion = elements [NodeToNodeV_12 ..]
+    let genVersion = elements [NodeToNodeV_11 ..]
     NtNHandshakeV11ToLast <$> genNtNHandshake genVersion
 
 
