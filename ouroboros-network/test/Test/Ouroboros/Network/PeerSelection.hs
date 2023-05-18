@@ -22,6 +22,8 @@
 module Test.Ouroboros.Network.PeerSelection
   ( tests
   , unfHydra
+  , takeBigLedgerPeers
+  , dropBigLedgerPeers
   ) where
 
 import           Data.Bifoldable (bitraverse_)
@@ -133,7 +135,7 @@ tests =
                      prop_governor_target_active_public
       ]
 
-    , testGroup "local roots"
+    , testGroup "local root peers"
       [ testProperty "progresses towards established target"
                      prop_governor_target_established_local
       , testProperty "progresses towards active target (from below)"

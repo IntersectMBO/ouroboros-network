@@ -6,6 +6,9 @@
 module Test.Ouroboros.Network.PeerSelection.Instances
   ( -- test types
     PeerAddr (..)
+    -- generators
+  , genIPv4
+  , genIPv6
     -- generator tests
   , prop_arbitrary_PeerSelectionTargets
   , prop_shrink_PeerSelectionTargets
@@ -107,7 +110,7 @@ instance Arbitrary DomainAccessPoint where
 
 genIPv4 :: Gen IP.IP
 genIPv4 =
-    IP.IPv4 . IP.toIPv4w <$> arbitrary
+    IP.IPv4 . IP.toIPv4w <$> arbitrary `suchThat` (> 100)
 
 genIPv6 :: Gen IP.IP
 genIPv6 =
@@ -115,7 +118,7 @@ genIPv6 =
   where
     genFourWord32 :: Gen (Word32, Word32, Word32, Word32)
     genFourWord32 =
-       (,,,) <$> arbitrary
+       (,,,) <$> arbitrary `suchThat` (> 100)
              <*> arbitrary
              <*> arbitrary
              <*> arbitrary

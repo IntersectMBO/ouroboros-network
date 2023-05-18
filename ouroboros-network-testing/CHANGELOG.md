@@ -8,6 +8,7 @@
 
 * type signature of `prop_shrink_valid` is more admissible
 * added `singletonTimedScript`
+* added `Ouroboros.Network.Testing.Data.Script.shrinkScriptWith`
 
 ## 0.3.0.0
 

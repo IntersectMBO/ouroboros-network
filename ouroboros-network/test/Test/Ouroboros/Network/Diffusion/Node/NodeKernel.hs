@@ -12,6 +12,7 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   , NtNAddr_ (..)
   , encodeNtNAddr
   , decodeNtNAddr
+  , ntnAddrToRelayAccessPoint
   , NtNVersion
   , NtNVersionData (..)
   , NtCAddr
@@ -80,6 +81,8 @@ import qualified Codec.CBOR.Encoding as CBOR
 import           Ouroboros.Network.Mock.Chain (Chain (..))
 import           Ouroboros.Network.NodeToNode ()
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..),
                      newPeerSharingRegistry)
 import qualified Test.Ouroboros.Network.Diffusion.Node.ChainDB as ChainDB
@@ -142,6 +145,11 @@ data NtNVersionData = NtNVersionData
 type NtCAddr        = TestAddress Int
 type NtCVersion     = UnversionedProtocol
 type NtCVersionData = UnversionedProtocolData
+
+ntnAddrToRelayAccessPoint :: NtNAddr -> Maybe RelayAccessPoint
+ntnAddrToRelayAccessPoint (TestAddress (IPAddr ip port)) =
+    Just (RelayAccessAddress ip port)
+ntnAddrToRelayAccessPoint _ = Nothing
 
 encodeNtNAddr :: NtNAddr -> CBOR.Encoding
 encodeNtNAddr (TestAddress (EphemeralIPv4Addr nat)) = CBOR.encodeListLen 2

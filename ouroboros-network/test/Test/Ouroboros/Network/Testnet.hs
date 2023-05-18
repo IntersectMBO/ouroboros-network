@@ -20,7 +20,6 @@ import           Control.Tracer (Tracer (Tracer))
 import           Data.Bifoldable (bifoldMap)
 
 import           Data.List (find, intercalate, tails)
-import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -54,9 +53,8 @@ import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRo
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-import           Ouroboros.Network.Testing.Data.Script (singletonScript)
-import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
-                     eventsToList, signalProperty)
+import           Ouroboros.Network.Testing.Data.Script
+import           Ouroboros.Network.Testing.Data.Signal
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 import           Ouroboros.Network.Testing.Utils hiding (SmallDelay,
                      debugTracer)
@@ -383,9 +381,9 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
     script :: DiffusionScript
     script =
       DiffusionScript (SimArgs 1 10)
+        (singletonTimedScript Map.empty)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
               (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
-              (Map.fromList [("test2", [read "9022:64c9:4e9b:9281:913f:3fb4:a447:28e", read "d412:ff8f:ce57:932d:b74c:989:48af:73f4", read "0:6:0:3:0:6:0:5"])])
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
               NoPeerSharing
               [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoNotAdvertisePeer),(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoNotAdvertisePeer)])]
@@ -398,7 +396,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
               Nothing
               False
-          , [JoinNetwork 1.742857142857 Nothing
+          , [JoinNetwork 1.742857142857
             ,Reconfigure 6.33333333333 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)]),
                                         (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)
                                        ])]
@@ -408,7 +406,6 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
           )
         , ( NodeArgs (1) InitiatorAndResponderDiffusionMode (Just 135)
              (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65533, DoAdvertisePeer)])
-             (Map.fromList [("test2", [read "0:7:0:7::"])])
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
              NoPeerSharing
              []
@@ -428,7 +425,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
                      ]))
              Nothing
              False
-          , [JoinNetwork 0.183783783783 Nothing
+          , [JoinNetwork 0.183783783783
             ,Reconfigure 4.533333333333 [(1,1,Map.fromList [])]
             ]
           )
@@ -656,7 +653,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 prop_diffusion_nolivelock :: AbsBearerInfo
                          -> DiffusionScript
                          -> Property
-prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ l) =
+prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ _ l) =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
@@ -837,6 +834,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
 
+
 -- | Unit test which covers issue #4191
 --
 unit_4191 :: Property
@@ -854,22 +852,23 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
     script =
       DiffusionScript
         (SimArgs 1 20)
+        (singletonTimedScript $
+           Map.fromList
+             [ ("test2", [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
+                         , (read "254.167.216.215", 300)
+                         , (read "27.173.29.254", 300)
+                         , (read "61.238.34.238", 300)
+                         , (read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d", 300)
+                         ])
+             , ("test3", [ (read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430", 300)
+                         , (read "19.40.90.161", 300)
+                         ])
+             ])
         [(NodeArgs
             16
             InitiatorAndResponderDiffusionMode
             (Just 224)
             Map.empty
-            (Map.fromList
-              [ ("test2", [ read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9"
-                          , read "254.167.216.215"
-                          , read "27.173.29.254"
-                          , read "61.238.34.238"
-                          , read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d"
-                          ])
-              , ("test3", [ read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430"
-                          , read "19.40.90.161"
-                          ])
-              ])
             (TestAddress (IPAddr (read "0.0.1.236") 65527))
             NoPeerSharing
             [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,DoNotAdvertisePeer)
@@ -909,9 +908,9 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
                                                                    ]))
             Nothing
             False
-            , [ JoinNetwork 6.710144927536 Nothing
+            , [ JoinNetwork 6.710144927536
               , Kill 7.454545454545
-              , JoinNetwork 10.763157894736 (Just (TestAddress (IPAddr (read "4.138.119.62") 65527)))
+              , JoinNetwork 10.763157894736
               , Reconfigure 0.415384615384 [(1,1,Map.fromList [])
               , (1,1,Map.fromList [])]
               , Reconfigure 15.550561797752 [(1,1,Map.fromList [])
@@ -1052,7 +1051,9 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
                . traceEvents
                $ runSimTrace sim
 
-     in conjoin
+     in
+        labelDiffusionScript diffScript
+      $ conjoin
       $ (\ev ->
         let evsList = eventsToList ev
             lastTime = fst
@@ -1180,8 +1181,11 @@ prop_diffusion_target_active_local defaultBearerInfo diffScript =
           $ tabulate "active local peers" valuesList
           $ True
 
--- | This test checks the percentage of root peers that, at some point,
--- become active.
+-- | This test checks that there's at least one root or local root peers in the
+-- active set.  This is a statistical tests which is not enforced.
+--
+-- This test is somewhat similar to `prop_governor_target_active_public`,
+-- however that test enforces network level timeouts.
 --
 prop_diffusion_target_active_root :: AbsBearerInfo
                                   -> DiffusionScript
@@ -1212,7 +1216,7 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
                . traceEvents
                $ runSimTrace sim
 
-     in conjoin
+    in  conjoin
       $ (\ev ->
         let evsList = eventsToList ev
             lastTime = fst
@@ -1268,14 +1272,15 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
           $ tabulate "active root peers" valuesList
           $ True
 
+
 -- | This test checks the percentage of public root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
 --
 prop_hot_diffusion_target_active_public :: NonFailingAbsBearerInfo
                                         -> HotDiffusionScript
                                         -> Property
-prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa hds) =
-  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -1283,8 +1288,8 @@ prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa
 prop_hot_diffusion_target_active_local :: NonFailingAbsBearerInfo
                                        -> HotDiffusionScript
                                        -> Property
-prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa hds) =
-  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -1292,8 +1297,8 @@ prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa 
 prop_hot_diffusion_target_active_root :: NonFailingAbsBearerInfo
                                       -> HotDiffusionScript
                                       -> Property
-prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa hds) =
-  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
@@ -1784,6 +1789,7 @@ async_demotion_network_script :: DiffusionScript
 async_demotion_network_script =
     DiffusionScript
       simArgs
+      (singletonTimedScript Map.empty)
       [ ( common { naAddr                  = addr1,
                    naLocalRootPeers        = localRoots1,
                    naLocalSelectionTargets = Governor.nullPeerSelectionTargets {
@@ -1792,18 +1798,18 @@ async_demotion_network_script =
                                                targetNumberOfActivePeers = 2
                                              }
                  }
-        , [ JoinNetwork 0 (Just addr1)
+        , [ JoinNetwork 0
             -- reconfigure the peer to trigger the outbound governor log
           , Reconfigure 240 localRoots1'
           ]
         )
       , ( common { naAddr           = addr2,
                    naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
-        , [JoinNetwork 0 (Just addr2), Kill 5, JoinNetwork 20 (Just addr2)]
+        , [JoinNetwork 0, Kill 5, JoinNetwork 20]
         )
       , ( common { naAddr           = addr3,
                    naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
-        , [JoinNetwork 0 (Just addr3)]
+        , [JoinNetwork 0]
         )
       ]
   where
@@ -1828,8 +1834,7 @@ async_demotion_network_script =
         naSeed             = 10,
         naDiffusionMode    = InitiatorAndResponderDiffusionMode,
         naMbTime           = Just 1,
-        naRelays           = Map.empty,
-        naDomainMap        = Map.empty,
+        naPublicRoots      = Map.empty,
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
         naLocalSelectionTargets
@@ -2256,8 +2261,8 @@ prop_unit_4258 =
                    }
       diffScript = DiffusionScript
         (SimArgs 1 10)
+        (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224)
-             (Map.fromList [])
              (Map.fromList [])
              (TestAddress (IPAddr (read "0.0.0.4") 9))
              NoPeerSharing
@@ -2280,16 +2285,15 @@ prop_unit_4258 =
              (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| []))
              Nothing
              False
-         , [ JoinNetwork 4.166666666666 Nothing,
+         , [ JoinNetwork 4.166666666666,
              Kill 0.3,
-             JoinNetwork 1.517857142857 Nothing,
+             JoinNetwork 1.517857142857,
              Reconfigure 0.245238095238 [],
              Reconfigure 4.190476190476 []
            ]
          ),
          ( NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269)
              (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoAdvertisePeer)])
-             (Map.fromList [])
              (TestAddress (IPAddr (read "0.0.0.8") 65531))
              NoPeerSharing
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])]
@@ -2314,10 +2318,10 @@ prop_unit_4258 =
                      ]))
              Nothing
              False
-         , [ JoinNetwork 3.384615384615 Nothing,
+         , [ JoinNetwork 3.384615384615,
              Reconfigure 3.583333333333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],
              Kill 15.55555555555,
-             JoinNetwork 30.53333333333 Nothing,
+             JoinNetwork 30.53333333333,
              Kill 71.11111111111
             ]
          )]
@@ -2392,10 +2396,10 @@ prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
 prop_diffusion_peer_selection_actions_no_dodgy_traces :: AbsBearerInfo
                                                       -> HotDiffusionScript
                                                       -> Property
-prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiffusionScript sa hds) =
+prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiffusionScript sa dns hds) =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  (DiffusionScript sa hds)
+                                  (DiffusionScript sa dns hds)
                                   iosimTracer
                                   tracerDiffusionSimWithTimeName
 
@@ -2980,3 +2984,26 @@ takeUntilEndofTurn n as =
           where
             tmax :: Time
             tmax = case last hs of (t,_,_,_) -> t
+
+
+labelDiffusionScript :: DiffusionScript -> Property -> Property
+labelDiffusionScript (DiffusionScript args _ nodes) =
+      label ("sim args: "
+              ++ show args)
+    . label ("Nº nodes: "
+              ++ show (length nodes))
+    . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
+              ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) $ nodes))
+    . label ("Nº active peers: "
+              ++ show (sum . map (targetNumberOfActivePeers . naLocalSelectionTargets . fst) $ nodes))
+    . label ("Nº active big ledger peers: "
+              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . naLocalSelectionTargets . fst) $ nodes))
+    . label ("average number of active local roots: "
+              ++ show (average . map (sum . map (\(HotValency v,_,_) -> v) . naLocalRootPeers . fst) $ nodes))
+  where
+    average :: [Int] -> Float
+    average [] = 0
+    average as = realToFrac (sum as) / realToFrac (length as)
+
+    -- TODO: it would be nice to check if the graph is connected if all dns
+    -- names can be resolved.
