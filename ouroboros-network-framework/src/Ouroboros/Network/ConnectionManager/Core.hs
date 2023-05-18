@@ -148,7 +148,7 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
 -- | 'MutableConnState', which supplies a unique identifier.
 --
 -- TODO: We can get away without id, by tracking connections in
--- `TerminatingState` using a seprate priority search queue.
+-- `TerminatingState` using a separate priority search queue.
 --
 data MutableConnState peerAddr handle handleError version m = MutableConnState {
     -- | A unique identifier
@@ -233,7 +233,7 @@ data ConnectionState peerAddr handle handleError version m =
     -- | @OutboundState Unidirectional@ state.
   | OutboundUniState    !(ConnectionId peerAddr) !(Async m ()) !handle
 
-    -- | Either @OutboundState Duplex@ or @OutobundState^\tau Duplex@.
+    -- | Either @OutboundState Duplex@ or @OutboundState^\tau Duplex@.
   | OutboundDupState    !(ConnectionId peerAddr) !(Async m ()) !handle !TimeoutExpired
 
     -- | Before connection is reset it is put in 'OutboundIdleState' for the
@@ -410,7 +410,7 @@ getConnType TerminatedState {}                                       = Nothing
 
 
 -- | Return 'True' if a connection is inbound.  This must agree with
--- 'connectionStateToCounters'.  Both are used for prunning.
+-- 'connectionStateToCounters'.  Both are used for pruning.
 --
 isInboundConn :: ConnectionState peerAddr handle handleError version m -> Bool
 isInboundConn ReservedOutboundState                      = False
@@ -935,7 +935,7 @@ withConnectionManager ConnectionManagerArguments {
                       --
                       -- Key was overwritten in the dictionary (stateVar),
                       -- so we do not trace anything as it was already traced upon
-                      -- overwritting.
+                      -- overwriting.
                        else return [ ]
 
                   traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
@@ -944,7 +944,7 @@ withConnectionManager ConnectionManagerArguments {
     -- Pruning is done in two stages:
     -- * an STM transaction which selects which connections to prune, and sets
     --   their state to 'TerminatedState';
-    -- * an io action which logs and cancells all the connection handler
+    -- * an io action which logs and cancels all the connection handler
     --   threads.
     mkPruneAction :: peerAddr
                   -> Int
@@ -955,7 +955,7 @@ withConnectionManager ConnectionManagerArguments {
                   -> StrictTVar m (ConnectionState peerAddr handle handleError version m)
                   -> Async m ()
                   -> STM m (Bool, PruneAction m)
-                  -- ^ return if the connection was choose to be prunned and the
+                  -- ^ return if the connection was choose to be pruned and the
                   -- 'PruneAction'
     mkPruneAction peerAddr numberToPrune state connState' connVar connThread = do
       (choiceMap' :: Map peerAddr ( ConnectionType
@@ -1012,7 +1012,7 @@ withConnectionManager ConnectionManagerArguments {
         -- ^ inbound connections hard limit
         -- TODO: This is needed because the accept loop can not guarantee that
         -- includeInboundConnection can run safely without going above the
-        -- hardlimit.  We have to check if we are not above the hard limit
+        -- hard limit.  We have to check if we are not above the hard limit
         -- after locking the connection manager state `TMVar` and  then decide
         -- whether we can include the connection or not.
         -> socket
@@ -1769,7 +1769,7 @@ withConnectionManager ConnectionManagerArguments {
                           -- @
                           --  Negotiated^{Duplex}_{Outbound}
                           --    : UnnegotiatedState Outbound
-                          --    → OutboundDupState^\tau  Outbound
+                          --    → OutboundDupState^\tau Outbound
                           -- @
                           let connState' = OutboundDupState connId connThread handle Ticking
                           writeTVar connVar connState'
@@ -1826,7 +1826,7 @@ withConnectionManager ConnectionManagerArguments {
                   --                          → OutboundState^\tau Duplex
                   -- @
                   -- This transition can happen if there are concurrent
-                  -- `includeInboudConnection` and `requestOutboundConnection`
+                  -- `includeInboundConnection` and `requestOutboundConnection`
                   -- calls.
                   let connState' = OutboundDupState connId connThread handle Ticking
                   writeTVar connVar connState'

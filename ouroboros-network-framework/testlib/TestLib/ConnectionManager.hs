@@ -74,7 +74,7 @@ verifyAbstractTransition Transition { fromState, toState } =
       -- @Negotiated^{Unidirectional}_{Inbound}
       (UnnegotiatedSt Inbound, InboundIdleSt Unidirectional) -> True
 
-      -- 'unregisterOutboundConnection' and 'demotedToColdRemote' might perfrom
+      -- 'unregisterOutboundConnection' and 'demotedToColdRemote' might perform
       (InboundIdleSt Duplex, InboundIdleSt Duplex) -> True
       -- @Awake^{Duplex}_{Remote}
       (InboundIdleSt Duplex, InboundSt Duplex) -> True
