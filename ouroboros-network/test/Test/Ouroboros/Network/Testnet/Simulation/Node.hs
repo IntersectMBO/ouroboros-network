@@ -408,11 +408,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
         -- `UseLedgerPeers 0`!
       , naAddr                   = makeNtNAddr relay
       , naLocalRootPeers         = localRootPeers
-      , naLocalSelectionTargets  = peerSelectionTargets {
-                                       targetNumberOfKnownBigLedgerPeers = 0,
-                                       targetNumberOfEstablishedBigLedgerPeers = 0,
-                                       targetNumberOfActiveBigLedgerPeers = 0
-                                     }
+      , naLocalSelectionTargets  = peerSelectionTargets
       , naDNSTimeoutScript       = dnsTimeout
       , naDNSLookupDelayScript   = dnsLookupDelay
       , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
