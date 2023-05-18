@@ -171,6 +171,7 @@ member :: Ord peeraddr
 member peeraddr KnownPeers {allPeers} =
     peeraddr `Map.member` allPeers
 
+-- TODO: `insert` ought to be idempotent, see issue #4616.
 insert :: Ord peeraddr
        => Map peeraddr (PeerSharing, PeerAdvertise, IsLedgerPeer)
        -> KnownPeers peeraddr

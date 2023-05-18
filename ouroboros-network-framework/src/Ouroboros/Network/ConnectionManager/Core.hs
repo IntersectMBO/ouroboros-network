@@ -256,7 +256,6 @@ connectionTerminated TerminatedState  {} = True
 connectionTerminated _                   = False
 
 
-
 -- | Perform counting from an 'AbstractState'
 connectionStateToCounters
     :: ConnectionState peerAddr handle handleError version m
@@ -1047,6 +1046,8 @@ withConnectionManager ConnectionManagerArguments {
                 -- @
                 --   Accepted    : ● → UnnegotiatedState Inbound
                 --   Overwritten : ● → UnnegotiatedState Inbound
+                --   SelfConn    : UnnegotiatedState Outbound
+                --               → UnnegotiatedState Inbound
                 -- @
                 --
                 -- This is subtle part, which needs to handle a near simultaneous
@@ -1056,14 +1057,25 @@ withConnectionManager ConnectionManagerArguments {
                 -- the `accept` call will return.  We overwrite the state and
                 -- replace the connection state 'TVar' with a fresh one.  Nothing
                 -- is blocked on the replaced 'TVar'.
+                --
+                -- The `SelfConn` transition can happen when the node tries to
+                -- connect to itself (and inbound & outbound addresses are the
+                -- same).
                 let connState' = UnnegotiatedState provenance connId connThread
                 (mutableConnVar', connState0') <-
                   atomically $ do
-                    v <- newMutableConnState freshIdSupply connState'
-                    labelTVar (connVar v) ("conn-state-" ++ show connId)
-                    connState0' <- traverse (readTVar . connVar)
-                                            (Map.lookup peerAddr state)
-                    return (v, connState0')
+                    let v0 = Map.lookup peerAddr state
+                    connState0' <- traverse (readTVar . connVar) v0
+                    case v0 of
+                      Nothing -> do
+                        -- 'Accepted'
+                        v <- newMutableConnState freshIdSupply connState'
+                        labelTVar (connVar v) ("conn-state-" ++ show connId)
+                        return (v, connState0')
+                      Just v -> do
+                        -- 'Overwritten' or 'SelfConn'.
+                        writeTVar (connVar v) connState'
+                        return (v, connState0')
                 connThread' <-
                   forkConnectionHandler
                      stateVar mutableConnVar' socket connId writer handler
@@ -1099,7 +1111,7 @@ withConnectionManager ConnectionManagerArguments {
 
               Right (HandshakeConnectionResult handle (version, versionData)) -> do
                 let dataFlow = connectionDataFlow version versionData
-                mbTransition <- atomically $ do
+                (connected, mbTransition, provenance) <- atomically $ do
                   connState <- readTVar connVar
                   case connState of
                     -- Inbound connections cannot be found in this state at this
@@ -1116,27 +1128,27 @@ withConnectionManager ConnectionManagerArguments {
                     --
                     UnnegotiatedState {} -> do
                       let connState' = InboundIdleState
-                                         connId connThread handle
-                                         (connectionDataFlow version versionData)
+                                         connId connThread handle dataFlow
                       writeTVar connVar connState'
-                      return (Just $ mkTransition connState connState')
+                      return ( True
+                             , Just $ mkTransition connState connState'
+                             , Inbound
+                             )
 
-                    -- It is impossible to find a connection in 'OutboundUniState'
-                    -- or 'OutboundDupState', since 'includeInboundConnection'
-                    -- blocks until 'InboundState'.  This guarantees that this
-                    -- transactions runs first in case of race between
-                    -- 'requestOutboundConnection' and 'includeInboundConnection'.
-                    OutboundUniState _connId _connThread _handle ->
-                      throwSTM (withCallStack (ImpossibleState peerAddr))
-                    OutboundDupState _connId _connThread _handle _expired ->
-                      throwSTM (withCallStack (ImpossibleState peerAddr))
+                    -- Self connection: the inbound side lost the race to update
+                    -- the state after negotiating the connection.
+                    OutboundUniState {} -> return (True, Nothing, Outbound)
+                    OutboundDupState {} -> return (True, Nothing, Outbound)
 
                     OutboundIdleState _ _ _ dataFlow' -> do
                       let connState' = InboundIdleState
                                          connId connThread handle
                                          dataFlow'
                       writeTVar connVar connState'
-                      return (Just $ mkTransition connState connState')
+                      return ( True
+                             , Just $ mkTransition connState connState'
+                             , Outbound
+                             )
 
                     InboundIdleState {} ->
                       throwSTM (withCallStack (ImpossibleState peerAddr))
@@ -1151,9 +1163,9 @@ withConnectionManager ConnectionManagerArguments {
                     DuplexState {} ->
                       throwSTM (withCallStack (ImpossibleState peerAddr))
 
-                    TerminatingState {} -> return Nothing
+                    TerminatingState {} -> return (False, Nothing, Inbound)
 
-                    TerminatedState {} -> return Nothing
+                    TerminatedState {} -> return (False, Nothing, Inbound)
 
                 traverse_ (traceWith trTracer . TransitionTrace peerAddr) mbTransition
                 traceCounters stateVar
@@ -1170,20 +1182,28 @@ withConnectionManager ConnectionManagerArguments {
                 -- idle, it will call 'unregisterInboundConnection' which will
                 -- perform the aforementioned @Commit@ transition.
 
-                -- If mbTransition is Nothing, it means that the connVar was read
-                -- either in Terminating or TerminatedState. Either case we should
-                -- return Disconnected instead of Connected.
-                case mbTransition of
-                  Nothing -> return $ Disconnected connId Nothing
-                  Just {} -> do
+                if connected
+                  then do
                     case inboundGovernorInfoChannel of
                       InResponderMode infoChannel ->
                         atomically $ InfoChannel.writeMessage
                                        infoChannel
-                                       (NewConnectionInfo Inbound connId dataFlow handle)
-                      NotInResponderMode -> return ()
-                    case (dataFlow, outboundGovernorInfoChannel) of
-                      (Duplex, InResponderMode infoChannel) ->
+                                       (NewConnectionInfo provenance connId dataFlow handle)
+                      _ -> return ()
+
+                    let -- True iff the connection can be used by the outbound
+                        -- governor.
+                        notifyOutboundGov =
+                          case provenance of
+                            Inbound  -> Duplex == dataFlow
+                            Outbound -> False
+                            -- The connection started as inbound but its
+                            -- provenance was changed to outbound; this is only
+                            -- possible if we are connecting to ourselves.  In
+                            -- this case we don't need to notify the outbound
+                            -- governor.
+                    case outboundGovernorInfoChannel of
+                      InResponderMode infoChannel | notifyOutboundGov ->
                         atomically $ InfoChannel.writeMessage
                                        infoChannel
                                        (peerAddr, cmGetPeerSharing versionData)
@@ -1191,6 +1211,11 @@ withConnectionManager ConnectionManagerArguments {
                       _ -> return ()
 
                     return $ Connected connId dataFlow handle
+
+                  -- the connection is in `TerminatingState` or
+                  -- `TerminatedState`.
+                  else
+                    return $ Disconnected connId Nothing
 
     terminateInboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState handleErrorM = do
         transitions <- atomically $ do
@@ -1618,7 +1643,7 @@ withConnectionManager ConnectionManagerArguments {
                     (openToConnect cmSnocket peerAddr)
                     (\socket -> uninterruptibleMask_ $ do
                       close cmSnocket socket
-                      res <- atomically $ modifyTMVarSTM stateVar $ \state -> do
+                      trs <- atomically $ modifyTMVarSTM stateVar $ \state -> do
                         case Map.lookup peerAddr state of
                           -- Lookup failed, which means connection was already
                           -- removed.  So we just update the connVar and trace
@@ -1629,41 +1654,43 @@ withConnectionManager ConnectionManagerArguments {
                             writeTVar connVar connState'
                             return
                               ( state
-                              , Right [ mkTransition connState connState'
-                                      , Transition (Known connState') Unknown
-                                      ]
+                              , [ mkTransition connState connState'
+                                , Transition (Known connState') Unknown
+                                ]
                               )
 
                           -- Current connVar.
-                          Just mutableConnState' ->
-                            -- If accept call returned first than connect then
-                            -- the connVar will be replaced. If it was
-                            -- replaced then we do not need to do anything.
-                            -- Otherwise, we need to remove the connVar from
-                            -- the state and trace accordingly.
-                            if mutableConnState' == mutableConnState
-                               then do
-                                connState <- readTVar connVar
+                          Just mutableConnState' -> do
+                            connState <- readTVar connVar
+                            case connState of
+                              -- Update the state only if the connection was in
+                              -- 'ReservedOutboundState'.  This covers the case
+                              -- when we connect to ourselves, in which case: we
+                              -- first set the connection state to
+                              -- `ReservedOutboundState`, then race connect
+                              -- & accept calls.  If the connection was
+                              -- accepted it, it will use the same
+                              -- 'MutableConnState', and if the inbound side is
+                              -- using the connection the state will be
+                              -- different than `ReservedOutboundState`.
+                              ReservedOutboundState | mutableConnState' == mutableConnState -> do
                                 let state' = Map.delete peerAddr state
                                     connState' = TerminatedState Nothing
                                 writeTVar connVar connState'
                                 return
                                   ( state'
-                                  , Right [ mkTransition connState connState'
-                                          , Transition (Known connState')
-                                                       Unknown
-                                          ]
-                                  )
-                               else
-                                return
-                                  ( state
-                                  , Left ()
+                                  , [ mkTransition connState connState'
+                                    , Transition (Known connState')
+                                                 Unknown
+                                    ]
                                   )
 
-                      case res of
-                        Left _ -> pure ()
-                        Right trs ->
-                          traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
+                                -- self connection: the connection might have
+                                -- been accepted, in such case do not modify its
+                                -- state.
+                              _ -> return (state, [])
+
+                      traverse_ (traceWith trTracer . TransitionTrace peerAddr) trs
                       traceCounters stateVar
                     )
                     $ \socket -> do
@@ -1718,6 +1745,20 @@ withConnectionManager ConnectionManagerArguments {
                   return ( Just $ mkTransition connState connState'
                          , Nothing
                          )
+
+                -- @
+                --  SelfConn⁻¹ : UnnegotiatedState Inbound
+                --             → UnnegotiatedState Outbound
+                -- @
+                --
+                UnnegotiatedState Inbound _connId _connThread -> do
+                  let connState' = UnnegotiatedState Outbound connId connThread
+                  writeTVar connVar connState'
+                  return ( Just $ mkTransition connState connState'
+                         , Nothing
+                         )
+
+
                 TerminatingState {} ->
                   return (Nothing, Nothing)
                 TerminatedState {} ->
@@ -1754,7 +1795,7 @@ withConnectionManager ConnectionManagerArguments {
                 mbTransition <- atomically $ do
                   connState <- readTVar  connVar
                   case connState of
-                    UnnegotiatedState {} ->
+                    UnnegotiatedState provenance' _ _ ->
                       case dataFlow of
                         Unidirectional -> do
                           -- @
@@ -1772,14 +1813,43 @@ withConnectionManager ConnectionManagerArguments {
                           --    → OutboundDupState^\tau Outbound
                           -- @
                           let connState' = OutboundDupState connId connThread handle Ticking
+                              notifyInboundGov =
+                                case provenance' of
+                                  Inbound  -> False
+                                  -- ^ This is a connection to oneself; We don't
+                                  -- need to notify the inbound governor, as
+                                  -- it's already done by
+                                  -- `includeInboundConnectionImpl`
+                                  Outbound -> True
                           writeTVar connVar connState'
                           case inboundGovernorInfoChannel of
-                            InResponderMode infoChannel ->
+                            InResponderMode infoChannel | notifyInboundGov ->
                               InfoChannel.writeMessage
                                 infoChannel
-                                (NewConnectionInfo Outbound connId dataFlow handle)
-                            NotInResponderMode -> return ()
+                                (NewConnectionInfo provenance' connId dataFlow handle)
+                            _ -> return ()
                           return (Just $ mkTransition connState connState')
+
+                    -- @
+                    --   SelfConn'^{-1}
+                    --     : InboundIdleState Unidirectional
+                    --     → OutboundUniState
+                    -- @
+                    InboundIdleState connId' connThread' handle' Unidirectional -> do
+                      let connState' = OutboundUniState connId' connThread' handle'
+                      writeTVar connVar connState'
+                      return (Just $ mkTransition connState connState')
+
+                    -- @
+                    --   SelfConn'^{-1}
+                    --     : InboundIdleState Duplex
+                    --     → OutboundDupState
+                    -- @
+                    InboundIdleState connId' connThread' handle' Duplex -> do
+                      let connState' = OutboundDupState connId' connThread' handle' Ticking
+                      writeTVar connVar connState'
+                      return (Just $ mkTransition connState connState')
+
                     TerminatedState _ ->
                       return Nothing
                     _ ->
