@@ -651,8 +651,8 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 -- cases.
 --
 prop_diffusion_nolivelock :: AbsBearerInfo
-                         -> DiffusionScript
-                         -> Property
+                          -> DiffusionScript
+                          -> Property
 prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ _ l) =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
@@ -2855,10 +2855,14 @@ getTime (t, _, _, _) = t
 
 classifySimulatedTime :: Time -> Property -> Property
 classifySimulatedTime lastTime =
-        classify (lastTime <= Time (60 * 60)) "Simulated time <= 1H"
-      . classify (lastTime >= Time (5 * 60 * 60)) "Simulated time >= 5H"
-      . classify (lastTime >= Time (10 * 60 * 60)) "Simulated time >= 10H"
-      . classify (lastTime >= Time (24 * 60 * 60)) "Simulated time >= 1 Day"
+        classify (lastTime <= Time (10 * 60)) "simulation time <= 10min"
+      . classify (lastTime >  Time (10 * 60)      && lastTime <= Time (20 * 60)) "10min < simulation time <= 20min"
+      . classify (lastTime >  Time (20 * 60)      && lastTime <= Time (40 * 60)) "20min < simulation time <= 40min"
+      . classify (lastTime >  Time (40 * 60)      && lastTime <= Time (60 * 60)) "40min < simulation time <= 1H"
+      . classify (lastTime >  Time (60 * 60)      && lastTime <= Time (5 * 60 * 60)) "1H < simulation time <= 5H"
+      . classify (lastTime >  Time (5 * 60 * 60)  && lastTime <= Time (10 * 60 * 60)) "5H < simulation time <= 10H"
+      . classify (lastTime >  Time (10 * 60 * 60) && lastTime <= Time (24 * 60 * 60)) "10H < simulation time <= 1 Day"
+      . classify (lastTime >= Time (24 * 60 * 60)) "simulation time >= 1 Day"
 
 classifyNumberOfEvents :: Int -> Property -> Property
 classifyNumberOfEvents nEvents =
