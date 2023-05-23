@@ -1,5 +1,6 @@
 module Main (main) where
 
+import           Main.Utf8 (withUtf8)
 import           Test.Tasty
 
 import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
@@ -33,7 +34,7 @@ import qualified Test.Socket (tests)
 import qualified Test.Version (tests)
 
 main :: IO ()
-main = defaultMain tests
+main = withUtf8 $ defaultMain tests
 
 tests :: TestTree
 tests =
