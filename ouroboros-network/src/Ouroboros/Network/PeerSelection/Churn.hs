@@ -93,6 +93,32 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
                        min 1 (targetNumberOfActivePeers base - 1)
         })
 
+    increaseActiveBigLedgerPeers :: ChurnMode -> STM m ()
+    increaseActiveBigLedgerPeers mode =  do
+        modifyTVar peerSelectionVar (\targets -> targets {
+          -- TODO: when chain-skipping will be implemented and chain-sync client
+          -- will take into account big ledger peers, we don't need pattern
+          -- match on the churn mode, but use
+          -- `targetNumberOfActiveBigLedgerPeers` (issue #4609).
+          targetNumberOfActiveBigLedgerPeers =
+              case mode of
+                   ChurnModeNormal ->
+                      targetNumberOfActiveBigLedgerPeers base
+                   ChurnModeBulkSync ->
+                      min 1 (targetNumberOfActiveBigLedgerPeers base)
+        })
+
+    decreaseActiveBigLedgerPeers :: ChurnMode -> STM m ()
+    decreaseActiveBigLedgerPeers mode =  do
+        modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfActiveBigLedgerPeers =
+              case mode of
+                   ChurnModeNormal ->
+                       decrease $ targetNumberOfActiveBigLedgerPeers base
+                   ChurnModeBulkSync ->
+                       min 1 (targetNumberOfActiveBigLedgerPeers base)
+        })
+
 
     go :: StdGen -> m Void
     go !rng = do
@@ -107,18 +133,34 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
       -- Short delay, we may have no active peers right now
       threadDelay 1
 
+      atomically $ do
+        -- Pick new active peer(s).
+        increaseActivePeers churnMode
+
+        -- Purge the worst active big ledger peer(s).
+        decreaseActiveBigLedgerPeers churnMode
+
+      -- Short delay, we may have no active big ledger peers right now
+      threadDelay 1
+
       -- Pick new active peer(s).
-      atomically $ increaseActivePeers churnMode
+      atomically $ increaseActiveBigLedgerPeers churnMode
 
       -- Give the promotion process time to start
       threadDelay 1
 
       -- Forget the worst performing non-active peers.
       atomically $ modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfRootPeers = decrease (targetNumberOfRootPeers base)
-        , targetNumberOfKnownPeers = decrease (targetNumberOfKnownPeers base)
+          targetNumberOfRootPeers =
+            decrease (targetNumberOfRootPeers base)
+        , targetNumberOfKnownPeers =
+            decrease (targetNumberOfKnownPeers base)
         , targetNumberOfEstablishedPeers =
-              decrease (targetNumberOfEstablishedPeers base)
+            decrease (targetNumberOfEstablishedPeers base)
+        , targetNumberOfKnownBigLedgerPeers =
+            decrease (targetNumberOfKnownBigLedgerPeers base)
+        , targetNumberOfEstablishedBigLedgerPeers =
+            decrease (targetNumberOfEstablishedBigLedgerPeers base)
         })
 
       -- Give the governor time to properly demote them.
@@ -129,6 +171,8 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
           targetNumberOfRootPeers = targetNumberOfRootPeers base
         , targetNumberOfKnownPeers = targetNumberOfKnownPeers base
         , targetNumberOfEstablishedPeers = targetNumberOfEstablishedPeers base
+        , targetNumberOfKnownBigLedgerPeers = targetNumberOfKnownBigLedgerPeers base
+        , targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base
         })
       endTs <- getMonotonicTime
 
