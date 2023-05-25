@@ -269,15 +269,19 @@ and unofficially `aarch64`, on 32-bit platforms you might expect some issues.
 
 ## Releasing packages to CHaP
 
-New versions of packages are published on [CHaP].
+New versions of packages are published on [CHaP].  To release packages to
+[CHaP] one should use `./scritp/release-to-chap.sh`.
 
-To release packages to [CHaP] one should use `./scritp/release-to-chap.sh`.  It
-will create a new branch in `cardano-haskell-packages` repo (pointed by
-`CARDANO_HASKELL_PACKAGES_DIR` environment variable or `/tmp/chap` if it's not
-defined).  Before merging that branch, run `./script/build-with-chap.sh`.  It
-will use the new branch in `cardano-haskell-packages` to restore the
-`ourobors-network` repository to the state published in `CHaP`.  One must
-resolve all compilation issues before merging the `CHaP` branch.
+* First run `./script/release-to-chap.sh -r` to see which changes will be
+  published. And verify that all `CHANGELOG.md` files are up-to date.
+* Run `./script/release-to-chap.sh` which will create a PR in
+  `cardano-haskell-packages` repo (pointed by `CARDANO_HASKELL_PACKAGES_DIR`
+  environment variable or `/tmp/chap` if it's not defined).
+* Before merging that branch, run `./script/build-with-chap.sh`.  It will use the new branch in
+  `cardano-haskell-packages` to restore the `ourobors-network` repository to the
+  state published in `CHaP`.  One must resolve all compilation issues before
+  merging the `CHaP` branch.  On a successful run the script will add comment
+  on the `CHaP` PR.
 
 ## Release Branches
 
