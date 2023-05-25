@@ -265,7 +265,9 @@ We officially support:
 * `Windows` (using [`msys2`] software distribution)
 * `MacOS`
 
-and unofficially `aarch64`, on 32-bit platforms you might expect some issues.
+and unofficially `aarch64`, on 32-bit platforms you might expect some issues
+(currently memory requirement for `cardano-node` on 32 architecture are too
+high).
 
 ## Releasing packages to CHaP
 
