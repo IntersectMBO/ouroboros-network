@@ -38,8 +38,6 @@ import           Data.List (elemIndex)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void, absurd)
@@ -59,6 +57,7 @@ import qualified Data.IP as IP
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
+import           Data.Bifunctor (second)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
@@ -75,8 +74,10 @@ data TraceLocalRootPeers peerAddr exception =
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAccessPoint DiffTime
      | TraceLocalRootResult  DomainAccessPoint [(IP, DNS.TTL)]
-     | TraceLocalRootGroups  (Seq (Int, Map peerAddr PeerAdvertise))
+     | TraceLocalRootGroups  [(Int, Map peerAddr PeerAdvertise)]
        -- ^ This traces the results of the local root peer provider
+     | TraceLocalRootDNSMap  (Map DomainAccessPoint [peerAddr])
+       -- ^ This traces the results of the domain name resolution
      | TraceLocalRootReconfigured [(Int, Map RelayAccessPoint PeerAdvertise)] -- ^ Old value
                                   [(Int, Map RelayAccessPoint PeerAdvertise)] -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (DNSorIOError exception)
@@ -103,7 +104,7 @@ localRootPeersProvider
   -> DNSActions resolver exception m
   -> STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
   -- ^ input
-  -> StrictTVar m (Seq (Int, Map peerAddr PeerAdvertise))
+  -> StrictTVar m [(Int, Map peerAddr PeerAdvertise)]
   -- ^ output 'TVar'
   -> m Void
 localRootPeersProvider tracer
@@ -113,66 +114,61 @@ localRootPeersProvider tracer
                          dnsAsyncResolverResource,
                          dnsLookupWithTTL
                        }
-                       readDomainsGroups
-                       rootPeersGroupsVar =
-    atomically readDomainsGroups >>= loop
+                       readLocalRootPeers
+                       rootPeersGroupVar =
+    atomically readLocalRootPeers >>= loop
   where
+    -- | Loop function that monitors DNS Domain resolution threads and restarts
+    -- if either these threads fail or detects the local configuration changed.
+    --
+    loop :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> m Void
     loop domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
       rr <- dnsAsyncResolverResource resolvConf
       let
-          -- Flatten the local root peers groups and associate its index to each
-          -- DomainAddress to be monitored.
-          -- NOTE: We need to pair the index because the resulting list can be
-          -- sparse.
-          domains :: [(Int, DomainAccessPoint, PeerAdvertise)]
-          domains = [ (index, domain, pa)
-                    | (index, (_, m)) <- zip [0..] domainsGroups
-                    , (RelayDomainAccessPoint domain, pa) <- Map.toList m ]
-          -- Since we want to preserve the number of groups, the targets, and
-          -- the addresses within each group, we fill the TVar with
-          -- a placeholder list, in order for each monitored DomainAddress to
-          -- be updated in the correct group.
-          --
-          -- This is the static configuration.
-          rootPeersGroups :: Seq (Int, Map peerAddr PeerAdvertise)
-          rootPeersGroups = Seq.fromList $ map (\(target, m) -> (target, f m)) domainsGroups
-            where
-               f :: Map RelayAccessPoint PeerAdvertise
-                 -> Map peerAddr PeerAdvertise
-               f = Map.mapKeys
-                     (\k -> case k of
-                       RelayAccessAddress ip port ->
-                         toPeerAddr ip port
-                       _ ->
-                         error "localRootPeersProvider: impossible happened"
-                     )
-                 . Map.filterWithKey
-                     (\k _ -> case k of
-                       RelayAccessAddress {} -> True
-                       RelayAccessDomain {}  -> False
-                     )
-      atomically $
-        writeTVar rootPeersGroupsVar rootPeersGroups
-      traceWith tracer (TraceLocalRootGroups rootPeersGroups)
+          -- Get only DomainAccessPoint to monitor and perform DNS resolution
+          -- on them.
+          domains :: [DomainAccessPoint]
+          domains = [ domain
+                    | (_, m) <- domainsGroups
+                    , (RelayDomainAccessPoint domain, _) <- Map.toList m ]
+
+          -- Initial DNS Domain Map has all domains entries empty
+          initialDNSDomainMap :: Map DomainAccessPoint [peerAddr]
+          initialDNSDomainMap =
+            Map.fromList $ map (, []) domains
+
+      -- Create TVar to store DNS lookup results
+      dnsDomainMapVar <- newTVarIO initialDNSDomainMap
+
+      traceWith tracer (TraceLocalRootDNSMap initialDNSDomainMap)
 
       -- Launch DomainAddress monitoring threads and wait for threads to error
       -- or for local configuration changes.
+      --
+      -- Each thread receives the DNS Domain Map TVar so it can update it with
+      -- its current DNS lookup result. The way we build the resulting local
+      -- root groups is:
+      --
+      -- After that each thread resolves its domain, it is going to read the
+      -- static local root peers groups and for each domain it finds, it is
+      -- going to lookup into the new DNS Domain Map and replace that entry
+      -- with the lookup result.
       domainsGroups' <-
-        withAsyncAll (monitorDomain rr `map` domains) $ \as -> do
+        withAsyncAll (monitorDomain rr dnsDomainMapVar `map` domains) $ \as -> do
           res <- atomically $
                   -- wait until any of the monitoring threads errors
                   ((\(a, res) ->
                       let domain :: DomainAccessPoint
                           domain = case a `elemIndex` as of
                             Nothing  -> error "localRootPeersProvider: impossible happened"
-                            Just idx -> case (domains !! idx) of (_, x, _) -> x
+                            Just idx -> case domains !! idx of x -> x
                       in either (Left . (domain,)) absurd res)
                     -- the monitoring thread cannot return, it can only error
                     <$> waitAnyCatchSTM as)
               <|>
                   -- wait for configuration changes
-                  (do a <- readDomainsGroups
+                  (do a <- readLocalRootPeers
                       -- wait until the input domains groups changes
                       check (a /= domainsGroups)
                       return (Right a))
@@ -189,15 +185,12 @@ localRootPeersProvider tracer
       -- all the monitoring threads are killed.
       loop domainsGroups'
 
-
     resolveDomain
       :: resolver
       -> DomainAccessPoint
-      -> PeerAdvertise
-      -> m (Either [DNS.DNSError] [((peerAddr, PeerAdvertise), DNS.TTL)])
+      -> m (Either [DNS.DNSError] [(peerAddr, DNS.TTL)])
     resolveDomain resolver
-                  domain@DomainAccessPoint {dapDomain, dapPortNumber}
-                  advertisePeer = do
+                  domain@DomainAccessPoint {dapDomain, dapPortNumber} = do
       (errs, results) <- dnsLookupWithTTL resolvConf resolver dapDomain
       mapM_ (traceWith tracer . TraceLocalRootFailure domain . DNSError)
             errs
@@ -205,17 +198,23 @@ localRootPeersProvider tracer
       if null errs
          then do
            traceWith tracer (TraceLocalRootResult domain results)
-           return $ Right [ (( toPeerAddr addr dapPortNumber
-                            , advertisePeer)
+           return $ Right [ ( toPeerAddr addr dapPortNumber
                             , _ttl)
                           | (addr, _ttl) <- results ]
          else return $ Left errs
 
+    -- | Function that runs on a monitoring thread. This function will, every
+    -- TTL, issue a DNS resolution request and collect the results for its
+    -- particular domain in the DNS Domain Map TVar. After having the result it
+    -- will construct the new view of the local root groups by replacing every
+    -- domain name in the static configuration with the most up to date results
+    -- from the DNS Domain Map.
     monitorDomain
       :: Resource m (DNSorIOError exception) resolver
-      -> (Int, DomainAccessPoint, PeerAdvertise)
+      -> StrictTVar m (Map DomainAccessPoint [peerAddr])
+      -> DomainAccessPoint
       -> m Void
-    monitorDomain rr0 (index, domain, advertisePeer) =
+    monitorDomain rr0 dnsDomainMapVar domain =
         go rr0 0
       where
         go :: Resource m (DNSorIOError exception) resolver
@@ -231,36 +230,80 @@ localRootPeersProvider tracer
                           (1 :| [3, 6, 9, 12])
                           rr
 
-          reply <- resolveDomain resolver domain advertisePeer
+          --- Resolve 'domain'
+          reply <- resolveDomain resolver domain
           case reply of
             Left errs -> go rrNext
                            (minimum $ map (\err -> ttlForDnsError err ttl) errs)
             Right results -> do
-              rootPeersGroups <- atomically $ do
-                rootPeersGroups <- readTVar rootPeersGroupsVar
-                let (target, entry)  = rootPeersGroups `Seq.index` index
-                    resultsMap       = Map.fromList (map fst results)
-                    -- Discard old values and only keep current lookup result.
-                    --
-                    -- Since the 'loop' function always receives the groups read
-                    -- from the source stm transaction 'readDomainGroups', we
-                    -- need to merge against it (because it has the statically
-                    -- configured IPs) and not what is read from the TVar
-                    -- 'rootPeersGroupsVar'.
-                    entry'           = resultsMap <> entry
-                    rootPeersGroups' =
-                      Seq.update index
-                                 (target, entry')
-                                 rootPeersGroups
+              (newRootPeersGroups, newDNSDomainMap) <- atomically $ do
+                -- Read current DNS Domain Map value
+                dnsDomainMap <- readTVar dnsDomainMapVar
+
+                let results' = map fst results
+                    -- New DNS Resolution results, update the map
+                    newDNSDomainMap =
+                      Map.insert domain results' dnsDomainMap
 
                 -- Only overwrite if it changed:
-                when (entry /= entry') $
-                  writeTVar rootPeersGroupsVar rootPeersGroups'
+                when (results' /= dnsDomainMap Map.! domain) $
+                  writeTVar dnsDomainMapVar newDNSDomainMap
 
-                return rootPeersGroups'
+                -- Read the static local roots configuration
+                staticRootPeersGroups <- readLocalRootPeers
 
-              traceWith tracer (TraceLocalRootGroups rootPeersGroups)
+                -- Read current root peers groups value
+                oldRootPeersGroups <- readTVar rootPeersGroupVar
+
+                -- Get possibly new value for root peers groups
+                let newRootPeersGroups =
+                      getLocalRootPeersGroups newDNSDomainMap
+                                              staticRootPeersGroups
+
+                -- Only overwrite if it changed:
+                when (oldRootPeersGroups /= newRootPeersGroups) $
+                  writeTVar rootPeersGroupVar newRootPeersGroups
+
+                return (newRootPeersGroups, newDNSDomainMap)
+
+              traceWith tracer (TraceLocalRootGroups newRootPeersGroups)
+              traceWith tracer (TraceLocalRootDNSMap newDNSDomainMap)
+
               go rrNext (ttlForResults (map snd results))
+
+    -- | Returns local root peers without any domain names, only 'peerAddr'
+    -- (IP + PortNumber).
+    --
+    -- It does so by reading a DNS Domain Map and replacing all instances of a
+    -- DomainAccessPoint in the static configuration with the values from the
+    -- map.
+    getLocalRootPeersGroups :: Map DomainAccessPoint [peerAddr]
+                            -> [(Int, Map RelayAccessPoint PeerAdvertise)]
+                            -> [(Int, Map peerAddr PeerAdvertise)]
+    getLocalRootPeersGroups dnsMap =
+      -- The idea is to traverse the static configuration. Enter each local
+      -- group and check if any of the RelayAccessPoint has a Domain Name.
+      --
+      -- If it does we make a lookup in the DNS Domain Map and get the new
+      -- entries.
+      --
+      -- So in a nutshell we are traversing the static configuration and
+      -- replacing every domain name for its resolved result (if it exists).
+      fmap (second (Map.foldlWithKey'
+                      (\accMap rap pa
+                         -> case rap of
+                             RelayAccessAddress ip port ->
+                               Map.insert (toPeerAddr ip port) pa accMap
+                             RelayDomainAccessPoint dap ->
+                               let newEntries = maybe Map.empty
+                                                      Map.fromList
+                                              $ fmap (, pa)
+                                              <$> Map.lookup dap dnsMap
+                                in accMap <> newEntries
+                      )
+                   Map.empty
+                   )
+           )
 
 ---------------------------------------------
 -- Public root peer set provider using DNS
