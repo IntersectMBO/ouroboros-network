@@ -28,8 +28,6 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (catMaybes)
-import           Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time.Clock (picosecondsToDiffTime)
@@ -49,6 +47,7 @@ import qualified Control.Monad.Class.MonadTimer.SI as MonadTimer
 import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
+import           Data.List (intercalate)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
@@ -463,7 +462,7 @@ selectLocalRootPeersEvents :: [(Time, TestTraceEvent Failure)]
 selectLocalRootPeersEvents trace = [ (t, e) | (t, RootPeerDNSLocal e) <- trace ]
 
 selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
-                            -> [(Time, Seq (Int, Map SockAddr PeerAdvertise))]
+                            -> [(Time, [(Int, Map SockAddr PeerAdvertise)])]
 selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- trace ]
 
 selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
@@ -508,14 +507,15 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
 
-     in checkAll tr
-      .&&. not (null tr)
+     in counterexample (intercalate "\n" $ map show tr)
+      $ classify (length tr > 0) "Actually testing something"
+      $ checkAll tr
   where
-    checkAll :: [(Time, Seq (Int, Map SockAddr PeerAdvertise))] -> Property
+    checkAll :: [(Time, [(Int, Map SockAddr PeerAdvertise)])] -> Property
     checkAll [] = property True
     checkAll (x:t) =
       let
-          -- local root addresses
+          -- get local root ip addresses
           localRootAddresses :: [(a, Map RelayAccessPoint PeerAdvertise)]
                              -> Set SockAddr
           localRootAddresses lrp =
@@ -525,7 +525,8 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
             , RelayAccessAddress ip port <- Map.keys m
             ]
 
-          localGroupEventsAddresses :: (a, Seq (Int, Map SockAddr PeerAdvertise))
+          -- get ip addresses out of LocalRootGroup trace events
+          localGroupEventsAddresses :: (a, [(Int, Map SockAddr PeerAdvertise)])
                                     -> Set SockAddr
           localGroupEventsAddresses (_, s) =
               Set.fromList
@@ -713,7 +714,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
 
                                          ) $ Map.keys
                                            $ snd
-                                           $ lrpg `Seq.index` index :: [IP]
+                                           $ lrpg !! index :: [IP]
                             -- Check if all ips from the previous DNS
                             -- lookup result are present in the current
                             -- result group at the correct index
