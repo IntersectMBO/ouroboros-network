@@ -52,5 +52,5 @@ package ouroboros-network
 
 if impl(ghc >= 9.6)
   allow-newer:
-    , *:base
+    -- https://github.com/protolude/protolude/pull/143
     , protolude:*
