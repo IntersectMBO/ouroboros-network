@@ -126,6 +126,10 @@
 \def\CommitUniLoc{\textsf{Commit}\textsuperscript{\textsf{Unidirectional}}\textsubscript{\textsf{Local}}}
 \def\Terminate{\textsf{Terminate}}
 \def\Timeout{\textsf{Timeout}}
+\def\SelfConn{\textsf{SelfConn}}
+\def\SelfConnRev{\textsf{SelfConn$^{-1}$}}
+\def\SelfConnPrim{\textsf{SelfConn'}}
+\def\SelfConnPrimRev{\textsf{SelfConn'$^{-1}$}}
 
 % Inbound governor states
 \def\RemoteEstablished{\textsf{RemoteEstablished}}
@@ -649,7 +653,7 @@ regarding \texttt{InitiatorMode}.
     \draw[->]         (OutboundStateUni.190)    to [out=270, in=90,pos=0.23,looseness=2]
                                                 node[fill=white,rotate=88,pos=0.3]{\small\DemotedToColdUniLoc}        (OutboundIdleStateUni.173);
 
-    \draw[->]         (OutboundIdleStateUni)       to [out=300, in=180] node[fill=white,below left]{\CommitUniLoc}         (TerminatingState.180);
+    \draw[->]         (OutboundIdleStateUni)       to [out=300, in=180] node[fill=white,below left]{\CommitUniLoc}    (TerminatingState.180);
     \draw[->]         (OutboundIdleStateDup.280)   -- node[fill=white,pos=.4]{\CommitDupLoc}                          (TerminatingState.40);
     \draw[->]         (TerminatingState)           -- node[left]{\Terminate}                                          (TerminatedState);
   \end{tikzpicture}}
@@ -1067,6 +1071,86 @@ After a connection was closed, we keep it in \TerminatingState{} for the
 duration of \textit{wait time timeout}.  When the timeout expires the
 connection is forgotten.  \todo[inline]{Add a haddock link to \texttt{daTimeWaitTimeout}}
 
+\subsubsection{Connecting to oneself}
+The transitions described in this section can only happen when the connection
+manager was requested to connect to its own listening socket and the address
+wasn't translated by the \textsf{OS} or a \textsf{NAT}.  This could happen only
+in very specific situtations:
+
+\begin{enumerate}
+  \item misconfiguration a system;
+  \item running a node on multiple interfaces;
+  \item in some cases it could also happen when learning about oneself from the
+    ledger;
+  \item or due to peer sharing.
+\end{enumerate}
+
+In some of these cases, the external IP address would need to agree with the
+internal one, which is true for some cloud service providers.
+
+Let us note that these connections effectively only add delay, and thus they
+will be replaced by the outbound governor (by its churn mechanism).
+
+These transitions are not indicated in the figure~\ref{fig:statediagram},
+instead they are shown bellow in figure~\ref{fig:statediagram-selfconn}.
+
+\paragraph{\SelfConn{} and \SelfConnRev{}}
+We allow transitioning between
+\begin{itemize}
+  \item\UnnegotiatedStateOut{} and
+  \item\UnnegotiatedStateIn{}
+\end{itemize}
+or the other way.  This transition is not guaranteed as on some systems in
+such case the outbound and inbound addresses (as returned by the
+\texttt{accept} call) can be different.  Whether \SelfConn{} or \SelfConnRev{}
+will happen depending on the race between the inbound and outbound sides.
+
+\paragraph{\SelfConnPrim{} and \SelfConnPrimRev{}}
+We also allow transitioning between
+\begin{itemize}
+  \item\InboundIdleStateAny{} and
+  \item\OutboundStateAny{}
+\end{itemize}
+
+After the handshake is negotiated there is a race between inbound and outbound
+threads, which need to be resolved consistently.
+
+\begin{figure}[p]
+  {\begin{tikzpicture}[scale=0.66]
+    \node                                     (init)                       at ( 2,   2)     {\small\InitialState};
+    \node[outbound_state]                     (ReservedOutboundState)      at ( 0,-0.25)    {\small\ReservedOutboundState};
+    \node[outbound_state,anchor=east]         (UnnegotiatedStateOut)       at (-1,  -3)     {\small\UnnegotiatedStateOut};
+    \node[inbound_state]                      (UnnegotiatedStateIn)        at ( 5.5, -3)    {\small\UnnegotiatedStateIn};
+    \node[inbound_outbound_state,anchor=west] (InboundIdleStateDup)        at ( 5, -10.5)   {\small\InboundIdleStateDup};
+    \node[inbound_state,anchor=west]          (InboundIdleStateUni)        at ( 5, -7.5)    {\small\InboundIdleStateUni};
+    \node[outbound_state,anchor=east]         (OutboundStateUni)           at (-2, -7.5)    {\small\OutboundStateUni};
+    \node[inbound_outbound_state,anchor=east] (OutboundStateDupTau)        at (-2, -10.5)   {\small\OutboundStateDupTau};
+
+    \draw[->] (init) -- node[fill=white,pos=0.425,above left]{\small\Reserve}                                          (ReservedOutboundState);
+    \draw[->] (init) to [out=310, in=90] node[fill=white, above right]{\small\Accepted}                                (UnnegotiatedStateIn.30);
+
+    \draw[->] (ReservedOutboundState)          -- node[fill=white,above left] {\small\Connected}                       (UnnegotiatedStateOut);
+    \draw[->] (ReservedOutboundState)          -- node[fill=white,above right] {\small\Overwritten}                    (UnnegotiatedStateIn);
+
+    \draw[->] (UnnegotiatedStateOut)           -- node[fill=white,left=-42pt] {\small\NegotiatedUniOut}                (OutboundStateUni.165);
+    \draw[->] (UnnegotiatedStateOut.340)       to [out=-60, in=90]
+                                               node[fill=white,right=-20pt,pos=0.23]{\small\NegotiatedDupOut}          (OutboundStateDupTau.13);
+
+    \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white,left=-40pt,pos=0.33]{\small\NegotiatedDupIn}         (InboundIdleStateDup.150);
+    \draw[->]         (UnnegotiatedStateIn)    -- node[fill=white,pos=0.35,right=-20pt]{\small\NegotiatedUniIn}        (InboundIdleStateUni.60);
+
+    \draw[->]         (UnnegotiatedStateOut.3)   -- node[above]{\small\SelfConn}                                       (UnnegotiatedStateIn.177);
+    \draw[->]         (UnnegotiatedStateIn.183)  -- node[below]{\small\SelfConnRev}                                    (UnnegotiatedStateOut.357);
+
+    \draw[->]        (OutboundStateUni.3)        -- node[above]{\small\SelfConnPrim}                                   (InboundIdleStateUni.177);
+    \draw[->]        (InboundIdleStateUni.183)   -- node[below]{\small\SelfConnPrimRev}                                (OutboundStateUni.357);
+
+    \draw[->]        (OutboundStateDupTau.3)     -- node[above]{\small\SelfConnPrim}                                   (InboundIdleStateDup.177);
+    \draw[->]        (InboundIdleStateDup.183)   -- node[below]{\small\SelfConnPrimRev}                                (OutboundStateDupTau.357);
+  \end{tikzpicture}}
+  \caption{Extra transitions when connecting to onself}
+  \label{fig:statediagram-selfconn}
+\end{figure}
 
 \subsection{Protocol errors}
 If a mini-protocol errors, on either side, connection will be reset, and put in
@@ -1625,6 +1709,8 @@ the \AwakeDupRem{} transition is triggered and the \inbgov{} calls
     \draw[->, unregisterOutboundArr]         (OutboundIdleStateUni)       to [out=300, in=180] node[fill=white,below left]{\CommitUniLoc}         (TerminatingState.180);
     \draw[->, unregisterOutboundArr]         (OutboundIdleStateDup.280)   -- node[fill=white,pos=.4]{\CommitDupLoc}                          (TerminatingState.40);
     \draw[->]         (TerminatingState)           -- node[left]{\Terminate}                                          (TerminatedState);
+
+    \draw[->, registerInboundArr]            (UnnegotiatedStateOut)    -- node[above]{\small\SelfConn}                                       (UnnegotiatedStateIn);
 
   \end{tikzpicture}
   \caption{Transitions classified by connection manager method.}
