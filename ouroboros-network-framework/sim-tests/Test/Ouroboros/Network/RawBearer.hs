@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE CPP                 #-}
 
 module Test.Ouroboros.Network.RawBearer where
 
@@ -64,12 +65,17 @@ prop_raw_bearer_send_and_receive_inet msg =
 prop_raw_bearer_send_and_receive_local :: Message -> Property
 prop_raw_bearer_send_and_receive_local msg =
   ioProperty $ withIOManager $ \iomgr -> do
+#if defined(mingw32_HOST_OS)
+    let clientName = "\\\\.\\pipe\\local_socket_client.test"
+    let serverName = "\\\\.\\pipe\\local_socket_server.test"
+#else
     let clientName = "local_socket_client.test"
     let serverName = "local_socket_server.test"
+#endif
     cleanUp clientName
     cleanUp serverName
-    let clientAddr = LocalAddress clientName
-    let serverAddr = LocalAddress serverName
+    let clientAddr = localAddressFromPath clientName
+    let serverAddr = localAddressFromPath serverName
     rawBearerSendAndReceive
       (localSnocket iomgr)
       makeLocalRawBearer
