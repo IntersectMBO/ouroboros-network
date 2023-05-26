@@ -20,7 +20,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer)
-import           Data.Foldable (toList)
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -93,7 +92,7 @@ withPeerSelectionActions
     localRootsVar <- newTVarIO mempty
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
-            readLocalRootPeers = toList <$> readTVar localRootsVar,
+            readLocalRootPeers = readTVar localRootsVar,
             peerSharing,
             peerConnToPeerSharing,
             requestPublicRootPeers = requestPublicRootPeers,
