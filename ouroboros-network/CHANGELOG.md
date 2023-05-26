@@ -1,10 +1,18 @@
 # Revision history for ouroboros-network
 
-## 0.7.0.1
+## 0.8.0.0
 
 ### Non-breaking changes
 
 * Updated to use `ouroboros-network-api-0.5.0.0`.
+
+### Breaking changes
+
+* Changed how DNS for local root peers works
+  - Change TraceLocalRootPeersTrace to include TraceLocalRootDNSMap constructor;
+  - Change TraceLocalRootGroups constructor type;
+  - Change localRootPeersProvider type signature;
+  - Updated tests to reflect the above changes.
 
 ## 0.7.0.0
 
