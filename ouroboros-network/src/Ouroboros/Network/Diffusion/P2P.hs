@@ -52,6 +52,7 @@ import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Set (Set, elemAt)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           System.Exit (ExitCode)
 import           System.Random (StdGen, newStdGen, randomRs, split)
 #ifdef POSIX
 import qualified System.Posix.Signals as Signals
@@ -1219,8 +1220,11 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
     -- naming convention is that we use /local/ prefix for /node-to-client/
     -- related terms, as this is a local only service running over a unix
     -- socket / windows named pipe.
-    handle (\e -> traceWith tracer (DiffusionErrored e)
-               >> throwIO (DiffusionError e))
+    handleJust (\e -> case fromException e :: Maybe ExitCode of
+                  Nothing -> Just e
+                  Just {} -> Nothing)
+               (\e -> traceWith tracer (DiffusionErrored e)
+                   >> throwIO (DiffusionError e))
          $ withIOManager $ \iocp -> do
              let diNtnSnocket :: SocketSnocket
                  diNtnSnocket = Snocket.socketSnocket iocp

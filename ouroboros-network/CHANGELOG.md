@@ -1,6 +1,15 @@
 # Revision history for ouroboros-network
 
+
+## 0.8.1.0
+
+### Non-breaking changes
+
+* Do not wrap `ExitCode` in `DiffusionError` wrapper.
+
 ## 0.8.0.1
+
+### Non-breaking changes
 
 * Export `Ouroboros.Network.Diffusion.Failiure` constructors.
 

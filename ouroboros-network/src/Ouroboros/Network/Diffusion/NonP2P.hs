@@ -24,6 +24,7 @@ import           Data.Foldable (asum)
 import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
 import           Data.Void (Void)
+import           System.Exit (ExitCode)
 
 import           Network.Socket (SockAddr, Socket)
 import qualified Network.Socket as Socket
@@ -242,9 +243,13 @@ run Tracers
 
   where
     traceException :: IO a -> IO a
-    traceException f = catch f $ \(e :: SomeException) -> do
-      traceWith dtDiffusionTracer (DiffusionErrored e)
-      throwIO (DiffusionError e)
+    traceException f = catchJust
+        (\e -> case fromException e :: Maybe ExitCode of
+            Nothing -> Just e
+            Just {} -> Nothing)
+        f $ \(e :: SomeException) -> do
+            traceWith dtDiffusionTracer (DiffusionErrored e)
+            throwIO (DiffusionError e)
 
     --
     -- We can't share portnumber with our server since we run separate
@@ -303,12 +308,12 @@ run Tracers
 
         return (localIpv4 <> localIpv6)
       where
-        -- Return an IPv4 address with an emphemeral portnumber if we use IPv4
+        -- Return an IPv4 address with an ephemeral port number if we use IPv4
         anyIPv4Addr :: SockAddr -> Maybe SockAddr
         anyIPv4Addr Socket.SockAddrInet {} = Just (Socket.SockAddrInet 0 0)
         anyIPv4Addr _                      = Nothing
 
-        -- Return an IPv6 address with an emphemeral portnumber if we use IPv6
+        -- Return an IPv6 address with an ephemeral port number if we use IPv6
         anyIPv6Addr :: SockAddr -> Maybe SockAddr
         anyIPv6Addr Socket.SockAddrInet6 {} =
           Just (Socket.SockAddrInet6 0 0 (0, 0, 0, 0) 0)
