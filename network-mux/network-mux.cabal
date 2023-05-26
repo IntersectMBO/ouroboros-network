@@ -12,7 +12,8 @@ author:                 Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szam
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     CHANGELOG.md
+extra-doc-files:        README.md
+                        CHANGELOG.md
 
 flag asserts
   description: Enable assertions

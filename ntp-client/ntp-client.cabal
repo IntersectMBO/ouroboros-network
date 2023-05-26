@@ -11,8 +11,8 @@ copyright:              2019-2023 Input Output Global Inc (IOG)
 maintainer:             operations@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     README.md
-extra-source-files:     CHANGELOG.md
+extra-doc-files:        README.md
+                        CHANGELOG.md
 
 flag demo
   description: Build a demo application
