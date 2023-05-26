@@ -10,17 +10,27 @@ on:
 
 jobs:
   check-git-dependencies:
-
     name: Check git dependencies
-
     if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
-
     runs-on: ubuntu-latest
-
     defaults:
       run:
         shell: bash
 
     steps:
     - uses: actions/checkout@v3
-    - run: ./scripts/ci/check-git-dependencies.sh
+    - name: Check Dependencies
+      run: ./scripts/ci/check-git-dependencies.sh
+
+  check-changelogs:
+    name: Check changelogs
+    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Check changelogs
+      run: ./scripts/ci/check-changelogs.sh
