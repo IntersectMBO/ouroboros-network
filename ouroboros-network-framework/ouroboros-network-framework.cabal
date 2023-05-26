@@ -11,7 +11,7 @@ author:                 Alexander Vieth, Duncan Coutts, Marcin Szamotulski
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     CHANGELOG.md
+extra-doc-files:        CHANGELOG.md
 
 Flag ipv6
   Description: Enable IPv6 test cases

@@ -10,17 +10,44 @@ on:
 
 jobs:
   check-git-dependencies:
-
     name: Check git dependencies
-
     if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
-
     runs-on: ubuntu-latest
-
     defaults:
       run:
         shell: bash
 
     steps:
     - uses: actions/checkout@v3
-    - run: ./scripts/ci/check-git-dependencies.sh
+    - name: Check Dependencies
+      run: ./scripts/ci/check-git-dependencies.sh
+
+  check-changelogs:
+    name: Check changelogs
+    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Check changelogs
+      run: ./scripts/ci/check-changelogs.sh
+
+  check-cabal-files:
+    name: Check cabal files
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Install Haskell
+      uses: input-output-hk/setup-haskell@v1
+      id: setup-haskell
+      with:
+        cabal-version: "3.10.1.0"
+
+    - uses: actions/checkout@v3
+
+    - name: Check cabal files
+      run: ./scripts/ci/check-cabal-files.sh
+

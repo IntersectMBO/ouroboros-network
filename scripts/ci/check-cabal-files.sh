@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 
-for x in $(find . -name '*.cabal' | grep -v dist-newstyle | cut -c 3-); do
+for x in $(fd -e cabal); do
   (
     d=$(dirname $x)
     echo "== $d =="
-    cd $d
+    pushd $d
     cabal check
+    popd
   )
 done
