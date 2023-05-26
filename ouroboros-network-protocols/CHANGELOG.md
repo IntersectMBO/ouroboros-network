@@ -1,5 +1,9 @@
 # Revision history for ouroboros-network-protocols
 
+## 0.5.0.3 -- 2023-05-26
+
+* `ghc-9.6` compatibility
+
 ## 0.5.0.2 -- 2023-05-15
 
 ## Non-breaking changes
