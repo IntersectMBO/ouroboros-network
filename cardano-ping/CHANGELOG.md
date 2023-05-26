@@ -1,5 +1,9 @@
 # Revision history for cardano-ping
 
+## 0.2.0.1 -- 2023-05-26
+
+* Support `ghc-9.6`.
+
 ## 0.2.0.0 -- 2023-05-08
 
 * Support for `NodeToNodeV_12` and `NodeToClientV_16`, e.g. support for
