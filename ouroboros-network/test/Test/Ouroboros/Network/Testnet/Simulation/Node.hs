@@ -122,11 +122,14 @@ import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
+import           Ouroboros.Network.PeerSelection.LocalRootPeers
+                     (HotValency (..), WarmValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
                      (byteLimitsPeerSharing, timeLimitsPeerSharing)
+import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
 import           Test.QuickCheck
 
 -- | Diffusion Simulator Arguments
@@ -169,7 +172,9 @@ data NodeArgs =
       -- ^ 'Arguments' 'aIPAddress' value
     , naPeerSharing            :: PeerSharing
       -- ^ 'Arguments' 'aIPAddress' value
-    , naLocalRootPeers         :: [(Int, Map RelayAccessPoint PeerAdvertise)]
+    , naLocalRootPeers         :: [( HotValency
+                                   , WarmValency
+                                   , Map RelayAccessPoint PeerAdvertise)]
       -- ^ 'Arguments' 'LocalRootPeers' values
     , naLocalSelectionTargets  :: PeerSelectionTargets
       -- ^ 'Arguments' 'aLocalSelectionTargets' value
@@ -211,7 +216,9 @@ instance Show NodeArgs where
 data Command = JoinNetwork DiffTime (Maybe NtNAddr)
              | Kill DiffTime
              | Reconfigure DiffTime
-                           [(Int, Map RelayAccessPoint PeerAdvertise)]
+                           [( HotValency
+                            , WarmValency
+                            , Map RelayAccessPoint PeerAdvertise)]
   deriving Eq
 
 instance Show Command where
@@ -248,7 +255,10 @@ genIP ips =
       genIPv6 = IPv6 . toIPv6 <$> replicateM 8 (choose (0,0xffff))
    in oneof ([genIPv4, genIPv6] ++ map pure ips)
 
-genCommands :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> Gen [Command]
+genCommands :: [( HotValency
+                , WarmValency
+                , Map RelayAccessPoint PeerAdvertise)]
+            -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
   port <- fromIntegral <$> (arbitrary :: Gen Int)
   commands <- vectorOf size (frequency [ (1, JoinNetwork
@@ -268,10 +278,12 @@ genCommands localRoots = sized $ \size -> do
                                        ])
   return (fixupCommands commands)
   where
-    subLocalRootPeers :: Gen [(Int, Map RelayAccessPoint PeerAdvertise)]
+    subLocalRootPeers :: Gen [( HotValency
+                              , WarmValency
+                              , Map RelayAccessPoint PeerAdvertise)]
     subLocalRootPeers = do
       subLRP <- sublistOf localRoots
-      mapM (mapM (fmap Map.fromList . sublistOf . Map.toList)) subLRP
+      mapM (\(h, w, g) -> (h, w,) <$> (fmap Map.fromList . sublistOf . Map.toList $ g)) subLRP
 
     delay = frequency [ (3, genDelayWithPrecision 100)
                       , (2, (* 10) <$> genDelayWithPrecision 100)
@@ -318,7 +330,9 @@ genNodeArgs :: [RelayAccessPoint]
            -> Int
            -> ( [RelayAccessPoint]
              -> RelayAccessPoint
-             -> Gen [(Int, Map RelayAccessPoint PeerAdvertise)] )
+             -> Gen [( HotValency
+                     , WarmValency
+                     , Map RelayAccessPoint PeerAdvertise)] )
            -> (NtNAddr, RelayAccessPoint)
            -> Gen NodeArgs
 genNodeArgs raps minConnected genLocalRootPeers (ntnAddr, rap) = do
@@ -429,7 +443,8 @@ genNonHotDiffusionScript = do
     --
     genLocalRootPeers :: [RelayAccessPoint]
                       -> RelayAccessPoint
-                      -> Gen [(Int, Map RelayAccessPoint PeerAdvertise)]
+                      -> Gen [( HotValency, WarmValency
+                              , Map RelayAccessPoint PeerAdvertise)]
     genLocalRootPeers l r = do
       nrGroups <- chooseInt (1, 3)
       -- Remove self from local root peers
@@ -445,12 +460,20 @@ genNonHotDiffusionScript = do
 
       target <- forM relayGroups
                     (\x -> if null x
-                          then pure 0
-                          else chooseInt (1, length x))
+                          then pure (0, 0)
+                          else genTargets (length x))
 
-      let lrpGroups = zip target relayGroupsMap
+      let lrpGroups = zipWith (\(h, w) g -> (h, w, g))
+                              target
+                              relayGroupsMap
 
       return lrpGroups
+
+    genTargets :: Int -> Gen (HotValency, WarmValency)
+    genTargets l = do
+      warmValency <- WarmValency <$> chooseEnum (1, l)
+      hotValency <- HotValency <$> chooseEnum (1, getWarmValency warmValency)
+      return (hotValency, warmValency)
 
 -- | Multinode Hot Diffusion Simulator Script
 --
@@ -496,7 +519,9 @@ genHotDiffusionScript = do
       -- This only generates 1 group
       genLocalRootPeers :: [RelayAccessPoint]
                         -> RelayAccessPoint
-                        -> Gen [(Int, Map RelayAccessPoint PeerAdvertise)]
+                        -> Gen [( HotValency
+                                , WarmValency
+                                , Map RelayAccessPoint PeerAdvertise)]
       genLocalRootPeers l r = do
         -- Remove self from local root peers
         let newL = filter (/= r) l
@@ -506,9 +531,13 @@ genHotDiffusionScript = do
 
         let relaysAdv      = zip newL peerAdvertise
             relayGroupsMap = Map.fromList relaysAdv
-            target         = length relaysAdv
+            warmTarget         = length relaysAdv
 
-        return [(target, relayGroupsMap)]
+        hotTarget <- choose (0 , warmTarget)
+
+        return [( HotValency hotTarget
+                , WarmValency warmTarget
+                , relayGroupsMap)]
 
 instance Arbitrary DiffusionScript where
   arbitrary = uncurry DiffusionScript
@@ -684,7 +713,9 @@ diffusionSimulation
     -- | Runs a single node according to a list of commands.
     runCommand
       :: Maybe ( Async m Void
-               , StrictTVar m [(Int, Map RelayAccessPoint PeerAdvertise)])
+               , StrictTVar m [( HotValency
+                               , WarmValency
+                               , Map RelayAccessPoint PeerAdvertise)])
          -- ^ If the node is running and corresponding local root configuration
          -- TVar.
       -> Snocket m (FD m NtNAddr) NtNAddr
@@ -784,7 +815,9 @@ diffusionSimulation
             -> NodeArgs
             -> Snocket m (FD m NtNAddr) NtNAddr
             -> Snocket m (FD m NtCAddr) NtCAddr
-            -> StrictTVar m [(Int, Map RelayAccessPoint PeerAdvertise)]
+            -> StrictTVar m [( HotValency
+                             , WarmValency
+                             , Map RelayAccessPoint PeerAdvertise)]
             -> StrictTVar m (Map Domain [(IP, TTL)])
             -> m Void
     runNode SimArgs

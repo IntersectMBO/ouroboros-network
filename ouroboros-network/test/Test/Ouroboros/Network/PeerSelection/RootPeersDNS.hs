@@ -21,7 +21,7 @@ import           Control.Applicative (Alternative)
 import           Control.Monad (forever, replicateM_)
 import           Data.ByteString.Char8 (pack)
 import           Data.Dynamic (Typeable, fromDynamic)
-import           Data.Foldable (foldl', toList)
+import           Data.Foldable (foldl')
 import           Data.Functor (void)
 import           Data.IP (fromHostAddress, toIPv4w, toSockAddr)
 import qualified Data.List.NonEmpty as NonEmpty
@@ -48,6 +48,8 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
 import           Data.List (intercalate)
+import           Ouroboros.Network.PeerSelection.LocalRootPeers
+                     (HotValency (..), WarmValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
@@ -84,7 +86,9 @@ tests =
 --
 
 data MockRoots = MockRoots {
-    mockLocalRootPeers        :: [(Int, Map RelayAccessPoint PeerAdvertise)]
+    mockLocalRootPeers        :: [( HotValency
+                                  , WarmValency
+                                  , Map RelayAccessPoint PeerAdvertise)]
   , mockLocalRootPeersDNSMap  :: Script (Map Domain [(IP, TTL)])
   , mockPublicRootPeers       :: Map RelayAccessPoint PeerAdvertise
   , mockPublicRootPeersDNSMap :: Script (Map Domain [(IP, TTL)])
@@ -100,7 +104,7 @@ genMockRoots = sized $ \relaysNumber -> do
     relaysPerGroup <- chooseEnum (1, relaysNumber `div` 3)
 
     localRootRelays <- vectorOf relaysNumber arbitrary
-    targets <- vectorOf relaysNumber (chooseEnum (1, 5))
+    targets <- vectorOf relaysNumber genTargets
 
     peerAdvertise <- blocks relaysPerGroup
                       <$> vectorOf relaysNumber (arbitrary @PeerAdvertise)
@@ -110,7 +114,7 @@ genMockRoots = sized $ \relaysNumber -> do
         localRelaysBlocks = blocks relaysPerGroup taggedLocalRelays
         localRelaysMap    = map Map.fromList $ zipWith zip localRelaysBlocks
                                                            peerAdvertise
-        localRootPeers    = zip targets localRelaysMap
+        localRootPeers    = zipWith (\(h, w) g -> (h, w, g)) targets localRelaysMap
         localRootDomains  = [ domain
                             | RelayAccessDomain domain _ <- taggedLocalRelays ]
 
@@ -142,6 +146,12 @@ genMockRoots = sized $ \relaysNumber -> do
       mockPublicRootPeersDNSMap = publicRootPeersDNSMap
     })
   where
+    genTargets :: Gen (HotValency, WarmValency)
+    genTargets = do
+      warmValency <- WarmValency <$> chooseEnum (1, 5)
+      hotValency <- HotValency <$> chooseEnum (1, getWarmValency warmValency)
+      return (hotValency, warmValency)
+
     genDomainLookupTable :: Int -> [Domain] -> Gen (Map Domain [(IP, TTL)])
     genDomainLookupTable ipsPerDomain localRootDomains = do
       localRootDomainIPs <- blocks ipsPerDomain
@@ -186,7 +196,7 @@ instance Arbitrary MockRoots where
         let lrpDomains =
               Set.fromList [ domain
                            | RelayAccessDomain domain _
-                              <- concatMap (Map.keys . snd) lrp ]
+                              <- concatMap (Map.keys . thrd) lrp ]
             lrpDNSMap  = (`Map.restrictKeys` lrpDomains)
                        <$> mockLocalRootPeersDNSMap
       ] ++
@@ -200,6 +210,8 @@ instance Arbitrary MockRoots where
             prpDNSMap  = (`Map.restrictKeys` prpDomains)
                        <$> mockPublicRootPeersDNSMap
       ]
+        where
+          thrd (_, _, c) = c
 
 -- | Used for debugging in GHCI
 --
@@ -207,7 +219,7 @@ simpleMockRoots :: MockRoots
 simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map.empty)
   where
     localRootPeers =
-      [ ( 2
+      [ ( 2, 2
         , Map.fromList
           [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
             , DoAdvertisePeer
@@ -436,7 +448,7 @@ mockResolveDomainAddresses tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 --
 
 data TestTraceEvent = RootPeerDNSLocal  (TraceLocalRootPeers SockAddr Failure)
-                    | LocalRootPeersResults [(Int, Map SockAddr PeerAdvertise)]
+                    | LocalRootPeersResults [(HotValency, WarmValency, Map SockAddr PeerAdvertise)]
                     | RootPeerDNSPublic TracePublicRootPeers
   deriving (Show, Typeable)
 
@@ -471,8 +483,14 @@ selectLocalRootPeersEvents :: [(Time, TestTraceEvent)]
 selectLocalRootPeersEvents trace = [ (t, e) | (t, RootPeerDNSLocal e) <- trace ]
 
 selectLocalRootPeersResults :: [(Time, TestTraceEvent)]
-                            -> [(Time, [(Int, Map SockAddr PeerAdvertise)])]
+                            -> [(Time, [(HotValency, WarmValency, Map SockAddr PeerAdvertise)])]
 selectLocalRootPeersResults trace = [ (t, r) | (t, LocalRootPeersResults r) <- trace ]
+
+selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
+                            -> [(Time, [( HotValency
+                                        , WarmValency
+                                        , Map SockAddr PeerAdvertise)])]
+selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- trace ]
 
 selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
                             -> [(Time, (Domain, [IP]))]
@@ -519,27 +537,32 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
       $ classify (length tr > 0) "Actually testing something"
       $ checkAll tr
   where
-    checkAll :: [(Time, [(Int, Map SockAddr PeerAdvertise)])] -> Property
+    checkAll :: [(Time, [( HotValency
+                         , WarmValency
+                         , Map SockAddr PeerAdvertise)])]
+             -> Property
     checkAll [] = property True
     checkAll (x:t) =
-      let
+      let thrd (_, _, c) = c
           -- get local root ip addresses
-          localRootAddresses :: [(a, Map RelayAccessPoint PeerAdvertise)]
+          localRootAddresses :: [(a, b, Map RelayAccessPoint PeerAdvertise)]
                              -> Set SockAddr
           localRootAddresses lrp =
             Set.fromList
             [ toSockAddr (ip, port)
-            | (_, m) <- lrp
+            | (_, _, m) <- lrp
             , RelayAccessAddress ip port <- Map.keys m
             ]
 
           -- get ip addresses out of LocalRootGroup trace events
-          localGroupEventsAddresses :: (a, [(Int, Map SockAddr PeerAdvertise)])
+          localGroupEventsAddresses :: (a, [( HotValency
+                                            , WarmValency
+                                            , Map SockAddr PeerAdvertise)])
                                     -> Set SockAddr
           localGroupEventsAddresses (_, s) =
               Set.fromList
-            $ concatMap (Map.keys . snd)
-            $ toList s
+            $ concatMap (Map.keys . thrd)
+            $ s
 
           localRootAddressesSet = localRootAddresses localRoots
           localGroupEventsAddressesSet = localGroupEventsAddresses x
@@ -576,8 +599,8 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _ _)
         -- For all LocalRootGroup results, the targets for each group
         -- should be preserved, i.e. targets are not modified along the
         -- trace by localRootPeersProvider.
-        preservesTargets     = all (all (\(a, b) -> fst a == fst b))
-                                   [ zip lrp (toList r) | r <- map snd tr ]
+        preservesTargets     = all (all (\((a, b, _), (a', b', _)) -> a == a' && b == b'))
+                                   [ zip lrp r | r <- map snd tr ]
 
      in label (show $ length tr `div` 100 * 100) $
         preservesGroupNumber .&&. preservesTargets
@@ -611,7 +634,7 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
         localRootDomains =
           Set.fromList
           [ domain
-          | (_, m) <- localRoots
+          | (_, _, m) <- localRoots
           , RelayAccessDomain domain _ <- Map.keys m
           ]
 
@@ -688,12 +711,12 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                         let -- Get all IPs present in last group at position
                             -- 'index'
                             ipsAtIndex = Map.keys
-                                       $ foldMap snd lrpg
+                                       $ foldMap thrd lrpg
 
                             -- Get all IPs present in current group at position
                             -- 'index'
                             ipsAtIndex' = Map.keys
-                                        $ foldMap snd lrpg'
+                                        $ foldMap thrd lrpg'
 
                             arePreserved = all (`elem` ipsAtIndex') ipsAtIndex
 
@@ -706,7 +729,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                             -- unique domain addresses we can look for
                             -- which group index does a particular domain
                             -- address belongs
-                            index = foldr (\(i, (_, m)) prev ->
+                            index = foldr (\(i, (_, _, m)) prev ->
                                             case Map.lookup (RelayDomainAccessPoint da) m of
                                               Nothing -> prev
                                               Just _  -> i
@@ -720,7 +743,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
                                                _ -> error "Impossible happened!"
 
                                          ) $ Map.keys
-                                           $ snd
+                                           $ thrd
                                            $ lrpg !! index :: [IP]
                             -- Check if all ips from the previous DNS
                             -- lookup result are present in the current
@@ -734,6 +757,8 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
               (True, head tr)
               (tail tr)
      in property (fst r)
+  where
+    thrd (_, _, c) = c
 
 --
 -- Public Root Peers Provider Tests
