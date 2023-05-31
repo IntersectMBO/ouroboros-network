@@ -62,15 +62,15 @@ prop_raw_bearer_send_and_receive_inet msg =
       clientAddr serverAddr
       msg
 
-prop_raw_bearer_send_and_receive_local :: Message -> Property
-prop_raw_bearer_send_and_receive_local msg =
+prop_raw_bearer_send_and_receive_local :: Int -> Int -> Message -> Property
+prop_raw_bearer_send_and_receive_local clientInt serverInt msg =
   ioProperty $ withIOManager $ \iomgr -> do
 #if defined(mingw32_HOST_OS)
-    let clientName = "\\\\.\\pipe\\local_socket_client.test"
-    let serverName = "\\\\.\\pipe\\local_socket_server.test"
+    let clientName = "\\\\.\\pipe\\local_socket_client.test" ++ show clientInt
+    let serverName = "\\\\.\\pipe\\local_socket_server.test" ++ show serverInt
 #else
-    let clientName = "local_socket_client.test"
-    let serverName = "local_socket_server.test"
+    let clientName = "local_socket_client.test" ++ show clientInt
+    let serverName = "local_socket_server.test" ++ show serverInt
 #endif
     cleanUp clientName
     cleanUp serverName
@@ -93,11 +93,11 @@ prop_raw_bearer_send_and_receive_local msg =
 localhost :: Word32
 localhost = Socket.tupleToHostAddress (127, 0, 0, 1)
 
-prop_raw_bearer_send_and_receive_unix :: Message -> Property
-prop_raw_bearer_send_and_receive_unix msg =
+prop_raw_bearer_send_and_receive_unix :: Int -> Int -> Message -> Property
+prop_raw_bearer_send_and_receive_unix clientInt serverInt msg =
   ioProperty $ withIOManager $ \iomgr -> do
-    let clientName = "unix_socket_client.test"
-    let serverName = "unix_socket_server.test"
+    let clientName = "unix_socket_client.test" ++ show clientInt
+    let serverName = "unix_socket_server.test"++ show serverInt
     cleanUp clientName
     cleanUp serverName
     let clientAddr = Socket.SockAddrUnix clientName
@@ -117,7 +117,6 @@ prop_raw_bearer_send_and_receive_unix msg =
 
 prop_raw_bearer_send_and_receive_iosim :: Int -> Int -> Message -> Property
 prop_raw_bearer_send_and_receive_iosim clientInt serverInt msg =
-  (clientInt /= serverInt) ==>
   iosimProperty $
     SimSnocket.withSnocket
       nullTracer
