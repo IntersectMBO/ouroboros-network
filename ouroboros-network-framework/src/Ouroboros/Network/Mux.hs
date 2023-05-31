@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveFoldable        #-}
 {-# LANGUAGE DeriveFunctor         #-}
@@ -412,9 +413,9 @@ runMiniProtocolCb :: ( MonadAsync m
                   -> ctx
                   -> Mux.Channel m
                   -> m (a, Maybe LBS.ByteString)
-runMiniProtocolCb (MiniProtocolCb run)  ctx = run ctx . fromChannel
-runMiniProtocolCb (MuxPeer fn)          ctx = runMiniProtocolCb (mkMiniProtocolCbFromPeer fn) ctx
-runMiniProtocolCb (MuxPeerPipelined fn) ctx = runMiniProtocolCb (mkMiniProtocolCbFromPeerPipelined fn) ctx
+runMiniProtocolCb (MiniProtocolCb run)  !ctx = run ctx . fromChannel
+runMiniProtocolCb (MuxPeer fn)          !ctx = runMiniProtocolCb (mkMiniProtocolCbFromPeer fn) ctx
+runMiniProtocolCb (MuxPeerPipelined fn) !ctx = runMiniProtocolCb (mkMiniProtocolCbFromPeerPipelined fn) ctx
 
 contramapMiniProtocolCbCtx :: (ctx -> ctx')
                            -> MiniProtocolCb ctx' bytes m a
