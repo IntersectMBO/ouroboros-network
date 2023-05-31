@@ -466,25 +466,31 @@ data PeerSelectionCounters = PeerSelectionCounters {
       coldPeers  :: Int,
       warmPeers  :: Int,
       hotPeers   :: Int,
-      localRoots :: [(HotValency, WarmValency, Int)]
+      localRoots :: [(Int, Int)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
 peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers, localRoots }
   where
-    knownGenericPeersSet = KnownPeers.toSet (knownPeers st)
     establishedPeersSet = EstablishedPeers.toSet (establishedPeers st)
+    knownGenericPeersSet = KnownPeers.toSet (knownPeers st)
+
+    hotPeersSet         = activePeers st
+    warmPeersSet        = establishedPeersSet Set.\\ hotPeersSet
+
+    hotPeers   = Set.size hotPeersSet
+    warmPeers  = Set.size warmPeersSet
     coldPeers  = Set.size $ knownGenericPeersSet Set.\\ establishedPeersSet
-    warmPeers  = Set.size $ establishedPeersSet Set.\\ activePeers st
-    hotPeers   = Set.size $ activePeers st
+
     localRoots =
-      [ (h, w, active)
-      | (h, w, members) <- LocalRootPeers.toGroupSets (localRootPeers st)
-      , let active = Set.size (members `Set.intersection` activePeers st)
+      [ (warm, hot)
+      | (_,_, members) <- LocalRootPeers.toGroupSets (localRootPeers st)
+      , let warm   = Set.size $ members `Set.intersection` warmPeersSet
+            hot    = Set.size $ members `Set.intersection` hotPeersSet
       ]
 
 emptyPeerSelectionState :: StdGen
-                        -> [(HotValency, WarmValency, Int)]
+                        -> [(Int, Int)]
                         -> PeerSelectionState peeraddr peerconn
 emptyPeerSelectionState rng localRoots =
     PeerSelectionState {

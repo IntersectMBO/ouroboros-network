@@ -52,7 +52,11 @@
 
 ### Non-breaking changes
 
-- Fixed a small memory leak in `PeerMetrics` (#4633).
+* Fixed a small memory leak in `PeerMetrics` (#4633).
+
+* The counters logged by `PeerSelectionCounters` for local root peers are now
+  the number of warm and hot peers per group (before the first one was the
+  target of the given group).
 
 ## 0.8.2.0
 
@@ -109,6 +113,8 @@
   - Change TraceLocalRootGroups constructor type;
   - Change localRootPeersProvider type signature;
   - Updated tests to reflect the above changes.
+
+## 0.7.0.1
 
 ### Non-breaking changes
 

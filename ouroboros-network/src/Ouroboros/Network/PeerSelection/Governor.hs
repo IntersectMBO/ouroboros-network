@@ -452,7 +452,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> m Void
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar actions policy =
     JobPool.withJobPool $ \jobPool -> do
-      localPeers <- map (\(h, w, _) -> (h, w, 0))
+      localPeers <- map (\_ -> (0, 0))
                 <$> atomically (readLocalRootPeers actions)
       peerSelectionGovernorLoop
         tracer
