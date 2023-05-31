@@ -16,6 +16,8 @@
 module Ouroboros.Network.NodeToNode
   ( nodeToNodeProtocols
   , NodeToNodeProtocols (..)
+  , NodeToNodeProtocolsWithExpandedCtx
+  , NodeToNodeProtocolsWithMinimalCtx
   , MiniProtocolParameters (..)
   , chainSyncProtocolLimits
   , blockFetchProtocolLimits
@@ -165,28 +167,33 @@ type HandshakeTr ntnAddr ntnVersion =
                   (TraceSendRecv (Handshake ntnVersion CBOR.Term))
 
 
-data NodeToNodeProtocols appType ntnAddr bytes m a b = NodeToNodeProtocols {
+data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
     -- | chain-sync mini-protocol
     --
-    chainSyncProtocol    :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b,
+    chainSyncProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
     -- | block-fetch mini-protocol
     --
-    blockFetchProtocol   :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b,
+    blockFetchProtocol   :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
     -- | tx-submission mini-protocol
     --
-    txSubmissionProtocol :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b,
+    txSubmissionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
     -- | keep-alive mini-protocol
     --
-    keepAliveProtocol    :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b,
+    keepAliveProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
     -- | peer sharing mini-protocol
     --
-    peerSharingProtocol  :: RunMiniProtocolWithExpandedCtx appType ntnAddr bytes m a b
+    peerSharingProtocol  :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
 
   }
+
+type NodeToNodeProtocolsWithExpandedCtx appType ntnAddr bytes m a b =
+    NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr m) (ResponderContext ntnAddr) bytes m a b
+type NodeToNodeProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
+    NodeToNodeProtocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr) bytes m a b
 
 
 data MiniProtocolParameters = MiniProtocolParameters {
@@ -240,10 +247,10 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 --
 nodeToNodeProtocols
   :: MiniProtocolParameters
-  -> NodeToNodeProtocols muxMode addr bytes m a b
+  -> NodeToNodeProtocols muxMode initiatorCtx responderCtx bytes m a b
   -> NodeToNodeVersion
   -> PeerSharing -- ^ Node's own PeerSharing value
-  -> OuroborosBundleWithExpandedCtx muxMode addr bytes m a b
+  -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
 nodeToNodeProtocols miniProtocolParameters protocols version ownPeerSharing =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
