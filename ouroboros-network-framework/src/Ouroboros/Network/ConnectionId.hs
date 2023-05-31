@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE DerivingVia         #-}
@@ -26,6 +27,7 @@ data ConnectionId addr = ConnectionId {
   }
   deriving (Eq, Ord, Show, Generic)
   deriving NoThunks via InspectHeap (ConnectionId addr)
+  deriving Functor
 
 instance Hashable a => Hashable (ConnectionId a)
 

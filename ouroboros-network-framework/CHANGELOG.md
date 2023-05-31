@@ -59,6 +59,8 @@
 
 ### Non-breaking changes
 
+* Added `Functor` instance for `ConnectionId`.
+
 ## 0.7.0.0 -- 2023-07-17
 
 ### Breaking changes

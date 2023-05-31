@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+
 -- | Initiator and responder execution context.
 --
 module Ouroboros.Network.Context
@@ -29,9 +31,11 @@ data ExpandedInitiatorContext addr m = ExpandedInitiatorContext {
 newtype MinimalInitiatorContext addr = MinimalInitiatorContext {
     micConnectionId   :: ConnectionId addr
   }
+  deriving Functor
 
 -- | Context passed to each responder mini-protocol execution.
 --
 newtype ResponderContext addr = ResponderContext {
     rcConnectionId    :: ConnectionId addr
   }
+  deriving Functor
