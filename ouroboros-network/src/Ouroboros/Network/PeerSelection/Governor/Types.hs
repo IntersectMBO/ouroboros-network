@@ -460,31 +460,50 @@ toPublicState PeerSelectionState { knownPeers
         availableToShare = availableNowWithPermission
       }
 
--- TODO: split cold, warm & hot peers into generic & big ledger peers.
+-- Peer selection counters.
 --
 data PeerSelectionCounters = PeerSelectionCounters {
-      coldPeers  :: Int,
-      warmPeers  :: Int,
-      hotPeers   :: Int,
-      localRoots :: [(Int, Int)]
+      -- | All cold peers including ledger peers, root peers, big ledger peers
+      -- and peers discovered through peer sharing.
+      coldPeers          :: Int,
+      -- | All warm peers including ledger peers, root peers, big ledger peers,
+      -- local root peers and peers discovered through peer sharing.
+      warmPeers          :: Int,
+      -- | All hot peers including ledger peers, root peers, big ledger peers,
+      -- local root peers and peers discovered through peer sharing.
+      hotPeers           :: Int,
+      -- | Cold big ledger peers.
+      coldBigLedgerPeers :: Int,
+      -- | Warm big ledger peers.
+      warmBigLedgerPeers :: Int,
+      -- | Hot big ledger peers.
+      hotBigLedgerPeers  :: Int,
+      -- | Local root peers with one entry per group. First entry is the number
+      -- of warm peers in that group the second is the number of hot peers in
+      -- that group.
+      localRoots         :: [(Int, Int)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
-peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers, localRoots }
+peerStateToCounters st@PeerSelectionState { activePeers, bigLedgerPeers, localRootPeers } =
+    PeerSelectionCounters {
+      coldPeers          = Set.size $ coldPeersSet Set.\\ bigLedgerPeers,
+      warmPeers          = Set.size $ warmPeersSet Set.\\ bigLedgerPeers,
+      hotPeers           = Set.size $ hotPeersSet  Set.\\ bigLedgerPeers,
+      coldBigLedgerPeers = Set.size $ coldPeersSet `Set.intersection` bigLedgerPeers,
+      warmBigLedgerPeers = Set.size $ warmPeersSet `Set.intersection` bigLedgerPeers,
+      hotBigLedgerPeers  = Set.size $ hotPeersSet  `Set.intersection` bigLedgerPeers,
+      localRoots
+    }
   where
+    knownPeersSet = KnownPeers.toSet (knownPeers st)
     establishedPeersSet = EstablishedPeers.toSet (establishedPeers st)
-    knownGenericPeersSet = KnownPeers.toSet (knownPeers st)
-
-    hotPeersSet         = activePeers st
-    warmPeersSet        = establishedPeersSet Set.\\ hotPeersSet
-
-    hotPeers   = Set.size hotPeersSet
-    warmPeers  = Set.size warmPeersSet
-    coldPeers  = Set.size $ knownGenericPeersSet Set.\\ establishedPeersSet
-
-    localRoots =
+    coldPeersSet  = knownPeersSet Set.\\ establishedPeersSet
+    warmPeersSet  = establishedPeersSet Set.\\ activePeers
+    hotPeersSet   = activePeers
+    localRoots    =
       [ (warm, hot)
-      | (_,_, members) <- LocalRootPeers.toGroupSets (localRootPeers st)
+      | (_,_, members) <- LocalRootPeers.toGroupSets localRootPeers
       , let warm   = Set.size $ members `Set.intersection` warmPeersSet
             hot    = Set.size $ members `Set.intersection` hotPeersSet
       ]
@@ -513,7 +532,7 @@ emptyPeerSelectionState rng localRoots =
       inProgressDemoteWarm          = Set.empty,
       inProgressDemoteHot           = Set.empty,
       fuzzRng                       = rng,
-      countersCache                 = Cache (PeerSelectionCounters 0 0 0 localRoots)
+      countersCache                 = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots)
     }
 
 
