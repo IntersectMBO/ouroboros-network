@@ -1,5 +1,9 @@
 # Revision history for ouroboros-network
 
+## 0.8.0.1
+
+* Export `Ouroboros.Network.Diffusion.Failiure` constructors.
+
 ## 0.8.0.0
 
 ### Breaking changes
