@@ -17,13 +17,14 @@ txSubmission2Message
 msgInit         = [6]
 msgRequestTxIds = [0, tsBlocking, txCount, txCount]
 msgReplyTxIds   = [1, [ *txIdAndSize] ]
-msgRequestTxs   = [2, tsIdList ]
-msgReplyTxs     = [3, tsIdList ]
+msgRequestTxs   = [2, txIdList ]
+msgReplyTxs     = [3, txList ]
 tsMsgDone       = [4]
 
 tsBlocking      = false / true
 txCount         = word16
-; The codec only accepts infinite-length list encoding for tsIdList !
-tsIdList        = [ *txId ]
+; The codec only accepts infinite-length list encoding for txIdList !
+txIdList        = [ *txId ]
+txList          = [ *tx ]
 txIdAndSize     = [txId, txSizeInBytes]
 txSizeInBytes   = word32

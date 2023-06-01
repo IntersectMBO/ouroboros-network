@@ -21,8 +21,10 @@ origin          = []
 blockHeaderHash = [slotNo, int]
 slotNo          = word64
 
+; In `ouroboros-network` we don't know what are tx (and txId), we mock them
+; with `int`s, that's because `ouroboros-network` is polymorphic over them.
 txId         = int
-transaction  = int
+tx           = int
 rejectReason = int
 
 word16 = 0..65535
