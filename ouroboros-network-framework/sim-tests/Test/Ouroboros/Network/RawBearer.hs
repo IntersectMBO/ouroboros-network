@@ -1,6 +1,8 @@
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Test.Ouroboros.Network.RawBearer where
 
@@ -62,8 +64,17 @@ prop_raw_bearer_send_and_receive_inet msg =
       clientAddr serverAddr
       msg
 
-prop_raw_bearer_send_and_receive_local :: Int -> Int -> Message -> Property
+newtype Unshrinkable a = Unshrinkable { unUnshrinkable :: a }
+  deriving newtype (Show, Eq, Ord)
+
+instance Arbitrary a => Arbitrary (Unshrinkable a) where
+  shrink _ = []
+  arbitrary = Unshrinkable <$> arbitrary
+
+prop_raw_bearer_send_and_receive_local :: Unshrinkable Int -> Unshrinkable Int -> Message -> Property
 prop_raw_bearer_send_and_receive_local clientInt serverInt msg =
+  (clientInt /= Unshrinkable 0) ==>
+  (serverInt /= Unshrinkable 0) ==> do
   ioProperty $ withIOManager $ \iomgr -> do
 #if defined(mingw32_HOST_OS)
     let clientName = "\\\\.\\pipe\\local_socket_client.test" ++ show clientInt
@@ -84,10 +95,14 @@ prop_raw_bearer_send_and_receive_local clientInt serverInt msg =
         cleanUp clientName
         cleanUp serverName
   where
+#if defined(mingw32_HOST_OS)
+    cleanUp _ = return ()
+#else
     cleanUp name = do
         catchJust (\e -> if isDoesNotExistErrorType (ioeGetErrorType e) then Just () else Nothing)
                   (removeFile name)
                   (\_ -> return ())
+#endif
 
 
 localhost :: Word32
