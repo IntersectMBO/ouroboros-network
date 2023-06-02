@@ -88,7 +88,6 @@ import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
 import qualified Ouroboros.Network.InboundGovernor as IG
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as Server
 import           Ouroboros.Network.InboundGovernor.State
                      (InboundGovernorCounters (..))
 import           Ouroboros.Network.IOManager
@@ -127,6 +126,8 @@ import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
 import           Test.Ouroboros.Network.Orphans ()
 import           Test.Simulation.Network.Snocket hiding (tests)
 
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (newInformationChannel)
 import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
                      allValidTransitionsNames, validTransitionMap,
                      verifyAbstractTransition, verifyAbstractTransitionOrder)
@@ -365,11 +366,12 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
           cmSnocket = snocket,
           cmMakeBearer = makeBearer,
           cmConfigureSocket = \_ _ -> return (),
-          connectionDataFlow = \_ (DataFlowProtocolData df) -> df,
+          connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
           cmConnectionsLimits = acceptedConnLimit,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
-          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts
+          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
+          cmGetPeerSharing = \(DataFlowProtocolData _ ps) -> ps
         }
       (makeConnectionHandler
         muxTracer
@@ -389,6 +391,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
                     <> debugIOErrorRethrowPolicy
                     <> assertRethrowPolicy))
       (\_ -> HandshakeFailure)
+      NotInResponderMode
       NotInResponderMode
       (\cm ->
         k cm `catch` \(e :: SomeException) -> throwIO e)
@@ -526,7 +529,8 @@ withBidirectionalConnectionManager name timeouts
                                    handshakeTimeLimits
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
-    inbgovControlChannel      <- Server.newControlChannel
+    inbgovInfoChannel <- newInformationChannel
+    outgovInfoChannel <- newInformationChannel
     -- we are not using the randomness
     observableStateVar        <- Server.newObservableStateVarFromSeed 0
     let muxTracer = WithName name `contramap` nullTracer -- mux tracer
@@ -548,9 +552,10 @@ withBidirectionalConnectionManager name timeouts
           cmConfigureSocket = \sock _ -> confSock sock,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
           cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          connectionDataFlow = \_ (DataFlowProtocolData df) -> df,
+          connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
-          cmConnectionsLimits = acceptedConnLimit
+          cmConnectionsLimits = acceptedConnLimit,
+          cmGetPeerSharing = \(DataFlowProtocolData _ ps) -> ps
         }
         (makeConnectionHandler
           muxTracer
@@ -570,7 +575,8 @@ withBidirectionalConnectionManager name timeouts
                         <> debugIOErrorRethrowPolicy
                         <> assertRethrowPolicy))
           (\_ -> HandshakeFailure)
-          (InResponderMode inbgovControlChannel)
+          (InResponderMode inbgovInfoChannel)
+          (InResponderMode outgovInfoChannel)
       $ \connectionManager ->
           do
             serverAddr <- Snocket.getLocalAddr snocket socket
@@ -588,7 +594,7 @@ withBidirectionalConnectionManager name timeouts
                     serverConnectionLimits = acceptedConnLimit,
                     serverConnectionManager = connectionManager,
                     serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
-                    serverControlChannel = inbgovControlChannel,
+                    serverInboundInfoChannel = inbgovInfoChannel,
                     serverObservableStateVar = observableStateVar
                   }
               )

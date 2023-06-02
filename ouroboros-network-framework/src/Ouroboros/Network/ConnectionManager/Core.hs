@@ -55,12 +55,15 @@ import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
 import           Network.Mux.Types (MuxMode)
 
 import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (InformationChannel)
+import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
-import           Ouroboros.Network.InboundGovernor.ControlChannel
-                     (ControlChannel (..))
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
+import           Ouroboros.Network.InboundGovernor.Event
+                     (NewConnectionInfo (..))
 import           Ouroboros.Network.MuxMode
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Snocket
@@ -135,7 +138,10 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         -- | Prune policy
         --
         cmPrunePolicy         :: PrunePolicy peerAddr (STM m),
-        cmConnectionsLimits   :: AcceptedConnectionsLimit
+        cmConnectionsLimits   :: AcceptedConnectionsLimit,
+
+        -- | How to extract PeerSharing information from versionData
+        cmGetPeerSharing      :: versionData -> PeerSharing
       }
 
 
@@ -551,8 +557,11 @@ withConnectionManager
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
-    -> InResponderMode muxMode (ControlChannel peerAddr handle m)
+    -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
     -- ^ On outbound duplex connections we need to notify the server about
+    -- a new connection.
+    -> InResponderMode muxMode (InformationChannel (peerAddr, PeerSharing) m)
+    -- ^ On inbound duplex connections we need to notify the outbound governor about
     -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
@@ -573,13 +582,15 @@ withConnectionManager ConnectionManagerArguments {
                           cmOutboundIdleTimeout,
                           connectionDataFlow,
                           cmPrunePolicy,
-                          cmConnectionsLimits
+                          cmConnectionsLimits,
+                          cmGetPeerSharing
                         }
                       ConnectionHandler {
                           connectionHandler
                         }
                       classifyHandleError
-                      inboundGovernorControlChannel
+                      inboundGovernorInfoChannel
+                      outboundGovernorInfoChannel
                       k = do
     ((freshIdSupply, stateVar)
        ::  ( FreshIdSupply m
@@ -1165,12 +1176,20 @@ withConnectionManager ConnectionManagerArguments {
                 case mbTransition of
                   Nothing -> return $ Disconnected connId Nothing
                   Just {} -> do
-                    case inboundGovernorControlChannel of
-                      InResponderMode controlChannel ->
-                        atomically $ ControlChannel.writeMessage
-                                       controlChannel
-                                       (ControlChannel.NewConnection Inbound connId dataFlow handle)
+                    case inboundGovernorInfoChannel of
+                      InResponderMode infoChannel ->
+                        atomically $ InfoChannel.writeMessage
+                                       infoChannel
+                                       (NewConnectionInfo Inbound connId dataFlow handle)
                       NotInResponderMode -> return ()
+                    case (dataFlow, outboundGovernorInfoChannel) of
+                      (Duplex, InResponderMode infoChannel) ->
+                        atomically $ InfoChannel.writeMessage
+                                       infoChannel
+                                       (peerAddr, cmGetPeerSharing versionData)
+
+                      _ -> return ()
+
                     return $ Connected connId dataFlow handle
 
     terminateInboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState handleErrorM = do
@@ -1754,11 +1773,11 @@ withConnectionManager ConnectionManagerArguments {
                           -- @
                           let connState' = OutboundDupState connId connThread handle Ticking
                           writeTVar connVar connState'
-                          case inboundGovernorControlChannel of
-                            InResponderMode controlChannel ->
-                              ControlChannel.writeMessage
-                                controlChannel
-                                (ControlChannel.NewConnection Outbound connId dataFlow handle)
+                          case inboundGovernorInfoChannel of
+                            InResponderMode infoChannel ->
+                              InfoChannel.writeMessage
+                                infoChannel
+                                (NewConnectionInfo Outbound connId dataFlow handle)
                             NotInResponderMode -> return ()
                           return (Just $ mkTransition connState connState')
                     TerminatedState _ ->

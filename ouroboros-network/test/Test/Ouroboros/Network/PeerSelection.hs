@@ -42,9 +42,7 @@ import qualified Data.OrdPSQ as PSQ
 import           System.Random (mkStdGen)
 
 import           Control.Exception (AssertionFailed (..), catch, evaluate)
-import           Control.Monad.Class.MonadSTM (STM)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.IOSim
+import           Control.Monad.Class.MonadSTM (STM, retry)
 import           Control.Tracer (Tracer (..))
 
 import qualified Network.DNS as DNS (defaultResolvConf)
@@ -70,6 +68,8 @@ import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.IOSim
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
@@ -570,28 +570,29 @@ traceNum TracePublicRootsFailure{}       = 04
 traceNum TracePeerShareRequests{}        = 05
 traceNum TracePeerShareResults{}         = 06
 traceNum TracePeerShareResultsFiltered{} = 07
-traceNum TraceForgetColdPeers{}          = 08
-traceNum TracePromoteColdPeers{}         = 09
-traceNum TracePromoteColdLocalPeers{}    = 10
-traceNum TracePromoteColdFailed{}        = 11
-traceNum TracePromoteColdDone{}          = 12
-traceNum TracePromoteWarmPeers{}         = 13
-traceNum TracePromoteWarmLocalPeers{}    = 14
-traceNum TracePromoteWarmFailed{}        = 15
-traceNum TracePromoteWarmDone{}          = 16
-traceNum TraceDemoteWarmPeers{}          = 17
-traceNum TraceDemoteWarmFailed{}         = 18
-traceNum TraceDemoteWarmDone{}           = 19
-traceNum TraceDemoteHotPeers{}           = 20
-traceNum TraceDemoteLocalHotPeers{}      = 21
-traceNum TraceDemoteHotFailed{}          = 22
-traceNum TraceDemoteHotDone{}            = 23
-traceNum TraceDemoteAsynchronous{}       = 24
-traceNum TraceGovernorWakeup{}           = 25
-traceNum TraceChurnWait{}                = 26
-traceNum TraceChurnMode{}                = 27
-traceNum TracePromoteWarmAborted{}       = 28
-traceNum TraceDemoteLocalAsynchronous{}  = 29
+traceNum TraceKnownInboundConnection{}   = 08
+traceNum TraceForgetColdPeers{}          = 09
+traceNum TracePromoteColdPeers{}         = 10
+traceNum TracePromoteColdLocalPeers{}    = 11
+traceNum TracePromoteColdFailed{}        = 12
+traceNum TracePromoteColdDone{}          = 13
+traceNum TracePromoteWarmPeers{}         = 14
+traceNum TracePromoteWarmLocalPeers{}    = 15
+traceNum TracePromoteWarmFailed{}        = 16
+traceNum TracePromoteWarmDone{}          = 17
+traceNum TraceDemoteWarmPeers{}          = 18
+traceNum TraceDemoteWarmFailed{}         = 19
+traceNum TraceDemoteWarmDone{}           = 20
+traceNum TraceDemoteHotPeers{}           = 21
+traceNum TraceDemoteLocalHotPeers{}      = 22
+traceNum TraceDemoteHotFailed{}          = 23
+traceNum TraceDemoteHotDone{}            = 24
+traceNum TraceDemoteAsynchronous{}       = 25
+traceNum TraceGovernorWakeup{}           = 26
+traceNum TraceChurnWait{}                = 27
+traceNum TraceChurnMode{}                = 28
+traceNum TracePromoteWarmAborted{}       = 29
+traceNum TraceDemoteLocalAsynchronous{}  = 30
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -604,28 +605,29 @@ allTraceNames =
    , (05, "TracePeerShareRequests")
    , (06, "TracePeerShareResults")
    , (07, "TracePeerShareResultsFiltered")
-   , (08, "TraceForgetColdPeers")
-   , (09, "TracePromoteColdPeers")
-   , (10, "TracePromoteColdLocalPeers")
-   , (11, "TracePromoteColdFailed")
-   , (12, "TracePromoteColdDone")
-   , (13, "TracePromoteWarmPeers")
-   , (14, "TracePromoteWarmLocalPeers")
-   , (15, "TracePromoteWarmFailed")
-   , (16, "TracePromoteWarmDone")
-   , (17, "TraceDemoteWarmPeers")
-   , (18, "TraceDemoteWarmFailed")
-   , (19, "TraceDemoteWarmDone")
-   , (20, "TraceDemoteHotPeers")
-   , (21, "TraceDemoteLocalHotPeers")
-   , (22, "TraceDemoteHotFailed")
-   , (23, "TraceDemoteHotDone")
-   , (24, "TraceDemoteAsynchronous")
-   , (25, "TraceGovernorWakeup")
-   , (26, "TraceChurnWait")
-   , (27, "TraceChurnMode")
-   , (28, "TracePromoteWarmAborted")
-   , (29, "TraceDemoteAsynchronous")
+   , (08, "TraceKnownInboundConnection")
+   , (09, "TraceForgetColdPeers")
+   , (10, "TracePromoteColdPeers")
+   , (11, "TracePromoteColdLocalPeers")
+   , (12, "TracePromoteColdFailed")
+   , (13, "TracePromoteColdDone")
+   , (14, "TracePromoteWarmPeers")
+   , (15, "TracePromoteWarmLocalPeers")
+   , (16, "TracePromoteWarmFailed")
+   , (17, "TracePromoteWarmDone")
+   , (18, "TraceDemoteWarmPeers")
+   , (19, "TraceDemoteWarmFailed")
+   , (20, "TraceDemoteWarmDone")
+   , (21, "TraceDemoteHotPeers")
+   , (22, "TraceDemoteLocalHotPeers")
+   , (23, "TraceDemoteHotFailed")
+   , (24, "TraceDemoteHotDone")
+   , (25, "TraceDemoteAsynchronous")
+   , (26, "TraceGovernorWakeup")
+   , (27, "TraceChurnWait")
+   , (28, "TraceChurnMode")
+   , (29, "TracePromoteWarmAborted")
+   , (30, "TraceDemoteAsynchronous")
    ]
 
 
@@ -2282,6 +2284,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing =
                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
                 peerConnToPeerSharing    = \ps -> ps,
                 requestPublicRootPeers   = \_ -> return (Map.empty, 0),
+                readNewInboundConnection = retry,
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
                   monitorPeerConnection    = error "monitorPeerConnection",

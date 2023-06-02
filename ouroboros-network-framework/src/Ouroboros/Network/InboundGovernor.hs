@@ -55,17 +55,15 @@ import qualified Network.Mux as Mux
 import           Ouroboros.Network.Channel (fromChannel)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (InboundGovernorInfoChannel)
+import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
 import           Ouroboros.Network.ConnectionManager.Types hiding
                      (TrUnexpectedlyFalseAssertion)
-import           Ouroboros.Network.InboundGovernor.ControlChannel
-                     (ServerControlChannel)
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.InboundGovernor.Event
 import           Ouroboros.Network.InboundGovernor.State
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Server.RateLimiting
-
-
 
 -- | Run the server, which consists of the following components:
 --
@@ -97,14 +95,15 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket peerAddr versionData versi
                    )
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)
-                -> ServerControlChannel muxMode peerAddr versionData ByteString m a b
+                -> InboundGovernorInfoChannel muxMode peerAddr versionData ByteString m a b
                 -> Maybe DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket peerAddr versionData
                                         versionNumber ByteString m a b
                 -> StrictTVar m InboundGovernorObservableState
                 -> m Void
-inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
-                connectionManager observableStateVar = do
+inboundGovernor trTracer tracer inboundInfoChannel
+                inboundIdleTimeout connectionManager
+                observableStateVar = do
     -- State needs to be a TVar, otherwise, when catching the exception inside
     -- the loop we do not have access to the most recent version of the state
     -- and might be truncating transitions.
@@ -165,13 +164,13 @@ inboundGovernor trTracer tracer serverControlChannel inboundIdleTimeout
                  )
                  (igsConnections state)
             <> FirstToFinish (
-                 NewConnection <$> ControlChannel.readMessage serverControlChannel)
+                 NewConnection <$> InfoChannel.readMessage inboundInfoChannel)
       (mbConnId, state') <- case event of
         NewConnection
           -- new connection has been announced by either accept loop or
           -- by connection manager (in which case the connection is in
           -- 'DuplexState').
-          (ControlChannel.NewConnection
+          (NewConnectionInfo
             provenance
             connId
             csDataFlow
@@ -500,7 +499,6 @@ runResponder mux
             Mux.ResponderDirection
             startStrategy
             (runMuxPeer responder . fromChannel)
-
 
 --
 -- Trace
