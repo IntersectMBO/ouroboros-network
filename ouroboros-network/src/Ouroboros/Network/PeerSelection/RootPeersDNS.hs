@@ -116,7 +116,10 @@ localRootPeersProvider tracer
                        }
                        readLocalRootPeers
                        rootPeersGroupVar =
-    atomically readLocalRootPeers >>= loop
+        atomically (do domainsGroups <- readLocalRootPeers
+                       writeTVar rootPeersGroupVar (getLocalRootPeersGroups Map.empty domainsGroups)
+                       return domainsGroups)
+    >>= loop
   where
     -- | Loop function that monitors DNS Domain resolution threads and restarts
     -- if either these threads fail or detects the local configuration changed.
