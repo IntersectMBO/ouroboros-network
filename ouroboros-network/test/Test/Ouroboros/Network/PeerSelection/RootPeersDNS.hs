@@ -300,10 +300,6 @@ mockDNSActions dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
        Just (Left e)  -> return ([e], [])
        Just (Right a) -> return ([], a)
 
--- TODO: Change this once upgraded to most recent GHC version
-newtype Solo a = Solo { unSolo :: a }
-  deriving (Show, Eq)
-
 -- | 'localRootPeersProvider' running with a given MockRoots env
 --
 mockLocalRootPeersProvider :: forall m.
@@ -312,6 +308,7 @@ mockLocalRootPeersProvider :: forall m.
                               , MonadDelay    m
                               , MonadTimer    m
                               , MonadTraceSTM m
+                              , MonadLabelledSTM m
                               , Eq (Async m Void)
                               )
                            => Tracer m (TraceLocalRootPeers SockAddr Failure)
@@ -329,8 +326,9 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       localRootPeersVar <- newTVarIO localRootPeers
       resultVar <- newTVarIO mempty
+      _ <- labelTVarIO resultVar "resultVar"
       _ <- traceTVarIO resultVar
-                       (\_ a -> pure $ TraceDynamic (Solo a))
+                       (\_ a -> pure $ TraceDynamic (LocalRootPeersResults a))
       withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
         void $ MonadTimer.timeout 3600 $
           localRootPeersProvider tracer
@@ -341,6 +339,11 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
                                                  dnsLookupDelayScriptVar)
                                  (readTVar localRootPeersVar)
                                  resultVar
+        -- if there's no dns domain, `localRootPeersProvider` will never write
+        -- to `resultVar`; thus the `traceTVarIO` callback will never execute.
+        -- By reading & writing to the `TVar` we are forcing it to run at least
+        -- once.
+        atomically $ readTVar resultVar >>= writeTVar resultVar
   where
     updateDNSMap :: LazySTM.TVar m (Script (Map Domain [(IP, TTL)]))
                  -> StrictTVar m (Map Domain [(IP, TTL)])
@@ -427,9 +430,10 @@ mockResolveDomainAddresses tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 -- Utils for properties
 --
 
-data TestTraceEvent exception = RootPeerDNSLocal  (TraceLocalRootPeers SockAddr exception)
-                              | RootPeerDNSPublic TracePublicRootPeers
-  deriving Show
+data TestTraceEvent = RootPeerDNSLocal  (TraceLocalRootPeers SockAddr Failure)
+                    | LocalRootPeersResults [(Int, Map SockAddr PeerAdvertise)]
+                    | RootPeerDNSPublic TracePublicRootPeers
+  deriving (Show, Typeable)
 
 tracerTraceLocalRoots :: Tracer (IOSim s) (TraceLocalRootPeers SockAddr Failure)
 tracerTraceLocalRoots = contramap RootPeerDNSLocal tracerTestTraceEvent
@@ -437,13 +441,13 @@ tracerTraceLocalRoots = contramap RootPeerDNSLocal tracerTestTraceEvent
 tracerTracePublicRoots :: Tracer (IOSim s) TracePublicRootPeers
 tracerTracePublicRoots = contramap RootPeerDNSPublic tracerTestTraceEvent
 
-tracerTestTraceEvent :: Tracer (IOSim s) (TestTraceEvent Failure)
+tracerTestTraceEvent :: Tracer (IOSim s) TestTraceEvent
 tracerTestTraceEvent = dynamicTracer
 
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
 dynamicTracer = Tracer traceM
 
-selectRootPeerDNSTraceEvents :: SimTrace a -> [(Time, TestTraceEvent Failure)]
+selectRootPeerDNSTraceEvents :: SimTrace a -> [(Time, TestTraceEvent)]
 selectRootPeerDNSTraceEvents = go
   where
     go (SimTrace t _ _ (EventLog e) trace)
@@ -457,20 +461,20 @@ selectRootPeerDNSTraceEvents = go
     go (TraceMainReturn    _ _ _)    = []
     go TraceLoop                     = error "IOSimPOR step time limit exceeded"
 
-selectLocalRootPeersEvents :: [(Time, TestTraceEvent Failure)]
+selectLocalRootPeersEvents :: [(Time, TestTraceEvent)]
                            -> [(Time, TraceLocalRootPeers SockAddr Failure)]
 selectLocalRootPeersEvents trace = [ (t, e) | (t, RootPeerDNSLocal e) <- trace ]
 
-selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
+selectLocalRootPeersResults :: [(Time, TestTraceEvent)]
                             -> [(Time, [(Int, Map SockAddr PeerAdvertise)])]
-selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- trace ]
+selectLocalRootPeersResults trace = [ (t, r) | (t, LocalRootPeersResults r) <- trace ]
 
 selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
                             -> [(Time, (Domain, [IP]))]
 selectLocalRootResultEvents trace = [ (t, (domain, map fst r))
                                     | (t, TraceLocalRootResult (DomainAccessPoint domain _) r) <- trace ]
 
-selectPublicRootPeersEvents :: [(Time, TestTraceEvent Failure)]
+selectPublicRootPeersEvents :: [(Time, TestTraceEvent)]
                             -> [(Time, TracePublicRootPeers)]
 selectPublicRootPeersEvents trace = [ (t, e) | (t, RootPeerDNSPublic e) <- trace ]
 
@@ -498,8 +502,7 @@ prop_local_preservesIPs :: MockRoots
 prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
                         dnsTimeoutScript
                         dnsLookupDelayScript =
-    let tr = selectLocalRootGroupsEvents
-           $ selectLocalRootPeersEvents
+    let tr = selectLocalRootPeersResults
            $ selectRootPeerDNSTraceEvents
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
@@ -552,8 +555,7 @@ prop_local_preservesGroupNumberAndTargets :: MockRoots
 prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _ _)
                                           dnsTimeoutScript
                                           dnsLookupDelayScript =
-    let tr = selectLocalRootGroupsEvents
-           $ selectLocalRootPeersEvents
+    let tr = selectLocalRootPeersResults
            $ selectRootPeerDNSTraceEvents
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
