@@ -243,7 +243,7 @@ instance Hashable Socket.SockAddr where
 --  524_344 / 30 / 1024 = 17kbps
 --
 sduTimeout :: DiffTime
-sduTimeout = 30
+sduTimeout = 3000
 
 -- | For handshake, we put a limit of `10s` for sending or receiving a single
 -- `MuxSDU`.
