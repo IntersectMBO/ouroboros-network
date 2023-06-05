@@ -1,5 +1,13 @@
 # Revision history for ouroboros-network-protocols
 
+## next version
+
+### Breaking changes
+
+* `MkPipelineDecision` is a monadic computation, adjusted
+  `chainSyncClientPipelined` (no type level changes except of
+  `MkPipelineDecision`).
+ 
 ## 0.5.0.3 -- 2023-05-26
 
 * `ghc-9.6` compatibility

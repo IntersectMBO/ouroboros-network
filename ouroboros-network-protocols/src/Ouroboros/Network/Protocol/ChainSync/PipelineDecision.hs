@@ -57,28 +57,29 @@ data PipelineDecision n where
 -- * 'pipelineDecisionMin'
 -- * 'pipelineDecisionLowHighMark'
 --
-data MkPipelineDecision where
+data MkPipelineDecision m where
      MkPipelineDecision
        :: (forall n. Nat n
                   -> WithOrigin BlockNo
                   -> WithOrigin BlockNo
-                  -> (PipelineDecision n, MkPipelineDecision))
-       -> MkPipelineDecision
+                  -> m (PipelineDecision n, MkPipelineDecision m))
+       -> MkPipelineDecision m
 
 runPipelineDecision
-    :: MkPipelineDecision
+    :: MkPipelineDecision m
     -> Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo
-    -> (PipelineDecision n, MkPipelineDecision)
+    -> m (PipelineDecision n, MkPipelineDecision m)
 runPipelineDecision (MkPipelineDecision f) n clientTipBlockNo serverTipBlockNo =
     f n clientTipBlockNo serverTipBlockNo
 
 
 constantPipelineDecision
-   :: (forall n. Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo -> PipelineDecision n)
-   -> MkPipelineDecision
+   :: Applicative m
+   => (forall n. Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo -> PipelineDecision n)
+   -> MkPipelineDecision m
 constantPipelineDecision f = MkPipelineDecision
   $ \n clientTipBlockNo serverTipBlockNo ->
-    (f n clientTipBlockNo serverTipBlockNo, constantPipelineDecision f)
+    pure (f n clientTipBlockNo serverTipBlockNo, constantPipelineDecision f)
 
 
 -- | Present maximal pipelining of at most @omax@ requests.  Collect responses
@@ -172,12 +173,12 @@ pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
 -- number of pipelined messages exceeds the high mark, it collects messages
 -- until there are at most @lowMark@ outstanding requests.
 --
-pipelineDecisionLowHighMark :: Word32 -> Word32-> MkPipelineDecision
+pipelineDecisionLowHighMark :: forall m. Applicative m => Word32 -> Word32-> MkPipelineDecision m
 pipelineDecisionLowHighMark lowMark highMark =
     assert (lowMark <= highMark) goLow
   where
     goZero :: Nat Z -> WithOrigin BlockNo -> WithOrigin BlockNo
-           -> (PipelineDecision Z, MkPipelineDecision)
+           -> (PipelineDecision Z, MkPipelineDecision m)
     goZero Zero clientTipBlockNo serverTipBlockNo
       | clientTipBlockNo == serverTipBlockNo
       = (Request, goLow)
@@ -188,10 +189,10 @@ pipelineDecisionLowHighMark lowMark highMark =
     -- Mutually recursive pipeline decision strategies; we start with 'goLow',
     -- when we go above the high mark, switch to 'goHigh', switch back to
     -- 'goLow' when we go below the low mark.
-    goLow, goHigh  :: MkPipelineDecision
+    goLow, goHigh  :: MkPipelineDecision m
 
     goLow = MkPipelineDecision $
-      \n clientTipBlockNo serverTipBlockNo ->
+      \n clientTipBlockNo serverTipBlockNo -> pure $
         case n of
           Zero   -> goZero n clientTipBlockNo serverTipBlockNo
 
@@ -207,8 +208,8 @@ pipelineDecisionLowHighMark lowMark highMark =
               n' :: BlockNo
               n' = fromIntegral (natToInt n)
 
-    goHigh = MkPipelineDecision $
-      \n clientTipBlockNo serverTipBlockNo ->
+    goHigh = MkPipelineDecisio $
+      \n clientTipBlockNo serverTipBlockNo -> pure $
       case n of
         Zero   -> goZero n clientTipBlockNo serverTipBlockNo
 

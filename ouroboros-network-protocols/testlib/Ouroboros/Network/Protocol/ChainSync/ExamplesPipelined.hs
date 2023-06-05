@@ -36,7 +36,7 @@ chainSyncClientPipelined
          ( HasHeader header
          , MonadSTM m
          )
-      => MkPipelineDecision
+      => MkPipelineDecision m
       -> StrictTVar m (Chain header)
       -> Client header (Point header) (Tip header) m a
       -> ChainSyncClientPipelined header (Point header) (Tip header) m a
@@ -52,27 +52,28 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
       ClientPipelinedStIntersect {
         recvMsgIntersectFound    = \_ srvTip -> do
           cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
-          pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client,
+          go mkPipelineDecision0 Zero cliTipBlockNo srvTip client,
         recvMsgIntersectNotFound = \  srvTip -> do
           cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
-          pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client
+          go mkPipelineDecision0 Zero cliTipBlockNo srvTip client
       }
 
     -- Drive pipelining by using @mkPipelineDecision@ callback.
-    go :: MkPipelineDecision
+    go :: MkPipelineDecision m
        -> Nat n
        -> WithOrigin BlockNo
        -- ^ our head
        -> Tip header
        -- ^ head of the server
        -> Client header (Point header) (Tip header) m a
-       -> ClientPipelinedStIdle n header (Point header) (Tip header) m a
+       -> m (ClientPipelinedStIdle n header (Point header) (Tip header) m a)
 
-    go mkPipelineDecision n cliTipBlockNo srvTip client@Client {rollforward, rollbackward} =
-      let srvTipBlockNo = getTipBlockNo srvTip in
-      case (n, runPipelineDecision mkPipelineDecision n cliTipBlockNo srvTipBlockNo) of
+    go mkPipelineDecision n cliTipBlockNo srvTip client@Client {rollforward, rollbackward} = do
+      let srvTipBlockNo = getTipBlockNo srvTip
+      decision <- runPipelineDecision mkPipelineDecision n cliTipBlockNo srvTipBlockNo
+      case (n, decision) of
         (_Zero, (Request, mkPipelineDecision')) ->
-          SendMsgRequestNext
+          pure $ SendMsgRequestNext
               clientStNext
               -- We received 'MsgAwaitReplay' and we get a chance to run
               -- a monadic action, in this case we do not take up that
@@ -83,58 +84,58 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                   recvMsgRollForward = \srvHeader srvTip' -> do
                     addBlock srvHeader
                     choice <- rollforward srvHeader
-                    pure $ case choice of
-                      Left a        -> SendMsgDone a
+                    case choice of
+                      Left a        -> pure $ SendMsgDone a
                       Right client' -> go mkPipelineDecision' n (At (blockNo srvHeader)) srvTip' client',
                   recvMsgRollBackward = \pRollback srvTip' -> do
                     cliTipBlockNo' <- rollback pRollback
                     choice <- rollbackward pRollback srvTip'
-                    pure $ case choice of
-                      Left a        -> SendMsgDone a
+                    case choice of
+                      Left a        -> pure $ SendMsgDone a
                       Right client' -> go mkPipelineDecision' n cliTipBlockNo' srvTip' client'
                 }
 
         (_, (Pipeline, mkPipelineDecision')) ->
-          SendMsgRequestNextPipelined
+          SendMsgRequestNextPipelined <$>
             (go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
 
         (Succ n', (CollectOrPipeline, mkPipelineDecision')) ->
-          CollectResponse
+          pure $ CollectResponse
             -- if there is no message we pipeline next one; it is important we
             -- do not directly loop here, but send something; otherwise we
             -- would just build a busy loop polling the driver's receiving
             -- queue.
-            (Just $ pure $ SendMsgRequestNextPipelined $ go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
+            (Just $ SendMsgRequestNextPipelined <$> go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
             ClientStNext {
                 recvMsgRollForward = \srvHeader srvTip' -> do
                   addBlock srvHeader
                   choice <- rollforward srvHeader
-                  pure $ case choice of
-                    Left a        -> collectAndDone n' a
+                  case choice of
+                    Left a        -> pure $ collectAndDone n' a
                     Right client' -> go mkPipelineDecision' n' (At (blockNo srvHeader)) srvTip' client',
                 recvMsgRollBackward = \pRollback srvTip' -> do
                   cliTipBlockNo' <- rollback pRollback
                   choice <- rollbackward pRollback srvTip'
-                  pure $ case choice of
-                    Left a        -> collectAndDone n' a
+                  case choice of
+                    Left a        -> pure $ collectAndDone n' a
                     Right client' -> go mkPipelineDecision' n' cliTipBlockNo' srvTip' client'
               }
 
         (Succ n', (Collect, mkPipelineDecision')) ->
-          CollectResponse
+          pure $ CollectResponse
             Nothing
             ClientStNext {
                 recvMsgRollForward = \srvHeader srvTip' -> do
                   addBlock srvHeader
                   choice <- rollforward srvHeader
-                  pure $ case choice of
-                    Left a        -> collectAndDone n' a
+                  case choice of
+                    Left a        -> pure $ collectAndDone n' a
                     Right client' -> go mkPipelineDecision' n' (At (blockNo srvHeader)) srvTip' client',
                 recvMsgRollBackward = \pRollback srvTip' -> do
                   cliTipBlockNo' <- rollback pRollback
                   choice <- rollbackward pRollback srvTip'
-                  pure $ case choice of
-                    Left a        -> collectAndDone n' a
+                  case choice of
+                    Left a        -> pure $ collectAndDone n' a
                     Right client' -> go mkPipelineDecision' n' cliTipBlockNo' srvTip' client'
               }
 
