@@ -1,5 +1,10 @@
 # Revision history for ouroboros-network
 
+## 0.8.1.1
+
+### Non-breaking changes
+
+* Initialise local root peers results `TVar` (#4584).
 
 ## 0.8.1.0
 
