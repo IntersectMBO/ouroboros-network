@@ -1,5 +1,15 @@
 # Revision history for ouroboros-network-framework
 
+## next version
+
+### Breaking changes
+
+* light peer sharing:
+  * Added `cmGetPeerSharing` field to `ConnectionManagerArguments`.
+  * Added `getProtocolPeerSharing` field to `DataFlowProtocolData` record.
+  * Renamed `serverControlChannel` as `serverInboundInfoChannel` of the `ServerArguments` record.
+  * Moved `OurboundGovernorInfoChannel` to `ouroboros-network`.
+
 ## 0.6.0.1 -- 2023-05-15
 
 * Updated to use `ouroboros-network-api-0.5.0.0`.
