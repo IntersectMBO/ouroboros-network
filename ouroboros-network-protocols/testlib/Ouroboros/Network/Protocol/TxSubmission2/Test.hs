@@ -48,10 +48,12 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Examples
 import           Ouroboros.Network.Protocol.TxSubmission2.Server
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
+import           Test.Data.CDDL (Any (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
 import           Test.QuickCheck as QC
+import           Test.QuickCheck.Instances.ByteString ()
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
@@ -94,7 +96,9 @@ instance ShowProxy Tx where
 txId :: Tx -> TxId
 txId (Tx txid) = txid
 
-newtype TxId = TxId Int
+-- | We use any `CBOR.Term`.  This allows us to use `any` in cddl specs.
+--
+newtype TxId = TxId Any
   deriving (Eq, Ord, Show, Arbitrary, Serialise)
 
 instance ShowProxy TxId where

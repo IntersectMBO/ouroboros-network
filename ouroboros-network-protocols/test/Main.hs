@@ -14,6 +14,7 @@ import qualified Ouroboros.Network.Protocol.TxSubmission2.Test (tests)
 import qualified Test.AnchoredFragment (tests)
 import qualified Test.Chain (tests)
 import qualified Test.ChainGenerators (tests)
+import qualified Test.Data.CDDL (tests)
 
 main :: IO ()
 main = defaultMain tests
@@ -26,6 +27,8 @@ tests =
   [ Test.AnchoredFragment.tests
   , Test.Chain.tests
   , Test.ChainGenerators.tests
+
+  , Test.Data.CDDL.tests
 
     -- protocols
   , Ouroboros.Network.Protocol.ChainSync.Test.tests

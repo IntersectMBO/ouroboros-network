@@ -153,6 +153,7 @@ library testlib
                        Ouroboros.Network.Protocol.PeerSharing.Examples
                        Ouroboros.Network.Protocol.PeerSharing.Test
 
+                       Test.Data.CDDL
                        Test.ChainGenerators
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
