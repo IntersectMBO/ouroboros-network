@@ -1,5 +1,13 @@
 # Revision history for ouroboros-network
 
+## next version
+
+### Breaking changes
+
+* light peer sharing
+  * Added `TraceKnownInboundConnection` constructor to `TracePeerSelection`
+  * Added `readNewInboundConnection` field to `PeerSelectionActions` record.
+
 ## 0.8.1.1
 
 ### Non-breaking changes
