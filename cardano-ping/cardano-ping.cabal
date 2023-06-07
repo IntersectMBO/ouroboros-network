@@ -28,8 +28,7 @@ library
                         bytestring                    >=0.10     && <0.12,
                         contra-tracer                 >=0.1      && <0.2,
 
-                        io-classes                   ^>=1.1,
-                        si-timers,
+                        si-timers                    ^>=1.1,
                         strict-stm,
 
                         network-mux                  ^>=0.4,

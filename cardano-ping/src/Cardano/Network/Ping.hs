@@ -42,7 +42,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
-import qualified Control.Monad.Class.MonadTimer as MT
+import qualified Control.Monad.Class.MonadTimer.SI as MT
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS.Char
 import qualified Data.List as L
@@ -437,6 +437,16 @@ toStatPoint ts host cookie sample td =
     stddev' :: Double
     stddev' = fromMaybe 0 (stddev td)
 
+
+keepAliveDelay :: MT.DiffTime
+keepAliveDelay = 1
+
+idleTimeout :: MT.DiffTime
+idleTimeout = 5
+
+sduTimeout :: MT.DiffTime
+sduTimeout = 30
+
 pingClient :: Tracer IO LogMsg -> Tracer IO String -> PingOpts -> [NodeVersion] -> AddrInfo -> IO ()
 pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pingOptsHandshakeQuery} versions peer = bracket
   (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
@@ -456,8 +466,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
     peerStr <- peerString
     unless pingOptsQuiet $ printf "%s network rtt: %.3f\n" peerStr $ toSample t0_e t0_s
 
-    let timeout = 30
-    bearer <- getBearer makeSocketBearer timeout nullTracer sd
+    bearer <- getBearer makeSocketBearer sduTimeout nullTracer sd
 
     !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions pingOptsHandshakeQuery)
     (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum
@@ -479,7 +488,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
               _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
               return ()
             -- protocol idle timeout
-            MT.threadDelay 5
+            MT.threadDelay idleTimeout
 
   )
   where
@@ -565,5 +574,5 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
           if pingOptsJson
             then traceWith stdout $ LogMsg (encode point)
             else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
-          MT.threadDelay 1
+          MT.threadDelay keepAliveDelay
           keepAlive bearer timeoutfn peerStr version td' (cookie + 1)
