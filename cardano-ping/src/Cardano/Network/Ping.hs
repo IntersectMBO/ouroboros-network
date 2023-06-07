@@ -472,7 +472,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
           Left err ->
             eprint $ printf "%s Version negotiation error %s\n" peerStr err
           Right version -> do
-            unless pingOptsQuiet $ printf "%s Negotiated version %s\n" peerStr (show version)
+            unless (pingOptsQuiet || pingOptsHandshakeQuery) $ printf "%s Negotiated version %s\n" peerStr (show version)
             unless pingOptsHandshakeQuery $ do
               keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
