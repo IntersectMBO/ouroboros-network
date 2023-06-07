@@ -467,7 +467,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
       Left err -> eprint $ printf "%s Decoding error %s" peerStr (show err)
       Right (_, Left err) -> eprint $ printf "%s Protocol error %s" peerStr (show err)
       Right (_, Right recVersions) -> do
-        when (pingOptsHandshakeQuery && not pingOptsQuiet) $ printf "%s Queried versions %s\n" peerStr (show recVersions)
+        when pingOptsHandshakeQuery $ printf "%s Queried versions %s\n" peerStr (show recVersions)
         case acceptVersions recVersions of
           Left err ->
             eprint $ printf "%s Version negotiation error %s\n" peerStr err
