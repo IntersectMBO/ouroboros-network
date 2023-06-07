@@ -240,6 +240,7 @@ handshakeReqEnc versions query =
        <> CBOR.encodeInt (fromIntegral magic)
        <> CBOR.encodeBool mode
        <> CBOR.encodeInt 0 -- NoPeerSharing
+       <> CBOR.encodeBool query
       | otherwise =
           CBOR.encodeWord vn
       <>  CBOR.encodeListLen 2
