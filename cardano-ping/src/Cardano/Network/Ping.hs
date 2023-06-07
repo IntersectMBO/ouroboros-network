@@ -107,6 +107,7 @@ supportedNodeToNodeVersions magic =
   , NodeToNodeVersionV9  magic InitiatorOnly
   , NodeToNodeVersionV10 magic InitiatorOnly
   , NodeToNodeVersionV11 magic InitiatorOnly
+  , NodeToNodeVersionV12 magic InitiatorOnly
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -118,6 +119,7 @@ supportedNodeToClientVersions magic =
   , NodeToClientVersionV13 magic
   , NodeToClientVersionV14 magic
   , NodeToClientVersionV15 magic
+  , NodeToClientVersionV16 magic
   ]
 
 data InitiatorOnly = InitiatorOnly | InitiatorAndResponder
