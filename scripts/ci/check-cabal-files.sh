@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
-for x in $(fd -e cabal); do
+FD="$(which fdfind 2>/dev/null || which fd 2>/dev/null)"
+
+set -eo pipefail
+
+for x in $($FD -e cabal); do
   (
     d=$(dirname $x)
     echo "== $d =="

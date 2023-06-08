@@ -42,7 +42,7 @@ import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
-import qualified Control.Monad.Class.MonadTimer as MT
+import qualified Control.Monad.Class.MonadTimer.SI as MT
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS.Char
 import qualified Data.List as L
@@ -102,11 +102,12 @@ logger msgQueue json query = go True
 
 supportedNodeToNodeVersions :: Word32 -> [NodeVersion]
 supportedNodeToNodeVersions magic =
-  [ NodeToNodeVersionV7  magic False
-  , NodeToNodeVersionV8  magic False
-  , NodeToNodeVersionV9  magic False
-  , NodeToNodeVersionV10 magic False
-  , NodeToNodeVersionV11 magic False
+  [ NodeToNodeVersionV7  magic InitiatorOnly
+  , NodeToNodeVersionV8  magic InitiatorOnly
+  , NodeToNodeVersionV9  magic InitiatorOnly
+  , NodeToNodeVersionV10 magic InitiatorOnly
+  , NodeToNodeVersionV11 magic InitiatorOnly
+  , NodeToNodeVersionV12 magic InitiatorOnly
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -118,7 +119,19 @@ supportedNodeToClientVersions magic =
   , NodeToClientVersionV13 magic
   , NodeToClientVersionV14 magic
   , NodeToClientVersionV15 magic
+  , NodeToClientVersionV16 magic
   ]
+
+data InitiatorOnly = InitiatorOnly | InitiatorAndResponder
+  deriving (Eq, Ord, Show, Bounded)
+
+modeToBool :: InitiatorOnly -> Bool
+modeToBool InitiatorOnly = True
+modeToBool InitiatorAndResponder = False
+
+modeFromBool :: Bool -> InitiatorOnly
+modeFromBool True = InitiatorOnly
+modeFromBool False  = InitiatorAndResponder
 
 data NodeVersion
   = NodeToClientVersionV9  Word32
@@ -132,15 +145,15 @@ data NodeVersion
   | NodeToNodeVersionV1    Word32
   | NodeToNodeVersionV2    Word32
   | NodeToNodeVersionV3    Word32
-  | NodeToNodeVersionV4    Word32 Bool
-  | NodeToNodeVersionV5    Word32 Bool
-  | NodeToNodeVersionV6    Word32 Bool
-  | NodeToNodeVersionV7    Word32 Bool
-  | NodeToNodeVersionV8    Word32 Bool
-  | NodeToNodeVersionV9    Word32 Bool
-  | NodeToNodeVersionV10   Word32 Bool
-  | NodeToNodeVersionV11   Word32 Bool
-  | NodeToNodeVersionV12   Word32 Bool
+  | NodeToNodeVersionV4    Word32 InitiatorOnly
+  | NodeToNodeVersionV5    Word32 InitiatorOnly
+  | NodeToNodeVersionV6    Word32 InitiatorOnly
+  | NodeToNodeVersionV7    Word32 InitiatorOnly
+  | NodeToNodeVersionV8    Word32 InitiatorOnly
+  | NodeToNodeVersionV9    Word32 InitiatorOnly
+  | NodeToNodeVersionV10   Word32 InitiatorOnly
+  | NodeToNodeVersionV11   Word32 InitiatorOnly
+  | NodeToNodeVersionV12   Word32 InitiatorOnly
   deriving (Eq, Ord, Show)
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
@@ -225,26 +238,27 @@ handshakeReqEnc versions query =
       <> CBOR.encodeInt (fromIntegral magic)
       <> CBOR.encodeBool query
 
-    encodeWithMode :: Word -> Word32 -> Bool -> CBOR.Encoding
+    encodeWithMode :: Word -> Word32 -> InitiatorOnly -> CBOR.Encoding
     encodeWithMode vn magic mode
       | vn >= 12 =
           CBOR.encodeWord vn
        <> CBOR.encodeListLen 4
        <> CBOR.encodeInt (fromIntegral magic)
-       <> CBOR.encodeBool mode
+       <> CBOR.encodeBool (modeToBool mode)
        <> CBOR.encodeInt 0 -- NoPeerSharing
        <> CBOR.encodeBool query
       | vn >= 11 =
           CBOR.encodeWord vn
        <> CBOR.encodeListLen 4
        <> CBOR.encodeInt (fromIntegral magic)
-       <> CBOR.encodeBool mode
+       <> CBOR.encodeBool (modeToBool mode)
        <> CBOR.encodeInt 0 -- NoPeerSharing
+       <> CBOR.encodeBool query
       | otherwise =
           CBOR.encodeWord vn
       <>  CBOR.encodeListLen 2
       <>  CBOR.encodeInt (fromIntegral magic)
-      <>  CBOR.encodeBool mode
+      <>  CBOR.encodeBool (modeToBool mode)
 
 handshakeReq :: [NodeVersion] -> Bool -> ByteString
 handshakeReq []       _     = LBS.empty
@@ -334,21 +348,21 @@ handshakeDec = do
         (12, True)  -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
         (13, True)  -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
         (14, True)  -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
-        (15, True) -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* CBOR.decodeBool)
+        (15, True) -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         _           -> return $ Left $ UnknownVersionInRsp version
 
-    decodeWithMode :: (Word32 -> Bool -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
+    decodeWithMode :: (Word32 -> InitiatorOnly -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
     decodeWithMode vnFun = do
       _ <- CBOR.decodeListLen
       magic <- CBOR.decodeWord32
-      Right . vnFun magic <$> CBOR.decodeBool
+      Right . vnFun magic . modeFromBool <$> CBOR.decodeBool
 
-    decodeWithModeAndQuery :: (Word32 -> Bool -> NodeVersion)
+    decodeWithModeAndQuery :: (Word32 -> InitiatorOnly -> NodeVersion)
                            -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
     decodeWithModeAndQuery vnFun = do
         _len <- CBOR.decodeListLen
         magic <- CBOR.decodeWord32
-        mode <- CBOR.decodeBool
+        mode <- modeFromBool <$> CBOR.decodeBool
         _peerSharing <- CBOR.decodeWord32
         _query <- CBOR.decodeBool
         return $ Right $ vnFun magic mode
@@ -423,6 +437,16 @@ toStatPoint ts host cookie sample td =
     stddev' :: Double
     stddev' = fromMaybe 0 (stddev td)
 
+
+keepAliveDelay :: MT.DiffTime
+keepAliveDelay = 1
+
+idleTimeout :: MT.DiffTime
+idleTimeout = 5
+
+sduTimeout :: MT.DiffTime
+sduTimeout = 30
+
 pingClient :: Tracer IO LogMsg -> Tracer IO String -> PingOpts -> [NodeVersion] -> AddrInfo -> IO ()
 pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pingOptsHandshakeQuery} versions peer = bracket
   (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
@@ -442,8 +466,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
     peerStr <- peerString
     unless pingOptsQuiet $ printf "%s network rtt: %.3f\n" peerStr $ toSample t0_e t0_s
 
-    let timeout = 30
-    bearer <- getBearer makeSocketBearer timeout nullTracer sd
+    bearer <- getBearer makeSocketBearer sduTimeout nullTracer sd
 
     !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions pingOptsHandshakeQuery)
     (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum
@@ -453,19 +476,19 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
       Left err -> eprint $ printf "%s Decoding error %s" peerStr (show err)
       Right (_, Left err) -> eprint $ printf "%s Protocol error %s" peerStr (show err)
       Right (_, Right recVersions) -> do
-        when (pingOptsHandshakeQuery && not pingOptsQuiet) $ printf "%s Queried versions %s\n" peerStr (show recVersions)
+        when pingOptsHandshakeQuery $ printf "%s Queried versions %s\n" peerStr (show recVersions)
         case acceptVersions recVersions of
           Left err ->
             eprint $ printf "%s Version negotiation error %s\n" peerStr err
           Right version -> do
-            unless pingOptsQuiet $ printf "%s Negotiated version %s\n" peerStr (show version)
+            unless (pingOptsQuiet || pingOptsHandshakeQuery) $ printf "%s Negotiated version %s\n" peerStr (show version)
             unless pingOptsHandshakeQuery $ do
               keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
               _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)
               return ()
             -- protocol idle timeout
-            MT.threadDelay 5
+            MT.threadDelay idleTimeout
 
   )
   where
@@ -551,5 +574,5 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
           if pingOptsJson
             then traceWith stdout $ LogMsg (encode point)
             else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
-          MT.threadDelay 1
+          MT.threadDelay keepAliveDelay
           keepAlive bearer timeoutfn peerStr version td' (cookie + 1)
