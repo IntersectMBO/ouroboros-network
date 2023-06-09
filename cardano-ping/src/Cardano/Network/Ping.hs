@@ -130,8 +130,8 @@ modeToBool InitiatorOnly = True
 modeToBool InitiatorAndResponder = False
 
 modeFromBool :: Bool -> InitiatorOnly
-modeFromBool True = InitiatorOnly
-modeFromBool False  = InitiatorAndResponder
+modeFromBool True  = InitiatorOnly
+modeFromBool False = InitiatorAndResponder
 
 data NodeVersion
   = NodeToClientVersionV9  Word32
@@ -184,10 +184,28 @@ handshakeReqEnc versions query =
       CBOR.encodeListLen 2
   <>  CBOR.encodeWord 0
   <>  CBOR.encodeMapLen (fromIntegral $ L.length versions)
-  <>  mconcat [ encodeVersion v
+  <>  mconcat [ encodeVersion (fixupVersion v)
               | v <- versions
               ]
   where
+    -- Query is only available for NodeToNodeVersionV11 and higher, for smaller
+    -- versions we send `InitiatorAndResponder`, in which case the remote side
+    -- will do the handshake negotiation but it will reply with the right data.
+    -- We shutdown the connection right after query, in most cases the remote
+    -- side will not even have a chance to start using this connection as
+    -- duplex (which could be possible if the node is using
+    -- `NodeToNodeVersionV10`).
+    fixupVersion :: NodeVersion -> NodeVersion
+    fixupVersion v | not query = v
+    fixupVersion (NodeToNodeVersionV4 a _)  = NodeToNodeVersionV4 a InitiatorAndResponder
+    fixupVersion (NodeToNodeVersionV5 a _)  = NodeToNodeVersionV5 a InitiatorAndResponder
+    fixupVersion (NodeToNodeVersionV6 a _)  = NodeToNodeVersionV6 a InitiatorAndResponder
+    fixupVersion (NodeToNodeVersionV7 a _)  = NodeToNodeVersionV7 a InitiatorAndResponder
+    fixupVersion (NodeToNodeVersionV8 a _)  = NodeToNodeVersionV8 a InitiatorAndResponder
+    fixupVersion (NodeToNodeVersionV9 a _)  = NodeToNodeVersionV9 a InitiatorAndResponder
+    fixupVersion (NodeToNodeVersionV10 a _) = NodeToNodeVersionV10 a InitiatorAndResponder
+    fixupVersion v = v
+
     encodeVersion :: NodeVersion -> CBOR.Encoding
     encodeVersion (NodeToClientVersionV9 magic) =
           CBOR.encodeWord (9 `setBit` nodeToClientVersionBit)
@@ -348,7 +366,7 @@ handshakeDec = do
         (12, True)  -> Right . NodeToClientVersionV12 <$> CBOR.decodeWord32
         (13, True)  -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
         (14, True)  -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
-        (15, True) -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
+        (15, True)  -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> InitiatorOnly -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
@@ -476,12 +494,14 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
       Left err -> eprint $ printf "%s Decoding error %s" peerStr (show err)
       Right (_, Left err) -> eprint $ printf "%s Protocol error %s" peerStr (show err)
       Right (_, Right recVersions) -> do
-        when pingOptsHandshakeQuery $ printf "%s Queried versions %s\n" peerStr (show recVersions)
         case acceptVersions recVersions of
-          Left err ->
-            eprint $ printf "%s Version negotiation error %s\n" peerStr err
+          Left err -> do
+            eprint $ printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
           Right version -> do
-            unless (pingOptsQuiet || pingOptsHandshakeQuery) $ printf "%s Negotiated version %s\n" peerStr (show version)
+            unless pingOptsQuiet $
+              printf "%s Negotiated version %s\n" peerStr (show version)
+            when (pingOptsHandshakeQuery && version >= NodeToNodeVersionV11 minBound minBound) $
+              printf "%s Queried versions %s\n" peerStr (show recVersions)
             unless pingOptsHandshakeQuery $ do
               keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
