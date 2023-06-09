@@ -56,43 +56,35 @@ onlyIf True  = Just
 prop_raw_bearer_send_and_receive_inet :: Message -> Property
 prop_raw_bearer_send_and_receive_inet msg =
   ioProperty $ withIOManager $ \iomgr -> do
-    let clientAddr = Socket.SockAddrInet 10000 localhost
     let serverAddr = Socket.SockAddrInet 10001 localhost
     rawBearerSendAndReceive
       (socketSnocket iomgr)
       makeSocketRawBearer
-      clientAddr serverAddr
+      serverAddr
       msg
 
-newtype Unshrinkable a = Unshrinkable { unUnshrinkable :: a }
+newtype ArbPosInt = ArbPosInt { unArbPosInt :: Int }
   deriving newtype (Show, Eq, Ord)
 
-instance Arbitrary a => Arbitrary (Unshrinkable a) where
+instance Arbitrary ArbPosInt where
   shrink _ = []
-  arbitrary = Unshrinkable <$> arbitrary
+  arbitrary = ArbPosInt . getPositive <$> arbitrary
 
-prop_raw_bearer_send_and_receive_local :: Unshrinkable Int -> Unshrinkable Int -> Message -> Property
-prop_raw_bearer_send_and_receive_local clientInt serverInt msg =
-  (clientInt /= Unshrinkable 0) ==>
-  (serverInt /= Unshrinkable 0) ==> do
+prop_raw_bearer_send_and_receive_local :: ArbPosInt -> Message -> Property
+prop_raw_bearer_send_and_receive_local serverInt msg =
   ioProperty $ withIOManager $ \iomgr -> do
 #if defined(mingw32_HOST_OS)
-    let clientName = "\\\\.\\pipe\\local_socket_client.test" ++ show clientInt
     let serverName = "\\\\.\\pipe\\local_socket_server.test" ++ show serverInt
 #else
-    let clientName = "local_socket_client.test" ++ show clientInt
     let serverName = "local_socket_server.test" ++ show serverInt
 #endif
-    cleanUp clientName
     cleanUp serverName
-    let clientAddr = localAddressFromPath clientName
     let serverAddr = localAddressFromPath serverName
     rawBearerSendAndReceive
       (localSnocket iomgr)
       makeLocalRawBearer
-      clientAddr serverAddr
+      serverAddr
       msg `finally` do
-        cleanUp clientName
         cleanUp serverName
   where
 #if defined(mingw32_HOST_OS)
@@ -108,21 +100,17 @@ prop_raw_bearer_send_and_receive_local clientInt serverInt msg =
 localhost :: Word32
 localhost = Socket.tupleToHostAddress (127, 0, 0, 1)
 
-prop_raw_bearer_send_and_receive_unix :: Int -> Int -> Message -> Property
-prop_raw_bearer_send_and_receive_unix clientInt serverInt msg =
+prop_raw_bearer_send_and_receive_unix :: Int -> Message -> Property
+prop_raw_bearer_send_and_receive_unix serverInt msg =
   ioProperty $ withIOManager $ \iomgr -> do
-    let clientName = "unix_socket_client.test" ++ show clientInt
     let serverName = "unix_socket_server.test"++ show serverInt
-    cleanUp clientName
     cleanUp serverName
-    let clientAddr = Socket.SockAddrUnix clientName
     let serverAddr = Socket.SockAddrUnix serverName
     rawBearerSendAndReceive
       (socketSnocket iomgr)
       makeSocketRawBearer
-      clientAddr serverAddr
+      serverAddr
       msg `finally` do
-        cleanUp clientName
         cleanUp serverName
   where
     cleanUp name = do
@@ -130,8 +118,8 @@ prop_raw_bearer_send_and_receive_unix clientInt serverInt msg =
                   (removeFile name)
                   (\_ -> return ())
 
-prop_raw_bearer_send_and_receive_iosim :: Int -> Int -> Message -> Property
-prop_raw_bearer_send_and_receive_iosim clientInt serverInt msg =
+prop_raw_bearer_send_and_receive_iosim :: Int -> Message -> Property
+prop_raw_bearer_send_and_receive_iosim serverInt msg =
   iosimProperty $
     SimSnocket.withSnocket
       nullTracer
@@ -140,7 +128,6 @@ prop_raw_bearer_send_and_receive_iosim clientInt serverInt msg =
         rawBearerSendAndReceive
           snocket
           (makeFDRawBearer nullTracer)
-          (TestAddress clientInt)
           (TestAddress serverInt)
           msg
 
@@ -166,16 +153,15 @@ rawBearerSendAndReceive :: forall m fd addr
                         => Snocket m fd addr
                         -> MakeRawBearer m fd
                         -> addr
-                        -> addr
                         -> Message
                         -> m Property
-rawBearerSendAndReceive snocket mkrb clientAddr serverAddr msg =
+rawBearerSendAndReceive snocket mkrb serverAddr msg =
   withLiftST $ \liftST -> do
     let io = liftST . unsafeIOToST
     let size = BS.length (messageBytes msg)
     retVar <- newEmptyMVar
     senderDone <- newEmptyMVar
-    let sender = bracket (openToConnect snocket clientAddr) (close snocket) $ \s -> do
+    let sender = bracket (openToConnect snocket serverAddr) (close snocket) $ \s -> do
                     say "sender: connecting"
                     connect snocket s serverAddr
                     say "sender: connected"
