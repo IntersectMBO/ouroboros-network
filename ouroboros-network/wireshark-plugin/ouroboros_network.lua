@@ -1,3 +1,4 @@
+cbor = Dissector.get("cbor")
 
 local default_settings =
 {
@@ -152,6 +153,7 @@ dissectOuroboros = function (tvbuf, pktinfo, root, offset)
 	elseif convId == 8 then subtree:add(on_keepalive_msg, tvbuf:range(offset + 9, 1))
 	end
 
+	cbor:call(tvbuf(ON_HDR_LEN):tvb(), pktinfo, subtree)
 	return ON_HDR_LEN + length
 end
 
