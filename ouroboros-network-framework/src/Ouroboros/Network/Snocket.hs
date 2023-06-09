@@ -234,36 +234,71 @@ deriving instance Show addr => Show (AddressFamily addr)
 -- is useful for testing and/or simulations.
 --
 data Snocket m fd addr = Snocket {
+    -- | Get local address of a file descriptor.
+    --
+    -- /For Berkeley sockets:/ `Socket.getSocketName` is used.
+    --
+    -- /For named pipes:/ a file name is returned which was used when the file
+    -- descriptor was opened.
+    --
     getLocalAddr  :: fd -> m addr
+    -- | Get remote address of a file descriptor.
+    --
+    -- /For Berkeley sockets:/ `Socket.getPeerName` is used.
+    --
+    -- /For named pipes:/ either an empty string (`open`) or file name
+    -- (`openToConnect`) which was used to open the file descriptor is returned.
+    --
   , getRemoteAddr :: fd -> m addr
 
+    -- | Get address family of an address.
+    --
   , addrFamily    :: addr -> AddressFamily addr
 
-  -- | Open a file descriptor  (socket / namedPipe).  For named pipes this is
-  -- using 'CreateNamedPipe' syscall, for Berkeley sockets 'socket' is used.
-  --
+    -- | Open a file descriptor  (socket / namedPipe).
+    --
+    -- /For Berkeley sockets:/ `Socket.socket` is used.
+    --
+    -- /For named pipes:/ 'Win32.createNamedPipe' is used.
+    --
   , open          :: AddressFamily addr -> m fd
 
-    -- | A way to create 'fd' to pass to 'connect'.  For named pipes it will
-    -- use 'CreateFile' syscall.  For Berkeley sockets this the same as 'open'.
+    -- | A way to create 'fd' to pass to 'connect'.
     --
-    -- For named pipes we need full 'addr' rather than just address family as
-    -- it is for sockets.
+    -- /For Berkeley sockets:/ this the same as 'Socket.open'.
+    --
+    -- /For named pipes:/ it will use 'CreateFile' syscall.
+    --
+    -- NOTE: For named pipes,  one must pass the `LocalAddress` of the named
+    -- pipe to connect to.  This call will open this file as required by the
+    -- semantics of named pipes.
     --
   , openToConnect :: addr -> m fd
 
-    -- | `connect` is only needed for Berkeley sockets, for named pipes this is
+    -- | `connect` is only needed for Berkeley sockets, for named pipes it is
     -- no-op.
     --
   , connect       :: fd -> addr -> m ()
+    -- | `bind` is only needed for Berkeley sockets, for named pipes it is
+    -- no-op.
   , bind          :: fd -> addr -> m ()
+    -- | `listen` is only needed for Berkeley sockets, for named pipes it is
+    -- no-op.
   , listen        :: fd -> m ()
 
-  -- SomeException is chosen here to avoid having to include it in the Snocket
-  -- type, and therefore refactoring a bunch of stuff.
-  -- FIXME probably a good idea to abstract it.
+    -- | 'Accept' loop for Berkeley sockets and named pipes.
+    --
+    -- /For Berkeley sockets:/ calling `runAccept` calls `Snocket.accept', while
+    -- `accept` just returns `Accept` without any IO.
+    --
+    -- /For named pipes:/ `accept` calls `Win32.Async.connectNamedPipe` on the
+    -- file descriptor passed to it; then each subsequent `runAccept` creates
+    -- a new file descriptor and calls `Win32.Async.ConnectNamedPipe` on it.
+    --
   , accept        :: fd -> m (Accept m fd addr)
 
+    -- | Close a file descriptor opened with `open` or `openToConnect`.
+    --
   , close         :: fd -> m ()
   }
 
