@@ -494,12 +494,14 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
       Left err -> eprint $ printf "%s Decoding error %s" peerStr (show err)
       Right (_, Left err) -> eprint $ printf "%s Protocol error %s" peerStr (show err)
       Right (_, Right recVersions) -> do
-        when pingOptsHandshakeQuery $ printf "%s Queried versions %s\n" peerStr (show recVersions)
         case acceptVersions recVersions of
-          Left err ->
-            eprint $ printf "%s Version negotiation error %s\n" peerStr err
+          Left err -> do
+            eprint $ printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
           Right version -> do
-            unless (pingOptsQuiet || pingOptsHandshakeQuery) $ printf "%s Negotiated version %s\n" peerStr (show version)
+            unless pingOptsQuiet $
+              printf "%s Negotiated version %s\n" peerStr (show version)
+            when (pingOptsHandshakeQuery && version >= NodeToNodeVersionV11 minBound minBound) $
+              printf "%s Queried versions %s\n" peerStr (show recVersions)
             unless pingOptsHandshakeQuery $ do
               keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
