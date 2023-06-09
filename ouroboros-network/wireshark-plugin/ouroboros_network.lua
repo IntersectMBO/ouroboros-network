@@ -28,7 +28,8 @@ local on_conversation = ProtoField.uint16("ouroboros.conv", "Conversation", base
 local handshake_msg_codes = {
 	[0] = "MsgProposeVersions",
 	[1] = "MsgAcceptVersion",
-	[2] = "MsgRefuse"
+	[2] = "MsgRefuse",
+	[3] = "MsgQueryReply"
 }
 local on_handshake_msg = ProtoField.uint8("ouroboros.handshakemsg", "Handshake Message", base.DEC, handshake_msg_codes, nil, "Handshake Message Types")
 
