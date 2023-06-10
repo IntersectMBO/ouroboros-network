@@ -1,5 +1,9 @@
 # Revision history for cardano-ping
 
+## 0.2.0.4 -- 2023-06-12
+
+* Only print negotiated version, if negotiation took place on the remote side.
+
 ## 0.2.0.3 -- 2023-06-09
 
 * For versions strictly lower than `NodeToNodeV_11`, send
