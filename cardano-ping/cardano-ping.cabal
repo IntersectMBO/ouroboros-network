@@ -27,6 +27,7 @@ library
                         cborg                         >=0.2.8    && <0.3,
                         bytestring                    >=0.10     && <0.12,
                         contra-tracer                 >=0.1      && <0.2,
+                        time,
 
                         si-timers                    ^>=1.1,
                         strict-stm,
