@@ -8,6 +8,11 @@
   * Added `TraceKnownInboundConnection` constructor to `TracePeerSelection`
   * Added `readNewInboundConnection` field to `PeerSelectionActions` record.
 
+### Non-breaking changes
+
+* Support for decoding Handshake Query Reply in wireshark dissector.
+* Support for decoding CBOR payload in wireshark dissector.
+
 ## 0.8.1.1
 
 ### Non-breaking changes
