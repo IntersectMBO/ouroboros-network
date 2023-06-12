@@ -31,6 +31,7 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Maybe (fromMaybe,)
 import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean, quantile, stddev, TDigest)
 import           Data.Text (unpack)
+import           Data.Time.Format.ISO8601 (iso8601Show)
 import           Data.Word (Word16, Word32)
 import           Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
 import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerial)
@@ -93,7 +94,7 @@ logger msgQueue json query = go True
           let bs' = case (json, first) of
                 (True, False)  -> LBS.Char.pack ",\n" <> bs
                 (True, True)   -> LBS.Char.pack "{ \"pongs\": [ " <> bs
-                (False, True)  -> LBS.Char.pack "   timestamp,                         host,                          cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
+                (False, True)  -> LBS.Char.pack "timestamp,                      host,                         cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
                 (False, False) -> bs
 
           LBS.Char.putStr bs'
@@ -413,8 +414,8 @@ data StatPoint = StatPoint
 instance Show StatPoint where
   show :: StatPoint -> String
   show StatPoint {..} =
-    printf "%36s, %-28s, %7d, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f"
-      (show spTimestamp) spHost spCookie spSample spMedian spP90 spMean spMin spMax spStd
+    printf "%-31s %-28s %7d, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f"
+      (iso8601Show spTimestamp ++ ",") (spHost ++ ",") spCookie spSample spMedian spP90 spMean spMin spMax spStd
 
 instance ToJSON StatPoint where
   toJSON :: StatPoint -> Value
@@ -498,9 +499,14 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
           Left err -> do
             eprint $ printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
           Right version -> do
-            unless pingOptsQuiet $
+            let querySupported = version >= NodeToNodeVersionV11 minBound minBound
+            when (   (not pingOptsHandshakeQuery && not pingOptsQuiet)
+                  || (    pingOptsHandshakeQuery && not querySupported)) $
+              -- print the negotiated version iff not quiet or querying but, query
+              -- is not supported by the remote host.
               printf "%s Negotiated version %s\n" peerStr (show version)
-            when (pingOptsHandshakeQuery && version >= NodeToNodeVersionV11 minBound minBound) $
+            when (pingOptsHandshakeQuery && querySupported) $
+              -- print query results if it was supported by the remote side
               printf "%s Queried versions %s\n" peerStr (show recVersions)
             unless pingOptsHandshakeQuery $ do
               keepAlive bearer timeoutfn peerStr version (tdigest []) 0
