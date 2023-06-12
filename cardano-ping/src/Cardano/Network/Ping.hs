@@ -500,7 +500,8 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
             eprint $ printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
           Right version -> do
             let querySupported = version >= NodeToNodeVersionV11 minBound minBound
-            when ((not pingOptsHandshakeQuery && not pingOptsQuiet) || (pingOptsHandshakeQuery && not querySupported)) $
+            when (   (not pingOptsHandshakeQuery && not pingOptsQuiet)
+                  || (    pingOptsHandshakeQuery && not querySupported)) $
               -- print the negotiated version iff not quiet or querying but, query
               -- is not supported by the remote host.
               printf "%s Negotiated version %s\n" peerStr (show version)
