@@ -1,9 +1,14 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
+#if __GLASGOW_HASKELL__ > 810 && __GLASGOW_HASKELL__ < 904
+{-# OPTIONS -fno-full-laziness #-}
+#endif
 
 module Ouroboros.Network.Protocol.ChainSync.ClientPipelined
   ( ChainSyncClientPipelined (..)
