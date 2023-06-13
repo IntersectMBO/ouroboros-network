@@ -1,5 +1,14 @@
 # Revision history for ouroboros-network-protocols
 
+## next version
+
+### Breaking changes
+
+* Provide `Any` type in `Test.Data.CDDL` module.
+* Definition of `TxId` has changed, it's now a newtype wrapper for
+  `Any` type, which indicates that `ouroboros-network` does not specify what
+  `TxId` or `Tx` types are.
+
 ## 0.5.0.3 -- 2023-05-26
 
 * `ghc-9.6` compatibility

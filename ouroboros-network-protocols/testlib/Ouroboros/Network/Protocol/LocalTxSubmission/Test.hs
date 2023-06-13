@@ -41,6 +41,7 @@ import           Ouroboros.Network.Protocol.LocalTxSubmission.Examples
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
+import           Test.Data.CDDL (Any (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
                      prop_codec_valid_cbor_encoding, splits2, splits3)
 
@@ -77,7 +78,7 @@ tests =
 -- Common types & clients and servers used in the tests in this module.
 --
 
-newtype Tx = Tx Int
+newtype Tx = Tx Any
   deriving (Eq, Show, Arbitrary, CoArbitrary, Serialise)
 
 instance ShowProxy Tx where
