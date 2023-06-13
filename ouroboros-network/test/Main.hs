@@ -3,15 +3,6 @@ module Main (main) where
 import           Main.Utf8 (withUtf8)
 import           Test.Tasty
 
-import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
-import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
-import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
-import qualified Ouroboros.Network.Protocol.KeepAlive.Test (tests)
-import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test (tests)
-import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests)
-import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
-import qualified Ouroboros.Network.Protocol.PeerSharing.Test (tests)
-import qualified Ouroboros.Network.Protocol.TxSubmission2.Test (tests)
 import qualified Test.ChainProducerState (tests)
 import qualified Test.LedgerPeers (tests)
 import qualified Test.Ouroboros.Network.BlockFetch (tests)
@@ -42,17 +33,6 @@ tests =
 
     -- data structures
   [ Test.ChainProducerState.tests
-
-    -- protocols
-  , Ouroboros.Network.Protocol.ChainSync.Test.tests
-  , Ouroboros.Network.Protocol.BlockFetch.Test.tests
-  , Ouroboros.Network.Protocol.LocalStateQuery.Test.tests
-  , Ouroboros.Network.Protocol.LocalTxMonitor.Test.tests
-  , Ouroboros.Network.Protocol.LocalTxSubmission.Test.tests
-  , Ouroboros.Network.Protocol.TxSubmission2.Test.tests
-  , Ouroboros.Network.Protocol.Handshake.Test.tests
-  , Ouroboros.Network.Protocol.KeepAlive.Test.tests
-  , Ouroboros.Network.Protocol.PeerSharing.Test.tests
 
     -- network logic
   , Test.Version.tests
