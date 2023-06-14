@@ -14,6 +14,9 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS
     -- ** DNSActions IO
   , ioDNSActions
   , LookupReqs (..)
+    -- * DNS semaphore
+  , DNSSemaphore
+  , newLocalAndPublicRootDNSSemaphore
     -- * DNS based provider for local root peers
   , localRootPeersProvider
   , DomainAccessPoint (..)
@@ -45,6 +48,7 @@ import           Data.Word (Word32)
 
 import           Control.Applicative (Alternative, (<|>))
 import           Control.Concurrent.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.TSem
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
@@ -85,6 +89,36 @@ data TraceLocalRootPeers peerAddr exception =
      | TraceLocalRootError   DomainAccessPoint SomeException
   deriving Show
 
+
+-- | Maximal concurrency when resolving DNS names of root and ledger peers.
+--
+maxDNSConcurrency :: Integer
+maxDNSConcurrency = 8
+
+-- | Maximal concurrency when resolving DNS names of local root peers.
+--
+maxDNSLocalRootConcurrency :: Integer
+maxDNSLocalRootConcurrency = 2
+
+-- | A semaphore used to limit concurrency of dns names resolution.
+--
+newtype DNSSemaphore m = DNSSemaphore (TSem m)
+
+-- | Create a `DNSSemaphore` for root and ledger peers.
+--
+newLocalAndPublicRootDNSSemaphore :: MonadSTM m => m (DNSSemaphore m)
+newLocalAndPublicRootDNSSemaphore = DNSSemaphore <$> atomically (newTSem maxDNSConcurrency)
+
+-- | Create a `DNSSemaphore` for local root peers.
+--
+newDNSLocalRootSemaphore :: MonadSTM m => STM m (DNSSemaphore m)
+newDNSLocalRootSemaphore = DNSSemaphore <$> newTSem maxDNSLocalRootConcurrency
+
+withDNSSemaphore :: (MonadSTM m, MonadThrow m) => DNSSemaphore m -> m a -> m a
+withDNSSemaphore (DNSSemaphore s) =
+    bracket_ (atomically $ waitTSem s)
+             (atomically $ signalTSem s)
+
 -- | Resolve 'RelayAddress'-es of local root peers using dns if needed.  Local
 -- roots are provided wrapped in a 'StrictTVar', which value might change
 -- (re-read form a config file).  The resolved dns names are available through
@@ -95,6 +129,7 @@ localRootPeersProvider
      ( Alternative (STM m)
      , MonadAsync m
      , MonadDelay m
+     , MonadThrow m
      , Eq (Async m Void)
      , Ord peerAddr
      )
@@ -118,14 +153,15 @@ localRootPeersProvider tracer
                        rootPeersGroupVar =
         atomically (do domainsGroups <- readLocalRootPeers
                        writeTVar rootPeersGroupVar (getLocalRootPeersGroups Map.empty domainsGroups)
-                       return domainsGroups)
-    >>= loop
+                       dnsSemaphore <- newDNSLocalRootSemaphore
+                       return (dnsSemaphore, domainsGroups))
+    >>= uncurry loop
   where
     -- | Loop function that monitors DNS Domain resolution threads and restarts
     -- if either these threads fail or detects the local configuration changed.
     --
-    loop :: [(Int, Map RelayAccessPoint PeerAdvertise)] -> m Void
-    loop domainsGroups = do
+    loop :: DNSSemaphore m -> [(Int, Map RelayAccessPoint PeerAdvertise)] -> m Void
+    loop dnsSemaphore domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
       rr <- dnsAsyncResolverResource resolvConf
       let
@@ -158,7 +194,7 @@ localRootPeersProvider tracer
       -- going to lookup into the new DNS Domain Map and replace that entry
       -- with the lookup result.
       domainsGroups' <-
-        withAsyncAll (monitorDomain rr dnsDomainMapVar `map` domains) $ \as -> do
+        withAsyncAll (monitorDomain rr dnsSemaphore dnsDomainMapVar `map` domains) $ \as -> do
           res <- atomically $
                   -- wait until any of the monitoring threads errors
                   ((\(a, res) ->
@@ -186,7 +222,7 @@ localRootPeersProvider tracer
                                   >> return domainsGroups'
       -- we continue the loop outside of 'withAsyncAll',  this makes sure that
       -- all the monitoring threads are killed.
-      loop domainsGroups'
+      loop dnsSemaphore domainsGroups'
 
     resolveDomain
       :: resolver
@@ -214,10 +250,11 @@ localRootPeersProvider tracer
     -- from the DNS Domain Map.
     monitorDomain
       :: Resource m (DNSorIOError exception) resolver
+      -> DNSSemaphore m
       -> StrictTVar m (Map DomainAccessPoint [peerAddr])
       -> DomainAccessPoint
       -> m Void
-    monitorDomain rr0 dnsDomainMapVar domain =
+    monitorDomain rr0 dnsSemaphore dnsDomainMapVar domain =
         go rr0 0
       where
         go :: Resource m (DNSorIOError exception) resolver
@@ -234,7 +271,7 @@ localRootPeersProvider tracer
                           rr
 
           --- Resolve 'domain'
-          reply <- resolveDomain resolver domain
+          reply <- withDNSSemaphore dnsSemaphore (resolveDomain resolver domain)
           case reply of
             Left errs -> go rrNext
                            (minimum $ map (\err -> ttlForDnsError err ttl) errs)
@@ -328,6 +365,7 @@ publicRootPeersProvider
       Ord peerAddr)
   => Tracer m TracePublicRootPeers
   -> (IP -> Socket.PortNumber -> peerAddr)
+  -> DNSSemaphore m
   -> DNS.ResolvConf
   -> STM m (Map RelayAccessPoint PeerAdvertise)
   -> DNSActions resolver exception m
@@ -335,6 +373,7 @@ publicRootPeersProvider
   -> m a
 publicRootPeersProvider tracer
                         toPeerAddr
+                        dnsSemaphore
                         resolvConf
                         readDomains
                         DNSActions {
@@ -373,11 +412,12 @@ publicRootPeersProvider tracer
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let lookups =
-                  [ (,) (DomainAccessPoint domain port, pa)
-                      <$> dnsLookupWithTTL
-                            resolvConf
-                            resolver
-                            domain
+                  [ ((DomainAccessPoint domain port, pa),)
+                      <$> withDNSSemaphore dnsSemaphore
+                            (dnsLookupWithTTL
+                              resolvConf
+                              resolver
+                              domain)
                   | (RelayAccessDomain domain port, pa) <- Map.assocs domains ]
             -- The timeouts here are handled by the 'lookupWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
@@ -400,15 +440,19 @@ publicRootPeersProvider tracer
 
 -- | Provides DNS resolution functionality.
 --
+-- Concurrently resolve DNS names, respecting the 'maxDNSConcurrency' limit.
+--
 resolveDomainAccessPoint
   :: forall exception resolver m.
      (MonadThrow m, MonadAsync m, Exception exception)
   => Tracer m TracePublicRootPeers
+  -> DNSSemaphore m
   -> DNS.ResolvConf
   -> DNSActions resolver exception m
   -> [DomainAccessPoint]
   -> m (Map DomainAccessPoint (Set Socket.SockAddr))
 resolveDomainAccessPoint tracer
+                         dnsSemaphore
                          resolvConf
                          DNSActions {
                             dnsResolverResource,
@@ -419,12 +463,12 @@ resolveDomainAccessPoint tracer
     traceWith tracer (TracePublicRootDomains domains)
     rr <- dnsResolverResource resolvConf
     resourceVar <- newTVarIO rr
-    requestPublicRootPeers resourceVar
+    resolveDomains resourceVar
   where
-    requestPublicRootPeers
+    resolveDomains
       :: StrictTVar m (Resource m (DNSorIOError exception) resolver)
       -> m (Map DomainAccessPoint (Set Socket.SockAddr))
-    requestPublicRootPeers resourceVar = do
+    resolveDomains resourceVar = do
         rr <- atomically $ readTVar resourceVar
         (er, rr') <- withResource rr
         atomically $ writeTVar resourceVar rr'
@@ -434,10 +478,11 @@ resolveDomainAccessPoint tracer
           Right resolver -> do
             let lookups =
                   [ (,) domain
-                      <$> dnsLookupWithTTL
-                            resolvConf
-                            resolver
-                            (dapDomain domain)
+                      <$> withDNSSemaphore dnsSemaphore
+                            (dnsLookupWithTTL
+                              resolvConf
+                              resolver
+                              (dapDomain domain))
                   | domain <- domains ]
             -- The timeouts here are handled by the 'lookupWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults

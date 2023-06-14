@@ -306,6 +306,7 @@ mockLocalRootPeersProvider :: forall m.
                               ( Alternative (STM m)
                               , MonadAsync    m
                               , MonadDelay    m
+                              , MonadThrow    m
                               , MonadTimer    m
                               , MonadTraceSTM m
                               , MonadLabelledSTM m
@@ -379,6 +380,7 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
       dnsMapVar <- newTVarIO dnsMap
+      dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
 
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
@@ -389,6 +391,7 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 
         publicRootPeersProvider tracer
                                 (curry toSockAddr)
+                                dnsSemaphore
                                 DNSResolver.defaultResolvConf
                                 (readTVar publicRootPeersVar)
                                 (mockDNSActions @Failure
@@ -414,10 +417,12 @@ mockResolveDomainAddresses tracer (MockRoots _ _ publicRootPeers dnsMapScript)
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
       dnsMapVar <- newTVarIO dnsMap
+      dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
 
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       resolveDomainAccessPoint tracer
+                               dnsSemaphore
                                DNSResolver.defaultResolvConf
                                (mockDNSActions @Failure dnsMapVar
                                                         dnsTimeoutScriptVar

@@ -85,7 +85,7 @@ import           Ouroboros.Network.PeerSelection.PeerMetric
                      (PeerMetricsConfiguration (..), newPeerMetric)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..),
-                     RelayAccessPoint (..))
+                     RelayAccessPoint (..), newLocalAndPublicRootDNSSemaphore)
 import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (VersionDataCodec (..), noTimeLimitsHandshake,
@@ -199,6 +199,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
+        dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
         peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
@@ -249,6 +250,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                                      (iDomainMap ni)
                                                      dnsTimeoutScriptVar
                                                      dnsLookupDelayScriptVar)
+              , Diff.P2P.diLocalAndPublicRootDnsSemaphore = dnsSemaphore
               }
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m ()

@@ -55,6 +55,7 @@ withPeerSelectionActions
   => Tracer m (TraceLocalRootPeers peeraddr exception)
   -> Tracer m TracePublicRootPeers
   -> (IP -> Socket.PortNumber -> peeraddr)
+  -> DNSSemaphore m
   -> DNSActions resolver exception m
   -> STM m PeerSelectionTargets
   -> STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
@@ -81,6 +82,7 @@ withPeerSelectionActions
   localRootTracer
   publicRootTracer
   toPeerAddr
+  dnsSemaphore
   dnsActions
   readTargets
   readLocalRootPeers
@@ -143,6 +145,7 @@ withPeerSelectionActions
     requestConfiguredRootPeers n =
       publicRootPeersProvider publicRootTracer
                               toPeerAddr
+                              dnsSemaphore
                               DNS.defaultResolvConf
                               readPublicRootPeers
                               dnsActions
