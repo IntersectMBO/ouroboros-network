@@ -207,7 +207,10 @@ handshakeReqEnc versions query =
     fixupVersion (NodeToNodeVersionV10 a _) = NodeToNodeVersionV10 a InitiatorAndResponder
     fixupVersion v = v
 
+
     encodeVersion :: NodeVersion -> CBOR.Encoding
+
+    -- node-to-client
     encodeVersion (NodeToClientVersionV9 magic) =
           CBOR.encodeWord (9 `setBit` nodeToClientVersionBit)
       <>  CBOR.encodeInt (fromIntegral magic)
@@ -228,10 +231,12 @@ handshakeReqEnc versions query =
       <>  CBOR.encodeInt (fromIntegral magic)
     encodeVersion (NodeToClientVersionV15 magic) =
           CBOR.encodeWord (15 `setBit` nodeToClientVersionBit)
-      <>  CBOR.encodeInt (fromIntegral magic)
+      <> nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV16 magic) =
           CBOR.encodeWord (16 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
+
+    -- node-to-node
     encodeVersion (NodeToNodeVersionV1 magic) =
           CBOR.encodeWord 1
       <>  CBOR.encodeInt (fromIntegral magic)
@@ -361,6 +366,8 @@ handshakeDec = do
         (9,  False) -> decodeWithMode NodeToNodeVersionV9
         (10, False) -> decodeWithMode NodeToNodeVersionV10
         (11, False) -> decodeWithModeAndQuery NodeToNodeVersionV11
+        (12, False) -> decodeWithModeAndQuery NodeToNodeVersionV12
+
         (9,  True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
         (10, True)  -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
         (11, True)  -> Right . NodeToClientVersionV11 <$> CBOR.decodeWord32
@@ -368,6 +375,7 @@ handshakeDec = do
         (13, True)  -> Right . NodeToClientVersionV13 <$> CBOR.decodeWord32
         (14, True)  -> Right . NodeToClientVersionV14 <$> CBOR.decodeWord32
         (15, True)  -> Right . NodeToClientVersionV15 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
+        (16, True)  -> Right . NodeToClientVersionV16 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> InitiatorOnly -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
@@ -492,14 +500,19 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
     unless pingOptsQuiet $ printf "%s handshake rtt: %s\n" peerStr (show $ diffTime t1_e t1_s)
 
     case CBOR.deserialiseFromBytes handshakeDec msg of
-      Left err -> eprint $ printf "%s Decoding error %s" peerStr (show err)
-      Right (_, Left err) -> eprint $ printf "%s Protocol error %s" peerStr (show err)
+      Left err -> eprint $ printf "%s Decoding error: %s" peerStr (show err)
+      Right (_, Left err) -> eprint $ printf "%s Protocol error: %s" peerStr (show err)
       Right (_, Right recVersions) -> do
         case acceptVersions recVersions of
           Left err -> do
             eprint $ printf "%s Version negotiation error %s\nReceived versions: %s\n" peerStr err (show recVersions)
           Right version -> do
-            let querySupported = version >= NodeToNodeVersionV11 minBound minBound
+            let isUnixSocket = case Socket.addrFamily peer of
+                  Socket.AF_UNIX -> True
+                  _              -> False
+                querySupported = not isUnixSocket && (version >= NodeToNodeVersionV11 minBound minBound)
+                              ||     isUnixSocket && (version >= NodeToClientVersionV15 minBound)
+
             when (   (not pingOptsHandshakeQuery && not pingOptsQuiet)
                   || (    pingOptsHandshakeQuery && not querySupported)) $
               -- print the negotiated version iff not quiet or querying but, query
@@ -508,7 +521,7 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
             when (pingOptsHandshakeQuery && querySupported) $
               -- print query results if it was supported by the remote side
               printf "%s Queried versions %s\n" peerStr (show recVersions)
-            unless pingOptsHandshakeQuery $ do
+            when (not pingOptsHandshakeQuery && not isUnixSocket) $ do
               keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
               _ <- write bearer timeoutfn $ wrap keepaliveNum InitiatorDir (keepAliveDone version)

@@ -1,5 +1,11 @@
 # Revision history for cardano-ping
 
+## 0.2.0.5 -- 2023-06-15
+
+* Fixed support of `node-to-client` protocol on Unix sockets.
+* Fixed encoding of `NodeToClientVersionV16` version data.
+* Fixed decoding of `NodeToClientVersionV16` and `NodeToNodeVersionV12`.
+
 ## 0.2.0.4 -- 2023-06-12
 
 * Using `ISO8601` time format.
