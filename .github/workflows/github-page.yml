@@ -38,7 +38,7 @@ jobs:
 
       # we need nix to later build the spec documents
     - name: Install Nix
-      uses: cachix/install-nix-action@v21
+      uses: cachix/install-nix-action@v22
 
     - name: Install Haskell
       uses: haskell/actions/setup@v2
