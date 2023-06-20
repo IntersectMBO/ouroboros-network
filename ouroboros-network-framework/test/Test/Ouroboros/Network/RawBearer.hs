@@ -14,8 +14,9 @@ import           Ouroboros.Network.Testing.Data.AbsBearerInfo
 
 import           Control.Concurrent.Class.MonadMVar
 import           Control.Exception (Exception)
-import           Control.Monad (when)
+import           Control.Monad (when, unless)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadTimer (MonadDelay (threadDelay))
 import           Control.Monad.Class.MonadFork (labelThisThread)
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadST (MonadST, withLiftST)
@@ -224,6 +225,7 @@ rawBearerSendAndReceive :: forall m fd addr
                          . ( MonadST m
                            , MonadThrow m
                            , MonadAsync m
+                           , MonadDelay m
                            , MonadMVar m
                            , MonadSay m
                            , Show addr
@@ -240,36 +242,38 @@ rawBearerSendAndReceive snocket mkrb serverAddr mclientAddr msg =
     let size = BS.length (messageBytes msg)
     retVar <- newEmptyMVar
     senderDone <- newEmptyMVar
-    let sender = bracket (openToConnect snocket serverAddr) (\s -> say "sender: closing" >> close snocket s) $ \s -> do
-                    case mclientAddr of
-                      Nothing -> return ()
-                      Just clientAddr -> do
-                        say $ "sender: binding to " ++ show clientAddr
-                        bind snocket s clientAddr
-                    say $ "sender: connecting to " ++ show serverAddr
-                    connect snocket s serverAddr
-                    say "sender: connected"
-                    bearer <- getRawBearer mkrb s
-                    bracket (io $ mallocBytes size) (io . free) $ \srcBuf -> do
-                      io $ BS.useAsCStringLen (messageBytes msg)
-                            (uncurry (copyBytes srcBuf))
-                      let go _ 0 = do
-                            say "sender: done"
-                            return ()
-                          go _ n | n < 0 = do
-                            error "sender: negative byte count"
-                          go buf n = do
-                            say $ "sender: " ++ show n ++ " bytes left"
-                            bytesSent <- send bearer buf n
-                            when (bytesSent == 0) (throwIO $ TestError "sender: premature hangup")
-                            let n' = n - bytesSent
-                            say $ "sender: " ++ show bytesSent ++ " bytes sent, " ++ show n' ++ " remaining"
-                            go (plusPtr buf bytesSent) n'
-                      go (castPtr srcBuf) size
-                      putMVar senderDone ()
+    let sender = do
+          bracket (openToConnect snocket serverAddr) (\s -> say "sender: closing" >> close snocket s >> putMVar senderDone ()) $ \s -> do
+            case mclientAddr of
+              Nothing -> return ()
+              Just clientAddr -> do
+                say $ "sender: binding to " ++ show clientAddr
+                bind snocket s clientAddr
+            say $ "sender: connecting to " ++ show serverAddr
+            connect snocket s serverAddr
+            say "sender: connected"
+            bearer <- getRawBearer mkrb s
+            bracket (io $ mallocBytes size) (io . free) $ \srcBuf -> do
+              threadDelay 2000000
+              io $ BS.useAsCStringLen (messageBytes msg)
+                    (uncurry (copyBytes srcBuf))
+              let go _ 0 = do
+                    say "sender: done"
+                    return ()
+                  go _ n | n < 0 = do
+                    error "sender: negative byte count"
+                  go buf n = do
+                    say $ "sender: " ++ show n ++ " bytes left"
+                    bytesSent <- send bearer buf n
+                    when (bytesSent == 0) (throwIO $ TestError "sender: premature hangup")
+                    let n' = n - bytesSent
+                    say $ "sender: " ++ show bytesSent ++ " bytes sent, " ++ show n' ++ " remaining"
+                    go (plusPtr buf bytesSent) n'
+              go (castPtr srcBuf) size
         receiver s = do
           let acceptLoop :: Accept m fd addr -> m ()
               acceptLoop accept0 = do
+                threadDelay 1000
                 say "receiver: accepting connection"
                 (accepted, acceptNext) <- runAccept accept0
                 case accepted :: Accepted fd addr of
@@ -278,28 +282,28 @@ rawBearerSendAndReceive snocket mkrb serverAddr mclientAddr msg =
                   Accepted s' _ -> do
                     labelThisThread "accept"
                     say "receiver: connection accepted"
-                    flip finally (say "receiver: closing connection" >> close snocket s' >> say "receiver: connection closed") $ do
-                      bearer <- getRawBearer mkrb s'
-                      retval <- bracket (io $ mallocBytes size) (io . free) $ \dstBuf -> do
-                        let go _ 0 = do
-                              say "receiver: done receiving"
-                              return ()
-                            go _ n | n < 0 = do
-                              error "receiver: negative byte count"
-                            go buf n = do
-                              say $ "receiver: " ++ show n ++ " bytes left"
-                              bytesReceived <- recv bearer buf n
-                              when (bytesReceived == 0) (throwIO $ TestError "receiver: premature hangup")
-                              let n' = n - bytesReceived
-                              say $ "receiver: " ++ show bytesReceived ++ " bytes received, " ++ show n' ++ " remaining"
-                              go (plusPtr buf bytesReceived) n'
-                        go (castPtr dstBuf) size
-                        io (BS.packCStringLen (castPtr dstBuf, size))
-                      say $ "receiver: received " ++ show retval
-                      written <- tryPutMVar retVar retval
-                      say $ if written then "receiver: stored " ++ show retval else "receiver: already have result"
+                    -- flip finally (say "receiver: closing connection" >> close snocket s' >> say "receiver: connection closed") $ do
+                    bearer <- getRawBearer mkrb s'
+                    retval <- bracket (io $ mallocBytes size) (io . free) $ \dstBuf -> do
+                      let go _ 0 = do
+                            say "receiver: done receiving"
+                            return ()
+                          go _ n | n < 0 = do
+                            error "receiver: negative byte count"
+                          go buf n = do
+                            say $ "receiver: " ++ show n ++ " bytes left"
+                            bytesReceived <- recv bearer buf n
+                            when (bytesReceived == 0) (throwIO $ TestError "receiver: premature hangup")
+                            let n' = n - bytesReceived
+                            say $ "receiver: " ++ show bytesReceived ++ " bytes received, " ++ show n' ++ " remaining"
+                            go (plusPtr buf bytesReceived) n'
+                      go (castPtr dstBuf) size
+                      io (BS.packCStringLen (castPtr dstBuf, size))
+                    say $ "receiver: received " ++ show retval
+                    written <- tryPutMVar retVar retval
+                    say $ if written then "receiver: stored " ++ show retval else "receiver: already have result"
                     say "receiver: finishing connection"
-                    acceptLoop acceptNext
+                    unless written $ acceptLoop acceptNext
           accept snocket s >>= acceptLoop
 
     resBSEither <- bracket (open snocket (addrFamily snocket serverAddr)) (close snocket) $ \s -> do
