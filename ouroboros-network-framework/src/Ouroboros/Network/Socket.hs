@@ -72,7 +72,6 @@ module Ouroboros.Network.Socket
   , sockAddrFamily
   ) where
 
-import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeException (..))
@@ -82,6 +81,7 @@ import qualified Codec.CBOR.Term as CBOR
 import           Control.Monad (unless, when)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import qualified Control.Monad.STM as STM
 import qualified Data.ByteString.Lazy as BL
 import           Data.Hashable
@@ -304,7 +304,7 @@ connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits ver
           Snocket.connect sn sd remoteAddr
           connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd
           print "DELAY"
-          threadDelay 120
+          threadDelay (120 :: DiffTime)
           print "DELAY: DONE"
       )
 
