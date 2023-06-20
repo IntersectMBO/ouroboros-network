@@ -303,6 +303,9 @@ connectToNode sn makeBearer configureSock handshakeCodec handshakeTimeLimits ver
             Nothing   -> return ()
           Snocket.connect sn sd remoteAddr
           connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec tracers handshakeCallbacks versions sd
+          print "DELAY"
+          threadDelay 120
+          print "DELAY: DONE"
       )
 
 -- |
