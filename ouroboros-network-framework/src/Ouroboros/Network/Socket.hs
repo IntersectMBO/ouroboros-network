@@ -72,7 +72,6 @@ module Ouroboros.Network.Socket
   , sockAddrFamily
   ) where
 
-import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeException (..))
@@ -82,6 +81,7 @@ import qualified Codec.CBOR.Term as CBOR
 import           Control.Monad (unless, when)
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.Class.MonadTimer.SI
 import qualified Control.Monad.STM as STM
 import qualified Data.ByteString.Lazy as BL
 import           Data.Hashable
@@ -504,7 +504,7 @@ beginConnection makeBearer muxTracer handshakeTracer handshakeCodec handshakeTim
              Right (HandshakeQueryResult _vMap) -> do
                  traceWith muxTracer' Mx.MuxTraceHandshakeServerEnd
                  -- Wait 20s for client to receive response, who should close the connection.
-                 threadDelay 20
+                 threadDelay handshake_QUERY_SHUTDOWN_DELAY
 
       RejectConnection st' _peerid -> pure $ Server.Reject st'
 
