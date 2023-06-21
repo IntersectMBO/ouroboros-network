@@ -88,6 +88,7 @@ data RunMiniProtocol (mode :: MuxMode) m a b where
 muxStart
     :: forall m mode a b.
        ( MonadAsync m
+       , MonadDelay m
        , MonadFork m
        , MonadLabelledSTM m
        , Alternative (STM m)

@@ -199,6 +199,7 @@ data MuxGroup = MuxJob
 --
 runMux :: forall m mode.
           ( MonadAsync m
+          , MonadDelay m
           , MonadFork m
           , MonadLabelledSTM m
           , Alternative (STM m)
@@ -230,6 +231,7 @@ runMux tracer Mux {muxMiniProtocols, muxControlCmdQueue, muxStatus} bearer = do
                   muxControlCmdQueue
                   muxStatus
       )
+    threadDelay 1
     -- Only handle async exceptions, 'monitor' sets 'muxStatus' before throwing
     -- an exception.  Setting 'muxStatus' is necessary to resolve a possible
     -- deadlock of mini-protocol completion action.
