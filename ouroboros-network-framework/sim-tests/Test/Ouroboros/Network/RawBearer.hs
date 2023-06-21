@@ -25,7 +25,6 @@ import           Control.Monad.ST.Unsafe (unsafeIOToST)
 import           Control.Tracer (nullTracer)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import           Data.Maybe (catMaybes)
 import           Data.Word (Word32)
 import           Foreign.Marshal (copyBytes, free, mallocBytes)
 import           Foreign.Ptr (castPtr, plusPtr)
@@ -42,14 +41,13 @@ import           Test.Tasty.QuickCheck
 import           Debug.Trace
 
 tests :: TestTree
-tests = testGroup "Ouroboros.Network.RawBearer" $
-  catMaybes
-  [ Just $ testProperty "raw bearer send receive simulated socket" prop_raw_bearer_send_and_receive_iosim
-  , Just $ testProperty "raw bearer send receive local socket" prop_raw_bearer_send_and_receive_local
-  , onlyIf (Socket.isSupportedSockAddr (Socket.SockAddrUnix "dummy")) $
-    testProperty "raw bearer send receive unix socket" prop_raw_bearer_send_and_receive_unix
-  , onlyIf (Socket.isSupportedSockAddr (Socket.SockAddrInet 10000 localhost)) $
-    testProperty "raw bearer send receive inet socket" prop_raw_bearer_send_and_receive_inet
+tests = testGroup "Ouroboros.Network.RawBearer"
+  [ testProperty "raw bearer send receive simulated socket" prop_raw_bearer_send_and_receive_iosim
+#if !defined(mingw32_HOST_OS)
+  , testProperty "raw bearer send receive local socket" prop_raw_bearer_send_and_receive_local
+  , testProperty "raw bearer send receive unix socket" prop_raw_bearer_send_and_receive_unix
+#endif
+  , testProperty "raw bearer send receive inet socket" prop_raw_bearer_send_and_receive_inet
   ]
 
 onlyIf :: Bool -> a -> Maybe a
@@ -91,6 +89,7 @@ prop_raw_bearer_send_and_receive_local serverInt clientInt msg =
     let clientName = "local_socket_client.test" ++ show clientInt
 #endif
     cleanUp serverName
+    cleanUp clientName
     let serverAddr = localAddressFromPath serverName
     let clientAddr = localAddressFromPath clientName
     rawBearerSendAndReceive
@@ -100,6 +99,7 @@ prop_raw_bearer_send_and_receive_local serverInt clientInt msg =
       (Just clientAddr)
       msg `finally` do
         cleanUp serverName
+        cleanUp clientName
   where
 #if defined(mingw32_HOST_OS)
     cleanUp _ = return ()
