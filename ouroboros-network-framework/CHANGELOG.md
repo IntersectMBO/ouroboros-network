@@ -33,6 +33,7 @@
 * `Ouroboros.Network.ConnectionManager.Core` must be imported qualified.
 * `ConnectionManagerTrace` moved from `Ouroboros.Network.ConnectionManager.Types`
   to the `Core` module & renamed as `Trace`.
+* RawBearer API (typeclass and instances) added.
 
 ### Non-breaking changes
 
@@ -281,7 +282,6 @@
 ### Non-breaking changes
 
 * `ghc-9.4` and `ghc-9.6` compatibility.
-* RawBearer API (typeclass and instances) added.
 
 ## 0.4.0.0 -- 2023-04-19
 
