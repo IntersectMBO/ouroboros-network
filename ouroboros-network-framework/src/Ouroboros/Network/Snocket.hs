@@ -21,7 +21,7 @@ module Ouroboros.Network.Snocket
   , AddressFamily (..)
   , Snocket (..)
   , makeSocketBearer
-  , makeLocalRawBearer 
+  , makeLocalRawBearer
     -- ** Socket based Snockets
   , SocketSnocket
   , socketSnocket
