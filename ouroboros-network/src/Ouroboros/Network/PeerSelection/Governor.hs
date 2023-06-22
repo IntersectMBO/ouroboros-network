@@ -672,7 +672,7 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
                    ChurnModeNormal ->
                        decrease $ targetNumberOfActivePeers base
                    ChurnModeBulkSync ->
-                       min 1 (targetNumberOfActivePeers base - 1)
+                       decrease $ targetNumberOfActivePeers base
         })
 
 
@@ -727,7 +727,8 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
     fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
     fuzzyDelay' baseDelay maxFuzz rng execTime = do
       let (fuzz, rng') = randomR (0, maxFuzz) rng
-          delay = realToFrac fuzz + baseDelay - execTime
+          -- delay = realToFrac fuzz + baseDelay - execTime
+          delay = 60
       traceWith tracer $ TraceChurnWait delay
       threadDelay delay
       return rng'
@@ -742,6 +743,6 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
 
     -- Replace 20% or at least on peer every churnInterval.
     decrease :: Int -> Int
-    decrease v = v  - max 1 (v `div` 5)
+    decrease v = 0
 
 
