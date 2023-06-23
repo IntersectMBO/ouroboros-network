@@ -2255,10 +2255,12 @@ _governorFindingPublicRoots :: Int
                             -> STM IO (Map RelayAccessPoint PeerAdvertise)
                             -> PeerSharing
                             -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing =
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
+    dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
     publicRootPeersProvider
       tracer
       (curry IP.toSockAddr)
+      dnsSemaphore
       DNS.defaultResolvConf
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do

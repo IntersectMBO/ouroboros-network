@@ -115,9 +115,11 @@ import           Ouroboros.Network.PeerSelection.PeerStateActions
                      PeerStateActionsArguments (..), pchPeerSharing,
                      withPeerStateActions)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
-                     DomainAccessPoint, LookupReqs (..), RelayAccessPoint (..),
-                     TraceLocalRootPeers (..), TracePublicRootPeers (..),
-                     ioDNSActions, resolveDomainAccessPoint)
+                     DNSSemaphore, DomainAccessPoint, LookupReqs (..),
+                     RelayAccessPoint (..), TraceLocalRootPeers (..),
+                     TracePublicRootPeers (..), ioDNSActions,
+                     newLocalAndPublicRootDNSSemaphore,
+                     resolveDomainAccessPoint)
 import           Ouroboros.Network.PeerSelection.Simple
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
@@ -567,7 +569,12 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: LookupReqs -> DNSActions resolver resolverError m
+          :: LookupReqs -> DNSActions resolver resolverError m,
+
+        -- | DNS Semaphore
+        --
+        diLocalAndPublicRootDnsSemaphore
+          :: DNSSemaphore m
       }
 
 runM
@@ -645,6 +652,7 @@ runM Interfaces
        , diRng
        , diInstallSigUSR1Handler
        , diDnsActions
+       , diLocalAndPublicRootDnsSemaphore
        }
      Tracers
        { dtMuxTracer
@@ -952,6 +960,7 @@ runM Interfaces
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
                       diNtnToPeerAddr
+                      diLocalAndPublicRootDnsSemaphore
                       (diDnsActions lookupReqs)
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
@@ -1102,6 +1111,7 @@ runM Interfaces
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
                       diNtnToPeerAddr
+                      diLocalAndPublicRootDnsSemaphore
                       (diDnsActions lookupReqs)
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
@@ -1294,11 +1304,13 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diInstallSigUSR1Handler = \_ -> pure ()
 #endif
 
+             diLocalAndPublicRootDnsSemaphore <- newLocalAndPublicRootDNSSemaphore
              let diNtnDomainResolver :: LookupReqs -> [DomainAccessPoint]
                                      -> IO (Map DomainAccessPoint (Set Socket.SockAddr))
                  diNtnDomainResolver lr =
                    resolveDomainAccessPoint
                      (dtTracePublicRootPeersTracer tracersExtra)
+                     diLocalAndPublicRootDnsSemaphore
                      DNS.defaultResolvConf
                      (ioDNSActions lr)
 
@@ -1325,7 +1337,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
                  diRng,
                  diInstallSigUSR1Handler,
-                 diDnsActions = ioDNSActions
+                 diDnsActions = ioDNSActions,
+                 diLocalAndPublicRootDnsSemaphore
                }
                tracers tracersExtra args argsExtra apps appsExtra
 
