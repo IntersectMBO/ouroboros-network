@@ -2,26 +2,18 @@
   inputs = {
     nixpkgs.follows = "std/nixpkgs";
     std.url = "github:divnix/std";
-    tullia = {
-      url = "github:input-output-hk/tullia";
-      inputs.std.follows = "std";
-    };
   };
 
-  outputs = { self, std, tullia, ... }@inputs:
+  outputs = { self, std, ... }@inputs:
     std.growOn {
       inherit inputs;
       cellsFrom = nix/cells;
       cellBlocks = [
         (std.functions "library")
         (std.functions "hydraJobs")
-        (tullia.tasks "pipelines")
         (std.functions "actions")
       ];
-    } (tullia.fromStd {
-      actions = std.harvest self [ "cloud" "actions" ];
-      tasks = std.harvest self [ "automation" "pipelines" ];
-    }) { hydraJobs = std.harvest self [ "automation" "hydraJobs" ]; };
+    } { hydraJobs = std.harvest self [ "automation" "hydraJobs" ]; };
 
   nixConfig = {
     extra-substituters = [ "https://cache.iog.io" ];
