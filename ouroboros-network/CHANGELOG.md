@@ -7,6 +7,8 @@
 * light peer sharing
   * Added `TraceKnownInboundConnection` constructor to `TracePeerSelection`
   * Added `readNewInboundConnection` field to `PeerSelectionActions` record.
+* The constructor `FetchDeclineChainNoIntersection` was renamed to
+  `FetchDeclineChainIntersectionTooDeep` (#4541)
 
 ### Non-breaking changes
 

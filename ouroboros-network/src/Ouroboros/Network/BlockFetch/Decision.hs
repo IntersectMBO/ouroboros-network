@@ -137,7 +137,7 @@ type FetchDecision result = Either FetchDecline result
 --   fragments of other peers, but that should only happen ephemerally (eg for
 --   a brief while immediately after first connecting to this peer).
 --
--- * 'FetchDeclineChainNoIntersection': decline this peer because the node's
+-- * 'FetchDeclineChainIntersectionTooDeep': decline this peer because the node's
 --   selection has more than @K@ blocks that are not on this peer's candidate
 --   chain. Typically, this reason occurs after the node has been declined---ie
 --   lost the above competitions---for a long enough duration. This decision
@@ -157,14 +157,7 @@ data FetchDecline =
      -- | Switching to this peer's candidate chain would require rolling back
      -- more than @K@ blocks.
      --
-     -- Clarification: this constructor name is technically nonsensical. Every
-     -- pair of valid chains intersects, if only at the genesis block! Even so,
-     -- the current name is sufficiently clear for those with some intuition
-     -- for the latent assumptions of ChainSync, BlockFetch, Praos, etc. But a
-     -- more precise name such as @FetchDeclineIntersectionTooDeep@ would rely
-     -- less on familiarity with that context.
-     --
-   | FetchDeclineChainNoIntersection
+   | FetchDeclineChainIntersectionTooDeep
 
      -- | Every block on this peer's candidate chain has already been fetched.
      --
@@ -543,7 +536,7 @@ selectForkSuffixes current chains =
     | (mchain,  peer) <- chains
     , let mchain' = do
             chain <- mchain
-            chainForkSuffix current chain ?! FetchDeclineChainNoIntersection
+            chainForkSuffix current chain ?! FetchDeclineChainIntersectionTooDeep
     ]
 
 {-
