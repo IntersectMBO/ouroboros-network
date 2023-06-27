@@ -4,6 +4,10 @@
 
 ### Breaking changes
 
+* The counters logged by `PeerSelectionCounters` for local root peers are now
+  the number of warm and hot peers per group (before the first one was the
+  target of the given group).
+
 * Introduced big ledger peers to the outbound governor.  The breaking changes include:
   - Added new targets to `PeerSelectionTargets` data type
 
@@ -57,6 +61,10 @@
 * The counters logged by `PeerSelectionCounters` for local root peers are now
   the number of warm and hot peers per group (before the first one was the
   target of the given group).
+* Added `getNumberOfPeers` destructor of `NumberOfPeers`.
+* Added `NotEnoughBigLedgerPeers` and `NotEnoughLedgerPeers` constructors of
+  `TraceLedgerPeers`; Renamed `FallingBackToBootstrapPeers` as
+  `FallingBackToPublicRootPeers`.
 
 ## 0.8.2.0
 

@@ -77,7 +77,8 @@ data IsLedgerPeer = IsLedgerPeer
 data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
   deriving Show
 
-newtype NumberOfPeers = NumberOfPeers Word16 deriving Show
+newtype NumberOfPeers = NumberOfPeers { getNumberOfPeers :: Word16 }
+  deriving Show
 
 newtype LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
       lpGetPeers :: SlotNo -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
@@ -103,7 +104,9 @@ data TraceLedgerPeers =
     | WaitingOnRequest
     | RequestForPeers NumberOfPeers
     | ReusingLedgerState Int DiffTime
-    | FallingBackToBootstrapPeers
+    | FallingBackToPublicRootPeers
+    | NotEnoughBigLedgerPeers NumberOfPeers Int
+    | NotEnoughLedgerPeers NumberOfPeers Int
 
 
 instance Show TraceLedgerPeers where
@@ -137,8 +140,12 @@ instance Show TraceLedgerPeers where
         printf "ReusingLedgerState %d peers age %s"
           cnt
           (show age)
-    show FallingBackToBootstrapPeers = "Falling back to bootstrap peers"
+    show FallingBackToPublicRootPeers = "Falling back to public root peers"
     show DisabledLedgerPeers = "LedgerPeers is disabled"
+    show (NotEnoughBigLedgerPeers (NumberOfPeers n) numOfBigLedgerPeers) =
+      printf "Not enough big ledger peers to pick %d out of %d" n numOfBigLedgerPeers
+    show (NotEnoughLedgerPeers (NumberOfPeers n) numOfLedgerPeers) =
+      printf "Not enough ledger peers to pick %d out of %d" n numOfLedgerPeers
 
 
 -- | Convert a list of pools with stake to a Map keyed on the accumulated stake.
@@ -359,16 +366,27 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
         if Map.null peerMap'
            then do
                when (isLedgerPeersEnabled useLedgerAfter) $
-                   traceWith tracer FallingBackToBootstrapPeers
+                   traceWith tracer FallingBackToPublicRootPeers
                atomically $ putRsp Nothing
                go rng ts peerMap' bigPeerMap'
            else do
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
                (rng', !pickedPeers) <- pickPeers rng tracer peerMap' bigPeerMap' numRequested ledgerPeersKind
-               traceWith tracer $ case ledgerPeersKind of
-                 BigLedgerPeers -> PickedBigLedgerPeers numRequested pickedPeers
-                 AllLedgerPeers -> PickedLedgerPeers    numRequested pickedPeers
+               case ledgerPeersKind of
+                 BigLedgerPeers -> do
+                   let numBigLedgerPeers = Map.size bigPeerMap'
+                   when (getNumberOfPeers numRequested
+                           > fromIntegral numBigLedgerPeers) $
+                     traceWith tracer (NotEnoughBigLedgerPeers numRequested numBigLedgerPeers)
+                   traceWith tracer (PickedBigLedgerPeers numRequested pickedPeers)
+                 AllLedgerPeers -> do
+                   let numLedgerPeers = Map.size peerMap'
+                   when (getNumberOfPeers numRequested
+                           > fromIntegral numLedgerPeers) $
+                     traceWith tracer (NotEnoughLedgerPeers numRequested numLedgerPeers)
+                   traceWith tracer (PickedLedgerPeers numRequested pickedPeers)
+
 
                let (plainAddrs, domains) = foldl' partitionPeer (Set.empty, []) pickedPeers
 
