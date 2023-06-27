@@ -10,6 +10,10 @@
   * Renamed `serverControlChannel` as `serverInboundInfoChannel` of the `ServerArguments` record.
   * Moved `OurboundGovernorInfoChannel` to `ouroboros-network`.
 
+### Non-breaking changes
+
+* Fixed query shutdown timeout in the legacy (non-p2p) mode (20s).
+
 ## 0.6.0.1 -- 2023-05-15
 
 * Updated to use `ouroboros-network-api-0.5.0.0`.

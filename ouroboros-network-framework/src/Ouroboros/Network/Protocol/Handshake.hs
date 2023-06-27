@@ -15,6 +15,7 @@ module Ouroboros.Network.Protocol.Handshake
   , HandshakeResult (..)
   , RefuseReason (..)
   , Accept (..)
+  , handshake_QUERY_SHUTDOWN_DELAY
   ) where
 
 import           Control.Monad.Class.MonadAsync
@@ -182,3 +183,9 @@ runHandshakeServer bearer
           haTimeLimits
           (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir))
           (handshakeServerPeer haVersionDataCodec haAcceptVersion haQueryVersion versions))
+
+-- | A 20s delay after query result was send back, before we close the
+-- connection.  After that delay we close the connection.
+--
+handshake_QUERY_SHUTDOWN_DELAY :: DiffTime
+handshake_QUERY_SHUTDOWN_DELAY = 20
