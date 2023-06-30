@@ -100,6 +100,7 @@ library
                      , optparse-applicative
                      , QuickCheck
                      , quickcheck-state-machine
+                                                    <0.7.2
                      , quiet             >=0.2   && <0.3
                      , random
                      , serialise         >=0.2   && <0.3
