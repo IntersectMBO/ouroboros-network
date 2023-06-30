@@ -50,7 +50,8 @@ import           Ouroboros.Consensus.Network.NodeToClient (ClientCodecs,
                      cChainSyncCodec, cStateQueryCodec, cTxSubmissionCodec,
                      clientCodecs)
 import           Ouroboros.Consensus.Node.NetworkProtocolVersion
-                     (BlockNodeToClientVersion, supportedNodeToClientVersions)
+                     (BlockNodeToClientVersion, latestReleasedNodeVersion,
+                     supportedNodeToClientVersions)
 import           Ouroboros.Consensus.Node.Run (RunNode)
 
 subscribe ::
@@ -97,8 +98,10 @@ versionedProtocols ::
        NodeToClientVersionData
        (OuroborosApplication appType LocalAddress bytes m a b)
 versionedProtocols codecConfig networkMagic callback =
-    foldMapVersions applyVersion $
-      Map.toList $ supportedNodeToClientVersions (Proxy @blk)
+      foldMapVersions applyVersion
+    . filter (\(v, _) -> Just v <= snd (latestReleasedNodeVersion (Proxy @blk)))
+    . Map.toList
+    $ supportedNodeToClientVersions (Proxy @blk)
   where
     applyVersion ::
          (NodeToClientVersion, BlockNodeToClientVersion blk)
