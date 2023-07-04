@@ -22,7 +22,7 @@ library
                        bytestring        >=0.10 && <0.12,
                        containers,
                        io-classes,
-                       ouroboros-network-api,
+                       ouroboros-network-api <= 0.4,
                        ouroboros-network,
                        ouroboros-network-framework,
                        ouroboros-consensus-diffusion,
