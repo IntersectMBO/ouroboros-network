@@ -1,5 +1,11 @@
 # Revision history for ouroboros-network-api
 
+## 0.5.1.0
+
+### Non breaking
+
+* Add `NodeToClientV_17` for Conway `GetConstitutionHash`
+
 ## 0.5.0.0 -- 2023-05-15
 
 * Swapped `NodeToClientV_15` with `NodeToClientV_16`, e.g. handshake query

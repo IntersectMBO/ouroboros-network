@@ -40,6 +40,8 @@ data NodeToClientVersion
     | NodeToClientV_16
     -- ^ enabled @CardanoNodeToClientVersion11@, i.e., Conway and
     -- @GetStakeDelegDeposits@.
+    | NodeToClientV_17
+    -- ^ @GetConstitutionHash@
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -60,6 +62,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
       encodeTerm NodeToClientV_14 = CBOR.TInt (14 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_15 = CBOR.TInt (15 `setBit` nodeToClientVersionBit)
       encodeTerm NodeToClientV_16 = CBOR.TInt (16 `setBit` nodeToClientVersionBit)
+      encodeTerm NodeToClientV_17 = CBOR.TInt (17 `setBit` nodeToClientVersionBit)
 
       decodeTerm (CBOR.TInt tag) =
        case ( tag `clearBit` nodeToClientVersionBit
@@ -73,6 +76,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
         (14, True) -> Right NodeToClientV_14
         (15, True) -> Right NodeToClientV_15
         (16, True) -> Right NodeToClientV_16
+        (17, True) -> Right NodeToClientV_17
         (n, _)     -> Left ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show tag)
                             , Just n)
       decodeTerm _  = Left ( T.pack "decode NodeToClientVersion: unexpected term"
