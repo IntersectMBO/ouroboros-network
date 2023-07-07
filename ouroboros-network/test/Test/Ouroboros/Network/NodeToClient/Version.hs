@@ -25,7 +25,7 @@ instance Arbitrary VersionAndVersionData where
     arbitrary =
       VersionAndVersionData
         <$> elements [ minBound .. maxBound]
-        <*> (NodeToClientVersionData . NetworkMagic <$> arbitrary)
+        <*> (NodeToClientVersionData . NetworkMagic <$> arbitrary <*> arbitrary)
 
 prop_nodeToClientCodec :: VersionAndVersionData -> Bool
 prop_nodeToClientCodec (VersionAndVersionData vNumber vData) =

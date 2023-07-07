@@ -42,9 +42,7 @@ import qualified Data.OrdPSQ as PSQ
 import           System.Random (mkStdGen)
 
 import           Control.Exception (AssertionFailed (..), catch, evaluate)
-import           Control.Monad.Class.MonadSTM (STM)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.IOSim
+import           Control.Monad.Class.MonadSTM (STM, retry)
 import           Control.Tracer (Tracer (..))
 
 import qualified Network.DNS as DNS (defaultResolvConf)
@@ -70,7 +68,11 @@ import           Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
+import           Control.Monad.Class.MonadTime.SI
+import           Control.Monad.IOSim
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
+import           Ouroboros.Network.PeerSelection.LocalRootPeers
+                     (HotValency (..), LocalRootPeers, WarmValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -570,28 +572,29 @@ traceNum TracePublicRootsFailure{}       = 04
 traceNum TracePeerShareRequests{}        = 05
 traceNum TracePeerShareResults{}         = 06
 traceNum TracePeerShareResultsFiltered{} = 07
-traceNum TraceForgetColdPeers{}          = 08
-traceNum TracePromoteColdPeers{}         = 09
-traceNum TracePromoteColdLocalPeers{}    = 10
-traceNum TracePromoteColdFailed{}        = 11
-traceNum TracePromoteColdDone{}          = 12
-traceNum TracePromoteWarmPeers{}         = 13
-traceNum TracePromoteWarmLocalPeers{}    = 14
-traceNum TracePromoteWarmFailed{}        = 15
-traceNum TracePromoteWarmDone{}          = 16
-traceNum TraceDemoteWarmPeers{}          = 17
-traceNum TraceDemoteWarmFailed{}         = 18
-traceNum TraceDemoteWarmDone{}           = 19
-traceNum TraceDemoteHotPeers{}           = 20
-traceNum TraceDemoteLocalHotPeers{}      = 21
-traceNum TraceDemoteHotFailed{}          = 22
-traceNum TraceDemoteHotDone{}            = 23
-traceNum TraceDemoteAsynchronous{}       = 24
-traceNum TraceGovernorWakeup{}           = 25
-traceNum TraceChurnWait{}                = 26
-traceNum TraceChurnMode{}                = 27
-traceNum TracePromoteWarmAborted{}       = 28
-traceNum TraceDemoteLocalAsynchronous{}  = 29
+traceNum TraceKnownInboundConnection{}   = 08
+traceNum TraceForgetColdPeers{}          = 09
+traceNum TracePromoteColdPeers{}         = 10
+traceNum TracePromoteColdLocalPeers{}    = 11
+traceNum TracePromoteColdFailed{}        = 12
+traceNum TracePromoteColdDone{}          = 13
+traceNum TracePromoteWarmPeers{}         = 14
+traceNum TracePromoteWarmLocalPeers{}    = 15
+traceNum TracePromoteWarmFailed{}        = 16
+traceNum TracePromoteWarmDone{}          = 17
+traceNum TraceDemoteWarmPeers{}          = 18
+traceNum TraceDemoteWarmFailed{}         = 19
+traceNum TraceDemoteWarmDone{}           = 20
+traceNum TraceDemoteHotPeers{}           = 21
+traceNum TraceDemoteLocalHotPeers{}      = 22
+traceNum TraceDemoteHotFailed{}          = 23
+traceNum TraceDemoteHotDone{}            = 24
+traceNum TraceDemoteAsynchronous{}       = 25
+traceNum TraceGovernorWakeup{}           = 26
+traceNum TraceChurnWait{}                = 27
+traceNum TraceChurnMode{}                = 28
+traceNum TracePromoteWarmAborted{}       = 29
+traceNum TraceDemoteLocalAsynchronous{}  = 30
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -604,28 +607,29 @@ allTraceNames =
    , (05, "TracePeerShareRequests")
    , (06, "TracePeerShareResults")
    , (07, "TracePeerShareResultsFiltered")
-   , (08, "TraceForgetColdPeers")
-   , (09, "TracePromoteColdPeers")
-   , (10, "TracePromoteColdLocalPeers")
-   , (11, "TracePromoteColdFailed")
-   , (12, "TracePromoteColdDone")
-   , (13, "TracePromoteWarmPeers")
-   , (14, "TracePromoteWarmLocalPeers")
-   , (15, "TracePromoteWarmFailed")
-   , (16, "TracePromoteWarmDone")
-   , (17, "TraceDemoteWarmPeers")
-   , (18, "TraceDemoteWarmFailed")
-   , (19, "TraceDemoteWarmDone")
-   , (20, "TraceDemoteHotPeers")
-   , (21, "TraceDemoteLocalHotPeers")
-   , (22, "TraceDemoteHotFailed")
-   , (23, "TraceDemoteHotDone")
-   , (24, "TraceDemoteAsynchronous")
-   , (25, "TraceGovernorWakeup")
-   , (26, "TraceChurnWait")
-   , (27, "TraceChurnMode")
-   , (28, "TracePromoteWarmAborted")
-   , (29, "TraceDemoteAsynchronous")
+   , (08, "TraceKnownInboundConnection")
+   , (09, "TraceForgetColdPeers")
+   , (10, "TracePromoteColdPeers")
+   , (11, "TracePromoteColdLocalPeers")
+   , (12, "TracePromoteColdFailed")
+   , (13, "TracePromoteColdDone")
+   , (14, "TracePromoteWarmPeers")
+   , (15, "TracePromoteWarmLocalPeers")
+   , (16, "TracePromoteWarmFailed")
+   , (17, "TracePromoteWarmDone")
+   , (18, "TraceDemoteWarmPeers")
+   , (19, "TraceDemoteWarmFailed")
+   , (20, "TraceDemoteWarmDone")
+   , (21, "TraceDemoteHotPeers")
+   , (22, "TraceDemoteLocalHotPeers")
+   , (23, "TraceDemoteHotFailed")
+   , (24, "TraceDemoteHotDone")
+   , (25, "TraceDemoteAsynchronous")
+   , (26, "TraceGovernorWakeup")
+   , (27, "TraceChurnWait")
+   , (28, "TraceChurnMode")
+   , (29, "TracePromoteWarmAborted")
+   , (30, "TraceDemoteAsynchronous")
    ]
 
 
@@ -1971,9 +1975,9 @@ prop_governor_target_established_local env =
                . runGovernorInMockEnvironment
                $ env
 
-        govLocalRootPeersSig :: Signal (Set PeerAddr)
+        govLocalRootPeersSig :: Signal (LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
-          selectGovState (LocalRootPeers.keysSet . Governor.localRootPeers)
+          selectGovState Governor.localRootPeers
                          events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
@@ -2022,9 +2026,16 @@ prop_governor_target_established_local env =
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
           (\local established recentFailures inProgressPromoteCold ->
-              local Set.\\ established
-                    Set.\\ recentFailures
-                    Set.\\ inProgressPromoteCold
+              Set.unions
+                [ -- There are no opportunities if we're at or above target
+                  if Set.size groupEstablished >= warmTarget
+                     then Set.empty
+                     else group Set.\\ established
+                                Set.\\ recentFailures
+                                Set.\\ inProgressPromoteCold
+                | (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local
+                , let groupEstablished = group `Set.intersection` established
+                ]
           ) <$> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
@@ -2116,11 +2127,11 @@ prop_governor_target_active_local_below env =
           (\local established active recentFailures ->
               Set.unions
                 [ -- There are no opportunities if we're at or above target
-                  if Set.size groupActive >= target
+                  if Set.size groupActive >= hotTarget
                      then Set.empty
                      else groupEstablished Set.\\ active
                                            Set.\\ recentFailures
-                | (target, group) <- LocalRootPeers.toGroupSets local
+                | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
                 , let groupActive      = group `Set.intersection` active
                       groupEstablished = group `Set.intersection` established
                 ]
@@ -2169,10 +2180,10 @@ prop_governor_target_active_local_above env =
           (\local active ->
               Set.unions
                 [ -- There are no opportunities if we're at or below target
-                  if Set.size groupActive <= target
+                  if Set.size groupActive <= hotTarget
                      then Set.empty
                      else groupActive
-                | (target, group) <- LocalRootPeers.toGroupSets local
+                | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
                 , let groupActive = group `Set.intersection` active
                 ]
           ) <$> govLocalRootPeersSig
@@ -2253,10 +2264,12 @@ _governorFindingPublicRoots :: Int
                             -> STM IO (Map RelayAccessPoint PeerAdvertise)
                             -> PeerSharing
                             -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing =
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
+    dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
     publicRootPeersProvider
       tracer
       (curry IP.toSockAddr)
+      dnsSemaphore
       DNS.defaultResolvConf
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
@@ -2282,6 +2295,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing =
                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
                 peerConnToPeerSharing    = \ps -> ps,
                 requestPublicRootPeers   = \_ -> return (Map.empty, 0),
+                readNewInboundConnection = retry,
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
                   monitorPeerConnection    = error "monitorPeerConnection",
@@ -2321,7 +2335,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing =
 
 prop_issue_3550 :: Property
 prop_issue_3550 = prop_governor_target_established_below $
-  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 14,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 16,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1,Map.fromList [(PeerAddr 16,DoAdvertisePeer)]),(1,Map.fromList [(PeerAddr 4,DoAdvertisePeer)])], publicRootPeers = Map.fromList [(PeerAddr 14, (DoNotAdvertisePeer, IsNotLedgerPeer)),(PeerAddr 29, (DoNotAdvertisePeer, IsNotLedgerPeer))], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 4, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 3},NoDelay) :| []), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickSome (Set.fromList [PeerAddr 29]) :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
+  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 14,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 16,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1, 1,Map.fromList [(PeerAddr 16,DoAdvertisePeer)]),(1, 1,Map.fromList [(PeerAddr 4,DoAdvertisePeer)])], publicRootPeers = Map.fromList [(PeerAddr 14, (DoNotAdvertisePeer, IsNotLedgerPeer)),(PeerAddr 29, (DoNotAdvertisePeer, IsNotLedgerPeer))], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 4, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 3},NoDelay) :| []), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickSome (Set.fromList [PeerAddr 29]) :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
 
 -- | issue #3515
 --
@@ -2333,7 +2347,7 @@ prop_issue_3550 = prop_governor_target_established_below $
 -- ```
 prop_issue_3515 :: Property
 prop_issue_3515 = prop_governor_nolivelock $
-  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 10,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1,Map.fromList [(PeerAddr 10,DoAdvertisePeer)])], publicRootPeers = Map.fromList [], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
+  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 10,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1, 1,Map.fromList [(PeerAddr 10,DoAdvertisePeer)])], publicRootPeers = Map.fromList [], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
 
 -- | issue #3494
 --
@@ -2344,10 +2358,10 @@ prop_issue_3515 = prop_governor_nolivelock $
 -- ```
 prop_issue_3494 :: Property
 prop_issue_3494 = prop_governor_nofail $
-  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 64,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1,Map.fromList [(PeerAddr 64,DoAdvertisePeer)])], publicRootPeers = Map.fromList [], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
+  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 64,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1, 1,Map.fromList [(PeerAddr 64,DoAdvertisePeer)])], publicRootPeers = Map.fromList [], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
 
 -- | issue #3233
 --
 prop_issue_3233 :: Property
 prop_issue_3233 = prop_governor_nolivelock $
-  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay),(ToWarm,NoDelay),(ToCold,NoDelay),(Noop,NoDelay)])}),(PeerAddr 13,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])})], localRootPeers = LocalRootPeers.fromGroups [(1,Map.fromList [(PeerAddr 15,DoAdvertisePeer)]),(1,Map.fromList [(PeerAddr 13,DoAdvertisePeer)])], publicRootPeers = Map.fromList [(PeerAddr 4, (DoNotAdvertisePeer, IsNotLedgerPeer))], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 3, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 0},LongDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 3, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 2},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
+  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay),(ToWarm,NoDelay),(ToCold,NoDelay),(Noop,NoDelay)])}),(PeerAddr 13,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])})], localRootPeers = LocalRootPeers.fromGroups [(1, 1,Map.fromList [(PeerAddr 15,DoAdvertisePeer)]),(1, 1,Map.fromList [(PeerAddr 13,DoAdvertisePeer)])], publicRootPeers = Map.fromList [(PeerAddr 4, (DoNotAdvertisePeer, IsNotLedgerPeer))], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 3, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 0},LongDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 3, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 2},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}

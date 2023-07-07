@@ -85,7 +85,7 @@ import           Ouroboros.Network.PeerSelection.PeerMetric
                      (PeerMetricsConfiguration (..), newPeerMetric)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), LookupReqs (..),
-                     RelayAccessPoint (..))
+                     RelayAccessPoint (..), newLocalAndPublicRootDNSSemaphore)
 import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (VersionDataCodec (..), noTimeLimitsHandshake,
@@ -105,6 +105,8 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
+                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -147,7 +149,9 @@ data Arguments m = Arguments
     , aChainSyncEarlyExit   :: Bool
 
     , aPeerSelectionTargets :: PeerSelectionTargets
-    , aReadLocalRootPeers   :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
+    , aReadLocalRootPeers   :: STM m [( HotValency
+                                      , WarmValency
+                                      , Map RelayAccessPoint PeerAdvertise)]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
     , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerAfter   :: STM m UseLedgerAfter
@@ -199,6 +203,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
+        dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
         peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
@@ -220,6 +225,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     , haHandshakeCodec       = unversionedHandshakeCodec
                     , haVersionDataCodec     = ntnUnversionedDataCodec
                     , haAcceptVersion        = iAcceptVersion ni
+                    , haQueryVersion         = const False
                     , haTimeLimits           = timeLimitsHandshake
                     }
               , Diff.P2P.diNtnAddressType    = ntnAddressType
@@ -238,6 +244,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     , haHandshakeCodec       = unversionedHandshakeCodec
                     , haVersionDataCodec     = unversionedProtocolDataCodec
                     , haAcceptVersion        = \_ v -> Accept v
+                    , haQueryVersion         = const False
                     , haTimeLimits           = noTimeLimitsHandshake
                     }
               , Diff.P2P.diNtcGetFileDescriptor  = \_ -> pure (FileDescriptor (-1))
@@ -247,6 +254,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                                      (iDomainMap ni)
                                                      dnsTimeoutScriptVar
                                                      dnsLookupDelayScriptVar)
+              , Diff.P2P.diLocalAndPublicRootDnsSemaphore = dnsSemaphore
               }
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m ()

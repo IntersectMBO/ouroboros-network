@@ -10,7 +10,8 @@ import qualified Codec.CBOR.Term as CBOR
 
 import           Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse)
+import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse,
+                     decodeQueryResult, encodeVersions)
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -24,19 +25,28 @@ handshakeServerPeer
      )
   => VersionDataCodec CBOR.Term vNumber vData
   -> (vData -> vData -> Accept vData)
+  -> (vData -> Bool)
   -> Versions vNumber vData r
   -> Peer (Handshake vNumber CBOR.Term)
           AsServer StPropose m
-          (Either (HandshakeProtocolError vNumber) (r, vNumber, vData))
-handshakeServerPeer codec@VersionDataCodec {encodeData} acceptVersion versions =
+          (Either
+            (HandshakeProtocolError vNumber)
+            (HandshakeResult r vNumber vData))
+handshakeServerPeer codec@VersionDataCodec {encodeData, decodeData} acceptVersion query versions =
     Await (ClientAgency TokPropose) $ \msg -> case msg of
       MsgProposeVersions vMap  ->
         case acceptOrRefuse codec acceptVersion versions vMap of
-          (Right r@(_, vNumber, agreedData)) ->
+          Right (_, _, agreedData) | query agreedData ->
             Yield (ServerAgency TokConfirm)
-                  (MsgAcceptVersion vNumber (encodeData vNumber agreedData))
-                  (Done TokDone (Right r))
-          (Left vReason) ->
+                  (MsgQueryReply $ encodeVersions encodeData versions)
+                  (Done TokDone (Right $ decodeQueryResult decodeData vMap))
+
+          Right (r, vNumber, agreedData) ->
+            Yield (ServerAgency TokConfirm)
+                  (MsgAcceptVersion vNumber $ encodeData vNumber agreedData)
+                  (Done TokDone (Right $ HandshakeNegotiationResult r vNumber agreedData))
+
+          Left vReason ->
             Yield (ServerAgency TokConfirm)
                   (MsgRefuse vReason)
                   (Done TokDone (Left (HandshakeError vReason)))

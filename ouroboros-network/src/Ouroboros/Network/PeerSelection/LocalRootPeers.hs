@@ -1,10 +1,14 @@
-{-# LANGUAGE BangPatterns    #-}
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE RecordWildCards    #-}
 
 module Ouroboros.Network.PeerSelection.LocalRootPeers
   ( -- * Types
     LocalRootPeers (..)
+  , HotValency (..)
+  , WarmValency (..)
     -- Export constructors for defining tests.
   , invariant
     -- * Basic operations
@@ -12,7 +16,8 @@ module Ouroboros.Network.PeerSelection.LocalRootPeers
   , null
   , size
   , member
-  , target
+  , hotTarget
+  , warmTarget
   , fromGroups
   , toGroups
   , toGroupSets
@@ -44,8 +49,22 @@ data LocalRootPeers peeraddr =
        (Map peeraddr PeerAdvertise)
 
        -- The groups, but without the associated PeerAdvertise
-       [(Int, Set peeraddr)]
+       [(HotValency, WarmValency, Set peeraddr)]
   deriving Eq
+
+-- | Newtype wrapper representing hot valency value from local root group
+-- configuration
+--
+newtype HotValency = HotValency { getHotValency :: Int }
+  deriving (Show, Eq, Ord)
+  deriving Num via Int
+
+-- | Newtype wrapper representing warm valency value from local root group
+-- configuration
+--
+newtype WarmValency = WarmValency { getWarmValency :: Int }
+  deriving (Show, Eq, Ord)
+  deriving Num via Int
 
 -- It is an abstract type, so the derived Show is unhelpful, e.g. for replaying
 -- test cases.
@@ -57,14 +76,20 @@ invariant :: Ord peeraddr => LocalRootPeers peeraddr -> Bool
 invariant (LocalRootPeers m gs) =
 
     -- The overlapping representations must be consistent
-    Set.unions [ g | (_, g) <- gs ] == Map.keysSet m
+    Set.unions [ g | (_, _, g) <- gs ] == Map.keysSet m
 
     -- The localRootPeers groups must not overlap with each other
- && Map.size m == sum [ Set.size g | (_, g) <- gs ]
+ && Map.size m == sum [ Set.size g | (_, _, g) <- gs ]
 
     -- Individual group targets must be greater than zero and achievable given
     -- the group sizes.
- && and [ 0 < t && t <= Set.size g | (t, g) <- gs ]
+    --
+    -- Also the warm target needs to be greater than or equal to the hot target
+ && and [   0 < h
+          && getWarmValency w >= getHotValency h
+          -- If warm valency is achievable, by monotonicity, hot valency also is
+          && getWarmValency w <= Set.size g
+       | (h, w, g) <- gs ]
 
 
 empty :: LocalRootPeers peeraddr
@@ -79,8 +104,11 @@ size (LocalRootPeers m _) = Map.size m
 member :: Ord peeraddr => peeraddr -> LocalRootPeers peeraddr -> Bool
 member p (LocalRootPeers m _) = Map.member p m
 
-target :: LocalRootPeers peeraddr -> Int
-target (LocalRootPeers _ gs) = sum [ t | (t, _) <- gs ]
+hotTarget :: LocalRootPeers peeraddr -> HotValency
+hotTarget (LocalRootPeers _ gs) = sum [ h | (h, _, _) <- gs ]
+
+warmTarget :: LocalRootPeers peeraddr -> WarmValency
+warmTarget (LocalRootPeers _ gs) = sum [ w | (_, w, _) <- gs ]
 
 toMap :: LocalRootPeers peeraddr -> Map peeraddr PeerAdvertise
 toMap (LocalRootPeers m _) = m
@@ -88,7 +116,7 @@ toMap (LocalRootPeers m _) = m
 keysSet :: LocalRootPeers peeraddr -> Set peeraddr
 keysSet (LocalRootPeers m _) = Map.keysSet m
 
-toGroupSets :: LocalRootPeers peeraddr -> [(Int, Set peeraddr)]
+toGroupSets :: LocalRootPeers peeraddr -> [(HotValency, WarmValency, Set peeraddr)]
 toGroupSets (LocalRootPeers _ gs) = gs
 
 
@@ -102,22 +130,26 @@ toGroupSets (LocalRootPeers _ gs) = gs
 -- trace a warning about dodgy config.
 --
 fromGroups :: Ord peeraddr
-           => [(Int, Map peeraddr PeerAdvertise)]
+           => [(HotValency, WarmValency, Map peeraddr PeerAdvertise)]
            -> LocalRootPeers peeraddr
 fromGroups =
-    (\gs -> let m'  = Map.unions [ g | (_, g) <- gs ]
-                gs' = [ (t, Map.keysSet g) | (t, g) <- gs ]
+    (\gs -> let m'  = Map.unions [ g | (_, _, g) <- gs ]
+                gs' = [ (h, w, Map.keysSet g) | (h, w, g) <- gs ]
              in LocalRootPeers m' gs')
   . establishStructureInvariant Set.empty
   where
-    -- The groups must not overlap; have achievable targets; and be non-empty.
+    -- The groups must not overlap;
+    -- have achievable targets;
+    -- Hot targets need to be smaller than or equal to warm targets
+    -- and be non-empty.
     establishStructureInvariant !_ [] = []
-    establishStructureInvariant !acc ((t, g): gs)
-      | t' > 0    = (t', g') : establishStructureInvariant acc' gs
-      | otherwise =            establishStructureInvariant acc' gs
+    establishStructureInvariant !acc ((h, w, g): gs)
+      | w' > 0 && h' > 0 = (h', w', g') : establishStructureInvariant acc' gs
+      | otherwise        =                  establishStructureInvariant acc' gs
       where
         !g'   = g `Map.withoutKeys` acc
-        !t'   = min t (Map.size g')
+        !w'   = min w (WarmValency (Map.size g'))
+        !h'   = HotValency (getHotValency h `min` getWarmValency w')
         !acc' = acc <> Map.keysSet g
 
 -- | Inverse of 'fromGroups', for the subset of inputs to 'fromGroups' that
@@ -125,10 +157,10 @@ fromGroups =
 --
 toGroups :: Ord peeraddr
          => LocalRootPeers peeraddr
-         -> [(Int, Map peeraddr PeerAdvertise)]
+         -> [(HotValency, WarmValency, Map peeraddr PeerAdvertise)]
 toGroups (LocalRootPeers m gs) =
-    [ (t, Map.fromSet (m Map.!) g)
-    | (t, g) <- gs ]
+    [ (h, w, Map.fromSet (m Map.!) g)
+    | (h, w, g) <- gs ]
 
 
 -- | Limit the size of the root peers collection to fit within given bounds.
@@ -157,12 +189,12 @@ clampToLimit :: Ord peeraddr
              -> LocalRootPeers peeraddr
 clampToLimit totalLimit (LocalRootPeers m gs0) =
     let gs' = limitTotalSize 0 gs0
-        m'  = m `Map.restrictKeys` Set.unions [ g | (_, g) <- gs' ]
+        m'  = m `Map.restrictKeys` Set.unions [ g | (_, _, g) <- gs' ]
      in LocalRootPeers m' gs'
 
   where
     limitTotalSize !_ [] = []
-    limitTotalSize !n ((t, g) : gs)
+    limitTotalSize !n ((h, w, g) : gs)
 
         -- No space at all!
       | n == totalLimit
@@ -171,10 +203,11 @@ clampToLimit totalLimit (LocalRootPeers m gs0) =
         -- It fits entirely!
       | let n' = n + Set.size g
       , n' <= totalLimit
-      = (t, g) : limitTotalSize n' gs
+      = (h, w, g) : limitTotalSize n' gs
 
         -- We can fit a bit more if we chop it up!
       | otherwise
       , let !g' = Set.take (totalLimit - n) g
-            !t' = min t (Set.size g')
-      = (t', g') : []
+            !w' = min w (WarmValency (Set.size g'))
+            !h' = HotValency (getHotValency h `min` getWarmValency w')
+      = [(h', w', g')]

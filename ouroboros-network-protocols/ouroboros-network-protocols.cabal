@@ -1,7 +1,6 @@
-cabal-version:       3.0
-
+cabal-version:          3.0
 name:                   ouroboros-network-protocols
-version:                0.5.0.0
+version:                0.5.0.3
 synopsis:               Ouroboros Network Protocols
 description:            Ouroboros Network Protocols.
 license:                Apache-2.0
@@ -12,7 +11,7 @@ author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     CHANGELOG.md
+extra-doc-files:        CHANGELOG.md
 
 flag asserts
   description: Enable assertions
@@ -101,7 +100,8 @@ library
                        io-classes       ^>=1.1,
                        si-timers,
 
-                       ouroboros-network-api,
+                       ouroboros-network-api
+                                        ^>=0.5,
                        serialise,
                        typed-protocols   >=0.1.0.4 && <1.0,
                        typed-protocols-cborg
@@ -153,6 +153,7 @@ library testlib
                        Ouroboros.Network.Protocol.PeerSharing.Examples
                        Ouroboros.Network.Protocol.PeerSharing.Test
 
+                       Test.Data.CDDL
                        Test.ChainGenerators
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils

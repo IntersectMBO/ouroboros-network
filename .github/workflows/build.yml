@@ -6,51 +6,26 @@ concurrency:
 
 on:
   pull_request:
-  push:
-    branches:
-      - 'staging'
-      - 'trying'
+  merge_group:
 
 jobs:
-  check-cabal-files:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Workaround runner image issue
-      # https://github.com/actions/runner-images/issues/7061
-      run: sudo chown -R $USER /usr/local/.ghcup
-
-    - name: Install Haskell
-      uses: input-output-hk/setup-haskell@v1
-      id: setup-haskell
-      with:
-        cabal-version: "3.8.1.0"
-
-    - uses: actions/checkout@v3
-
-    - name: Cabal check
-      run: ./scripts/ci/check-cabal-files.sh
-
   build:
     runs-on: ${{ matrix.os }}
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
 
     strategy:
       fail-fast: false
       matrix:
-        # Currently Hydra/Cicero build with 8.10.7
-        ghc: ["9.2.5"]
+        ghc: ["8.10.7", "9.2.7", "9.6.1"]
         # This is the only OS that Hydra/Cicero cannot run.
         os: [windows-latest]
 
     env:
-      # Modify this value to "invalidate" the cabal cache.
+      # Modify this value to "invalidate" all cabal caches.
       CABAL_CACHE_VERSION: "2022-12-30"
-
-      # current ref from: 27.02.2022
-      SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
-
-      SECP_CACHE_VERSION: "2022-12-30"
+      # Modify this value to "invalidate" the cabal store cache only.
+      CACHE_VERSION: "20220919"
+      # Modify this value to "invalidate" the dist-newstyle cache only.
+      DIST_CACHE_VERSION: "20221122"
 
     steps:
 
@@ -59,10 +34,9 @@ jobs:
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: "3.8.1.0"
+        cabal-version: "3.10.1.0"
         pacman-packages: >
           mingw-w64-x86_64-pkg-config
-          mingw-w64-x86_64-libsodium
           mingw-w64-x86_64-openssl
           mingw-w64-x86_64-sed
           base-devel
@@ -72,21 +46,7 @@ jobs:
           libtool
           make
 
-    - name: "[OUTPUT] cache keys: version, weeknum"
-      id: cache-keys
-      shell: bash
-      run: |
-        echo "weeknum=$(/usr/bin/date -u "+%W")" >> $GITHUB_OUTPUT
-        echo "CACHE_VERSION=20220919" >> $GITHUB_OUTPUT
-        echo "DIST_CACHE_VERSION=20221122" >> $GITHUB_OUTPUT
-
     - uses: actions/checkout@v3
-
-    - name: Install secp256k1
-      uses: input-output-hk/setup-secp256k1@v1
-      with:
-        git-ref: ${{ env.SECP256K1_REF }}
-        cache-version: ${{ env.SECP_CACHE_VERSION }}
 
     - name: "Configure cabal.project.local"
       run: |
@@ -106,12 +66,12 @@ jobs:
         cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -L .github/workflows/jq-install-plan | sort | uniq > dependencies.txt
 
-    - uses: actions/cache@v3
-      name: "Cache `cabal store`"
+    - uses: actions/cache/restore@v3
+      name: "Restore cache: `cabal store`"
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
-        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
-        restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+        restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - uses: actions/cache@v3
       name: "Cache `dist-newstyle`"
@@ -119,11 +79,17 @@ jobs:
         path: |
           dist-newstyle
           !dist-newstyle/**/.git
-        key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ steps.cache-keys.outputs.weeknum }}
-        restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ steps.cache-keys.outputs.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+        key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project') }}
+        restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
     - name: Build dependencies
       run: cabal build --only-dependencies all -j
+
+    - uses: actions/cache/save@v3
+      name: "Save cache: `cabal store`"
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
 
     - name: Build projects [build]
       run: cabal build all -j
@@ -147,11 +113,7 @@ jobs:
 
     # We don't run cddl in GitHub actions (only on Hydra).
     # - name: ouroboros-network-protocols [cddl]
-    #   run: |
-    #     # The tests call out to msys2 commands. We generally do not want to mix toolchains, so
-    #     # we are very deliberate about only adding msys64 to the path where absolutely necessary.
-    #     ${{ (runner.os == 'Windows' && '$env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)') || '' }}
-    #     cabal run ouroboros-network-protocols-test:cddl
+    #   run: cabal run ouroboros-network-protocols-test:cddl
 
     - name: ouroboros-network [test]
       run: cabal run ouroboros-network:test

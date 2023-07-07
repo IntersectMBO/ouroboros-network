@@ -12,7 +12,7 @@ localTxSubmissionMessage
     / msgRejectTx
     / ltMsgDone
 
-msgSubmitTx = [0, transaction ]
+msgSubmitTx = [0, tx ]
 msgAcceptTx = [1]
 msgRejectTx = [2, rejectReason ]
 ltMsgDone   = [3]

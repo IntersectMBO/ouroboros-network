@@ -52,6 +52,7 @@ import           Data.Maybe (catMaybes, maybeToList)
 import           Data.Set (Set, elemAt)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
+import           System.Exit (ExitCode)
 import           System.Random (StdGen, newStdGen, randomRs, split)
 #ifdef POSIX
 import qualified System.Posix.Signals as Signals
@@ -80,6 +81,9 @@ import           Ouroboros.Network.Socket (configureSocket,
 import           Data.List (nub)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (InboundGovernorInfoChannel, InformationChannel (..),
+                     OutboundGovernorInfoChannel, newInformationChannel)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
@@ -104,22 +108,26 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      TracePeerSelection (..), emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
+                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), pchPeerSharing,
                      withPeerStateActions)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
-                     DomainAccessPoint, LookupReqs (..), RelayAccessPoint (..),
-                     TraceLocalRootPeers (..), TracePublicRootPeers (..),
-                     ioDNSActions, resolveDomainAccessPoint)
+                     DNSSemaphore, DomainAccessPoint, LookupReqs (..),
+                     RelayAccessPoint (..), TraceLocalRootPeers (..),
+                     TracePublicRootPeers (..), ioDNSActions,
+                     newLocalAndPublicRootDNSSemaphore,
+                     resolveDomainAccessPoint)
 import           Ouroboros.Network.PeerSelection.Simple
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.RethrowPolicy
 import           Ouroboros.Network.Server2 (ServerArguments (..),
-                     ServerControlChannel, ServerTrace (..))
+                     ServerTrace (..))
 import qualified Ouroboros.Network.Server2 as Server
 
 -- | P2P DiffusionTracers Extras
@@ -220,7 +228,7 @@ data ArgumentsExtra m = ArgumentsExtra {
       --
       daPeerSelectionTargets :: PeerSelectionTargets
 
-    , daReadLocalRootPeers  :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
+    , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
     , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
     -- | Peer's own PeerSharing value.
     --
@@ -346,7 +354,8 @@ data ConnectionManagerDataInMode peerAddr versionData m a (mode :: MuxMode) wher
       :: ConnectionManagerDataInMode peerAddr versionData m a InitiatorMode
 
     CMDInInitiatorResponderMode
-      :: ServerControlChannel InitiatorResponderMode peerAddr versionData ByteString  m a ()
+      :: InboundGovernorInfoChannel InitiatorResponderMode peerAddr versionData ByteString  m a ()
+      -> OutboundGovernorInfoChannel peerAddr m
       -> StrictTVar m Server.InboundGovernorObservableState
       -> ConnectionManagerDataInMode peerAddr versionData m a InitiatorResponderMode
 
@@ -562,7 +571,12 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: LookupReqs -> DNSActions resolver resolverError m
+          :: LookupReqs -> DNSActions resolver resolverError m,
+
+        -- | DNS Semaphore
+        --
+        diLocalAndPublicRootDnsSemaphore
+          :: DNSSemaphore m
       }
 
 runM
@@ -640,6 +654,7 @@ runM Interfaces
        , diRng
        , diInstallSigUSR1Handler
        , diDnsActions
+       , diLocalAndPublicRootDnsSemaphore
        }
      Tracers
        { dtMuxTracer
@@ -730,7 +745,8 @@ runM Interfaces
             Just localAddr ->
               Just $ withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
                        $ \localSocket -> do
-                localControlChannel <- Server.newControlChannel
+                localInbInfoChannel <- newInformationChannel
+                localOutInfoChannel <- newInformationChannel
                 localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
 
                 let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
@@ -769,14 +785,20 @@ runM Interfaces
                           connectionDataFlow    = localDataFlow,
                           cmPrunePolicy         = Diffusion.Policies.prunePolicy
                                                     localServerStateVar,
-                          cmConnectionsLimits   = localConnectionLimits
+                          cmConnectionsLimits   = localConnectionLimits,
+
+                          -- local thread does not start a Outbound Governor
+                          -- so it doesn't matter what we put here.
+                          -- 'NoPeerSharing' is set for all connections.
+                          cmGetPeerSharing = \_ -> NoPeerSharing
                         }
 
                 withConnectionManager
                   localConnectionManagerArguments
                   localConnectionHandler
                   classifyHandleError
-                  (InResponderMode localControlChannel)
+                  (InResponderMode localInbInfoChannel)
+                  (InResponderMode localOutInfoChannel)
                   $ \(localConnectionManager :: NodeToClientConnectionManager
                                                   ntcFd ntcAddr ntcVersion
                                                   ntcVersionData m)
@@ -800,7 +822,7 @@ runM Interfaces
                             serverInboundIdleTimeout    = Nothing,
                             serverConnectionLimits      = localConnectionLimits,
                             serverConnectionManager     = localConnectionManager,
-                            serverControlChannel        = localControlChannel,
+                            serverInboundInfoChannel    = localInbInfoChannel,
                             serverObservableStateVar    = localServerStateVar
                           }) Async.wait
 
@@ -814,7 +836,7 @@ runM Interfaces
                                (Nothing, Just _) -> return LookupReqAAAAOnly
                                (Just _, Just _)  -> return LookupReqAAndAAAA
                                _                 ->
-                                   throwIO (NoSocket :: Failure RemoteAddress)
+                                   throwIO NoSocket
 
           -- control channel for the server; only required in
           -- @'InitiatorResponderMode' :: 'MuxMode'@
@@ -826,7 +848,8 @@ runM Interfaces
                 InitiatorAndResponderDiffusionMode ->
                   HasInitiatorResponder <$>
                     (CMDInInitiatorResponderMode
-                      <$> Server.newControlChannel
+                      <$> newInformationChannel
+                      <*> newInformationChannel
                       <*> Server.newObservableStateVar ntnInbgovRng)
 
           -- RNGs used for picking random peers from the ledger and for
@@ -884,7 +907,8 @@ runM Interfaces
                           -- than limits imposed by 'cmConnectionsLimits'.
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
                           cmTimeWaitTimeout     = daTimeWaitTimeout,
-                          cmOutboundIdleTimeout = daProtocolIdleTimeout
+                          cmOutboundIdleTimeout = daProtocolIdleTimeout,
+                          cmGetPeerSharing      = diNtnPeerSharing
                         }
 
                     connectionHandler
@@ -904,6 +928,7 @@ runM Interfaces
                   connectionManagerArguments
                   connectionHandler
                   classifyHandleError
+                  NotInResponderMode
                   NotInResponderMode
                   $ \(connectionManager
                       :: NodeToNodeConnectionManager
@@ -937,6 +962,7 @@ runM Interfaces
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
                       diNtnToPeerAddr
+                      diLocalAndPublicRootDnsSemaphore
                       (diDnsActions lookupReqs)
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
@@ -944,6 +970,7 @@ runM Interfaces
                       daOwnPeerSharing
                       (pchPeerSharing diNtnPeerSharing)
                       (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
+                      retry -- Will never receive inbound connections
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerSelectionActionsThread
@@ -988,7 +1015,7 @@ runM Interfaces
               -- Run peer selection and the server.
               --
               HasInitiatorResponder
-                (CMDInInitiatorResponderMode controlChannel observableStateVar) -> do
+                (CMDInInitiatorResponderMode inboundInfoChannel outboundInfoChannel observableStateVar) -> do
                 let connectionManagerArguments
                       :: NodeToNodeConnectionManagerArguments
                           InitiatorResponderMode
@@ -1011,7 +1038,8 @@ runM Interfaces
                           cmPrunePolicy         = Diffusion.Policies.prunePolicy observableStateVar,
                           cmConnectionsLimits   = daAcceptedConnectionsLimit,
                           cmTimeWaitTimeout     = daTimeWaitTimeout,
-                          cmOutboundIdleTimeout = daProtocolIdleTimeout
+                          cmOutboundIdleTimeout = daProtocolIdleTimeout,
+                          cmGetPeerSharing      = diNtnPeerSharing
                         }
 
                     computePeerSharingPeers :: STM m (PublicPeerSelectionState ntnAddr)
@@ -1049,7 +1077,8 @@ runM Interfaces
                   connectionManagerArguments
                   connectionHandler
                   classifyHandleError
-                  (InResponderMode controlChannel)
+                  (InResponderMode inboundInfoChannel)
+                  (InResponderMode outboundInfoChannel)
                   $ \(connectionManager
                         :: NodeToNodeConnectionManager
                              InitiatorResponderMode ntnFd ntnAddr ntnVersionData ntnVersion m a ()
@@ -1084,6 +1113,7 @@ runM Interfaces
                       dtTraceLocalRootPeersTracer
                       dtTracePublicRootPeersTracer
                       diNtnToPeerAddr
+                      diLocalAndPublicRootDnsSemaphore
                       (diDnsActions lookupReqs)
                       (readTVar peerSelectionTargetsVar)
                       daReadLocalRootPeers
@@ -1091,6 +1121,7 @@ runM Interfaces
                       daOwnPeerSharing
                       (pchPeerSharing diNtnPeerSharing)
                       (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
+                      (readMessage outboundInfoChannel)
                       peerStateActions
                       requestLedgerPeers
                       $ \localPeerRootProviderThread
@@ -1134,7 +1165,7 @@ runM Interfaces
                                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                                   serverConnectionManager     = connectionManager,
                                   serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
-                                  serverControlChannel        = controlChannel,
+                                  serverInboundInfoChannel    = inboundInfoChannel,
                                   serverObservableStateVar    = observableStateVar
                                 })
                                 $ \serverThread ->
@@ -1219,8 +1250,11 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
     -- naming convention is that we use /local/ prefix for /node-to-client/
     -- related terms, as this is a local only service running over a unix
     -- socket / windows named pipe.
-    handle (\e -> traceWith tracer (DiffusionErrored e)
-               >> throwIO e)
+    handleJust (\e -> case fromException e :: Maybe ExitCode of
+                  Nothing -> Just e
+                  Just {} -> Nothing)
+               (\e -> traceWith tracer (DiffusionErrored e)
+                   >> throwIO (DiffusionError e))
          $ withIOManager $ \iocp -> do
              let diNtnSnocket :: SocketSnocket
                  diNtnSnocket = Snocket.socketSnocket iocp
@@ -1236,6 +1270,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                          cborTermVersionDataCodec
                            NodeToNode.nodeToNodeCodecCBORTerm,
                        haAcceptVersion = acceptableVersion,
+                       haQueryVersion = queryVersion,
                        haTimeLimits = timeLimitsHandshake
                      }
                  diNtcHandshakeArguments =
@@ -1246,6 +1281,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                          cborTermVersionDataCodec
                            NodeToClient.nodeToClientCodecCBORTerm,
                        haAcceptVersion = acceptableVersion,
+                       haQueryVersion = queryVersion,
                        haTimeLimits = noTimeLimitsHandshake
                      }
 
@@ -1270,11 +1306,13 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diInstallSigUSR1Handler = \_ -> pure ()
 #endif
 
+             diLocalAndPublicRootDnsSemaphore <- newLocalAndPublicRootDNSSemaphore
              let diNtnDomainResolver :: LookupReqs -> [DomainAccessPoint]
                                      -> IO (Map DomainAccessPoint (Set Socket.SockAddr))
                  diNtnDomainResolver lr =
                    resolveDomainAccessPoint
                      (dtTracePublicRootPeersTracer tracersExtra)
+                     diLocalAndPublicRootDnsSemaphore
                      DNS.defaultResolvConf
                      (ioDNSActions lr)
 
@@ -1301,7 +1339,8 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
                  diRng,
                  diInstallSigUSR1Handler,
-                 diDnsActions = ioDNSActions
+                 diDnsActions = ioDNSActions,
+                 diLocalAndPublicRootDnsSemaphore
                }
                tracers tracersExtra args argsExtra apps appsExtra
 

@@ -12,8 +12,10 @@ module Ouroboros.Network.Protocol.Handshake
   , Versions (..)
   , HandshakeException (..)
   , HandshakeProtocolError (..)
+  , HandshakeResult (..)
   , RefuseReason (..)
   , Accept (..)
+  , handshake_QUERY_SHUTDOWN_DELAY
   ) where
 
 import           Control.Monad.Class.MonadAsync
@@ -97,6 +99,10 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       -- argument is the remote version data.
       haAcceptVersion :: vData -> vData -> Accept vData,
 
+      -- | Whether version data requested a query of support version.
+      --
+      haQueryVersion :: vData -> Bool,
+
       -- | 'Driver' timeouts for 'Handshake' protocol.
       --
       haTimeLimits
@@ -119,7 +125,7 @@ runHandshakeClient
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application
     -> m (Either (HandshakeException vNumber)
-                 (application, vNumber, vData))
+                 (HandshakeResult application vNumber vData))
 runHandshakeClient bearer
                    connectionId
                    HandshakeArguments {
@@ -155,9 +161,8 @@ runHandshakeServer
     -> connectionId
     -> HandshakeArguments connectionId vNumber vData m
     -> Versions vNumber vData application
-    -> m (Either
-           (HandshakeException vNumber)
-           (application, vNumber, vData))
+    -> m (Either (HandshakeException vNumber)
+                 (HandshakeResult application vNumber vData))
 runHandshakeServer bearer
                    connectionId
                    HandshakeArguments {
@@ -165,6 +170,7 @@ runHandshakeServer bearer
                      haHandshakeCodec,
                      haVersionDataCodec,
                      haAcceptVersion,
+                     haQueryVersion,
                      haTimeLimits
                    }
                    versions  =
@@ -176,4 +182,10 @@ runHandshakeServer bearer
           byteLimitsHandshake
           haTimeLimits
           (fromChannel (muxBearerAsChannel bearer handshakeProtocolNum ResponderDir))
-          (handshakeServerPeer haVersionDataCodec haAcceptVersion versions))
+          (handshakeServerPeer haVersionDataCodec haAcceptVersion haQueryVersion versions))
+
+-- | A 20s delay after query result was send back, before we close the
+-- connection.  After that delay we close the connection.
+--
+handshake_QUERY_SHUTDOWN_DELAY :: DiffTime
+handshake_QUERY_SHUTDOWN_DELAY = 20

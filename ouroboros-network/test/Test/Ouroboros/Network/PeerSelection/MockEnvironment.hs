@@ -57,11 +57,11 @@ import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 
-import           Ouroboros.Network.Testing.Data.Script (PickScript,
+import           Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
                      ScriptDelay (..), TimedScript, arbitraryPickScript,
-                     initScript', interpretPickScript, playTimedScript,
-                     prop_shrink_Script, singletonScript, stepScript,
-                     stepScriptSTM)
+                     arbitraryScriptOf, initScript', interpretPickScript,
+                     playTimedScript, prop_shrink_Script, singletonScript,
+                     stepScript)
 import           Ouroboros.Network.Testing.Utils (arbitrarySubset,
                      prop_shrink_nonequal, prop_shrink_valid)
 
@@ -310,6 +310,7 @@ mockPeerSelectionActions' tracer
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
       requestPublicRootPeers,
       readPeerSelectionTargets = readTVar targetsVar,
+      readNewInboundConnection = retry,
       requestPeerShare,
       peerStateActions         = PeerStateActions {
           establishPeerConnection,

@@ -42,7 +42,7 @@ let
       tests = collectChecks' haskellPackages;
       styles = recurseIntoAttrs {
         check-nixfmt = callPackage ./nix/check-nixfmt.nix { };
-        check-stylish-network = callPackage ./nix/check-stylish-network.nix { };
+        check-stylish = callPackage ./nix/check-stylish.nix { };
       };
     };
 

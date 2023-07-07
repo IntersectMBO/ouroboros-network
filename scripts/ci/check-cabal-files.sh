@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 
-for x in $(find . -name '*.cabal' | grep -v dist-newstyle | cut -c 3-); do
+FD="$(which fdfind 2>/dev/null || which fd 2>/dev/null)"
+
+set -eo pipefail
+
+for x in $($FD -e cabal); do
   (
     d=$(dirname $x)
     echo "== $d =="
-    cd $d
+    pushd $d
     cabal check
+    popd
   )
 done

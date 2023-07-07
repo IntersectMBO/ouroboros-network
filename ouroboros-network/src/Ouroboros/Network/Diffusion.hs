@@ -11,7 +11,7 @@ module Ouroboros.Network.Diffusion
   , Tracers (..)
   , nullTracers
   , ExtraTracers (..)
-  , Failure
+  , Failure (..)
   , Arguments (..)
   , ExtraArguments (..)
   , Applications (..)

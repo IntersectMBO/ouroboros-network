@@ -3,7 +3,7 @@ status = [
   "ci (x86_64-linux)",
   # "ci (x86_64-darwin)", Temporarily disabled due to space problems on MacOS runners
   "check-cabal-files",
-  "build (9.2.5, windows-latest)"
+  "build (9.2.7, windows-latest)"
 ]
 timeout_sec = 10800
 required_approvals = 1

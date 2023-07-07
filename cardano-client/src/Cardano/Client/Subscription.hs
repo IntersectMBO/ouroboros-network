@@ -103,5 +103,5 @@ versionedProtocols networkMagic supportedVersions callback =
     applyVersion (version, blockVersion) =
       versionedNodeToClientProtocols
         version
-        (NodeToClientVersionData networkMagic)
+        (NodeToClientVersionData networkMagic False)
         (callback version blockVersion)

@@ -55,12 +55,15 @@ import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
 import           Network.Mux.Types (MuxMode)
 
 import           Ouroboros.Network.ConnectionId
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (InformationChannel)
+import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
 import           Ouroboros.Network.ConnectionManager.Types
 import qualified Ouroboros.Network.ConnectionManager.Types as CM
-import           Ouroboros.Network.InboundGovernor.ControlChannel
-                     (ControlChannel (..))
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
+import           Ouroboros.Network.InboundGovernor.Event
+                     (NewConnectionInfo (..))
 import           Ouroboros.Network.MuxMode
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
 import           Ouroboros.Network.Snocket
@@ -135,7 +138,10 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         -- | Prune policy
         --
         cmPrunePolicy         :: PrunePolicy peerAddr (STM m),
-        cmConnectionsLimits   :: AcceptedConnectionsLimit
+        cmConnectionsLimits   :: AcceptedConnectionsLimit,
+
+        -- | How to extract PeerSharing information from versionData
+        cmGetPeerSharing      :: versionData -> PeerSharing
       }
 
 
@@ -551,8 +557,11 @@ withConnectionManager
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
-    -> InResponderMode muxMode (ControlChannel peerAddr handle m)
+    -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
     -- ^ On outbound duplex connections we need to notify the server about
+    -- a new connection.
+    -> InResponderMode muxMode (InformationChannel (peerAddr, PeerSharing) m)
+    -- ^ On inbound duplex connections we need to notify the outbound governor about
     -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
@@ -573,13 +582,15 @@ withConnectionManager ConnectionManagerArguments {
                           cmOutboundIdleTimeout,
                           connectionDataFlow,
                           cmPrunePolicy,
-                          cmConnectionsLimits
+                          cmConnectionsLimits,
+                          cmGetPeerSharing
                         }
                       ConnectionHandler {
                           connectionHandler
                         }
                       classifyHandleError
-                      inboundGovernorControlChannel
+                      inboundGovernorInfoChannel
+                      outboundGovernorInfoChannel
                       k = do
     ((freshIdSupply, stateVar)
        ::  ( FreshIdSupply m
@@ -768,7 +779,7 @@ withConnectionManager ConnectionManagerArguments {
       -> MutableConnState peerAddr handle handleError version m
       -> socket
       -> ConnectionId peerAddr
-      -> PromiseWriter m (Either handleError (handle, (version, versionData)))
+      -> PromiseWriter m (Either handleError (HandshakeConnectionResult handle (version, versionData)))
       -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError (version, versionData) m
       -> m (Async m ())
     forkConnectionHandler stateVar
@@ -1081,81 +1092,12 @@ withConnectionManager ConnectionManagerArguments {
             res <- atomically $ readPromise reader
             case res of
               Left handleError -> do
-                transitions <- atomically $ do
-                  connState <- readTVar connVar
+                terminateInboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState $ Just handleError
 
-                  let connState' =
-                        case classifyHandleError handleError of
-                          HandshakeFailure ->
-                            TerminatingState connId connThread
-                                            (Just handleError)
-                          HandshakeProtocolViolation ->
-                            TerminatedState (Just handleError)
-                      transition = mkTransition connState connState'
-                      absConnState = abstractState (Known connState)
-                      shouldTrace = absConnState /= TerminatedSt
+              Right HandshakeConnectionQuery -> do
+                terminateInboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState Nothing
 
-                  updated <-
-                    modifyTMVarSTM
-                      stateVar
-                      ( \state ->
-                        case Map.lookup peerAddr state of
-                          Nothing -> return (state, False)
-                          Just mutableConnState'  ->
-                            if mutableConnState' == mutableConnState
-                              then do
-                                -- 'handleError' might be either a handshake
-                                -- negotiation a protocol failure (an IO
-                                -- exception, a timeout or codec failure).  In
-                                -- the first case we should not reset the
-                                -- connection as this is not a protocol error.
-                                --
-                                -- If we are deleting the connState from the
-                                -- state then connState' can be TerminatingSt in
-                                -- which case we are going to transition
-                                -- TerminatingSt -> TerminatedSt. Otherwise,
-                                -- Connection Manager cleanup will take care of
-                                -- tracing accordingly.
-                                writeTVar connVar connState'
-
-                                return (Map.delete peerAddr state , True)
-                              else return (state                  , False)
-                      )
-
-                  if updated
-                     then
-                    -- Key was present in the dictionary (stateVar) and
-                    -- removed so we trace the removal.
-                      return $
-                        if shouldTrace
-                           then [ transition
-                                , Transition
-                                   { fromState = Known (TerminatedState Nothing)
-                                   , toState   = Unknown
-                                   }
-                                ]
-                           else [ Transition
-                                   { fromState = Known (TerminatedState Nothing)
-                                   , toState   = Unknown
-                                   }
-                                ]
-                    -- Key was not present in the dictionary (stateVar),
-                    -- so we do not trace anything as it was already traced upon
-                    -- deletion.
-                    --
-                    -- OR
-                    --
-                    -- Key was overwritten in the dictionary (stateVar),
-                    -- so we do not trace anything as it was already traced upon
-                    -- overwriting.
-                     else return [ ]
-
-                traverse_ (traceWith trTracer . TransitionTrace peerAddr) transitions
-                traceCounters stateVar
-
-                return (Disconnected connId (Just handleError))
-
-              Right (handle, (version, versionData)) -> do
+              Right (HandshakeConnectionResult handle (version, versionData)) -> do
                 let dataFlow = connectionDataFlow version versionData
                 mbTransition <- atomically $ do
                   connState <- readTVar connVar
@@ -1234,13 +1176,100 @@ withConnectionManager ConnectionManagerArguments {
                 case mbTransition of
                   Nothing -> return $ Disconnected connId Nothing
                   Just {} -> do
-                    case inboundGovernorControlChannel of
-                      InResponderMode controlChannel ->
-                        atomically $ ControlChannel.writeMessage
-                                       controlChannel
-                                       (ControlChannel.NewConnection Inbound connId dataFlow handle)
+                    case inboundGovernorInfoChannel of
+                      InResponderMode infoChannel ->
+                        atomically $ InfoChannel.writeMessage
+                                       infoChannel
+                                       (NewConnectionInfo Inbound connId dataFlow handle)
                       NotInResponderMode -> return ()
+                    case (dataFlow, outboundGovernorInfoChannel) of
+                      (Duplex, InResponderMode infoChannel) ->
+                        atomically $ InfoChannel.writeMessage
+                                       infoChannel
+                                       (peerAddr, cmGetPeerSharing versionData)
+
+                      _ -> return ()
+
                     return $ Connected connId dataFlow handle
+
+    terminateInboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState handleErrorM = do
+        transitions <- atomically $ do
+          connState <- readTVar connVar
+
+          let connState' =
+                case classifyHandleError <$> handleErrorM of
+                  Just HandshakeFailure ->
+                    TerminatingState connId connThread
+                                    handleErrorM
+                  Just HandshakeProtocolViolation ->
+                    TerminatedState handleErrorM
+                  -- On inbound query, connection is terminating.
+                  Nothing ->
+                    TerminatingState connId connThread
+                                    handleErrorM
+              transition = mkTransition connState connState'
+              absConnState = abstractState (Known connState)
+              shouldTrace = absConnState /= TerminatedSt
+
+          updated <-
+            modifyTMVarSTM
+              stateVar
+              ( \state ->
+                case Map.lookup peerAddr state of
+                  Nothing -> return (state, False)
+                  Just mutableConnState'  ->
+                    if mutableConnState' == mutableConnState
+                      then do
+                        -- 'handleError' might be either a handshake
+                        -- negotiation a protocol failure (an IO
+                        -- exception, a timeout or codec failure).  In
+                        -- the first case we should not reset the
+                        -- connection as this is not a protocol error.
+                        --
+                        -- If we are deleting the connState from the
+                        -- state then connState' can be TerminatingSt in
+                        -- which case we are going to transition
+                        -- TerminatingSt -> TerminatedSt. Otherwise,
+                        -- Connection Manager cleanup will take care of
+                        -- tracing accordingly.
+                        writeTVar connVar connState'
+
+                        return (Map.delete peerAddr state , True)
+                      else return (state                  , False)
+              )
+
+          if updated
+             then
+            -- Key was present in the dictionary (stateVar) and
+            -- removed so we trace the removal.
+              return $
+                if shouldTrace
+                   then [ transition
+                        , Transition
+                           { fromState = Known (TerminatedState Nothing)
+                           , toState   = Unknown
+                           }
+                        ]
+                   else [ Transition
+                           { fromState = Known (TerminatedState Nothing)
+                           , toState   = Unknown
+                           }
+                        ]
+            -- Key was not present in the dictionary (stateVar),
+            -- so we do not trace anything as it was already traced upon
+            -- deletion.
+            --
+            -- OR
+            --
+            -- Key was overwritten in the dictionary (stateVar),
+            -- so we do not trace anything as it was already traced upon
+            -- overwriting.
+             else return [ ]
+
+        traverse_ (traceWith trTracer . TransitionTrace peerAddr) transitions
+        traceCounters stateVar
+
+        return (Disconnected connId handleErrorM)
 
     -- We need 'mask' in order to guarantee that the traces are logged if an
     -- async exception lands between the successful STM action and the logging
@@ -1711,73 +1740,12 @@ withConnectionManager ConnectionManagerArguments {
             res <- atomically (readPromise reader)
             case res of
               Left handleError -> do
-                transitions <- atomically $ do
-                  connState <- readTVar connVar
+                terminateOutboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState $ Just handleError
 
-                  let connState' =
-                        case classifyHandleError handleError of
-                          HandshakeFailure ->
-                            TerminatingState connId connThread
-                                            (Just handleError)
-                          HandshakeProtocolViolation ->
-                            TerminatedState (Just handleError)
-                      transition = mkTransition connState connState'
-                      absConnState = abstractState (Known connState)
-                      shouldTrace = absConnState /= TerminatedSt
+              Right HandshakeConnectionQuery -> do
+                terminateOutboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState Nothing
 
-                  -- 'handleError' might be either a handshake negotiation
-                  -- a protocol failure (an IO exception, a timeout or
-                  -- codec failure).  In the first case we should not reset
-                  -- the connection as this is not a protocol error.
-                  writeTVar connVar connState'
-
-                  updated <-
-                    modifyTMVarPure
-                      stateVar
-                      ( \state ->
-                        case Map.lookup peerAddr state of
-                          Nothing -> (state, False)
-                          Just mutableConnState'  ->
-                            if mutableConnState' == mutableConnState
-                              then (Map.delete peerAddr state , True)
-                              else (state                     , False)
-                      )
-
-                  if updated
-                     then
-                    -- Key was present in the dictionary (stateVar) and
-                    -- removed so we trace the removal.
-                      return $
-                        if shouldTrace
-                           then [ transition
-                                , Transition
-                                   { fromState = Known (TerminatedState Nothing)
-                                   , toState   = Unknown
-                                   }
-                                ]
-                           else [ Transition
-                                   { fromState = Known (TerminatedState Nothing)
-                                   , toState   = Unknown
-                                   }
-                                ]
-                    -- Key was not present in the dictionary (stateVar),
-                    -- so we do not trace anything as it was already traced upon
-                    -- deletion.
-                    --
-                    -- OR
-                    --
-                    -- Key was overwritten in the dictionary (stateVar),
-                    -- so we do not trace anything as it was already traced upon
-                    -- overwriting.
-                     else return [ ]
-
-
-                traverse_ (traceWith trTracer . TransitionTrace peerAddr) transitions
-                traceCounters stateVar
-
-                return (Disconnected connId (Just handleError))
-
-              Right (handle, (version, versionData)) -> do
+              Right (HandshakeConnectionResult handle (version, versionData)) -> do
                 let dataFlow = connectionDataFlow version versionData
                 -- We can safely overwrite the state: after successful
                 -- `connect` it's not possible to have a race condition
@@ -1805,11 +1773,11 @@ withConnectionManager ConnectionManagerArguments {
                           -- @
                           let connState' = OutboundDupState connId connThread handle Ticking
                           writeTVar connVar connState'
-                          case inboundGovernorControlChannel of
-                            InResponderMode controlChannel ->
-                              ControlChannel.writeMessage
-                                controlChannel
-                                (ControlChannel.NewConnection Outbound connId dataFlow handle)
+                          case inboundGovernorInfoChannel of
+                            InResponderMode infoChannel ->
+                              InfoChannel.writeMessage
+                                infoChannel
+                                (NewConnectionInfo Outbound connId dataFlow handle)
                             NotInResponderMode -> return ()
                           return (Just $ mkTransition connState connState')
                     TerminatedState _ ->
@@ -1919,6 +1887,85 @@ withConnectionManager ConnectionManagerArguments {
           Right (Here connected) -> do
             traceCounters stateVar
             return connected
+
+    terminateOutboundWithErrorOrQuery
+        :: ConnectionId peerAddr
+        -> StrictTVar m (ConnectionState peerAddr handle handleError version m)
+        -> Async m ()
+        -> peerAddr
+        -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        -> MutableConnState peerAddr handle handleError version m
+        -> Maybe handleError
+        -> m (Connected peerAddr handle handleError)
+    terminateOutboundWithErrorOrQuery connId connVar connThread peerAddr stateVar mutableConnState handleErrorM = do
+        transitions <- atomically $ do
+          connState <- readTVar connVar
+
+          let connState' =
+                case classifyHandleError <$> handleErrorM of
+                  Just HandshakeFailure ->
+                    TerminatingState connId connThread
+                                    handleErrorM
+                  Just HandshakeProtocolViolation ->
+                    TerminatedState handleErrorM
+                  -- On outbound query, connection is terminated.
+                  Nothing ->
+                    TerminatedState handleErrorM
+              transition = mkTransition connState connState'
+              absConnState = abstractState (Known connState)
+              shouldTrace = absConnState /= TerminatedSt
+
+          -- 'handleError' might be either a handshake negotiation
+          -- a protocol failure (an IO exception, a timeout or
+          -- codec failure).  In the first case we should not reset
+          -- the connection as this is not a protocol error.
+          writeTVar connVar connState'
+
+          updated <-
+            modifyTMVarPure
+              stateVar
+              ( \state ->
+                case Map.lookup peerAddr state of
+                  Nothing -> (state, False)
+                  Just mutableConnState'  ->
+                    if mutableConnState' == mutableConnState
+                      then (Map.delete peerAddr state , True)
+                      else (state                     , False)
+              )
+
+          if updated
+             then
+            -- Key was present in the dictionary (stateVar) and
+            -- removed so we trace the removal.
+              return $
+                if shouldTrace
+                   then [ transition
+                        , Transition
+                           { fromState = Known (TerminatedState Nothing)
+                           , toState   = Unknown
+                           }
+                        ]
+                   else [ Transition
+                           { fromState = Known (TerminatedState Nothing)
+                           , toState   = Unknown
+                           }
+                        ]
+            -- Key was not present in the dictionary (stateVar),
+            -- so we do not trace anything as it was already traced upon
+            -- deletion.
+            --
+            -- OR
+            --
+            -- Key was overwritten in the dictionary (stateVar),
+            -- so we do not trace anything as it was already traced upon
+            -- overwriting.
+             else return [ ]
+
+
+        traverse_ (traceWith trTracer . TransitionTrace peerAddr) transitions
+        traceCounters stateVar
+
+        return (Disconnected connId handleErrorM)
 
 
     unregisterOutboundConnectionImpl

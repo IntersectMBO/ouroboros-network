@@ -1,5 +1,67 @@
 # Revision history for ouroboros-network
 
+## next version
+
+### Breaking changes
+
+* light peer sharing
+  * Added `TraceKnownInboundConnection` constructor to `TracePeerSelection`
+  * Added `readNewInboundConnection` field to `PeerSelectionActions` record.
+* The constructor `FetchDeclineChainNoIntersection` was renamed to
+  `FetchDeclineChainIntersectionTooDeep` (#4541)
+- Include Warm Valency for Local Root Peers
+
+### Non-breaking changes
+
+* Support for decoding Handshake Query Reply in wireshark dissector.
+* Support for decoding CBOR payload in wireshark dissector.
+* Limit concurrency used by dns resolution.  We only resolve up to 8 dns names
+  concurrently for public / ledger peers and up to 2 for local root peers.
+  This will affect how quickly node connects to ledger peers when it starts.
+
+## 0.8.1.1
+
+### Non-breaking changes
+
+* Initialise local root peers results `TVar` (#4584).
+
+## 0.8.1.0
+
+### Non-breaking changes
+
+* Do not wrap `ExitCode` in `DiffusionError` wrapper.
+
+## 0.8.0.1
+
+### Non-breaking changes
+
+* Export `Ouroboros.Network.Diffusion.Failiure` constructors.
+
+## 0.8.0.0
+
+### Breaking changes
+
+* Changed how DNS for local root peers works
+  - Change TraceLocalRootPeersTrace to include TraceLocalRootDNSMap constructor;
+  - Change TraceLocalRootGroups constructor type;
+  - Change localRootPeersProvider type signature;
+  - Updated tests to reflect the above changes.
+
+### Non-breaking changes
+
+* Updated to use `ouroboros-network-api-0.5.0.0`.
+
+## 0.7.0.0
+
+### Breaking changes
+
+* Added `DiffusionError` constructor of `Ouroboros.Network.Diffusion.Failure` which kind is now `Type`.
+
+### Non-breaking changes
+
+* Compatible with `ouroboros-network-framework-0.6.0.0` and
+  `ouroboros-network-api-0.4.0.0`
+
 ## 0.6.0.0
 
 ### Breaking changes

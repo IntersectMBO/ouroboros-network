@@ -4,14 +4,18 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Network.Protocol.Handshake.Client
   ( handshakeClientPeer
+  , decodeQueryResult
+  , encodeVersions
   , acceptOrRefuse
   ) where
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Text (Text)
 
 import qualified Codec.CBOR.Term as CBOR
 
@@ -37,7 +41,7 @@ handshakeClientPeer
           AsClient StPropose m
           (Either
             (HandshakeProtocolError vNumber)
-            (r, vNumber, vData))
+            (HandshakeResult r vNumber vData))
 handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
                     acceptVersion versions =
   -- send known versions
@@ -48,8 +52,11 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
         -- simultaneous open; 'accept' will choose version (the greatest common
         -- version), and check if we can accept received version data.
         Done TokDone $ case acceptOrRefuse codec acceptVersion versions vMap of
-          Right r      -> Right r
-          Left vReason -> Left (HandshakeError vReason)
+          Right (r, vNumber, vData) -> Right $ HandshakeNegotiationResult r vNumber vData
+          Left vReason              -> Left (HandshakeError vReason)
+
+      MsgQueryReply vMap ->
+        Done TokDone $ Right $ decodeQueryResult decodeData vMap
 
       -- the server refused common highest version
       MsgRefuse vReason ->
@@ -69,13 +76,17 @@ handshakeClientPeer codec@VersionDataCodec {encodeData, decodeData}
               Right vData' ->
                 case acceptVersion vData vData' of
                   Accept agreedData ->
-                    Done TokDone $ Right $ ( app agreedData
-                                           , vNumber
-                                           , agreedData
-                                           )
+                    Done TokDone $ Right $ HandshakeNegotiationResult (app agreedData)
+                                                                      vNumber
+                                                                      agreedData
                   Refuse err ->
                     Done TokDone (Left (InvalidServerSelection vNumber err))
 
+
+decodeQueryResult :: (vNumber -> bytes -> Either Text vData)
+                  -> Map vNumber bytes
+                  -> HandshakeResult r vNumber vData
+decodeQueryResult decodeData vMap = HandshakeQueryResult $ Map.mapWithKey decodeData vMap
 
 encodeVersions
   :: forall vNumber r vParams vData.

@@ -1,6 +1,6 @@
 { runCommand, fd, lib, stylish-haskell, haskell-nix }:
 
-runCommand "check-stylish-network" {
+runCommand "check-stylish" {
   meta.platforms = with lib.platforms; [ linux ];
   buildInputs = [ fd stylish-haskell ];
   src = haskell-nix.haskellLib.cleanGit {
@@ -10,7 +10,7 @@ runCommand "check-stylish-network" {
 } ''
   unpackPhase
   cd $sourceRoot
-  bash ./scripts/ci/check-stylish-network.sh
+  bash ./scripts/ci/check-stylish.sh
   diff -ru $src .
 
   EXIT_CODE=$?

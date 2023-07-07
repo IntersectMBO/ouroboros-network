@@ -20,7 +20,6 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer)
-import           Data.Foldable (toList)
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -33,6 +32,8 @@ import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
+                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -56,9 +57,12 @@ withPeerSelectionActions
   => Tracer m (TraceLocalRootPeers peeraddr exception)
   -> Tracer m TracePublicRootPeers
   -> (IP -> Socket.PortNumber -> peeraddr)
+  -> DNSSemaphore m
   -> DNSActions resolver exception m
   -> STM m PeerSelectionTargets
-  -> STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
+  -> STM m [( HotValency
+            , WarmValency
+            , Map RelayAccessPoint PeerAdvertise)]
   -- ^ local root peers
   -> STM m (Map RelayAccessPoint PeerAdvertise)
   -- ^ public root peers
@@ -68,6 +72,8 @@ withPeerSelectionActions
   -- ^ Extract peer sharing information from peerconn
   -> STM m (Map peeraddr (PeerSharingController peeraddr m))
   -- ^ peer sharing registry
+  -> STM m (peeraddr, PeerSharing)
+  -- ^ Read New Inbound Connections
   -> PeerStateActions peeraddr peerconn m
   -> (NumberOfPeers -> m (Maybe (Set peeraddr, DiffTime)))
   -> (   Async m Void
@@ -80,6 +86,7 @@ withPeerSelectionActions
   localRootTracer
   publicRootTracer
   toPeerAddr
+  dnsSemaphore
   dnsActions
   readTargets
   readLocalRootPeers
@@ -87,13 +94,15 @@ withPeerSelectionActions
   peerSharing
   peerConnToPeerSharing
   readPeerSharingController
+  readNewInboundConnections
   peerStateActions
   getLedgerPeers
   k = do
     localRootsVar <- newTVarIO mempty
     let peerSelectionActions = PeerSelectionActions {
             readPeerSelectionTargets = readTargets,
-            readLocalRootPeers = toList <$> readTVar localRootsVar,
+            readLocalRootPeers = readTVar localRootsVar,
+            readNewInboundConnection = readNewInboundConnections,
             peerSharing,
             peerConnToPeerSharing,
             requestPublicRootPeers = requestPublicRootPeers,
@@ -140,6 +149,7 @@ withPeerSelectionActions
     requestConfiguredRootPeers n =
       publicRootPeersProvider publicRootTracer
                               toPeerAddr
+                              dnsSemaphore
                               DNS.defaultResolvConf
                               readPublicRootPeers
                               dnsActions

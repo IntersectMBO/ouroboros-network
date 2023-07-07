@@ -36,6 +36,7 @@ instance Arbitrary NodeToNodeVersionData where
                   , pure PeerSharingPrivate
                   , pure PeerSharingPublic
                   ]
+        <*> arbitrary
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
 prop_nodeToNodeCodec ntnVersion ntnData =

@@ -454,7 +454,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> m Void
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar actions policy =
     JobPool.withJobPool $ \jobPool -> do
-      localPeers <- map (\(target, _) -> (target, 0))
+      localPeers <- map (\(h, w, _) -> (h, w, 0))
                 <$> atomically (readLocalRootPeers actions)
       peerSelectionGovernorLoop
         tracer
@@ -579,6 +579,16 @@ peerSelectionGovernorLoop tracer
       <> EstablishedPeers.aboveTarget actions             policy st
       <> ActivePeers.belowTarget      actions             policy st
       <> ActivePeers.aboveTarget      actions             policy st
+
+      -- Note that this job is potentially blocking but is non-prioritary.
+      --
+      -- The node could be bombarded with incoming connections and we don't want
+      -- to hinder it making progress towards the targets.
+      --
+      -- Although we do have rate-limiting of inbound connections it is better
+      -- to safeguard it by giving it less priority at the governor level.
+      --
+      <> Monitor.inboundPeers         actions st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 

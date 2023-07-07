@@ -26,6 +26,8 @@ import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as Established
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.KnownPeers (setTepidFlag)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import           Ouroboros.Network.PeerSelection.LocalRootPeers
+                     (HotValency (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 
 
@@ -81,10 +83,10 @@ belowTargetLocal actions
                      Set.\\ inProgressDemoteWarm
                 numPromoteInProgress = Set.size inProgressPromoteWarm
           , not (Set.null availableToPromote)
-          , (target, members, membersActive) <- groupsBelowTarget
+          , (HotValency hotTarget, members, membersActive) <- groupsBelowTarget
           , let membersAvailableToPromote = Set.intersection
                                               members availableToPromote
-                numMembersToPromote       = target
+                numMembersToPromote       = hotTarget
                                           - Set.size membersActive
                                           - numPromoteInProgress
           , not (Set.null membersAvailableToPromote)
@@ -135,10 +137,10 @@ belowTargetLocal actions
   = GuardedSkip Nothing
   where
     groupsBelowTarget =
-      [ (target, members, membersActive)
-      | (target, members) <- LocalRootPeers.toGroupSets localRootPeers
+      [ (hotValency, members, membersActive)
+      | (hotValency, _, members) <- LocalRootPeers.toGroupSets localRootPeers
       , let membersActive = members `Set.intersection` activePeers
-      , Set.size membersActive < target
+      , Set.size membersActive < getHotValency hotValency
       ]
 
 belowTargetOther :: forall peeraddr peerconn m.
@@ -357,10 +359,10 @@ aboveTargetLocal actions
                  }
     -- Are there any groups of local peers that are below target?
   | let groupsAboveTarget =
-          [ (target, members, membersActive)
-          | (target, members) <- LocalRootPeers.toGroupSets localRootPeers
+          [ (hotValency, members, membersActive)
+          | (hotValency, _, members) <- LocalRootPeers.toGroupSets localRootPeers
           , let membersActive = members `Set.intersection` activePeers
-          , Set.size membersActive > target
+          , Set.size membersActive > getHotValency hotValency
           ]
   , not (null groupsAboveTarget)
     -- We need this detailed check because it is not enough to check we are
@@ -376,11 +378,11 @@ aboveTargetLocal actions
                                        Set.\\ inProgressDemoteHot
                 numDemoteInProgress = Set.size inProgressDemoteHot
           , not (Set.null availableToDemote)
-          , (target, members, membersActive) <- groupsAboveTarget
+          , (HotValency hotTarget, members, membersActive) <- groupsAboveTarget
           , let membersAvailableToDemote = Set.intersection
                                              members availableToDemote
                 numMembersToDemote       = Set.size membersActive
-                                         - target
+                                         - hotTarget
                                          - numDemoteInProgress
           , not (Set.null membersAvailableToDemote)
           , numMembersToDemote > 0

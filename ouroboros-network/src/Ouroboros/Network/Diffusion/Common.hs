@@ -1,5 +1,8 @@
 -- Common things between P2P and NonP2P Diffusion modules
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE GADTs              #-}
+{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Ouroboros.Network.Diffusion.Common
   ( DiffusionTracer (..)
@@ -61,13 +64,15 @@ data DiffusionTracer ntnAddr ntcAddr
     deriving Show
 
 -- TODO: add a tracer for these misconfiguration
-data Failure ntnAddr = UnsupportedReadySocket -- Windows only
-                     | UnexpectedIPv4Address ntnAddr
-                     | UnexpectedIPv6Address ntnAddr
-                     | NoSocket
-  deriving (Eq, Show)
+data Failure where
+  UnsupportedReadySocket :: Failure
+  UnexpectedIPv4Address  :: forall ntnAddr. (Show ntnAddr, Typeable ntnAddr) => ntnAddr -> Failure
+  UnexpectedIPv6Address  :: forall ntnAddr. (Show ntnAddr, Typeable ntnAddr) => ntnAddr -> Failure
+  NoSocket               :: Failure
+  DiffusionError         :: SomeException -> Failure
 
-instance (Typeable ntnAddr, Show ntnAddr) => Exception (Failure ntnAddr)
+deriving instance Show Failure
+instance Exception Failure
 
 -- | Common DiffusionTracers interface between P2P and NonP2P
 --

@@ -68,10 +68,10 @@ tests = testGroup "Ouroboros.Network.Protocol"
     , testProperty "direct IO" propChainSyncDirectIO
     , testProperty "connect ST" propChainSyncConnectST
     , testProperty "connect IO" propChainSyncConnectIO
-    , testProperty "directPipelinedMax ST" propChainSyncPipeliendMaxDirectST
-    , testProperty "directPipelinedMax IO" propChainSyncPipeliendMaxDirectIO
-    , testProperty "directPipelinedMin ST" propChainSyncPipeliendMinDirectST
-    , testProperty "directPipelinedMin IO" propChainSyncPipeliendMinDirectIO
+    , testProperty "directPipelinedMax ST" propChainSyncPipelinedMaxDirectST
+    , testProperty "directPipelinedMax IO" propChainSyncPipelinedMaxDirectIO
+    , testProperty "directPipelinedMin ST" propChainSyncPipelinedMinDirectST
+    , testProperty "directPipelinedMin IO" propChainSyncPipelinedMinDirectIO
     , testProperty "connectPipelinedMax ST" propChainSyncPipelinedMaxConnectST
     , testProperty "connectPipelinedMin ST" propChainSyncPipelinedMinConnectST
     , testProperty "connectPipelinedMax IO" propChainSyncPipelinedMaxConnectIO
@@ -223,40 +223,40 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
 -- Pipelined direct tests
 --
 
-propChainSyncPipeliendMaxDirectST :: ChainProducerStateForkTest
+propChainSyncPipelinedMaxDirectST :: ChainProducerStateForkTest
                                   -> Positive Word32
                                   -> Bool
-propChainSyncPipeliendMaxDirectST cps (Positive omax) =
+propChainSyncPipelinedMaxDirectST cps (Positive omax) =
     runSimOrThrow $
       chainSyncPipelinedForkExperiment
         ((fmap . fmap) void directPipelined)
         (ChainSyncExamples.chainSyncClientPipelinedMax omax)
         cps
 
-propChainSyncPipeliendMaxDirectIO :: ChainProducerStateForkTest
+propChainSyncPipelinedMaxDirectIO :: ChainProducerStateForkTest
                                   -> Positive Word32
                                   -> Property
-propChainSyncPipeliendMaxDirectIO cps (Positive omax) =
+propChainSyncPipelinedMaxDirectIO cps (Positive omax) =
     ioProperty $
       chainSyncPipelinedForkExperiment
         ((fmap . fmap) void directPipelined)
         (ChainSyncExamples.chainSyncClientPipelinedMax omax)
         cps
 
-propChainSyncPipeliendMinDirectST :: ChainProducerStateForkTest
+propChainSyncPipelinedMinDirectST :: ChainProducerStateForkTest
                                   -> Positive Word32
                                   -> Bool
-propChainSyncPipeliendMinDirectST cps (Positive omax) =
+propChainSyncPipelinedMinDirectST cps (Positive omax) =
     runSimOrThrow $
       chainSyncPipelinedForkExperiment
         ((fmap . fmap) void directPipelined)
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
         cps
 
-propChainSyncPipeliendMinDirectIO :: ChainProducerStateForkTest
+propChainSyncPipelinedMinDirectIO :: ChainProducerStateForkTest
                                   -> Positive Word32
                                   -> Property
-propChainSyncPipeliendMinDirectIO cps (Positive omax) =
+propChainSyncPipelinedMinDirectIO cps (Positive omax) =
     ioProperty $
       chainSyncPipelinedForkExperiment
         ((fmap . fmap) void directPipelined)

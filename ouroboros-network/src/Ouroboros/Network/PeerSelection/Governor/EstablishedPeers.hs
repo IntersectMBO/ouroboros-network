@@ -23,6 +23,8 @@ import           System.Random (randomR)
 import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
+import           Ouroboros.Network.PeerSelection.LocalRootPeers
+                     (WarmValency (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 
 
@@ -59,8 +61,8 @@ belowTarget :: forall peeraddr peerconn m.
 belowTarget = belowTargetLocal <> belowTargetOther
 
 
--- | For locally configured root peers we have the (implicit) target that they
--- should all be warm peers all the time.
+-- | For locally configured root peers we have the explicit target that comes from local
+-- configuration.
 --
 belowTargetLocal :: forall peeraddr peerconn m.
                    (MonadSTM m, Ord peeraddr)
@@ -77,46 +79,44 @@ belowTargetLocal actions
                    inProgressPromoteCold
                  }
 
-    -- Are we below the target for number of /local/ root peers that are
-    -- established? Our target for established local root peers is all of them!
-    -- However we still don't want to go over the number of established peers
-    -- or we'll end up in a cycle.
-  | numLocalEstablishedPeers + numLocalConnectInProgress
-  < targetNumberOfLocalPeers
+    -- Are there any groups of local peers that are below target?
+  | not (null groupsBelowTarget)
+    -- We need this detailed check because it is not enough to check we are
+    -- below an aggregate target. We can be above target for some groups
+    -- and below for others. We need to take into account peers which are being
+    -- promoted to Warm, and peers which are being demoted to Cold.
 
-    -- Are there any /local/ root peers that are cold we could possibly pick to
-    -- connect to? We can subtract the local established ones because by
-    -- definition they are not cold and our invariant is that they are always
-    -- in the connect set. We can also subtract the in progress ones since they
-    -- are also already in the connect set and we cannot pick them again.
-  , numLocalAvailableToConnect - numLocalEstablishedPeers
-                               - numLocalConnectInProgress > 0
-  --TODO: switch style to checking if the set is empty
+    -- Are there any groups where we can pick members to promote?
+  , let groupsAvailableToPromote =
+          [ (numMembersToPromote, membersAvailableToPromote)
+          | let availableToPromote =
+                  localAvailableToConnect
+                     Set.\\ localEstablishedPeers
+                     Set.\\ localConnectInProgress
+          , not (Set.null availableToPromote)
+          , (WarmValency warmTarget, members, membersEstablished) <- groupsBelowTarget
+          , let membersAvailableToPromote = Set.intersection members availableToPromote
+                numMembersToPromote       = warmTarget
+                                          - Set.size membersEstablished
+                                          - numLocalConnectInProgress
+          , not (Set.null membersAvailableToPromote)
+          , numMembersToPromote > 0
+          ]
+  , not (null groupsAvailableToPromote)
   = Guarded Nothing $ do
-      -- The availableToPromote here is non-empty due to the second guard.
-      -- The known peers map restricted to the connect set is the same size as
-      -- the connect set (because it is a subset). The establishedPeers is a
-      -- subset of the connect set and we also know that there is no overlap
-      -- between inProgressPromoteCold and establishedPeers. QED.
-      --
-      -- The numPeersToPromote is positive based on the first guard.
-      --
-      let availableToPromote :: Set peeraddr
-          availableToPromote = localAvailableToConnect
-                                 Set.\\ localEstablishedPeers
-                                 Set.\\ localConnectInProgress
+      selectedToPromote <-
+        Set.unions <$> sequence
+          [ pickPeers st
+              policyPickColdPeersToPromote
+              membersAvailableToPromote
+              numMembersToPromote
+          | (numMembersToPromote,
+             membersAvailableToPromote) <- groupsAvailableToPromote ]
 
-          numPeersToPromote  = targetNumberOfLocalPeers
-                             - numLocalEstablishedPeers
-                             - numLocalConnectInProgress
-      selectedToPromote <- pickPeers st
-                             policyPickColdPeersToPromote
-                             availableToPromote
-                             numPeersToPromote
       return $ \_now -> Decision {
         decisionTrace = [TracePromoteColdLocalPeers
-                           targetNumberOfLocalPeers
-                           numLocalEstablishedPeers
+                           [ (target, Set.size membersEstablished)
+                           | (target, _, membersEstablished) <- groupsBelowTarget ]
                            selectedToPromote],
         decisionState = st {
                           inProgressPromoteCold = inProgressPromoteCold
@@ -126,28 +126,34 @@ belowTargetLocal actions
                         | peer <- Set.toList selectedToPromote ]
       }
 
-    -- If we could connect to a local root peer except that there are no local
-    -- root peers currently available then we return the next wakeup time (if any)
-    -- TODO: Note that this may wake up too soon, since it considers non-local
-    -- known peers too for the purpose of the wakeup time.
-  | numLocalEstablishedPeers + numLocalConnectInProgress < targetNumberOfLocalPeers
+    -- If we could promote except that there are no peers currently available
+    -- then we return the next wakeup time (if any)
+  | not (null groupsBelowTarget)
+  , let potentialToPromote =
+          -- These are local peers that are cold but not ready.
+          localRootPeersSet
+             Set.\\ localEstablishedPeers
+             Set.\\ KnownPeers.availableToConnect knownPeers
+  , not (Set.null potentialToPromote)
   = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers)
 
   | otherwise
   = GuardedSkip Nothing
   where
-    localRootPeersSet          = LocalRootPeers.keysSet localRootPeers
-    targetNumberOfLocalPeers   = LocalRootPeers.size localRootPeers
+    groupsBelowTarget =
+      [ (warmValency, members, membersEstablished)
+      | (_, warmValency, members) <- LocalRootPeers.toGroupSets localRootPeers
+      , let membersEstablished = members `Set.intersection` EstablishedPeers.toSet establishedPeers
+      , Set.size membersEstablished < getWarmValency warmValency
+      ]
 
+    localRootPeersSet          = LocalRootPeers.keysSet localRootPeers
     localEstablishedPeers      = EstablishedPeers.toSet establishedPeers
                                   `Set.intersection` localRootPeersSet
     localAvailableToConnect    = KnownPeers.availableToConnect knownPeers
                                   `Set.intersection` localRootPeersSet
     localConnectInProgress     = inProgressPromoteCold
                                   `Set.intersection` localRootPeersSet
-
-    numLocalEstablishedPeers   = Set.size localEstablishedPeers
-    numLocalAvailableToConnect = Set.size localAvailableToConnect
     numLocalConnectInProgress  = Set.size localConnectInProgress
 
 

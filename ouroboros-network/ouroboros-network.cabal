@@ -1,7 +1,6 @@
-cabal-version:       3.0
-
+cabal-version:          3.0
 name:                   ouroboros-network
-version:                0.6.0.0
+version:                0.8.1.1
 synopsis:               A networking layer for the Ouroboros blockchain protocol
 description:            A networking layer for the Ouroboros blockchain protocol.
 license:                Apache-2.0
@@ -12,7 +11,7 @@ author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     CHANGELOG.md
+extra-doc-files:        CHANGELOG.md
 
 flag asserts
   description: Enable assertions
@@ -122,9 +121,9 @@ library
                        io-classes-mtl   ^>=0.1,
                        network-mux,
                        si-timers,
-                       ouroboros-network-api       ^>=0.3,
-                       ouroboros-network-framework ^>=0.5,
-                       ouroboros-network-protocols ^>=0.5,
+                       ouroboros-network-api       ^>=0.5,
+                       ouroboros-network-framework ^>=0.6,
+                       ouroboros-network-protocols ^>=0.5.0.2,
                        strict-stm,
                        typed-protocols   >=0.1.0.4 && <1.0,
   if !os(windows)
@@ -224,6 +223,7 @@ test-suite test
                        strict-stm,
                        typed-protocols,
                        typed-protocols-examples,
+                       with-utf8,
 
   if os(windows)
     build-depends:     Win32-network                 <0.2.0.0,

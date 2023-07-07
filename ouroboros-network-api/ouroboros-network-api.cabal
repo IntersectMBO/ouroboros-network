@@ -1,7 +1,6 @@
-cabal-version:       3.0
-
+cabal-version:          3.0
 name:                   ouroboros-network-api
-version:                0.3.0.0
+version:                0.5.0.0
 synopsis:               A networking api shared with ouroboros-consensus
 description:            A networking api shared with ouroboros-consensus.
 license:                Apache-2.0
@@ -12,7 +11,7 @@ author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
 build-type:             Simple
-extra-source-files:     CHANGELOG.md
+extra-doc-files:        CHANGELOG.md
 
 flag asserts
   description: Enable assertions
@@ -31,7 +30,9 @@ library
 
                        Ouroboros.Network.CodecCBORTerm
                        Ouroboros.Network.ControlMessage
+                       Ouroboros.Network.Handshake
                        Ouroboros.Network.Handshake.Acceptable
+                       Ouroboros.Network.Handshake.Queryable
                        Ouroboros.Network.Magic
                        Ouroboros.Network.NodeToClient.Version
                        Ouroboros.Network.NodeToNode.Version

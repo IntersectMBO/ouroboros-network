@@ -18,7 +18,6 @@ package io-sim
   ghc-options: -Werror
   flags: +asserts
 
--- Add strcittvar check
 package io-classes
   flags: +checktvarinvariant
 
@@ -27,7 +26,6 @@ package typed-protocols
 
 package typed-protocols-examples
   ghc-options: -Werror
-  flags:
 
 package network-mux
   flags: +ipv6 +asserts
@@ -35,26 +33,11 @@ package network-mux
 package ouroboros-network
   flags: +ipv6 +cddl +asserts
 
-package cardano-crypto-praos
-  flags: -external-libsodium-vrf
-
 package HsOpenSSL
   extra-include-dirs: D:/a/_temp/msys64/mingw64/include
   extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib
   flags: +use-pkg-config
 
-package secp256k1-haskell
-  extra-include-dirs: D:/a/_temp/msys64/mingw64/include
-  extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib
-
 package basement
-  extra-include-dirs: D:/a/_temp/msys64/mingw64/include
-  extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib
-
-package cardano-crypto-class
-  extra-include-dirs: D:/a/_temp/msys64/mingw64/include
-  extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib
-
-package cardano-crypto-praos
   extra-include-dirs: D:/a/_temp/msys64/mingw64/include
   extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib

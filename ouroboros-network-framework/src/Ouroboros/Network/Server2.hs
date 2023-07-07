@@ -27,8 +27,6 @@ module Ouroboros.Network.Server2
   , RemoteSt (..)
   , RemoteTransition
   , RemoteTransitionTrace
-    -- * ControlChannel
-  , module ControlChannel
   ) where
 
 import           Control.Applicative (Alternative)
@@ -51,10 +49,10 @@ import           Foreign.C.Error
 #endif
 
 import           Ouroboros.Network.ConnectionHandler
+import           Ouroboros.Network.ConnectionManager.InformationChannel
+                     (InboundGovernorInfoChannel)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.InboundGovernor
-import           Ouroboros.Network.InboundGovernor.ControlChannel
-import qualified Ouroboros.Network.InboundGovernor.ControlChannel as ControlChannel
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket
@@ -88,8 +86,8 @@ data ServerArguments (muxMode  :: MuxMode) socket peerAddr versionData versionNu
       -- server to run and manage responders which needs to be started on
       -- inbound connections.
       --
-      serverControlChannel        :: ServerControlChannel muxMode peerAddr versionData
-                                                          bytes m a b,
+      serverInboundInfoChannel    :: InboundGovernorInfoChannel muxMode peerAddr versionData
+                                                                bytes m a b,
 
       -- | Observable mutable state.
       --
@@ -143,7 +141,7 @@ run ServerArguments {
         serverLimits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       serverInboundIdleTimeout,
       serverConnectionManager,
-      serverControlChannel,
+      serverInboundInfoChannel,
       serverObservableStateVar
     } = do
       let sockets = NonEmpty.toList serverSockets
@@ -158,7 +156,7 @@ run ServerArguments {
                                         )
                         inboundGovernor serverTrTracer
                                         inboundGovernorTracer
-                                        serverControlChannel
+                                        serverInboundInfoChannel
                                         serverInboundIdleTimeout
                                         serverConnectionManager
                                         serverObservableStateVar)

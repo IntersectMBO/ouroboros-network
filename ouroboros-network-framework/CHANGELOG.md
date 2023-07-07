@@ -1,10 +1,37 @@
 # Revision history for ouroboros-network-framework
 
-## Next version
+## next version
+
+### Breaking changes
+
+* light peer sharing:
+  * Added `cmGetPeerSharing` field to `ConnectionManagerArguments`.
+  * Added `getProtocolPeerSharing` field to `DataFlowProtocolData` record.
+  * Renamed `serverControlChannel` as `serverInboundInfoChannel` of the `ServerArguments` record.
+  * Moved `OurboundGovernorInfoChannel` to `ouroboros-network`.
 
 ### Non-breaking changes
 
-* RawBearer API (typeclass and instances) added.
+* Fixed query shutdown timeout in the legacy (non-p2p) mode (20s).
+* Added RawBearer API (typeclass and instances).
+
+## 0.6.0.1 -- 2023-05-15
+
+* Updated to use `ouroboros-network-api-0.5.0.0`.
+
+## 0.6.0.0 -- 2023-05-08
+
+### Breaking changes
+
+* Handshake support for querying:
+  * Use `ouroboros-network-api-0.4.0.0`
+  * Added `haQueryVersion` to `HandshakeArguments`
+  * `handshakeServerPeer` recieves extra argument `vData -> Bool`
+  * Added `MsgQueryReply` to `Handshake` mini-protocol.
+  * Added `Ouroboros.Network.Protocol.Handshake.Client.handshakeCleintPeerTestVersions`
+  * Added `HandshakeResult` and `HandshakeException` types.
+
+### Non-breaking changes
 
 ## 0.5.0.0 -- 2023-04-28
 
