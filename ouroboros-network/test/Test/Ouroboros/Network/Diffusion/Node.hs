@@ -105,6 +105,8 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
+                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -147,7 +149,9 @@ data Arguments m = Arguments
     , aChainSyncEarlyExit   :: Bool
 
     , aPeerSelectionTargets :: PeerSelectionTargets
-    , aReadLocalRootPeers   :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
+    , aReadLocalRootPeers   :: STM m [( HotValency
+                                      , WarmValency
+                                      , Map RelayAccessPoint PeerAdvertise)]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
     , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerAfter   :: STM m UseLedgerAfter

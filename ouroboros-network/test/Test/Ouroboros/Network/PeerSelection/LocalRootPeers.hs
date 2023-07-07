@@ -1,12 +1,15 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns     #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Test.Ouroboros.Network.PeerSelection.LocalRootPeers
   ( arbitraryLocalRootPeers
   , restrictKeys
   , tests
   , LocalRootPeers (..)
+  , HotValency (..)
+  , WarmValency (..)
   ) where
 
 import           Data.Map.Strict (Map)
@@ -15,7 +18,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 
 import           Ouroboros.Network.PeerSelection.LocalRootPeers
-                     (LocalRootPeers (..))
+                     (HotValency (..), LocalRootPeers (..), WarmValency (..))
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.PeerSelection.Governor
@@ -77,10 +80,21 @@ arbitraryLocalRootPeers peeraddrs = do
                                          gassignment
                                          advertise
                    ]
-    targets <- mapM (\g -> choose (0, Map.size g)) groups
+    targets <- mapM (\g -> do
+                      warmValency <- WarmValency <$> choose (0, Map.size g)
+                      hotValency <- HotValency <$> choose (0, getWarmValency warmValency)
+                      return (hotValency, warmValency)
+                    ) groups
 
-    return (LocalRootPeers.fromGroups (zip targets groups))
+    return (LocalRootPeers.fromGroups (zipWith (\(h, w) g -> (h, w, g))
+                                               targets
+                                               groups))
 
+instance Arbitrary HotValency where
+  arbitrary = HotValency <$> arbitrary
+
+instance Arbitrary WarmValency where
+  arbitrary = WarmValency <$> arbitrary
 
 instance (Arbitrary peeraddr, Ord peeraddr) =>
          Arbitrary (LocalRootPeers peeraddr) where
@@ -97,7 +111,7 @@ restrictKeys :: Ord peeraddr
              -> LocalRootPeers peeraddr
 restrictKeys lrps ks =
     LocalRootPeers.fromGroups
-  . map (\(t,g) -> (t, Map.restrictKeys g ks))
+  . map (\(h, w, g) -> (h, w, Map.restrictKeys g ks))
   . LocalRootPeers.toGroups
   $ lrps
 
@@ -110,14 +124,17 @@ prop_arbitrary_LocalRootPeers lrps =
 
     LocalRootPeers.invariant lrps
   where
+    thrd (_, _, c) = c
     size       = renderRanges 5 (LocalRootPeers.size lrps)
     numGroups  = show (length (LocalRootPeers.toGroups lrps))
-    sizeGroups = map (show . Set.size . snd) (LocalRootPeers.toGroupSets lrps)
+    sizeGroups = map (show . Set.size . thrd) (LocalRootPeers.toGroupSets lrps)
     targets    = [ case () of
-                    _ | t == 0          -> "none"
-                      | t == Set.size g -> "all"
-                      | otherwise       -> "some"
-                 | (t, g) <- LocalRootPeers.toGroupSets lrps ]
+                    _ | h == 0                        -> "none active"
+                      | w == 0                        -> "none established"
+                      | h == HotValency (Set.size g)  -> "all active"
+                      | w == WarmValency (Set.size g) -> "all established"
+                      | otherwise                     -> "some"
+                 | (h, w, g) <- LocalRootPeers.toGroupSets lrps ]
 
 
 prop_shrink_LocalRootPeers :: Fixed (LocalRootPeers PeerAddr) -> Property
@@ -125,7 +142,7 @@ prop_shrink_LocalRootPeers x =
       prop_shrink_valid LocalRootPeers.invariant x
  .&&. prop_shrink_nonequal x
 
-prop_fromGroups :: [(Int, Map PeerAddr PeerAdvertise)] -> Bool
+prop_fromGroups :: [(HotValency, WarmValency, Map PeerAddr PeerAdvertise)] -> Bool
 prop_fromGroups = LocalRootPeers.invariant . LocalRootPeers.fromGroups
 
 prop_fromToGroups :: LocalRootPeers PeerAddr -> Bool

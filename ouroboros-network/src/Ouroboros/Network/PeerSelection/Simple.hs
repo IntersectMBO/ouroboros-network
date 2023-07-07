@@ -32,6 +32,8 @@ import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
+                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -58,7 +60,9 @@ withPeerSelectionActions
   -> DNSSemaphore m
   -> DNSActions resolver exception m
   -> STM m PeerSelectionTargets
-  -> STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
+  -> STM m [( HotValency
+            , WarmValency
+            , Map RelayAccessPoint PeerAdvertise)]
   -- ^ local root peers
   -> STM m (Map RelayAccessPoint PeerAdvertise)
   -- ^ public root peers

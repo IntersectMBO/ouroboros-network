@@ -67,7 +67,8 @@ import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as Established
 import           Ouroboros.Network.PeerSelection.KnownPeers (KnownPeers)
 import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer)
-import           Ouroboros.Network.PeerSelection.LocalRootPeers (LocalRootPeers)
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
+                     LocalRootPeers, WarmValency)
 import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -202,7 +203,9 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- It is structured as a collection of (non-overlapping) groups of peers
        -- where we are supposed to select n from each group.
        --
-       readLocalRootPeers       :: STM m [(Int, Map peeraddr PeerAdvertise)],
+       readLocalRootPeers       :: STM m [( HotValency
+                                          , WarmValency
+                                          , Map peeraddr PeerAdvertise)],
 
        readNewInboundConnection :: STM m (peeraddr, PeerSharing),
 
@@ -377,7 +380,7 @@ data PeerSelectionCounters = PeerSelectionCounters {
       coldPeers  :: Int,
       warmPeers  :: Int,
       hotPeers   :: Int,
-      localRoots :: [(Int, Int)]
+      localRoots :: [(HotValency, WarmValency, Int)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
@@ -389,13 +392,13 @@ peerStateToCounters st = PeerSelectionCounters { coldPeers, warmPeers, hotPeers,
     warmPeers  = Set.size $ establishedPeersSet Set.\\ activePeers st
     hotPeers   = Set.size $ activePeers st
     localRoots =
-      [ (target, active)
-      | (target, members) <- LocalRootPeers.toGroupSets (localRootPeers st)
+      [ (h, w, active)
+      | (h, w, members) <- LocalRootPeers.toGroupSets (localRootPeers st)
       , let active = Set.size (members `Set.intersection` activePeers st)
       ]
 
 emptyPeerSelectionState :: StdGen
-                        -> [(Int, Int)]
+                        -> [(HotValency, WarmValency, Int)]
                         -> PeerSelectionState peeraddr peerconn
 emptyPeerSelectionState rng localRoots =
     PeerSelectionState {
@@ -662,8 +665,7 @@ data TracePeerSelection peeraddr =
      -- | target established, actual established, selected peers
      | TracePromoteColdPeers   Int Int (Set peeraddr)
      -- | target local established, actual local established, selected peers
-     | TracePromoteColdLocalPeers Int Int (Set peeraddr)
-     -- | target established, actual established, peer, delay until next
+     | TracePromoteColdLocalPeers [(WarmValency, Int)] (Set peeraddr)
      -- promotion, reason
      | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
      -- | target established, actual established, peer
@@ -672,8 +674,9 @@ data TracePeerSelection peeraddr =
      | TracePromoteWarmPeers   Int Int (Set peeraddr)
      -- | Promote local peers to warm
      | TracePromoteWarmLocalPeers
-         [(Int, Int)]   -- ^ local per-group `(target active, actual active)`,
-                        -- only limited to groups which are below their target.
+         [(HotValency, Int)]
+         -- ^ local per-group `(target active, actual active)`,
+         -- only limited to groups which are below their target.
          (Set peeraddr) -- ^ selected peers
      -- | target active, actual active, peer, reason
      | TracePromoteWarmFailed  Int Int peeraddr SomeException
@@ -693,7 +696,7 @@ data TracePeerSelection peeraddr =
      -- | target active, actual active, selected peers
      | TraceDemoteHotPeers     Int Int (Set peeraddr)
      -- | local per-group (target active, actual active), selected peers
-     | TraceDemoteLocalHotPeers [(Int, Int)] (Set peeraddr)
+     | TraceDemoteLocalHotPeers [(HotValency, Int)] (Set peeraddr)
      -- | target active, actual active, peer, reason
      | TraceDemoteHotFailed    Int Int peeraddr SomeException
      -- | target active, actual active, peer

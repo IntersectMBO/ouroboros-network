@@ -108,6 +108,8 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      TracePeerSelection (..), emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (UseLedgerAfter (..), withLedgerPeers)
+import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
+                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.PeerStateActions
@@ -226,7 +228,7 @@ data ArgumentsExtra m = ArgumentsExtra {
       --
       daPeerSelectionTargets :: PeerSelectionTargets
 
-    , daReadLocalRootPeers  :: STM m [(Int, Map RelayAccessPoint PeerAdvertise)]
+    , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
     , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
     -- | Peer's own PeerSharing value.
     --

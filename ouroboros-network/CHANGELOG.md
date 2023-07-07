@@ -9,6 +9,7 @@
   * Added `readNewInboundConnection` field to `PeerSelectionActions` record.
 * The constructor `FetchDeclineChainNoIntersection` was renamed to
   `FetchDeclineChainIntersectionTooDeep` (#4541)
+- Include Warm Valency for Local Root Peers
 
 ### Non-breaking changes
 
