@@ -10,7 +10,6 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
   , empty
   , size
   , insert
-  , updatePeerSharing
   , delete
   , toSet
   , member
@@ -45,8 +44,10 @@ import qualified Data.Set as Set
 import           Control.Exception (assert)
 import           Control.Monad.Class.MonadTime.SI
 
+import           Data.Maybe (fromMaybe)
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..),
                      combinePeerInformation)
 
@@ -80,7 +81,7 @@ data KnownPeers peeraddr = KnownPeers {
        -- connection attempt.
        nextConnectTimes   :: !(OrdPSQ peeraddr Time ())
      }
-  deriving Show
+  deriving (Eq, Show)
 
 data KnownPeerInfo = KnownPeerInfo {
        -- | The current number of consecutive connection attempt failures. This
@@ -173,7 +174,7 @@ member peeraddr KnownPeers {allPeers} =
 
 -- TODO: `insert` ought to be idempotent, see issue #4616.
 insert :: Ord peeraddr
-       => Map peeraddr (PeerSharing, PeerAdvertise, IsLedgerPeer)
+       => Map peeraddr (Maybe PeerSharing, Maybe PeerAdvertise, Maybe IsLedgerPeer)
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
 insert peeraddrs
@@ -194,13 +195,17 @@ insert peeraddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeerInfo (ps, pa, lp) =
-      KnownPeerInfo {
+    newPeerInfo (peerSharing, peerAdvertise, ledgerPeers) =
+      let peerAdvertise' = fromMaybe DoNotAdvertisePeer peerAdvertise
+          peerSharing'   = fromMaybe NoPeerSharing peerSharing
+                           `combinePeerInformation`
+                           peerAdvertise'
+       in KnownPeerInfo {
         knownPeerFailCount = 0
       , knownPeerTepid     = False
-      , knownPeerSharing   = ps
-      , knownPeerAdvertise = pa
-      , knownLedgerPeer    = lp
+      , knownPeerSharing   = peerSharing'
+      , knownPeerAdvertise = peerAdvertise'
+      , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
       }
     mergePeerInfo old new =
       KnownPeerInfo {
@@ -212,26 +217,10 @@ insert peeraddrs
                                                     (knownPeerAdvertise new)
       , knownPeerAdvertise = knownPeerAdvertise new
       -- Preserve Ledger Peer information if the peer is ledger.
-      , knownLedgerPeer    = case (knownLedgerPeer old) of
+      , knownLedgerPeer    = case knownLedgerPeer old of
                                IsLedgerPeer    -> IsLedgerPeer
                                IsNotLedgerPeer -> knownLedgerPeer new
       }
-
-updatePeerSharing :: Ord peeraddr
-                  => peeraddr
-                  -> PeerSharing
-                  -> KnownPeers peeraddr
-                  -> KnownPeers peeraddr
-updatePeerSharing peeraddr
-                  ps
-                  knownPeers@KnownPeers {
-                    allPeers
-                  } =
-  case Map.lookup peeraddr allPeers of
-    Nothing -> knownPeers
-    Just (KnownPeerInfo i b _ pa lp) ->
-      let allPeers' = Map.insert peeraddr (KnownPeerInfo i b ps pa lp) allPeers
-       in knownPeers { allPeers = allPeers' }
 
 delete :: Ord peeraddr
        => Set peeraddr
