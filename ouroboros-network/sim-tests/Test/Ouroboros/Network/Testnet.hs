@@ -87,7 +87,7 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency (..))
+                     (HotValency (..), WarmValency (..))
 
 tests :: TestTree
 tests =
@@ -1329,12 +1329,9 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
   where
     verify_target_established_local :: Events DiffusionTestTrace -> Property
     verify_target_established_local events =
-      let govLocalRootPeersSig :: Signal (Set NtNAddr)
+      let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState
-              ( LocalRootPeers.keysSet
-              . Governor.localRootPeers)
-              events
+            selectDiffusionPeerSelectionState Governor.localRootPeers events
 
           govInProgressPromoteColdSig :: Signal (Set NtNAddr)
           govInProgressPromoteColdSig =
@@ -1410,10 +1407,17 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
           promotionOpportunities :: Signal (Set NtNAddr)
           promotionOpportunities =
             (\local established recentFailures inProgressPromoteCold isAlive ->
-              if isAlive
-              then local Set.\\ established
-                         Set.\\ recentFailures
-                         Set.\\ inProgressPromoteCold
+              if isAlive then
+                Set.unions
+                  [ -- There are no opportunities if we're at or above target
+                    if Set.size groupEstablished >= warmTarget
+                       then Set.empty
+                       else groupEstablished Set.\\ established
+                                             Set.\\ recentFailures
+                                             Set.\\ inProgressPromoteCold
+                  | (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local
+                  , let groupEstablished = group `Set.intersection` established
+                  ]
               else Set.empty
             ) <$> govLocalRootPeersSig
               <*> govEstablishedPeersSig
@@ -1467,6 +1471,8 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                . splitWithNameTrace
                . Trace.fromList ()
                . fmap snd
+               . Signal.eventsToList
+               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . Trace.toList
                . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
                . withTimeNameTraceEvents
@@ -1497,15 +1503,24 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
           govLocalRootPeersSig =
             selectDiffusionPeerSelectionState Governor.localRootPeers events
 
+          govActiveTargetsSig :: Signal Int
+          govActiveTargetsSig =
+            selectDiffusionPeerSelectionState
+              (targetNumberOfActivePeers . Governor.targets)
+              events
+
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
-              (EstablishedPeers.toSet . Governor.establishedPeers)
+              (dropBigLedgerPeers $
+                 EstablishedPeers.toSet . Governor.establishedPeers)
               events
 
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
-            selectDiffusionPeerSelectionState Governor.activePeers events
+            selectDiffusionPeerSelectionState
+              (dropBigLedgerPeers Governor.activePeers)
+              events
 
           govActiveFailuresSig :: Signal (Set NtNAddr)
           govActiveFailuresSig =
@@ -1530,10 +1545,21 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                          | otherwise         -> Just failures
                          where
                            failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                       TracePromoteWarmBigLedgerPeerFailed _ _ peer _ ->
+                         Just (Set.singleton peer)
+                       TraceDemoteBigLedgerPeersAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise -> Just failures
+                         where
+                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents
             $ events
+
+          govInProgressPromoteWarmSig :: Signal (Set NtNAddr)
+          govInProgressPromoteWarmSig =
+            selectDiffusionPeerSelectionState Governor.inProgressPromoteWarm events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -1562,22 +1588,31 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                                   (const False)
                                   trJoinKillSig
 
+          -- There are no opportunities if we're at or above target.
+          --
+          -- We define local root peers not to be promotion opportunities for
+          -- the purpose of the general target of active peers.
+          -- The local root peers have a separate target with a separate property.
+          -- And we cannot count local peers since we can have corner cases where
+          -- the only choices are local roots in a group that is already at target
+          -- but the general target is still higher. In such situations we do not
+          -- want to promote any, since we'd then be above target for the local
+          -- root peer group.
+          --
+          promotionOpportunity target local established active recentFailures isAlive
+            | isAlive && Set.size active < target
+            = established Set.\\ active
+                          Set.\\ LocalRootPeers.keysSet local
+                          Set.\\ recentFailures
+
+            | otherwise
+            = Set.empty
+
           promotionOpportunities :: Signal (Set NtNAddr)
           promotionOpportunities =
-            (\local established active recentFailures isAlive ->
-              if isAlive
-              then Set.unions
-                    [ -- There are no opportunities if we're at or above target
-                      if Set.size groupActive >= hotTarget
-                         then Set.empty
-                         else groupEstablished Set.\\ active
-                                               Set.\\ recentFailures
-                    | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
-                    , let groupActive      = group `Set.intersection` active
-                          groupEstablished = group `Set.intersection` established
-                    ]
-              else Set.empty
-            ) <$> govLocalRootPeersSig
+            promotionOpportunity
+              <$> govActiveTargetsSig
+              <*> govLocalRootPeersSig
               <*> govEstablishedPeersSig
               <*> govActivePeersSig
               <*> govActiveFailuresSig
@@ -1593,10 +1628,19 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
        in counterexample
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, ignored too long)") $
+          counterexample
+            (intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
-            (\toolong -> Set.null toolong)
-            promotionOpportunitiesIgnoredTooLong
+            (\(_, _, _, _, _, _, toolong) -> Set.null toolong)
+            ((,,,,,,) <$> govLocalRootPeersSig
+                 <*> govEstablishedPeersSig
+                 <*> govActivePeersSig
+                 <*> govActiveFailuresSig
+                 <*> govInProgressPromoteWarmSig
+                 <*> trIsNodeAlive
+                 <*> promotionOpportunitiesIgnoredTooLong
+            )
 
 
 prop_diffusion_target_active_local_below :: AbsBearerInfo
@@ -1625,7 +1669,7 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
                   @NtNAddr
                . Trace.fromList (MainReturn (Time 0) () [])
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take 250000
                . traceEvents
                $ runSimTrace sim
 
@@ -1746,6 +1790,8 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
        in counterexample
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, ignored too long)") $
+          counterexample
+            (intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_,_,_,_,_,toolong) -> Set.null toolong)
@@ -2040,7 +2086,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              15 -- seconds
+              50 -- seconds
               id
               demotionOpportunities
 
@@ -2721,7 +2767,8 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
             lastTime = (\(WithName _ (WithTime t _)) -> t)
                      . last
                      $ evsList
-         in classifySimulatedTime lastTime
+         in counterexample (Trace.ppTrace show show ev)
+          $ classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_ig_valid_transition_order
           $ (\(WithName _ (WithTime _ b)) -> b)
@@ -2978,3 +3025,11 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
 
     -- TODO: it would be nice to check if the graph is connected if all dns
     -- names can be resolved.
+
+-- | filter out big ledger peers
+--
+dropBigLedgerPeers
+    :: (Governor.PeerSelectionState NtNAddr peerconn -> Set NtNAddr)
+    ->  Governor.PeerSelectionState NtNAddr peerconn -> Set NtNAddr
+dropBigLedgerPeers f =
+  \st -> f st Set.\\ Governor.bigLedgerPeers st

@@ -50,7 +50,7 @@ import           Control.Monad.IOSim (IOSim, traceM)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import           Data.IP (IP (..))
-import           Data.List (delete)
+import           Data.List (delete, nubBy)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, fromMaybe, maybeToList)
@@ -121,6 +121,7 @@ import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelect
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay (..), DNSTimeout (..))
 
+import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
@@ -645,9 +646,13 @@ genDiffusionScript genLocalRootPeers
                    (RelayAccessInfosWithDNS relays dnsMapScript)
                    = do
     let simArgs = mainnetSimArgs (length relays')
-    nodesWithCommands <- mapM go relays'
+    nodesWithCommands <- mapM go (nubBy ((==) `on` getRelayIP) relays')
     return (simArgs, dnsMapScript, nodesWithCommands)
   where
+    getRelayIP :: RelayAccessInfo -> IP
+    getRelayIP (RelayAddrInfo ip _ _)     = ip
+    getRelayIP (RelayDomainInfo _ ip _ _) = ip
+
     relays' :: [RelayAccessInfo]
     relays' = getRelayAccessInfos relays
 
