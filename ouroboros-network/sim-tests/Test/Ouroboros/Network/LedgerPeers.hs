@@ -90,19 +90,27 @@ instance Arbitrary StakePool where
                                        (NonEmpty.toList spRelay)
       ]
 
-newtype LedgerPools = LedgerPools [(PoolStake, NonEmpty RelayAccessPoint)]
+newtype LedgerPools =
+  LedgerPools { getLedgerPools :: [(PoolStake, NonEmpty RelayAccessPoint)] }
   deriving Show
 
 instance Arbitrary LedgerPools where
     arbitrary = LedgerPools . calculateRelativeStake <$> arbitrary
 
-      where
-        calculateRelativeStake :: [StakePool]
-                               -> [(PoolStake, NonEmpty RelayAccessPoint)]
-        calculateRelativeStake sps =
-            let totalStake = foldl' (\s p -> s + spStake p) 0 sps in
-            map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
-                       , spRelay p)) sps
+calculateRelativeStake :: [StakePool]
+                       -> [(PoolStake, NonEmpty RelayAccessPoint)]
+calculateRelativeStake sps =
+    let totalStake = foldl' (\s p -> s + spStake p) 0 sps in
+    map (\p -> ( PoolStake (fromIntegral (spStake p) % fromIntegral totalStake)
+               , spRelay p)) sps
+
+genLedgerPoolsFrom :: [RelayAccessPoint] -> Gen LedgerPools
+genLedgerPoolsFrom relays = do
+  stake <- choose (0, 1000000)
+  (ArbitraryRelayAccessPoint firstRelay) <- arbitrary
+  let moreRelays = filter (/= firstRelay) . nub $ relays
+      stakePool = StakePool stake (firstRelay :| moreRelays)
+  return (LedgerPools $ calculateRelativeStake [stakePool])
 
 newtype ArbLedgerPeersKind = ArbLedgerPeersKind LedgerPeersKind
   deriving Show

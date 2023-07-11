@@ -88,6 +88,7 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..), WarmValency (..))
+import           Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
 tests :: TestTree
 tests =
@@ -374,10 +375,15 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
               NoPeerSharing
               [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoNotAdvertisePeer),(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoNotAdvertisePeer)])]
+              (Script (LedgerPools [] :| []))
               nullPeerSelectionTargets {
                 targetNumberOfKnownPeers = 2,
                 targetNumberOfEstablishedPeers = 2,
-                targetNumberOfActivePeers = 1
+                targetNumberOfActivePeers = 1,
+
+                targetNumberOfKnownBigLedgerPeers = 0,
+                targetNumberOfEstablishedBigLedgerPeers = 0,
+                targetNumberOfActiveBigLedgerPeers = 0
               }
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
@@ -396,6 +402,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
              NoPeerSharing
              []
+             (Script (LedgerPools [] :| []))
              nullPeerSelectionTargets {
                targetNumberOfRootPeers = 2,
                targetNumberOfKnownPeers = 5,
@@ -855,11 +862,16 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
             [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,DoNotAdvertisePeer)
                                 , (RelayAccessDomain "test3" 4,DoAdvertisePeer)])
             ]
-            nullPeerSelectionTargets
+            (Script (LedgerPools [] :| []))
+            PeerSelectionTargets
               { targetNumberOfRootPeers = 6,
                 targetNumberOfKnownPeers = 7,
                 targetNumberOfEstablishedPeers = 7,
-                targetNumberOfActivePeers = 6
+                targetNumberOfActivePeers = 6,
+
+                targetNumberOfKnownBigLedgerPeers = 0,
+                targetNumberOfEstablishedBigLedgerPeers = 0,
+                targetNumberOfActiveBigLedgerPeers = 0
               }
             (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
                                                            , DNSTimeout {getDNSTimeout = 0.333}
@@ -1857,6 +1869,7 @@ async_demotion_network_script =
         naPublicRoots      = Map.empty,
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
+        naLedgerPeers      = Script (LedgerPools [] :| []),
         naLocalSelectionTargets
                            = Governor.nullPeerSelectionTargets {
                                targetNumberOfKnownPeers = 1,
@@ -2280,49 +2293,62 @@ prop_unit_4258 =
                      abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted),
                      abiSDUSize = LargeSDU
                    }
-      diffScript = DiffusionScript
-        (SimArgs 1 10)
-        (singletonTimedScript Map.empty)
-        [( NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224)
-             (Map.fromList [])
-             (TestAddress (IPAddr (read "0.0.0.4") 9))
-             NoPeerSharing
-             [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])]
-             nullPeerSelectionTargets {
-                 targetNumberOfRootPeers = 2,
-                 targetNumberOfKnownPeers = 5,
-                 targetNumberOfEstablishedPeers = 4,
-                 targetNumberOfActivePeers = 1
-               }
-             (Script (DNSTimeout {getDNSTimeout = 0.397}
-                 :| [ DNSTimeout {getDNSTimeout = 0.382},
-                      DNSTimeout {getDNSTimeout = 0.321},
-                      DNSTimeout {getDNSTimeout = 0.143},
-                      DNSTimeout {getDNSTimeout = 0.256},
-                      DNSTimeout {getDNSTimeout = 0.142},
-                      DNSTimeout {getDNSTimeout = 0.341},
-                      DNSTimeout {getDNSTimeout = 0.236}
-                    ]))
-             (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| []))
-             Nothing
-             False
-         , [ JoinNetwork 4.166666666666,
-             Kill 0.3,
-             JoinNetwork 1.517857142857,
-             Reconfigure 0.245238095238 [],
-             Reconfigure 4.190476190476 []
-           ]
-         ),
-         ( NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269)
-             (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoAdvertisePeer)])
-             (TestAddress (IPAddr (read "0.0.0.8") 65531))
-             NoPeerSharing
-             [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])]
-             nullPeerSelectionTargets {
+      diffScript =
+        DiffusionScript
+          (SimArgs 1 10)
+          (singletonTimedScript Map.empty)
+          [(NodeArgs
+              (-3)
+              InitiatorAndResponderDiffusionMode
+              (Just 224)
+              Map.empty
+              (TestAddress (IPAddr (read "0.0.0.4") 9))
+              NoPeerSharing
+              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])]
+              (Script (LedgerPools [] :| []))
+              PeerSelectionTargets {
+                targetNumberOfRootPeers = 2,
+                targetNumberOfKnownPeers = 5,
+                targetNumberOfEstablishedPeers = 4,
+                targetNumberOfActivePeers = 1,
+
+                targetNumberOfKnownBigLedgerPeers = 0,
+                targetNumberOfEstablishedBigLedgerPeers = 0,
+                targetNumberOfActiveBigLedgerPeers = 0
+              }
+              (Script (DNSTimeout {getDNSTimeout = 0.397} :| [ DNSTimeout {getDNSTimeout = 0.382}
+                                                             , DNSTimeout {getDNSTimeout = 0.321}
+                                                             , DNSTimeout {getDNSTimeout = 0.143}
+                                                             , DNSTimeout {getDNSTimeout = 0.256}
+                                                             , DNSTimeout {getDNSTimeout = 0.142}
+                                                             , DNSTimeout {getDNSTimeout = 0.341}
+                                                             , DNSTimeout {getDNSTimeout = 0.236}]))
+              (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| []))
+              Nothing
+              False
+          , [ JoinNetwork 4.166666666666
+            , Kill 0.3
+            , JoinNetwork 1.517857142857
+            , Reconfigure 0.245238095238 []
+            , Reconfigure 4.190476190476 []])
+          , (NodeArgs
+               (-5)
+               InitiatorAndResponderDiffusionMode
+               (Just 269)
+               (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoNotAdvertisePeer)])
+               (TestAddress (IPAddr (read "0.0.0.8") 65531))
+               NoPeerSharing
+               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])]
+               (Script (LedgerPools [] :| []))
+               PeerSelectionTargets {
                  targetNumberOfRootPeers = 4,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 3,
-                 targetNumberOfActivePeers = 1
+                 targetNumberOfActivePeers = 1,
+
+                 targetNumberOfKnownBigLedgerPeers = 0,
+                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
                }
              (Script (DNSTimeout {getDNSTimeout = 0.281}
                  :| [ DNSTimeout {getDNSTimeout = 0.177},

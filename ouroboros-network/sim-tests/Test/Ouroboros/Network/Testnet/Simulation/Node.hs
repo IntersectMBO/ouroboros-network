@@ -81,7 +81,8 @@ import           Ouroboros.Network.PeerSelection.Governor
                      TracePeerSelection)
 import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
 import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
+                     (LedgerPeersConsensusInterface (..), UseLedgerAfter (..),
+                     accPoolStake)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerSelectionActionsTrace)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -132,6 +133,8 @@ import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..), WarmValency (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
                      (byteLimitsPeerSharing, timeLimitsPeerSharing)
+import           Test.Ouroboros.Network.LedgerPeers (LedgerPools (..),
+                     genLedgerPoolsFrom)
 import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
 import           Test.QuickCheck
 
@@ -195,6 +198,7 @@ data NodeArgs =
                                    , WarmValency
                                    , Map RelayAccessPoint PeerAdvertise
                                    )]
+    , naLedgerPeers            :: Script LedgerPools
       -- ^ 'Arguments' 'LocalRootPeers' values
     , naLocalSelectionTargets  :: PeerSelectionTargets
       -- ^ 'Arguments' 'aLocalSelectionTargets' value
@@ -393,23 +397,32 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
 
   peerSharing <- arbitrary
 
+  let (ledgerPeersRelays, publicRootsRelays) =
+        splitAt (length relays `div` 2) relays
+      publicRoots =
+        Map.fromList [ (makeRelayAccessPoint relay', advertise)
+                     | relay' <- publicRootsRelays
+                     , relay' /= relay
+                     , let advertise = case relay' of
+                             RelayAddrInfo        _ip _port adv -> adv
+                             RelayDomainInfo _dns _ip _port adv -> adv
+                     ]
+  ledgerPeers <- fmap (map makeRelayAccessPoint) <$> listOf (sublistOf ledgerPeersRelays)
+  ledgerPeerPools <- traverse genLedgerPoolsFrom ledgerPeers
+  firstLedgerPool <- arbitrary
+  let ledgerPeerPoolsScript = Script (firstLedgerPool :| ledgerPeerPools)
+
   return
    $ NodeArgs
       { naSeed                   = seed
       , naDiffusionMode          = diffusionMode
       , naMbTime                 = mustReplyTimeout
-      , naPublicRoots            = Map.fromList
-                                 [ (makeRelayAccessPoint relay', advertise)
-                                 | relay' <- relays
-                                 , relay' /= relay
-                                 , let advertise = case relay' of
-                                         RelayAddrInfo        _ip _port adv -> adv
-                                         RelayDomainInfo _dns _ip _port adv -> adv
-                                 ]
+      , naPublicRoots            = publicRoots
         -- TODO: we haven't been using public root peers so far because we set
         -- `UseLedgerPeers 0`!
       , naAddr                   = makeNtNAddr relay
       , naLocalRootPeers         = localRootPeers
+      , naLedgerPeers            = ledgerPeerPoolsScript
       , naLocalSelectionTargets  = peerSelectionTargets
       , naDNSTimeoutScript       = dnsTimeout
       , naDNSLookupDelayScript   = dnsLookupDelay
@@ -1021,6 +1034,7 @@ diffusionSimulation
             , naMbTime                 = mustReplyTimeout
             , naPublicRoots            = publicRoots
             , naAddr                   = addr
+            , naLedgerPeers            = ledgerPeers
             , naLocalSelectionTargets  = peerSelectionTargets
             , naDNSTimeoutScript       = dnsTimeout
             , naDNSLookupDelayScript   = dnsLookupDelay
@@ -1033,6 +1047,7 @@ diffusionSimulation
             lrpVar
             dMapVar = do
       chainSyncExitVar <- newTVarIO chainSyncExitOnBlockNo
+      ledgerPeersVar <- initScript' ledgerPeers
       let (bgaRng, rng) = Random.split $ mkStdGen seed
           acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
@@ -1102,10 +1117,15 @@ diffusionSimulation
               , NodeKernel.iNtcBearer         = makeFDBearer
               , NodeKernel.iRng               = rng
               , NodeKernel.iDomainMap         = dMapVar
-              , NodeKernel.iLedgerPeersConsensusInterface
-                                        -- TODO: #4611.
-                                        = LedgerPeersConsensusInterface
-                                        $ \_ -> return Nothing
+              , NodeKernel.iLedgerPeersConsensusInterface =
+                  LedgerPeersConsensusInterface $
+                    \_ -> do
+                      ledgerPools <- stepScriptSTM ledgerPeersVar
+                      return $ Just
+                             $ Map.elems
+                             $ accPoolStake
+                             $ getLedgerPools
+                             $ ledgerPools
               }
 
           shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> BlockHeader -> m Bool
