@@ -16,7 +16,6 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time),
                      addTime, diffTime)
 import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (Tracer))
 import           Data.Bifoldable (bifoldMap)
 
 import           Data.List (find, intercalate, tails)
@@ -174,14 +173,6 @@ tests =
 #endif
   ]
 
-
-tracerDiffusionSimWithTimeName :: Tracer (IOSim s) (WithName NtNAddr DiffusionSimulationTrace)
-tracerDiffusionSimWithTimeName = tracerWithTime tracer
-  where
-    tracer :: Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionSimulationTrace))
-    tracer = dynamicTracer
-
-
 -- | This test coverage of ConnectionManagerTrace constructors.
 --
 prop_connection_manager_trace_coverage :: AbsBearerInfo
@@ -193,7 +184,6 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
-                                tracerDiffusionSimWithTimeName
 
       events :: [ConnectionManagerTrace
                   NtNAddr
@@ -229,7 +219,6 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
-                                tracerDiffusionSimWithTimeName
 
       events :: [AbstractTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionConnectionManagerTransitionTrace st ->
@@ -266,7 +255,6 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
-                                tracerDiffusionSimWithTimeName
 
       events :: [InboundGovernorTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
@@ -299,7 +287,6 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
-                                tracerDiffusionSimWithTimeName
 
       events :: [RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
@@ -335,7 +322,6 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
-                                tracerDiffusionSimWithTimeName
 
       events :: [TraceFetchClientState BlockHeader]
       events = mapMaybe (\case DiffusionFetchTrace st ->
@@ -443,7 +429,6 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
-                                tracerDiffusionSimWithTimeName
 
       events :: [ServerTrace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
@@ -476,7 +461,6 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
-                                tracerDiffusionSimWithTimeName
 
       events :: [PeerSelectionActionsTrace NtNAddr NtNVersion]
       events = mapMaybe (\case DiffusionPeerSelectionActionsTrace st -> Just st
@@ -520,7 +504,6 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
                                 iosimTracer
-                                tracerDiffusionSimWithTimeName
 
       events :: [TracePeerSelection NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionTrace st -> Just st
@@ -659,7 +642,6 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ _ l) =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         trace :: [(Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType)]
         trace = take 125000
@@ -729,7 +711,6 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -791,8 +772,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
 
     verify_dns_can_recover :: Events DiffusionTestTrace -> Property
     verify_dns_can_recover events =
-        counterexample (intercalate "\n" $ map show $ eventsToList events)
-      $ verify Map.empty Map.empty 0 (Time 0) (Signal.eventsToList events)
+        verify Map.empty Map.empty 0 (Time 0) (Signal.eventsToList events)
 
     verify :: Map DNS.Domain Time
            -> Map DNS.Domain DiffTime
@@ -937,7 +917,6 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1031,7 +1010,6 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1113,7 +1091,6 @@ prop_diffusion_target_active_local defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1196,7 +1173,6 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1318,7 +1294,6 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1483,7 +1458,6 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1633,7 +1607,6 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1865,7 +1838,6 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -1978,7 +1950,6 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
@@ -2100,7 +2071,6 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2201,7 +2171,6 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2344,7 +2313,6 @@ prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2407,7 +2375,6 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   (DiffusionScript sa dns hds)
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2660,7 +2627,6 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2730,7 +2696,6 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
@@ -2797,7 +2762,6 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
                                   iosimTracer
-                                  tracerDiffusionSimWithTimeName
 
         events :: [Trace () (Time, DiffusionTestTrace)]
         events = fmap ( Trace.fromList ()
@@ -2876,9 +2840,6 @@ classifyNumberOfEvents nEvents =
       . classify (nEvents >= 1000) "Nº Events >= 1000"
       . classify (nEvents >= 10000) "Nº Events >= 10000"
       . classify (nEvents >= 50000) "Nº Events >= 50000"
-
-dynamicTracer :: (Typeable a, Show a) => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM <> sayTracer
 
 withTimeNameTraceEvents :: forall b name r. (Typeable b, Typeable name)
                         => SimTrace r
