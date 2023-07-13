@@ -75,7 +75,7 @@ tryHandshake doHandshake = do
 
 
 --
--- Record arguemnts
+-- Record arguments
 --
 
 -- | Common arguments for both 'Handshake' client & server.

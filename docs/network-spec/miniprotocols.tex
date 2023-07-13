@@ -532,7 +532,7 @@ following sense:
 \end{description}
 Note that the above condition guarantees that if either side returns
 \texttt{Accept} then the connection will not be closed by the remote end.
-A weaker condition, in which the returns values are equal if they both return
+A weaker condition, in which the return values are equal if they both return
 \texttt{Accept}, does not guarantee this property.  We also verify that the
 whole Handshake protocol, not just the \texttt{acceptable} satisfies the above
 property, see
@@ -673,7 +673,7 @@ The protocol uses the following messages:
       shall be ordered by perference (e.g. points with highest slot number
       first) and it is up to the producer to find the first intersection point
       on its chain and send it back to the consumer.  If an empty list of
-      points is send with \MsgFindIntersect{} the server will reply with
+      points is sent with \MsgFindIntersect{} the server will reply with
       \MsgIntersectNotFound{}.
 \item [\MsgIntersectFound{} {\boldmath $(point_{intersect} ,tip)$}]
       The producer replies with the first point of the request that is on his current chain.
@@ -715,7 +715,7 @@ The protocol uses the following messages:
 \hide{The trade-offs between the robustness and efficiency of possible chain-sync protocols are
 discussed in Section~\ref{chain-sync-discussion}.
 }
-This section describes a state-full implementation of a chain producer that is suitable for a setting where
+This section describes a stateful implementation of a chain producer that is suitable for a setting where
 the producer cannot trust the chain consumer.
 An important requirement in this setting
 is that a chain consumer must never be able to cause excessive resource use on the producer side.
