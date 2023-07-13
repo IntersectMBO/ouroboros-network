@@ -670,7 +670,7 @@ The protocol uses the following messages:
       shall be ordered by perference (e.g. points with highest slot number
       first) and it is up to the producer to find the first intersection point
       on its chain and send it back to the consumer.  If an empty list of
-      points is send with \MsgFindIntersect{} the server will reply with
+      points is sent with \MsgFindIntersect{} the server will reply with
       \MsgIntersectNotFound{}.
 \item [\MsgIntersectFound{} {\boldmath $(point_{intersect} ,tip)$}]
       The producer replies with the first point of the request that is on his current chain.

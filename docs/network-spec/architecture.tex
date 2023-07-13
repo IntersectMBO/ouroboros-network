@@ -32,9 +32,9 @@ tx-submission to desiminate transactions across the network.
 \end{figure}
 
 Figure~\ref{node-diagram-concurrency} illustrates design of a node.  Circles
-represents threads that run one of the mini-protocols.  
+represents threads that run one of the mini-protocols.
 Each mini-protocols communicate with a remote node over the network.
-Threads communicate communicate by means of a shared mutable variables, which
+Threads communicate by means of a shared mutable variables, which
 are represented by boxes in Figure~\ref{node-diagram-concurrency}.
 We heavily use
 \href{https://en.wikipedia.org/wiki/Software_transactional_memory}{Software
@@ -71,7 +71,7 @@ recover form transient conditions.  In any condition, a node must not exceed
 its memory limits, that is there must be defined limits, breaches of which
 being treated like protocol violations.
 
-Of cause it makes no sense if the system design is robust, but so defensive
+Of course it makes no sense if the system design is robust, but so defensive
 that it fails to meet performance goals.  An example would be a protocol that
 never transmits a message unless it has received an explicit ACK for the
 previous message. This approach might avoid overloading the network, but would
