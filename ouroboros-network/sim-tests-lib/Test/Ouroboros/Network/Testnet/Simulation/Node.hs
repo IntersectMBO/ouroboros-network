@@ -80,15 +80,8 @@ import           Ouroboros.Network.PeerSelection.Governor
                      (DebugPeerSelection (..), PeerSelectionTargets (..),
                      TracePeerSelection)
 import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface (..), UseLedgerAfter (..),
-                     accPoolStake)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerSelectionActionsTrace)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DomainAccessPoint (..), LookupReqs (..), PortNumber,
-                     RelayAccessPoint (..), TraceLocalRootPeers,
-                     TracePublicRootPeers)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
                      (byteLimitsBlockFetch, timeLimitsBlockFetch)
 import           Ouroboros.Network.Protocol.ChainSync.Codec
@@ -129,6 +122,17 @@ import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (DomainAccessPoint (..), PortNumber, RelayAccessPoint (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+                     (DNSLookupType)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (LedgerPeersConsensusInterface (..), TraceLedgerPeers,
+                     UseLedgerAfter (..), accPoolStake)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+                     (TraceLocalRootPeers)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+                     (TracePublicRootPeers)
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..), WarmValency (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Codec
@@ -885,6 +889,7 @@ data DiffusionSimulationTrace
 data DiffusionTestTrace =
       DiffusionLocalRootPeerTrace (TraceLocalRootPeers NtNAddr SomeException)
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
+    | DiffusionLedgerPeersTrace TraceLedgerPeers
     | DiffusionPeerSelectionTrace (TracePeerSelection NtNAddr)
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
     | DiffusionDebugPeerSelectionTrace (DebugPeerSelection NtNAddr)
@@ -1177,7 +1182,7 @@ diffusionSimulation
                      $ nodeTracer)
 
     domainResolver :: StrictTVar m (Map Domain [(IP, TTL)])
-                   -> LookupReqs
+                   -> DNSLookupType
                    -> [DomainAccessPoint]
                    -> m (Map DomainAccessPoint (Set NtNAddr))
     -- TODO: we can take into account the `LookupReqs` and return only `IPv4`
@@ -1212,6 +1217,11 @@ diffusionSimulation
                                                        $ nodeTracer
         , Diff.P2P.dtTracePublicRootPeersTracer        = contramap
                                                           DiffusionPublicRootPeerTrace
+                                                       . tracerWithName ntnAddr
+                                                       . tracerWithTime
+                                                       $ nodeTracer
+        , Diff.P2P.dtTraceLedgerPeersTracer            = contramap
+                                                          DiffusionLedgerPeersTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer

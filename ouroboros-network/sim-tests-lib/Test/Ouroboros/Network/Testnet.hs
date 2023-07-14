@@ -45,7 +45,6 @@ import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.PeerStateActions
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
@@ -86,6 +85,10 @@ import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (DomainAccessPoint (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+                     (TraceLocalRootPeers (..))
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..), WarmValency (..))
 import           Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))

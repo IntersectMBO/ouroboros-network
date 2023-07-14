@@ -21,7 +21,7 @@ import           Control.Monad.Class.MonadTime.SI
 import           System.Random (randomR)
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (IsBigLedgerPeer (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers

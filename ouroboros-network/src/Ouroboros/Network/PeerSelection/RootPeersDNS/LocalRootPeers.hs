@@ -1,53 +1,24 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Ouroboros.Network.PeerSelection.RootPeersDNS
-  ( -- * DNS based actions for local and public root providers
-    DNSActions (..)
-    -- * DNS resolver IO auxiliary functions
-  , constantResource
-    -- ** DNSActions IO
-  , ioDNSActions
-  , LookupReqs (..)
-    -- * DNS semaphore
-  , DNSSemaphore
-  , newLocalAndPublicRootDNSSemaphore
-    -- * DNS based provider for local root peers
-  , localRootPeersProvider
-  , DomainAccessPoint (..)
-  , RelayAccessPoint (..)
-  , IP.IP (..)
+module Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+  ( -- * DNS based provider for local root peers
+    localRootPeersProvider
   , TraceLocalRootPeers (..)
-    -- * DNS based provider for public root peers
-  , publicRootPeersProvider
-  , TracePublicRootPeers (..)
-    -- DNS lookup support
-  , resolveDomainAccessPoint
-    -- * DNS type re-exports
-  , DNS.ResolvConf
-  , DNS.Domain
-  , DNS.TTL
-    -- * Socket type re-exports
-  , Socket.PortNumber
   ) where
 
-import           Data.Foldable (foldlM)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.Void (Void, absurd)
 import           Data.Word (Word32)
 
 import           Control.Applicative (Alternative, (<|>))
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Concurrent.Class.MonadSTM.TSem
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
@@ -55,8 +26,6 @@ import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..), contramap, traceWith)
 
-
-import qualified Data.IP as IP
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
@@ -64,15 +33,10 @@ import           Data.Bifunctor (second)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSActions (..), DNSorIOError (..), LookupReqs (..),
-                     Resource (..), constantResource, ioDNSActions,
-                     retryResource)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+                     (DNSSemaphore, newDNSLocalRootSemaphore, withDNSSemaphore)
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency, WarmValency)
-
------------------------------------------------
--- local root peer set provider based on DNS
---
 
 data TraceLocalRootPeers peerAddr exception =
        TraceLocalRootDomains [( HotValency
@@ -97,36 +61,6 @@ data TraceLocalRootPeers peerAddr exception =
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException
   deriving Show
-
-
--- | Maximal concurrency when resolving DNS names of root and ledger peers.
---
-maxDNSConcurrency :: Integer
-maxDNSConcurrency = 8
-
--- | Maximal concurrency when resolving DNS names of local root peers.
---
-maxDNSLocalRootConcurrency :: Integer
-maxDNSLocalRootConcurrency = 2
-
--- | A semaphore used to limit concurrency of dns names resolution.
---
-newtype DNSSemaphore m = DNSSemaphore (TSem m)
-
--- | Create a `DNSSemaphore` for root and ledger peers.
---
-newLocalAndPublicRootDNSSemaphore :: MonadSTM m => m (DNSSemaphore m)
-newLocalAndPublicRootDNSSemaphore = DNSSemaphore <$> atomically (newTSem maxDNSConcurrency)
-
--- | Create a `DNSSemaphore` for local root peers.
---
-newDNSLocalRootSemaphore :: MonadSTM m => STM m (DNSSemaphore m)
-newDNSLocalRootSemaphore = DNSSemaphore <$> newTSem maxDNSLocalRootConcurrency
-
-withDNSSemaphore :: (MonadSTM m, MonadThrow m) => DNSSemaphore m -> m a -> m a
-withDNSSemaphore (DNSSemaphore s) =
-    bracket_ (atomically $ waitTSem s)
-             (atomically $ signalTSem s)
 
 -- | Resolve 'RelayAddress'-es of local root peers using dns if needed.  Local
 -- roots are provided wrapped in a 'StrictTVar', which value might change
@@ -172,7 +106,9 @@ localRootPeersProvider tracer
     -- | Loop function that monitors DNS Domain resolution threads and restarts
     -- if either these threads fail or detects the local configuration changed.
     --
-    loop :: DNSSemaphore m -> [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)] -> m Void
+    loop :: DNSSemaphore m
+         -> [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
+         -> m Void
     loop dnsSemaphore domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
       rr <- dnsAsyncResolverResource resolvConf
@@ -231,12 +167,17 @@ localRootPeersProvider tracer
       loop dnsSemaphore domainsGroups'
 
     resolveDomain
-      :: resolver
+      :: DNSSemaphore m
+      -> resolver
       -> DomainAccessPoint
       -> m (Either [DNS.DNSError] [(peerAddr, DNS.TTL)])
-    resolveDomain resolver
+    resolveDomain dnsSemaphore resolver
                   domain@DomainAccessPoint {dapDomain, dapPortNumber} = do
-      (errs, results) <- dnsLookupWithTTL resolvConf resolver dapDomain
+      (errs, results) <- withDNSSemaphore dnsSemaphore
+                                          (dnsLookupWithTTL
+                                            resolvConf
+                                            resolver
+                                            dapDomain)
       mapM_ (traceWith tracer . TraceLocalRootFailure domain . DNSError)
             errs
 
@@ -276,7 +217,7 @@ localRootPeersProvider tracer
           (resolver, rr') <- withResource rr
 
           --- Resolve 'domain'
-          reply <- withDNSSemaphore dnsSemaphore (resolveDomain resolver domain)
+          reply <- resolveDomain dnsSemaphore resolver domain
           case reply of
             Left errs -> go (minimum $ map (\err -> ttlForDnsError err ttl) errs)
                            rr'
@@ -354,180 +295,7 @@ localRootPeersProvider tracer
                    )
            )
 
----------------------------------------------
--- Public root peer set provider using DNS
---
-
-data TracePublicRootPeers =
-       TracePublicRootRelayAccessPoint (Map RelayAccessPoint PeerAdvertise)
-     | TracePublicRootDomains [DomainAccessPoint]
-     | TracePublicRootResult  DNS.Domain [(IP, DNS.TTL)]
-     | TracePublicRootFailure DNS.Domain DNS.DNSError
-       --TODO: classify DNS errors, config error vs transitory
-  deriving Show
-
--- |
---
-publicRootPeersProvider
-  :: forall peerAddr resolver exception a m.
-     (MonadThrow m, MonadAsync m, Exception exception,
-      Ord peerAddr)
-  => Tracer m TracePublicRootPeers
-  -> (IP -> Socket.PortNumber -> peerAddr)
-  -> DNSSemaphore m
-  -> DNS.ResolvConf
-  -> STM m (Map RelayAccessPoint PeerAdvertise)
-  -> DNSActions resolver exception m
-  -> ((Int -> m (Map peerAddr PeerAdvertise, DiffTime)) -> m a)
-  -> m a
-publicRootPeersProvider tracer
-                        toPeerAddr
-                        dnsSemaphore
-                        resolvConf
-                        readDomains
-                        DNSActions {
-                          dnsResolverResource,
-                          dnsLookupWithTTL
-                        }
-                        action = do
-    domains <- atomically readDomains
-    traceWith tracer (TracePublicRootRelayAccessPoint domains)
-    rr <- dnsResolverResource resolvConf
-    resourceVar <- newTVarIO rr
-    action (requestPublicRootPeers resourceVar)
-  where
-    processResult :: ((DomainAccessPoint, PeerAdvertise), ([DNS.DNSError], [(IP, DNS.TTL)]))
-                  -> m ((DomainAccessPoint, PeerAdvertise), [(IP, DNS.TTL)])
-    processResult ((domain, pa), (errs, result)) = do
-        mapM_ (traceWith tracer . TracePublicRootFailure (dapDomain domain))
-              errs
-        when (not $ null result) $
-            traceWith tracer $ TracePublicRootResult (dapDomain domain) result
-
-        return ((domain, pa), result)
-
-    requestPublicRootPeers
-      :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
-      -> Int
-      -> m (Map peerAddr PeerAdvertise, DiffTime)
-    requestPublicRootPeers resourceVar _numRequested = do
-        domains <- atomically readDomains
-        traceWith tracer (TracePublicRootRelayAccessPoint domains)
-        rr <- atomically $ readTVar resourceVar
-        (er, rr') <- withResource rr
-        atomically $ writeTVar resourceVar rr'
-        case er of
-          Left (DNSError err) -> throwIO err
-          Left (IOError  err) -> throwIO err
-          Right resolver -> do
-            let lookups =
-                  [ ((DomainAccessPoint domain port, pa),)
-                      <$> withDNSSemaphore dnsSemaphore
-                            (dnsLookupWithTTL
-                              resolvConf
-                              resolver
-                              domain)
-                  | (RelayAccessDomain domain port, pa) <- Map.assocs domains ]
-            -- The timeouts here are handled by the 'lookupWithTTL'. They're
-            -- configured via the DNS.ResolvConf resolvTimeout field and defaults
-            -- to 3 sec.
-            results <- withAsyncAll lookups (atomically . mapM waitSTM)
-            results' <- mapM processResult results
-            let successes = [ ( (toPeerAddr ip dapPortNumber, pa)
-                              , ipttl)
-                            | ( (DomainAccessPoint {dapPortNumber}, pa)
-                              , ipttls) <- results'
-                            , (ip, ipttl) <- ipttls
-                            ]
-                !domainsIps = [(toPeerAddr ip port, pa)
-                              | (RelayAccessAddress ip port, pa) <- Map.assocs domains ]
-                !ips      = Map.fromList (map fst successes) `Map.union` Map.fromList domainsIps
-                !ttl      = ttlForResults (map snd successes)
-            -- If all the lookups failed we'll return an empty set with a minimum
-            -- TTL, and the governor will invoke its exponential backoff.
-            return (ips, ttl)
-
--- | Provides DNS resolution functionality.
---
--- Concurrently resolve DNS names, respecting the 'maxDNSConcurrency' limit.
---
-resolveDomainAccessPoint
-  :: forall exception resolver m.
-     (MonadThrow m, MonadAsync m, Exception exception)
-  => Tracer m TracePublicRootPeers
-  -> DNSSemaphore m
-  -> DNS.ResolvConf
-  -> DNSActions resolver exception m
-  -> [DomainAccessPoint]
-  -> m (Map DomainAccessPoint (Set Socket.SockAddr))
-resolveDomainAccessPoint tracer
-                         dnsSemaphore
-                         resolvConf
-                         DNSActions {
-                            dnsResolverResource,
-                            dnsLookupWithTTL
-                          }
-                         domains
-                         = do
-    traceWith tracer (TracePublicRootDomains domains)
-    rr <- dnsResolverResource resolvConf
-    resourceVar <- newTVarIO rr
-    resolveDomains resourceVar
-  where
-    resolveDomains
-      :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
-      -> m (Map DomainAccessPoint (Set Socket.SockAddr))
-    resolveDomains resourceVar = do
-        rr <- atomically $ readTVar resourceVar
-        (er, rr') <- withResource rr
-        atomically $ writeTVar resourceVar rr'
-        case er of
-          Left (DNSError err) -> throwIO err
-          Left (IOError  err) -> throwIO err
-          Right resolver -> do
-            let lookups =
-                  [ (,) domain
-                      <$> withDNSSemaphore dnsSemaphore
-                            (dnsLookupWithTTL
-                              resolvConf
-                              resolver
-                              (dapDomain domain))
-                  | domain <- domains ]
-            -- The timeouts here are handled by the 'lookupWithTTL'. They're
-            -- configured via the DNS.ResolvConf resolvTimeout field and defaults
-            -- to 3 sec.
-            results <- withAsyncAll lookups (atomically . mapM waitSTM)
-            foldlM processResult Map.empty results
-
-    processResult :: Map DomainAccessPoint (Set Socket.SockAddr)
-                  -> (DomainAccessPoint, ([DNS.DNSError], [(IP, DNS.TTL)]))
-                  -> m (Map DomainAccessPoint (Set Socket.SockAddr))
-    processResult mr (domain, (errs, ipsttls)) = do
-        mapM_ (traceWith tracer . TracePublicRootFailure (dapDomain domain))
-              errs
-        when (not $ null ipsttls) $
-            traceWith tracer $ TracePublicRootResult (dapDomain domain) ipsttls
-
-        return $ Map.alter addFn domain mr
-      where
-        addFn :: Maybe (Set Socket.SockAddr) -> Maybe (Set Socket.SockAddr)
-        addFn Nothing =
-            let ips = map fst ipsttls
-                !addrs = map (\ip -> IP.toSockAddr (ip, dapPortNumber domain))
-                             ips
-                !addrSet = Set.fromList addrs in
-            Just addrSet
-        addFn (Just addrSet) =
-            let ips = map fst ipsttls
-                !addrs = map (\ip -> IP.toSockAddr (ip, dapPortNumber domain))
-                             ips
-                !addrSet' = Set.union addrSet (Set.fromList addrs) in
-            Just addrSet'
-
-
----------------------------------------------
--- Shared utils
---
+-- * Aux
 
 -- | Policy for TTL for positive results
 ttlForResults :: [DNS.TTL] -> DiffTime
@@ -541,23 +309,17 @@ ttlForResults ttls = clipTTLBelow
                    . (fromIntegral :: Word32 -> DiffTime)
                    $ maximum ttls
 
+-- | Limit insane TTL choices.
+clipTTLAbove, clipTTLBelow :: DiffTime -> DiffTime
+clipTTLBelow = max 60     -- between 1min
+clipTTLAbove = min 86400  -- and 24hrs
+
 -- | Policy for TTL for negative results
 -- Cache negative response for 3hrs
 -- Otherwise, use exponential backoff, up to a limit
 ttlForDnsError :: DNS.DNSError -> DiffTime -> DiffTime
 ttlForDnsError DNS.NameError _ = 10800
 ttlForDnsError _           ttl = clipTTLAbove (ttl * 2 + 5)
-
--- | Limit insane TTL choices.
-clipTTLAbove, clipTTLBelow :: DiffTime -> DiffTime
-clipTTLBelow = max 60     -- between 1min
-clipTTLAbove = min 86400  -- and 24hrs
-
-withAsyncAll :: MonadAsync m => [m a] -> ([Async m a] -> m b) -> m b
-withAsyncAll xs0 action = go [] xs0
-  where
-    go as []     = action (reverse as)
-    go as (x:xs) = withAsync x (\a -> go (a:as) xs)
 
 -- | `withAsyncAll`, but the actions are tagged with a context
 withAsyncAllWithCtx :: MonadAsync m => [(ctx, m a)] -> ([(ctx, Async m a)] -> m b) -> m b

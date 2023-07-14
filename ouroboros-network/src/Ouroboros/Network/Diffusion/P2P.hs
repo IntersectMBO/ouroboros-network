@@ -49,7 +49,7 @@ import qualified Data.IP as IP
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map (Map)
 import           Data.Maybe (catMaybes, maybeToList)
-import           Data.Set (Set, elemAt)
+import           Data.Set (elemAt)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           System.Exit (ExitCode)
@@ -58,7 +58,6 @@ import           System.Random (StdGen, newStdGen, randomRs, split)
 import qualified System.Posix.Signals as Signals
 #endif
 
-import qualified Network.DNS as DNS
 import           Network.Socket (Socket)
 import qualified Network.Socket as Socket
 
@@ -104,10 +103,9 @@ import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types
                      (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-                     PeerSelectionCounters (..), PublicPeerSelectionState (..),
+                     PeerSelectionActions, PeerSelectionCounters (..),
+                     PeerStateActions, PublicPeerSelectionState (..),
                      TracePeerSelection (..), emptyPublicPeerSelectionState)
-import           Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind,
-                     NumberOfPeers, UseLedgerAfter (..), withLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSelectionActions
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -115,12 +113,17 @@ import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), pchPeerSharing,
                      withPeerStateActions)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions,
-                     DNSSemaphore, DomainAccessPoint, LookupReqs (..),
-                     RelayAccessPoint (..), TraceLocalRootPeers (..),
-                     TracePublicRootPeers (..), ioDNSActions,
-                     newLocalAndPublicRootDNSSemaphore,
-                     resolveDomainAccessPoint)
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (RelayAccessPoint)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+                     (DNSActions, DNSLookupType (..), ioDNSActions)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (LedgerPeersConsensusInterface, TraceLedgerPeers,
+                     UseLedgerAfter)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+                     (TraceLocalRootPeers)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+                     (TracePublicRootPeers)
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency, WarmValency)
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
@@ -141,6 +144,10 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
 
     , dtTracePublicRootPeersTracer
         :: Tracer m TracePublicRootPeers
+
+      -- | Ledger Peers tracer
+    , dtTraceLedgerPeersTracer
+        :: Tracer m TraceLedgerPeers
 
     , dtTracePeerSelectionTracer
         :: Tracer m (TracePeerSelection ntnAddr)
@@ -206,6 +213,7 @@ nullTracers =
     TracersExtra {
         dtTraceLocalRootPeersTracer                  = nullTracer
       , dtTracePublicRootPeersTracer                 = nullTracer
+      , dtTraceLedgerPeersTracer                     = nullTracer
       , dtTracePeerSelectionTracer                   = nullTracer
       , dtDebugPeerSelectionInitiatorTracer          = nullTracer
       , dtDebugPeerSelectionInitiatorResponderTracer = nullTracer
@@ -456,11 +464,6 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnToPeerAddr
           :: IP -> Socket.PortNumber -> ntnAddr,
 
-        -- | node-to-node domain resolver
-        --
-        diNtnDomainResolver
-          :: LookupReqs -> [DomainAccessPoint] -> m (Map DomainAccessPoint (Set ntnAddr)),
-
         -- | node-to-client snocket
         --
         diNtcSnocket
@@ -497,12 +500,7 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         -- | diffusion dns actions
         --
         diDnsActions
-          :: LookupReqs -> DNSActions resolver resolverError m,
-
-        -- | DNS Semaphore
-        --
-        diLocalAndPublicRootDnsSemaphore
-          :: DNSSemaphore m
+          :: DNSLookupType -> DNSActions resolver resolverError m
       }
 
 runM
@@ -571,7 +569,6 @@ runM Interfaces
        , diNtnDataFlow
        , diNtnPeerSharing
        , diNtnToPeerAddr
-       , diNtnDomainResolver
        , diNtcSnocket
        , diNtcBearer
        , diNtcHandshakeArguments
@@ -579,12 +576,10 @@ runM Interfaces
        , diRng
        , diInstallSigUSR1Handler
        , diDnsActions
-       , diLocalAndPublicRootDnsSemaphore
        }
      Tracers
        { dtMuxTracer
        , dtLocalMuxTracer
-       , dtLedgerPeersTracer
        , dtDiffusionTracer = tracer
        }
      TracersExtra
@@ -595,6 +590,7 @@ runM Interfaces
        , dtPeerSelectionActionsTracer
        , dtTraceLocalRootPeersTracer
        , dtTracePublicRootPeersTracer
+       , dtTraceLedgerPeersTracer
        , dtConnectionManagerTracer
        , dtConnectionManagerTransitionTracer
        , dtServerTracer
@@ -934,28 +930,34 @@ runM Interfaces
       let withPeerSelectionActions'
             :: forall muxMode responderCtx peerAddr bytes a1 b c.
                STM m (ntnAddr, PeerSharing)
-            -> Governor.PeerStateActions
+            -- ^ Read New Inbound Connections
+            -> PeerStateActions
                  ntnAddr
                  (PeerConnectionHandle
                     muxMode responderCtx peerAddr ntnVersionData bytes m a1 b)
                  m
-            -> (NumberOfPeers
-                -> LedgerPeersKind
-                -> m (Maybe (Set ntnAddr, DiffTime)))
-            -> (Async m Void
-                -> Governor.PeerSelectionActions
+            -> StdGen
+            -- ^ Random generator for picking ledger peers
+            -> LedgerPeersConsensusInterface m
+            -- ^ Get Ledger Peers comes from here
+            -> STM m UseLedgerAfter
+            -- ^ Get Use Ledger After value
+            -> (   (Async m Void, Async m Void)
+                -> PeerSelectionActions
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx peerAddr ntnVersionData bytes m a1 b)
                       m
                 -> m c)
+            -- ^ continuation, receives a handle to the local roots peer provider thread
+            -- (only if local root peers were non-empty).
             -> m c
           withPeerSelectionActions' =
               withPeerSelectionActions
                   dtTraceLocalRootPeersTracer
                   dtTracePublicRootPeersTracer
+                  dtTraceLedgerPeersTracer
                   diNtnToPeerAddr
-                  diLocalAndPublicRootDnsSemaphore
                   (diDnsActions lookupReqs)
                   (readTVar peerSelectionTargetsVar)
                   daReadLocalRootPeers
@@ -1030,73 +1032,72 @@ runM Interfaces
       --
       -- Part (b): capturing the major control-flow of runM:
       --
-      withLedgerPeers
-        ledgerPeersRng
-        diNtnToPeerAddr
-        dtLedgerPeersTracer
-        daReadUseLedgerAfter
-        daLedgerPeersCtx
-        (diNtnDomainResolver lookupReqs)
-        $ \requestLedgerPeers ledgerPeerThread ->
-        case diffusionMode of
+      case diffusionMode of
 
-          -- InitiatorOnly mode, run peer selection only:
-          InitiatorOnlyDiffusionMode ->
-            withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
+        -- InitiatorOnly mode, run peer selection only:
+        InitiatorOnlyDiffusionMode ->
+          withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
+          diInstallSigUSR1Handler connectionManager
+          withPeerStateActions' connectionManager $ \peerStateActions->
+            withPeerSelectionActions'
+              retry
+              peerStateActions
+              ledgerPeersRng
+              daLedgerPeersCtx
+              daReadUseLedgerAfter
+                $ \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
+
+               Async.withAsync
+                 (peerSelectionGovernor'
+                    dtDebugPeerSelectionInitiatorTracer
+                    peerSelectionActions)
+               $ \governorThread ->
+               Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+            -- wait for any thread to fail:
+            snd <$> Async.waitAny
+               [ ledgerPeersThread
+               , localRootPeersProvider
+               , governorThread
+               , churnGovernorThread
+               ]
+
+        -- InitiatorAndResponder mode, run peer selection and the server:
+        InitiatorAndResponderDiffusionMode -> do
+          inboundInfoChannel  <- newInformationChannel
+          outboundInfoChannel <- newInformationChannel
+          observableStateVar  <- Server.newObservableStateVar ntnInbgovRng
+          withConnectionManagerInitiatorAndResponderMode
+            inboundInfoChannel outboundInfoChannel
+            observableStateVar $ \connectionManager-> do
             diInstallSigUSR1Handler connectionManager
             withPeerStateActions' connectionManager $ \peerStateActions->
-              withPeerSelectionActions' retry peerStateActions requestLedgerPeers
-                 $ \localPeerSelectionActionsThread peerSelectionActions->
-
-                 Async.withAsync
-                   (peerSelectionGovernor'
-                      dtDebugPeerSelectionInitiatorTracer
-                      peerSelectionActions)
-                 $ \governorThread ->
-                 Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
-              -- wait for any thread to fail:
-              snd <$> Async.waitAny
-                 [ localPeerSelectionActionsThread
-                 , governorThread
-                 , ledgerPeerThread
-                 , churnGovernorThread
-                 ]
-
-          -- InitiatorAndResponder mode, run peer selection and the server:
-          InitiatorAndResponderDiffusionMode -> do
-            inboundInfoChannel  <- newInformationChannel
-            outboundInfoChannel <- newInformationChannel
-            observableStateVar  <- Server.newObservableStateVar ntnInbgovRng
-            withConnectionManagerInitiatorAndResponderMode
-              inboundInfoChannel outboundInfoChannel
-              observableStateVar $ \connectionManager-> do
-              diInstallSigUSR1Handler connectionManager
-              withPeerStateActions' connectionManager $ \peerStateActions->
-                withPeerSelectionActions'
-                  (readMessage outboundInfoChannel)
-                  peerStateActions
-                  requestLedgerPeers
-                    $ \localPeerRootProviderThread peerSelectionActions->
-                Async.withAsync
-                  (peerSelectionGovernor'
-                     dtDebugPeerSelectionInitiatorResponderTracer
-                     peerSelectionActions) $ \governorThread ->
-                -- begin, unique to InitiatorAndResponder mode:
-                withSockets' $ \sockets addresses -> do
-                traceWith tracer (RunServer addresses)
-                Async.withAsync
-                  (serverRun' sockets connectionManager inboundInfoChannel
-                   observableStateVar) $ \serverThread ->
-                -- end, unique to ...
-                  Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
-                  -- wait for any thread to fail:
-                  snd <$> Async.waitAny
-                       [ localPeerRootProviderThread
-                       , serverThread
-                       , governorThread
-                       , ledgerPeerThread
-                       , churnGovernorThread
-                       ]
+              withPeerSelectionActions'
+                (readMessage outboundInfoChannel)
+                peerStateActions
+                ledgerPeersRng
+                daLedgerPeersCtx
+                daReadUseLedgerAfter
+                  $ \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
+              Async.withAsync
+                (peerSelectionGovernor'
+                   dtDebugPeerSelectionInitiatorResponderTracer
+                   peerSelectionActions) $ \governorThread ->
+              -- begin, unique to InitiatorAndResponder mode:
+              withSockets' $ \sockets addresses -> do
+              traceWith tracer (RunServer addresses)
+              Async.withAsync
+                (serverRun' sockets connectionManager inboundInfoChannel
+                 observableStateVar) $ \serverThread ->
+              -- end, unique to ...
+                Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+                -- wait for any thread to fail:
+                snd <$> Async.waitAny
+                     [ ledgerPeersThread
+                     , localRootPeersProvider
+                     , governorThread
+                     , churnGovernorThread
+                     , serverThread
+                     ]
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
@@ -1179,16 +1180,6 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diInstallSigUSR1Handler = \_ -> pure ()
 #endif
 
-             diLocalAndPublicRootDnsSemaphore <- newLocalAndPublicRootDNSSemaphore
-             let diNtnDomainResolver :: LookupReqs -> [DomainAccessPoint]
-                                     -> IO (Map DomainAccessPoint (Set Socket.SockAddr))
-                 diNtnDomainResolver lr =
-                   resolveDomainAccessPoint
-                     (dtTracePublicRootPeersTracer tracersExtra)
-                     diLocalAndPublicRootDnsSemaphore
-                     DNS.defaultResolvConf
-                     (ioDNSActions lr)
-
              diRng <- newStdGen
              runM
                Interfaces {
@@ -1203,7 +1194,6 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diNtnDataFlow = nodeDataFlow,
                  diNtnPeerSharing = peerSharing,
                  diNtnToPeerAddr = curry IP.toSockAddr,
-                 diNtnDomainResolver,
 
                  diNtcSnocket = Snocket.localSnocket iocp,
                  diNtcBearer = makeLocalBearer,
@@ -1212,8 +1202,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
                  diRng,
                  diInstallSigUSR1Handler,
-                 diDnsActions = ioDNSActions,
-                 diLocalAndPublicRootDnsSemaphore
+                 diDnsActions = ioDNSActions
                }
                tracers tracersExtra args argsExtra apps appsExtra
 

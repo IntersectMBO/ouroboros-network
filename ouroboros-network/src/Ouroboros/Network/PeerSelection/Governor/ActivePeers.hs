@@ -23,7 +23,7 @@ import           Control.Monad.Class.MonadTimer.SI
 import           System.Random (randomR)
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (IsBigLedgerPeer (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)

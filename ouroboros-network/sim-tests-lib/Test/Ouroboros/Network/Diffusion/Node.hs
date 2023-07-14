@@ -4,7 +4,6 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
@@ -23,11 +22,8 @@ module Test.Ouroboros.Network.Diffusion.Node
     -- * extra types used by the node
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
-  , LedgerPeersConsensusInterface (..)
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)
-  , RelayAccessPoint (..)
-  , UseLedgerAfter (..)
     -- * configuration constants
   , config_RECONNECT_DELAY
   ) where
@@ -81,13 +77,8 @@ import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface (..), UseLedgerAfter (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric
                      (PeerMetricsConfiguration (..), newPeerMetric)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DomainAccessPoint (..), LookupReqs (..),
-                     RelayAccessPoint (..), newLocalAndPublicRootDNSSemaphore)
 import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
                      (VersionDataCodec (..), noTimeLimitsHandshake,
@@ -110,6 +101,12 @@ import           Simulation.Network.Snocket (AddressType (..), FD)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (DomainAccessPoint, RelayAccessPoint)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+                     (DNSLookupType)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (LedgerPeersConsensusInterface, UseLedgerAfter)
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency, WarmValency)
 import           Ouroboros.Network.PeerSharing
@@ -129,7 +126,7 @@ data Interfaces m = Interfaces
     { iNtnSnocket        :: Snocket m (NtNFD m) NtNAddr
     , iNtnBearer         :: MakeBearer m (NtNFD m)
     , iAcceptVersion     :: NtNVersionData -> NtNVersionData -> Accept NtNVersionData
-    , iNtnDomainResolver :: LookupReqs -> [DomainAccessPoint] -> m (Map DomainAccessPoint (Set NtNAddr))
+    , iNtnDomainResolver :: DNSLookupType -> [DomainAccessPoint] -> m (Map DomainAccessPoint (Set NtNAddr))
     , iNtcSnocket        :: Snocket m (NtCFD m) NtCAddr
     , iNtcBearer         :: MakeBearer m (NtCFD m)
     , iRng               :: StdGen
@@ -205,7 +202,6 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
-        dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
         peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
@@ -237,7 +233,6 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     InitiatorAndResponderDiffusionMode -> Duplex
               , Diff.P2P.diNtnPeerSharing        = ntnPeerSharing
               , Diff.P2P.diNtnToPeerAddr         = \a b -> TestAddress (Node.IPAddr a b)
-              , Diff.P2P.diNtnDomainResolver     = iNtnDomainResolver ni
               , Diff.P2P.diNtcSnocket            = iNtcSnocket ni
               , Diff.P2P.diNtcBearer             = iNtcBearer ni
               , Diff.P2P.diNtcHandshakeArguments =
@@ -256,7 +251,6 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                                                      (iDomainMap ni)
                                                      dnsTimeoutScriptVar
                                                      dnsLookupDelayScriptVar)
-              , Diff.P2P.diLocalAndPublicRootDnsSemaphore = dnsSemaphore
               }
 
             appsExtra :: Diff.P2P.ApplicationsExtra NtNAddr m ()

@@ -52,7 +52,6 @@ import           Network.Socket (SockAddr)
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..), peerSharing)
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
@@ -71,10 +70,19 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.IOSim
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (RelayAccessPoint)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+                     (DNSLookupType (..), ioDNSActions)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+                     (newLedgerAndPublicRootDNSSemaphore)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (IsLedgerPeer (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+                     (publicRootPeersProvider)
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..), LocalRootPeers, WarmValency (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type
@@ -2855,7 +2863,7 @@ _governorFindingPublicRoots :: Int
                             -> PeerSharing
                             -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
-    dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
+    dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     publicRootPeersProvider
       tracer
       (curry IP.toSockAddr)

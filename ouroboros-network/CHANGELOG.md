@@ -33,6 +33,11 @@
 
 ### Breaking changes
 
+* Refactors `PeerSelection.RootPeersDNS` module, enabling more sharing between
+  modules and providing just better module organisation overall.
+    * Tweaks exports and imports
+    * Shares semaphores with `withPeerSelectionActions` and `ledgerPeersThread`
+
 ### Non-breaking changes
 
 * Updated KeepAlive client to collect a rtt sample for the first packet.

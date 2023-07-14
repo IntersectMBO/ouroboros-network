@@ -11,12 +11,11 @@
 module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   ( tests
   , mockDNSActions
+  , MockRoots (..)
   , DNSTimeout (..)
   , DNSLookupDelay (..)
+  , DelayAndTimeoutScripts (..)
   ) where
-
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 
 import           Control.Applicative (Alternative)
 import           Control.Monad (forever, replicateM_)
@@ -27,7 +26,6 @@ import           Data.Foldable (foldl')
 import           Data.Function (fix)
 import           Data.Functor (void)
 import           Data.IP (fromHostAddress, toIPv4w, toSockAddr)
-import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -36,7 +34,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Time.Clock (picosecondsToDiffTime)
 import           Data.Void (Void)
-import           Network.DNS (DNSError (NameError, TimeoutExpired))
+import           Network.DNS (DNSError (NameError, TimeoutExpired), Domain, TTL)
 import qualified Network.DNS.Resolver as DNSResolver
 import           Network.Socket (SockAddr (..))
 
@@ -57,11 +55,14 @@ import           Control.Tracer (Tracer (Tracer), contramap, nullTracer,
 import           Data.List (intercalate)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency (..), WarmValency (..))
-import           Ouroboros.Network.Testing.Data.Script (Script (Script),
-                     initScript', scriptHead, singletonScript, stepScript,
-                     stepScript')
+import           Ouroboros.Network.Testing.Data.Script
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -402,7 +403,7 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
       dnsMapVar <- newTVarIO dnsMap
-      dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
+      dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
 
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
@@ -424,34 +425,35 @@ mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 
 -- | 'resolveDomainAddresses' running with a given MockRoots env
 --
-mockResolveDomainAddresses :: ( MonadAsync m
-                              , MonadDelay m
-                              , MonadThrow m
-                              , MonadTimer m
-                              )
-                           => Tracer m TracePublicRootPeers
-                           -> MockRoots
-                           -> Script DNSTimeout
-                           -> Script DNSLookupDelay
-                           -> m (Map DomainAccessPoint (Set SockAddr))
-mockResolveDomainAddresses tracer (MockRoots _ _ publicRootPeers dnsMapScript)
-                           dnsTimeoutScript dnsLookupDelayScript = do
+mockResolveLedgerPeers :: ( MonadAsync m
+                         , MonadDelay m
+                         , MonadThrow m
+                         , MonadTimer m
+                         )
+                       => Tracer m TraceLedgerPeers
+                       -> MockRoots
+                       -> Script DNSTimeout
+                       -> Script DNSLookupDelay
+                       -> m (Map DomainAccessPoint (Set SockAddr))
+mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
+                       dnsTimeoutScript dnsLookupDelayScript = do
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
       dnsMapVar <- newTVarIO dnsMap
-      dnsSemaphore <- newLocalAndPublicRootDNSSemaphore
+      dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
 
       dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
-      resolveDomainAccessPoint tracer
-                               dnsSemaphore
-                               DNSResolver.defaultResolvConf
-                               (mockDNSActions @Failure dnsMapVar
-                                                        dnsTimeoutScriptVar
-                                                        dnsLookupDelayScriptVar)
-                               [ domain
-                               | (RelayDomainAccessPoint domain, _)
-                                    <- Map.assocs publicRootPeers ]
+      resolveLedgerPeers tracer
+                         (curry toSockAddr)
+                         dnsSemaphore
+                         DNSResolver.defaultResolvConf
+                         (mockDNSActions @Failure dnsMapVar
+                                                  dnsTimeoutScriptVar
+                                                  dnsLookupDelayScriptVar)
+                         [ domain
+                         | (RelayDomainAccessPoint domain, _)
+                              <- Map.assocs publicRootPeers ]
 
 --
 -- Utils for properties

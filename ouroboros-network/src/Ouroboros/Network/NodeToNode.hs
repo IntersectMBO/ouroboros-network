@@ -38,7 +38,6 @@ module Ouroboros.Network.NodeToNode
   , cleanNetworkMutableState
   , withServer
     -- * P2P Governor
-  , DomainAccessPoint (..)
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)
     -- * Subscription Workers
@@ -138,8 +137,6 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DomainAccessPoint (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
