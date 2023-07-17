@@ -122,8 +122,8 @@ library
                        network-mux,
                        si-timers,
                        ouroboros-network-api       ^>=0.5,
-                       ouroboros-network-framework ^>=0.6,
-                       ouroboros-network-protocols ^>=0.5.0.2,
+                       ouroboros-network-framework ^>=0.7,
+                       ouroboros-network-protocols ^>=0.5.1.0,
                        strict-stm,
                        typed-protocols   >=0.1.0.4 && <1.0,
   if !os(windows)

@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.7.0.0 -- 2023-07-17
+
+### Breaking changes
+
 * light peer sharing:
   * Added `cmGetPeerSharing` field to `ConnectionManagerArguments`.
   * Added `getProtocolPeerSharing` field to `DataFlowProtocolData` record.
@@ -36,7 +42,7 @@
 
 ### Breaking changes
 
-* Use `io-classes-1.1`. 
+* Use `io-classes-1.1`.
 
 ### Non-breaking changes
 
