@@ -18,6 +18,7 @@
 * Limit concurrency used by dns resolution.  We only resolve up to 8 dns names
   concurrently for public / ledger peers and up to 2 for local root peers.
   This will affect how quickly node connects to ledger peers when it starts.
+* Improved memory footprint of peer metrics (#4620)
 
 ## 0.8.1.1
 
