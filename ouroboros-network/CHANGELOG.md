@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.8.2.0
+
+### Breaking changes
+
 * light peer sharing
   * Added `TraceKnownInboundConnection` constructor to `TracePeerSelection`
   * Added `readNewInboundConnection` field to `PeerSelectionActions` record.
