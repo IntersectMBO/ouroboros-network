@@ -4,6 +4,9 @@ ignore-project: False
 tests: True
 benchmarks: True
 
+package strict-stm
+  flags: +checktvarinvariant
+
 program-options
   ghc-options: -Werror
 
@@ -32,12 +35,3 @@ package network-mux
 
 package ouroboros-network
   flags: +ipv6 +cddl +asserts
-
-package HsOpenSSL
-  extra-include-dirs: D:/a/_temp/msys64/mingw64/include
-  extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib
-  flags: +use-pkg-config
-
-package basement
-  extra-include-dirs: D:/a/_temp/msys64/mingw64/include
-  extra-lib-dirs: D:/a/_temp/msys64/mingw64/lib

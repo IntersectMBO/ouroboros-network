@@ -41,6 +41,7 @@ module Ouroboros.Network.Snocket
   , MakeBearer (..)
   ) where
 
+import           Control.DeepSeq (NFData (..))
 import           Control.Exception
 import           Data.Bifoldable (Bifoldable (..))
 import           Data.Bifunctor (Bifunctor (..))
@@ -197,7 +198,7 @@ instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
 newtype TestAddress addr = TestAddress { getTestAddress :: addr }
-  deriving (Eq, Ord, Typeable, Generic)
+  deriving (Eq, Ord, Typeable, Generic, NFData)
   deriving NoThunks via InspectHeap (TestAddress addr)
 
 instance Show addr => Show (TestAddress addr) where
