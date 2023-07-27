@@ -50,7 +50,7 @@ jobs:
 
     - name: "Configure cabal.project.local"
       run: |
-        cp .github/workflows/cabal.project.local.Windows cabal.project.local
+        cp .github/workflows/cabal.project.local cabal.project.local
 
     - name: Update PATH
       run: |

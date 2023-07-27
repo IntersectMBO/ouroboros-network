@@ -1,5 +1,7 @@
 {-# LANGUAGE DerivingVia        #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -11,6 +13,8 @@ import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as OrdPSQ
 
 import           Network.Socket (SockAddr)
+import           Control.Monad.Class.MonadTime.SI (Time (..))
+import           Control.DeepSeq (NFData (..))
 
 import           NoThunks.Class
 
@@ -33,3 +37,5 @@ instance (NoThunks k, NoThunks v) => NoThunks (IntPSQ k v) where
     showTypeOf _ = "IntPSQ"
 
 deriving via InspectHeap SockAddr instance NoThunks SockAddr
+deriving anyclass instance (NoThunks Time)
+deriving newtype instance (NFData Time)

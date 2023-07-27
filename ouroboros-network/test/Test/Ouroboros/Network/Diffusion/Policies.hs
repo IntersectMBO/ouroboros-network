@@ -6,7 +6,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
-
 module Test.Ouroboros.Network.Diffusion.Policies where
 
 import           Control.Concurrent.Class.MonadSTM.Strict
@@ -21,6 +20,8 @@ import qualified Data.Set as Set
 import           Data.Word
 import           Network.Socket (SockAddr (..))
 import           System.Random
+
+import           NoThunks.Class.Orphans ()
 
 import           Cardano.Slotting.Slot (SlotNo (..))
 import           Ouroboros.Network.Diffusion.Policies
@@ -39,7 +40,6 @@ tests = testGroup "Policies"
   [ testProperty "HotToWarm" prop_hotToWarm
   , testProperty "WarmToCold" prop_randomDemotion
   ]
-
 
 newtype ArbitrarySockAddr = ArbitrarySockAddr SockAddr deriving (Eq, Ord, Show)
 
@@ -137,13 +137,13 @@ instance Arbitrary ArbitraryPolicyArguments where
 
 
 prop_hotToWarm :: ArbitraryPolicyArguments
-                 -> Int
-                 -> Property
+               -> Int
+               -> Property
 prop_hotToWarm args seed = runSimOrThrow $ prop_hotToWarmM args seed
 
 -- Verify that there are no peers worse than the peers picked for demotion.
 prop_hotToWarmM :: forall m.
-                   ( MonadSTM m
+                   ( MonadLabelledSTM m
                    , Monad (STM m)
                    )
                  => ArbitraryPolicyArguments
@@ -210,7 +210,7 @@ prop_randomDemotion args seed = runSimOrThrow $ prop_randomDemotionM args seed
 -- Verifies that Tepid (formerly hot) or failing peers are more likely to get
 -- demoted/forgotten.
 prop_randomDemotionM :: forall m.
-                        ( MonadSTM m
+                        ( MonadLabelledSTM m
                         , Monad (STM m)
                         )
                      => ArbitraryPolicyArguments

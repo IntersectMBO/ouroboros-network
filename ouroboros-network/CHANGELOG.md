@@ -1,5 +1,14 @@
 # Revision history for ouroboros-network
 
+## next version
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Fixed a small memory leak in `PeerMetrics` (#4633).
+* Improved memory footprint of peer metrics (#4620)
+
 ## 0.8.1.1
 
 ### Non-breaking changes

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -33,6 +34,7 @@ import           GHC.Generics (Generic)
 import           Control.Applicative (Alternative)
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
+import           Control.DeepSeq (NFData (..))
 import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
@@ -93,6 +95,13 @@ data NtNAddr_
   | EphemeralIPv6Addr Natural
   | IPAddr IP.IP PortNumber
   deriving (Eq, Ord, Generic)
+
+-- we need to work around the lack of the `NFData IP` instance
+instance NFData NtNAddr_ where
+    rnf (EphemeralIPv4Addr p)      = p `seq` ()
+    rnf (EphemeralIPv6Addr p)      = p `seq` ()
+    rnf (IPAddr (IP.IPv4 ip) port) = ip `seq` port `seq` ()
+    rnf (IPAddr (IP.IPv6 ip) port) = rnf (IP.fromIPv6w ip) `seq` port `seq` ()
 
 instance Arbitrary NtNAddr_ where
   arbitrary = do

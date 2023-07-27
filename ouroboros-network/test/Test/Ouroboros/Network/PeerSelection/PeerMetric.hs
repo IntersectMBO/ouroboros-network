@@ -1,13 +1,16 @@
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Test.Ouroboros.Network.PeerSelection.PeerMetric where
 
 
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
+import           Control.DeepSeq (NFData (..))
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime.SI
@@ -32,6 +35,8 @@ import           Cardano.Slotting.Slot (SlotNo (..))
 
 import           Control.Monad.IOSim
 
+import           NoThunks.Class
+
 import           Ouroboros.Network.Testing.Data.Script
 import           TestLib.Utils (AllProperty (..))
 
@@ -50,7 +55,8 @@ tests = testGroup "Ouroboros.Network.PeerSelection.PeerMetric"
 
 
 newtype TestAddress = TestAddress Int
-  deriving (Show, Eq, Ord)
+  deriving stock   (Show, Eq, Ord)
+  deriving newtype (NoThunks, NFData)
 
 instance Arbitrary TestAddress where
     arbitrary = do
@@ -147,13 +153,14 @@ data PeerMetricsTrace = PeerMetricsTrace {
     }
   deriving Show
 
-
 simulatePeerMetricScript
   :: forall m.
      ( MonadAsync m
      , MonadDelay m
      , MonadTimer m
      , MonadMonotonicTime m
+     , MonadLabelledSTM m
+     , MonadTraceSTM m
      )
   => Tracer m PeerMetricsTrace
   -> PeerMetricsConfiguration
