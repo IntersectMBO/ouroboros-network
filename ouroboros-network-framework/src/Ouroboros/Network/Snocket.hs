@@ -1,13 +1,14 @@
-{-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE DeriveFunctor         #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE DerivingVia           #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 #if !defined(mingw32_HOST_OS)
 #define POSIX
@@ -55,6 +56,8 @@ import qualified System.Win32 as Win32
 import qualified System.Win32.Async as Win32.Async
 import qualified System.Win32.NamedPipes as Win32
 #endif
+
+import           NoThunks.Class
 
 import           Network.Socket (SockAddr (..), Socket)
 import qualified Network.Socket as Socket
@@ -195,6 +198,7 @@ instance Hashable LocalAddress where
 
 newtype TestAddress addr = TestAddress { getTestAddress :: addr }
   deriving (Eq, Ord, Typeable, Generic)
+  deriving NoThunks via InspectHeap (TestAddress addr)
 
 instance Show addr => Show (TestAddress addr) where
     showsPrec d (TestAddress addr) =

@@ -22,6 +22,7 @@ Flag ipv6
 library
   exposed-modules:     Data.Cache
                        Data.Wedge
+                       NoThunks.Class.Orphans
                        Ouroboros.Network.Channel
                        Ouroboros.Network.Driver
                        Ouroboros.Network.Driver.Simple
@@ -87,6 +88,10 @@ library
                      , io-classes     ^>=1.1
                      , si-timers
                      , strict-stm
+
+                     , nothunks       ^>=0.1.4
+                     , psqueues
+                     -- ^ only to derive nothunk instances
 
                      , monoidal-synchronisation
                                       ^>=0.1.0.3
