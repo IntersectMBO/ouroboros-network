@@ -46,7 +46,7 @@ common demo-deps
 
 library
   build-depends:       base            >=4.14 && <4.19,
-                       io-classes     ^>=1.1,
+                       io-classes     ^>=1.2,
                        strict-stm,
                        si-timers,
                        contra-tracer   >=0.1 && <0.2,

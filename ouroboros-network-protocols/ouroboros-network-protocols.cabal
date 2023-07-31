@@ -97,7 +97,7 @@ library
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
 
-                       io-classes       ^>=1.1,
+                       io-classes       ^>=1.2,
                        si-timers,
 
                        ouroboros-network-api

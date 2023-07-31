@@ -4,8 +4,9 @@ ignore-project: False
 tests: True
 benchmarks: True
 
-package strict-stm
-  flags: +checktvarinvariant
+-- TODO: we only verify it with nix
+-- package strict-checked-vars
+--   flags: +checktvarinvariants +checkmvarinvariants
 
 program-options
   ghc-options: -Werror
@@ -20,9 +21,6 @@ package ntp-client
 package io-sim
   ghc-options: -Werror
   flags: +asserts
-
-package io-classes
-  flags: +checktvarinvariant
 
 package typed-protocols
   ghc-options: -Werror

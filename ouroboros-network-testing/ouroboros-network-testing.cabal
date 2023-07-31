@@ -62,7 +62,7 @@ library
                        containers,
                        contra-tracer,
                        deque            ^>=0.4,
-                       io-classes       ^>=1.1,
+                       io-classes       ^>=1.2,
                        io-sim,
                        psqueues          >=0.2.3 && <0.3,
                        si-timers,

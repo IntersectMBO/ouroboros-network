@@ -21,7 +21,7 @@ library
   build-depends:       base              >=4.14 && <4.19,
                        bytestring        >=0.10 && <0.12,
                        containers,
-                       io-classes       ^>=1.1,
+                       io-classes       ^>=1.2,
                        ouroboros-network-api,
                        ouroboros-network,
                        ouroboros-network-framework,

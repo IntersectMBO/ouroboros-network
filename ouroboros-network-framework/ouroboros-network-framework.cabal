@@ -86,7 +86,7 @@ library
                      , cardano-prelude
                      , contra-tracer
 
-                     , io-classes     ^>=1.1
+                     , io-classes     ^>=1.2
                      , si-timers
                      , strict-stm
 

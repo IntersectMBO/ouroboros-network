@@ -17,7 +17,7 @@ in {
   ouroborosNetworkHaskellPackagesWithTVarCheck =
     import ./ouroboros-network.nix {
       inherit config pkgs lib stdenv haskell-nix buildPackages;
-      checkTVarInvariant = true;
+      checkTVarInvariants = true;
       inherit (sources) CHaP;
     };
 
