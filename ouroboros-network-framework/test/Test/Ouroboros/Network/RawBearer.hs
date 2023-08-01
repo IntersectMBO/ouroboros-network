@@ -22,7 +22,7 @@ import           Control.Monad.Class.MonadThrow (MonadThrow, bracket, catchJust,
                      finally, throwIO)
 import           Control.Monad.IOSim hiding (liftST)
 import           Control.Monad.ST.Unsafe (unsafeIOToST)
-import           Control.Tracer (nullTracer)
+import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import           Data.Word (Word32)
@@ -38,8 +38,6 @@ import           Test.Simulation.Network.Snocket (toBearerInfo)
 import           Test.Tasty
 import           Test.Tasty.QuickCheck
 
-import           Debug.Trace
-
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.RawBearer"
   [ testProperty "raw bearer send receive simulated socket" prop_raw_bearer_send_and_receive_iosim
@@ -49,6 +47,12 @@ tests = testGroup "Ouroboros.Network.RawBearer"
 #endif
   , testProperty "raw bearer send receive inet socket" prop_raw_bearer_send_and_receive_inet
   ]
+
+iosimTracer :: forall s. Tracer (IOSim s) String
+iosimTracer = Tracer say
+
+ioTracer :: Tracer IO String
+ioTracer = nullTracer
 
 onlyIf :: Bool -> a -> Maybe a
 onlyIf False = const Nothing
@@ -63,8 +67,8 @@ prop_raw_bearer_send_and_receive_inet msg =
   ioProperty $ withIOManager $ \iomgr -> do
     serverPort <- modifyMVar nextPort (\i -> return (succ i, succ i))
     let serverAddr = Socket.SockAddrInet (fromIntegral serverPort) localhost
-    Debug.Trace.traceM $ "Server: " ++ show serverAddr
     rawBearerSendAndReceive
+      ioTracer
       (socketSnocket iomgr)
       makeSocketRawBearer
       serverAddr
@@ -93,6 +97,7 @@ prop_raw_bearer_send_and_receive_local serverInt clientInt msg =
     let serverAddr = localAddressFromPath serverName
     let clientAddr = localAddressFromPath clientName
     rawBearerSendAndReceive
+      ioTracer
       (localSnocket iomgr)
       makeLocalRawBearer
       serverAddr
@@ -124,6 +129,7 @@ prop_raw_bearer_send_and_receive_unix serverInt clientInt msg =
     let serverAddr = Socket.SockAddrUnix serverName
     let clientAddr = Socket.SockAddrUnix clientName
     rawBearerSendAndReceive
+      ioTracer
       (socketSnocket iomgr)
       makeSocketRawBearer
       serverAddr
@@ -144,6 +150,7 @@ prop_raw_bearer_send_and_receive_iosim serverInt clientInt msg =
       (toBearerInfo absNoAttenuation)
       mempty $ \snocket _observe -> do
         rawBearerSendAndReceive
+          iosimTracer
           snocket
           (makeFDRawBearer nullTracer)
           (TestAddress serverInt)
@@ -167,88 +174,88 @@ rawBearerSendAndReceive :: forall m fd addr
                            , MonadThrow m
                            , MonadAsync m
                            , MonadMVar m
-                           , MonadSay m
                            , Show addr
                            )
-                        => Snocket m fd addr
+                        => Tracer m String
+                        -> Snocket m fd addr
                         -> MakeRawBearer m fd
                         -> addr
                         -> Maybe addr
                         -> Message
                         -> m Property
-rawBearerSendAndReceive snocket mkrb serverAddr mclientAddr msg =
+rawBearerSendAndReceive tracer snocket mkrb serverAddr mclientAddr msg =
   withLiftST $ \liftST -> do
     let io = liftST . unsafeIOToST
     let size = BS.length (messageBytes msg)
     retVar <- newEmptyMVar
     senderDone <- newEmptyMVar
-    let sender = bracket (openToConnect snocket serverAddr) (\s -> say "sender: closing" >> close snocket s) $ \s -> do
+    let sender = bracket (openToConnect snocket serverAddr) (\s -> traceWith tracer "sender: closing" >> close snocket s) $ \s -> do
                     case mclientAddr of
                       Nothing -> return ()
                       Just clientAddr -> do
-                        say $ "sender: binding to " ++ show clientAddr
+                        traceWith tracer $ "sender: binding to " ++ show clientAddr
                         bind snocket s clientAddr
-                    say $ "sender: connecting to " ++ show serverAddr
+                    traceWith tracer $ "sender: connecting to " ++ show serverAddr
                     connect snocket s serverAddr
-                    say "sender: connected"
+                    traceWith tracer "sender: connected"
                     bearer <- getRawBearer mkrb s
                     bracket (io $ mallocBytes size) (io . free) $ \srcBuf -> do
                       io $ BS.useAsCStringLen (messageBytes msg)
                             (uncurry (copyBytes srcBuf))
                       let go _ 0 = do
-                            say "sender: done"
+                            traceWith tracer "sender: done"
                             return ()
                           go _ n | n < 0 = do
                             error "sender: negative byte count"
                           go buf n = do
-                            say $ "sender: " ++ show n ++ " bytes left"
+                            traceWith tracer $ "sender: " ++ show n ++ " bytes left"
                             bytesSent <- send bearer buf n
                             when (bytesSent == 0) (throwIO $ TestError "sender: premature hangup")
                             let n' = n - bytesSent
-                            say $ "sender: " ++ show bytesSent ++ " bytes sent, " ++ show n' ++ " remaining"
+                            traceWith tracer $ "sender: " ++ show bytesSent ++ " bytes sent, " ++ show n' ++ " remaining"
                             go (plusPtr buf bytesSent) n'
                       go (castPtr srcBuf) size
                       putMVar senderDone ()
         receiver s = do
           let acceptLoop :: Accept m fd addr -> m ()
               acceptLoop accept0 = do
-                say "receiver: accepting connection"
+                traceWith tracer "receiver: accepting connection"
                 (accepted, acceptNext) <- runAccept accept0
                 case accepted :: Accepted fd addr of
                   AcceptFailure err ->
                     throwIO err
                   Accepted s' _ -> do
                     labelThisThread "accept"
-                    say "receiver: connection accepted"
-                    flip finally (say "receiver: closing connection" >> close snocket s' >> say "receiver: connection closed") $ do
+                    traceWith tracer "receiver: connection accepted"
+                    flip finally (traceWith tracer "receiver: closing connection" >> close snocket s' >> traceWith tracer "receiver: connection closed") $ do
                       bearer <- getRawBearer mkrb s'
                       retval <- bracket (io $ mallocBytes size) (io . free) $ \dstBuf -> do
                         let go _ 0 = do
-                              say "receiver: done receiving"
+                              traceWith tracer "receiver: done receiving"
                               return ()
                             go _ n | n < 0 = do
                               error "receiver: negative byte count"
                             go buf n = do
-                              say $ "receiver: " ++ show n ++ " bytes left"
+                              traceWith tracer $ "receiver: " ++ show n ++ " bytes left"
                               bytesReceived <- recv bearer buf n
                               when (bytesReceived == 0) (throwIO $ TestError "receiver: premature hangup")
                               let n' = n - bytesReceived
-                              say $ "receiver: " ++ show bytesReceived ++ " bytes received, " ++ show n' ++ " remaining"
+                              traceWith tracer $ "receiver: " ++ show bytesReceived ++ " bytes received, " ++ show n' ++ " remaining"
                               go (plusPtr buf bytesReceived) n'
                         go (castPtr dstBuf) size
                         io (BS.packCStringLen (castPtr dstBuf, size))
-                      say $ "receiver: received " ++ show retval
+                      traceWith tracer $ "receiver: received " ++ show retval
                       written <- tryPutMVar retVar retval
-                      say $ if written then "receiver: stored " ++ show retval else "receiver: already have result"
-                    say "receiver: finishing connection"
+                      traceWith tracer $ if written then "receiver: stored " ++ show retval else "receiver: already have result"
+                    traceWith tracer "receiver: finishing connection"
                     acceptLoop acceptNext
           accept snocket s >>= acceptLoop
 
     resBSEither <- bracket (open snocket (addrFamily snocket serverAddr)) (close snocket) $ \s -> do
-      say "receiver: starting"
+      traceWith tracer "receiver: starting"
       bind snocket s serverAddr
       listen snocket s
-      say "receiver: listening"
+      traceWith tracer "receiver: listening"
       race
         (sender `concurrently` receiver s)
         (takeMVar retVar <* takeMVar senderDone)
