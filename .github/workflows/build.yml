@@ -15,9 +15,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10.7", "9.2.7", "9.6.1"]
-        # This is the only OS that Hydra/Cicero cannot run.
-        os: [windows-latest]
+        ghc: ["8.10.7"]
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            ghc: "9.4.5"
+          - os: ubuntu-latest
+            ghc: "9.6.2"
 
     env:
       # Modify this value to "invalidate" all cabal caches.
@@ -50,9 +54,10 @@ jobs:
 
     - name: "Configure cabal.project.local"
       run: |
-        cp .github/workflows/cabal.project.local cabal.project.local
+        cp .github/workflows/cabal.project.local.${{ runner.os }} cabal.project.local
 
     - name: Update PATH
+      if: runner.os == 'Windows'
       run: |
         $env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)
         echo "PATH=$env:PATH" >> $env:GITHUB_ENV

@@ -74,12 +74,6 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 import           Text.Show.Functions ()
 
-{-
- - The travis build hosts does not support IPv6 so those test cases are hidden
- - behind the OUROBOROS_NETWORK_IPV6 define for now.
- -}
--- #define OUROBOROS_NETWORK_IPV6
-
 --
 -- The list of all tests
 --
@@ -150,7 +144,6 @@ prop_socket_send_recv_ipv4 f xs = ioProperty $ do
 
 
 #ifdef OUROBOROS_NETWORK_IPV6
-
 -- | Send and receive over IPv6
 prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
                            -> [Int]
@@ -158,7 +151,9 @@ prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
     server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
     client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
-    prop_socket_send_recv client server configureSocket request response
+    prop_socket_send_recv (Socket.addrAddress client)
+                          (Socket.addrAddress server)
+                          configureSocket request response
 #endif
 
 #ifndef mingw32_HOST_OS
