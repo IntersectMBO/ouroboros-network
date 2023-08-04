@@ -14,6 +14,8 @@ import Cardano.KESAgent.RefCounting
 import Cardano.Crypto.KES.Class
 
 import Network.TypedProtocol.Core
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
 
 kesReceiver :: forall (c :: *) (m :: * -> *)
              . KESAlgorithm (KES c)
@@ -37,7 +39,8 @@ kesReceiver receiveKey =
 
 kesPusher :: forall (c :: *) (m :: (* -> *))
            . KESAlgorithm (KES c)
-          => Monad m
+          => MonadSTM m
+          => MonadThrow m
           => m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
           -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
           -> Peer (KESProtocol m c) AsServer InitialState m ()

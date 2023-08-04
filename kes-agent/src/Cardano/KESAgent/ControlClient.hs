@@ -10,8 +10,8 @@ import Cardano.KESAgent.Driver (driver, DriverTrace)
 import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.OCert (Crypto (..), OCert (..))
 import Cardano.KESAgent.RetrySocket (retrySocket)
-import Cardano.KESAgent.RefCounting (CRef)
-import Cardano.KESAgent.Classes (MonadKES, MonadNetworking)
+import Cardano.KESAgent.RefCounting (CRef, withCRef)
+import Cardano.KESAgent.Classes (MonadKES)
 
 import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..))
 
@@ -25,12 +25,12 @@ import Data.Proxy (Proxy (..))
 
 import Control.Monad (forever, void)
 import Control.Monad.Class.MonadThrow (SomeException, bracket)
-import Control.Monad.Class.MonadTimer (DiffTime)
 
 data ControlClientOptions m fd addr =
   ControlClientOptions
     { controlClientSnocket :: Snocket m fd addr
     , controlClientAddress :: addr
+    , controlClientLocalAddress :: Maybe addr
     }
 
 data ControlClientTrace
@@ -45,14 +45,14 @@ data ControlClientTrace
 -- | A simple control client: push one KES key, then exit.
 runControlClient1 :: forall c m fd addr
                    . MonadKES m c
-                  => MonadNetworking m fd
                   => Proxy c
+                  -> MakeRawBearer m fd
                   -> ControlClientOptions m fd addr
                   -> CRef m (SignKeyWithPeriodKES (KES c))
                   -> OCert c
                   -> Tracer m ControlClientTrace
                   -> m ()
-runControlClient1 proxy options key oc tracer = do
+runControlClient1 proxy mrb options key oc tracer = withCRef key $ \key -> do
   let s = controlClientSnocket options
   void $ bracket
     (openToConnect s (controlClientAddress options))
@@ -61,10 +61,13 @@ runControlClient1 proxy options key oc tracer = do
       traceWith tracer $ ControlClientSocketClosed
     )
     (\fd -> do
+      case controlClientLocalAddress options of
+        Just addr -> bind s fd addr
+        Nothing -> return ()
       retrySocket (\(e :: SomeException) n i -> traceWith tracer $ ControlClientAttemptReconnect n) $
         connect s fd (controlClientAddress options)
       traceWith tracer $ ControlClientConnected -- (controlClientSocketAddress options)
-      bearer <- toRawBearer fd
+      bearer <- getRawBearer mrb fd
       void $ runPeerWithDriver
         (driver bearer $ ControlClientDriverTrace >$< tracer)
         (kesPusher (traceWith tracer ControlClientSendingKey >> return (key, oc)) (return Nothing))

@@ -38,7 +38,6 @@ import Data.Word
 -- | Convenience class that bundles associated KES and DSIGN algorithms into a
 -- single typeclass
 class ( KESAlgorithm (KES c)
-      , KESSignAlgorithm IO (KES c)
       , DSIGNAlgorithm (DSIGN c)
       ) => Crypto c where
   type KES c :: *

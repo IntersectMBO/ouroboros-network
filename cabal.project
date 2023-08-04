@@ -10,8 +10,8 @@ repository cardano-haskell-packages
     d4a35cd3121aa00d18544bb0ac01c3e1691d618f462c46129271bccf39f7e8ee
 
 -- run `nix flake lock --update-input hackageNix` after updating index-state.
-index-state: 2023-03-22T00:00:00Z
-index-state: cardano-haskell-packages 2023-03-22T00:00:00Z
+index-state: 2023-06-14T00:00:00Z
+index-state: cardano-haskell-packages 2023-06-14T00:00:00Z
 
 packages:
   kes-agent
@@ -52,7 +52,7 @@ package cardano-crypto-class
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 2281ce54f48750bd7a0426c98ea5e208811eef3a
+  tag: 70d4fa911cf8ad09a92cd0ced15f1134198502bb
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     cardano-binary
@@ -65,7 +65,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/ouroboros-network
-  tag: cf44dd297e2799b004e90340cf6d7888ad94cfde
+  tag: 26f81c3be7aeb1a7a01acbea54393d40cb8b54b6
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     ouroboros-network-framework
@@ -73,16 +73,16 @@ source-repository-package
     ouroboros-network-testing
     network-mux
 
--- Using a fork until MVar fixes land
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/io-sim
-  tag: acdcffb81f3cd5220bb7c698eee7ce09a71dfe7d
-  --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
-  subdir:
-    io-sim
-    io-classes
-    strict-stm
+-- -- Using a fork until MVar fixes land
+-- source-repository-package
+--   type: git
+--   location: https://github.com/input-output-hk/io-sim
+--   tag: acdcffb81f3cd5220bb7c698eee7ce09a71dfe7d
+--   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
+--   subdir:
+--     io-sim
+--     io-classes
+--     strict-stm
 
     -- We pull the remaining sub-packages from CHaP, because our fork doesn't
     -- modify them, and other dependencies depend on them.

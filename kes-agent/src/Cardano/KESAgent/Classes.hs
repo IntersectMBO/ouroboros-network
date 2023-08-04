@@ -13,13 +13,11 @@ where
 import Cardano.Binary
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
-import Cardano.Crypto.MonadMLock
-import Cardano.KESAgent.DirectBearer
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.Protocol
 import Control.Concurrent.Class.MonadSTM.TChan
+import Control.Concurrent.Class.MonadMVar
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
@@ -32,7 +30,6 @@ import Ouroboros.Network.RawBearer
 -- management, including direct access to mlocked and bytestring memory, MVars,
 -- timing, exceptions, and manual memory management.
 class ( MonadAsync m
-      , MonadByteStringMemory m
       , MonadCatch m
       , MonadDelay m
       , MonadFail m
@@ -41,13 +38,10 @@ class ( MonadAsync m
       , MonadSTM m
       , MonadThrow m
       , MonadTime m
-      , MonadUnmanagedMemory m
-      , MonadMLock m
       ) => MonadMemoryEffects m
 
 deriving anyclass instance {-# OVERLAPPING #-}
       ( MonadAsync m
-      , MonadByteStringMemory m
       , MonadCatch m
       , MonadDelay m
       , MonadFail m
@@ -56,8 +50,6 @@ deriving anyclass instance {-# OVERLAPPING #-}
       , MonadSTM m
       , MonadThrow m
       , MonadTime m
-      , MonadUnmanagedMemory m
-      , MonadMLock m
       )
       => MonadMemoryEffects m
 
@@ -68,7 +60,7 @@ class ( Crypto c
       , Typeable c
       , ContextKES (KES c) ~ ()
       , VersionedProtocol (KESProtocol m c)
-      , KESSignAlgorithm m (KES c)
+      , KESAlgorithm (KES c)
       , DirectDeserialise m (SignKeyKES (KES c))
       , DirectSerialise m (SignKeyKES (KES c))
       , MonadMemoryEffects m
@@ -79,17 +71,8 @@ deriving anyclass instance {-# OVERLAPPING #-}
       , Typeable c
       , ContextKES (KES c) ~ ()
       , VersionedProtocol (KESProtocol m c)
-      , KESSignAlgorithm m (KES c)
+      , KESAlgorithm (KES c)
       , DirectDeserialise m (SignKeyKES (KES c))
       , DirectSerialise m (SignKeyKES (KES c))
       , MonadMemoryEffects m
       ) => MonadKES m c
-
-
--- | Shorthand to group typeclasses relating to networking.
-class ( ToRawBearer m fd
-      ) => MonadNetworking m fd
-
-deriving anyclass instance {-# OVERLAPPING #-}
-      ( ToRawBearer m fd
-      ) => MonadNetworking m fd

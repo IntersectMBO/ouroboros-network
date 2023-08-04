@@ -11,6 +11,8 @@ import Cardano.KESAgent.OCert
 
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Control.Monad.Class.MonadTime
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadST
 
 import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
 
@@ -28,8 +30,10 @@ getCurrentKESPeriodWith now genesisTimestamp =
     . nominalDiffTimeToSeconds
     <$> now
 
-updateKESToCurrent :: KESSignAlgorithm m (KES v)
+updateKESToCurrent :: KESAlgorithm (KES v)
                    => MonadTime m
+                   => MonadST m
+                   => MonadThrow m
                    => Integer
                    -> ContextKES (KES v)
                    -> OCert v
@@ -39,7 +43,9 @@ updateKESToCurrent genesisTimestamp context cert skp = do
   currentPeriod <- getCurrentKESPeriod genesisTimestamp
   updateKESTo context currentPeriod cert skp
 
-updateKESTo :: KESSignAlgorithm m (KES v)
+updateKESTo :: KESAlgorithm (KES v)
+            => MonadST m
+            => MonadThrow m
             => ContextKES (KES v)
             -> KESPeriod
             -> OCert v

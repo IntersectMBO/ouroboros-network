@@ -26,17 +26,18 @@ import Data.Binary (encode, decode)
 import Data.Typeable
 import Control.Tracer (Tracer, traceWith)
 import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
+import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Ouroboros.Network.RawBearer
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.DirectSerialise
-import Cardano.Crypto.MonadMLock
-          ( MonadMLock (..)
-          , MonadUnmanagedMemory (..)
-          , MonadByteStringMemory (..)
-          , packByteStringCStringLen
+import Cardano.Crypto.Libsodium.Memory
+          ( packByteStringCStringLen
+          , unpackByteStringCStringLen
+          , allocaBytes
+          , copyMem
           )
 import Cardano.Binary
 
@@ -49,10 +50,10 @@ data DriverTrace
   = DriverSendingVersionID VersionIdentifier
   | DriverReceivingVersionID
   | DriverReceivedVersionID VersionIdentifier
-  | DriverSendingKey
-  | DriverSentKey
+  | DriverSendingKey Word64
+  | DriverSentKey Word64
   | DriverReceivingKey
-  | DriverReceivedKey
+  | DriverReceivedKey Word64
   | DriverConnectionClosed
   deriving (Show)
 
@@ -60,14 +61,13 @@ driver :: forall c m f t p
         . Crypto c
        => Typeable c
        => VersionedProtocol (KESProtocol m c)
-       => KESSignAlgorithm m (KES c)
+       => KESAlgorithm (KES c)
        => DirectDeserialise m (SignKeyKES (KES c))
        => DirectSerialise m (SignKeyKES (KES c))
        => MonadThrow m
+       => MonadSTM m
        => MonadMVar m
        => MonadFail m
-       => MonadUnmanagedMemory m
-       => MonadByteStringMemory m
        => MonadST m
        => RawBearer m
        -> Tracer m DriverTrace
@@ -79,7 +79,7 @@ driver s tracer = Driver
         traceWith tracer (DriverSendingVersionID $ VersionIdentifier v)
         void $ sendBS s v
       (ServerAgency TokIdle, KeyMessage skpRef oc) -> do
-        traceWith tracer DriverSendingKey
+        traceWith tracer $ DriverSendingKey (ocertN oc)
         withCRefValue skpRef $ \(SignKeyWithPeriodKES sk t) -> do
           directSerialise (\buf bufSize -> do
                 n <- send s (castPtr buf) (fromIntegral bufSize)
@@ -89,7 +89,7 @@ driver s tracer = Driver
           sendWord32 s (fromIntegral t)
           sendWord32 s (fromIntegral (BS.length serializedOC))
           sendBS s serializedOC
-          traceWith tracer DriverSentKey
+          traceWith tracer $ DriverSentKey (ocertN oc)
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
 
@@ -122,7 +122,7 @@ driver s tracer = Driver
         skpVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) (SignKeyWithPeriodKES sk t)
         succeeded <- isEmptyMVar noReadVar
         if succeeded then do
-          traceWith tracer DriverReceivedKey
+          traceWith tracer $ DriverReceivedKey (ocertN oc)
           return (SomeMessage (KeyMessage skpVar oc), ())
         else do
           -- We're not actually returning the key, so we must release it
@@ -134,7 +134,7 @@ driver s tracer = Driver
   , startDState = ()
   }
 
-receiveBS :: (MonadST m, MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
+receiveBS :: (MonadST m, MonadThrow m)
           => RawBearer m
           -> Int
           -> m BS.ByteString
@@ -145,17 +145,17 @@ receiveBS s size =
       0 -> return ""
       n -> packByteStringCStringLen (buf, fromIntegral n)
 
-sendBS :: (MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
+sendBS :: (MonadST m, MonadThrow m)
        => RawBearer m
        -> BS.ByteString
        -> m Int
 sendBS s bs =
   allocaBytes (BS.length bs) $ \buf -> do
-    useByteStringAsCStringLen bs $ \(bsbuf, size) -> do
+    unpackByteStringCStringLen bs $ \(bsbuf, size) -> do
       copyMem buf bsbuf (fromIntegral size)
     fromIntegral <$> send s (castPtr buf) (fromIntegral $ BS.length bs)
 
-receiveWord32 :: (MonadThrow m, MonadST m, MonadUnmanagedMemory m, MonadByteStringMemory m)
+receiveWord32 :: (MonadThrow m, MonadST m)
               => RawBearer m
               -> m (Maybe Word32)
 receiveWord32 s =
@@ -163,7 +163,7 @@ receiveWord32 s =
     "" -> return Nothing
     xs -> (return . Just . fromIntegral) (decode @Word32 $ LBS.fromStrict xs)
 
-sendWord32 :: (MonadThrow m, MonadUnmanagedMemory m, MonadByteStringMemory m)
+sendWord32 :: (MonadThrow m, MonadST m)
            => RawBearer m
            -> Word32
            -> m ()

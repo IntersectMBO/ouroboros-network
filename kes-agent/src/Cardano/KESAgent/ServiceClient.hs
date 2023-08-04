@@ -11,7 +11,7 @@ import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
 import Cardano.KESAgent.OCert (Crypto (..), OCert (..))
 import Cardano.KESAgent.RetrySocket (retrySocket)
 import Cardano.KESAgent.RefCounting (CRef)
-import Cardano.KESAgent.Classes (MonadKES, MonadNetworking)
+import Cardano.KESAgent.Classes (MonadKES)
 
 import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..))
 
@@ -25,7 +25,6 @@ import Data.Proxy (Proxy (..))
 
 import Control.Monad (forever, void)
 import Control.Monad.Class.MonadThrow (SomeException, bracket)
-import Control.Monad.Class.MonadTimer (DiffTime)
 
 data ServiceClientOptions m fd addr =
   ServiceClientOptions
@@ -37,20 +36,20 @@ data ServiceClientTrace
   = ServiceClientDriverTrace DriverTrace
   | ServiceClientSocketClosed
   | ServiceClientConnected -- (SocketAddress Unix)
-  | ServiceClientAttemptReconnect Int DiffTime String
+  | ServiceClientAttemptReconnect Int Int String
   | ServiceClientReceivedKey
   | ServiceClientAbnormalTermination String 
   deriving (Show)
 
 runServiceClient :: forall c m fd addr
                   . MonadKES m c
-                 => MonadNetworking m fd
                  => Proxy c
+                 -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr
                  -> (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ())
                  -> Tracer m ServiceClientTrace
                  -> m ()
-runServiceClient proxy options handleKey tracer = do
+runServiceClient proxy mrb options handleKey tracer = do
   let s = serviceClientSnocket options
   void $ bracket
     (openToConnect s (serviceClientAddress options))
@@ -62,7 +61,7 @@ runServiceClient proxy options handleKey tracer = do
       retrySocket (\(e :: SomeException) n i -> traceWith tracer $ ServiceClientAttemptReconnect n i (show e)) $
         connect s fd (serviceClientAddress options)
       traceWith tracer ServiceClientConnected
-      bearer <- toRawBearer fd
+      bearer <- getRawBearer mrb fd
       void $ runPeerWithDriver
         (driver bearer $ ServiceClientDriverTrace >$< tracer)
         (kesReceiver $ \k o -> handleKey k o <* traceWith tracer ServiceClientReceivedKey)

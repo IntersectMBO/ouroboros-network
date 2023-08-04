@@ -17,7 +17,7 @@ module Cardano.KESAgent.RefCounting
 )
 where
 
-import Control.Monad.Class.MonadMVar
+import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad (when)
 
@@ -25,7 +25,7 @@ data CRef m a =
   CRef
     { cDeref :: !a
     , cFinalize :: a -> m ()
-    , cCount :: !(MVar m Int)
+    , cCount :: !(TMVar m Int)
     }
 
 data ReferenceCountUnderflow =
@@ -36,36 +36,42 @@ instance Exception ReferenceCountUnderflow where
 
 {- HLINT ignore "Deprecated: Use throwIO" -}
 -- | Gets the current reference count for the 'CRef'.
-getCRefCount :: (MonadMVar m) => CRef m a -> m Int
-getCRefCount = readMVar . cCount
+getCRefCount :: (MonadSTM m) => CRef m a -> m Int
+getCRefCount = atomically . readTMVar . cCount
 
 -- | Increment the 'CRef' counter such that it will not be finalized until we
 -- 'releaseCRef' it again.
-acquireCRef :: (MonadMVar m, MonadThrow m) => CRef m a -> m a
+acquireCRef :: (MonadSTM m, MonadThrow m) => CRef m a -> m a
 acquireCRef cref = do
-  count <- takeMVar (cCount cref)
+  (count, val) <- atomically $ do
+    count <- takeTMVar (cCount cref)
+    let count' = succ count
+    putTMVar (cCount cref) count'
+    return (count, cDeref cref)
   when (count <= 0) (throwIO ReferenceCountUnderflow)
-  putMVar (cCount cref) (succ count)
-  return (cDeref cref)
+  return val
 
 -- | Release a 'CRef' by decrementing its counter. When the counter reaches
 -- zero, the resource is finalized. Releasing a 'CRef' more often than it has
 -- been acquired is an error, and will (eventually) throwIO
 -- 'ReferenceCountUnderflow' exceptions.
-releaseCRef :: (MonadMVar m, MonadThrow m) => CRef m a -> m ()
+releaseCRef :: (MonadSTM m, MonadThrow m) => CRef m a -> m ()
 releaseCRef cref = do
-  count <- pred <$> takeMVar (cCount cref)
-  when (count < 0) (throwIO ReferenceCountUnderflow)
-  when (count == 0) (cFinalize cref (cDeref cref))
-  putMVar (cCount cref) count
+  count' <- atomically $ do
+    count <- takeTMVar (cCount cref)
+    let count' = pred count
+    putTMVar (cCount cref) count'
+    return count'
+  when (count' < 0) (throwIO ReferenceCountUnderflow)
+  when (count' == 0) (cFinalize cref (cDeref cref))
 
 -- | Read a 'CRef' without acquiring it. The caller is responsible for making
 -- sure the 'CRef' has been acquired appropriately for the duration of the
 -- call, and while using the wrapped resource.
 -- It is generally preferable to use 'withCRefValue' instead.
-readCRef :: (MonadMVar m, MonadThrow m) => CRef m a -> m a
+readCRef :: (MonadSTM m, MonadThrow m) => CRef m a -> m a
 readCRef cref = bracket
-  (readMVar (cCount cref))
+  (atomically $ readTMVar (cCount cref))
   (const $ return ())
   (\count -> do
     when (count <= 0) (throwIO ReferenceCountUnderflow)
@@ -74,9 +80,9 @@ readCRef cref = bracket
 
 -- | Create a fresh 'CRef'. Its counter will be initialized to 1; the caller is
 -- responsible for calling 'releaseCRef' to release it.
-newCRef :: (MonadMVar m, MonadThrow m) => (a -> m ()) -> a -> m (CRef m a)
+newCRef :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> m (CRef m a)
 newCRef finalizer val = do
-  counter <- newMVar 1
+  counter <- newTMVarIO 1
   return CRef
     { cDeref = val
     , cFinalize = finalizer
@@ -85,14 +91,14 @@ newCRef finalizer val = do
 
 -- | Operate on a 'CRef'. The 'CRef' is guaranteed to not finalize for the
 -- duration of the wrapped function call.
-withCRef :: (MonadMVar m, MonadThrow m) => CRef m a -> (CRef m a -> m b) -> m b
+withCRef :: (MonadSTM m, MonadThrow m) => CRef m a -> (CRef m a -> m b) -> m b
 withCRef cref action =
   bracket_
     (acquireCRef cref)
     (releaseCRef cref)
     (action cref)
 
-withNewCRef :: (MonadMVar m, MonadThrow m) => (a -> m ()) -> a -> (CRef m a -> m b) -> m b
+withNewCRef :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (CRef m a -> m b) -> m b
 withNewCRef finalizer val action = do
   bracket
     (newCRef finalizer val)
@@ -101,14 +107,14 @@ withNewCRef finalizer val action = do
 
 -- | Operate on a 'CRef'. The 'CRef' is guaranteed to not finalize for the
 -- duration of the wrapped function call.
-withCRefValue :: (MonadMVar m, MonadThrow m) => CRef m a -> (a -> m b) -> m b
+withCRefValue :: (MonadSTM m, MonadThrow m) => CRef m a -> (a -> m b) -> m b
 withCRefValue cref action =
   bracket_
     (acquireCRef cref)
     (releaseCRef cref)
     (action $ cDeref cref)
 
-withNewCRefValue :: (MonadMVar m, MonadThrow m) => (a -> m ()) -> a -> (a -> m b) -> m b
+withNewCRefValue :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (a -> m b) -> m b
 withNewCRefValue finalizer val action = do
   bracket
     (newCRef finalizer val)

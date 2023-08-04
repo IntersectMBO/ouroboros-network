@@ -7,7 +7,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImpredicativeTypes #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoStarIsType #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -16,7 +15,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 module Cardano.KESAgent.Tests.Simulation
 ( tests
@@ -25,7 +23,7 @@ module Cardano.KESAgent.Tests.Simulation
 )
 where
 
-import Control.Monad (forever, void, forM)
+import Control.Monad (forever, void, forM, forM_, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadMVar
   ( MonadMVar
@@ -43,33 +41,37 @@ import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST (MonadST, withLiftST)
 import Control.Monad.Class.MonadThrow (MonadThrow, MonadCatch, bracket, catch, SomeException, catchJust, finally, throwIO)
 import Control.Monad.Class.MonadTime
-import Control.Monad.Class.MonadSay (say)
-import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay, DiffTime)
+import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay)
 import Control.Monad.IOSim
 import Control.Monad.Primitive (PrimState)
-import Control.Monad.ST (ST)
+import Control.Monad.ST (ST, stToIO)
 import Control.Monad.ST.Unsafe (unsafeIOToST)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
+import Data.Primitive
 import Data.Proxy
 import qualified Data.Text as Text
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Data.Time (NominalDiffTime, picosecondsToDiffTime)
+import Data.Time (NominalDiffTime, picosecondsToDiffTime, DiffTime, diffTimeToPicoseconds)
 import Data.Time.Clock.POSIX (getPOSIXTime, utcTimeToPOSIXSeconds)
 import Data.Typeable
 import Data.Word
 import Debug.Trace
-import Foreign.Ptr (castPtr, Ptr)
 import Foreign (mallocBytes, free)
+import Foreign.C (CSize)
 import Foreign.ForeignPtr (mallocForeignPtrBytes, finalizeForeignPtr, touchForeignPtr)
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
-import Foreign.C (CSize)
+import Foreign.Ptr (castPtr, Ptr)
 import GHC.Stack (HasCallStack)
-import GHC.TypeLits (KnownNat, natVal, type (*))
+import GHC.TypeLits (KnownNat, natVal, type (*), Nat)
 import GHC.Types (Type)
 import Network.Socket
+import Simulation.Network.Snocket as SimSnocket
+import System.Directory (removeFile)
 import System.IO
+import System.IO.Error (isDoesNotExistErrorType, ioeGetErrorType)
 import System.IO.Unsafe
 import System.IOManager
 import System.Socket.Family.Unix
@@ -78,22 +80,18 @@ import Test.QuickCheck (Arbitrary (..), vectorOf)
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf (printf)
-import Simulation.Network.Snocket as SimSnocket
-import System.Directory (removeFile)
-import System.IO.Error (isDoesNotExistErrorType, ioeGetErrorType)
 -- import Test.Crypto.Util
-import Data.Primitive
-import GHC.TypeLits (Nat)
+import qualified Network.Mux.Channel as Mux
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
-import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
 import qualified Ouroboros.Network.Testing.Data.AbsBearerInfo as ABI (delay)
+import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
 
 import Cardano.Binary (FromCBOR)
 import Cardano.Crypto.DSIGN.Class
-import Cardano.Crypto.DSIGN.Ed25519
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
+import Cardano.Crypto.DSIGN.Ed25519
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.Hash.Blake2b
 import Cardano.Crypto.KES.Class
@@ -102,9 +100,8 @@ import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Libsodium
 import Cardano.Crypto.Libsodium.MLockedBytes.Internal (MLockedSizedBytes (..))
 import Cardano.Crypto.Libsodium.Memory.Internal (MLockedForeignPtr (..))
-import Cardano.Crypto.MLockedSeed
-import Cardano.Crypto.MonadMLock
-import Cardano.Crypto.PinnedSizedBytes (psbFromByteString)
+import Cardano.Crypto.Libsodium.MLockedSeed
+import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbFromByteString, psbToByteString)
 import Cardano.Crypto.Seed
 
 import Cardano.KESAgent.Agent
@@ -116,6 +113,8 @@ import Cardano.KESAgent.OCert
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.RefCounting
 import Cardano.KESAgent.ServiceClient
+
+import System.Random
 
 tests :: Lock IO
       -> (forall a. (Show a, TracePretty a) => Tracer IO a)
@@ -152,8 +151,7 @@ testCrypto :: forall c kes
             . kes ~ KES c
            => MonadKES IO c
            => (forall s. MonadKES (IOSim s) c)
-           => UnsoundKESSignAlgorithm IO kes
-           => (forall s. UnsoundKESSignAlgorithm (IOSim s) kes)
+           => UnsoundKESAlgorithm kes
            => DSIGN.Signable (DSIGN c) (OCertSignable c)
            => ContextDSIGN (DSIGN c) ~ ()
            => Show (SignKeyWithPeriodKES (KES c))
@@ -192,6 +190,14 @@ mvarPrettyTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
   t <- utcTimeToPOSIXSeconds <$> getCurrentTime
   let str = printf "%015.4f %s" (realToFrac t :: Double) (tracePretty x)
   return $ strs ++ [str]
+
+mvarStringTracer :: (MonadTime m, MonadMVar m)
+                 => MVar m [String]
+                 -> Tracer m String
+mvarStringTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
+  t <- utcTimeToPOSIXSeconds <$> getCurrentTime
+  let str = printf "%015.4f %s" (realToFrac t :: Double) x
+  return $ strs ++ [str]
   
 
 class TracePretty a where
@@ -203,11 +209,11 @@ strLength = length
 instance TracePretty AgentTrace where
   tracePretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ tracePretty d
   tracePretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ tracePretty d
-  tracePretty (AgentServiceClientConnected) = "Agent: ServiceClientConnected"
-  tracePretty (AgentServiceClientDisconnected) = "Agent: ServiceClientDisconnected"
+  tracePretty (AgentServiceClientConnected a) = "Agent: ServiceClientConnected: " ++ a
+  tracePretty (AgentServiceClientDisconnected a) = "Agent: ServiceClientDisconnected: " ++ a
   tracePretty (AgentServiceSocketError e) = "Agent: ServiceSocketError: " ++ e
-  tracePretty (AgentControlClientConnected) = "Agent: ControlClientConnected"
-  tracePretty (AgentControlClientDisconnected) = "Agent: ControlClientDisconnected"
+  tracePretty (AgentControlClientConnected a) = "Agent: ControlClientConnected: " ++ a
+  tracePretty (AgentControlClientDisconnected a) = "Agent: ControlClientDisconnected: " ++ a
   tracePretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
   tracePretty x = "Agent: " ++ (drop (strLength "Agent") (show x))
 
@@ -228,7 +234,7 @@ instance TracePretty DriverTrace where
 data ControlClientHooks m c =
   ControlClientHooks
     { sendKey :: (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
-    , controlClientWait :: DiffTime -> m ()
+    , controlClientWait :: Int -> m ()
     }
 
 -- | A control client script is just a monadic action that runs an arbitrary
@@ -241,7 +247,7 @@ type ControlClientScript m c =
 data NodeHooks m c =
   NodeHooks
     { reportProperty :: Property -> m ()
-    , nodeWait :: DiffTime -> m ()
+    , nodeWait :: Int -> m ()
     }
 
 -- | A node script actually consists of two parts: the 'runNodeScript' action
@@ -268,6 +274,7 @@ data TestNetworkConfig m addr =
   TestNetworkConfig
     { tnControlAddress :: addr
     , tnServiceAddress :: addr
+    , tnMkLocalAddress :: m (Maybe addr)
 
       -- | This can be used to release residual system resources; it will run
       -- in a 'finally', after the main test payload has finished and all
@@ -281,62 +288,79 @@ data TestNetworkConfig m addr =
 instance Show (TestNetworkConfig m a) where
   show = tnShow
 
--- | Kludgy workaround, because we can't have
--- @instance Arbitrary (forall s. TestNetworkConfig (IOSim s) (TestAddress Int))@
--- directly, so we use a newtype wrapper to convince GHC that this is what we want.
-newtype IOSimTestNetworkConfig =
-  IOSimTestNetworkConfig {
-    unIOSimTestNetworkConfig :: forall s. TestNetworkConfig (IOSim s) (TestAddress Int)
-  }
+mkIOSimTestNetworkConfig :: Word -> Word -> forall s. TestNetworkConfig (IOSim s) (TestAddress Int)
+mkIOSimTestNetworkConfig c s =
+  TestNetworkConfig
+    (mkAddr c)
+    (mkAddr s)
+    (return Nothing)
+    (return ())
+    ("TestNetworkConfig " ++ show c ++ " " ++ show s)
+  where
+    mkAddr :: Word -> TestAddress Int
+    mkAddr = TestAddress . fromIntegral
 
-instance Arbitrary IOSimTestNetworkConfig where
-  arbitrary = do
-    (c, s) <- arbitrary `suchThat` \(c, s) -> c /= s
-    pure . IOSimTestNetworkConfig $
-      TestNetworkConfig
-        (mkAddr c)
-        (mkAddr s)
-        (return ())
-        ("TestNetworkConfig " ++ show c ++ " " ++ show s)
-    where
-      mkAddr :: Word -> TestAddress Int
-      mkAddr = TestAddress . fromIntegral
+mkIOTestNetworkConfig :: Word -> Word -> TestNetworkConfig IO SockAddr
+mkIOTestNetworkConfig c s =
+  TestNetworkConfig
+    (mkAddr c)
+    (mkAddr s)
+    (return Nothing)
+    (cleanup c >>
+     cleanup s
+    )
+    ("TestNetworkConfig " ++ show c ++ " " ++ show s)
+  where
+    mkAddrName i = "./local" ++ show i
 
+    mkAddr :: Word -> SockAddr
+    mkAddr i = SockAddrUnix $ mkAddrName i
 
--- | This is a bit of a kludge so that we can write @instance Show IOSimTestNetworkConfig@.
-forallTnShow :: (forall s. TestNetworkConfig (IOSim s) (TestAddress Int)) -> String
-forallTnShow = tnShow
-
-instance Show IOSimTestNetworkConfig where
-  show = forallTnShow . unIOSimTestNetworkConfig
-
-instance Arbitrary (TestNetworkConfig IO SockAddr) where
-  arbitrary = do
-    (c, s) <- arbitrary `suchThat` \(c, s) -> c /= s
-    pure $
-      TestNetworkConfig
-        (mkAddr c)
-        (mkAddr s)
-        (cleanup c >>
-         cleanup s
+    cleanup seed = do
+      -- putStrLn $ "rm " ++ mkAddrName seed
+      (removeFile $ mkAddrName seed) `catch`
+        (\e ->
+          if isDoesNotExistErrorType (ioeGetErrorType e)
+            then do
+              putStrLn $ mkAddrName seed ++ " does not exist"
+            else do
+              throwIO e
         )
-        ("TestNetworkConfig " ++ show c ++ " " ++ show s)
-    where
-      mkAddrName i = "./local" ++ show i
 
-      mkAddr :: Word -> SockAddr
-      mkAddr i = SockAddrUnix $ mkAddrName i
+type AddressPool m = MVar m AddressPoolData
 
-      cleanup seed = do
-        -- putStrLn $ "rm " ++ mkAddrName seed
-        (removeFile $ mkAddrName seed) `catch`
-          (\e ->
-            if isDoesNotExistErrorType (ioeGetErrorType e)
-              then do
-                putStrLn $ mkAddrName seed ++ " does not exist"
-              else do
-                throwIO e
-          )
+data AddressPoolData =
+  APD
+    { poolBound :: Word
+    , poolItems :: [Word]
+    }
+
+newAddressPool :: MonadMVar m => m (AddressPool m)
+newAddressPool = newMVar (APD 0 [])
+
+allocatePoolAddress :: (MonadMVar m, MonadST m) => AddressPool m -> m Word
+allocatePoolAddress pool = do
+  apd <- takeMVar pool
+  let (taken, apd') = case poolItems apd of
+        [] ->
+          let next = poolBound apd
+          in (next, apd { poolBound = succ next })
+        x:xs ->
+          (x, apd { poolItems = xs })
+  putMVar pool apd'
+  return taken
+
+freePoolAddress :: MonadMVar m => AddressPool m -> Word -> m ()
+freePoolAddress pool addr =
+  modifyMVar_ pool (\apd -> return apd { poolItems = addr : poolItems apd })
+
+withPoolAddress :: (MonadMVar m, MonadST m, MonadCatch m) => AddressPool m -> (Word -> m a) -> m a
+withPoolAddress pool =
+  bracket (allocatePoolAddress pool) (freePoolAddress pool)
+
+{-# NOINLINE ioAddressPool #-}
+ioAddressPool :: AddressPool IO
+ioAddressPool = unsafePerformIO newAddressPool
 
 -- | Run a test network, consisting of one Agent, and an arbitrary number of scripted
 -- control clients and nodes.
@@ -345,23 +369,25 @@ instance Arbitrary (TestNetworkConfig IO SockAddr) where
 -- timing of the network components starting up and doing their things.
 runTestNetwork :: forall c m fd addr
                 . MonadKES m c
-               => MonadNetworking m fd
+               => Show addr
+               => Show fd
                => MonadTimer m
                => DSIGN.Signable (DSIGN c) (OCertSignable c)
                => ContextDSIGN (DSIGN c) ~ ()
                => Show (SignKeyWithPeriodKES (KES c))
                => Proxy c
+               -> MakeRawBearer m fd
                -> (forall a. (Show a, TracePretty a) => Tracer m a)
                -> Snocket m fd addr
                -> Integer
                -> TestNetworkConfig m addr
-               -> DiffTime
+               -> Int
                   -- | control clients: startup delay, script
-               -> [(DiffTime, ControlClientScript m c)]
+               -> [(Int, ControlClientScript m c)]
                   -- | nodes: startup delay, script
-               -> [(DiffTime, NodeScript m c)]
+               -> [(Int, NodeScript m c)]
                -> m Property
-runTestNetwork p tracer snocket genesisTimestamp
+runTestNetwork p mrb tracer snocket genesisTimestamp
                config
                agentDelay senders receivers = do
     propertyVar <- newEmptyMVar :: m (MVar m Property)
@@ -380,13 +406,13 @@ runTestNetwork p tracer snocket genesisTimestamp
 
         -- Run the single agent.
         agent :: HasCallStack => Tracer m AgentTrace -> m ()
-        agent tracer = runAgent p agentOptions tracer
+        agent tracer = runAgent p mrb agentOptions tracer
 
         -- Run one node.
         node :: HasCallStack
              => Tracer m ServiceClientTrace
              -> MVar m Property
-             -> (DiffTime, NodeScript m c)
+             -> (Int, NodeScript m c)
              -> m ()
         node tracer mvar (startupDelay, script) = do
           let hooks = NodeHooks
@@ -400,7 +426,7 @@ runTestNetwork p tracer snocket genesisTimestamp
           concurrently_
             (runNodeScript script hooks)
             (
-              runServiceClient p
+              runServiceClient p mrb
                 ServiceClientOptions
                   { serviceClientSnocket = snocket
                   , serviceClientAddress = serviceAddress
@@ -418,16 +444,18 @@ runTestNetwork p tracer snocket genesisTimestamp
         -- for each interaction.
         controlClient :: HasCallStack
                       => Tracer m ControlClientTrace
-                      -> (DiffTime, ControlClientScript m c)
+                      -> (Int, ControlClientScript m c)
                       -> m ()
         controlClient tracer (startupDelay, script) = do
           threadDelay startupDelay
           script $ ControlClientHooks
-            { sendKey = \(sk, oc) ->
-                runControlClient1 p
+            { sendKey = \(sk, oc) -> do
+                addrMay <- tnMkLocalAddress config
+                runControlClient1 p mrb
                   ControlClientOptions
                     { controlClientSnocket = snocket
                     , controlClientAddress = controlAddress
+                    , controlClientLocalAddress = addrMay
                     }
                   sk oc
                   tracer
@@ -450,7 +478,7 @@ runTestNetwork p tracer snocket genesisTimestamp
 
     output <- race
           -- abort 5 seconds after all clients have started
-          (threadDelay $ 5 + maximum (agentDelay : (map fst senders ++ map fst receivers)))
+          (threadDelay $ 5000000 + maximum (agentDelay : (map fst senders ++ map fst receivers)))
           (race
             -- run these to "completion"
             ( agent tracer `concurrently_`
@@ -473,11 +501,10 @@ testOneKeyThroughChainIO :: forall c
                        => ContextDSIGN (DSIGN c) ~ ()
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => Show (SignKeyWithPeriodKES (KES c))
-                       => UnsoundKESSignAlgorithm IO (KES c)
+                       => UnsoundKESAlgorithm (KES c)
                        => Proxy c
                        -> Lock IO
                        -> IOManager
-                       -> TestNetworkConfig IO SockAddr
                        -> PinnedSizedBytes (SeedSizeKES (KES c))
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
@@ -489,7 +516,6 @@ testOneKeyThroughChainIO :: forall c
 testOneKeyThroughChainIO p
     lock
     ioManager
-    config
     seedKESPSB
     seedDSIGNPSB
     genesisTimestamp
@@ -498,30 +524,36 @@ testOneKeyThroughChainIO p
     nodeDelay
     controlDelay =
   ioProperty . withLock lock $
-      testOneKeyThroughChain
-        p
-        ioSnocket
-        config
-        seedKESPSB
-        seedDSIGNPSB
-        genesisTimestamp
-        certN
-        agentDelay
-        nodeDelay
-        controlDelay
+    withPoolAddress ioAddressPool $ \clientAddr ->
+      withPoolAddress ioAddressPool $ \serverAddr -> do
+        let config = mkIOTestNetworkConfig clientAddr serverAddr
+        testOneKeyThroughChain
+          p
+          makeSocketRawBearer
+          ioSnocket
+          config
+          seedKESPSB
+          seedDSIGNPSB
+          genesisTimestamp
+          certN
+          agentDelay
+          nodeDelay
+          controlDelay
   where
     ioSnocket = socketSnocket ioManager
+
+instance Show (FD (IOSim s) (TestAddress Int)) where
+  show _ = "???"
 
 testOneKeyThroughChainIOSim :: forall c kes
                              . KES c ~ kes
                             => (forall s. MonadKES (IOSim s) c)
-                            => (forall s. UnsoundKESSignAlgorithm (IOSim s) kes)
+                            => (UnsoundKESAlgorithm kes)
                             => ContextDSIGN (DSIGN c) ~ ()
                             => DSIGN.Signable (DSIGN c) (OCertSignable c)
                             => Show (SignKeyWithPeriodKES  kes)
                             => (forall s. VersionedProtocol (KESProtocol (IOSim s) c))
                             => Proxy c
-                            -> IOSimTestNetworkConfig
                             -> PinnedSizedBytes (SeedSizeKES (KES c))
                             -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                             -> Integer
@@ -531,7 +563,6 @@ testOneKeyThroughChainIOSim :: forall c kes
                             -> Word
                             -> Property
 testOneKeyThroughChainIOSim p
-    config
     seedKESPSB
     seedDSIGNPSB
     genesisTimestamp
@@ -539,32 +570,39 @@ testOneKeyThroughChainIOSim p
     agentDelay
     nodeDelay
     controlDelay =
-  iosimProperty $
-    SimSnocket.withSnocket
-      nullTracer
-      (toBearerInfo absNoAttenuation)
-      mempty $ \snocket _observe -> do
-        testOneKeyThroughChain
-          p
-          snocket
-          (unIOSimTestNetworkConfig config)
-          seedKESPSB
-          seedDSIGNPSB
-          genesisTimestamp
-          certN
-          agentDelay
-          nodeDelay
-          controlDelay
+  iosimProperty $ do
+    ap <- newAddressPool
+    withPoolAddress ap $ \clientAddr ->
+      withPoolAddress ap $ \serverAddr ->
+        SimSnocket.withSnocket
+          nullTracer
+          (toBearerInfo absNoAttenuation)
+          mempty $ \snocket _observe -> do
+            let config = mkIOSimTestNetworkConfig clientAddr serverAddr
+            testOneKeyThroughChain
+              p
+              (makeFDRawBearer nullTracer)
+              snocket
+              config
+              seedKESPSB
+              seedDSIGNPSB
+              genesisTimestamp
+              certN
+              agentDelay
+              nodeDelay
+              controlDelay
 
 testOneKeyThroughChain :: forall c m fd addr
                         . MonadKES m c
-                       => MonadNetworking m fd
+                       => Show addr
+                       => Show fd
                        => MonadTimer m
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => ContextDSIGN (DSIGN c) ~ ()
                        => Show (SignKeyWithPeriodKES (KES c))
-                       => UnsoundKESSignAlgorithm m (KES c)
+                       => UnsoundKESAlgorithm (KES c)
                        => Proxy c
+                       -> MakeRawBearer m fd
                        -> Snocket m fd addr
                        -> TestNetworkConfig m addr
                        -> PinnedSizedBytes (SeedSizeKES (KES c))
@@ -576,6 +614,7 @@ testOneKeyThroughChain :: forall c m fd addr
                        -> Word
                        -> m Property
 testOneKeyThroughChain p
+    mrb
     snocket
     config
     seedKESPSB
@@ -591,12 +630,12 @@ testOneKeyThroughChain p
     -- convert quickcheck-generated inputs into things we can use
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
-    expectedSK <- genKeyKES @m @(KES c) seedKES
+    expectedSK <- genKeyKES @(KES c) seedKES
     let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
     expectedSKBS <- rawSerialiseSignKeyKES expectedSK
 
     withNewCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP $ \expectedSKPVar -> do
-      vkHot <- deriveVerKeyKES @m expectedSK
+      vkHot <- deriveVerKeyKES expectedSK
       let kesPeriod = KESPeriod 0
       let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
           expectedOC = makeOCert vkHot certN kesPeriod skCold
@@ -614,7 +653,7 @@ testOneKeyThroughChain p
               , runNodeScript = const $ return ()
               }
 
-      prop <- runTestNetwork p
+      prop <- runTestNetwork p mrb
         (mvarPrettyTracer traceMVar)
         snocket
         genesisTimestamp
@@ -630,11 +669,10 @@ testConcurrentPushesIO :: forall c
                        => ContextDSIGN (DSIGN c) ~ ()
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => Show (SignKeyWithPeriodKES (KES c))
-                       => UnsoundKESSignAlgorithm IO (KES c)
+                       => UnsoundKESAlgorithm (KES c)
                        => Proxy c
                        -> Lock IO
                        -> IOManager
-                       -> TestNetworkConfig IO SockAddr
                        -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
@@ -643,36 +681,37 @@ testConcurrentPushesIO :: forall c
                        -> Property
 testConcurrentPushesIO proxyCrypto
     lock
-    ioManager
-    config
+    _ioManager
     controlDelaysAndSeedsKESPSB
     seedDSIGNPSB
     genesisTimestamp
     agentDelay
     nodeDelay =
   not (null controlDelaysAndSeedsKESPSB) ==>
-  ioProperty . withLock lock $ do
-      testConcurrentPushes
-        proxyCrypto
-        ioSnocket
-        config
-        controlDelaysAndSeedsKESPSB
-        seedDSIGNPSB
-        genesisTimestamp
-        agentDelay
-        nodeDelay
-  where
-    ioSnocket = socketSnocket ioManager
+  ioProperty . withIOManager $ \ioManager ->
+    withPoolAddress ioAddressPool $ \clientAddr ->
+      withPoolAddress ioAddressPool $ \serverAddr -> do
+        let config = mkIOTestNetworkConfig clientAddr serverAddr
+        withLock lock $ do
+          testConcurrentPushes
+            proxyCrypto
+            makeSocketRawBearer
+            (socketSnocket ioManager)
+            config
+            controlDelaysAndSeedsKESPSB
+            seedDSIGNPSB
+            genesisTimestamp
+            agentDelay
+            nodeDelay
 
 testConcurrentPushesIOSim :: forall c k
                           . (forall s. MonadKES (IOSim s) c)
                          => ContextDSIGN (DSIGN c) ~ ()
                          => DSIGN.Signable (DSIGN c) (OCertSignable c)
                          => Show (SignKeyWithPeriodKES (KES c))
-                         => (forall s. UnsoundKESSignAlgorithm (IOSim s) k)
+                         => UnsoundKESAlgorithm k
                          => KES c ~ k
                          => Proxy c
-                         -> IOSimTestNetworkConfig
                          -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
                          -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                          -> Integer
@@ -680,37 +719,43 @@ testConcurrentPushesIOSim :: forall c k
                          -> Word
                          -> Property
 testConcurrentPushesIOSim proxyCrypto
-    config
     controlDelaysAndSeedsKESPSB
     seedDSIGNPSB
     genesisTimestamp
     agentDelay
     nodeDelay =
   not (null controlDelaysAndSeedsKESPSB) ==>
-  iosimProperty $
-    SimSnocket.withSnocket
-      nullTracer
-      (toBearerInfo absNoAttenuation)
-      mempty $ \snocket _observe -> do
-        testConcurrentPushes
-            proxyCrypto
-            snocket
-            (unIOSimTestNetworkConfig config)
-            controlDelaysAndSeedsKESPSB
-            seedDSIGNPSB
-            genesisTimestamp
-            agentDelay
-            nodeDelay
+  iosimProperty $ do
+    ap <- newAddressPool
+    withPoolAddress ap $ \clientAddr ->
+      withPoolAddress ap $ \serverAddr ->
+        SimSnocket.withSnocket
+          nullTracer
+          (toBearerInfo absNoAttenuation)
+          mempty $ \snocket _observe -> do
+            let config = mkIOSimTestNetworkConfig clientAddr serverAddr
+            testConcurrentPushes
+                proxyCrypto
+                (makeFDRawBearer nullTracer)
+                snocket
+                config
+                controlDelaysAndSeedsKESPSB
+                seedDSIGNPSB
+                genesisTimestamp
+                agentDelay
+                nodeDelay
 
 testConcurrentPushes :: forall c m n fd addr
                       . MonadKES m c
-                     => MonadNetworking m fd
+                     => Show addr
+                     => Show fd
                      => MonadTimer m
                      => DSIGN.Signable (DSIGN c) (OCertSignable c)
                      => ContextDSIGN (DSIGN c) ~ ()
                      => Show (SignKeyWithPeriodKES (KES c))
-                     => UnsoundKESSignAlgorithm m (KES c)
+                     => UnsoundKESAlgorithm (KES c)
                      => Proxy c
+                     -> MakeRawBearer m fd
                      -> Snocket m fd addr
                      -> TestNetworkConfig m addr
                      -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
@@ -720,6 +765,7 @@ testConcurrentPushes :: forall c m n fd addr
                      -> Word
                      -> m Property
 testConcurrentPushes proxyCrypto
+    mrb
     snocket
     config
     controlDelaysAndSeedsKESPSB
@@ -729,14 +775,20 @@ testConcurrentPushes proxyCrypto
     nodeDelay =
   do
     traceMVar <- newMVar []
+    -- Debug.Trace.traceM $ "Concurrent pushes: " ++ show (length controlDelaysAndSeedsKESPSB)
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
     let (controlDelays, seedsKESRaw) = unzip controlDelaysAndSeedsKESPSB
     let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
+    let strTracer :: Tracer m String = mvarStringTracer traceMVar
+
+    forM_ controlDelays $ \delay -> traceWith strTracer $ "Control delay: " ++ show (delayFromWord delay)
+    traceWith strTracer $ "Node delay: " ++ show (delayFromWord nodeDelay)
+    traceWith strTracer $ "Agent delay: " ++ show (delayFromWord agentDelay)
 
     expectedSKOs <- forM (zip [0..] seedsKESRaw) $ \(certN, seedKESPSB) ->
         withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
-          expectedSK <- genKeyKES @m @(KES c) seedKES
+          expectedSK <- genKeyKES @(KES c) seedKES
           let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
           expectedSKPVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP
           vkHot <- deriveVerKeyKES expectedSK
@@ -749,7 +801,11 @@ testConcurrentPushes proxyCrypto
             serialized <- rawSerialiseSignKeyKES . skWithoutPeriodKES $ skp
             return (ocertN oc, (PrettyBS serialized, periodKES skp))
 
-    let controlScript bundle hooks = sendKey hooks bundle
+    let maxOCertN = fst $ last expectedSerialized
+
+    let controlScript bundle hooks = do
+          traceWith strTracer $ "Sending: " ++ (show . ocertN $ snd bundle)
+          sendKey hooks bundle
 
     let nodeScript =
           NodeScript
@@ -757,25 +813,47 @@ testConcurrentPushes proxyCrypto
                 received <- withCRefValue resultSKPVar $ \resultSKP -> do
                                 skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
                                 return $ Just (PrettyBS skp, periodKES resultSKP)
-                let sent = lookup (ocertN resultOC) expectedSerialized
-                reportProperty hooks (sent === received)
+                let actualOCertN = ocertN resultOC
+                traceWith strTracer $ "Received: " ++ show actualOCertN
+                let sent = lookup actualOCertN expectedSerialized
+                traceWith strTracer $
+                    show (ocertN resultOC) ++ "/" ++ show maxOCertN ++
+                    (if ocertN resultOC == maxOCertN then "*" else "")
+                when (ocertN resultOC == maxOCertN) $ do
+                  traceWith strTracer "Received last key"
+                  reportProperty hooks (sent === received)
             , runNodeScript = const $ return ()
             }
 
-    prop <- runTestNetwork proxyCrypto
-      (mvarPrettyTracer traceMVar)
-      snocket
-      genesisTimestamp
-      config
-      (delayFromWord agentDelay)
-      [ (delayFromWord controlDelay, controlScript sko)
-      | (controlDelay, sko) <- zip controlDelays expectedSKOs
-      ]
-      [(delayFromWord nodeDelay, nodeScript)]
+    traceWith strTracer "Start test network"
 
-    mapM_ (releaseCRef . fst) expectedSKOs
-    log <- takeMVar traceMVar
-    return $ (counterexample $ unlines log) prop
+    let go = do
+          prop <- runTestNetwork proxyCrypto
+            mrb
+            nullTracer -- (mvarPrettyTracer traceMVar)
+            snocket
+            genesisTimestamp
+            config
+            (delayFromWord agentDelay)
+            [ (delayFromWord controlDelay + 5000, controlScript sko)
+            | (controlDelay, sko) <- zip controlDelays expectedSKOs
+            ]
+            [(delayFromWord nodeDelay + 5000, nodeScript)]
+          traceWith strTracer "Finished test network"
+          mapM_ (releaseCRef . fst) expectedSKOs
+          log <- readMVar traceMVar
+          return $ (counterexample $ unlines log) prop
+
+    let timeout :: m ()
+        timeout = do
+          threadDelay $ 5000000 + delayFromWord (maximum (agentDelay : nodeDelay : controlDelays))
+
+    (race timeout go >>= either (error "TIMEOUT") return) `catch` \(e :: SomeException) -> do
+        log <- readMVar traceMVar
+        return $
+          counterexample (unlines log) $
+          counterexample (show e) $
+          False
 
 -- Show instances for signing keys violate mlocking guarantees, but for testing
 -- purposes, this is fine, so we'll declare orphan instances here.
@@ -846,62 +924,5 @@ toBearerInfo abi =
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 
-instance MonadUnmanagedMemory (IOSim s) where
-  zeroMem ptr size = unsafeIOToIOSim $ zeroMem ptr size
-  copyMem dst src size = unsafeIOToIOSim $ copyMem dst src size
-  allocaBytes size action =
-    bracket
-      (unsafeIOToIOSim $ mallocBytes size)
-      (unsafeIOToIOSim . free)
-      action
-
-unsafeIOToIOSim :: IO a -> IOSim s a
-unsafeIOToIOSim ioAction = liftST (unsafeIOToST ioAction)
-
-instance MonadPSB (IOSim s) where
-  psbUseAsCPtrLen psb action =
-    allocaBytes (fromInteger size) $ \ptr -> do
-      unsafeIOToIOSim $ do
-        psbUseAsCPtrLen psb $ \src _ -> copyMem (castPtr ptr) (castPtr src) (fromInteger size)
-      r <- action (castPtr ptr) (fromInteger size)
-      unsafeIOToIOSim $ do
-        psbUseAsCPtrLen psb $ \src _ -> copyMem (castPtr src) (castPtr ptr) (fromInteger size)
-      return r
-    where
-      size = natVal psb
-  psbCreateResultLen initialize = do
-    psb <- unsafeIOToIOSim $ psbCreate (\_ -> return ())
-    r <- psbUseAsCPtrLen psb initialize
-    return (psb, r)
-
-instance MonadByteStringMemory (IOSim s) where
-  useByteStringAsCStringLen bs action =
-    allocaBytes (fromIntegral size) $ \ptr -> do
-      unsafeIOToIOSim $ do
-        useByteStringAsCStringLen bs $ \(src, _) -> copyMem (castPtr ptr) (castPtr src) (fromIntegral size)
-      r <- action (castPtr ptr, fromIntegral size)
-      unsafeIOToIOSim $ do
-        useByteStringAsCStringLen bs $ \(src, _) -> copyMem (castPtr src) (castPtr ptr) (fromIntegral size)
-      return r
-    where
-      size = BS.length bs
-
-instance MonadMLock (IOSim s) where
-  mlockedMalloc size = do
-    say $ "Allocating " ++ show size ++ " mlocked byte(s)"
-    liftST . unsafeIOToST . fmap SFP $ mallocForeignPtrBytes (fromIntegral size)
-  finalizeMLockedForeignPtr (SFP fp) = do
-    say "Finalize"
-    liftST . unsafeIOToST $ finalizeForeignPtr fp
-
-  withMLockedForeignPtr (SFP fp) action = do
-    result <- action $ unsafeForeignPtrToPtr fp
-    liftST . unsafeIOToST $ touchForeignPtr fp
-    return result
-
-  traceMLockedForeignPtr mlp =
-    withMLockedForeignPtr mlp $ \ptr ->
-      say (show ptr)
-
-delayFromWord :: Word -> DiffTime
-delayFromWord wordDelay = picosecondsToDiffTime $ fromIntegral wordDelay * 1000000000
+delayFromWord :: Word -> Int
+delayFromWord wordDelay = fromIntegral wordDelay
