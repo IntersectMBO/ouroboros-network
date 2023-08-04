@@ -29,9 +29,10 @@ import           NoThunks.Class (NoThunks (..), unsafeNoThunks)
 
 import           Cardano.Prelude (forceElemsToWHNF)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked.Switch
 import           Control.Exception (assert)
 import           Control.Monad (unless)
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
 import           Control.Tracer (Tracer, traceWith)
 
@@ -507,6 +508,7 @@ continueWithStateM :: NoThunks s
                    -> m (ServerStIdle n txid tx m ())
 continueWithStateM (StatefulM f) !st =
     checkInvariant (show <$> unsafeNoThunks st) (f st)
+{-# NOINLINE continueWithStateM #-}
 
 -- | A variant of 'continueWithState' to be more easily utilized with
 -- 'handleReply'.
@@ -517,3 +519,4 @@ collectAndContinueWithState :: NoThunks s
                             -> m (ServerStIdle n txid tx m ())
 collectAndContinueWithState (StatefulCollect f) !st c =
     checkInvariant (show <$> unsafeNoThunks st) (f st c)
+{-# NOINLINE collectAndContinueWithState #-}

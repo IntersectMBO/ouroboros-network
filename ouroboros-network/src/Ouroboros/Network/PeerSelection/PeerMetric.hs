@@ -1,8 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 
 
 module Ouroboros.Network.PeerSelection.PeerMetric
@@ -28,8 +32,10 @@ module Ouroboros.Network.PeerSelection.PeerMetric
   , newPeerMetric'
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked.Switch
+import           Control.DeepSeq (NFData (..))
 import           Control.Monad (when)
+import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer (..), contramap, nullTracer)
 import           Data.Bifunctor (Bifunctor (..))
@@ -41,6 +47,10 @@ import           Data.Maybe (fromMaybe)
 import           Data.Monoid (Sum (..))
 import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as OrdPSQ
+import           GHC.Generics
+
+import           NoThunks.Class
+import           NoThunks.Class.Orphans ()
 
 import           Cardano.Slotting.Slot (SlotNo (..))
 import           Ouroboros.Network.DeltaQ (SizeInBytes)
@@ -56,6 +66,7 @@ newtype PeerMetricsConfiguration = PeerMetricsConfiguration {
       -- produced in one hour.
       maxEntriesToTrack :: Int
     }
+  deriving (Show, Generic, NoThunks, NFData)
 
 
 -- | Integer based metric ordered by 'SlotNo' which holds the peer and time.
@@ -111,6 +122,7 @@ data PeerMetricsState p = PeerMetricsState {
     --
     metricsConfig    :: !PeerMetricsConfiguration
   }
+  deriving (Show, Generic, NoThunks, NFData)
 
 
 -- | Average results at a given slot.
@@ -120,31 +132,38 @@ data AverageMetrics = AverageMetrics {
     averageFetchynessBlocks :: !Int,
     averageFetchynessBytes  :: !Int
   }
-  deriving Show
+  deriving (Show, Generic, NoThunks, NFData)
 
 
 newPeerMetric
-    :: MonadSTM m
+    :: (MonadLabelledSTM m, NoThunks p, NFData p)
     => PeerMetricsConfiguration
     -> m (PeerMetrics m p)
 newPeerMetric = newPeerMetric' IntPSQ.empty IntPSQ.empty
 
 
 newPeerMetric'
-    :: MonadSTM m
+    :: (MonadLabelledSTM m, NoThunks p, NFData p)
     => SlotMetric p
     -> SlotMetric (p, SizeInBytes)
     -> PeerMetricsConfiguration
     -> m (PeerMetrics m p)
 newPeerMetric' headerMetrics fetchedMetrics metricsConfig =
-  PeerMetrics <$> newTVarIO PeerMetricsState {
-                                headerMetrics,
-                                fetchedMetrics,
-                                peerRegistry = OrdPSQ.empty,
-                                lastSeenRegistry = OrdPSQ.empty,
-                                lastSlotNo = SlotNo 0,
-                                metricsConfig
-                              }
+    case rnf state of
+      () -> atomically $ do
+        a <- newTVarWithInvariant (\a -> show <$> unsafeNoThunks a)
+                                  state
+        labelTVar a "peermetrics"
+        return (PeerMetrics a)
+  where
+    state = PeerMetricsState {
+                headerMetrics,
+                fetchedMetrics,
+                peerRegistry     = OrdPSQ.empty,
+                lastSeenRegistry = OrdPSQ.empty,
+                lastSlotNo       = SlotNo 0,
+                metricsConfig
+              }
 
 updateLastSlot :: SlotNo -> PeerMetricsState p -> PeerMetricsState p
 updateLastSlot slotNo state@PeerMetricsState { lastSlotNo }
@@ -228,8 +247,8 @@ fetchedMetricTracer config peerMetrics@PeerMetrics{peerMetricsVar} =
     bimap remoteAddress (\(_, slotNo, _) -> slotNo)
     `contramap`
     peerRegistryTracer peerMetrics
- <> (\(TraceLabelPeer con (bytes, slot, time)) ->
-       TraceLabelPeer (remoteAddress con, bytes) (slot, time))
+ <> (\(TraceLabelPeer ConnectionId { remoteAddress } (!bytes, slot, time)) ->
+       TraceLabelPeer (remoteAddress, bytes) (slot, time))
     `contramap`
      metricsTracer
        (fetchedMetrics <$> readTVar peerMetricsVar)
@@ -357,9 +376,11 @@ metricsTracer
 metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTrack } =
     Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
       metrics <- getMetrics
-      case IntPSQ.lookup (slotToInt slot) metrics of
+      let !k = slotToInt slot
+          !v = (peer, time)
+      case IntPSQ.lookup k metrics of
            Nothing -> do
-             let metrics' = IntPSQ.insert (slotToInt slot) slot (peer, time) metrics
+             let metrics' = IntPSQ.insert k slot v metrics
              if IntPSQ.size metrics' > maxEntriesToTrack
              -- drop last element if the metric board is too large
              then case IntPSQ.minView metrics' of
@@ -371,8 +392,7 @@ metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTra
              else writeMetrics metrics'
            Just (_, (_, oldTime)) ->
                when (oldTime > time) $
-                    writeMetrics (IntPSQ.insert (slotToInt slot) slot
-                                                (peer, time) metrics)
+                    writeMetrics (IntPSQ.insert k slot v metrics)
 
 
 joinedPeerMetricAt

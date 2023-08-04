@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+- Fixed a small memory leak in `PeerMetrics` (#4633).
+
 ## 0.8.2.0
 
 ### Breaking changes

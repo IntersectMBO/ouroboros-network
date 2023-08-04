@@ -2,10 +2,10 @@
 # It just takes the shell attribute from default.nix.
 { config ? { }, sourcesOverride ? { }, withHoogle ? false
 , pkgs ? import ./nix { inherit config sourcesOverride; }
-, checkTVarInvariant ? false }:
+, checkTVarInvariants ? false }:
 with pkgs;
 let
-  hsPkgs = if checkTVarInvariant then
+  hsPkgs = if checkTVarInvariants then
     ouroborosNetworkHaskellPackagesWithTVarCheck
   else
     ouroborosNetworkHaskellPackages;

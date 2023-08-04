@@ -15,11 +15,6 @@ build-type:             Simple
 extra-doc-files:        README.md
                         CHANGELOG.md
 
-flag asserts
-  description: Enable assertions
-  manual:      False
-  default:     False
-
 Flag ipv6
   Description: Enable IPv6 test cases
   Manual: True
@@ -46,7 +41,7 @@ common demo-deps
 
 library
   build-depends:       base            >=4.14 && <4.19,
-                       io-classes     ^>=1.1,
+                       io-classes     ^>=1.2,
                        strict-stm,
                        si-timers,
                        contra-tracer   >=0.1 && <0.2,
@@ -71,9 +66,6 @@ library
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <3.0,
                        Win32-network   >=0.1 && <0.2
-
-  if flag(asserts)
-     ghc-options:      -fno-ignore-asserts
 
   if flag(tracetcpinfo)
     cpp-options:       -DMUX_TRACE_TCPINFO
