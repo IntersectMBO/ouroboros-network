@@ -508,6 +508,7 @@ continueWithStateM :: NoThunks s
                    -> m (ServerStIdle n txid tx m ())
 continueWithStateM (StatefulM f) !st =
     checkInvariant (show <$> unsafeNoThunks st) (f st)
+{-# NOINLINE continueWithStateM #-}
 
 -- | A variant of 'continueWithState' to be more easily utilized with
 -- 'handleReply'.
@@ -518,3 +519,4 @@ collectAndContinueWithState :: NoThunks s
                             -> m (ServerStIdle n txid tx m ())
 collectAndContinueWithState (StatefulCollect f) !st c =
     checkInvariant (show <$> unsafeNoThunks st) (f st c)
+{-# NOINLINE collectAndContinueWithState #-}
