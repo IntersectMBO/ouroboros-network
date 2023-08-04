@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+## 0.5.1.1 -- 2023-08-04
+
+* `full-laziness` is turned off for GHC 9.2 in `ClientPipelined`.
+
 ## 0.5.1.0 -- 2023-07-17
 
 ### Breaking changes
