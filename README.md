@@ -1,6 +1,7 @@
 # [Ouroboros-Network][ouroboros-network]
 
 [![Haskell CI](https://img.shields.io/github/actions/workflow/status/input-output-hk/ouroboros-network/build.yml?branch=master&label=Build&style=for-the-badge)](https://github.com/input-output-hk/ouroboros-network/actions/workflows/build.yml)
+[![Nightly CI](https://img.shields.io/github/actions/workflow/status/input-output-hk/ouroboros-network/nightly.yml?branch=master&label=Nightly&style=for-the-badge)](https://github.com/input-output-hk/ouroboros-network/actions/workflows/nightly.yml)
 [![Haddocks](https://img.shields.io/github/actions/workflow/status/input-output-hk/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://github.com/input-output-hk/ouroboros-network/actions/workflows/github-page.yml)
 [![handbook](https://img.shields.io/badge/policy-Cardano%20Engineering%20Handbook-informational?style=for-the-badge)](https://input-output-hk.github.io/cardano-engineering-handbook)
 

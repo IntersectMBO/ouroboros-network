@@ -1,0 +1,160 @@
+name: Nightly Haskell CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  schedule:
+    - cron: 0 3 * * *
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ["8.10.7", "9.6.2"]
+        os: [ubuntu-latest]
+
+    env:
+      # Modify this value to "invalidate" all cabal caches.
+      CABAL_CACHE_VERSION: "2022-12-30"
+      # Modify this value to "invalidate" the cabal store cache only.
+      CACHE_VERSION: "20220919"
+      # Modify this value to "invalidate" the dist-newstyle cache only.
+      DIST_CACHE_VERSION: "20221122"
+
+    steps:
+
+    - name: Install Haskell
+      uses: input-output-hk/setup-haskell@v1
+      id: setup-haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: "3.10.1.0"
+        pacman-packages: >
+          mingw-w64-x86_64-pkg-config
+          mingw-w64-x86_64-openssl
+          mingw-w64-x86_64-sed
+          base-devel
+          autoconf-wrapper
+          autoconf
+          automake
+          libtool
+          make
+
+    - name: Set up Ruby
+      if: runner.os == 'Linux'
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: 2.7
+
+    - name: Install cddl
+      if: runner.os == 'Linux'
+      run: |
+        gem install cddl -v 0.8.27
+
+    - uses: actions/checkout@v3
+
+    - name: "Configure cabal.project.local"
+      run: |
+        cp ./scripts/ci/cabal.project.nightly${{ runner.os }} cabal.project.local
+
+    - name: Update PATH (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        $env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)
+        echo "PATH=$env:PATH" >> $env:GITHUB_ENV
+
+    - name: Update PATH (Linux)
+      if: runner.os == 'Linux'
+      run:
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Update Hackage and CHaP
+      run: cabal update
+
+    - name: Record dependencies
+      id: record-deps
+      run: |
+        cabal build all --dry-run
+        cat dist-newstyle/cache/plan.json | jq -L .github/workflows/jq-install-plan | sort | uniq > dependencies.txt
+
+    - uses: actions/cache/restore@v3
+      name: "Restore cache: `cabal store`"
+      id: restore-cabal-store
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+        restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+
+    - uses: actions/cache@v3
+      name: "Cache `dist-newstyle`"
+      with:
+        path: |
+          dist-newstyle
+          !dist-newstyle/**/.git
+        key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project') }}
+        restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+
+    - name: Build dependencies
+      run: cabal build --only-dependencies all -j
+
+    - uses: actions/cache/save@v3
+      name: "Save cache: `cabal store`"
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+
+    - name: Build projects [build]
+      run: cabal build all -j
+
+    # Test network packages
+
+    - name: ntp-client [test]
+      run: cabal run ntp-client:test -- +RTS -maxN2 -RTS
+
+    - name: monoidal-synchronisation [test]
+      run: cabal run monoidal-synchronisation:test -- +RTS -maxN2 -RTS
+
+    - name: network-mux [test]
+      # TODO: issue #4635 to enable `+RTS -N`
+      run: cabal run network-mux:test
+
+    - name: ourobors-network-testing [test]
+      run: cabal run ouroboros-network-testing:test -- +RTS -maxN2 -RTS
+
+    - name: ourobors-network-framework [test]
+      # TODO: enable `+RTS -N`
+      run: cabal run ouroboros-network-framework:test
+
+    - name: ouroboros-network-protocols [test]
+      run: cabal run ouroboros-network-protocols:test -- +RTS -maxN2 -RTS
+
+    - name: ouroboros-netowrk-protocols [cddl]
+      if: runner.os == 'Linux'
+      run: cabal run ouroboros-network-protocols:cddl -- +RTS -maxN2 -RTS
+
+    - name: ouroboros-network [test]
+      run: cabal run ouroboros-network:test -- +RTS -maxN2 -RTS
+
+    # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
+    # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and
+    # `/msys2/mingw64` paths are not in PATH by default for the workflow, but tmate
+    # will put them in.
+    # You may also want to run
+    #
+    #   $env:PATH=("C:\Program Files\PowerShell\7;{0}" -f $env:ORIGINAL_PATH)
+    #
+    # to restore the original path.  Do note that some test might need msys2
+    # and will silently fail if msys2 is not in path. See the "Run tests" step.
+    #
+    # - name: Set up tmate session
+    #   if: ${{ failure() }}
+    #   uses: mxschmitt/action-tmate@v3
+    #   with:
+    #     limit-access-to-actor: true
+

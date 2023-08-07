@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -175,10 +174,7 @@ tests =
 
   , testGroup "races"
     [ nightlyTest $ testProperty "governor no livelock"       $ prop_explore_governor_nolivelock
--- `IOSimPOR` is consumes too much RAM on Windows
-#if !defined(mingw32_HOST_OS)
-    ,               testProperty "governor connection status" $ prop_explore_governor_connstatus
-#endif
+    , nightlyTest $ testProperty "governor connection status" $ prop_explore_governor_connstatus
     ]
   ]
   --TODO: We should add separate properties to check that we do not overshoot
