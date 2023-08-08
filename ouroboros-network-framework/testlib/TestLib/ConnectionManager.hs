@@ -74,7 +74,7 @@ verifyAbstractTransition Transition { fromState, toState } =
       -- @Negotiated^{Unidirectional}_{Inbound}
       (UnnegotiatedSt Inbound, InboundIdleSt Unidirectional) -> True
 
-      -- 'unregisterOutboundConnection' and 'demotedToColdRemote' might perfrom
+      -- 'unregisterOutboundConnection' and 'demotedToColdRemote' might perform
       (InboundIdleSt Duplex, InboundIdleSt Duplex) -> True
       -- @Awake^{Duplex}_{Remote}
       (InboundIdleSt Duplex, InboundSt Duplex) -> True
@@ -96,6 +96,20 @@ verifyAbstractTransition Transition { fromState, toState } =
 
       (OutboundIdleSt Duplex, InboundSt Duplex) -> True
       (OutboundIdleSt _dataFlow, TerminatingSt) -> True
+
+      --
+      -- Connecting to oneself
+      --
+
+      -- 'SelfConn'
+      (UnnegotiatedSt Outbound, UnnegotiatedSt Inbound) -> True
+      -- 'SelfConn⁻¹'
+      (UnnegotiatedSt Inbound,  UnnegotiatedSt Outbound) -> True
+      -- We should also add this transition, but it's not observed in our test
+      -- suite:
+      -- (InboundIdleSt Unidirectional, OutboundState Unidirectional) -> True
+      -- this transition is also excluded from `validTransitionMap` and
+      -- `allValidTransitionsNames`.
 
       --
       -- Terminate
@@ -159,6 +173,8 @@ validTransitionMap t@Transition { fromState, toState } =
       (InboundIdleSt Unidirectional , TerminatingSt)                -> (28, show t)
       (InboundSt Unidirectional     , InboundIdleSt Unidirectional) -> (29, show t)
       (OutboundIdleSt Duplex        , InboundSt Duplex)             -> (30, show t)
+      (UnnegotiatedSt Outbound      , UnnegotiatedSt Inbound)       -> (36, show t)
+      (UnnegotiatedSt Inbound       , UnnegotiatedSt Outbound)      -> (37, show t) -- max valid transition
       (OutboundIdleSt _dataFlow , TerminatingSt)                    -> (31, show t)
       (TerminatingSt            , TerminatedSt)                     -> (32, show t)
       (_                        , TerminatedSt)                     -> (33, show t)
@@ -212,6 +228,8 @@ allValidTransitionsNames =
   [ Transition UnknownConnectionSt             ReservedOutboundSt
   -- , Transition TerminatedSt                    ReservedOutboundSt
   , Transition ReservedOutboundSt              (UnnegotiatedSt Outbound)
+  , Transition (UnnegotiatedSt Outbound)       (UnnegotiatedSt Inbound)
+  , Transition (UnnegotiatedSt Inbound)        (UnnegotiatedSt Outbound)
   , Transition (UnnegotiatedSt Outbound)       OutboundUniSt
   , Transition (UnnegotiatedSt Outbound)       (OutboundDupSt Ticking)
   , Transition OutboundUniSt                   (OutboundIdleSt Unidirectional)
@@ -241,6 +259,8 @@ allValidTransitionsNames =
   -- , Transition (InboundIdleSt Unidirectional)  TerminatingSt
   -- , Transition (InboundSt Unidirectional)      (InboundIdleSt Unidirectional)
   -- , Transition (OutboundIdleSt Duplex)         (InboundSt Duplex)
+  , Transition (UnnegotiatedSt Outbound)       (UnnegotiatedSt Inbound)
+  , Transition (UnnegotiatedSt Inbound)        (UnnegotiatedSt Outbound)
   -- , Transition (OutboundIdleSt Unidirectional) TerminatingSt
   -- , Transition (OutboundIdleSt Duplex)         TerminatingSt
   , Transition TerminatingSt                   TerminatedSt

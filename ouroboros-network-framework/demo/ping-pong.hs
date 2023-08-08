@@ -91,10 +91,10 @@ maximumMiniProtocolLimits =
 -- Ping pong demo
 --
 
-demoProtocol0 :: RunMiniProtocol appType bytes m a b
-              -> OuroborosApplication appType addr bytes m a b
+demoProtocol0 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+              -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 demoProtocol0 pingPong =
-    OuroborosApplication $ \_connectionId _controlMessageSTM -> [
+    OuroborosApplication $ [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
@@ -119,22 +119,25 @@ clientPingPong pipelined =
       Nothing
       defaultLocalSocketAddr
   where
-    app :: OuroborosApplication InitiatorMode addr LBS.ByteString IO () Void
+    app :: OuroborosApplicationWithMinimalCtx
+             InitiatorMode LocalAddress LBS.ByteString IO () Void
     app = demoProtocol0 pingPongInitiator
 
     pingPongInitiator | pipelined =
       InitiatorProtocolOnly $
-      MuxPeerPipelined
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongClientPeerPipelined (pingPongClientPipelinedMax 5))
+      mkMiniProtocolCbFromPeerPipelined $ \_ctx ->
+        (contramap show stdoutTracer
+        , codecPingPong
+        , pingPongClientPeerPipelined (pingPongClientPipelinedMax 5)
+        )
 
       | otherwise =
       InitiatorProtocolOnly $
-      MuxPeer
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap show stdoutTracer
+        , codecPingPong
+        , pingPongClientPeer (pingPongClientCount 5)
+        )
 
 
 pingPongClientCount :: Applicative m => Int -> PingPongClient m ()
@@ -163,15 +166,17 @@ serverPingPong =
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderMode addr LBS.ByteString IO Void ()
+    app :: OuroborosApplicationWithMinimalCtx
+             ResponderMode LocalAddress LBS.ByteString IO Void ()
     app = demoProtocol0 pingPongResponder
 
     pingPongResponder =
       ResponderProtocolOnly $
-      MuxPeer
-        (contramap show stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap show stdoutTracer
+        , codecPingPong
+        , pingPongServerPeer pingPongServerStandard
+        )
 
 pingPongServerStandard
   :: Applicative m
@@ -187,11 +192,11 @@ pingPongServerStandard =
 -- Ping pong demo2
 --
 
-demoProtocol1 :: RunMiniProtocol appType bytes m a b
-              -> RunMiniProtocol appType bytes m a b
-              -> OuroborosApplication appType addr bytes m a b
+demoProtocol1 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+              -> RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+              -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 demoProtocol1 pingPong pingPong' =
-    OuroborosApplication $ \_connectionId _controlMessageSTM -> [
+    OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
@@ -221,22 +226,25 @@ clientPingPong2 =
       Nothing
       defaultLocalSocketAddr
   where
-    app :: OuroborosApplication InitiatorMode addr LBS.ByteString IO  () Void
+    app :: OuroborosApplicationWithMinimalCtx
+             InitiatorMode addr LBS.ByteString IO  () Void
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
       InitiatorProtocolOnly $
-      MuxPeer
-        (contramap (show . (,) (1 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap (show . (,) (1 :: Int)) stdoutTracer
+        , codecPingPong
+        , pingPongClientPeer (pingPongClientCount 5)
+        )
 
     pingpong'=
       InitiatorProtocolOnly $
-      MuxPeer
-        (contramap (show . (,) (2 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongClientPeer (pingPongClientCount 5))
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap (show . (,) (2 :: Int)) stdoutTracer
+        , codecPingPong
+        , pingPongClientPeer (pingPongClientCount 5)
+        )
 
 pingPongClientPipelinedMax
   :: forall m. Monad m
@@ -278,20 +286,24 @@ serverPingPong2 =
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    app :: OuroborosApplication ResponderMode addr LBS.ByteString IO Void ()
+    app :: OuroborosApplicationWithMinimalCtx
+             ResponderMode addr LBS.ByteString IO Void ()
     app = demoProtocol1 pingpong pingpong'
 
     pingpong =
       ResponderProtocolOnly $
-      MuxPeer
-        (contramap (show . (,) (1 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap (show . (,) (1 :: Int)) stdoutTracer
+        , codecPingPong
+        , pingPongServerPeer pingPongServerStandard
+        )
 
     pingpong' =
       ResponderProtocolOnly $
-      MuxPeer
-        (contramap (show . (,) (2 :: Int)) stdoutTracer)
-        codecPingPong
-        (pingPongServerPeer pingPongServerStandard)
+      mkMiniProtocolCbFromPeer $ \_ctx ->
+        ( contramap (show . (,) (2 :: Int)) stdoutTracer
+        , codecPingPong
+        , pingPongServerPeer pingPongServerStandard
+        )
+
 

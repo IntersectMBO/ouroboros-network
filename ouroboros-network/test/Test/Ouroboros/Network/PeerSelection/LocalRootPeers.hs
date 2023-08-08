@@ -17,9 +17,9 @@ import qualified Data.Map.Strict as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import           Ouroboros.Network.PeerSelection.LocalRootPeers
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..), LocalRootPeers (..), WarmValency (..))
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.PeerSelection.Governor
 

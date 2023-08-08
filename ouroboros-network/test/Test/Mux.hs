@@ -32,8 +32,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Block (Tip (..), decodeTip, encodeTip)
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.ControlMessage (continueForever)
+import           Ouroboros.Network.Context
 import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Mock.Chain as Chain
 import qualified Ouroboros.Network.Mock.ProducerState as CPS
@@ -65,10 +64,10 @@ _sayTracer :: MonadSay m => Tracer m String
 _sayTracer = Tracer say
 
 
-testProtocols :: RunMiniProtocol appType bytes m a b
-              -> OuroborosApplication appType addr bytes m a b
+testProtocols :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+              -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 testProtocols chainSync =
-    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
+    OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -117,13 +116,14 @@ demo chain0 updates delay = do
 
         chainSyncInitator =
           InitiatorProtocolOnly $
-          MuxPeer
-            nullTracer
-            (ChainSync.codecChainSync
-               encode             decode
-               encode             decode
-               (encodeTip encode) (decodeTip decode))
-            consumerPeer
+          mkMiniProtocolCbFromPeer $ \_ctx ->
+            ( nullTracer
+            , ChainSync.codecChainSync
+                 encode             decode
+                 encode             decode
+                (encodeTip encode) (decodeTip decode)
+            , consumerPeer
+            )
 
         consumerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
                              AsClient ChainSync.StIdle m ()
@@ -134,14 +134,14 @@ demo chain0 updates delay = do
         producerApp = testProtocols chainSyncResponder
 
         chainSyncResponder =
-          ResponderProtocolOnly $
-          MuxPeer
-            nullTracer
-            (ChainSync.codecChainSync
-               encode             decode
-               encode             decode
-               (encodeTip encode) (decodeTip decode))
-            producerPeer
+          ResponderProtocolOnly $ mkMiniProtocolCbFromPeer $ \_ctx ->
+            ( nullTracer
+            , ChainSync.codecChainSync
+                 encode             decode
+                 encode             decode
+                (encodeTip encode) (decodeTip decode)
+            , producerPeer
+            )
 
         producerPeer :: Peer (ChainSync.ChainSync block (Point block) (Tip block))
                         AsServer ChainSync.StIdle m ()
@@ -164,16 +164,16 @@ demo chain0 updates delay = do
       Mx.muxStart
         activeTracer
         (Mx.toApplication
-          (ConnectionId "client" "server")
-          (continueForever (Proxy :: Proxy m))
+          MinimalInitiatorContext { micConnectionId = ConnectionId "client" "server" }
+          ResponderContext { rcConnectionId = ConnectionId "client" "server" }
           consumerApp)
         clientBearer
     serverAsync <- async $
       Mx.muxStart
         activeTracer
         (Mx.toApplication
-          (ConnectionId "server" "client")
-          (continueForever (Proxy :: Proxy m))
+          MinimalInitiatorContext { micConnectionId = ConnectionId "server" "client" }
+          ResponderContext { rcConnectionId = ConnectionId "server" "client" }
           producerApp)
         serverBearer
 

@@ -43,8 +43,7 @@ import           System.Process (createPipe)
 #endif
 
 import           Ouroboros.Network.Block (decodeTip, encodeTip)
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.ControlMessage (continueForever)
+import           Ouroboros.Network.Context
 import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import qualified Ouroboros.Network.Mock.Chain as Chain
 import qualified Ouroboros.Network.Mock.ProducerState as CPS
@@ -80,10 +79,10 @@ defaultMiniProtocolLimit = 3000000
 
 -- | The bundle of mini-protocols in our demo protocol: only chain sync
 --
-demoProtocols :: RunMiniProtocol appType bytes m a b
-              -> OuroborosApplication appType addr bytes m a b
+demoProtocols :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+              -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 demoProtocols chainSync =
-    OuroborosApplication $ \_connectionId _shouldStopSTM -> [
+    OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -160,32 +159,36 @@ demo chain0 updates = do
         let Just expectedChain = Chain.applyChainUpdates updates chain0
             target = Chain.headPoint expectedChain
 
-            consumerApp :: OuroborosApplication InitiatorMode String BL.ByteString IO () Void
+            consumerApp :: OuroborosApplicationWithMinimalCtx
+                             InitiatorMode String BL.ByteString IO () Void
             consumerApp = demoProtocols chainSyncInitator
 
             chainSyncInitator =
               InitiatorProtocolOnly $
-                MuxPeer nullTracer
-                        (ChainSync.codecChainSync encode             decode
-                                                  encode             decode
-                                                  (encodeTip encode) (decodeTip decode))
-                        (ChainSync.chainSyncClientPeer
-                          (ChainSync.chainSyncClientExample consumerVar
-                          (consumerClient done target consumerVar)))
+                mkMiniProtocolCbFromPeer $ \_ctx -> ( nullTracer
+                                     , ChainSync.codecChainSync encode             decode
+                                                                encode             decode
+                                                     (encodeTip encode) (decodeTip decode)
+                                     , ChainSync.chainSyncClientPeer
+                                          (ChainSync.chainSyncClientExample consumerVar
+                                            (consumerClient done target consumerVar))
+                                     )
 
             server :: ChainSyncServer block (Point block) (Tip block) IO ()
             server = ChainSync.chainSyncServerExample () producerVar id
 
-            producerApp ::OuroborosApplication ResponderMode String BL.ByteString IO Void ()
+            producerApp ::OuroborosApplicationWithMinimalCtx
+                            ResponderMode String BL.ByteString IO Void ()
             producerApp = demoProtocols chainSyncResponder
 
             chainSyncResponder =
               ResponderProtocolOnly $
-                MuxPeer nullTracer
-                        (ChainSync.codecChainSync encode             decode
-                                                  encode             decode
-                                                  (encodeTip encode) (decodeTip decode))
-                        (ChainSync.chainSyncServerPeer server)
+                mkMiniProtocolCbFromPeer $ \_ctx -> ( nullTracer
+                                     , ChainSync.codecChainSync encode             decode
+                                                                encode             decode
+                                                     (encodeTip encode) (decodeTip decode)
+                                     , ChainSync.chainSyncServerPeer server
+                                     )
 
         clientBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan1
         serverBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) activeTracer chan2
@@ -194,16 +197,16 @@ demo chain0 updates = do
               Mx.muxStart
                 activeTracer
                 (toApplication
-                  (ConnectionId "producer" "consumer")
-                  (continueForever (Proxy :: Proxy IO))
+                  MinimalInitiatorContext { micConnectionId = ConnectionId "producer" "consumer" }
+                  ResponderContext { rcConnectionId = ConnectionId "producer" "consumer" }
                   producerApp)
                 clientBearer
         _ <- async $
               Mx.muxStart
                 activeTracer
                 (toApplication
-                  (ConnectionId "consumer" "producer")
-                  (continueForever (Proxy :: Proxy IO))
+                  MinimalInitiatorContext { micConnectionId = ConnectionId "consumer" "producer" }
+                  ResponderContext { rcConnectionId = ConnectionId "consumer" "producer" }
                   consumerApp)
                 serverBearer
 

@@ -6,6 +6,9 @@
 module Test.Ouroboros.Network.PeerSelection.Instances
   ( -- test types
     PeerAddr (..)
+    -- generators
+  , genIPv4
+  , genIPv6
     -- generator tests
   , prop_arbitrary_PeerSelectionTargets
   , prop_shrink_PeerSelectionTargets
@@ -64,21 +67,32 @@ instance Arbitrary IsLedgerPeer where
 
 instance Arbitrary PeerSelectionTargets where
   arbitrary = do
-    targetNumberOfKnownPeers       <-            min 10000 . getNonNegative <$> arbitrary
+    targetNumberOfKnownPeers       <- getNonNegative <$> resize 1000 arbitrary
     targetNumberOfRootPeers        <- choose (0, min 100  targetNumberOfKnownPeers)
     targetNumberOfEstablishedPeers <- choose (0, min 1000 targetNumberOfKnownPeers)
     targetNumberOfActivePeers      <- choose (0, min 100  targetNumberOfEstablishedPeers)
+
+    targetNumberOfKnownBigLedgerPeers
+      <- getNonNegative <$> resize 1000 arbitrary
+    targetNumberOfEstablishedBigLedgerPeers
+      <- choose (0 , min 1000 targetNumberOfKnownBigLedgerPeers)
+    targetNumberOfActiveBigLedgerPeers
+      <- choose (0, min 100 targetNumberOfEstablishedBigLedgerPeers)
+
     return PeerSelectionTargets {
       targetNumberOfRootPeers,
       targetNumberOfKnownPeers,
       targetNumberOfEstablishedPeers,
-      targetNumberOfActivePeers
+      targetNumberOfActivePeers,
+      targetNumberOfKnownBigLedgerPeers,
+      targetNumberOfEstablishedBigLedgerPeers,
+      targetNumberOfActiveBigLedgerPeers
     }
 
-  shrink (PeerSelectionTargets r k e a) =
+  shrink (PeerSelectionTargets r k e a kb eb ab) =
     [ targets'
-    | (r',k',e',a') <- shrink (r,k,e,a)
-    , let targets' = PeerSelectionTargets r' k' e' a'
+    | (r',k',e',a',kb',eb',ab') <- shrink (r,k,e,a,kb,eb,ab)
+    , let targets' = PeerSelectionTargets r' k' e' a' kb' eb' ab'
     , sanePeerSelectionTargets targets' ]
 
 instance Arbitrary DomainAccessPoint where
@@ -96,7 +110,7 @@ instance Arbitrary DomainAccessPoint where
 
 genIPv4 :: Gen IP.IP
 genIPv4 =
-    IP.IPv4 . IP.toIPv4w <$> arbitrary
+    IP.IPv4 . IP.toIPv4w <$> arbitrary `suchThat` (> 100)
 
 genIPv6 :: Gen IP.IP
 genIPv6 =
@@ -104,7 +118,7 @@ genIPv6 =
   where
     genFourWord32 :: Gen (Word32, Word32, Word32, Word32)
     genFourWord32 =
-       (,,,) <$> arbitrary
+       (,,,) <$> arbitrary `suchThat` (> 100)
              <*> arbitrary
              <*> arbitrary
              <*> arbitrary

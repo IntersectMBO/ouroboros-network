@@ -467,7 +467,7 @@ empty fetch range, but this is ok since we never request empty ranges.
 -- current chain.
 --
 -- The anchor point of a 'ChainSuffix' will be a point within the bounds of
--- the currrent chain ('AF.withinFragmentBounds'), indicating that it forks off
+-- the current chain ('AF.withinFragmentBounds'), indicating that it forks off
 -- in the last @K@ blocks.
 --
 -- A 'ChainSuffix' must be non-empty, as an empty suffix, i.e. the candidate
@@ -926,7 +926,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
         decision = fetchRequestDecision
                      fetchDecisionPolicy
                      fetchMode
-                     -- Permitt the prefered peers to by pass any concurrency limits.
+                     -- Permit the preferred peers to by pass any concurrency limits.
                      (if elem peer nPreferedPeers then 0
                                                   else nConcurrentFetchPeers)
                      (calculatePeerFetchInFlightLimits gsvs)
@@ -993,7 +993,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     -- permitted to go active even if we're above the desired maxConcurrentFetchPeers
     -- which will cause us to switch smoothly from a slower to faster peers.
     -- When switching from slow to faster peers we will be over the configured limit, but
-    -- PeerGSV is expected to be updated rather infrequently so the set of prefered peers should
+    -- PeerGSV is expected to be updated rather infrequently so the set of preferred peers should
     -- be stable during 10s of seconds.
     nPreferedPeers :: [peer]
     nPreferedPeers =

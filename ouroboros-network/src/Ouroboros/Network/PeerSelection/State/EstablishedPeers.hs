@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-module Ouroboros.Network.PeerSelection.EstablishedPeers
+module Ouroboros.Network.PeerSelection.State.EstablishedPeers
   ( EstablishedPeers
   , empty
   , toMap
@@ -253,15 +253,20 @@ setCurrentTime now ep@EstablishedPeers { nextPeerShareTimes
     (_, nextActivateTimes') = PSQ.atMostView now nextActivateTimes
 
 
+-- | Find smallest activation time for a peer belonging to a given set.
+--
 minActivateTime :: Ord peeraddr
                 => EstablishedPeers peeraddr peerconn
+                -> (peeraddr -> Bool)
+                -- ^ a predicate which describes the peers to take into
+                -- account
                 -> Maybe Time
-minActivateTime EstablishedPeers { nextActivateTimes }
-  | Just (_k, t, _, _psq) <- PSQ.minView nextActivateTimes
-  = Just t
-
-  | otherwise
-  = Nothing
+minActivateTime EstablishedPeers { nextActivateTimes } fn = go nextActivateTimes
+  where
+    go psq = case PSQ.minView psq of
+      Just (k, t, _, psq') | fn k      -> Just t
+                           | otherwise -> go psq'
+      Nothing                          -> Nothing
 
 
 setActivateTimes :: Ord peeraddr

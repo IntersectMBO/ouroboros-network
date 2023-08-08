@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.PeerSelection.Simple
+module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
     -- * Re-exports
   , PeerSelectionTargets (..)
@@ -32,12 +32,12 @@ import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
-import           Ouroboros.Network.PeerSelection.LocalRootPeers (HotValency,
-                     WarmValency)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency, WarmValency)
 import           Ouroboros.Network.PeerSharing (PeerSharingController (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type
                      (PeerSharingAmount (..))
@@ -75,7 +75,7 @@ withPeerSelectionActions
   -> STM m (peeraddr, PeerSharing)
   -- ^ Read New Inbound Connections
   -> PeerStateActions peeraddr peerconn m
-  -> (NumberOfPeers -> m (Maybe (Set peeraddr, DiffTime)))
+  -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
   -> (   Async m Void
       -> PeerSelectionActions peeraddr peerconn m
       -> m a)
@@ -88,7 +88,7 @@ withPeerSelectionActions
   toPeerAddr
   dnsSemaphore
   dnsActions
-  readTargets
+  readPeerSelectionTargets
   readLocalRootPeers
   readPublicRootPeers
   peerSharing
@@ -100,13 +100,14 @@ withPeerSelectionActions
   k = do
     localRootsVar <- newTVarIO mempty
     let peerSelectionActions = PeerSelectionActions {
-            readPeerSelectionTargets = readTargets,
+            readPeerSelectionTargets,
             readLocalRootPeers = readTVar localRootsVar,
             readNewInboundConnection = readNewInboundConnections,
             peerSharing,
             peerConnToPeerSharing,
-            requestPublicRootPeers = requestPublicRootPeers,
-            requestPeerShare = requestPeerShare,
+            requestPublicRootPeers,
+            requestBigLedgerPeers,
+            requestPeerShare,
             peerStateActions
           }
     withAsync
@@ -124,7 +125,7 @@ withPeerSelectionActions
     -- to using the manually configured bootstrap root peers.
     requestPublicRootPeers :: Int -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime)
     requestPublicRootPeers n = do
-      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n)
+      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n) AllLedgerPeers
       case peers_m of
            -- No peers from Ledger
            Nothing    -> do
@@ -154,6 +155,18 @@ withPeerSelectionActions
                               readPublicRootPeers
                               dnsActions
                               ($ n)
+
+    requestBigLedgerPeers :: Int -> m (Set peeraddr, DiffTime)
+    requestBigLedgerPeers n = do
+      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n) BigLedgerPeers
+      case peers_m of
+        Nothing    ->  do
+          (m, dt) <- requestConfiguredRootPeers n
+          -- TODO: we need to ensure we only choose from big configured root
+          -- peers, but for that the root peers need to contain stake
+          -- information!
+          return (Map.keysSet m, dt)
+        Just peers -> return peers
 
     requestPeerShare :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr)
     requestPeerShare amount peer = do

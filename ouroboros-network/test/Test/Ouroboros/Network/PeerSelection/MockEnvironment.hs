@@ -55,7 +55,7 @@ import           Control.Tracer (Tracer (..), contramap, traceWith)
 import           Ouroboros.Network.ExitPolicy
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
                      ScriptDelay (..), TimedScript, arbitraryPickScript,
@@ -71,7 +71,8 @@ import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRoo
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Test.Ouroboros.Network.ShrinkCarefully
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer)
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
+                     IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
@@ -117,6 +118,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        peerGraph                  :: PeerGraph,
        localRootPeers             :: LocalRootPeers PeerAddr,
        publicRootPeers            :: Map PeerAddr (PeerAdvertise, IsLedgerPeer),
+       bigLedgerPeers             :: Set PeerAddr,
        targets                    :: TimedScript PeerSelectionTargets,
        pickKnownPeersForPeerShare :: PickScript PeerAddr,
        pickColdPeersToPromote     :: PickScript PeerAddr,
@@ -157,17 +159,24 @@ instance Arbitrary GovernorMockEnvironmentWithoutAsyncDemotion where
 -- However we do not check for that invariant here. The goal
 -- is to check if the actual Governor takes care of this and enforces
 -- the invariant.
-validGovernorMockEnvironment :: GovernorMockEnvironment -> Bool
+validGovernorMockEnvironment :: GovernorMockEnvironment -> Property
 validGovernorMockEnvironment GovernorMockEnvironment {
                                peerGraph,
                                localRootPeers,
                                publicRootPeers,
+                               bigLedgerPeers,
                                targets
                              } =
-      validPeerGraph peerGraph
-   && LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet
-   &&           Map.keysSet publicRootPeers `Set.isSubsetOf` allPeersSet
-   && all (sanePeerSelectionTargets . fst) targets
+        counterexample "invalid peer graph"
+        (validPeerGraph peerGraph)
+   .&&. counterexample "local roots not a subset of all peers"
+        (LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet)
+   .&&. counterexample "public roots not a subset of all peers"
+        (Map.keysSet publicRootPeers `Set.isSubsetOf` allPeersSet)
+   .&&. foldl (\p (a,_) -> p .&&. counterexample ("in sane targets: " ++ show a) (sanePeerSelectionTargets a))
+              (property True) targets
+   .&&. counterexample "big ledger peers not a subset of public roots"
+        (bigLedgerPeers `Set.isSubsetOf` (Map.keysSet publicRootPeers))
   where
     allPeersSet = allPeers peerGraph
 
@@ -192,6 +201,7 @@ governorAction mockEnv = do
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv policy
     exploreRaces      -- explore races within the governor
     _ <- forkIO $ do  -- races with the governor should be explored
+      labelThisThread "outbound-governor"
       _ <- peerSelectionGovernor
         tracerTracePeerSelection
         tracerDebugPeerSelection
@@ -214,8 +224,10 @@ exploreGovernorInMockEnvironment optsf mockEnv k =
 data TraceMockEnv = TraceEnvAddPeers       PeerGraph
                   | TraceEnvSetLocalRoots  (LocalRootPeers PeerAddr)
                   | TraceEnvRequestPublicRootPeers
+                  | TraceEnvRequestBigLedgerPeers
                   | TraceEnvSetPublicRoots (Map PeerAddr (PeerAdvertise, IsLedgerPeer))
                   | TraceEnvPublicRootTTL
+                  | TraceEnvBigLedgerPeersTTL
                   | TraceEnvPeerShareTTL   PeerAddr
                   | TraceEnvSetTargets     PeerSelectionTargets
                   | TraceEnvPeersDemote    AsyncDemotion PeerAddr
@@ -225,6 +237,7 @@ data TraceMockEnv = TraceEnvAddPeers       PeerGraph
                   | TraceEnvCloseConn      PeerAddr
 
                   | TraceEnvRootsResult      [PeerAddr]
+                  | TraceEnvBigLedgerPeersResult (Set PeerAddr)
                   | TraceEnvPeerShareRequest PeerAddr (Maybe ([PeerAddr], PeerShareTime))
                   | TraceEnvPeerShareResult  PeerAddr [PeerAddr]
                   | TraceEnvPeersStatus      (Map PeerAddr PeerStatus)
@@ -296,6 +309,7 @@ mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
                             localRootPeers,
                             publicRootPeers,
+                            bigLedgerPeers,
                             peerSharing
                           }
                           PeerSelectionPolicy {
@@ -309,6 +323,7 @@ mockPeerSelectionActions' tracer
       peerSharing              = peerSharing,
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
       requestPublicRootPeers,
+      requestBigLedgerPeers,
       readPeerSelectionTargets = readTVar targetsVar,
       readNewInboundConnection = retry,
       requestPeerShare,
@@ -324,13 +339,24 @@ mockPeerSelectionActions' tracer
     -- TODO: make this dynamic
     requestPublicRootPeers _n = do
       traceWith tracer TraceEnvRequestPublicRootPeers
-      let ttl :: Num n => n
+      let ttl :: DiffTime
           ttl = 60
       _ <- async $ do
         threadDelay ttl
         traceWith tracer TraceEnvPublicRootTTL
       traceWith tracer (TraceEnvRootsResult (Map.keys publicRootPeers))
       return (publicRootPeers, ttl)
+
+    -- TODO: make this dynamic
+    requestBigLedgerPeers _n = do
+      traceWith tracer TraceEnvRequestBigLedgerPeers
+      let ttl :: DiffTime
+          ttl = 60
+      _ <- async $ do
+        threadDelay ttl
+        traceWith tracer TraceEnvBigLedgerPeersTTL
+      traceWith tracer (TraceEnvBigLedgerPeersResult bigLedgerPeers)
+      return (bigLedgerPeers, ttl)
 
     requestPeerShare :: PeerSharingAmount -> PeerAddr -> m (PeerSharingResult PeerAddr)
     requestPeerShare _ addr = do
@@ -350,8 +376,8 @@ mockPeerSelectionActions' tracer
           traceWith tracer (TraceEnvPeerShareResult addr peeraddrs)
           return (PeerSharingResult peeraddrs)
 
-    establishPeerConnection :: PeerAddr -> m (PeerConn m)
-    establishPeerConnection peeraddr = do
+    establishPeerConnection :: IsBigLedgerPeer -> PeerAddr -> m (PeerConn m)
+    establishPeerConnection _ peeraddr = do
       --TODO: add support for variable delays and synchronous failure
       traceWith tracer (TraceEnvEstablishConn peeraddr)
       threadDelay 1
@@ -404,8 +430,8 @@ mockPeerSelectionActions' tracer
         in loop
       return conn
 
-    activatePeerConnection :: PeerConn m -> m ()
-    activatePeerConnection (PeerConn peeraddr _ conn) = do
+    activatePeerConnection :: IsBigLedgerPeer -> PeerConn m -> m ()
+    activatePeerConnection _ (PeerConn peeraddr _ conn) = do
       traceWith tracer (TraceEnvActivatePeer peeraddr)
       threadDelay 1
       atomically $ do
@@ -453,7 +479,7 @@ mockPeerSelectionActions' tracer
 
     monitorPeerConnection :: PeerConn m -> STM m (PeerStatus, Maybe ReconnectDelay)
     monitorPeerConnection (PeerConn _peeraddr _ conn) = (,) <$> readTVar conn
-                                                          <*> pure Nothing
+                                                            <*> pure Nothing
 
 
 snapshotPeersStatus :: MonadInspectSTM m
@@ -585,7 +611,8 @@ instance Arbitrary GovernorMockEnvironment where
       peerGraph         <- arbitrary
       let peersSet       = allPeers peerGraph
       (localRootPeers,
-       publicRootPeers) <- arbitraryRootPeers peersSet
+       publicRootPeers,
+       bigLedgerPeers) <- arbitraryRootPeers peersSet
 
       -- But the others are independent
       targets                 <- arbitrary
@@ -601,9 +628,9 @@ instance Arbitrary GovernorMockEnvironment where
       return GovernorMockEnvironment{..}
     where
       arbitraryRootPeers :: Set PeerAddr
-                         -> Gen (LocalRootPeers PeerAddr, Map PeerAddr (PeerAdvertise, IsLedgerPeer))
+                         -> Gen (LocalRootPeers PeerAddr, Map PeerAddr (PeerAdvertise, IsLedgerPeer), Set PeerAddr)
       arbitraryRootPeers peers | Set.null peers =
-        return (LocalRootPeers.empty, Map.empty)
+        return (LocalRootPeers.empty, Map.empty, Set.empty)
 
       arbitraryRootPeers peers = do
         -- We decide how many we want and then pick randomly.
@@ -622,7 +649,7 @@ instance Arbitrary GovernorMockEnvironment where
             rootPeers = nub (map pick ixs)
         -- divide into local and public, but with a bit of overlap:
         local <- vectorOf (length rootPeers) (choose (0, 10 :: Int))
-        -- Deliberatly asking for a small intersection in order to test if
+        -- Deliberately asking for a small intersection in order to test if
         -- the Governor actually takes care of this invariant
         let localRootsSet  = Set.fromList [ x | (x, v) <- zip rootPeers local
                                               , v <= 5 ]
@@ -630,14 +657,26 @@ instance Arbitrary GovernorMockEnvironment where
                                      , v >= 5 ]
         pAdvPLedger <- vectorOf (length publicRootsSet)
                                ((,) <$> arbitrary <*> arbitrary)
+        let publicRoots = Map.fromList (zip publicRootsSet pAdvPLedger)
+
+        numBigLedgerPeers <- choose (minroots, numroots)
+        -- `publicRoots` might be empty
+        ixs' <- vectorOf numBigLedgerPeers (getNonNegative <$> arbitrary)
+        let bigLedgerPeers = (Set.\\ localRootsSet)
+                           . Set.fromList
+                           . map (\(_,_,a) -> a)
+                           . filter (\(ix, ix', _) ->
+                                       ix == ix' `mod` Map.size publicRoots)
+                           $ zip3 [0..] ixs' (Map.keys publicRoots)
 
         localRoots <- arbitraryLocalRootPeers localRootsSet
-        return (localRoots, Map.fromList (zip publicRootsSet pAdvPLedger))
+        return (localRoots, publicRoots, bigLedgerPeers)
 
   shrink env@GovernorMockEnvironment {
            peerGraph,
            localRootPeers,
            publicRootPeers,
+           bigLedgerPeers,
            targets,
            pickKnownPeersForPeerShare,
            pickColdPeersToPromote,
@@ -652,7 +691,8 @@ instance Arbitrary GovernorMockEnvironment where
       [ env {
           peerGraph       = peerGraph',
           localRootPeers  = LocalRootPeers.restrictKeys localRootPeers nodes',
-          publicRootPeers = publicRootPeers `Map.restrictKeys` nodes'
+          publicRootPeers = publicRootPeers `Map.restrictKeys` nodes',
+          bigLedgerPeers  = bigLedgerPeers `Set.intersection` nodes'
         }
       | peerGraph' <- shrink peerGraph
       , let nodes' = allPeers peerGraph' ]
@@ -661,6 +701,7 @@ instance Arbitrary GovernorMockEnvironment where
           peerGraph,
           localRootPeers          = localRootPeers',
           publicRootPeers         = publicRootPeers',
+          bigLedgerPeers          = bigLedgerPeers'',
           targets                 = targets',
           pickKnownPeersForPeerShare = pickKnownPeersForPeerShare',
           pickColdPeersToPromote  = pickColdPeersToPromote',
@@ -670,20 +711,23 @@ instance Arbitrary GovernorMockEnvironment where
           pickColdPeersToForget   = pickColdPeersToForget',
           peerSharing
         }
-      | (localRootPeers', publicRootPeers', targets',
+      | (localRootPeers', publicRootPeers', bigLedgerPeers', targets',
          pickKnownPeersForPeerShare',
          pickColdPeersToPromote',
          pickWarmPeersToPromote',
          pickHotPeersToDemote',
          pickWarmPeersToDemote',
          pickColdPeersToForget')
-          <- shrink (localRootPeers, publicRootPeers, targets,
+          <- shrink (localRootPeers, publicRootPeers, bigLedgerPeers, targets,
                      pickKnownPeersForPeerShare,
                      pickColdPeersToPromote,
                      pickWarmPeersToPromote,
                      pickHotPeersToDemote,
                      pickWarmPeersToDemote,
                      pickColdPeersToForget)
+      , let bigLedgerPeers'' = bigLedgerPeers'
+                               `Set.intersection`
+                               Map.keysSet publicRootPeers'
       ]
 
 
@@ -699,6 +743,7 @@ prop_arbitrary_GovernorMockEnvironment env =
     tabulate "num public root peers" [show (Map.size (publicRootPeers env))] $
     tabulate "empty root peers" [show $ not emptyGraph && emptyRootPeers]  $
     tabulate "overlapping local/public roots" [show overlappingRootPeers]  $
+    tabulate "num big ledger peers"  [show (Set.size (bigLedgerPeers env))] $
 
     validGovernorMockEnvironment env
   where

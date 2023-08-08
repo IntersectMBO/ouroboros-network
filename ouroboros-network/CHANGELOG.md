@@ -4,9 +4,67 @@
 
 ### Breaking changes
 
+* The counters logged by `PeerSelectionCounters` for local root peers are now
+  the number of warm and hot peers per group (before the first one was the
+  target of the given group).
+
+* Introduced big ledger peers to the outbound governor.  The breaking changes include:
+  - Added new targets to `PeerSelectionTargets` data type
+
+  - Added `requestBigLedgerPeers` to `PeerSelectionActions`.
+
+  - `establishPeerConnection` and `ativatePeerConnection` receive an
+    `IsLedgerPeer` argument (which is then passed to mini-protocols via
+    `ExtendedInitiatorContext`.
+
+  - The `PeerSelectionState` contains new fields to support big ledger peers.
+
+  - Modified `PickPolicy` type, it is now parametrised by monad `m` rather than
+    by an `stm` monad.  With this change the type alias can be used in
+   `pickPeers` type signature.
+
+  - `TraceLedgerPeers` renamed some constructors:
+      - `PickedPeer  -> PickedLedgerPeer`
+      - `PickedPeers -> PickedLedgerPeers`;
+    added new ones:
+      - `PickedBigLedgerPeer`
+      - `PickedBigLedgerPeers`;
+    and `FetchingNewLedgerState` constructor has a new field: number of big
+    ledger peers.
+
+* Propagated changes from `ouroboros-network-framework` related to the
+  introduction of initiator and responder contexts to `RunMiniProtocol` data
+  type. These changes include breaking changes to the following APIs:
+
+  - `Ouroboros.Network.Diffusion` is using: `OuroborosBundleWithExpandedCtx`
+    for node-to-node applications, `OuroborosApplicationWithMinimalCtx` for
+    node-to-client responders.
+  - `Ouroboros.Network.NodeToNode` exports `MinimalInitiatorContext` and
+    `ExpandedInitiatorContext` data types.
+  - `Ouroboros.Network.NodeToClient` exports `MinimalInitiatorContext` and
+    `ResponderContext` data types.
+  - `Ouroboros.Network.NodeToNode.NodeToNodeProtocols`,
+    `Ouroboros.Network.NodeToNode.nodeToNodeProtocols`,
+    `Ouroboros.Network.NodeToNode.versionedNodeToClientProtocols`,
+    `Ouroboros.Network.NodeToNode.withServer`  were modified.
+  - `Ouroboros.Network.NodeToClient.NodeToClientProtocols`,
+    `Ouroboros.Network.NodeToClient.nodeToClientProtocols`,
+    `Ouroboros.Network.NodeToClient.versionedNodeToClientProtocols`,
+    `Ouroboros.Network.NodeToClient.withServer`,
+    `Ouroboros.Network.NodeToClient.ipSubscriptionWorker`,
+    `Ouroboros.Network.NodeToClient.dnsSubscriptionWorker` were modified.
+
 ### Non-breaking changes
 
-- Fixed a small memory leak in `PeerMetrics` (#4633).
+* Fixed a small memory leak in `PeerMetrics` (#4633).
+
+* The counters logged by `PeerSelectionCounters` for local root peers are now
+  the number of warm and hot peers per group (before the first one was the
+  target of the given group).
+* Added `getNumberOfPeers` destructor of `NumberOfPeers`.
+* Added `NotEnoughBigLedgerPeers` and `NotEnoughLedgerPeers` constructors of
+  `TraceLedgerPeers`; Renamed `FallingBackToBootstrapPeers` as
+  `FallingBackToPublicRootPeers`.
 
 ## 0.8.2.0
 
@@ -17,7 +75,15 @@
   * Added `readNewInboundConnection` field to `PeerSelectionActions` record.
 * The constructor `FetchDeclineChainNoIntersection` was renamed to
   `FetchDeclineChainIntersectionTooDeep` (#4541)
-- Include Warm Valency for Local Root Peers
+* Include Warm Valency for Local Root Peers
+* `TraceLedgerPeers` renamed some constructors:
+    - `PickedPeer  -> PickedLedgerPeer`
+    - `PickedPeers -> PickedLedgerPeers`;
+  added new ones:
+    - `PickedBigLedgerPeer`
+    - `PickedBigLedgerPeers`;
+  and `FetchingNewLedgerState` constructor has a new field: number of big
+  ledger peers.
 
 ### Non-breaking changes
 
@@ -55,6 +121,8 @@
   - Change TraceLocalRootGroups constructor type;
   - Change localRootPeersProvider type signature;
   - Updated tests to reflect the above changes.
+
+## 0.7.0.1
 
 ### Non-breaking changes
 
@@ -132,6 +200,12 @@
          * `ouroboros-network-protocols:testlib`
 * Moved the `ipv6` cabal flag to `ouroboros-network-framework` package.
 * Build with `ghc-9.2`.
+
+## 0.3.0.2
+
+### Non-breaking changes
+
+- Fix interop problems between NonP2P and P2P nodes (PR #4465)
 
 ## 0.3.0.0 -- YYYY-MM-DD
 

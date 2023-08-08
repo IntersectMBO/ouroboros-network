@@ -20,15 +20,16 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.KnownPeers (isKnownLedgerPeer)
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
+import           Ouroboros.Network.PeerSelection.State.KnownPeers
+                     (isKnownLedgerPeer)
+import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 
@@ -38,7 +39,7 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 
 -- | If we are below the target of /known peers/ we peer share (if we are above
--- the peer share request threashold).
+-- the peer share request threshold).
 --
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
@@ -52,6 +53,7 @@ belowTarget actions
               policyPeerShareRetryTime
             }
             st@PeerSelectionState {
+              bigLedgerPeers,
               knownPeers,
               establishedPeers,
               inProgressPeerShareReqs,
@@ -121,7 +123,8 @@ belowTarget actions
   | otherwise
   = GuardedSkip Nothing
   where
-    numKnownPeers            = KnownPeers.size knownPeers
+    numKnownPeers            = Set.size $ KnownPeers.toSet knownPeers
+                                   Set.\\ bigLedgerPeers
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
                              - inProgressPeerShareReqs
     availableForPeerShare    = EstablishedPeers.availableForPeerShare establishedPeers
@@ -326,6 +329,7 @@ aboveTarget PeerSelectionPolicy {
             st@PeerSelectionState {
               localRootPeers,
               publicRootPeers,
+              bigLedgerPeers,
               knownPeers,
               establishedPeers,
               inProgressPromoteCold,
@@ -361,6 +365,7 @@ aboveTarget PeerSelectionPolicy {
                                   Set.\\ (if numRootPeersCanForget <= 0
                                             then publicRootPeers else Set.empty)
                                   Set.\\ inProgressPromoteCold
+                                  Set.\\ bigLedgerPeers
 
   , not (Set.null availableToForget)
   = Guarded Nothing $ do
@@ -401,8 +406,10 @@ aboveTarget PeerSelectionPolicy {
   = GuardedSkip Nothing
   where
     numKnownPeers, numEstablishedPeers :: Int
-    numKnownPeers        = KnownPeers.size knownPeers
-    numEstablishedPeers  = EstablishedPeers.size establishedPeers
+    numKnownPeers        = Set.size $ KnownPeers.toSet knownPeers
+                               Set.\\ bigLedgerPeers
+    numEstablishedPeers  = Set.size $ EstablishedPeers.toSet establishedPeers
+                               Set.\\ bigLedgerPeers
 
 
 -------------------------------

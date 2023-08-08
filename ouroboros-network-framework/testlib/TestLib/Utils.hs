@@ -348,7 +348,7 @@ data TestProperty = TestProperty {
     --
     tpNegotiatedDataFlows :: ![NegotiatedDataFlow],
     tpEffectiveDataFlows  :: ![EffectiveDataFlow],
-    tpTerminationTypes    :: ![TerminationType],
+    tpTerminationTypes    :: ![Maybe TerminationType],
     tpActivityTypes       :: ![ActivityType],
 
     tpTransitions         :: ![AbstractTransition]
@@ -441,16 +441,21 @@ classifyEffectiveDataFlow as =
     Just _  -> EffectiveDataFlow Duplex
 
 -- classify termination
-classifyTermination :: [AbstractTransition] -> TerminationType
+classifyTermination :: [AbstractTransition] -> Maybe TerminationType
 classifyTermination as =
-  case last $ dropWhileEnd
-                (== Transition TerminatedSt TerminatedSt)
-            $ dropWhileEnd
-                (== Transition TerminatedSt UnknownConnectionSt) as of
-    Transition { fromState = TerminatingSt
-               , toState   = TerminatedSt
-               } -> CleanTermination
-    _            -> ErroredTermination
+    case maybeLast $ dropWhileEnd
+                  (== Transition TerminatedSt TerminatedSt)
+              $ dropWhileEnd
+                  (== Transition TerminatedSt UnknownConnectionSt) as of
+      Just Transition { fromState = TerminatingSt
+                      , toState   = TerminatedSt
+                      } -> Just CleanTermination
+      Just _            -> Just ErroredTermination
+      Nothing           -> Nothing
+  where
+    maybeLast :: [a] -> Maybe a
+    maybeLast []         = Nothing
+    maybeLast xs@(_ : _) = Just (last xs)
 
 -- classify if a connection is active or not
 classifyActivityType :: [AbstractTransition] -> ActivityType

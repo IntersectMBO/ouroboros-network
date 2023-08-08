@@ -48,10 +48,10 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap)
 
 import           Data.List (intercalate)
-import           Ouroboros.Network.PeerSelection.LocalRootPeers
-                     (HotValency (..), WarmValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency (..), WarmValency (..))
 import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
                      Script (Script), initScript', scriptHead, singletonScript,
                      stepScript, stepScript')

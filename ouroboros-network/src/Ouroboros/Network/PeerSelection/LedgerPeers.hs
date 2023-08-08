@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Network.PeerSelection.LedgerPeers
   ( DomainAccessPoint (..)
@@ -15,11 +16,16 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , AccPoolStake (..)
   , TraceLedgerPeers (..)
   , NumberOfPeers (..)
+  , LedgerPeersKind (..)
   , accPoolStake
+  , accBigPoolStake
   , withLedgerPeers
   , UseLedgerAfter (..)
   , IsLedgerPeer (..)
+  , IsBigLedgerPeer (..)
   , Socket.PortNumber
+    -- Re-exports for testing purposes
+  , bigLedgerPeerQuota
   ) where
 
 
@@ -29,12 +35,14 @@ import           Control.Monad (when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Tracer (Tracer, traceWith)
+import           Data.Bifunctor (first)
 import qualified Data.IP as IP
-import           Data.List (foldl')
+import           Data.List (foldl', sortOn)
 import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import           Data.Ord (Down (..))
 import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
@@ -45,7 +53,7 @@ import           System.Random
 
 import           Cardano.Slotting.Slot (SlotNo)
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (AccPoolStake (..), PoolStake (..))
+                     (AccPoolStake (..), IsBigLedgerPeer (..), PoolStake (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DomainAccessPoint (..), RelayAccessPoint (..))
 import           Text.Printf
@@ -58,10 +66,19 @@ isLedgerPeersEnabled DontUseLedger = False
 isLedgerPeersEnabled _             = True
 
 -- | Identifies a peer as coming from ledger or not
-data IsLedgerPeer = IsLedgerPeer | IsNotLedgerPeer
+data IsLedgerPeer = IsLedgerPeer
+                  -- ^ a ledger peer.
+                  | IsNotLedgerPeer
   deriving (Eq, Show)
 
-newtype NumberOfPeers = NumberOfPeers Word16 deriving Show
+
+-- | Which ledger peers to pick.
+--
+data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
+  deriving Show
+
+newtype NumberOfPeers = NumberOfPeers { getNumberOfPeers :: Word16 }
+  deriving Show
 
 newtype LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
       lpGetPeers :: SlotNo -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
@@ -69,13 +86,17 @@ newtype LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
 
 -- | Trace LedgerPeers events.
 data TraceLedgerPeers =
-      PickedPeer RelayAccessPoint AccPoolStake PoolStake
-      -- ^ Trace for a peer picked with accumulated and relative stake of its pool.
-    | PickedPeers NumberOfPeers [RelayAccessPoint]
-      -- ^ Trace for the number of peers we wanted to pick and the list of peers picked.
-    | FetchingNewLedgerState Int
-      -- ^ Trace for fetching a new list of peers from the ledger. Int is the number of peers
-      -- returned.
+      PickedBigLedgerPeer RelayAccessPoint AccPoolStake PoolStake
+      -- ^ Trace for a significant ledger peer picked with accumulated and relative stake of its pool.
+    | PickedLedgerPeer RelayAccessPoint AccPoolStake PoolStake
+      -- ^ Trace for a ledger peer picked with accumulated and relative stake of its pool.
+    | PickedBigLedgerPeers NumberOfPeers [RelayAccessPoint]
+    | PickedLedgerPeers    NumberOfPeers [RelayAccessPoint]
+      -- ^ Trace for the number of peers and we wanted to pick and the list of peers picked.
+    | FetchingNewLedgerState Int Int
+      -- ^ Trace for fetching a new list of peers from the ledger. The first Int
+      -- is the number of ledger peers returned the latter is the number of big
+      -- ledger peers.
     | DisabledLedgerPeers
       -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedger.
     | TraceUseLedgerAfter UseLedgerAfter
@@ -83,22 +104,33 @@ data TraceLedgerPeers =
     | WaitingOnRequest
     | RequestForPeers NumberOfPeers
     | ReusingLedgerState Int DiffTime
-    | FallingBackToBootstrapPeers
+    | FallingBackToPublicRootPeers
+    | NotEnoughBigLedgerPeers NumberOfPeers Int
+    | NotEnoughLedgerPeers NumberOfPeers Int
 
 
 instance Show TraceLedgerPeers where
-    show (PickedPeer addr ackStake stake) =
-        printf "PickedPeer %s ack stake %s ( %.04f) relative stake %s ( %.04f )"
+    show (PickedBigLedgerPeer addr ackStake stake) =
+        printf "PickedBigLedgerPeer %s ack stake %s ( %.04f) relative stake %s ( %.04f )"
             (show addr)
             (show $ unAccPoolStake ackStake)
             (fromRational (unAccPoolStake ackStake) :: Double)
             (show $ unPoolStake stake)
             (fromRational (unPoolStake stake) :: Double)
-    show (PickedPeers (NumberOfPeers n) peers) =
-        printf "PickedPeers %d %s" n (show peers)
-    show (FetchingNewLedgerState cnt) =
-        printf "Fetching new ledgerstate, %d registered pools"
-            cnt
+    show (PickedLedgerPeer addr ackStake stake) =
+        printf "PickedLedgerPeer %s ack stake %s ( %.04f) relative stake %s ( %.04f )"
+            (show addr)
+            (show $ unAccPoolStake ackStake)
+            (fromRational (unAccPoolStake ackStake) :: Double)
+            (show $ unPoolStake stake)
+            (fromRational (unPoolStake stake) :: Double)
+    show (PickedBigLedgerPeers (NumberOfPeers n) peers) =
+        printf "PickedBigLedgerPeers %d %s" n (show peers)
+    show (PickedLedgerPeers (NumberOfPeers n) peers) =
+        printf "PickedLedgerPeers %d %s" n (show peers)
+    show (FetchingNewLedgerState cnt bigCnt) =
+        printf "Fetching new ledgerstate, %d registered pools, %d registered big ledger pools"
+            cnt bigCnt
     show (TraceUseLedgerAfter ula) =
         printf "UseLedgerAfter state %s"
             (show ula)
@@ -108,8 +140,12 @@ instance Show TraceLedgerPeers where
         printf "ReusingLedgerState %d peers age %s"
           cnt
           (show age)
-    show FallingBackToBootstrapPeers = "Falling back to bootstrap peers"
+    show FallingBackToPublicRootPeers = "Falling back to public root peers"
     show DisabledLedgerPeers = "LedgerPeers is disabled"
+    show (NotEnoughBigLedgerPeers (NumberOfPeers n) numOfBigLedgerPeers) =
+      printf "Not enough big ledger peers to pick %d out of %d" n numOfBigLedgerPeers
+    show (NotEnoughLedgerPeers (NumberOfPeers n) numOfLedgerPeers) =
+      printf "Not enough ledger peers to pick %d out of %d" n numOfLedgerPeers
 
 
 -- | Convert a list of pools with stake to a Map keyed on the accumulated stake.
@@ -122,10 +158,10 @@ instance Show TraceLedgerPeers where
 --
 accPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
              -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
-accPoolStake pl =
-    let pl' = reRelativeStake pl
-        ackList = foldl' fn [] pl' in
-    Map.fromList ackList
+accPoolStake =
+      Map.fromList
+    . foldl' fn []
+    . reRelativeStake AllLedgerPeers
   where
     fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
        -> (PoolStake, NonEmpty RelayAccessPoint)
@@ -138,40 +174,109 @@ accPoolStake pl =
             !acc = as + accst in
         (acc, (s, rs)) : ps
 
--- | Not all stake pools have valid \/ usable relay information. This means that we need to
--- recalculate the relative stake for each pool.
+-- | The total accumulated stake of big ledger peers.
 --
--- The relative stake is scaled by the square root in order to increase the number
--- of down stream peers smaller pools are likely to get.
--- https://en.wikipedia.org/wiki/Penrose_method
---
-reRelativeStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
-                -> [(PoolStake, NonEmpty RelayAccessPoint)]
-reRelativeStake pl =
-    let total = foldl' (+) 0 $ map (adjustment . fst) pl
-        pl' = map  (\(s, rls) -> (adjustment s / total, rls)) pl
-        total' = sum $ map fst pl' in
-    assert (total == 0 || (total' > (PoolStake $ 999999 % 1000000) &&
-            total' < (PoolStake $ 1000001 % 1000000))) pl'
+bigLedgerPeerQuota :: AccPoolStake
+bigLedgerPeerQuota = 0.9
 
+-- | Convert a list of pools with stake to a Map keyed on the accumulated stake
+-- which only contains big ledger peers, e.g. largest ledger peers which
+-- cumulatively control 90% of stake.
+--
+accBigPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
+                -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+accBigPoolStake =
+      Map.fromAscList -- the input list is ordered by `AccPoolStake`, thus we
+                      -- can use `fromAscList`
+    . takeWhilePrev (\(acc, _) -> acc <= bigLedgerPeerQuota)
+    . go 0
+    . sortOn (Down . fst)
+    . reRelativeStake BigLedgerPeers
   where
-    -- We do loose some precisioun in the conversion. However we care about precision
-    -- in the order of 1 block per year and for that a Double is good enough.
+    takeWhilePrev :: (a -> Bool) -> [a] -> [a]
+    takeWhilePrev f as =
+        fmap snd
+      . takeWhile (\(a, _) -> maybe True f a)
+      $ zip (Nothing : (Just <$> as)) as
+
+    -- natural fold
+    go :: AccPoolStake
+       -> [(PoolStake, NonEmpty RelayAccessPoint)]
+       -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
+    go _acc [] = []
+    go !acc (a@(s, _) : as) =
+      let acc' = acc + AccPoolStake (unPoolStake s)
+      in (acc', a) : go acc' as
+
+-- | Not all stake pools have valid \/ usable relay information. This means that
+-- we need to recalculate the relative stake for each pool.
+--
+reRelativeStake :: LedgerPeersKind
+                -> [(PoolStake, NonEmpty RelayAccessPoint)]
+                -> [(PoolStake, NonEmpty RelayAccessPoint)]
+reRelativeStake ledgerPeersKind pl =
+    let pl'   = first adjustment <$> pl
+        total = foldl' (+) 0 (fst <$> pl')
+        pl''  = first (/ total) <$> pl'
+    in
+    assert (let total' = sum $ map fst pl''
+            in total == 0 || (total' > (PoolStake $ 999999 % 1000000) &&
+                  total' < (PoolStake $ 1000001 % 1000000))
+           )
+    pl''
+  where
     adjustment :: PoolStake -> PoolStake
-    adjustment (PoolStake s) =
-      let d = fromRational s ::Double in
-      PoolStake $ toRational $ sqrt d
+    adjustment =
+      case ledgerPeersKind of
+        AllLedgerPeers ->
+          -- We do loose some precision in the conversion. However we care about
+          -- precision in the order of 1 block per year and for that a Double is
+          -- good enough.
+          PoolStake . toRational . sqrt @Double . fromRational . unPoolStake
+        BigLedgerPeers ->
+          id
 
 
--- | Try to pick n random peers.
+-- | Try to pick n random peers using stake distribution.
+--
 pickPeers :: forall m. Monad m
           => StdGen
           -> Tracer m TraceLedgerPeers
           -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+          -- ^ all ledger peers
+          -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+          -- ^ big ledger peers
           -> NumberOfPeers
+          -> LedgerPeersKind
           -> m (StdGen, [RelayAccessPoint])
-pickPeers inRng _ pools _ | Map.null pools = return (inRng, [])
-pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
+
+pickPeers inRng _ pools _bigPools _ _ | Map.null pools = return (inRng, [])
+
+-- pick big ledger peers using ledger stake distribution
+pickPeers inRng tracer _pools bigPools (NumberOfPeers cnt) BigLedgerPeers =
+    go inRng cnt []
+  where
+    go :: StdGen -> Word16 -> [RelayAccessPoint] -> m (StdGen, [RelayAccessPoint])
+    go rng 0 picked = return (rng, picked)
+    go rng n picked =
+        let (r :: Word64, rng') = random rng
+            d = maxBound :: Word64
+            -- x is the random accumulated stake capped by `bigLedgerPeerQuota`.
+            -- We use it to select random big ledger peer according to their
+            -- stake distribution.
+            x = fromIntegral r % fromIntegral d * (unAccPoolStake bigLedgerPeerQuota)
+        in case Map.lookupGE (AccPoolStake x) bigPools of
+             -- XXX We failed pick a peer. Shouldn't this be an error?
+             Nothing -> go rng' (n - 1) picked
+             Just (ackStake, (stake, relays)) -> do
+                 let (ix, rng'') = randomR (0, NonEmpty.length relays - 1) rng'
+                     relay = relays NonEmpty.!! ix
+                 traceWith tracer $ PickedBigLedgerPeer relay ackStake stake
+                 go rng'' (n - 1) (relay : picked)
+
+-- pick ledger peers (not necessarily big ones) using square root of the stake
+-- distribution
+pickPeers inRng tracer pools _bigPools (NumberOfPeers cnt) AllLedgerPeers = go inRng cnt []
   where
     go :: StdGen -> Word16 -> [RelayAccessPoint] -> m (StdGen, [RelayAccessPoint])
     go rng 0 picked = return (rng, picked)
@@ -185,8 +290,9 @@ pickPeers inRng tracer pools (NumberOfPeers cnt) = go inRng cnt []
              Just (ackStake, (stake, relays)) -> do
                  let (ix, rng'') = randomR (0, NonEmpty.length relays - 1) rng'
                      relay = relays NonEmpty.!! ix
-                 traceWith tracer $ PickedPeer relay ackStake stake
+                 traceWith tracer $ PickedLedgerPeer relay ackStake stake
                  go rng'' (n - 1) (relay : picked)
+
 
 -- | Peer list life time decides how often previous ledger peers should be
 -- reused.  If the ledger peer map is empty we use 'short_PEER_LIST_LIFE_TIME'
@@ -213,18 +319,20 @@ ledgerPeersThread :: forall m peerAddr.
                   -> STM m UseLedgerAfter
                   -> LedgerPeersConsensusInterface m
                   -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set peerAddr)))
-                  -> STM m NumberOfPeers
+                  -> STM m (NumberOfPeers, LedgerPeersKind)
                   -- ^ a blocking action which receives next request for more
                   -- ledger peers
                   -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                   -> m Void
 ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensusInterface{..} doResolve
                   getReq putRsp =
-    go inRng (Time 0) Map.empty
+    go inRng (Time 0) Map.empty Map.empty
   where
-    go :: StdGen -> Time -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+    go :: StdGen -> Time
+       -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+       -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> m Void
-    go rng oldTs peerMap = do
+    go rng oldTs peerMap bigPeerMap = do
         useLedgerAfter <- atomically readUseLedgerAfter
         traceWith tracer (TraceUseLedgerAfter useLedgerAfter)
 
@@ -234,37 +342,51 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
 
         traceWith tracer WaitingOnRequest
         -- wait until next request of ledger peers
-        numRequested <- atomically getReq
+        (numRequested, ledgerPeersKind) <- atomically getReq
         traceWith tracer $ RequestForPeers numRequested
         !now <- getMonotonicTime
         let age = diffTime now oldTs
-        (peerMap', ts) <- if age > peerListLifeTime
+        (peerMap', bigPeerMap', ts) <- if age > peerListLifeTime
                              then
                                  case useLedgerAfter of
                                    DontUseLedger -> do
                                      traceWith tracer DisabledLedgerPeers
-                                     return (Map.empty, now)
+                                     return (Map.empty, Map.empty, now)
                                    UseLedgerAfter slot -> do
                                      peers_m <- atomically $ lpGetPeers slot
-                                     let peers = maybe Map.empty accPoolStake peers_m
-                                     traceWith tracer $ FetchingNewLedgerState $ Map.size peers
-                                     return (peers, now)
+                                     let peers    = maybe Map.empty accPoolStake peers_m
+                                         bigPeers = maybe Map.empty accBigPoolStake peers_m
+                                     traceWith tracer $ FetchingNewLedgerState (Map.size peers) (Map.size bigPeers)
+                                     return (peers, bigPeers, now)
 
                              else do
                                  traceWith tracer $ ReusingLedgerState (Map.size peerMap) age
-                                 return (peerMap, oldTs)
+                                 return (peerMap, bigPeerMap, oldTs)
 
         if Map.null peerMap'
            then do
                when (isLedgerPeersEnabled useLedgerAfter) $
-                   traceWith tracer FallingBackToBootstrapPeers
+                   traceWith tracer FallingBackToPublicRootPeers
                atomically $ putRsp Nothing
-               go rng ts peerMap'
+               go rng ts peerMap' bigPeerMap'
            else do
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
-               (rng', !pickedPeers) <- pickPeers rng tracer peerMap' numRequested
-               traceWith tracer $ PickedPeers numRequested pickedPeers
+               (rng', !pickedPeers) <- pickPeers rng tracer peerMap' bigPeerMap' numRequested ledgerPeersKind
+               case ledgerPeersKind of
+                 BigLedgerPeers -> do
+                   let numBigLedgerPeers = Map.size bigPeerMap'
+                   when (getNumberOfPeers numRequested
+                           > fromIntegral numBigLedgerPeers) $
+                     traceWith tracer (NotEnoughBigLedgerPeers numRequested numBigLedgerPeers)
+                   traceWith tracer (PickedBigLedgerPeers numRequested pickedPeers)
+                 AllLedgerPeers -> do
+                   let numLedgerPeers = Map.size peerMap'
+                   when (getNumberOfPeers numRequested
+                           > fromIntegral numLedgerPeers) $
+                     traceWith tracer (NotEnoughLedgerPeers numRequested numLedgerPeers)
+                   traceWith tracer (PickedLedgerPeers numRequested pickedPeers)
+
 
                let (plainAddrs, domains) = foldl' partitionPeer (Set.empty, []) pickedPeers
 
@@ -275,7 +397,7 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter LedgerPeersConsensu
                                                        domainAddrs
 
                atomically $ putRsp $ Just (pickedAddrs, ttl)
-               go rng'' ts peerMap'
+               go rng'' ts peerMap' bigPeerMap'
 
     -- Randomly pick one of the addresses returned in the DNS result.
     pickDomainAddrs :: (StdGen, Set peerAddr)
@@ -312,7 +434,7 @@ withLedgerPeers :: forall peerAddr m a.
                 -> STM m UseLedgerAfter
                 -> LedgerPeersConsensusInterface m
                 -> ([DomainAccessPoint] -> m (Map DomainAccessPoint (Set peerAddr)))
-                -> ( (NumberOfPeers -> m (Maybe (Set peerAddr, DiffTime)))
+                -> (    (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime)))
                      -> Async m Void
                      -> m a )
                 -> m a
@@ -321,9 +443,9 @@ withLedgerPeers inRng toPeerAddr tracer readUseLedgerAfter interface doResolve k
     respVar <- newEmptyTMVarIO
     let getRequest  = takeTMVar reqVar
         putResponse = putTMVar  respVar
-        request :: NumberOfPeers -> m (Maybe (Set peerAddr, DiffTime))
-        request = \numberOfPeers -> do
-          atomically $ putTMVar reqVar numberOfPeers
+        request :: NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime))
+        request = \numberOfPeers ledgerDistribution -> do
+          atomically $ putTMVar reqVar (numberOfPeers, ledgerDistribution)
           atomically $ takeTMVar respVar
     withAsync
       ( ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter

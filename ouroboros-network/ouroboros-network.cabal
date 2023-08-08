@@ -46,16 +46,16 @@ library
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Tracers
                        Ouroboros.Network.PeerSelection.Types
-                       Ouroboros.Network.PeerSelection.EstablishedPeers
-                       Ouroboros.Network.PeerSelection.KnownPeers
                        Ouroboros.Network.PeerSelection.LedgerPeers
-                       Ouroboros.Network.PeerSelection.LocalRootPeers
                        Ouroboros.Network.PeerSelection.PeerMetric
+                       Ouroboros.Network.PeerSelection.PeerSelectionActions
                        Ouroboros.Network.PeerSelection.PeerStateActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.Governor
-                       Ouroboros.Network.PeerSelection.Simple
+                       Ouroboros.Network.PeerSelection.State.EstablishedPeers
+                       Ouroboros.Network.PeerSelection.State.KnownPeers
+                       Ouroboros.Network.PeerSelection.State.LocalRootPeers
                        Ouroboros.Network.PeerSharing
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
@@ -64,9 +64,11 @@ library
                        Ouroboros.Network.PeerSelection.Governor.ActivePeers
                        Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
                        Ouroboros.Network.PeerSelection.Governor.KnownPeers
+                       Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
                        Ouroboros.Network.PeerSelection.Governor.Monitor
                        Ouroboros.Network.PeerSelection.Governor.RootPeers
                        Ouroboros.Network.PeerSelection.Governor.Types
+                       Ouroboros.Network.PeerSelection.Churn
                        Ouroboros.Network.Diffusion.Utils
   reexported-modules:  Ouroboros.Network.AnchoredFragment,
                        Ouroboros.Network.AnchoredSeq,
@@ -184,6 +186,7 @@ test-suite test
   build-depends:       base >=4.14 && <4.19,
                        bytestring,
                        QuickCheck,
+                       quickcheck-instances,
                        aeson,
                        array,
                        cborg,

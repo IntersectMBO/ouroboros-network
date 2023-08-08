@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia       #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Ouroboros.Network.Testing.Data.Script
   ( -- * Test scripts
@@ -15,11 +16,13 @@ module Ouroboros.Network.Testing.Data.Script
   , initScript'
   , stepScript'
   , stepScriptSTM'
+  , shrinkScriptWith
   , arbitraryScriptOf
   , prop_shrink_Script
     -- * Timed scripts
   , ScriptDelay (..)
   , TimedScript
+  , singletonTimedScript
   , playTimedScript
     -- * Pick scripts
   , PickScript
@@ -37,6 +40,7 @@ import qualified Data.Set as Set
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer, traceWith)
 
@@ -109,16 +113,18 @@ stepScriptSTM' scriptVar = do
 
 instance Arbitrary a => Arbitrary (Script a) where
     arbitrary = sized $ \sz -> arbitraryScriptOf sz arbitrary
+    shrink = shrinkScriptWith shrink
 
-    shrink (Script (x :| [])) = [ Script (x' :| []) | x' <- shrink x ]
-    shrink (Script (x :| xs)) =
+shrinkScriptWith :: (a -> [a]) -> Script a -> [Script a]
+shrinkScriptWith f (Script (x :| [])) = [ Script (x' :| []) | x' <- f x ]
+shrinkScriptWith f (Script (x :| xs)) =
         Script (x :| [])                          -- drop whole tail
       : Script (x :| take (length xs `div` 2) xs) -- drop half the tail
       : Script (x :| init xs)                     -- drop only last
 
         -- drop none, shrink only elements
-      : [ Script (x' :| xs) | x'  <- shrink x ]
-     ++ [ Script (x :| xs') | xs' <- shrinkVector shrink xs ]
+      : [ Script (x' :| xs) | x'  <- f x ]
+     ++ [ Script (x :| xs') | xs' <- shrinkVector f xs ]
 
 
 --
@@ -126,6 +132,11 @@ instance Arbitrary a => Arbitrary (Script a) where
 --
 
 type TimedScript a = Script (a, ScriptDelay)
+
+-- | Timed script which consists of a single element.
+--
+singletonTimedScript :: a -> TimedScript a
+singletonTimedScript = singletonScript . (,NoDelay)
 
 data ScriptDelay = NoDelay | ShortDelay | LongDelay | Delay DiffTime
   deriving (Eq, Show)
@@ -146,6 +157,7 @@ playTimedScript tracer (Script ((x0,d0) :| script)) = do
     v <- newTVarIO x0
     traceWith tracer x0
     _ <- async $ do
+           labelThisThread "timed-script"
            threadDelay (interpretScriptDelay d0)
            sequence_ [ do atomically (writeTVar v x)
                           traceWith tracer x

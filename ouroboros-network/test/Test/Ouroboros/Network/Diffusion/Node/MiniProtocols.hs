@@ -68,9 +68,8 @@ import           Data.Monoid.Synchronisation
 
 import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
 import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
+import           Ouroboros.Network.Context
+import           Ouroboros.Network.ControlMessage (ControlMessage (..))
 import qualified Ouroboros.Network.Diffusion as Diff (Applications (..))
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.KeepAlive
@@ -278,12 +277,12 @@ applications debugTracer nodeKernel
       }
   where
     initiatorApp
-      :: OuroborosBundle InitiatorMode NtNAddr ByteString m () Void
+      :: OuroborosBundleWithExpandedCtx InitiatorMode NtNAddr ByteString m () Void
     -- initiator mode will never run a peer sharing responder side
-    initiatorApp = (fmap (fmap (fmap f))) <$> initiatorAndResponderApp (error "impossible happened!")
+    initiatorApp = fmap f <$> initiatorAndResponderApp (error "impossible happened!")
       where
-        f :: MiniProtocol InitiatorResponderMode ByteString m () ()
-          -> MiniProtocol InitiatorMode          ByteString m () Void
+        f :: MiniProtocolWithExpandedCtx InitiatorResponderMode NtNAddr ByteString m () ()
+          -> MiniProtocolWithExpandedCtx InitiatorMode          NtNAddr ByteString m () Void
         f MiniProtocol { miniProtocolNum
                        , miniProtocolLimits
                        , miniProtocolRun } =
@@ -298,15 +297,15 @@ applications debugTracer nodeKernel
     initiatorAndResponderApp
       :: (PeerSharingAmount -> m [NtNAddr])
       -- ^ Peer Sharing result computation callback
-      -> OuroborosBundle InitiatorResponderMode NtNAddr ByteString m () ()
+      -> OuroborosBundleWithExpandedCtx InitiatorResponderMode NtNAddr ByteString m () ()
     initiatorAndResponderApp computePeers = TemperatureBundle
-      { withHot = WithHot $ \ connId controlMessageSTM ->
+      { withHot = WithHot
           [ MiniProtocol
               { miniProtocolNum    = chainSyncMiniProtocolNum
               , miniProtocolLimits = chainSyncLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
-                    (chainSyncInitiator connId controlMessageSTM)
+                    chainSyncInitiator
                     chainSyncResponder
               }
           , MiniProtocol
@@ -314,27 +313,27 @@ applications debugTracer nodeKernel
               , miniProtocolLimits = blockFetchLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
-                    (blockFetchInitiator connId controlMessageSTM)
+                    blockFetchInitiator
                     blockFetchResponder
               }
           ]
-      , withWarm = WithWarm $ \ connId controlMessageSTM ->
+      , withWarm = WithWarm
           [ MiniProtocol
               { miniProtocolNum    = MiniProtocolNum 9
               , miniProtocolLimits = pingPongLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
-                    (pingPongInitiator connId controlMessageSTM)
-                    (pingPongResponder connId)
+                    pingPongInitiator
+                    pingPongResponder
               }
           ]
-      , withEstablished = WithEstablished $ \ connId controlMessageSTM ->
+      , withEstablished = WithEstablished $
           [ MiniProtocol
               { miniProtocolNum    = keepAliveMiniProtocolNum
               , miniProtocolLimits = keepAliveLimits limits
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
-                    (keepAliveInitiator connId controlMessageSTM)
+                    keepAliveInitiator
                     keepAliveResponder
               }
           ] ++ if aaOwnPeerSharing /= PSTypes.NoPeerSharing
@@ -343,7 +342,7 @@ applications debugTracer nodeKernel
                           , miniProtocolLimits = peerSharingLimits limits
                           , miniProtocolRun    =
                               InitiatorAndResponderProtocol
-                                (peerSharingInitiator controlMessageSTM (remoteAddress connId))
+                                peerSharingInitiator
                                 (peerSharingResponder computePeers)
                           }
                        ]
@@ -351,61 +350,65 @@ applications debugTracer nodeKernel
       }
 
     localResponderApp
-      :: OuroborosApplication ResponderMode NtCAddr ByteString m Void ()
-    localResponderApp = OuroborosApplication (\_ _ -> [])
+      :: OuroborosApplicationWithMinimalCtx
+           ResponderMode NtCAddr ByteString m Void ()
+    localResponderApp = OuroborosApplication []
 
     chainSyncInitiator
-      :: ConnectionId NtNAddr
-      -> ControlMessageSTM m
-      -> MuxPeer ByteString m ()
-    chainSyncInitiator ConnectionId { remoteAddress }
-                       controlMessageSTM =
-        MuxPeerRaw $ \channel -> do
-          bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
-                                     remoteAddress $
-            bracket (registerClientChains nodeKernel remoteAddress)
-                    (\_ -> unregisterClientChains nodeKernel remoteAddress)
-                    (\chainVar ->
-                      runPeerWithLimits
-                        nullTracer
-                        chainSyncCodec
-                        (chainSyncSizeLimits limits)
-                        (chainSyncTimeLimits limits)
-                        channel
-                        (chainSyncClientPeer $
-                           chainSyncClientExample
-                             chainVar
-                             client)
-                    )
-      where
-        client :: Client header point tip m ()
-        client = go
-          where
-            go = Client
-              { rollbackward = \_ _ -> do
-                  ctrl <- atomically controlMessageSTM
-                  case ctrl of
-                    Continue  -> pure (Right go)
-                    Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
-                    Terminate -> pure (Left ())
-              , rollforward = \header -> do
-                  exit <- aaShouldChainSyncExit header
-                  if exit
-                    then pure (Left ())
-                    else do ctrl <- atomically controlMessageSTM
-                            case ctrl of
-                              Continue  -> pure (Right go)
-                              Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
-                              Terminate -> pure (Left ())
-              , points = \_ -> pure $
-                                 if aaChainSyncEarlyExit
-                                 then Left ()
-                                 else Right go
-              }
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+    chainSyncInitiator =
+      MiniProtocolCb $
+        \  ExpandedInitiatorContext {
+             eicConnectionId   = connId,
+             eicControlMessage = controlMessageSTM
+           }
+           channel
+        ->
+          let client :: Client header point tip m ()
+              client = go
+                where
+                  go = Client
+                    { rollbackward = \_ _ -> do
+                        ctrl <- atomically controlMessageSTM
+                        case ctrl of
+                          Continue  -> pure (Right go)
+                          Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
+                          Terminate -> pure (Left ())
+                    , rollforward = \header -> do
+                        exit <- aaShouldChainSyncExit header
+                        if exit
+                          then pure (Left ())
+                          else do ctrl <- atomically controlMessageSTM
+                                  case ctrl of
+                                    Continue  -> pure (Right go)
+                                    Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
+                                    Terminate -> pure (Left ())
+                    , points = \_ -> pure $
+                                       if aaChainSyncEarlyExit
+                                       then Left ()
+                                       else Right go
+                    }
+          in do labelThisThread "ChainSyncClient"
+                bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
+                                           (remoteAddress connId) $
+                  bracket (registerClientChains nodeKernel (remoteAddress connId))
+                          (\_ -> unregisterClientChains nodeKernel (remoteAddress connId))
+                          (\chainVar ->
+                            runPeerWithLimits
+                              nullTracer
+                              chainSyncCodec
+                              (chainSyncSizeLimits limits)
+                              (chainSyncTimeLimits limits)
+                              channel
+                              (chainSyncClientPeer $
+                                 chainSyncClientExample
+                                   chainVar
+                                   client)
+                          )
 
     chainSyncResponder
-      :: MuxPeer ByteString m ()
-    chainSyncResponder = MuxPeerRaw $ \channel -> do
+      :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+    chainSyncResponder = MiniProtocolCb $ \_ctx channel -> do
       labelThisThread "ChainSyncServer"
       runPeerWithLimits
         nullTracer
@@ -418,32 +421,34 @@ applications debugTracer nodeKernel
             () (nkChainProducerState nodeKernel) toHeader))
 
     blockFetchInitiator
-      :: ConnectionId NtNAddr
-      -> ControlMessageSTM m
-      -> MuxPeer ByteString m ()
-    blockFetchInitiator ConnectionId { remoteAddress }
-                        controlMessageSTM =
-      MuxPeerRaw $ \channel -> do
-        labelThisThread "BlockFetchClient"
-        bracketFetchClient (nkFetchClientRegistry nodeKernel)
-                           UnversionedProtocol
-                           (const NotReceivingTentativeBlocks)
-                           remoteAddress
-                           $ \clientCtx ->
-          runPeerWithLimits
-            nullTracer
-            blockFetchCodec
-            (blockFetchSizeLimits limits)
-            (blockFetchTimeLimits limits)
-            channel
-            (forgetPipelined
-              $ blockFetchClient UnversionedProtocol controlMessageSTM
-                                 nullTracer clientCtx)
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+    blockFetchInitiator  =
+      MiniProtocolCb $
+      \  ExpandedInitiatorContext {
+           eicConnectionId   = ConnectionId { remoteAddress },
+           eicControlMessage = controlMessageSTM
+         }
+         channel
+      -> do labelThisThread "BlockFetchClient"
+            bracketFetchClient (nkFetchClientRegistry nodeKernel)
+                               UnversionedProtocol
+                               (const NotReceivingTentativeBlocks)
+                               remoteAddress
+                               $ \clientCtx ->
+              runPeerWithLimits
+                nullTracer
+                blockFetchCodec
+                (blockFetchSizeLimits limits)
+                (blockFetchTimeLimits limits)
+                channel
+                (forgetPipelined
+                  $ blockFetchClient UnversionedProtocol controlMessageSTM
+                                     nullTracer clientCtx)
 
     blockFetchResponder
-      :: MuxPeer ByteString m ()
+      :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
     blockFetchResponder =
-      MuxPeerRaw $ \channel -> do
+      MiniProtocolCb $ \_ctx channel -> do
         labelThisThread "BlockFetchServer"
         runPeerWithLimits
           nullTracer
@@ -464,35 +469,37 @@ applications debugTracer nodeKernel
           )
 
     keepAliveInitiator
-      :: ConnectionId NtNAddr
-      -> ControlMessageSTM m
-      -> MuxPeer ByteString m ()
-    keepAliveInitiator connId@ConnectionId { remoteAddress }
-                       controlMessageSTM =
-      MuxPeerRaw $ \channel -> do
-        labelThisThread "KeepAliveClient"
-        let kacApp =
-              \ctxVar -> runPeerWithLimits
-                           ((show . (connId,)) `contramap` debugTracer)
-                           keepAliveCodec
-                           (keepAliveSizeLimits limits)
-                           (keepAliveTimeLimits limits)
-                           channel
-                           (keepAliveClientPeer $
-                              keepAliveClient
-                                nullTracer
-                                aaKeepAliveStdGen
-                                controlMessageSTM
-                                remoteAddress
-                                ctxVar
-                                (KeepAliveInterval aaKeepAliveInterval))
-        bracketKeepAliveClient (nkFetchClientRegistry nodeKernel)
-                               remoteAddress
-                               kacApp
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+    keepAliveInitiator  =
+      MiniProtocolCb $
+      \  ExpandedInitiatorContext {
+           eicConnectionId   = connId@ConnectionId { remoteAddress },
+           eicControlMessage = controlMessageSTM
+         }
+         channel
+      -> do labelThisThread "KeepAliveClient"
+            let kacApp =
+                  \ctxVar -> runPeerWithLimits
+                               ((show . (connId,)) `contramap` debugTracer)
+                               keepAliveCodec
+                               (keepAliveSizeLimits limits)
+                               (keepAliveTimeLimits limits)
+                               channel
+                               (keepAliveClientPeer $
+                                  keepAliveClient
+                                    nullTracer
+                                    aaKeepAliveStdGen
+                                    controlMessageSTM
+                                    remoteAddress
+                                    ctxVar
+                                    (KeepAliveInterval aaKeepAliveInterval))
+            bracketKeepAliveClient (nkFetchClientRegistry nodeKernel)
+                                   remoteAddress
+                                   kacApp
 
     keepAliveResponder
-      :: MuxPeer ByteString m ()
-    keepAliveResponder = MuxPeerRaw $ \channel -> do
+      :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+    keepAliveResponder = MiniProtocolCb $ \_ctx channel -> do
       labelThisThread "KeepAliveServer"
       runPeerWithLimits
         nullTracer
@@ -503,49 +510,52 @@ applications debugTracer nodeKernel
         (keepAliveServerPeer keepAliveServer)
 
     pingPongInitiator
-      :: ConnectionId NtNAddr
-      -> ControlMessageSTM m
-      -> MuxPeer ByteString m ()
-    pingPongInitiator connId controlMessageSTM = MuxPeerRaw $ \channel ->
-        runPeerWithLimits
-          ((show . (connId,)) `contramap` debugTracer)
-          pingPongCodec
-          (pingPongSizeLimits limits)
-          (pingPongTimeLimits limits)
-          channel
-          (pingPongClientPeer pingPongClient)
-      where
-        continueSTM :: STM m Bool
-        continueSTM = do
-          ctrl <- controlMessageSTM
-          case ctrl of
-            Continue  -> return True
-            Quiesce   -> retry
-            Terminate -> return False
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+    pingPongInitiator  =
+        MiniProtocolCb $
+        \  ExpandedInitiatorContext {
+             eicConnectionId   = connId,
+             eicControlMessage = controlMessageSTM
+           }
+           channel
+        -> let continueSTM :: STM m Bool
+               continueSTM = do
+                 ctrl <- controlMessageSTM
+                 case ctrl of
+                   Continue  -> return True
+                   Quiesce   -> retry
+                   Terminate -> return False
 
-        pingPongClient :: PingPongClient m ()
-        pingPongClient = SendMsgPing $ do
-          v <- registerDelay aaPingPongInterval
-          -- block on the timer, but terminate as soon
-          -- as 'ctroContinue' returns 'False'.
-          --
-          -- Note that if both branches of '<>' return they will return the same
-          -- value (which must be 'False') so it does not matter which branch is
-          -- picked.
-          continue <- atomically $ runFirstToFinish $
-               ( FirstToFinish $ do
-                   LazySTM.readTVar v >>= check
-                   continueSTM )
-            <> ( FirstToFinish $ do
-                   continueSTM >>= \b -> check (not b) $> b )
-          if continue
-            then return   pingPongClient
-            else return $ PingPong.SendMsgDone ()
+               pingPongClient :: PingPongClient m ()
+               pingPongClient = SendMsgPing $ do
+                 v <- registerDelay aaPingPongInterval
+                 -- block on the timer, but terminate as soon
+                 -- as 'ctroContinue' returns 'False'.
+                 --
+                 -- Note that if both branches of '<>' return they will return the same
+                 -- value (which must be 'False') so it does not matter which branch is
+                 -- picked.
+                 continue <- atomically $ runFirstToFinish $
+                      ( FirstToFinish $ do
+                          LazySTM.readTVar v >>= check
+                          continueSTM )
+                   <> ( FirstToFinish $ do
+                          continueSTM >>= \b -> check (not b) $> b )
+                 if continue
+                   then return   pingPongClient
+                   else return $ PingPong.SendMsgDone ()
+           in runPeerWithLimits
+               ((show . (connId,)) `contramap` debugTracer)
+               pingPongCodec
+               (pingPongSizeLimits limits)
+               (pingPongTimeLimits limits)
+               channel
+               (pingPongClientPeer pingPongClient)
 
     pingPongResponder
-      :: ConnectionId NtNAddr
-      -> MuxPeer ByteString m ()
-    pingPongResponder connId = MuxPeerRaw $ \channel ->
+      :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+    pingPongResponder  = MiniProtocolCb $
+      \ResponderContext { rcConnectionId = connId } channel ->
       runPeerWithLimits
         ((show . (connId,)) `contramap` debugTracer)
         pingPongCodec
@@ -556,26 +566,30 @@ applications debugTracer nodeKernel
 
 
     peerSharingInitiator
-      :: ControlMessageSTM m
-      -> NtNAddr
-      -> MuxPeer ByteString m ()
-    peerSharingInitiator controlMessageSTM them = MuxPeerRaw $ \channel -> do
-      labelThisThread "PeerSharingClient"
-      bracketPeerSharingClient (nkPeerSharingRegistry nodeKernel) them
-        $ \controller -> do
-          psClient <- peerSharingClient controlMessageSTM controller
-          runPeerWithLimits
-            nullTracer
-            peerSharingCodec
-            (peerSharingSizeLimits limits)
-            (peerSharingTimeLimits limits)
-            channel
-            (peerSharingClientPeer psClient)
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+    peerSharingInitiator  =
+      MiniProtocolCb $
+       \  ExpandedInitiatorContext {
+            eicConnectionId   = ConnectionId { remoteAddress = them },
+            eicControlMessage = controlMessageSTM
+          }
+          channel
+       -> do labelThisThread "PeerSharingClient"
+             bracketPeerSharingClient (nkPeerSharingRegistry nodeKernel) them
+               $ \controller -> do
+                 psClient <- peerSharingClient controlMessageSTM controller
+                 runPeerWithLimits
+                   nullTracer
+                   peerSharingCodec
+                   (peerSharingSizeLimits limits)
+                   (peerSharingTimeLimits limits)
+                   channel
+                   (peerSharingClientPeer psClient)
 
     peerSharingResponder
       :: (PeerSharingAmount -> m [NtNAddr])
-      -> MuxPeer ByteString m ()
-    peerSharingResponder f = MuxPeerRaw $ \channel -> do
+      -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+    peerSharingResponder f = MiniProtocolCb $ \_ctx channel -> do
       labelThisThread "PeerSharingServer"
       runPeerWithLimits
         nullTracer

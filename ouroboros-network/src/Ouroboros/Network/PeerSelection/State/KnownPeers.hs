@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Ouroboros.Network.PeerSelection.KnownPeers
+module Ouroboros.Network.PeerSelection.State.KnownPeers
   ( -- * Types
     KnownPeers
   , invariant
@@ -171,6 +171,7 @@ member :: Ord peeraddr
 member peeraddr KnownPeers {allPeers} =
     peeraddr `Map.member` allPeers
 
+-- TODO: `insert` ought to be idempotent, see issue #4616.
 insert :: Ord peeraddr
        => Map peeraddr (PeerSharing, PeerAdvertise, IsLedgerPeer)
        -> KnownPeers peeraddr
@@ -351,13 +352,16 @@ setTepidFlag = setTepidFlag' True
 
 minConnectTime :: Ord peeraddr
                => KnownPeers peeraddr
+               -> (peeraddr -> Bool)
+               -- ^ a predicate which describes the peers to take into account
                -> Maybe Time
-minConnectTime KnownPeers { nextConnectTimes }
-  | Just (_k, t, _, _psq) <- PSQ.minView nextConnectTimes
-  = Just t
-
-  | otherwise
-  = Nothing
+minConnectTime KnownPeers { nextConnectTimes } fn =
+    go nextConnectTimes
+  where
+    go psq = case PSQ.minView psq of
+      Just (k, t, _, psq') | fn k      -> Just t
+                           | otherwise -> go psq'
+      Nothing                          -> Nothing
 
 
 setConnectTimes :: Ord peeraddr
@@ -448,5 +452,8 @@ sampleAdvertisedPeers _ _ _ = []
 isKnownLedgerPeer :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 isKnownLedgerPeer peeraddr KnownPeers { allPeers } =
   case Map.lookup peeraddr allPeers of
-    Just (KnownPeerInfo _ _ _ _ IsLedgerPeer) -> True
-    _                                         -> False
+    Just KnownPeerInfo { knownLedgerPeer } ->
+      case knownLedgerPeer of
+        IsLedgerPeer    -> True
+        IsNotLedgerPeer -> False
+    Nothing             -> False

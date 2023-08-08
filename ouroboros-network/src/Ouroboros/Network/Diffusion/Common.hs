@@ -23,7 +23,8 @@ import           Control.Tracer (Tracer, nullTracer)
 
 import           Network.Mux (MuxMode (..), MuxTrace, WithMuxBearer)
 
-import           Ouroboros.Network.Mux (OuroborosApplication, OuroborosBundle)
+import           Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
+                     OuroborosBundleWithExpandedCtx)
 import           Ouroboros.Network.NodeToClient (Versions)
 import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit,
@@ -127,7 +128,7 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
       --
       daIPv4Address              :: Maybe (Either ntnFd ntnAddr)
 
-      -- | an @IPV4@ socket ready to accept connections or an @IPv6@ addresses
+      -- | an @IPv6@ socket ready to accept connections or an @IPv6@ addresses
       --
     , daIPv6Address              :: Maybe (Either ntnFd ntnAddr)
 
@@ -156,10 +157,11 @@ data Applications ntnAddr ntnVersion ntnVersionData
       -- TODO: we should accept one or the other, but not both:
       -- 'daApplicationInitiatorMode', 'daApplicationInitiatorResponderMode'.
       --
+      -- Even in non-p2p mode we use p2p apps.
       daApplicationInitiatorMode
         :: Versions ntnVersion
                     ntnVersionData
-                    (OuroborosBundle
+                      (OuroborosBundleWithExpandedCtx
                       InitiatorMode ntnAddr
                       ByteString m a Void)
 
@@ -170,16 +172,18 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: (PeerSharingAmount -> m [ntnAddr])
         -> Versions ntnVersion
                     ntnVersionData
-                    (OuroborosBundle
+                    (OuroborosBundleWithExpandedCtx
                       InitiatorResponderMode ntnAddr
                       ByteString m a ())
 
       -- | NodeToClient responder application (server role)
       --
+      -- Because p2p mode does not infect local connections we we use non-p2p
+      -- apps.
     , daLocalResponderApplication
         :: Versions ntcVersion
                     ntcVersionData
-                    (OuroborosApplication
+                     (OuroborosApplicationWithMinimalCtx
                       ResponderMode ntcAddr
                       ByteString m Void ())
 

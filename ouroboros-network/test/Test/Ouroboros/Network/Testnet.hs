@@ -20,7 +20,6 @@ import           Control.Tracer (Tracer (Tracer))
 import           Data.Bifoldable (bifoldMap)
 
 import           Data.List (find, intercalate, tails)
-import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -43,20 +42,19 @@ import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
 import           Ouroboros.Network.InboundGovernor hiding
                      (TrUnexpectedlyFalseAssertion)
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerStateActions
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types
 import           Ouroboros.Network.Server2 (ServerTrace (..))
 import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-import           Ouroboros.Network.Testing.Data.Script (singletonScript)
-import           Ouroboros.Network.Testing.Data.Signal (Events, Signal,
-                     eventsToList, signalProperty)
+import           Ouroboros.Network.Testing.Data.Script
+import           Ouroboros.Network.Testing.Data.Signal
 import qualified Ouroboros.Network.Testing.Data.Signal as Signal
 import           Ouroboros.Network.Testing.Utils hiding (SmallDelay,
                      debugTracer)
@@ -73,11 +71,11 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState (..))
 import           Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
-import           Ouroboros.Network.PeerSelection.LocalRootPeers
-                     (HotValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency (..))
 import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
                      connectionManagerTraceMap, validTransitionMap,
                      verifyAbstractTransition, verifyAbstractTransitionOrder)
@@ -144,8 +142,6 @@ tests =
   , testProperty "cm & ig timeouts enforced"
                  prop_diffusion_timeouts_enforced
   , testProperty "unit #4177" unit_4177
-  , testProperty "never connect to self"
-                 prop_never_connects_to_self
 #endif
 #if !defined(mingw32_HOST_OS)
   , testGroup "coverage"
@@ -385,36 +381,51 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
     script :: DiffusionScript
     script =
       DiffusionScript (SimArgs 1 10)
+        (singletonTimedScript Map.empty)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
               (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
-              (Map.fromList [("test2", [read "9022:64c9:4e9b:9281:913f:3fb4:a447:28e", read "d412:ff8f:ce57:932d:b74c:989:48af:73f4", read "0:6:0:3:0:6:0:5"])])
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
               NoPeerSharing
               [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoNotAdvertisePeer),(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoNotAdvertisePeer)])]
-              PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 2, targetNumberOfEstablishedPeers = 2, targetNumberOfActivePeers = 1}
+              nullPeerSelectionTargets {
+                targetNumberOfKnownPeers = 2,
+                targetNumberOfEstablishedPeers = 2,
+                targetNumberOfActivePeers = 1
+              }
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
               Nothing
               False
-          , [JoinNetwork 1.742857142857 Nothing
-            ,Reconfigure 6.33333333333 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)])
-                                        ,(1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)])]
+          , [JoinNetwork 1.742857142857
+            ,Reconfigure 6.33333333333 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)]),
+                                        (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)
+                                       ])]
             ,Reconfigure 23.88888888888 [(1,1,Map.fromList []),(1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)])]
             ,Reconfigure 4.870967741935 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)])]
             ]
           )
         , ( NodeArgs (1) InitiatorAndResponderDiffusionMode (Just 135)
              (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65533, DoAdvertisePeer)])
-             (Map.fromList [("test2", [read "0:7:0:7::"])])
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
              NoPeerSharing
              []
-             PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 1, targetNumberOfActivePeers = 1}
-             (Script (DNSTimeout {getDNSTimeout = 0.28} :| [DNSTimeout {getDNSTimeout = 0.204},DNSTimeout {getDNSTimeout = 0.213}]))
-             (Script (DNSLookupDelay {getDNSLookupDelay = 0.066} :| [DNSLookupDelay {getDNSLookupDelay = 0.102},DNSLookupDelay {getDNSLookupDelay = 0.031}]))
+             nullPeerSelectionTargets {
+               targetNumberOfRootPeers = 2,
+               targetNumberOfKnownPeers = 5,
+               targetNumberOfEstablishedPeers = 1,
+               targetNumberOfActivePeers = 1
+             }
+             (Script (DNSTimeout {getDNSTimeout = 0.28}
+                  :| [DNSTimeout {getDNSTimeout = 0.204},
+                      DNSTimeout {getDNSTimeout = 0.213}
+                     ]))
+             (Script (DNSLookupDelay {getDNSLookupDelay = 0.066}
+                  :| [DNSLookupDelay {getDNSLookupDelay = 0.102},
+                      DNSLookupDelay {getDNSLookupDelay = 0.031}
+                     ]))
              Nothing
              False
-          , [JoinNetwork 0.183783783783 Nothing
+          , [JoinNetwork 0.183783783783
             ,Reconfigure 4.533333333333 [(1,1,Map.fromList [])]
             ]
           )
@@ -526,68 +537,104 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
              $ runSimTrace sim
 
       peerSelectionTraceMap :: TracePeerSelection NtNAddr -> String
-      peerSelectionTraceMap (TraceLocalRootPeersChanged _ _)    =
+      peerSelectionTraceMap TraceLocalRootPeersChanged {}            =
         "TraceLocalRootPeersChanged"
-      peerSelectionTraceMap (TraceTargetsChanged _ _)           =
+      peerSelectionTraceMap TraceTargetsChanged {}                   =
         "TraceTargetsChanged"
-      peerSelectionTraceMap (TracePublicRootsRequest _ _)       =
+      peerSelectionTraceMap TracePublicRootsRequest {}               =
         "TracePublicRootsRequest"
-      peerSelectionTraceMap (TracePublicRootsResults _ _ _)     =
+      peerSelectionTraceMap TracePublicRootsResults {}               =
         "TracePublicRootsResults"
-      peerSelectionTraceMap (TracePublicRootsFailure se _ _)    =
+      peerSelectionTraceMap (TracePublicRootsFailure se _ _)         =
         "TracePublicRootsFailure " ++ show se
-      peerSelectionTraceMap (TracePeerShareRequests _ _ _ _)    =
+      peerSelectionTraceMap TracePeerShareRequests {}                =
         "TracePeerShareRequests"
-      peerSelectionTraceMap (TracePeerShareResults _)           =
+      peerSelectionTraceMap TracePeerShareResults {}                 =
         "TracePeerShareResults"
-      peerSelectionTraceMap (TracePeerShareResultsFiltered _)   =
+      peerSelectionTraceMap TracePeerShareResultsFiltered {}         =
         "TracePeerShareResultsFiltered"
       peerSelectionTraceMap (TraceKnownInboundConnection addr ps) =
         "TraceKnownInboundConnection " ++ show addr ++ " " ++ show ps
-      peerSelectionTraceMap (TraceForgetColdPeers _ _ _)        =
+      peerSelectionTraceMap TraceForgetColdPeers {}                  =
         "TraceForgetColdPeers"
-      peerSelectionTraceMap (TracePromoteColdPeers _ _ _)       =
+      peerSelectionTraceMap TracePromoteColdPeers {}                 =
         "TracePromoteColdPeers"
-      peerSelectionTraceMap (TracePromoteColdLocalPeers _ _)  =
+      peerSelectionTraceMap TracePromoteColdLocalPeers {}            =
         "TracePromoteColdLocalPeers"
-      peerSelectionTraceMap (TracePromoteColdFailed _ _ _ _ _)  =
+      peerSelectionTraceMap TracePromoteColdFailed {}                =
         "TracePromoteColdFailed"
-      peerSelectionTraceMap (TracePromoteColdDone _ _ _)        =
+      peerSelectionTraceMap TracePromoteColdDone {}                  =
         "TracePromoteColdDone"
-      peerSelectionTraceMap (TracePromoteWarmPeers _ _ _)       =
+      peerSelectionTraceMap TracePromoteWarmPeers {}                 =
         "TracePromoteWarmPeers"
-      peerSelectionTraceMap (TracePromoteWarmLocalPeers _ _)    =
+      peerSelectionTraceMap TracePromoteWarmLocalPeers {}            =
         "TracePromoteWarmLocalPeers"
-      peerSelectionTraceMap (TracePromoteWarmFailed _ _ _ _)    =
+      peerSelectionTraceMap TracePromoteWarmFailed {}                =
         "TracePromoteWarmFailed"
-      peerSelectionTraceMap (TracePromoteWarmDone _ _ _)        =
+      peerSelectionTraceMap TracePromoteWarmDone {}                  =
         "TracePromoteWarmDone"
-      peerSelectionTraceMap (TracePromoteWarmAborted _ _ _)     =
+      peerSelectionTraceMap TracePromoteWarmAborted {}               =
         "TracePromoteWarmAborted"
-      peerSelectionTraceMap (TraceDemoteWarmPeers _ _ _)        =
+      peerSelectionTraceMap TraceDemoteWarmPeers {}                  =
         "TraceDemoteWarmPeers"
-      peerSelectionTraceMap (TraceDemoteWarmFailed _ _ _ _)     =
+      peerSelectionTraceMap TraceDemoteWarmFailed {}                 =
         "TraceDemoteWarmFailed"
-      peerSelectionTraceMap (TraceDemoteWarmDone _ _ _)         =
+      peerSelectionTraceMap TraceDemoteWarmDone {}                   =
         "TraceDemoteWarmDone"
-      peerSelectionTraceMap (TraceDemoteHotPeers _ _ _)         =
+      peerSelectionTraceMap TraceDemoteHotPeers {}                   =
         "TraceDemoteHotPeers"
-      peerSelectionTraceMap (TraceDemoteLocalHotPeers _ _)      =
+      peerSelectionTraceMap TraceDemoteLocalHotPeers {}              =
         "TraceDemoteLocalHotPeers"
-      peerSelectionTraceMap (TraceDemoteHotFailed _ _ _ _)      =
+      peerSelectionTraceMap TraceDemoteHotFailed {}                  =
         "TraceDemoteHotFailed"
-      peerSelectionTraceMap (TraceDemoteHotDone _ _ _)          =
+      peerSelectionTraceMap TraceDemoteHotDone {}                    =
         "TraceDemoteHotDone"
-      peerSelectionTraceMap (TraceDemoteAsynchronous _)         =
+      peerSelectionTraceMap TraceDemoteAsynchronous {}               =
         "TraceDemoteAsynchronous"
-      peerSelectionTraceMap (TraceDemoteLocalAsynchronous _)    =
+      peerSelectionTraceMap TraceDemoteLocalAsynchronous {}          =
         "TraceDemoteLocalAsynchronous"
-      peerSelectionTraceMap TraceGovernorWakeup                 =
+      peerSelectionTraceMap TraceGovernorWakeup                      =
         "TraceGovernorWakeup"
-      peerSelectionTraceMap (TraceChurnWait _)                  =
+      peerSelectionTraceMap TraceChurnWait {}                        =
         "TraceChurnWait"
-      peerSelectionTraceMap (TraceChurnMode cm)                 =
+      peerSelectionTraceMap (TraceChurnMode cm)                      =
         "TraceChurnMode " ++ show cm
+      peerSelectionTraceMap TraceForgetBigLedgerPeers {}             =
+        "TraceForgetBigLedgerPeers"
+      peerSelectionTraceMap TraceBigLedgerPeersRequest {}            =
+        "TraceBigLedgerPeersRequest"
+      peerSelectionTraceMap TraceBigLedgerPeersResults {}            =
+        "TraceBigLedgerPeersResults"
+      peerSelectionTraceMap TraceBigLedgerPeersFailure {}            =
+        "TraceBigLedgerPeersFailure"
+      peerSelectionTraceMap TracePromoteColdBigLedgerPeers {}        =
+        "TracePromoteColdBigLedgerPeers"
+      peerSelectionTraceMap TracePromoteColdBigLedgerPeerFailed {}   =
+        "TracePromoteColdBigLedgerPeerFailed"
+      peerSelectionTraceMap TracePromoteColdBigLedgerPeerDone {}     =
+        "TracePromoteColdBigLedgerPeerDone"
+      peerSelectionTraceMap TracePromoteWarmBigLedgerPeers {}        =
+        "TracePromoteWarmBigLedgerPeers"
+      peerSelectionTraceMap TracePromoteWarmBigLedgerPeerFailed {}   =
+        "TracePromoteWarmBigLedgerPeerFailed"
+      peerSelectionTraceMap TracePromoteWarmBigLedgerPeerDone {}     =
+        "TracePromoteWarmBigLedgerPeerDone"
+      peerSelectionTraceMap TracePromoteWarmBigLedgerPeerAborted {}  =
+        "TracePromoteWarmBigLedgerPeerAborted"
+      peerSelectionTraceMap TraceDemoteWarmBigLedgerPeers {}         =
+        "TraceDemoteWarmBigLedgerPeers"
+      peerSelectionTraceMap TraceDemoteWarmBigLedgerPeerFailed {}    =
+        "TraceDemoteWarmBigLedgerPeerFailed"
+      peerSelectionTraceMap TraceDemoteWarmBigLedgerPeerDone {}      =
+        "TraceDemoteWarmBigLedgerPeerDone"
+      peerSelectionTraceMap TraceDemoteHotBigLedgerPeers {}          =
+        "TraceDemoteHotBigLedgerPeers"
+      peerSelectionTraceMap TraceDemoteHotBigLedgerPeerFailed {}     =
+        "TraceDemoteHotBigLedgerPeerFailed"
+      peerSelectionTraceMap TraceDemoteHotBigLedgerPeerDone {}       =
+        "TraceDemoteHotBigLedgerPeerDone"
+      peerSelectionTraceMap TraceDemoteBigLedgerPeersAsynchronous {} =
+        "TraceDemoteBigLedgerPeersAsynchronous"
 
       eventsSeenNames = map peerSelectionTraceMap events
 
@@ -604,9 +651,9 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 -- cases.
 --
 prop_diffusion_nolivelock :: AbsBearerInfo
-                         -> DiffusionScript
-                         -> Property
-prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ l) =
+                          -> DiffusionScript
+                          -> Property
+prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ _ l) =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                   diffScript
@@ -787,6 +834,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
 
+
 -- | Unit test which covers issue #4191
 --
 unit_4191 :: Property
@@ -804,28 +852,29 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
     script =
       DiffusionScript
         (SimArgs 1 20)
+        (singletonTimedScript $
+           Map.fromList
+             [ ("test2", [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
+                         , (read "254.167.216.215", 300)
+                         , (read "27.173.29.254", 300)
+                         , (read "61.238.34.238", 300)
+                         , (read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d", 300)
+                         ])
+             , ("test3", [ (read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430", 300)
+                         , (read "19.40.90.161", 300)
+                         ])
+             ])
         [(NodeArgs
             16
             InitiatorAndResponderDiffusionMode
             (Just 224)
             Map.empty
-            (Map.fromList
-              [ ("test2", [ read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9"
-                          , read "254.167.216.215"
-                          , read "27.173.29.254"
-                          , read "61.238.34.238"
-                          , read "acda:b62d:6d7d:50f7:27b6:7e34:2dc6:ee3d"
-                          ])
-              , ("test3", [ read "903e:61bc:8b2f:d98f:b16e:5471:c83d:4430"
-                          , read "19.40.90.161"
-                          ])
-              ])
             (TestAddress (IPAddr (read "0.0.1.236") 65527))
             NoPeerSharing
             [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,DoNotAdvertisePeer)
                                 , (RelayAccessDomain "test3" 4,DoAdvertisePeer)])
             ]
-            PeerSelectionTargets
+            nullPeerSelectionTargets
               { targetNumberOfRootPeers = 6,
                 targetNumberOfKnownPeers = 7,
                 targetNumberOfEstablishedPeers = 7,
@@ -859,9 +908,9 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
                                                                    ]))
             Nothing
             False
-            , [ JoinNetwork 6.710144927536 Nothing
+            , [ JoinNetwork 6.710144927536
               , Kill 7.454545454545
-              , JoinNetwork 10.763157894736 (Just (TestAddress (IPAddr (read "4.138.119.62") 65527)))
+              , JoinNetwork 10.763157894736
               , Reconfigure 0.415384615384 [(1,1,Map.fromList [])
               , (1,1,Map.fromList [])]
               , Reconfigure 15.550561797752 [(1,1,Map.fromList [])
@@ -1002,7 +1051,9 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
                . traceEvents
                $ runSimTrace sim
 
-     in conjoin
+     in
+        labelDiffusionScript diffScript
+      $ conjoin
       $ (\ev ->
         let evsList = eventsToList ev
             lastTime = fst
@@ -1130,8 +1181,11 @@ prop_diffusion_target_active_local defaultBearerInfo diffScript =
           $ tabulate "active local peers" valuesList
           $ True
 
--- | This test checks the percentage of root peers that, at some point,
--- become active.
+-- | This test checks that there's at least one root or local root peers in the
+-- active set.  This is a statistical tests which is not enforced.
+--
+-- This test is somewhat similar to `prop_governor_target_active_public`,
+-- however that test enforces network level timeouts.
 --
 prop_diffusion_target_active_root :: AbsBearerInfo
                                   -> DiffusionScript
@@ -1162,7 +1216,7 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
                . traceEvents
                $ runSimTrace sim
 
-     in conjoin
+    in  conjoin
       $ (\ev ->
         let evsList = eventsToList ev
             lastTime = fst
@@ -1218,14 +1272,15 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
           $ tabulate "active root peers" valuesList
           $ True
 
+
 -- | This test checks the percentage of public root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
 --
 prop_hot_diffusion_target_active_public :: NonFailingAbsBearerInfo
                                         -> HotDiffusionScript
                                         -> Property
-prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa hds) =
-  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -1233,8 +1288,8 @@ prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa
 prop_hot_diffusion_target_active_local :: NonFailingAbsBearerInfo
                                        -> HotDiffusionScript
                                        -> Property
-prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa hds) =
-  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -1242,8 +1297,8 @@ prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa 
 prop_hot_diffusion_target_active_root :: NonFailingAbsBearerInfo
                                       -> HotDiffusionScript
                                       -> Property
-prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa hds) =
-  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript sa hds)
+prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
@@ -1734,21 +1789,27 @@ async_demotion_network_script :: DiffusionScript
 async_demotion_network_script =
     DiffusionScript
       simArgs
+      (singletonTimedScript Map.empty)
       [ ( common { naAddr                  = addr1,
                    naLocalRootPeers        = localRoots1,
-                   naLocalSelectionTargets = Governor.PeerSelectionTargets 0 2 2 2 }
-        , [ JoinNetwork 0 (Just addr1)
+                   naLocalSelectionTargets = Governor.nullPeerSelectionTargets {
+                                               targetNumberOfKnownPeers = 2,
+                                               targetNumberOfEstablishedPeers = 2,
+                                               targetNumberOfActivePeers = 2
+                                             }
+                 }
+        , [ JoinNetwork 0
             -- reconfigure the peer to trigger the outbound governor log
           , Reconfigure 240 localRoots1'
           ]
         )
       , ( common { naAddr           = addr2,
                    naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
-        , [JoinNetwork 0 (Just addr2), Kill 5, JoinNetwork 20 (Just addr2)]
+        , [JoinNetwork 0, Kill 5, JoinNetwork 20]
         )
       , ( common { naAddr           = addr3,
                    naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
-        , [JoinNetwork 0 (Just addr3)]
+        , [JoinNetwork 0]
         )
       ]
   where
@@ -1773,12 +1834,15 @@ async_demotion_network_script =
         naSeed             = 10,
         naDiffusionMode    = InitiatorAndResponderDiffusionMode,
         naMbTime           = Just 1,
-        naRelays           = Map.empty,
-        naDomainMap        = Map.empty,
+        naPublicRoots      = Map.empty,
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
         naLocalSelectionTargets
-                           = Governor.PeerSelectionTargets 0 1 1 1,
+                           = Governor.nullPeerSelectionTargets {
+                               targetNumberOfKnownPeers = 1,
+                               targetNumberOfEstablishedPeers = 1,
+                               targetNumberOfActivePeers = 1
+                             },
         naDNSTimeoutScript = singletonScript (DNSTimeout 3),
         naDNSLookupDelayScript
                            = singletonScript (DNSLookupDelay 0.2),
@@ -1823,13 +1887,14 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                . traceEvents
                $ runSimTrace sim
 
-     in conjoin
+    in conjoin
       $ (\ev ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
-         in classifySimulatedTime lastTime
+        in counterexample (unlines $ map show evsList)
+          $ classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_async_demotions ev
         )
@@ -1858,6 +1923,10 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                            Just $ Left (Just failures)
                          where
                            failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                       DiffusionPeerSelectionTrace (TraceDemoteBigLedgerPeersAsynchronous status) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
                        DiffusionPeerSelectionTrace (TraceDemoteLocalAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
@@ -1876,7 +1945,7 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
           demotionOpportunitiesTooLong =
               Signal.keyedTimeout 1 id demotionOpportunities
 
-       in signalProperty
+      in signalProperty
             20 show Set.null
             demotionOpportunitiesTooLong
 
@@ -2181,8 +2250,81 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
 -- change.
 prop_unit_4258 :: Property
 prop_unit_4258 =
-  let bearerInfo = AbsBearerInfo {abiConnectionDelay = NormalDelay, abiInboundAttenuation = NoAttenuation FastSpeed, abiOutboundAttenuation = NoAttenuation FastSpeed, abiInboundWriteFailure = Nothing, abiOutboundWriteFailure = Nothing, abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted), abiSDUSize = LargeSDU}
-      diffScript = DiffusionScript (SimArgs 1 10) [(NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224) Map.empty (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.4") 9)) NoPeerSharing [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 2, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.397} :| [DNSTimeout {getDNSTimeout = 0.382},DNSTimeout {getDNSTimeout = 0.321},DNSTimeout {getDNSTimeout = 0.143},DNSTimeout {getDNSTimeout = 0.256},DNSTimeout {getDNSTimeout = 0.142},DNSTimeout {getDNSTimeout = 0.341},DNSTimeout {getDNSTimeout = 0.236}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| [])) Nothing False,[JoinNetwork 4.166666666666 Nothing,Kill 0.3,JoinNetwork 1.517857142857 Nothing,Reconfigure 0.245238095238 [],Reconfigure 4.190476190476 []]),(NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269) (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoNotAdvertisePeer)]) (Map.fromList []) (TestAddress (IPAddr (read "0.0.0.8") 65531)) NoPeerSharing [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])] PeerSelectionTargets {targetNumberOfRootPeers = 4, targetNumberOfKnownPeers = 5, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 1} (Script (DNSTimeout {getDNSTimeout = 0.281} :| [DNSTimeout {getDNSTimeout = 0.177},DNSTimeout {getDNSTimeout = 0.164},DNSTimeout {getDNSTimeout = 0.373}])) (Script (DNSLookupDelay {getDNSLookupDelay = 0.133} :| [DNSLookupDelay {getDNSLookupDelay = 0.128},DNSLookupDelay {getDNSLookupDelay = 0.049},DNSLookupDelay {getDNSLookupDelay = 0.058},DNSLookupDelay {getDNSLookupDelay = 0.042},DNSLookupDelay {getDNSLookupDelay = 0.117},DNSLookupDelay {getDNSLookupDelay = 0.064}])) Nothing False,[JoinNetwork 3.384615384615 Nothing,Reconfigure 3.583333333333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],Kill 15.55555555555,JoinNetwork 30.53333333333 Nothing,Kill 71.11111111111])]
+  let bearerInfo = AbsBearerInfo {
+                     abiConnectionDelay = NormalDelay,
+                     abiInboundAttenuation = NoAttenuation FastSpeed,
+                     abiOutboundAttenuation = NoAttenuation FastSpeed,
+                     abiInboundWriteFailure = Nothing,
+                     abiOutboundWriteFailure = Nothing,
+                     abiAcceptFailure = Just (SmallDelay,AbsIOErrResourceExhausted),
+                     abiSDUSize = LargeSDU
+                   }
+      diffScript = DiffusionScript
+        (SimArgs 1 10)
+        (singletonTimedScript Map.empty)
+        [( NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224)
+             (Map.fromList [])
+             (TestAddress (IPAddr (read "0.0.0.4") 9))
+             NoPeerSharing
+             [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])]
+             nullPeerSelectionTargets {
+                 targetNumberOfRootPeers = 2,
+                 targetNumberOfKnownPeers = 5,
+                 targetNumberOfEstablishedPeers = 4,
+                 targetNumberOfActivePeers = 1
+               }
+             (Script (DNSTimeout {getDNSTimeout = 0.397}
+                 :| [ DNSTimeout {getDNSTimeout = 0.382},
+                      DNSTimeout {getDNSTimeout = 0.321},
+                      DNSTimeout {getDNSTimeout = 0.143},
+                      DNSTimeout {getDNSTimeout = 0.256},
+                      DNSTimeout {getDNSTimeout = 0.142},
+                      DNSTimeout {getDNSTimeout = 0.341},
+                      DNSTimeout {getDNSTimeout = 0.236}
+                    ]))
+             (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| []))
+             Nothing
+             False
+         , [ JoinNetwork 4.166666666666,
+             Kill 0.3,
+             JoinNetwork 1.517857142857,
+             Reconfigure 0.245238095238 [],
+             Reconfigure 4.190476190476 []
+           ]
+         ),
+         ( NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269)
+             (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoAdvertisePeer)])
+             (TestAddress (IPAddr (read "0.0.0.8") 65531))
+             NoPeerSharing
+             [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])]
+             nullPeerSelectionTargets {
+                 targetNumberOfRootPeers = 4,
+                 targetNumberOfKnownPeers = 5,
+                 targetNumberOfEstablishedPeers = 3,
+                 targetNumberOfActivePeers = 1
+               }
+             (Script (DNSTimeout {getDNSTimeout = 0.281}
+                 :| [ DNSTimeout {getDNSTimeout = 0.177},
+                      DNSTimeout {getDNSTimeout = 0.164},
+                      DNSTimeout {getDNSTimeout = 0.373}
+                    ]))
+             (Script (DNSLookupDelay {getDNSLookupDelay = 0.133}
+                 :| [ DNSLookupDelay {getDNSLookupDelay = 0.128},
+                      DNSLookupDelay {getDNSLookupDelay = 0.049},
+                      DNSLookupDelay {getDNSLookupDelay = 0.058},
+                      DNSLookupDelay {getDNSLookupDelay = 0.042},
+                      DNSLookupDelay {getDNSLookupDelay = 0.117},
+                      DNSLookupDelay {getDNSLookupDelay = 0.064}
+                     ]))
+             Nothing
+             False
+         , [ JoinNetwork 3.384615384615,
+             Reconfigure 3.583333333333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],
+             Kill 15.55555555555,
+             JoinNetwork 30.53333333333,
+             Kill 71.11111111111
+            ]
+         )]
    in prop_diffusion_cm_valid_transition_order bearerInfo diffScript
 
 
@@ -2254,10 +2396,10 @@ prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
 prop_diffusion_peer_selection_actions_no_dodgy_traces :: AbsBearerInfo
                                                       -> HotDiffusionScript
                                                       -> Property
-prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiffusionScript sa hds) =
+prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiffusionScript sa dns hds) =
     let sim :: forall s . IOSim s Void
         sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  (DiffusionScript sa hds)
+                                  (DiffusionScript sa dns hds)
                                   iosimTracer
                                   tracerDiffusionSimWithTimeName
 
@@ -2696,60 +2838,6 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
        in getAllProperty
         $ verifyAllTimeouts True transitionSignal
 
--- | This property checks that a node never connects to itself.
---
--- Connecting to itself means connecting to exactly the same address and port
--- of a node's listening socket. This is something that in the real world
--- wouldn't happen since the kernel would disallow it.
---
--- This check is important because our network simulation mock can not disallow
--- such cases, so we try very hard that our diffusion generator will not make
--- create a cenario where a node is connecting to itself.
---
-prop_never_connects_to_self :: AbsBearerInfo
-                            -> DiffusionScript
-                            -> Property
-prop_never_connects_to_self absBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo absBearerInfo)
-                                  diffScript
-                                  iosimTracer
-                                  tracerDiffusionSimWithTimeName
-
-        events :: [Trace () DiffusionTestTrace]
-        events = fmap ( Trace.fromList ()
-                      . fmap (\(WithName _ (WithTime _ b)) -> b))
-               . Trace.toList
-               . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
-               . withTimeNameTraceEvents
-                  @DiffusionTestTrace
-                  @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
-               . traceEvents
-               $ runSimTrace sim
-
-     in conjoin (never_connects_to_self <$> events)
-
-  where
-    never_connects_to_self :: Trace () DiffusionTestTrace -> Property
-    never_connects_to_self events =
-      let connectionManagerEvents = Trace.toList
-                                  . selectDiffusionConnectionManagerEvents
-                                  $ events
-
-       in counterexample (intercalate "\n" . map show $ connectionManagerEvents)
-        $ all (\ cmt -> case cmt of
-                          TrConnect mbLocalAddr remoteAddr -> mbLocalAddr /= Just remoteAddr
-                          _                                -> True
-              )
-              connectionManagerEvents
 
 -- Utils
 --
@@ -2767,10 +2855,14 @@ getTime (t, _, _, _) = t
 
 classifySimulatedTime :: Time -> Property -> Property
 classifySimulatedTime lastTime =
-        classify (lastTime <= Time (60 * 60)) "Simulated time <= 1H"
-      . classify (lastTime >= Time (5 * 60 * 60)) "Simulated time >= 5H"
-      . classify (lastTime >= Time (10 * 60 * 60)) "Simulated time >= 10H"
-      . classify (lastTime >= Time (24 * 60 * 60)) "Simulated time >= 1 Day"
+        classify (lastTime <= Time (10 * 60)) "simulation time <= 10min"
+      . classify (lastTime >  Time (10 * 60)      && lastTime <= Time (20 * 60)) "10min < simulation time <= 20min"
+      . classify (lastTime >  Time (20 * 60)      && lastTime <= Time (40 * 60)) "20min < simulation time <= 40min"
+      . classify (lastTime >  Time (40 * 60)      && lastTime <= Time (60 * 60)) "40min < simulation time <= 1H"
+      . classify (lastTime >  Time (60 * 60)      && lastTime <= Time (5 * 60 * 60)) "1H < simulation time <= 5H"
+      . classify (lastTime >  Time (5 * 60 * 60)  && lastTime <= Time (10 * 60 * 60)) "5H < simulation time <= 10H"
+      . classify (lastTime >  Time (10 * 60 * 60) && lastTime <= Time (24 * 60 * 60)) "10H < simulation time <= 1 Day"
+      . classify (lastTime >= Time (24 * 60 * 60)) "simulation time >= 1 Day"
 
 classifyNumberOfEvents :: Int -> Property -> Property
 classifyNumberOfEvents nEvents =
@@ -2896,3 +2988,26 @@ takeUntilEndofTurn n as =
           where
             tmax :: Time
             tmax = case last hs of (t,_,_,_) -> t
+
+
+labelDiffusionScript :: DiffusionScript -> Property -> Property
+labelDiffusionScript (DiffusionScript args _ nodes) =
+      label ("sim args: "
+              ++ show args)
+    . label ("Nº nodes: "
+              ++ show (length nodes))
+    . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
+              ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) $ nodes))
+    . label ("Nº active peers: "
+              ++ show (sum . map (targetNumberOfActivePeers . naLocalSelectionTargets . fst) $ nodes))
+    . label ("Nº active big ledger peers: "
+              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . naLocalSelectionTargets . fst) $ nodes))
+    . label ("average number of active local roots: "
+              ++ show (average . map (sum . map (\(HotValency v,_,_) -> v) . naLocalRootPeers . fst) $ nodes))
+  where
+    average :: [Int] -> Float
+    average [] = 0
+    average as = realToFrac (sum as) / realToFrac (length as)
+
+    -- TODO: it would be nice to check if the graph is connected if all dns
+    -- names can be resolved.

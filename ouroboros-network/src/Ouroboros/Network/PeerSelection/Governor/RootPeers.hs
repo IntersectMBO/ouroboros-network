@@ -13,9 +13,9 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
 
 --------------------------
@@ -76,7 +76,7 @@ jobReqPublicRootPeers :: forall m peeraddr peerconn.
                       -> Job () m (Completion m peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                                           }
-                   numExtraAllowed =
+                      numExtraAllowed =
     Job job (return . handler) () "reqPublicRootPeers"
   where
     handler :: SomeException -> Completion m peeraddr peerconn
@@ -113,6 +113,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
       return $ Completion $ \st now ->
         let newPeers         = results `Map.withoutKeys` LocalRootPeers.keysSet (localRootPeers st)
                                        `Map.withoutKeys` publicRootPeers st
+                                       `Map.withoutKeys` bigLedgerPeers st
             publicRootPeers' = publicRootPeers st <> Map.keysSet newPeers
             knownPeers'      = KnownPeers.insert
                                  -- When we don't know about the PeerSharing information

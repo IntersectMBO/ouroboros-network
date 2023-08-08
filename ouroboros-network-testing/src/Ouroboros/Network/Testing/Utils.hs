@@ -110,14 +110,11 @@ shrinkVector shr (x:xs) = [ x':xs | x'  <- shr x ]
 
 -- | Check that each shrink satisfies some invariant or validity condition.
 --
-prop_shrink_valid :: (Arbitrary a, Show a)
-                  => (a -> Bool) -> Fixed a -> Property
+prop_shrink_valid :: (Arbitrary a, Show a, Testable prop)
+                  => (a -> prop) -> Fixed a -> Property
 prop_shrink_valid valid (Fixed x) =
-    let invalid = [ x' | x' <- shrink x, not (valid x') ]
-     in case invalid of
-          []     -> property True
-          (x':_) -> counterexample ("shrink result invalid:\n" ++ show x') $
-                    property False
+    conjoin [ counterexample ("shrink result invalid:\n" ++ show x') (valid x')
+            | x' <- shrink x ]
 
 
 -- | The 'shrink' function needs to give a valid value that is /smaller/ than

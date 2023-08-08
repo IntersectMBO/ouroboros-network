@@ -40,11 +40,12 @@ library
                        Ouroboros.Network.Protocol.Handshake.Version
                        Ouroboros.Network.Protocol.Handshake.Unversioned
 
-                       Ouroboros.Network.ConnectionId
                        Ouroboros.Network.ConnectionHandler
-                       Ouroboros.Network.ConnectionManager.Types
+                       Ouroboros.Network.ConnectionId
                        Ouroboros.Network.ConnectionManager.Core
                        Ouroboros.Network.ConnectionManager.InformationChannel
+                       Ouroboros.Network.ConnectionManager.Types
+                       Ouroboros.Network.Context
                        Ouroboros.Network.InboundGovernor
                        Ouroboros.Network.InboundGovernor.Event
                        Ouroboros.Network.InboundGovernor.State

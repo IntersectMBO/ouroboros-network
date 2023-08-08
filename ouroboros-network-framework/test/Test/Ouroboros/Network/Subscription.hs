@@ -75,10 +75,10 @@ import           Text.Show.Functions ()
 defaultMiniProtocolLimit :: Int
 defaultMiniProtocolLimit = 3000000
 
-testProtocols1 :: RunMiniProtocol appType bytes m a b
-               -> OuroborosApplication appType addr bytes m a b
+testProtocols1 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+               -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 testProtocols1 chainSync =
-    OuroborosApplication $ \_connectionId _controlMessageSTM -> [
+    OuroborosApplication [
        MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = MiniProtocolLimits {
@@ -91,10 +91,10 @@ testProtocols1 chainSync =
 -- |
 -- Allow to run a singly req-resp protocol.
 --
-testProtocols2 :: RunMiniProtocol appType bytes m a b
-               -> OuroborosApplication appType addr bytes m a b
+testProtocols2 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
+               -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 testProtocols2 reqResp =
-    OuroborosApplication $ \_connectionId _controlMessageSTM -> [
+    OuroborosApplication [
        MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolLimits = MiniProtocolLimits {
@@ -558,12 +558,13 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
     clientTbl <- newConnectionTable
 
     let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplication ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+        responderApp :: OuroborosApplicationWithMinimalCtx
+                          ResponderMode Socket.SockAddr BL.ByteString IO Void ()
         responderApp = testProtocols2 reqRespResponder
 
         reqRespResponder =
           ResponderProtocolOnly $
-          MuxPeerRaw $ \channel -> do
+          MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -573,12 +574,13 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
               <$ waitSiblingSub siblingVar
 
         -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplication InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+        initiatorApp :: OuroborosApplicationWithMinimalCtx
+                          InitiatorMode Socket.SockAddr BL.ByteString IO () Void
         initiatorApp = testProtocols2 reqRespInitiator
 
         reqRespInitiator =
           InitiatorProtocolOnly $
-          MuxPeerRaw $ \channel -> do
+          MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -709,13 +711,15 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
 
   where
 
-    appX :: ReqRspCfg -> OuroborosApplication InitiatorResponderMode Socket.SockAddr BL.ByteString IO () ()
+    appX :: ReqRspCfg
+         -> OuroborosApplicationWithMinimalCtx
+              InitiatorResponderMode Socket.SockAddr BL.ByteString IO () ()
     appX cfg = testProtocols2 (reqResp cfg)
 
     reqResp ReqRspCfg {rrcTag, rrcServerVar, rrcClientVar, rrcSiblingVar} =
       InitiatorAndResponderProtocol
             -- Initiator
-            (MuxPeerRaw $ \channel -> do
+            (MiniProtocolCb $ \_ctx channel -> do
              (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -726,7 +730,7 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
                 <$ waitSiblingSub rrcSiblingVar
             )
             -- Responder
-            (MuxPeerRaw $ \channel -> do
+            (MiniProtocolCb $ \_ctx channel -> do
              (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
                          channel
@@ -905,12 +909,12 @@ _demo = ioProperty $ withIOManager $ \iocp -> do
     appReq =
       testProtocols1 $
         InitiatorProtocolOnly $
-        MuxPeerRaw $ \_ -> error "req fail"
+        MiniProtocolCb $ \_ _ -> error "req fail"
 
     appRsp =
       testProtocols1 $
         ResponderProtocolOnly $
-        MuxPeerRaw $ \_ -> error "rsp fail"
+        MiniProtocolCb $ \_ _ -> error "rsp fail"
 
 data WithThreadAndTime a = WithThreadAndTime {
       wtatOccuredAt    :: !UTCTime

@@ -23,6 +23,7 @@ import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import           Data.Foldable (asum)
 import           Data.Functor (void)
 import           Data.Maybe (maybeToList)
+import           Data.Proxy (Proxy (..))
 import           Data.Void (Void)
 import           System.Exit (ExitCode)
 
@@ -35,6 +36,9 @@ import qualified Ouroboros.Network.Snocket as Snocket
 import           Ouroboros.Network.Socket (configureSocket,
                      configureSystemdSocket)
 
+import           Ouroboros.Network.Context (ExpandedInitiatorContext (..),
+                     IsBigLedgerPeer (..), MinimalInitiatorContext (..))
+import           Ouroboros.Network.ControlMessage (continueForever)
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
@@ -118,29 +122,19 @@ newtype ApplicationsExtra = ApplicationsExtra {
     }
 
 -- | Converts between OuroborosBundle and OuroborosApplication.
--- Useful for sharing the same Applications modes.
---
-mkApp
-    :: OuroborosBundle      mode addr bs m a b
-    -> OuroborosApplication mode addr bs m a b
-mkApp bundle =
-    OuroborosApplication $ \connId controlMessageSTM ->
-      foldMap (\p -> p connId controlMessageSTM) bundle
-
--- | Converts between OuroborosBundle and OuroborosApplication.
 -- Converts from InitiatorResponderMode to ResponderMode.
 --
 -- Useful for sharing the same Applications modes.
 --
 mkResponderApp
-    :: OuroborosBundle      InitiatorResponderMode addr bs m a    b
-    -> OuroborosApplication ResponderMode          addr bs m Void b
+    :: OuroborosBundleWithExpandedCtx     InitiatorResponderMode addr bs m a    b
+    -> OuroborosApplicationWithMinimalCtx ResponderMode          addr bs m Void b
 mkResponderApp bundle =
-    OuroborosApplication $ \connId controlMessageSTM ->
-      foldMap (\p -> map f $ p connId controlMessageSTM) bundle
+    OuroborosApplication $
+      foldMap (fmap f) bundle
   where
-    f :: MiniProtocol InitiatorResponderMode bs m a    b
-      -> MiniProtocol ResponderMode          bs m Void b
+    f :: MiniProtocolWithExpandedCtx InitiatorResponderMode bs addr m a    b
+      -> MiniProtocolWithMinimalCtx  ResponderMode          bs addr m Void b
     f MiniProtocol { miniProtocolNum
                    , miniProtocolLimits
                    , miniProtocolRun = InitiatorAndResponderProtocol _initiator
@@ -476,7 +470,8 @@ run Tracers
               , spErrorPolicies          = remoteErrorPolicy
               , spSubscriptionTarget     = daIpProducers
               }
-            (mkApp <$> daApplicationInitiatorMode applications)
+            (contramapInitiatorCtx expandContext . fromOuroborosBundle
+              <$> daApplicationInitiatorMode applications)
 
     runDnsSubscriptionWorker :: SocketSnocket
                              -> NetworkMutableState SockAddr
@@ -500,4 +495,17 @@ run Tracers
               , spErrorPolicies          = remoteErrorPolicy
               , spSubscriptionTarget     = dnsProducer
               }
-            (mkApp <$> daApplicationInitiatorMode applications)
+            (contramapInitiatorCtx expandContext . fromOuroborosBundle
+              <$> daApplicationInitiatorMode applications)
+
+
+-- | Contramap context from `ExpandedInitiatorContext` to `MinimalInitiatorContext`.
+--
+expandContext :: MinimalInitiatorContext  RemoteAddress
+              -> ExpandedInitiatorContext RemoteAddress IO
+expandContext MinimalInitiatorContext { micConnectionId = connId } =
+              ExpandedInitiatorContext {
+                eicConnectionId    = connId,
+                eicControlMessage  = continueForever Proxy,
+                eicIsBigLedgerPeer = IsNotBigLedgerPeer
+              }

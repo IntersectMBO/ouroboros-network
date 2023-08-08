@@ -22,6 +22,8 @@
 module Test.Ouroboros.Network.PeerSelection
   ( tests
   , unfHydra
+  , takeBigLedgerPeers
+  , dropBigLedgerPeers
   ) where
 
 import           Data.Bifoldable (bitraverse_)
@@ -48,13 +50,13 @@ import           Control.Tracer (Tracer (..))
 import qualified Network.DNS as DNS (defaultResolvConf)
 import           Network.Socket (SockAddr)
 
-import qualified Ouroboros.Network.PeerSelection.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..), peerSharing)
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import qualified Ouroboros.Network.PeerSelection.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
+import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
+import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
 import           Ouroboros.Network.Testing.Data.Script
 import           Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal,
@@ -71,11 +73,11 @@ import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.IOSim
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
-import           Ouroboros.Network.PeerSelection.LocalRootPeers
-                     (HotValency (..), LocalRootPeers, WarmValency (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                     (HotValency (..), LocalRootPeers, WarmValency (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type
                      (PeerSharingResult (..))
 import           Test.QuickCheck
@@ -107,35 +109,59 @@ tests =
     -- The no livelock property is needed to ensure other tests terminate
   , after AllSucceed "Ouroboros.Network.PeerSelection.basic" $
     testGroup "progress"
-    [ testProperty "progresses towards root peers target (from below)"
-                   prop_governor_target_root_below
+    [ testGroup "ledger peers"
+      [ testProperty "progresses towards known target (from below)"
+                     prop_governor_target_known_below
+      , testProperty "progresses towards known target (from above)"
+                     prop_governor_target_known_above
 
-    , testProperty "progresses towards established public root peers"
-                   prop_governor_target_established_public
-    , testProperty "progresses towards active public root peers"
-                   prop_governor_target_active_public
+      , testProperty "progresses towards established target (from below)"
+                     prop_governor_target_established_below
+      , testProperty "progresses towards established target (from above)"
+                     prop_governor_target_established_above
 
-    , testProperty "progresses towards known peers target (from below)"
-                   prop_governor_target_known_below
-    , testProperty "progresses towards known peers target (from above)"
-                   prop_governor_target_known_above
+      , testProperty "progresses towards active target (from below)"
+                     prop_governor_target_active_below
+      , testProperty "progresses towards active target (from above)"
+                     prop_governor_target_active_above
+      ]
 
-    , testProperty "progresses towards established peers target (from below)"
-                   prop_governor_target_established_below
-    , testProperty "progresses towards established peers target (from above)"
-                   prop_governor_target_established_above
+    , testGroup "public root peers"
+      [ testProperty "progresses towards target (from below)"
+                     prop_governor_target_root_below
+      , testProperty "progresses towards established peers"
+                     prop_governor_target_established_public
+      , testProperty "progresses towards active peers"
+                     prop_governor_target_active_public
+      ]
 
-    , testProperty "progresses towards active peers target (from below)"
-                   prop_governor_target_active_below
-    , testProperty "progresses towards active peers target (from above)"
-                   prop_governor_target_active_above
+    , testGroup "local root peers"
+      [ testProperty "progresses towards established target"
+                     prop_governor_target_established_local
+      , testProperty "progresses towards active target (from below)"
+                     prop_governor_target_active_local_below
+      , testProperty "progresses towards active target (from above)"
+                     prop_governor_target_active_local_above
+      ]
 
-    , testProperty "progresses towards established local root peers target"
-                   prop_governor_target_established_local
-    , testProperty "progresses towards active local root peers target (from below)"
-                   prop_governor_target_active_local_below
-    , testProperty "progresses towards active local root peers target (from above)"
-                   prop_governor_target_active_local_above
+    , testGroup "big ledger peers"
+      [ testProperty "progresses towards known target (from below)"
+        prop_governor_target_known_big_ledger_peers_below
+      , testProperty "progresses towards known target (from above)"
+        prop_governor_target_known_big_ledger_peers_above
+
+      , testProperty "progresses towards established target"
+                      prop_governor_target_established_big_ledger_peers
+      , testProperty "progresses towards established target (from below)"
+                      prop_governor_target_established_big_ledger_peers_below
+      , testProperty "progresses towards established target (from above)"
+                      prop_governor_target_established_big_ledger_peers_above
+
+      , testProperty "progresses towards active target (from below)"
+                     prop_governor_target_active_big_ledger_peers_below
+      , testProperty "progresses towards active target (from above)"
+                     prop_governor_target_active_big_ledger_peers_above
+      ]
     ]
   , testGroup "issues"
     [ testProperty "3233" prop_issue_3233
@@ -149,7 +175,10 @@ tests =
 
   , testGroup "races"
     [ nightlyTest $ testProperty "governor no livelock"       $ prop_explore_governor_nolivelock
+-- `IOSimPOR` is consumes too much RAM on Windows
+#if !defined(mingw32_HOST_OS)
     ,               testProperty "governor connection status" $ prop_explore_governor_connstatus
+#endif
     ]
   ]
   --TODO: We should add separate properties to check that we do not overshoot
@@ -223,12 +252,14 @@ tests =
 -- any trace output at all. It should elicit some activity, unless the test
 -- environment is actually empty.
 --
-prop_governor_hasoutput :: GovernorMockEnvironment -> Bool
+prop_governor_hasoutput :: GovernorMockEnvironment -> Property
 prop_governor_hasoutput env =
-    let trace = selectPeerSelectionTraceEvents $
-                  runGovernorInMockEnvironment env
+    let trace = runGovernorInMockEnvironment env
+        evs   = selectPeerSelectionTraceEvents trace
 
-     in hasOutput env (selectGovernorEvents trace)
+     in counterexample (unlines ["\nSIM TRACE", ppTrace trace])
+      $ counterexample (unlines . ("EVENTS" :) . map show $ evs)
+      $ hasOutput env (selectGovernorEvents evs)
 
 hasOutput :: GovernorMockEnvironment
           -> [(Time, TracePeerSelection PeerAddr)]
@@ -509,7 +540,9 @@ envEventCredits (TraceEnvAddPeers peerGraph) = 80 * 5 + length adjacency * 5
 envEventCredits (TraceEnvSetLocalRoots  peers)  = LocalRootPeers.size peers
 envEventCredits (TraceEnvSetPublicRoots peers)  = Map.size peers
 envEventCredits  TraceEnvRequestPublicRootPeers = 0
+envEventCredits  TraceEnvRequestBigLedgerPeers  = 0
 envEventCredits  TraceEnvPublicRootTTL          = 60
+envEventCredits  TraceEnvBigLedgerPeersTTL      = 60
 envEventCredits (TraceEnvPeerShareTTL _)        = 30
 
 envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
@@ -528,8 +561,9 @@ envEventCredits (TraceEnvPeersDemote ToCold _)  = 30
 
 envEventCredits  TraceEnvPeersStatus{}          = 0
 -- These events are visible in the environment but are the result of actions
--- initiated by the governor, hence the get no credit.
+-- initiated by the governor, hence they get no credit.
 envEventCredits  TraceEnvRootsResult{}          = 0
+envEventCredits  TraceEnvBigLedgerPeersResult{} = 0
 envEventCredits  TraceEnvPeerShareRequest{}     = 0
 envEventCredits  TraceEnvPeerShareResult{}      = 0
 
@@ -537,6 +571,7 @@ envEventCredits  TraceEnvEstablishConn {}       = 0
 envEventCredits  TraceEnvActivatePeer {}        = 0
 envEventCredits  TraceEnvDeactivatePeer {}      = 0
 envEventCredits  TraceEnvCloseConn {}           = 0
+
 
 
 
@@ -564,37 +599,55 @@ collectTraces trace =
     Set.fromList [ traceNum e | (_, GovernorEvent e) <- trace ]
 
 traceNum :: TracePeerSelection peeraddr -> Int
-traceNum TraceLocalRootPeersChanged{}    = 00
-traceNum TraceTargetsChanged{}           = 01
-traceNum TracePublicRootsRequest{}       = 02
-traceNum TracePublicRootsResults{}       = 03
-traceNum TracePublicRootsFailure{}       = 04
-traceNum TracePeerShareRequests{}        = 05
-traceNum TracePeerShareResults{}         = 06
-traceNum TracePeerShareResultsFiltered{} = 07
-traceNum TraceKnownInboundConnection{}   = 08
-traceNum TraceForgetColdPeers{}          = 09
-traceNum TracePromoteColdPeers{}         = 10
-traceNum TracePromoteColdLocalPeers{}    = 11
-traceNum TracePromoteColdFailed{}        = 12
-traceNum TracePromoteColdDone{}          = 13
-traceNum TracePromoteWarmPeers{}         = 14
-traceNum TracePromoteWarmLocalPeers{}    = 15
-traceNum TracePromoteWarmFailed{}        = 16
-traceNum TracePromoteWarmDone{}          = 17
-traceNum TraceDemoteWarmPeers{}          = 18
-traceNum TraceDemoteWarmFailed{}         = 19
-traceNum TraceDemoteWarmDone{}           = 20
-traceNum TraceDemoteHotPeers{}           = 21
-traceNum TraceDemoteLocalHotPeers{}      = 22
-traceNum TraceDemoteHotFailed{}          = 23
-traceNum TraceDemoteHotDone{}            = 24
-traceNum TraceDemoteAsynchronous{}       = 25
-traceNum TraceGovernorWakeup{}           = 26
-traceNum TraceChurnWait{}                = 27
-traceNum TraceChurnMode{}                = 28
-traceNum TracePromoteWarmAborted{}       = 29
-traceNum TraceDemoteLocalAsynchronous{}  = 30
+traceNum TraceLocalRootPeersChanged{}            = 00
+traceNum TraceTargetsChanged{}                   = 01
+traceNum TracePublicRootsRequest{}               = 02
+traceNum TracePublicRootsResults{}               = 03
+traceNum TracePublicRootsFailure{}               = 04
+traceNum TracePeerShareRequests{}                = 05
+traceNum TracePeerShareResults{}                 = 06
+traceNum TracePeerShareResultsFiltered{}         = 07
+traceNum TraceForgetColdPeers{}                  = 08
+traceNum TracePromoteColdPeers{}                 = 09
+traceNum TracePromoteColdLocalPeers{}            = 10
+traceNum TracePromoteColdFailed{}                = 11
+traceNum TracePromoteColdDone{}                  = 12
+traceNum TracePromoteWarmPeers{}                 = 13
+traceNum TracePromoteWarmLocalPeers{}            = 14
+traceNum TracePromoteWarmFailed{}                = 15
+traceNum TracePromoteWarmDone{}                  = 16
+traceNum TraceDemoteWarmPeers{}                  = 17
+traceNum TraceDemoteWarmFailed{}                 = 18
+traceNum TraceDemoteWarmDone{}                   = 19
+traceNum TraceDemoteHotPeers{}                   = 20
+traceNum TraceDemoteLocalHotPeers{}              = 21
+traceNum TraceDemoteHotFailed{}                  = 22
+traceNum TraceDemoteHotDone{}                    = 23
+traceNum TraceDemoteAsynchronous{}               = 24
+traceNum TraceGovernorWakeup{}                   = 25
+traceNum TraceChurnWait{}                        = 26
+traceNum TraceChurnMode{}                        = 27
+traceNum TracePromoteWarmAborted{}               = 28
+traceNum TraceDemoteLocalAsynchronous{}          = 29
+traceNum TraceBigLedgerPeersRequest{}            = 30
+traceNum TraceBigLedgerPeersResults{}            = 31
+traceNum TraceBigLedgerPeersFailure{}            = 32
+traceNum TraceForgetBigLedgerPeers{}             = 33
+traceNum TracePromoteColdBigLedgerPeers{}        = 34
+traceNum TracePromoteColdBigLedgerPeerFailed{}   = 35
+traceNum TracePromoteColdBigLedgerPeerDone{}     = 36
+traceNum TracePromoteWarmBigLedgerPeers{}        = 37
+traceNum TracePromoteWarmBigLedgerPeerFailed{}   = 38
+traceNum TracePromoteWarmBigLedgerPeerDone{}     = 39
+traceNum TracePromoteWarmBigLedgerPeerAborted{}  = 40
+traceNum TraceDemoteWarmBigLedgerPeers{}         = 41
+traceNum TraceDemoteWarmBigLedgerPeerFailed{}    = 42
+traceNum TraceDemoteWarmBigLedgerPeerDone{}      = 43
+traceNum TraceDemoteHotBigLedgerPeers{}          = 44
+traceNum TraceDemoteHotBigLedgerPeerFailed{}     = 45
+traceNum TraceDemoteHotBigLedgerPeerDone{}       = 46
+traceNum TraceKnownInboundConnection{}           = 47
+traceNum TraceDemoteBigLedgerPeersAsynchronous{} = 48
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -607,29 +660,47 @@ allTraceNames =
    , (05, "TracePeerShareRequests")
    , (06, "TracePeerShareResults")
    , (07, "TracePeerShareResultsFiltered")
-   , (08, "TraceKnownInboundConnection")
-   , (09, "TraceForgetColdPeers")
-   , (10, "TracePromoteColdPeers")
-   , (11, "TracePromoteColdLocalPeers")
-   , (12, "TracePromoteColdFailed")
-   , (13, "TracePromoteColdDone")
-   , (14, "TracePromoteWarmPeers")
-   , (15, "TracePromoteWarmLocalPeers")
-   , (16, "TracePromoteWarmFailed")
-   , (17, "TracePromoteWarmDone")
-   , (18, "TraceDemoteWarmPeers")
-   , (19, "TraceDemoteWarmFailed")
-   , (20, "TraceDemoteWarmDone")
-   , (21, "TraceDemoteHotPeers")
-   , (22, "TraceDemoteLocalHotPeers")
-   , (23, "TraceDemoteHotFailed")
-   , (24, "TraceDemoteHotDone")
-   , (25, "TraceDemoteAsynchronous")
-   , (26, "TraceGovernorWakeup")
-   , (27, "TraceChurnWait")
-   , (28, "TraceChurnMode")
-   , (29, "TracePromoteWarmAborted")
-   , (30, "TraceDemoteAsynchronous")
+   , (08, "TraceForgetColdPeers")
+   , (09, "TracePromoteColdPeers")
+   , (10, "TracePromoteColdLocalPeers")
+   , (11, "TracePromoteColdFailed")
+   , (12, "TracePromoteColdDone")
+   , (13, "TracePromoteWarmPeers")
+   , (14, "TracePromoteWarmLocalPeers")
+   , (15, "TracePromoteWarmFailed")
+   , (16, "TracePromoteWarmDone")
+   , (17, "TraceDemoteWarmPeers")
+   , (18, "TraceDemoteWarmFailed")
+   , (19, "TraceDemoteWarmDone")
+   , (20, "TraceDemoteHotPeers")
+   , (21, "TraceDemoteLocalHotPeers")
+   , (22, "TraceDemoteHotFailed")
+   , (23, "TraceDemoteHotDone")
+   , (24, "TraceDemoteAsynchronous")
+   , (25, "TraceGovernorWakeup")
+   , (26, "TraceChurnWait")
+   , (27, "TraceChurnMode")
+   , (28, "TracePromoteWarmAborted")
+   , (29, "TraceDemoteAsynchronous")
+   , (30, "TraceBigLedgerPeersRequest")
+   , (31, "TraceBigLedgerPeersResults")
+   , (32, "TraceBigLedgerPeersFailure")
+   , (33, "TraceForgetBigLedgerPeers")
+   , (34, "TracePromoteColdBigLedgerPeers")
+   , (35, "TracePromoteColdBigLedgerPeerFailed")
+   , (36, "TracePromoteColdBigLedgerPeerDone")
+   , (37, "TracePromoteWarmBigLedgerPeers")
+   , (38, "TracePromoteWarmBigLedgerPeerFailed")
+   , (39, "TracePromoteWarmBigLedgerPeerDone")
+   , (40, "TracePromoteWarmBigLedgerPeerAborted")
+   , (41, "TraceDemoteWarmBigLedgerPeers")
+   , (42, "TraceDemoteWarmBigLedgerPeerFailed")
+   , (43, "TraceDemoteWarmBigLedgerPeerDone")
+   , (44, "TraceDemoteHotBigLedgerPeers")
+   , (45, "TraceDemoteHotBigLedgerPeerFailed")
+   , (46, "TraceDemoteHotBigLedgerPeerDone")
+   , (47, "TraceKnownInboundConnection")
+   , (48, "TraceDemoteBigLedgerPeersAsynchronous")
    ]
 
 
@@ -868,6 +939,63 @@ prop_governor_target_established_public env =
       $ tabulate "established public peers" valuesList
       $ True
 
+
+-- | A variant of 'prop_governor_target_established_public' but for big ledger
+-- peers.
+--
+prop_governor_target_established_big_ledger_peers
+    :: GovernorMockEnvironment
+    -> Property
+prop_governor_target_established_big_ledger_peers env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govBigLedgerPeersSig :: Signal (Set PeerAddr)
+        govBigLedgerPeersSig =
+          selectGovState Governor.bigLedgerPeers
+                         events
+
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState
+            (EstablishedPeers.toSet . Governor.establishedPeers)
+            events
+
+        govInProgressPromoteColdSig :: Signal (Set PeerAddr)
+        govInProgressPromoteColdSig =
+          selectGovState
+            Governor.inProgressPromoteCold
+            events
+
+        bigLedgerPeersInEstablished :: Signal Bool
+        bigLedgerPeersInEstablished =
+          (\bigLedgerPeers established inProgressPromoteCold ->
+            not . Set.null $
+            (bigLedgerPeers `Set.intersection`
+              (established `Set.union` inProgressPromoteCold))
+          ) <$> govBigLedgerPeersSig
+            <*> govEstablishedPeersSig
+            <*> govInProgressPromoteColdSig
+
+        meaning :: Bool -> String
+        meaning False = "No BigLedgerPeers in Established Set"
+        meaning True  = "BigLedgerPeers in Established Set"
+
+        valuesList :: [String]
+        valuesList = map (meaning . snd)
+                   . Signal.eventsToList
+                   . Signal.toChangeEvents
+                   $ bigLedgerPeersInEstablished
+
+     in checkCoverage
+      $ coverTable "established big ledger peers"
+                   [("BigLedgerPeers in Established Set", 1)]
+      $ tabulate "established big ledger peers" valuesList
+      $ True
+
+
 -- | A variant of 'prop_governor_target_active_below' but for checking if any
 -- number of public root peers becomes active, since there's no target for
 -- how many public root peers should be active.
@@ -1035,12 +1163,21 @@ prop_governor_target_active_public env =
 --
 prop_governor_target_known_below :: GovernorMockEnvironment -> Property
 prop_governor_target_known_below env =
-      prop_governor_target_known_1_valid_subset      env
- .&&. prop_governor_target_known_2_opportunity_taken env
- .&&. prop_governor_target_known_3_not_too_chatty    env
- .&&. prop_governor_target_known_4_results_used      env
- .&&. prop_governor_target_known_5_no_shrink_below   env
+      counterexample "invalid subset"
+      (prop_governor_target_known_1_valid_subset      env)
+ .&&. counterexample "opportunity not taken"
+      (prop_governor_target_known_2_opportunity_taken env)
+ .&&. counterexample "too chatty"
+      (prop_governor_target_known_3_not_too_chatty    env)
+ .&&. counterexample "not used results"
+      (prop_governor_target_known_4_results_used      env)
+ .&&. counterexample "shrinked below"
+      (prop_governor_target_known_5_no_shrink_below   env)
 
+prop_governor_target_known_big_ledger_peers_below :: GovernorMockEnvironment -> Property
+prop_governor_target_known_big_ledger_peers_below env =
+      counterexample "shrinked big ledger peers below"
+      (prop_governor_target_known_5_no_shrink_big_ledger_peers_below env)
 
 -- | The set of peers the governor knows about is a subset of the peers the
 -- environment has told the governor about.
@@ -1072,10 +1209,11 @@ prop_governor_target_known_1_valid_subset env =
           . Signal.fromChangeEvents Set.empty
           . Signal.selectEvents
               (\case
-                  TraceEnvSetLocalRoots  x    -> Just (LocalRootPeers.keysSet x)
-                  TraceEnvRootsResult    x    -> Just (Set.fromList x)
-                  TraceEnvPeerShareResult _ x -> Just (Set.fromList x)
-                  _                           -> Nothing
+                  TraceEnvSetLocalRoots  x       -> Just (LocalRootPeers.keysSet x)
+                  TraceEnvRootsResult    x       -> Just (Set.fromList x)
+                  TraceEnvBigLedgerPeersResult x -> Just x
+                  TraceEnvPeerShareResult _ x    -> Just (Set.fromList x)
+                  _                              -> Nothing
               )
           . selectEnvEvents
           $ events
@@ -1269,8 +1407,8 @@ prop_governor_target_known_3_not_too_chatty env =
 
 
 recentPeerShareActivity :: DiffTime
-                     -> Events TestTraceEvent
-                     -> Signal (Maybe (Set PeerAddr), Set PeerAddr)
+                        -> Events TestTraceEvent
+                        -> Signal (Maybe (Set PeerAddr), Set PeerAddr)
 recentPeerShareActivity d =
     Signal.fromChangeEvents (Nothing, Set.empty)
   . Signal.primitiveTransformEvents (go Set.empty PSQ.empty)
@@ -1318,6 +1456,14 @@ recentPeerShareActivity d =
        in E t (Nothing, recentSet')
         : go recentSet' recentPSQ' txs
 
+    -- Like above but for big ledger peers.
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TraceDemoteWarmBigLedgerPeerDone _ _ addr)) : txs) =
+      let recentSet' = Set.delete addr recentSet
+          recentPSQ' = PSQ.delete addr recentPSQ
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
     -- When the governor demotes a local established peer, we drop it from
     -- the recent activity tracking, which means if it is added back again
     -- later then we can peer share with it again earlier than the normal limit.
@@ -1354,6 +1500,19 @@ recentPeerShareActivity d =
     --
     go !recentSet !recentPSQ
         (E t (GovernorEvent (TraceDemoteAsynchronous m)) : txs) =
+      let peersDemotedToCold = Map.foldrWithKey'
+                                (\k v r -> case v of
+                                  (PeerCold, _) -> k : r
+                                  _             -> r
+                                ) [] m
+          recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
+          recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
+    -- As above but a big ledger peer
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TraceDemoteBigLedgerPeersAsynchronous m)) : txs) =
       let peersDemotedToCold = Map.foldrWithKey'
                                 (\k v r -> case v of
                                   (PeerCold, _) -> k : r
@@ -1484,6 +1643,71 @@ prop_governor_target_known_5_no_shrink_below env =
         govKnownPeersSig =
           selectGovState (KnownPeers.toSet . Governor.knownPeers) events
 
+        bigLedgerPeersSig :: Signal (Set PeerAddr)
+        bigLedgerPeersSig =
+          selectGovState (Governor.bigLedgerPeers) events
+
+        knownPeersShrinksSig :: Signal (Set PeerAddr)
+        knownPeersShrinksSig =
+            Signal.nub
+          . fmap (fromMaybe Set.empty)
+          . Signal.difference
+              -- We subtract all big ledger peers.  This is because we might
+              -- first satisfy the target of known peers, and then learn that
+              -- one of them was a big ledger peers.  This would be a fake
+              -- shrink of known non big ledger peers.
+              --
+              -- By subtracting a sum of `y` and `y'` we also do not account
+              -- forgetting big ledger peers.
+              (\(x,y) (x',y') -> x Set.\\ x' Set.\\ (y <> y'))
+          $ (,) <$> govKnownPeersSig
+                <*> bigLedgerPeersSig
+
+        unexpectedShrink :: Signal Bool
+        unexpectedShrink =
+          -- Note that when we observe a shrink, the known peers set at the
+          -- same time is the new shrunk value. This means our test has to be
+          -- Set.size known < target rather than Set.size known <= target
+          -- It also has the bonus of checking that we are checking that the
+          -- size of the known peer set after the shrink is not strictly
+          -- smaller than the target, which means we're checking that we do
+          -- not undershoot the target: from above we hit the target exactly.
+          (\target known shrinks ->
+                not (Set.null shrinks)
+             && Set.size known < target
+          ) <$> envTargetsSig
+            <*> govKnownPeersSig
+            <*> knownPeersShrinksSig
+
+     in counterexample
+          "\nSignal key: (target, known peers, shrinks, unexpected)" $
+
+        signalProperty 20 show
+          (\(_,_,_,unexpected) -> not unexpected)
+          ((,,,) <$> envTargetsSig
+                 <*> govKnownPeersSig
+                 <*> knownPeersShrinksSig
+                 <*> unexpectedShrink)
+
+-- | Like 'prop_governor_target_known_5_no_shrink_below' but for big ledger
+-- peers.
+--
+prop_governor_target_known_5_no_shrink_big_ledger_peers_below :: GovernorMockEnvironment -> Property
+prop_governor_target_known_5_no_shrink_big_ledger_peers_below env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        envTargetsSig :: Signal Int
+        envTargetsSig =
+          selectEnvTargets targetNumberOfKnownBigLedgerPeers events
+
+        govKnownPeersSig :: Signal (Set PeerAddr)
+        govKnownPeersSig =
+          selectGovState (takeBigLedgerPeers $
+                            KnownPeers.toSet . Governor.knownPeers) events
+
         knownPeersShrinksSig :: Signal (Set PeerAddr)
         knownPeersShrinksSig =
             Signal.nub
@@ -1517,6 +1741,7 @@ prop_governor_target_known_5_no_shrink_below env =
                  <*> govKnownPeersSig
                  <*> knownPeersShrinksSig
                  <*> unexpectedShrink)
+
 
 -- | The governor should shrink its known peer set within a bounded time when
 -- it is above the target size.
@@ -1564,11 +1789,14 @@ prop_governor_target_known_above env =
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (dropBigLedgerPeers $
+                            KnownPeers.toSet . Governor.knownPeers)
+                         events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
-          selectGovState (EstablishedPeers.toSet . Governor.establishedPeers)
+          selectGovState (dropBigLedgerPeers $
+                            EstablishedPeers.toSet . Governor.establishedPeers)
                          events
 
         -- There are no demotion opportunities if we're at or below target.
@@ -1626,6 +1854,71 @@ prop_governor_target_known_above env =
                     <*> demotionOpportunitiesIgnoredTooLong)
 
 
+-- | Like 'prop_governor_target_known_above' but for big ledger peers.
+--
+prop_governor_target_known_big_ledger_peers_above
+    :: GovernorMockEnvironment -> Property
+prop_governor_target_known_big_ledger_peers_above env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        envTargetsSig :: Signal PeerSelectionTargets
+        envTargetsSig =
+          selectEnvTargets id events
+
+        govKnownPeersSig :: Signal (Set PeerAddr)
+        govKnownPeersSig =
+          selectGovState (takeBigLedgerPeers $
+                            KnownPeers.toSet . Governor.knownPeers)
+                         events
+
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState (takeBigLedgerPeers $
+                            EstablishedPeers.toSet . Governor.establishedPeers)
+                         events
+
+        -- There are no demotion opportunities if we're at or below target.
+        -- Otherwise, the opportunities for demotion are known peers that
+        -- are not currently established and are not local.
+        --
+        demotionOpportunity targets known established
+          | Set.size known <= targetNumberOfKnownBigLedgerPeers targets
+          = Set.empty
+
+         | otherwise
+         = known Set.\\ established
+
+        demotionOpportunities :: Signal (Set PeerAddr)
+        demotionOpportunities =
+          demotionOpportunity
+            <$> envTargetsSig
+            <*> govKnownPeersSig
+            <*> govEstablishedPeersSig
+
+        demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        demotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            demotionOpportunities
+
+     in counterexample
+          ("\nSignal key: (target (root, known), local peers, public peers, known peers, " ++
+           "established peers, demotion opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,) <$> ((\t -> (targetNumberOfRootPeers t,
+                                 targetNumberOfKnownPeers t)) <$> envTargetsSig)
+                    <*> govKnownPeersSig
+                    <*> govEstablishedPeersSig
+                    <*> demotionOpportunities
+                    <*> demotionOpportunitiesIgnoredTooLong)
+
+
 -- | Check that the governor can hit (but not overshoot) its target for the
 -- number of warm peers. This has to be bounded by what is possible: we cannot
 -- always find enough peers, and when we can, some of them fail.
@@ -1667,7 +1960,8 @@ prop_governor_target_established_below env =
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+          selectGovState (dropBigLedgerPeers $
+                            KnownPeers.toSet . Governor.knownPeers) events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
@@ -1744,6 +2038,105 @@ prop_governor_target_established_below env =
                    <*> promotionOpportunities
                    <*> promotionOpportunitiesIgnoredTooLong)
 
+
+-- | A version of the `prop_governor_target_established_below` for big ledger
+-- peers.
+--
+prop_governor_target_established_big_ledger_peers_below
+    :: GovernorMockEnvironment -> Property
+prop_governor_target_established_big_ledger_peers_below env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        envTargetsSig :: Signal Int
+        envTargetsSig =
+          selectEnvTargets targetNumberOfEstablishedBigLedgerPeers events
+
+        govKnownPeersSig :: Signal (Set PeerAddr)
+        govKnownPeersSig =
+          selectGovState (takeBigLedgerPeers $
+                           KnownPeers.toSet . Governor.knownPeers)
+                         events
+
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState
+            (takeBigLedgerPeers $
+              EstablishedPeers.toSet . Governor.establishedPeers)
+            events
+
+        govEstablishedFailuresSig :: Signal (Set PeerAddr)
+        govEstablishedFailuresSig =
+            Signal.keyedLinger
+              180 -- 3 minutes  -- TODO: too eager to reconnect?
+              (fromMaybe Set.empty)
+          . Signal.fromEvents
+          . Signal.selectEvents
+              (\case TracePromoteColdBigLedgerPeerFailed _ _ peer _ _ ->
+                       --TODO: the environment does not yet cause this to happen
+                       -- it requires synchronous failure in the establish action
+                       Just (Set.singleton peer)
+                     --TODO: what about TraceDemoteWarmDone ?
+                     -- these are also not immediate candidates
+                     -- why does the property not fail for not tracking these?
+                     TraceDemoteBigLedgerPeersAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                     TraceDemoteLocalAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                     TracePromoteWarmFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
+                     _ -> Nothing
+              )
+          . selectGovEvents
+          $ events
+
+        -- There are no opportunities if we're at or above target
+        --
+        promotionOpportunity target known established recentFailures
+          | Set.size established >= target
+          = Set.empty
+
+          | otherwise
+          = known Set.\\ established
+                  Set.\\ recentFailures
+
+        promotionOpportunities :: Signal (Set PeerAddr)
+        promotionOpportunities =
+          promotionOpportunity
+            <$> envTargetsSig
+            <*> govKnownPeersSig
+            <*> govEstablishedPeersSig
+            <*> govEstablishedFailuresSig
+
+        promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        promotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            promotionOpportunities
+
+     in counterexample
+          ("\nSignal key: (target, known big ledger peers, established big ledger peers, recent failures, " ++
+           "opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,) <$> envTargetsSig
+                   <*> govKnownPeersSig
+                   <*> govEstablishedPeersSig
+                   <*> govEstablishedFailuresSig
+                   <*> promotionOpportunities
+                   <*> promotionOpportunitiesIgnoredTooLong)
+
+
 prop_governor_target_active_below :: GovernorMockEnvironment -> Property
 prop_governor_target_active_below env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -1762,12 +2155,13 @@ prop_governor_target_active_below env =
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
-            (EstablishedPeers.toSet . Governor.establishedPeers)
+            (dropBigLedgerPeers $
+               EstablishedPeers.toSet . Governor.establishedPeers)
             events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState Governor.activePeers events
+          selectGovState (dropBigLedgerPeers Governor.activePeers) events
 
         govActiveFailuresSig :: Signal (Set PeerAddr)
         govActiveFailuresSig =
@@ -1846,6 +2240,91 @@ prop_governor_target_active_below env =
                     <*> promotionOpportunities
                     <*> promotionOpportunitiesIgnoredTooLong)
 
+
+-- | A variant of 'prop_governor_target_active_below' but for big ledger peers.
+--
+prop_governor_target_active_big_ledger_peers_below
+    :: GovernorMockEnvironment -> Property
+prop_governor_target_active_big_ledger_peers_below env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        envTargetsSig :: Signal Int
+        envTargetsSig =
+          selectEnvTargets targetNumberOfActiveBigLedgerPeers events
+
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState
+            (takeBigLedgerPeers $
+              EstablishedPeers.toSet . Governor.establishedPeers)
+            events
+
+        govActivePeersSig :: Signal (Set PeerAddr)
+        govActivePeersSig =
+          selectGovState (takeBigLedgerPeers Governor.activePeers) events
+
+        govActiveFailuresSig :: Signal (Set PeerAddr)
+        govActiveFailuresSig =
+            Signal.keyedLinger
+              180 -- 3 minutes  -- TODO: too eager to reconnect?
+              (fromMaybe Set.empty)
+          . Signal.fromEvents
+          . Signal.selectEvents
+              (\case TracePromoteWarmFailed _ _ peer _ ->
+                       --TODO: the environment does not yet cause this to happen
+                       -- it requires synchronous failure in the establish action
+                       Just (Set.singleton peer)
+                     TraceDemoteBigLedgerPeersAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                     _ -> Nothing
+              )
+          . selectGovEvents
+          $ events
+
+        -- There are no opportunities if we're at or above target.
+        --
+        promotionOpportunity target established active recentFailures
+          | Set.size active >= target
+          = Set.empty
+
+          | otherwise
+          = established Set.\\ active
+                        Set.\\ recentFailures
+
+        promotionOpportunities :: Signal (Set PeerAddr)
+        promotionOpportunities =
+          promotionOpportunity
+            <$> envTargetsSig
+            <*> govEstablishedPeersSig
+            <*> govActivePeersSig
+            <*> govActiveFailuresSig
+
+        promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        promotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            promotionOpportunities
+
+     in counterexample
+          ("\nSignal key: (target, established big ledger peers, " ++
+           "active peers, recent failures, opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,) <$> envTargetsSig
+                    <*> govEstablishedPeersSig
+                    <*> govActivePeersSig
+                    <*> govActiveFailuresSig
+                    <*> promotionOpportunities
+                    <*> promotionOpportunitiesIgnoredTooLong)
+
 prop_governor_target_established_above :: GovernorMockEnvironment -> Property
 prop_governor_target_established_above env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -1864,12 +2343,13 @@ prop_governor_target_established_above env =
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
-            (EstablishedPeers.toSet . Governor.establishedPeers)
+            (dropBigLedgerPeers $
+               EstablishedPeers.toSet . Governor.establishedPeers)
             events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState Governor.activePeers events
+          selectGovState (dropBigLedgerPeers Governor.activePeers) events
 
         -- There are no demotion opportunities if we're at or below target.
         -- Otherwise the demotion opportunities are the established peers that
@@ -1910,6 +2390,69 @@ prop_governor_target_established_above env =
                    <*> demotionOpportunities
                    <*> demotionOpportunitiesIgnoredTooLong)
 
+
+-- | Like 'prop_governor_target_established_above' but for big ledger peers.
+--
+prop_governor_target_established_big_ledger_peers_above
+    :: GovernorMockEnvironment -> Property
+prop_governor_target_established_big_ledger_peers_above env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        envTargetsSig :: Signal Int
+        envTargetsSig =
+          selectEnvTargets targetNumberOfEstablishedBigLedgerPeers events
+
+        govEstablishedPeersSig :: Signal (Set PeerAddr)
+        govEstablishedPeersSig =
+          selectGovState
+            (takeBigLedgerPeers $
+              EstablishedPeers.toSet . Governor.establishedPeers)
+            events
+
+        govActivePeersSig :: Signal (Set PeerAddr)
+        govActivePeersSig =
+          selectGovState (takeBigLedgerPeers Governor.activePeers) events
+
+        -- There are no demotion opportunities if we're at or below target.
+        -- Otherwise the demotion opportunities are the established peers that
+        -- are not active and not local root peers.
+        --
+        demotionOpportunity target established active
+          | Set.size established <= target
+          = Set.empty
+
+          | otherwise
+          = established Set.\\ active
+        demotionOpportunities :: Signal (Set PeerAddr)
+        demotionOpportunities =
+          demotionOpportunity
+            <$> envTargetsSig
+            <*> govEstablishedPeersSig
+            <*> govActivePeersSig
+
+        demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        demotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            demotionOpportunities
+
+     in counterexample
+          ("\nSignal key: (target, established big ledger peers, active big ledger peers, " ++
+           "demotion opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,) <$> envTargetsSig
+                  <*> govEstablishedPeersSig
+                  <*> govActivePeersSig
+                  <*> demotionOpportunities
+                  <*> demotionOpportunitiesIgnoredTooLong)
+
+
 prop_governor_target_active_above :: GovernorMockEnvironment -> Property
 prop_governor_target_active_above env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -1927,7 +2470,7 @@ prop_governor_target_active_above env =
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState Governor.activePeers events
+          selectGovState (dropBigLedgerPeers Governor.activePeers) events
 
         demotionOpportunity target local active
           | Set.size active <= target
@@ -1961,6 +2504,57 @@ prop_governor_target_active_above env =
                   <*> govActivePeersSig
                   <*> demotionOpportunities
                   <*> demotionOpportunitiesIgnoredTooLong)
+
+
+-- | Like 'prop_governor_target_active_above' but for big ledger peers.
+--
+prop_governor_target_active_big_ledger_peers_above
+    :: GovernorMockEnvironment -> Property
+prop_governor_target_active_big_ledger_peers_above env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        envTargetsSig :: Signal Int
+        envTargetsSig =
+          selectEnvTargets targetNumberOfActiveBigLedgerPeers events
+
+        govActivePeersSig :: Signal (Set PeerAddr)
+        govActivePeersSig =
+          selectGovState (takeBigLedgerPeers Governor.activePeers) events
+
+        demotionOpportunity target active
+          | Set.size active <= target
+          = Set.empty
+
+          | otherwise
+          = active
+
+        demotionOpportunities :: Signal (Set PeerAddr)
+        demotionOpportunities =
+          demotionOpportunity
+            <$> envTargetsSig
+            <*> govActivePeersSig
+
+        demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
+        demotionOpportunitiesIgnoredTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            id
+            demotionOpportunities
+
+     in counterexample
+          ("\nSignal key: (target, active big ledger peers, " ++
+           "demotion opportunities, ignored too long)") $
+
+        signalProperty 20 show
+          (\(_,_,_,toolong) -> Set.null toolong)
+          ((,,,) <$> envTargetsSig
+                  <*> govActivePeersSig
+                  <*> demotionOpportunities
+                  <*> demotionOpportunitiesIgnoredTooLong)
+
 
 -- | A variant of 'prop_governor_target_established_below' but for the target
 -- that all local root peers should become established.
@@ -2296,6 +2890,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
                 peerConnToPeerSharing    = \ps -> ps,
                 requestPublicRootPeers   = \_ -> return (Map.empty, 0),
                 readNewInboundConnection = retry,
+                requestBigLedgerPeers    = \_ -> return (Set.empty, 0),
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
                   monitorPeerConnection    = error "monitorPeerConnection",
@@ -2306,11 +2901,9 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
               }
 
     targets :: PeerSelectionTargets
-    targets = PeerSelectionTargets {
-                targetNumberOfRootPeers        = targetNumberOfRootPeers,
-                targetNumberOfKnownPeers       = targetNumberOfRootPeers,
-                targetNumberOfEstablishedPeers = 0,
-                targetNumberOfActivePeers      = 0
+    targets = nullPeerSelectionTargets {
+                targetNumberOfRootPeers  = targetNumberOfRootPeers,
+                targetNumberOfKnownPeers = targetNumberOfRootPeers
               }
 
     policy :: PeerSelectionPolicy SockAddr IO
@@ -2335,7 +2928,34 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
 
 prop_issue_3550 :: Property
 prop_issue_3550 = prop_governor_target_established_below $
-  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 14,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 16,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1, 1,Map.fromList [(PeerAddr 16,DoAdvertisePeer)]),(1, 1,Map.fromList [(PeerAddr 4,DoAdvertisePeer)])], publicRootPeers = Map.fromList [(PeerAddr 14, (DoNotAdvertisePeer, IsNotLedgerPeer)),(PeerAddr 29, (DoNotAdvertisePeer, IsNotLedgerPeer))], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 4, targetNumberOfEstablishedPeers = 4, targetNumberOfActivePeers = 3},NoDelay) :| []), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickSome (Set.fromList [PeerAddr 29]) :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
+  GovernorMockEnvironment {
+      peerGraph = PeerGraph
+        [ (PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
+          (PeerAddr 14,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
+          (PeerAddr 16,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
+          (PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})
+        ],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 16,DoAdvertisePeer)]),(1,1,Map.fromList [(PeerAddr 4,DoAdvertisePeer)])],
+      publicRootPeers = Map.fromList
+        [ (PeerAddr 14, (DoNotAdvertisePeer, IsNotLedgerPeer)),
+          (PeerAddr 29, (DoNotAdvertisePeer, IsNotLedgerPeer))
+        ],
+      bigLedgerPeers = Set.empty,
+      targets = Script
+        ((nullPeerSelectionTargets {
+           targetNumberOfRootPeers = 1,
+           targetNumberOfKnownPeers = 4,
+           targetNumberOfEstablishedPeers = 4,
+           targetNumberOfActivePeers = 3
+         },NoDelay) :| []),
+      pickKnownPeersForPeerShare = Script (PickFirst :| []),
+      pickColdPeersToPromote = Script (PickFirst :| []),
+      pickWarmPeersToPromote = Script (PickFirst :| []),
+      pickHotPeersToDemote = Script (PickSome (Set.fromList [PeerAddr 29]) :| []),
+      pickWarmPeersToDemote = Script (PickFirst :| []),
+      pickColdPeersToForget = Script (PickFirst :| []),
+      peerSharing = PeerSharingPublic
+    }
 
 -- | issue #3515
 --
@@ -2347,7 +2967,29 @@ prop_issue_3550 = prop_governor_target_established_below $
 -- ```
 prop_issue_3515 :: Property
 prop_issue_3515 = prop_governor_nolivelock $
-  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 10,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1, 1,Map.fromList [(PeerAddr 10,DoAdvertisePeer)])], publicRootPeers = Map.fromList [], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
+  GovernorMockEnvironment {
+      peerGraph = PeerGraph
+        [(PeerAddr 10,[],GovernorScripts {
+                           peerShareScript = Script (Nothing :| []),
+                           connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
+                         })],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10,DoAdvertisePeer)])],
+      publicRootPeers = Map.fromList [],
+      bigLedgerPeers = Set.empty,
+      targets = Script
+        (( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, ShortDelay)
+        :| [ ( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, ShortDelay),
+             ( nullPeerSelectionTargets, NoDelay),
+             ( nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 }, NoDelay)
+           ]),
+      pickKnownPeersForPeerShare = Script (PickFirst :| []),
+      pickColdPeersToPromote = Script (PickFirst :| []),
+      pickWarmPeersToPromote = Script (PickFirst :| []),
+      pickHotPeersToDemote = Script (PickFirst :| []),
+      pickWarmPeersToDemote = Script (PickFirst :| []),
+      pickColdPeersToForget = Script (PickFirst :| []),
+      peerSharing = PeerSharingPublic
+    }
 
 -- | issue #3494
 --
@@ -2358,10 +3000,95 @@ prop_issue_3515 = prop_governor_nolivelock $
 -- ```
 prop_issue_3494 :: Property
 prop_issue_3494 = prop_governor_nofail $
-  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 64,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])})], localRootPeers = LocalRootPeers.fromGroups [(1, 1,Map.fromList [(PeerAddr 64,DoAdvertisePeer)])], publicRootPeers = Map.fromList [], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},ShortDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 1, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
+  GovernorMockEnvironment {
+      peerGraph = PeerGraph [(PeerAddr 64,[],GovernorScripts {
+                                                peerShareScript = Script (Nothing :| []),
+                                                connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
+                                              })],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64,DoAdvertisePeer)])],
+      publicRootPeers = Map.fromList [],
+      bigLedgerPeers = Set.empty,
+      targets = Script
+        (( nullPeerSelectionTargets,NoDelay)
+        :| [ (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },ShortDelay),
+             (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },ShortDelay),
+             (nullPeerSelectionTargets,NoDelay),
+             (nullPeerSelectionTargets,NoDelay),
+             (nullPeerSelectionTargets { targetNumberOfKnownPeers = 1 },NoDelay)
+           ]),
+      pickKnownPeersForPeerShare = Script (PickFirst :| []),
+      pickColdPeersToPromote = Script (PickFirst :| []),
+      pickWarmPeersToPromote = Script (PickFirst :| []),
+      pickHotPeersToDemote = Script (PickFirst :| []),
+      pickWarmPeersToDemote = Script (PickFirst :| []),
+      pickColdPeersToForget = Script (PickFirst :| []),
+      peerSharing = PeerSharingPublic
+    }
 
 -- | issue #3233
 --
 prop_issue_3233 :: Property
 prop_issue_3233 = prop_governor_nolivelock $
-  GovernorMockEnvironment {peerGraph = PeerGraph [(PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToCold,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay),(ToWarm,NoDelay),(ToCold,NoDelay),(Noop,NoDelay)])}),(PeerAddr 13,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),(PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])})], localRootPeers = LocalRootPeers.fromGroups [(1, 1,Map.fromList [(PeerAddr 15,DoAdvertisePeer)]),(1, 1,Map.fromList [(PeerAddr 13,DoAdvertisePeer)])], publicRootPeers = Map.fromList [(PeerAddr 4, (DoNotAdvertisePeer, IsNotLedgerPeer))], targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay) :| [(PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 3, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 0},LongDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 0, targetNumberOfKnownPeers = 0, targetNumberOfEstablishedPeers = 0, targetNumberOfActivePeers = 0},NoDelay),(PeerSelectionTargets {targetNumberOfRootPeers = 1, targetNumberOfKnownPeers = 3, targetNumberOfEstablishedPeers = 3, targetNumberOfActivePeers = 2},NoDelay)]), pickKnownPeersForPeerShare = Script (PickFirst :| []), pickColdPeersToPromote = Script (PickFirst :| []), pickWarmPeersToPromote = Script (PickFirst :| []), pickHotPeersToDemote = Script (PickFirst :| []), pickWarmPeersToDemote = Script (PickFirst :| []), pickColdPeersToForget = Script (PickFirst :| []), peerSharing = PeerSharingPublic}
+  GovernorMockEnvironment {
+      peerGraph = PeerGraph
+        [(PeerAddr 4,[],GovernorScripts {
+                          peerShareScript = Script (Nothing :| []),
+                          connectionScript = Script ((ToCold,NoDelay)
+                                                 :| [(ToCold,NoDelay),
+                                                     (Noop,NoDelay),
+                                                     (ToWarm,NoDelay),
+                                                     (ToCold,NoDelay),
+                                                     (Noop,NoDelay)
+                                                    ])
+                        }),
+         (PeerAddr 13,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
+         (PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])})
+        ],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 15,DoAdvertisePeer)]),(1,1,Map.fromList [(PeerAddr 13,DoAdvertisePeer)])],
+      publicRootPeers = Map.fromList [(PeerAddr 4, (DoNotAdvertisePeer, IsNotLedgerPeer))],
+      bigLedgerPeers = Set.empty,
+      targets = Script
+        ((nullPeerSelectionTargets,NoDelay)
+        :| [(nullPeerSelectionTargets {
+               targetNumberOfRootPeers = 1,
+               targetNumberOfKnownPeers = 3,
+               targetNumberOfEstablishedPeers = 3
+             },LongDelay),
+            (nullPeerSelectionTargets,NoDelay),
+            (nullPeerSelectionTargets,NoDelay),
+            (nullPeerSelectionTargets {
+                targetNumberOfRootPeers = 1,
+                targetNumberOfKnownPeers = 3,
+                targetNumberOfEstablishedPeers = 3,
+                targetNumberOfActivePeers = 2
+             },NoDelay)]),
+      pickKnownPeersForPeerShare = Script (PickFirst :| []),
+      pickColdPeersToPromote = Script (PickFirst :| []),
+      pickWarmPeersToPromote = Script (PickFirst :| []),
+      pickHotPeersToDemote = Script (PickFirst :| []),
+      pickWarmPeersToDemote = Script (PickFirst :| []),
+      pickColdPeersToForget = Script (PickFirst :| []),
+      peerSharing = PeerSharingPublic
+    }
+
+
+--
+-- Utils
+--
+
+
+-- | filter big ledger peers
+--
+takeBigLedgerPeers
+    :: (Governor.PeerSelectionState PeerAddr peerconn -> Set PeerAddr)
+    ->  Governor.PeerSelectionState PeerAddr peerconn -> Set PeerAddr
+takeBigLedgerPeers f =
+  \st -> f st `Set.intersection` Governor.bigLedgerPeers st
+
+-- | filter out big ledger peers
+--
+dropBigLedgerPeers
+    :: (Governor.PeerSelectionState PeerAddr peerconn -> Set PeerAddr)
+    ->  Governor.PeerSelectionState PeerAddr peerconn -> Set PeerAddr
+dropBigLedgerPeers f =
+  \st -> f st Set.\\ Governor.bigLedgerPeers st
