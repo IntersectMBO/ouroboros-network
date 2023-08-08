@@ -19,18 +19,26 @@ function check-stylish-file {
     DIFFSIZE=$(wc -l "$DIFF" | cut -f1 -d' ')
     if [ "$DIFFSIZE" -gt 0 ]
         then
-            (
-                cat "$DIFF"
-            ) >> "$GLOBAL_DIFF"
+            cat "$DIFF" >> "$GLOBAL_DIFF"
             report "stylish-haskell $FILE"
     fi
     rm -f "$FORMATTED"
     rm -f "$DIFF"
 }
 
+function check-whitespace-file {
+    FILE="$1"
+    COUNT=$(grep -c '\s$' "$FILE")
+    if [ "$COUNT" -gt 0 ]
+        then
+            report "trailing whitespace in $FILE"
+    fi
+}
+
 echo "" > "$GLOBAL_DIFF"
 
 for FILE in $(fd . ./kes-agent -e hs); do
+    check-whitespace-file "$FILE"
     check-stylish-file "$FILE"
 done
 
