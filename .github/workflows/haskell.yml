@@ -29,6 +29,11 @@ jobs:
           echo -n "${offenders}"
           exit 1
         fi
+    - name: Sanity checks
+      if: matrix.os != 'windows-latest'
+      run: |
+        curl -sL https://raw.github.com/haskell/stylish-haskell/master/scripts/latest.sh | sh -s .
+        ./scripts/sanity-check
   build:
     runs-on: ${{ matrix.os }}
 
