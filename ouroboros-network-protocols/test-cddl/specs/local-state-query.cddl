@@ -18,12 +18,8 @@ acquireFailurePointNotOnChain = 1
 failure      = acquireFailurePointTooOld
              / acquireFailurePointNotOnChain
 
-; 'query' and 'result' encodings are not specified; The values are only used
-; for compatibility with
-; 'Ouroboros.Network.Protocol.LocalStateQuery.Test.codec'
-query        = null
-result       = []
-             / [point]
+query        = any
+result       = any
 
 msgAcquire   = [0, point]
              / [8] 
