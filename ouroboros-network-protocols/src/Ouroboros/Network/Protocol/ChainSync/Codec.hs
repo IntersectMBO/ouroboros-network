@@ -184,7 +184,7 @@ codecChainSync encodeHeader decodeHeader
           return (SomeMessage MsgDone)
 
         --
-        -- failures per protcol state
+        -- failures per protocol state
         --
 
         (_, _, ClientAgency TokIdle) ->

@@ -1,19 +1,20 @@
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans        #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
@@ -57,7 +58,7 @@ import           Ouroboros.Network.Block (Point, SlotNo, Tip, decodeTip,
                      encodeTip, unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.Mock.ConcreteBlock (Block, BlockHeader (..))
+import           Ouroboros.Network.Mock.ConcreteBlock (Block)
 
 import           Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
                      NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
@@ -115,6 +116,7 @@ import           Ouroboros.Network.Protocol.PeerSharing.Test ()
 import           Ouroboros.Network.Protocol.PeerSharing.Type
                      (ClientHasAgency (TokIdle), ServerHasAgency (..))
 import qualified Ouroboros.Network.Protocol.PeerSharing.Type as PeerSharing
+import           Test.Data.CDDL (Any (..))
 import           Test.QuickCheck
 import           Test.QuickCheck.Instances.ByteString ()
 import           Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)
@@ -232,10 +234,7 @@ data CDDLSpecs = CDDLSpecs {
     cddlHandshakeNodeToClient        :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
     cddlHandshakeNodeToNodeV7To10    :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
     cddlHandshakeNodeToNodeV11ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
-    cddlChainSync                    :: CDDLSpec (ChainSync
-                                                    BlockHeader
-                                                    (Point BlockHeader)
-                                                    (Tip BlockHeader)),
+    cddlChainSync                    :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip),
     cddlBlockFetch                   :: CDDLSpec (BlockFetch Block (Point Block)),
     cddlTxSubmission2                :: CDDLSpec (TxSubmission2 TxId Tx),
     cddlKeepAlive                    :: CDDLSpec KeepAlive,
@@ -299,20 +298,30 @@ readCDDLSpecs = do
         cddlNodeToNodeVersionDataV11ToLast = CDDLSpec nodeToNodeVersionDataV11ToLast
       }
 
+
+newtype BlockHeader = BlockHeader Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+newtype HeaderPoint = HeaderPoint Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+newtype HeaderTip = HeaderTip Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
 --
 -- Mini-Protocol Codecs
 --
 
-chainSyncCodec :: Codec (ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader))
+chainSyncCodec :: Codec (ChainSync BlockHeader HeaderPoint HeaderTip)
                         CBOR.DeserialiseFailure IO BL.ByteString
 chainSyncCodec =
     codecChainSync
-      (wrapCBORinCBOR Serialise.encode)
-      (unwrapCBORinCBOR (const <$> Serialise.decode))
       Serialise.encode
       Serialise.decode
-      (encodeTip Serialise.encode)
-      (decodeTip Serialise.decode)
+      Serialise.encode
+      Serialise.decode
+      Serialise.encode
+      Serialise.decode
 
 
 blockFetchCodec :: Codec (BlockFetch Block (Point Block))
@@ -413,7 +422,7 @@ validateCBORTermEncoder spec
           $ a
     terms = CBOR.deserialiseFromBytes CBOR.decodeTerm blob
 
--- | Match encoded cbor against cddl specifiction.
+-- | Match encoded CBOR against cddl specification.
 --
 validateCBOR :: CDDLSpec ps
              -> BL.ByteString
@@ -569,11 +578,11 @@ prop_encodeHandshakeNodeToClient spec = validateEncoder spec nodeToClientHandsha
 
 prop_encodeChainSync
     :: CDDLSpec            (ChainSync BlockHeader
-                                      (Point BlockHeader)
-                                      (Tip BlockHeader))
+                                      HeaderPoint
+                                      HeaderTip)
     -> AnyMessageAndAgency (ChainSync BlockHeader
-                                      (Point BlockHeader)
-                                      (Tip BlockHeader))
+                                      HeaderPoint
+                                      HeaderTip)
     -> Property
 prop_encodeChainSync spec = validateEncoder spec chainSyncCodec
 
@@ -797,13 +806,13 @@ generateCBORFromSpec spec rounds = do
                 . readProcessWithExitCode "diag2cbor.rb" ["-"]
 
 
--- | Try decode at all given agencies.  If one suceeds return
+-- | Try decode at all given agencies.  If one succeeds return
 -- 'Nothing' otherwise return all 'DeserialiseFailure's.
 --
 decodeMsg :: forall ps.
              Codec ps CBOR.DeserialiseFailure IO BL.ByteString
           -> [SomeAgency ps]
-          -- ^ list of all gencies to try
+          -- ^ list of all agencies to try
           -> BL.ByteString
           -> IO (Maybe [CBOR.DeserialiseFailure])
 decodeMsg codec stoks bs =
@@ -813,7 +822,7 @@ decodeMsg codec stoks bs =
         decoder <- decode codec stok
         res <- runDecoder [bs] decoder
         return $ case res of
-          Left err -> Just (err)
+          Left err -> Just err
           Right {} -> Nothing
 
 
@@ -842,7 +851,7 @@ unit_decodeHandshakeNodeToClient spec =
 
 
 unit_decodeChainSync
-    :: CDDLSpec (ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader))
+    :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip)
     -> Assertion
 unit_decodeChainSync spec =
     validateDecoder Nothing

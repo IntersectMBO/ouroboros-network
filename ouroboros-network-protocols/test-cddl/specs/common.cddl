@@ -16,7 +16,7 @@ headerSlot      = word64
 headerBlockNo   = word64
 headerBodyHash  = int
 
-point           = origin / blockHeaderHash
+point           = any
 origin          = []
 blockHeaderHash = [slotNo, int]
 slotNo          = word64
