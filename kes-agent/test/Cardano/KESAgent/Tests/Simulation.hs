@@ -39,7 +39,16 @@ import Control.Monad.Class.MonadMVar
   , modifyMVar_
   )
 import Control.Monad.Class.MonadST (MonadST, withLiftST)
-import Control.Monad.Class.MonadThrow (MonadThrow, MonadCatch, bracket, catch, SomeException, catchJust, finally, throwIO)
+import Control.Monad.Class.MonadThrow
+  ( MonadThrow
+  , MonadCatch
+  , bracket
+  , catch
+  , SomeException
+  , catchJust
+  , throwIO
+  , finally
+  )
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay)
 import Control.Monad.IOSim
@@ -269,56 +278,26 @@ instance Show PrettyBS where
 
 {- HLINT ignore "Eta reduce" -}
 
--- | Configuration for a test network.
-data TestNetworkConfig m addr =
-  TestNetworkConfig
-    { tnControlAddress :: addr
-    , tnServiceAddress :: addr
-    , tnMkLocalAddress :: m (Maybe addr)
+class Monad m => WithTestAddress m addr where
+  withTestAddress :: (addr -> m a) -> m a
 
-      -- | This can be used to release residual system resources; it will run
-      -- in a 'finally', after the main test payload has finished and all
-      -- network activity has ceased (or should have ceased).
-    , tnCleanup :: m ()
-      -- | We need this so we can provide a 'Show' instance without having to demand
-      -- @instance Show addr@
-    , tnShow :: String
-    }
+instance WithTestAddress IO SockAddr where
+  withTestAddress = withTestAddressIO
 
-instance Show (TestNetworkConfig m a) where
-  show = tnShow
-
-mkIOSimTestNetworkConfig :: Word -> Word -> forall s. TestNetworkConfig (IOSim s) (TestAddress Int)
-mkIOSimTestNetworkConfig c s =
-  TestNetworkConfig
-    (mkAddr c)
-    (mkAddr s)
-    (return Nothing)
-    (return ())
-    ("TestNetworkConfig " ++ show c ++ " " ++ show s)
-  where
-    mkAddr :: Word -> TestAddress Int
-    mkAddr = TestAddress . fromIntegral
-
-mkIOTestNetworkConfig :: Word -> Word -> TestNetworkConfig IO SockAddr
-mkIOTestNetworkConfig c s =
-  TestNetworkConfig
-    (mkAddr c)
-    (mkAddr s)
-    (return Nothing)
-    (cleanup c >>
-     cleanup s
-    )
-    ("TestNetworkConfig " ++ show c ++ " " ++ show s)
+withTestAddressIO :: (SockAddr -> IO a) -> IO a
+withTestAddressIO a =
+  withPoolAddress ioAddressPool $ \i ->
+    a (mkAddr i) `finally` cleanup i
   where
     mkAddrName i = "./local" ++ show i
 
     mkAddr :: Word -> SockAddr
     mkAddr i = SockAddrUnix $ mkAddrName i
 
+    cleanup :: Word -> IO ()
     cleanup seed = do
       -- putStrLn $ "rm " ++ mkAddrName seed
-      (removeFile $ mkAddrName seed) `catch`
+      removeFile (mkAddrName seed) `catch`
         (\e ->
           if isDoesNotExistErrorType (ioeGetErrorType e)
             then do
@@ -326,6 +305,10 @@ mkIOTestNetworkConfig c s =
             else do
               throwIO e
         )
+
+withTestAddressIOSim :: forall s a. AddressPool (IOSim s) -> (TestAddress Int -> IOSim s a) -> IOSim s a
+withTestAddressIOSim ap a =
+  withPoolAddress ap $ \i -> a (TestAddress $ fromIntegral i)
 
 type AddressPool m = MVar m AddressPoolData
 
@@ -380,7 +363,7 @@ runTestNetwork :: forall c m fd addr
                -> (forall a. (Show a, TracePretty a) => Tracer m a)
                -> Snocket m fd addr
                -> Integer
-               -> TestNetworkConfig m addr
+               -> (forall a. (addr -> m a) -> m a)
                -> Int
                   -- | control clients: startup delay, script
                -> [(Int, ControlClientScript m c)]
@@ -388,112 +371,109 @@ runTestNetwork :: forall c m fd addr
                -> [(Int, NodeScript m c)]
                -> m Property
 runTestNetwork p mrb tracer snocket genesisTimestamp
-               config
+               withAddress
                agentDelay senders receivers = do
     propertyVar <- newEmptyMVar :: m (MVar m Property)
     timeVar <- newMVar (fromInteger genesisTimestamp) :: m (MVar m NominalDiffTime)
-    let controlAddress = tnControlAddress config
-    let serviceAddress = tnServiceAddress config
+    withAddress $ \controlAddress -> do
+      withAddress $ \serviceAddress -> do
+        let agentOptions  :: AgentOptions m fd addr
+            agentOptions = AgentOptions
+                              { agentGenesisTimestamp = genesisTimestamp
+                              , agentGetCurrentTime = readMVar timeVar
+                              , agentControlAddr = controlAddress
+                              , agentServiceAddr = serviceAddress
+                              , agentSnocket = snocket
+                              }
 
-    let agentOptions  :: AgentOptions m fd addr
-        agentOptions = AgentOptions
-                          { agentGenesisTimestamp = genesisTimestamp
-                          , agentGetCurrentTime = readMVar timeVar
-                          , agentControlAddr = controlAddress
-                          , agentServiceAddr = serviceAddress
-                          , agentSnocket = snocket
-                          }
+            -- Run the single agent.
+            agent :: HasCallStack => Tracer m AgentTrace -> m ()
+            agent tracer = runAgent p mrb agentOptions tracer
 
-        -- Run the single agent.
-        agent :: HasCallStack => Tracer m AgentTrace -> m ()
-        agent tracer = runAgent p mrb agentOptions tracer
-
-        -- Run one node.
-        node :: HasCallStack
-             => Tracer m ServiceClientTrace
-             -> MVar m Property
-             -> (Int, NodeScript m c)
-             -> m ()
-        node tracer mvar (startupDelay, script) = do
-          let hooks = NodeHooks
-                        { reportProperty = putMVar propertyVar
-                        , nodeWait = threadDelay
-                        }
-          threadDelay startupDelay
-          -- The node consists of two threads: the first runs the main or
-          -- background activity, the second runs the networking bits and
-          -- calls into 'keyReceived' upon receiving a key from the Agent.
-          concurrently_
-            (runNodeScript script hooks)
-            (
-              runServiceClient p mrb
-                ServiceClientOptions
-                  { serviceClientSnocket = snocket
-                  , serviceClientAddress = serviceAddress
-                  }
-                (\sk oc -> do
-                  keyReceived script hooks (sk, oc)
+            -- Run one node.
+            node :: HasCallStack
+                 => Tracer m ServiceClientTrace
+                 -> MVar m Property
+                 -> (Int, NodeScript m c)
+                 -> m ()
+            node tracer mvar (startupDelay, script) = do
+              let hooks = NodeHooks
+                            { reportProperty = putMVar propertyVar
+                            , nodeWait = threadDelay
+                            }
+              threadDelay startupDelay
+              -- The node consists of two threads: the first runs the main or
+              -- background activity, the second runs the networking bits and
+              -- calls into 'keyReceived' upon receiving a key from the Agent.
+              concurrently_
+                (runNodeScript script hooks)
+                (
+                  runServiceClient p mrb
+                    ServiceClientOptions
+                      { serviceClientSnocket = snocket
+                      , serviceClientAddress = serviceAddress
+                      }
+                    (\sk oc -> do
+                      keyReceived script hooks (sk, oc)
+                    )
+                    tracer
+                    `catch` (\(e :: AsyncCancelled) -> return ())
+                    `catch` (\(e :: SomeException) -> traceWith tracer $ ServiceClientAbnormalTermination ("NODE: " ++ show e))
                 )
-                tracer
-                `catch` (\(e :: AsyncCancelled) -> return ())
-                `catch` (\(e :: SomeException) -> traceWith tracer $ ServiceClientAbnormalTermination ("NODE: " ++ show e))
-            )
 
-        -- | Run one control client script. The script may perform multiple
-        -- interactions with the agent; a new control client will be spun up
-        -- for each interaction.
-        controlClient :: HasCallStack
-                      => Tracer m ControlClientTrace
-                      -> (Int, ControlClientScript m c)
-                      -> m ()
-        controlClient tracer (startupDelay, script) = do
-          threadDelay startupDelay
-          script $ ControlClientHooks
-            { sendKey = \(sk, oc) -> do
-                addrMay <- tnMkLocalAddress config
-                runControlClient1 p mrb
-                  ControlClientOptions
-                    { controlClientSnocket = snocket
-                    , controlClientAddress = controlAddress
-                    , controlClientLocalAddress = addrMay
-                    }
-                  sk oc
-                  tracer
-                  `catch` (\(e :: AsyncCancelled) -> return ())
-                  `catch` (\(e :: SomeException) -> traceWith tracer $ ControlClientAbnormalTermination ("CONTROL: " ++ show e))
-            , controlClientWait = threadDelay
-            }
+            -- | Run one control client script. The script may perform multiple
+            -- interactions with the agent; a new control client will be spun up
+            -- for each interaction.
+            controlClient :: HasCallStack
+                          => Tracer m ControlClientTrace
+                          -> (Int, ControlClientScript m c)
+                          -> m ()
+            controlClient tracer (startupDelay, script) = do
+              threadDelay startupDelay
+              script $ ControlClientHooks
+                { sendKey = \(sk, oc) -> do
+                    runControlClient1 p mrb
+                      ControlClientOptions
+                        { controlClientSnocket = snocket
+                        , controlClientAddress = controlAddress
+                        , controlClientLocalAddress = Nothing
+                        }
+                      sk oc
+                      tracer
+                      `catch` (\(e :: AsyncCancelled) -> return ())
+                      `catch` (\(e :: SomeException) -> traceWith tracer $ ControlClientAbnormalTermination ("CONTROL: " ++ show e))
+                , controlClientWait = threadDelay
+                }
 
-        -- | Run all the nodes.
-        nodes tracer mvar = forConcurrently_ receivers $ node tracer mvar
+            -- | Run all the nodes.
+            nodes tracer mvar = forConcurrently_ receivers $ node tracer mvar
 
-        -- | Run all the control clients.
-        controlClients tracer = forConcurrently_ senders $ controlClient tracer
+            -- | Run all the control clients.
+            controlClients tracer = forConcurrently_ senders $ controlClient tracer
 
-        -- | This is our watchdog; it will terminate as soon as property is
-        -- pushed to the shared MVar.
-        watch :: HasCallStack => MVar m a -> m a
-        watch mvar = do
-          takeMVar mvar
+            -- | This is our watchdog; it will terminate as soon as property is
+            -- pushed to the shared MVar.
+            watch :: HasCallStack => MVar m a -> m a
+            watch mvar = do
+              takeMVar mvar
 
-    output <- race
-          -- abort 5 seconds after all clients have started
-          (threadDelay $ 5000000 + maximum (agentDelay : (map fst senders ++ map fst receivers)))
-          (race
-            -- run these to "completion"
-            ( agent tracer `concurrently_`
-              nodes tracer propertyVar `concurrently_`
-              controlClients tracer
-            )
-            -- ...until this one finishes
-            (watch propertyVar)
-          )
-          `finally` tnCleanup config
+        output <- race
+              -- abort 5 seconds after all clients have started
+              (threadDelay $ 5000000 + maximum (agentDelay : (map fst senders ++ map fst receivers)))
+              (race
+                -- run these to "completion"
+                ( agent tracer `concurrently_`
+                  nodes tracer propertyVar `concurrently_`
+                  controlClients tracer
+                )
+                -- ...until this one finishes
+                (watch propertyVar)
+              )
 
-    case output of
-        Left () -> error "TIMEOUT"
-        Right (Left err) -> error ("EXCEPTION\n" ++ show err)
-        Right (Right prop) -> return prop
+        case output of
+            Left () -> error "TIMEOUT"
+            Right (Left err) -> error ("EXCEPTION\n" ++ show err)
+            Right (Right prop) -> return prop
 
 
 testOneKeyThroughChainIO :: forall c
@@ -524,21 +504,18 @@ testOneKeyThroughChainIO p
     nodeDelay
     controlDelay =
   ioProperty . withLock lock $
-    withPoolAddress ioAddressPool $ \clientAddr ->
-      withPoolAddress ioAddressPool $ \serverAddr -> do
-        let config = mkIOTestNetworkConfig clientAddr serverAddr
-        testOneKeyThroughChain
-          p
-          makeSocketRawBearer
-          ioSnocket
-          config
-          seedKESPSB
-          seedDSIGNPSB
-          genesisTimestamp
-          certN
-          agentDelay
-          nodeDelay
-          controlDelay
+      testOneKeyThroughChain
+        p
+        makeSocketRawBearer
+        ioSnocket
+        withTestAddressIO
+        seedKESPSB
+        seedDSIGNPSB
+        genesisTimestamp
+        certN
+        agentDelay
+        nodeDelay
+        controlDelay
   where
     ioSnocket = socketSnocket ioManager
 
@@ -572,25 +549,22 @@ testOneKeyThroughChainIOSim p
     controlDelay =
   iosimProperty $ do
     ap <- newAddressPool
-    withPoolAddress ap $ \clientAddr ->
-      withPoolAddress ap $ \serverAddr ->
-        SimSnocket.withSnocket
-          nullTracer
-          (toBearerInfo absNoAttenuation)
-          mempty $ \snocket _observe -> do
-            let config = mkIOSimTestNetworkConfig clientAddr serverAddr
-            testOneKeyThroughChain
-              p
-              (makeFDRawBearer nullTracer)
-              snocket
-              config
-              seedKESPSB
-              seedDSIGNPSB
-              genesisTimestamp
-              certN
-              agentDelay
-              nodeDelay
-              controlDelay
+    SimSnocket.withSnocket
+      nullTracer
+      (toBearerInfo absNoAttenuation)
+      mempty $ \snocket _observe -> do
+        testOneKeyThroughChain
+          p
+          (makeFDRawBearer nullTracer)
+          snocket
+          (withTestAddressIOSim ap)
+          seedKESPSB
+          seedDSIGNPSB
+          genesisTimestamp
+          certN
+          agentDelay
+          nodeDelay
+          controlDelay
 
 testOneKeyThroughChain :: forall c m fd addr
                         . MonadKES m c
@@ -604,7 +578,7 @@ testOneKeyThroughChain :: forall c m fd addr
                        => Proxy c
                        -> MakeRawBearer m fd
                        -> Snocket m fd addr
-                       -> TestNetworkConfig m addr
+                       -> (forall a. (addr -> m a) -> m a)
                        -> PinnedSizedBytes (SeedSizeKES (KES c))
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
@@ -616,7 +590,7 @@ testOneKeyThroughChain :: forall c m fd addr
 testOneKeyThroughChain p
     mrb
     snocket
-    config
+    withAddress
     seedKESPSB
     seedDSIGNPSB
     genesisTimestamp
@@ -657,7 +631,7 @@ testOneKeyThroughChain p
         (mvarPrettyTracer traceMVar)
         snocket
         genesisTimestamp
-        config
+        withAddress
         (delayFromWord agentDelay)
         [(delayFromWord controlDelay, controlScript)]
         [(delayFromWord nodeDelay, nodeScript)]
@@ -689,20 +663,17 @@ testConcurrentPushesIO proxyCrypto
     nodeDelay =
   not (null controlDelaysAndSeedsKESPSB) ==>
   ioProperty . withIOManager $ \ioManager ->
-    withPoolAddress ioAddressPool $ \clientAddr ->
-      withPoolAddress ioAddressPool $ \serverAddr -> do
-        let config = mkIOTestNetworkConfig clientAddr serverAddr
-        withLock lock $ do
-          testConcurrentPushes
-            proxyCrypto
-            makeSocketRawBearer
-            (socketSnocket ioManager)
-            config
-            controlDelaysAndSeedsKESPSB
-            seedDSIGNPSB
-            genesisTimestamp
-            agentDelay
-            nodeDelay
+    withLock lock $ do
+      testConcurrentPushes
+        proxyCrypto
+        makeSocketRawBearer
+        (socketSnocket ioManager)
+        withTestAddressIO
+        controlDelaysAndSeedsKESPSB
+        seedDSIGNPSB
+        genesisTimestamp
+        agentDelay
+        nodeDelay
 
 testConcurrentPushesIOSim :: forall c k
                           . (forall s. MonadKES (IOSim s) c)
@@ -727,23 +698,20 @@ testConcurrentPushesIOSim proxyCrypto
   not (null controlDelaysAndSeedsKESPSB) ==>
   iosimProperty $ do
     ap <- newAddressPool
-    withPoolAddress ap $ \clientAddr ->
-      withPoolAddress ap $ \serverAddr ->
-        SimSnocket.withSnocket
-          nullTracer
-          (toBearerInfo absNoAttenuation)
-          mempty $ \snocket _observe -> do
-            let config = mkIOSimTestNetworkConfig clientAddr serverAddr
-            testConcurrentPushes
-                proxyCrypto
-                (makeFDRawBearer nullTracer)
-                snocket
-                config
-                controlDelaysAndSeedsKESPSB
-                seedDSIGNPSB
-                genesisTimestamp
-                agentDelay
-                nodeDelay
+    SimSnocket.withSnocket
+      nullTracer
+      (toBearerInfo absNoAttenuation)
+      mempty $ \snocket _observe -> do
+        testConcurrentPushes
+            proxyCrypto
+            (makeFDRawBearer nullTracer)
+            snocket
+            (withTestAddressIOSim ap)
+            controlDelaysAndSeedsKESPSB
+            seedDSIGNPSB
+            genesisTimestamp
+            agentDelay
+            nodeDelay
 
 testConcurrentPushes :: forall c m n fd addr
                       . MonadKES m c
@@ -757,7 +725,7 @@ testConcurrentPushes :: forall c m n fd addr
                      => Proxy c
                      -> MakeRawBearer m fd
                      -> Snocket m fd addr
-                     -> TestNetworkConfig m addr
+                     -> (forall a. (addr -> m a) -> m a)
                      -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
                      -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                      -> Integer
@@ -767,7 +735,7 @@ testConcurrentPushes :: forall c m n fd addr
 testConcurrentPushes proxyCrypto
     mrb
     snocket
-    config
+    withAddress
     controlDelaysAndSeedsKESPSB
     seedDSIGNPSB
     genesisTimestamp
@@ -833,7 +801,7 @@ testConcurrentPushes proxyCrypto
             nullTracer -- (mvarPrettyTracer traceMVar)
             snocket
             genesisTimestamp
-            config
+            withAddress
             (delayFromWord agentDelay)
             [ (delayFromWord controlDelay + 5000, controlScript sko)
             | (controlDelay, sko) <- zip controlDelays expectedSKOs
