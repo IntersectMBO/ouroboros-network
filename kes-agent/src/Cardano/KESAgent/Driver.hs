@@ -1,49 +1,51 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 module Cardano.KESAgent.Driver
-where
+  where
 
-import Foreign (Ptr, plusPtr, castPtr)
-import Foreign.C.Types (CSize, CChar)
-import Foreign.Marshal.Alloc (mallocBytes, free)
-import Foreign.Marshal.Utils (copyBytes)
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Driver
-import Control.Monad (void, when)
-import Data.Proxy
-import Text.Printf
-import Data.Word
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
-import Data.Binary (encode, decode)
-import Data.Typeable
-import Control.Tracer (Tracer, traceWith)
-import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadMVar
-import Control.Monad.Class.MonadST
+import Cardano.KESAgent.OCert
+import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.RefCounting
+
+import Cardano.Binary
+import Cardano.Crypto.DirectSerialise
+import Cardano.Crypto.KES.Class
+import Cardano.Crypto.Libsodium.Memory
+  ( allocaBytes
+  , copyMem
+  , packByteStringCStringLen
+  , unpackByteStringCStringLen
+  )
+
 import Ouroboros.Network.RawBearer
 
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.DirectSerialise
-import Cardano.Crypto.Libsodium.Memory
-          ( packByteStringCStringLen
-          , unpackByteStringCStringLen
-          , allocaBytes
-          , copyMem
-          )
-import Cardano.Binary
-
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.RefCounting
+import Control.Monad ( void, when )
+import Control.Monad.Class.MonadMVar
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
+import Control.Tracer ( Tracer, traceWith )
+import Data.Binary ( decode, encode )
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
+import Data.Proxy
+import Data.Typeable
+import Data.Word
+import Foreign ( Ptr, castPtr, plusPtr )
+import Foreign.C.Types ( CChar, CSize )
+import Foreign.Marshal.Alloc ( free, mallocBytes )
+import Foreign.Marshal.Utils ( copyBytes )
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Driver
+import Text.Printf
 
 -- | Logging messages that the Driver may send
 data DriverTrace

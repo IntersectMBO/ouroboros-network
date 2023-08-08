@@ -1,7 +1,7 @@
-{-#LANGUAGE TypeApplications #-}
-{-#LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 module Cardano.KESAgent.POC
-where
+  where
 
 import Cardano.KESAgent.API
 import Cardano.KESAgent.DirectReadWrite
@@ -10,14 +10,13 @@ import Control.Concurrent
 import Control.Concurrent.Async
 import Data.Word
 import Foreign.Marshal.Alloc
-import Foreign.Storable
 import Foreign.Ptr
+import Foreign.Storable
 import System.Random.Stateful
-
 import System.Socket
-import System.Socket.Type.Stream
 import System.Socket.Family.Unix
 import System.Socket.Protocol.Default
+import System.Socket.Type.Stream
 
 data Message =
   Message

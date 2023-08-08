@@ -1,21 +1,21 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Cardano.KESAgent.Peers
-where
+  where
 
-import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.OCert
+import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.RefCounting
 
 import Cardano.Crypto.KES.Class
 
-import Network.TypedProtocol.Core
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Network.TypedProtocol.Core
 
 kesReceiver :: forall (c :: *) (m :: * -> *)
              . KESAlgorithm (KES c)

@@ -3,23 +3,22 @@
 -- This is useful to implement shared access to scarce resources that require
 -- timely destruction (i.e., we cannot rely on GC to run finalizers).
 module Cardano.KESAgent.RefCounting
-( CRef
-, ReferenceCountUnderflow (..)
-, acquireCRef
-, releaseCRef
-, newCRef
-, readCRef
-, withCRef
-, withCRefValue
-, withNewCRef
-, withNewCRefValue
-, getCRefCount
-)
-where
+  ( CRef
+  , ReferenceCountUnderflow (..)
+  , acquireCRef
+  , getCRefCount
+  , newCRef
+  , readCRef
+  , releaseCRef
+  , withCRef
+  , withCRefValue
+  , withNewCRef
+  , withNewCRefValue
+  ) where
 
 import Control.Concurrent.Class.MonadSTM
+import Control.Monad ( when )
 import Control.Monad.Class.MonadThrow
-import Control.Monad (when)
 
 data CRef m a =
   CRef

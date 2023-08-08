@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+cd "$(dirname $0)/.."
+GLOBAL_DIFF="./log/stylish.diff"
+
+ERRORS=0
+
+function report {
+    WHAT="$1"
+    let ERRORS++
+    echo "Check failed: $WHAT"
+}
+
+function check-stylish-file {
+    FILE="$1"
+    FORMATTED="$FILE~stylish"
+    DIFF="$FILE~stylish-diff"
+    stylish-haskell "$FILE" > "$FORMATTED"
+    diff -u "$FILE" "$FORMATTED" > "$DIFF"
+    DIFFSIZE=$(wc -l "$DIFF" | cut -f1 -d' ')
+    if [ "$DIFFSIZE" -gt 0 ]
+        then
+            (
+                cat "$DIFF"
+            ) >> "$GLOBAL_DIFF"
+            report "stylish-haskell $FILE"
+    fi
+    rm -f "$FORMATTED"
+    rm -f "$DIFF"
+}
+
+echo "" > "$GLOBAL_DIFF"
+
+for FILE in $(fd . ./kes-agent -e hs); do
+    check-stylish-file "$FILE"
+done
+
+exit "$ERRORS"

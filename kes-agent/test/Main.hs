@@ -1,13 +1,18 @@
-module Main where
+{-# LANGUAGE ImportQualifiedPost #-}
+module Main
+  where
 
-import Test.Tasty (defaultMain, TestTree, testGroup)
-import qualified Cardano.KESAgent.Tests.Simulation as Simulation
-import qualified Cardano.KESAgent.Tests.RefCounting as RefCounting
+import Cardano.KESAgent.Tests.RefCounting qualified as RefCounting
+import Cardano.KESAgent.Tests.Simulation qualified as Simulation
+
 import Cardano.Crypto.Libsodium
+
 import Ouroboros.Network.Snocket
-import System.IOManager
+
+import Control.Tracer ( nullTracer )
 import Network.Socket
-import Control.Tracer (nullTracer)
+import System.IOManager
+import Test.Tasty ( TestTree, defaultMain, testGroup )
 
 main :: IO ()
 main = withIOManager $ \ioManager -> do

@@ -1,30 +1,29 @@
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE ScopedTypeVariables #-}
-{-#LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MonoLocalBinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.ServiceClient
-where
+  where
 
-import Cardano.KESAgent.Driver (driver, DriverTrace)
-import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
-import Cardano.KESAgent.OCert (Crypto (..), OCert (..))
-import Cardano.KESAgent.RetrySocket (retrySocket)
-import Cardano.KESAgent.RefCounting (CRef)
-import Cardano.KESAgent.Classes (MonadKES)
+import Cardano.KESAgent.Classes ( MonadKES )
+import Cardano.KESAgent.Driver ( DriverTrace, driver )
+import Cardano.KESAgent.OCert ( Crypto (..), OCert (..) )
+import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
+import Cardano.KESAgent.RefCounting ( CRef )
+import Cardano.KESAgent.RetrySocket ( retrySocket )
 
-import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..))
+import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..) )
 
-import Ouroboros.Network.Snocket (Snocket (..))
 import Ouroboros.Network.RawBearer
+import Ouroboros.Network.Snocket ( Snocket (..) )
 
-import Network.TypedProtocol.Driver (runPeerWithDriver)
-import Control.Tracer (Tracer, traceWith)
-import Data.Functor.Contravariant ((>$<))
-import Data.Proxy (Proxy (..))
-
-import Control.Monad (forever, void)
-import Control.Monad.Class.MonadThrow (SomeException, bracket)
+import Control.Monad ( forever, void )
+import Control.Monad.Class.MonadThrow ( SomeException, bracket )
+import Control.Tracer ( Tracer, traceWith )
+import Data.Functor.Contravariant ( (>$<) )
+import Data.Proxy ( Proxy (..) )
+import Network.TypedProtocol.Driver ( runPeerWithDriver )
 
 data ServiceClientOptions m fd addr =
   ServiceClientOptions
@@ -38,7 +37,7 @@ data ServiceClientTrace
   | ServiceClientConnected -- (SocketAddress Unix)
   | ServiceClientAttemptReconnect Int Int String
   | ServiceClientReceivedKey
-  | ServiceClientAbnormalTermination String 
+  | ServiceClientAbnormalTermination String
   deriving (Show)
 
 runServiceClient :: forall c m fd addr

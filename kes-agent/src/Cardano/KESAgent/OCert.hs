@@ -1,10 +1,12 @@
-{-#LANGUAGE TypeFamilies #-}
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE RankNTypes #-}
-{-#LANGUAGE DerivingStrategies #-}
-{-#LANGUAGE DeriveGeneric #-}
-{-#LANGUAGE DerivingVia #-}
-{-#LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 
 -- | A stripped-down version of the @OCert@ and @Crypto@ types used in
 -- @cardano-ledger@. We only replicate what we need here, so as to avoid
@@ -17,23 +19,22 @@
 -- performance critical, the small overhead introduced by using the default
 -- CBOR serialization seems like an acceptable tradeoff.
 module Cardano.KESAgent.OCert
-where
+  where
 
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.DSIGN.Class as DSIGN
-import Cardano.Crypto.Util (SignableRepresentation (..))
 import Cardano.Binary
+import Cardano.Crypto.DSIGN.Class as DSIGN
+import Cardano.Crypto.KES.Class
+import Cardano.Crypto.Util ( SignableRepresentation (..) )
 
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.Builder as BSB
-import qualified Data.ByteString.Builder.Extra as BSB
-
-import GHC.Generics (Generic)
-import Data.Typeable (Typeable)
-import NoThunks.Class (NoThunks (..))
-import Quiet (Quiet (..))
+import Data.ByteString qualified as BS
+import Data.ByteString.Builder qualified as BSB
+import Data.ByteString.Builder.Extra qualified as BSB
+import Data.ByteString.Lazy qualified as LBS
+import Data.Typeable ( Typeable )
 import Data.Word
+import GHC.Generics ( Generic )
+import NoThunks.Class ( NoThunks (..) )
+import Quiet ( Quiet (..) )
 
 -- | Convenience class that bundles associated KES and DSIGN algorithms into a
 -- single typeclass

@@ -1,10 +1,10 @@
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE ScopedTypeVariables #-}
-{-#LANGUAGE TypeFamilies #-}
-{-#LANGUAGE NumericUnderscores #-}
-{-#LANGUAGE OverloadedStrings #-}
-{-#LANGUAGE MultiParamTypeClasses #-}
-{-#LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -14,40 +14,75 @@
 -- - A \"service\" socket, to which a Node can connect in order to receive the
 --   current KES key and future key updates.
 module Cardano.KESAgent.Agent
-where
+  where
 
-import Cardano.KESAgent.Driver (driver, DriverTrace (..))
-import Cardano.KESAgent.Peers (kesPusher, kesReceiver)
-import Cardano.KESAgent.OCert (KESPeriod (..), KES, OCert (..))
-import Cardano.KESAgent.RefCounting (CRef, withCRefValue, newCRef, acquireCRef, releaseCRef)
-import Cardano.KESAgent.Evolution (getCurrentKESPeriodWith, updateKESTo)
-import Cardano.KESAgent.Classes (MonadKES)
-import Cardano.KESAgent.Protocol (KESProtocol)
+import Cardano.KESAgent.Classes ( MonadKES )
+import Cardano.KESAgent.Driver ( DriverTrace (..), driver )
+import Cardano.KESAgent.Evolution ( getCurrentKESPeriodWith, updateKESTo )
+import Cardano.KESAgent.OCert ( KES, KESPeriod (..), OCert (..) )
+import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
+import Cardano.KESAgent.Protocol ( KESProtocol )
+import Cardano.KESAgent.RefCounting
+  ( CRef
+  , acquireCRef
+  , newCRef
+  , releaseCRef
+  , withCRefValue
+  )
 
-import Cardano.Crypto.KES.Class (SignKeyWithPeriodKES (..), forgetSignKeyKES, rawSerialiseSignKeyKES)
+import Cardano.Crypto.KES.Class
+  ( SignKeyWithPeriodKES (..)
+  , forgetSignKeyKES
+  , rawSerialiseSignKeyKES
+  )
 
-import Data.ByteString (ByteString)
-import Control.Monad (forever, void)
-import Control.Tracer (Tracer, traceWith)
-import Network.TypedProtocol.Driver (runPeerWithDriver)
-import Data.Functor.Contravariant ((>$<))
-import Data.Proxy (Proxy (..))
-import Data.Time (NominalDiffTime)
-import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Data.Maybe (fromJust)
-import Ouroboros.Network.Snocket (Snocket (..), Accept (..), Accepted (..))
 import Ouroboros.Network.RawBearer
-import Network.TypedProtocol.Core (Peer (..), PeerRole (..))
-import Text.Printf
+import Ouroboros.Network.Snocket ( Accept (..), Accepted (..), Snocket (..) )
 
-import Control.Monad.Class.MonadTime (MonadTime (..))
-import Control.Monad.Class.MonadSTM (atomically)
-import Control.Monad.Class.MonadAsync (concurrently, concurrently_)
-import Control.Monad.Class.MonadTimer (threadDelay)
-import Control.Monad.Class.MonadThrow (SomeException, bracket, throwIO, catch, finally)
-import Control.Concurrent.Class.MonadSTM.TChan (newTChan, writeTChan, readTChan)
-import Control.Concurrent.Class.MonadSTM.TMVar (TMVar, newEmptyTMVar, newTMVar, tryTakeTMVar, putTMVar, readTMVar)
-import Control.Concurrent.Class.MonadMVar (MVar, newEmptyMVar, newMVar, tryTakeMVar, putMVar, readMVar, withMVar)
+import Control.Concurrent.Class.MonadMVar
+  ( MVar
+  , newEmptyMVar
+  , newMVar
+  , putMVar
+  , readMVar
+  , tryTakeMVar
+  , withMVar
+  )
+import Control.Concurrent.Class.MonadSTM.TChan
+  ( newTChan
+  , readTChan
+  , writeTChan
+  )
+import Control.Concurrent.Class.MonadSTM.TMVar
+  ( TMVar
+  , newEmptyTMVar
+  , newTMVar
+  , putTMVar
+  , readTMVar
+  , tryTakeTMVar
+  )
+import Control.Monad ( forever, void )
+import Control.Monad.Class.MonadAsync ( concurrently, concurrently_ )
+import Control.Monad.Class.MonadSTM ( atomically )
+import Control.Monad.Class.MonadThrow
+  ( SomeException
+  , bracket
+  , catch
+  , finally
+  , throwIO
+  )
+import Control.Monad.Class.MonadTime ( MonadTime (..) )
+import Control.Monad.Class.MonadTimer ( threadDelay )
+import Control.Tracer ( Tracer, traceWith )
+import Data.ByteString ( ByteString )
+import Data.Functor.Contravariant ( (>$<) )
+import Data.Maybe ( fromJust )
+import Data.Proxy ( Proxy (..) )
+import Data.Time ( NominalDiffTime )
+import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
+import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
+import Network.TypedProtocol.Driver ( runPeerWithDriver )
+import Text.Printf
 
 {-HLINT ignore "Use underscore" -}
 
@@ -293,7 +328,7 @@ runAgent proxy mrb options tracer = do
                             `finally`
                             close s fd' >> traceWith tracer (tSocketClosed $ show fd')
                           )
-              
+
               (accept s fd >>= loop) `catch` \(e :: SomeException) -> do
                 traceWith tracer $ tSocketError (show e)
                 throwIO e

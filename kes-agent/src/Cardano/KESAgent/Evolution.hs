@@ -1,20 +1,20 @@
-{-#LANGUAGE TypeFamilies #-}
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Cardano.KESAgent.Evolution
-where
+  where
 
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.KESAgent.OCert
 
-import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Control.Monad.Class.MonadTime
-import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadST
+import Cardano.Crypto.DSIGN.Class as DSIGN
+import Cardano.Crypto.KES.Class
 
-import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime
+import Data.Time ( NominalDiffTime, nominalDiffTimeToSeconds )
+import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
 
 getCurrentKESPeriod :: MonadTime m => Integer -> m KESPeriod
 getCurrentKESPeriod genesisTimestamp = do

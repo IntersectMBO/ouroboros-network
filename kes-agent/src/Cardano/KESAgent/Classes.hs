@@ -1,30 +1,34 @@
-{-#LANGUAGE MultiParamTypeClasses #-}
-{-#LANGUAGE TypeFamilies #-}
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE FlexibleInstances #-}
-{-#LANGUAGE StandaloneDeriving #-}
-{-#LANGUAGE DerivingStrategies #-}
-{-#LANGUAGE DeriveAnyClass #-}
-{-#LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Cardano.KESAgent.Classes
-where
+  where
+
+import Cardano.KESAgent.OCert
+import Cardano.KESAgent.Protocol
 
 import Cardano.Binary
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.Protocol
-import Control.Concurrent.Class.MonadSTM.TChan
+
+import Ouroboros.Network.RawBearer
+
 import Control.Concurrent.Class.MonadMVar
+import Control.Concurrent.Class.MonadSTM.TChan
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime (MonadTime (..))
+import Control.Monad.Class.MonadTime ( MonadTime (..) )
 import Control.Monad.Class.MonadTimer
-import Data.Typeable (Typeable)
-import Ouroboros.Network.RawBearer
+import Data.Typeable ( Typeable )
 
 -- | Shorthand to group typeclasses relating to (cryptographic) memory
 -- management, including direct access to mlocked and bytestring memory, MVars,

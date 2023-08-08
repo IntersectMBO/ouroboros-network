@@ -1,14 +1,14 @@
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Cardano.KESAgent.RetrySocket
-where
+  where
 
-import Data.Time (picosecondsToDiffTime, DiffTime (..))
-import System.Socket (socket, SocketException, close, connect)
-import System.IO
-import Control.Exception (Exception)
+import Control.Exception ( Exception )
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer
+import Data.Time ( DiffTime (..), picosecondsToDiffTime )
+import System.IO
+import System.Socket ( SocketException, close, connect, socket )
 
 -- | Retry given action up to 6 times, using the provided reporting function
 -- to signal retries. Initial retry interval is 1 millisecond, after that

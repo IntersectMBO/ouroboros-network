@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoStarIsType #-}
@@ -17,113 +18,125 @@
 {-# LANGUAGE TypeOperators #-}
 
 module Cardano.KESAgent.Tests.Simulation
-( tests
-, Lock, withLock, mkLock
-, mvarPrettyTracer
-)
-where
-
-import Control.Monad (forever, void, forM, forM_, when)
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadMVar
-  ( MonadMVar
-  , MVar
-  , newMVar
-  , newEmptyMVar
-  , readMVar
-  , putMVar
-  , swapMVar
-  , takeMVar
-  , tryTakeMVar
-  , withMVar
-  , modifyMVar_
-  )
-import Control.Monad.Class.MonadST (MonadST, withLiftST)
-import Control.Monad.Class.MonadThrow
-  ( MonadThrow
-  , MonadCatch
-  , bracket
-  , catch
-  , SomeException
-  , catchJust
-  , throwIO
-  , finally
-  )
-import Control.Monad.Class.MonadTime
-import Control.Monad.Class.MonadTimer (MonadTimer, MonadDelay, threadDelay)
-import Control.Monad.IOSim
-import Control.Monad.Primitive (PrimState)
-import Control.Monad.ST (ST, stToIO)
-import Control.Monad.ST.Unsafe (unsafeIOToST)
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
-import Data.Primitive
-import Data.Proxy
-import qualified Data.Text as Text
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Data.Time (NominalDiffTime, picosecondsToDiffTime, DiffTime, diffTimeToPicoseconds)
-import Data.Time.Clock.POSIX (getPOSIXTime, utcTimeToPOSIXSeconds)
-import Data.Typeable
-import Data.Word
-import Debug.Trace
-import Foreign (mallocBytes, free)
-import Foreign.C (CSize)
-import Foreign.ForeignPtr (mallocForeignPtrBytes, finalizeForeignPtr, touchForeignPtr)
-import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
-import Foreign.Ptr (castPtr, Ptr)
-import GHC.Stack (HasCallStack)
-import GHC.TypeLits (KnownNat, natVal, type (*), Nat)
-import GHC.Types (Type)
-import Network.Socket
-import Simulation.Network.Snocket as SimSnocket
-import System.Directory (removeFile)
-import System.IO
-import System.IO.Error (isDoesNotExistErrorType, ioeGetErrorType)
-import System.IO.Unsafe
-import System.IOManager
-import System.Socket.Family.Unix
-import Test.Crypto.Instances
-import Test.QuickCheck (Arbitrary (..), vectorOf)
-import Test.Tasty
-import Test.Tasty.QuickCheck
-import Text.Printf (printf)
--- import Test.Crypto.Util
-import qualified Network.Mux.Channel as Mux
-
-import Ouroboros.Network.RawBearer
-import Ouroboros.Network.Snocket
-import qualified Ouroboros.Network.Testing.Data.AbsBearerInfo as ABI (delay)
-import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
-
-import Cardano.Binary (FromCBOR)
-import Cardano.Crypto.DSIGN.Class
-import qualified Cardano.Crypto.DSIGN.Class as DSIGN
-import Cardano.Crypto.DSIGN.Ed25519
-import Cardano.Crypto.DirectSerialise
-import Cardano.Crypto.Hash.Blake2b
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.KES.Single
-import Cardano.Crypto.KES.Sum
-import Cardano.Crypto.Libsodium
-import Cardano.Crypto.Libsodium.MLockedBytes.Internal (MLockedSizedBytes (..))
-import Cardano.Crypto.Libsodium.Memory.Internal (MLockedForeignPtr (..))
-import Cardano.Crypto.Libsodium.MLockedSeed
-import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbFromByteString, psbToByteString)
-import Cardano.Crypto.Seed
+  ( Lock
+  , mkLock
+  , mvarPrettyTracer
+  , tests
+  , withLock
+  ) where
 
 import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Classes
 import Cardano.KESAgent.ControlClient
-import Cardano.KESAgent.Driver (DriverTrace (..))
+import Cardano.KESAgent.Driver ( DriverTrace (..) )
 import Cardano.KESAgent.Evolution
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.RefCounting
 import Cardano.KESAgent.ServiceClient
 
+import Cardano.Binary ( FromCBOR )
+import Cardano.Crypto.DirectSerialise
+import Cardano.Crypto.DSIGN.Class
+import Cardano.Crypto.DSIGN.Class qualified as DSIGN
+import Cardano.Crypto.DSIGN.Ed25519
+import Cardano.Crypto.Hash.Blake2b
+import Cardano.Crypto.KES.Class
+import Cardano.Crypto.KES.Single
+import Cardano.Crypto.KES.Sum
+import Cardano.Crypto.Libsodium
+import Cardano.Crypto.Libsodium.Memory.Internal ( MLockedForeignPtr (..) )
+import Cardano.Crypto.Libsodium.MLockedBytes.Internal ( MLockedSizedBytes (..) )
+import Cardano.Crypto.Libsodium.MLockedSeed
+import Cardano.Crypto.PinnedSizedBytes
+  ( PinnedSizedBytes
+  , psbFromByteString
+  , psbToByteString
+  )
+import Cardano.Crypto.Seed
+
+import Ouroboros.Network.RawBearer
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding ( delay )
+import Ouroboros.Network.Testing.Data.AbsBearerInfo qualified as ABI ( delay )
+
+import Control.Monad ( forM, forM_, forever, void, when )
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadMVar
+  ( MVar
+  , MonadMVar
+  , modifyMVar_
+  , newEmptyMVar
+  , newMVar
+  , putMVar
+  , readMVar
+  , swapMVar
+  , takeMVar
+  , tryTakeMVar
+  , withMVar
+  )
+import Control.Monad.Class.MonadST ( MonadST, withLiftST )
+import Control.Monad.Class.MonadThrow
+  ( MonadCatch
+  , MonadThrow
+  , SomeException
+  , bracket
+  , catch
+  , catchJust
+  , finally
+  , throwIO
+  )
+import Control.Monad.Class.MonadTime
+import Control.Monad.Class.MonadTimer ( MonadDelay, MonadTimer, threadDelay )
+import Control.Monad.IOSim
+import Control.Monad.Primitive ( PrimState )
+import Control.Monad.ST ( ST, stToIO )
+import Control.Monad.ST.Unsafe ( unsafeIOToST )
+import Control.Tracer ( Tracer (..), nullTracer, traceWith )
+import Data.ByteString ( ByteString )
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
+import Data.Primitive
+import Data.Proxy
+import Data.Text qualified as Text
+import Data.Text.Encoding ( decodeUtf8, encodeUtf8 )
+import Data.Time
+  ( DiffTime
+  , NominalDiffTime
+  , diffTimeToPicoseconds
+  , picosecondsToDiffTime
+  )
+import Data.Time.Clock.POSIX ( getPOSIXTime, utcTimeToPOSIXSeconds )
+import Data.Typeable
+import Data.Word
+import Debug.Trace
+import Foreign ( free, mallocBytes )
+import Foreign.C ( CSize )
+import Foreign.ForeignPtr
+  ( finalizeForeignPtr
+  , mallocForeignPtrBytes
+  , touchForeignPtr
+  )
+import Foreign.ForeignPtr.Unsafe ( unsafeForeignPtrToPtr )
+import Foreign.Ptr ( Ptr, castPtr )
+import GHC.Stack ( HasCallStack )
+import GHC.TypeLits ( KnownNat, Nat, natVal, type (*) )
+import GHC.Types ( Type )
+import Network.Mux.Channel qualified as Mux
+import Network.Socket
+import Simulation.Network.Snocket as SimSnocket
+import System.Directory ( removeFile )
+import System.IO
+import System.IO.Error ( ioeGetErrorType, isDoesNotExistErrorType )
+import System.IO.Unsafe
+import System.IOManager
 import System.Random
+import System.Socket.Family.Unix
+import Test.Crypto.Instances
+import Test.QuickCheck ( Arbitrary (..), vectorOf )
+import Test.Tasty
+import Test.Tasty.QuickCheck
+import Text.Printf ( printf )
 
 tests :: Lock IO
       -> (forall a. (Show a, TracePretty a) => Tracer IO a)
@@ -131,19 +144,19 @@ tests :: Lock IO
       -> TestTree
 tests lock tracer ioManager =
   testGroup "Simulation"
-  [ testCrypto @MockCrypto
-      Proxy lock tracer ioManager
-  , testCrypto @SingleCrypto
-      Proxy lock tracer ioManager
-  , testCrypto @StandardCrypto
-      Proxy lock tracer ioManager
-  ]
+    [ testCrypto @MockCrypto
+        Proxy lock tracer ioManager
+    , testCrypto @SingleCrypto
+        Proxy lock tracer ioManager
+    , testCrypto @StandardCrypto
+        Proxy lock tracer ioManager
+    ]
 
-data Lock (m :: Type -> Type) =
-  Lock
-    { acquireLock :: m ()
-    , releaseLock :: () -> m ()
-    }
+data Lock (m :: Type -> Type)
+  = Lock
+      { acquireLock :: m ()
+      , releaseLock :: () -> m ()
+      }
 
 withLock :: MonadCatch m => Lock m -> m a -> m a
 withLock lock = bracket (acquireLock lock) (releaseLock lock) . const
@@ -186,7 +199,7 @@ testCrypto proxyC lock tracer ioManager =
     ]
   where
     ioMkAddr i = SockAddrUnix $ "./local" ++ show i
-    
+
     name = Text.unpack .
            decodeUtf8 .
            unVersionIdentifier .
@@ -207,7 +220,7 @@ mvarStringTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
   t <- utcTimeToPOSIXSeconds <$> getCurrentTime
   let str = printf "%015.4f %s" (realToFrac t :: Double) x
   return $ strs ++ [str]
-  
+
 
 class TracePretty a where
   tracePretty :: a -> String
@@ -224,27 +237,27 @@ instance TracePretty AgentTrace where
   tracePretty (AgentControlClientConnected a) = "Agent: ControlClientConnected: " ++ a
   tracePretty (AgentControlClientDisconnected a) = "Agent: ControlClientDisconnected: " ++ a
   tracePretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
-  tracePretty x = "Agent: " ++ (drop (strLength "Agent") (show x))
+  tracePretty x = "Agent: " ++ drop (strLength "Agent") (show x)
 
 instance TracePretty ControlClientTrace where
   tracePretty (ControlClientDriverTrace d) = "Control: Driver: " ++ tracePretty d
-  tracePretty (ControlClientConnected) = "Control: Connected"
-  tracePretty x = "Control: " ++ (drop (strLength "ControlClient") (show x))
+  tracePretty ControlClientConnected = "Control: Connected"
+  tracePretty x = "Control: " ++ drop (strLength "ControlClient") (show x)
 
 instance TracePretty ServiceClientTrace where
   tracePretty (ServiceClientDriverTrace d) = "Service: Driver: " ++ tracePretty d
-  tracePretty (ServiceClientConnected) = "Service: Connected"
-  tracePretty x = "Service: " ++ (drop (strLength "ServiceClient") (show x))
+  tracePretty ServiceClientConnected = "Service: Connected"
+  tracePretty x = "Service: " ++ drop (strLength "ServiceClient") (show x)
 
 instance TracePretty DriverTrace where
   tracePretty x = drop (strLength "Driver") (show x)
 
 -- | The operations a control client can perform: sending keys, and waiting.
-data ControlClientHooks m c =
-  ControlClientHooks
-    { sendKey :: (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
-    , controlClientWait :: Int -> m ()
-    }
+data ControlClientHooks m c
+  = ControlClientHooks
+      { sendKey :: (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
+      , controlClientWait :: Int -> m ()
+      }
 
 -- | A control client script is just a monadic action that runs an arbitrary
 -- number of actions.
@@ -253,25 +266,26 @@ type ControlClientScript m c =
 
 -- | The operations a control client can perform: reporting a property (this
 -- will be forwarded to the test result), and waiting.
-data NodeHooks m c =
-  NodeHooks
-    { reportProperty :: Property -> m ()
-    , nodeWait :: Int -> m ()
-    }
+data NodeHooks m c
+  = NodeHooks
+      { reportProperty :: Property -> m ()
+      , nodeWait :: Int -> m ()
+      }
 
 -- | A node script actually consists of two parts: the 'runNodeScript' action
 -- runs concurrently in the background, allowing the node script to simulate
 -- other activity, such as evolving keys, losing keys, etc.; the 'keyReceived'
 -- action is invoked every time the node receives a key + opcert bundle.
 -- Hook actions can be triggered from either script, as the use case requires.
-data NodeScript m c =
-  NodeScript
-    { runNodeScript :: NodeHooks m c -> m ()
-    , keyReceived :: NodeHooks m c -> (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
-    }
+data NodeScript m c
+  = NodeScript
+      { runNodeScript :: NodeHooks m c -> m ()
+      , keyReceived :: NodeHooks m c -> (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
+      }
 
-newtype PrettyBS = PrettyBS { unPrettyBS :: ByteString }
-  deriving newtype Eq
+newtype PrettyBS
+  = PrettyBS { unPrettyBS :: ByteString }
+  deriving newtype (Eq)
 
 instance Show PrettyBS where
   show = hexShowBS . unPrettyBS
@@ -312,11 +326,11 @@ withTestAddressIOSim ap a =
 
 type AddressPool m = MVar m AddressPoolData
 
-data AddressPoolData =
-  APD
-    { poolBound :: Word
-    , poolItems :: [Word]
-    }
+data AddressPoolData
+  = APD
+      { poolBound :: Word
+      , poolItems :: [Word]
+      }
 
 newAddressPool :: MonadMVar m => m (AddressPool m)
 newAddressPool = newMVar (APD 0 [])
@@ -471,8 +485,8 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
               )
 
         case output of
-            Left () -> error "TIMEOUT"
-            Right (Left err) -> error ("EXCEPTION\n" ++ show err)
+            Left ()            -> error "TIMEOUT"
+            Right (Left err)   -> error ("EXCEPTION\n" ++ show err)
             Right (Right prop) -> return prop
 
 
@@ -839,7 +853,7 @@ hexShowBS :: ByteString -> String
 hexShowBS = concatMap (printf "%02x") . BS.unpack
 
 justOrError :: Applicative m => Maybe a -> m a
-justOrError Nothing = error "Nothing"
+justOrError Nothing  = error "Nothing"
 justOrError (Just a) = pure a
 
 chunksOfBS :: Int -> ByteString -> [ByteString]

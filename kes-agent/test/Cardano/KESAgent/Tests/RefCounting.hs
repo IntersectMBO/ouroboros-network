@@ -1,17 +1,16 @@
 module Cardano.KESAgent.Tests.RefCounting
-( tests
-)
-where
+  ( tests
+  ) where
 
 import Cardano.KESAgent.RefCounting
 
-import Test.Tasty
-import Test.Tasty.QuickCheck
-import Control.Monad
+import Control.Concurrent ( threadDelay )
+import Control.Concurrent.Async ( concurrently_ )
 import Control.Concurrent.MVar
 import Control.Exception
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (concurrently_)
+import Control.Monad
+import Test.Tasty
+import Test.Tasty.QuickCheck
 
 {-# ANN module "HLint: ignore Use camelCase" #-}
 

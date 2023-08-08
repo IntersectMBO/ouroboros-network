@@ -1,39 +1,40 @@
-{-#LANGUAGE GADTs #-}
-{-#LANGUAGE TypeFamilies #-}
-{-#LANGUAGE DataKinds #-}
-{-#LANGUAGE EmptyCase #-}
-{-#LANGUAGE PolyKinds #-}
-{-#LANGUAGE FlexibleInstances #-}
-{-#LANGUAGE FlexibleContexts #-}
-{-#LANGUAGE OverloadedStrings #-}
-{-#LANGUAGE DerivingVia #-}
-{-#LANGUAGE GeneralizedNewtypeDeriving #-}
-{-#LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 module Cardano.KESAgent.Protocol
-where
+  where
 
 import Cardano.KESAgent.OCert
 import Cardano.KESAgent.RefCounting
 
-import Cardano.Crypto.KES.Class
-import Cardano.Crypto.KES.Sum
-import Cardano.Crypto.KES.Single
-import Cardano.Crypto.KES.Mock
+import Cardano.Binary
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DSIGN.Ed25519
 import Cardano.Crypto.Hash.Blake2b
-import Cardano.Crypto.Util (SignableRepresentation (..))
-import Cardano.Binary
+import Cardano.Crypto.KES.Class
+import Cardano.Crypto.KES.Mock
+import Cardano.Crypto.KES.Single
+import Cardano.Crypto.KES.Sum
+import Cardano.Crypto.Util ( SignableRepresentation (..) )
 
-import Network.TypedProtocol.Core
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import Data.Proxy (Proxy (..))
-import GHC.Generics (Generic)
-import Data.Word
-import NoThunks.Class (NoThunks (..))
-import Quiet
+import Data.ByteString ( ByteString )
+import Data.ByteString qualified as BS
+import Data.Proxy ( Proxy (..) )
 import Data.Typeable
+import Data.Word
+import GHC.Generics ( Generic )
+import Network.TypedProtocol.Core
+import NoThunks.Class ( NoThunks (..) )
+import Quiet
 
 data KESProtocol (m :: * -> *) (k :: *) where
   InitialState :: KESProtocol m k
