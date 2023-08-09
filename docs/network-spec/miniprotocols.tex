@@ -233,18 +233,21 @@ data definition language (CDDL)'}.
 
 Note that the networking layer knows very little about blocks, transactions or
 their indetifiers.  We use parametric polymorphism in the implementation which
-is not present in CDDL.  For this reason we have to make concrete choices which
-might not agree with what is used by `Cardano`.  Each ledger era has its own
-CDDL spec which you can find
+is not present in CDDL.  For this reason we use \texttt{any} in our CDDL specifications.
+If you want to find concrete instatiations of these types in by `Cardano` you
+will need to consult
+\href{https://github.com/input-output-hk/cardano-ledger}{cardano-ledger} and
+\href{https://github.com/input-output-hk/ouroboros-consensus}{ouroboros-consensus}.
+Each ledger era has its own CDDL spec which you can find
 \href{https://github.com/input-output-hk/cardano-ledger#cardano-ledger}{here}.
 Note that there's also the hard fork combinator (HFC) which allows us to
-combine multiple eras into a single blockchain.  It affects how things are
-encoded across different eras.  Currently this is not properly documented (see
+combine multiple eras into a single blockchain.  It affects how many of the
+data types are encoded across different eras.  Currently this is not properly
+documented (see
 \href{https://github.com/input-output-hk/ouroboros-consensus/issues/7}{issue
-\#7}). In the mean time we can only offer informal advise: things are encoded as
-tuples (length 2 lists), where the first element is a zero based index of an
-era while the second item represents the data from that era (e.g. block,
-transaction, etc).
+\#7}). In the mean time we can only offer informal advise: data is encoded
+as tuples (length 2 lists), where the first element is a zero based index of an
+era while the second item is the era dependent encoding.
 
 \section{Dummy Protocols}
 Dummy protocols are only used for testing and are not needed either for

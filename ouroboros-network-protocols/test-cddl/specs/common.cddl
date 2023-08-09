@@ -1,8 +1,11 @@
 
-; The Codecs are polymorphic in the data types for blocks, points, slot
-; numbers etc. In CDDL we need concrete values so we instantiate them
-; a bit arbitrarly.  See `CBOR and CDDL` in the network technical report
+; Mini-protocol codecs are polymorphic in various data types, e.g. blocks, points,
+; transactions, transaction ids, etc. In CDDL we need concrete values so we
+; instantiate them using `any`.  See `CBOR and CDDL` in the network
+; technical report
 ; https://input-output-hk.github.io/ouroboros-network/pdfs/network-spec
+; if you need further advise how to find concrete encoding of `Cardano` data
+; types.
 
 block  = any
 header = any
