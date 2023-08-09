@@ -17,3 +17,4 @@ msgAcceptTx = [1]
 msgRejectTx = [2, rejectReason ]
 ltMsgDone   = [3]
 
+rejectReason = int
