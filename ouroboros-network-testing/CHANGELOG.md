@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.3.1.0 -- 2023-08-09
+
+### Breaking changes
+
 ### Non breaking changes
 
 * type signature of `prop_shrink_valid` is more admissible

@@ -6,6 +6,15 @@
 
 ### Non-breaking changes
 
+## 0.5.2.0 -- 2023-09-08
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Use `io-classes-1.2`.
+* Fixed a momory leak in `GHC-9.2`.
+
 ## 0.5.1.0 -- 2023-07-17
 
 ### Breaking changes

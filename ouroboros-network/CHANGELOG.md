@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.9.0.0 -- 2023-08-09
+
+### Breaking changes
+
 * The counters logged by `PeerSelectionCounters` for local root peers are now
   the number of warm and hot peers per group (before the first one was the
   target of the given group).

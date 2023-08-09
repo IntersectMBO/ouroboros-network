@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.3.0.0 -- 2023-08-09
+
+### Breaking changes
+
 * Due to changes in `RunMiniProtocol`, `OuroborosApplication` and
   `NodeToClientProtocols` data types the API provided in this package has
   breaking changes.  For more details see recent changes in
