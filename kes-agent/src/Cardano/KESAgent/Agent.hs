@@ -48,8 +48,10 @@ import Control.Concurrent.Class.MonadMVar
   , tryTakeMVar
   , withMVar
   )
+import Control.Concurrent.Class.MonadSTM ( retry )
 import Control.Concurrent.Class.MonadSTM.TChan
-  ( newTChan
+  ( newBroadcastTChan
+  , dupTChan
   , readTChan
   , writeTChan
   )
@@ -60,6 +62,8 @@ import Control.Concurrent.Class.MonadSTM.TMVar
   , putTMVar
   , readTMVar
   , tryTakeTMVar
+  , takeTMVar
+  , tryReadTMVar
   )
 import Control.Monad ( forever, void )
 import Control.Monad.Class.MonadAsync ( concurrently, concurrently_ )
@@ -157,7 +161,7 @@ runAgent proxy mrb options tracer = do
   -- reference is dropped. The downside to this is that we need to be explicit
   -- about those references, which is what the 'CRef' type achieves.
   currentKeyVar :: TMVar m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) <- atomically newEmptyTMVar
-  nextKeyChan <- atomically newTChan
+  nextKeyChan <- atomically newBroadcastTChan
 
   -- The key update lock is required because we need to distinguish between two
   -- different situations in which the currentKey TMVar may be empty:
@@ -240,37 +244,31 @@ runAgent proxy mrb options tracer = do
           -- Empty the var in case there's anything there already
           oldKeyOcMay <- atomically $ tryTakeTMVar currentKeyVar
 
-          newKeyVar <- case oldKeyOcMay of
+          case oldKeyOcMay of
             Just (oldKeyVar, oldOC) -> do
               let oldKeyStr = formatKey oldOC
               if ocertN oldOC >= ocertN oc then do
                 releaseCRef keyVar
                 traceWith tracer $ AgentSkippingOldKey oldKeyStr keyStr
-                return oldKeyVar
+                atomically $ putTMVar currentKeyVar (oldKeyVar, oldOC)
               else do
                 releaseCRef oldKeyVar
                 traceWith tracer $ AgentReplacingPreviousKey oldKeyStr keyStr
-                return keyVar
+                atomically $ do
+                  writeTChan nextKeyChan (keyVar, oc)
+                  putTMVar currentKeyVar (keyVar, oc)
             Nothing -> do
               traceWith tracer $ AgentInstallingNewKey keyStr
-              return keyVar
-
-          -- The TMVar is now empty; we write to the next key signal channel
-          -- /before/ putting the new key in the MVar, because we want to make it
-          -- such that when the consumer picks up the signal, the next update
-          -- will be the correct one. Since the MVar is empty at this point, the
-          -- consumers will block until we put the key back in.
-          atomically $ do
-            writeTChan nextKeyChan (newKeyVar, oc)
-            putTMVar currentKeyVar (newKeyVar, oc)
+              -- The TMVar is now empty; we write to the next key signal channel
+              -- /before/ putting the new key in the MVar, because we want to make it
+              -- such that when the consumer picks up the signal, the next update
+              -- will be the correct one. Since the MVar is empty at this point, the
+              -- consumers will block until we put the key back in.
+              atomically $ do
+                writeTChan nextKeyChan (keyVar, oc)
+                putTMVar currentKeyVar (keyVar, oc)
 
         checkEvolution
-
-      currentKey = do
-        atomically $ readTMVar currentKeyVar
-
-      nextKey = atomically $ do
-        readTChan nextKeyChan
 
   let runEvolution = do
         forever $ do
@@ -337,7 +335,12 @@ runAgent proxy mrb options tracer = do
 
 
 
-  let runService =
+  let runService = do
+        nextKeyChanRcv <- atomically $ dupTChan nextKeyChan
+
+        let currentKey = atomically $ readTMVar currentKeyVar
+        let nextKey = atomically $ Just <$> readTChan nextKeyChanRcv
+
         runListener
           (agentServiceAddr options)
           AgentListeningOnServiceSocket
@@ -345,7 +348,7 @@ runAgent proxy mrb options tracer = do
           AgentServiceClientConnected
           AgentServiceSocketError
           AgentServiceDriverTrace
-          (kesPusher currentKey (Just <$> nextKey))
+          (kesPusher currentKey nextKey)
 
   let runControl =
         runListener
@@ -357,4 +360,4 @@ runAgent proxy mrb options tracer = do
           AgentControlDriverTrace
           (kesReceiver pushKey)
 
-  void $ runService `concurrently` runControl `concurrently` runEvolution
+  void $ runService `concurrently` runControl -- `concurrently` runEvolution

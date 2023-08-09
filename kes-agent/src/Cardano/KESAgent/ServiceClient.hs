@@ -20,6 +20,7 @@ import Ouroboros.Network.Snocket ( Snocket (..) )
 
 import Control.Monad ( forever, void )
 import Control.Monad.Class.MonadThrow ( SomeException, bracket )
+import Control.Concurrent.Class.MonadMVar
 import Control.Tracer ( Tracer, traceWith )
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy ( Proxy (..) )
@@ -42,6 +43,7 @@ data ServiceClientTrace
 
 runServiceClient :: forall c m fd addr
                   . MonadKES m c
+                 => MonadMVar m
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr
@@ -50,6 +52,23 @@ runServiceClient :: forall c m fd addr
                  -> m ()
 runServiceClient proxy mrb options handleKey tracer = do
   let s = serviceClientSnocket options
+  latestOCNumVar <- newMVar Nothing
+  let handleKey' keyRef ocert = do
+        latestOCNumMay <- takeMVar latestOCNumVar
+        case latestOCNumMay of
+          Nothing -> do
+            -- No key previously handled, so we need to accept this one
+            putMVar latestOCNumVar (Just $ ocertN ocert)
+            handleKey keyRef ocert
+          Just latestOCNum -> do
+            -- Have already handled a key before, so check that the received key
+            -- is newer; if not, discard it.
+            if ocertN ocert > latestOCNum then do
+              putMVar latestOCNumVar (Just $ ocertN ocert)
+              handleKey keyRef ocert
+            else do
+              putMVar latestOCNumVar (Just latestOCNum)
+
   void $ bracket
     (openToConnect s (serviceClientAddress options))
     (\fd -> do
@@ -63,6 +82,6 @@ runServiceClient proxy mrb options handleKey tracer = do
       bearer <- getRawBearer mrb fd
       void $ runPeerWithDriver
         (driver bearer $ ServiceClientDriverTrace >$< tracer)
-        (kesReceiver $ \k o -> handleKey k o <* traceWith tracer ServiceClientReceivedKey)
+        (kesReceiver $ \k o -> handleKey' k o <* traceWith tracer ServiceClientReceivedKey)
         ()
     )

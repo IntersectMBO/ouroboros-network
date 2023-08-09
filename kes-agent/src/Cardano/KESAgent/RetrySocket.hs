@@ -11,8 +11,8 @@ import System.IO
 import System.Socket ( SocketException, close, connect, socket )
 
 -- | Retry given action up to 6 times, using the provided reporting function
--- to signal retries. Initial retry interval is 1 millisecond, after that
--- it doubles with each iteration, with a maximum of 0.1 second.
+-- to signal retries. Initial retry interval is 10 milliseconds, after that
+-- it doubles with each iteration, with a maximum of 5 seconds.
 retrySocket :: MonadCatch m
             => MonadDelay m
             => Exception e
@@ -21,8 +21,8 @@ retrySocket :: MonadCatch m
             -> m a
 retrySocket =
   retrySocketWith
-    (\i -> min 100 (i * 2))
-    1
+    (\i -> min 5000000 (i * 2))
+    1000
     6
 
 reportRetryNull :: Applicative m => e -> Int -> Int -> m ()
