@@ -2,7 +2,7 @@
 with pkgs;
 let
   src = haskell-nix.haskellLib.cleanGit {
-    name = "ouroboros-network-protocols-docs-src";
+    name = "ouroboros-network-docs-src";
     src = ../.;
     subDir = "docs";
   };
