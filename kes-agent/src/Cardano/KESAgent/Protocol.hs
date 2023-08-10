@@ -37,8 +37,19 @@ import NoThunks.Class ( NoThunks (..) )
 import Quiet
 
 data KESProtocol (m :: * -> *) (k :: *) where
+  -- | Default state after connecting, but before the protocol version has been
+  -- negotiated.
   InitialState :: KESProtocol m k
+
+  -- | System is idling, waiting for the server to push the next key.
   IdleState :: KESProtocol m k
+
+  -- | A new key has been pushed, client must now confirm that the key has been
+  -- received.
+  WaitForConfirmationState :: KESProtocol m k
+
+  -- | The server has closed the connection, thus signalling the end of the
+  -- session.
   EndState :: KESProtocol m k
 
 class VersionedProtocol (p :: *) where
@@ -75,15 +86,15 @@ mkVersionIdentifier raw =
 
 instance VersionedProtocol (KESProtocol m StandardCrypto) where
   versionIdentifier _ =
-    mkVersionIdentifier "StandardCrypto:0.1"
+    mkVersionIdentifier "StandardCrypto:0.2"
 
 instance VersionedProtocol (KESProtocol m SingleCrypto) where
   versionIdentifier _ =
-    mkVersionIdentifier "SingleCrypto:0.1"
+    mkVersionIdentifier "SingleCrypto:0.2"
 
 instance VersionedProtocol (KESProtocol m MockCrypto) where
   versionIdentifier _ =
-    mkVersionIdentifier "MockCrypto:0.1"
+    mkVersionIdentifier "MockCrypto:0.2"
 
 -- | The protocol for pushing KES keys.
 --
@@ -93,10 +104,6 @@ instance VersionedProtocol (KESProtocol m MockCrypto) where
 -- - When a Node connects, the Agent will push the current key
 -- - When the Agent generates a new key, it will push the new key
 --
--- Hence, the Agent always has agency, and there is only one protocol state,
--- the 'IdleState'. From there, the Agent can always push keys, and the Node
--- will always accept new keys.
---
 -- **OR:**
 --
 -- - The Agent acts as the Client, and the Control Server as a Server
@@ -104,26 +111,36 @@ instance VersionedProtocol (KESProtocol m MockCrypto) where
 -- - The Agent stores the key locally in memory and pushes it to any connected
 --   Nodes.
 --
+-- All pushes are confirmed from the receiving end, to make sure they have gone
+-- through. This allows the control client to report success to the user, but it
+-- also helps make things more predictable in testing, because it means that
+-- sending keys is now synchronous.
+--
 instance Protocol (KESProtocol m c) where
   data Message (KESProtocol m c) st st' where
           VersionMessage :: Message (KESProtocol m c) InitialState IdleState
           KeyMessage :: CRef m (SignKeyWithPeriodKES (KES c))
                      -> OCert c
-                     -> Message (KESProtocol m c) IdleState IdleState
+                     -> Message (KESProtocol m c) IdleState WaitForConfirmationState
+          ConfirmMessage :: Message (KESProtocol m c) WaitForConfirmationState IdleState
           EndMessage :: Message (KESProtocol m c) IdleState EndState
 
-  -- | Server always has agency
+  -- | Server always has agency, except between sending a key and confirming it
   data ServerHasAgency st where
     TokInitial :: ServerHasAgency InitialState
     TokIdle :: ServerHasAgency IdleState
 
-  -- | Client never has agency
+  -- | Client only has agency between sending a key and confirming it
   data ClientHasAgency st where
+    TokWaitForConfirmation :: ClientHasAgency WaitForConfirmationState
 
   -- | Someone, i.e., the server, always has agency
   data NobodyHasAgency st where
     TokEnd :: NobodyHasAgency EndState
 
-  exclusionLemma_ClientAndServerHaveAgency tok _ = case tok of {}
+  exclusionLemma_ClientAndServerHaveAgency tok1 tok2 =
+    case tok1 of
+      TokWaitForConfirmation ->
+        case tok2 of {}
   exclusionLemma_NobodyAndClientHaveAgency _ _ = undefined
   exclusionLemma_NobodyAndServerHaveAgency _ _ = undefined

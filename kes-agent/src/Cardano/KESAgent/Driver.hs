@@ -56,6 +56,8 @@ data DriverTrace
   | DriverSentKey Word64
   | DriverReceivingKey
   | DriverReceivedKey Word64
+  | DriverConfirmingKey
+  | DriverConfirmedKey
   | DriverConnectionClosed
   deriving (Show)
 
@@ -94,6 +96,8 @@ driver s tracer = Driver
           traceWith tracer $ DriverSentKey (ocertN oc)
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
+      (ClientAgency TokWaitForConfirmation, ConfirmMessage) -> do
+        traceWith tracer DriverConfirmingKey
 
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
@@ -132,6 +136,9 @@ driver s tracer = Driver
           releaseCRef skpVar
           traceWith tracer DriverConnectionClosed
           return (SomeMessage EndMessage, ())
+      (ClientAgency TokWaitForConfirmation) -> do
+        traceWith tracer DriverConfirmedKey
+        return (SomeMessage ConfirmMessage, ())
 
   , startDState = ()
   }

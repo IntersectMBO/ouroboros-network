@@ -33,7 +33,7 @@ kesReceiver receiveKey =
           KeyMessage sk oc ->
             Effect $ do
               receiveKey sk oc
-              return go
+              return $ Yield (ClientAgency TokWaitForConfirmation) ConfirmMessage go
           EndMessage ->
             Done TokEnd ()
 
@@ -48,7 +48,10 @@ kesPusher currentKey nextKey =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
       (sk, oc) <- currentKey
-      return $ Yield (ServerAgency TokIdle) (KeyMessage sk oc) go
+      return (
+          Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
+          Await (ClientAgency TokWaitForConfirmation) $ \ConfirmMessage -> go
+        )
   where
     go :: Peer (KESProtocol m c) AsServer IdleState m ()
     go = Effect $ do
@@ -58,4 +61,5 @@ kesPusher currentKey nextKey =
           Yield (ServerAgency TokIdle) EndMessage $
           Done TokEnd ()
         Just (sk, oc) -> return $
-          Yield (ServerAgency TokIdle) (KeyMessage sk oc) go
+          Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
+          Await (ClientAgency TokWaitForConfirmation) $ \ConfirmMessage -> go
