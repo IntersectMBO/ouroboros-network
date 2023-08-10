@@ -18,13 +18,15 @@ jobs:
       fail-fast: false
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt install -y fd-find stylish-haskell
+        stylish-haskell --version
 
     - name: Sanity checks
-      if: matrix.os != 'windows-latest'
       run: |
-        curl -sL https://raw.github.com/haskell/stylish-haskell/master/scripts/latest.sh | sh -s .
-        stylish-haskell --version
         ./scripts/sanity-check
   build:
     runs-on: ${{ matrix.os }}
@@ -45,108 +47,19 @@ jobs:
       SECP256K1_REF: ac83be33d0956faf6b7f61a60ab524ef7d6a473a
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v3
 
-    - name: Install pkgconfiglite (Windows)
-      if: matrix.os == 'windows-latest'
-      run: choco install -y pkgconfiglite --allow-empty-checksums
-
-    - name: Install libsodium (MacOS)
-      if: matrix.os == 'macos-latest'
-      run: brew install libsodium
-
-    - name: Install secp256k1 (MacOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew install autoconf automake libtool
-        mkdir secp256k1-sources
-        cd secp256k1-sources
-        git clone https://github.com/bitcoin-core/secp256k1.git
-        cd secp256k1
-        git reset --hard $SECP256K1_REF
-        ./autogen.sh
-        ./configure --enable-module-schnorrsig --enable-experimental
-        make
-        make check
-        sudo make install
-        cd ../..
-
-    - name: Install libsodium (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install libsodium23 libsodium-dev
-        sudo apt-get -y remove --purge software-properties-common
-        sudo apt-get -y autoremove
-
-    - name: Install secp256k1 (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get -y install autoconf automake libtool
-        mkdir secp256k1-sources
-        cd secp256k1-sources
-        git clone https://github.com/bitcoin-core/secp256k1.git
-        cd secp256k1
-        git reset --hard $SECP256K1_REF
-        ./autogen.sh
-        ./configure --prefix=/usr --enable-module-schnorrsig --enable-experimental
-        make
-        make check
-        sudo make install
-        cd ../..
-
-    - name: Install libsodium (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        curl -Ls \
-          --connect-timeout 5 \
-          --max-time 10 \
-          --retry 5 \
-          --retry-delay 0 \
-          --retry-max-time 40 \
-          https://download.libsodium.org/libsodium/releases/libsodium-1.0.18-mingw.tar.gz -o libsodium-1.0.18-mingw.tar.gz
-        tar zxvf libsodium-1.0.18-mingw.tar.gz
-
-        sed -i "s|/d/a/1/s/|D:/a/cardano-base/cardano-base/|g" libsodium-win64/lib/pkgconfig/libsodium.pc
-
-        export PKG_CONFIG_PATH="$(readlink -f libsodium-win64/lib/pkgconfig | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
-
-        export LIBSODIUM_PATH="$(readlink -f libsodium-win64/bin | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "LIBSODIUM_PATH=$LIBSODIUM_PATH"
-        echo "$LIBSODIUM_PATH" >> $GITHUB_PATH
-
-    - name: Install secp256k1 (Windows)
-      if: matrix.os == 'windows-latest'
-      env:
-        RUNNER_TEMP: ${{ runner.temp }}
-      run: |
-        echo "RUNNER_TEMP=$RUNNER_TEMP"
-        cd "$RUNNER_TEMP"
-        RUNNER_TEMP_FWD="$(echo "$RUNNER_TEMP" | sed 's|\\|/|g')"
-        curl -Ls \
-          --connect-timeout 5 \
-          --max-time 10 \
-          --retry 5 \
-          --retry-delay 0 \
-          --retry-max-time 40 \
-          https://hydra.iohk.io/job/Cardano/haskell-nix/windows-secp256k1/latest/download/1 -o secp256k1.zip
-        mkdir secp256k1
-        cd secp256k1
-        unzip ../secp256k1.zip
-        cd ..
-        export PKG_CONFIG_PATH="$PKG_CONFIG_PATH;$(readlink -f secp256k1/lib/pkgconfig | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
-        echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH" >> $GITHUB_ENV
-        export SECP256K1_PATH="$(readlink -f secp256k1/bin | sed 's|^/d|D:|g' | tr / '\\')"
-        echo "SECP256K1_PATH=$SECP256K1_PATH"
-        echo "$SECP256K1_PATH" >> $GITHUB_PATH
-
-    - uses: haskell/actions/setup@v1
+    - name: Install Haskell
+      uses: input-output-hk/actions/haskell@latest
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: 3.6.2.0
+        cabal-version: 3.10.1.0
+
+    - name: Install system dependencies
+      uses: input-output-hk/actions/base@latest
+      with:
+        use-sodium-vrf: false # default is true
 
     - name: Cabal update
       run: cabal update
@@ -164,6 +77,7 @@ jobs:
 
     - name: Record dependencies
       run: |
+        cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -r '."install-plan"[].id' | sort | uniq > dependencies.txt
 
     - name: Set cache version
@@ -183,9 +97,6 @@ jobs:
 
     - name: Build
       run: cabal build all
-
-    # - name: Clone mainnet mirror
-    #   run: git clone https://github.com/input-output-hk/cardano-mainnet-mirror
 
     - name: Run tests
       run: cabal test all
