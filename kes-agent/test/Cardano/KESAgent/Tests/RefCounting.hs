@@ -80,10 +80,11 @@ p_finalizerOnConcurrentUse d1 d2 =
   abs d2 < 10000 ==>
   ioProperty $ do
     firingsVar <- newMVar 0
+    acquiredVar <- newEmptyMVar
     ref <- newCRef (\_ -> modifyMVar_ firingsVar (return . succ)) ()
     concurrently_
-        (threadDelay (abs d1 + 10) >> releaseCRef ref)
-        (withCRef ref $ const (threadDelay (abs d2 + 10)))
+        (threadDelay (abs d1) >> takeMVar acquiredVar >> releaseCRef ref)
+        (withCRef ref $ \_ -> putMVar acquiredVar () >> threadDelay (abs d2))
     firings <- readMVar firingsVar
     return (firings === 1)
 
