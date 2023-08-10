@@ -24,6 +24,7 @@ jobs:
       if: matrix.os != 'windows-latest'
       run: |
         curl -sL https://raw.github.com/haskell/stylish-haskell/master/scripts/latest.sh | sh -s .
+        stylish-haskell --version
         ./scripts/sanity-check
   build:
     runs-on: ${{ matrix.os }}

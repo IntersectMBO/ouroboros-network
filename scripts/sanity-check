@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 cd "$(dirname $0)/.."
+pwd
+
 GLOBAL_DIFF="./log/stylish.diff"
 
 ERRORS=0
@@ -37,7 +39,9 @@ function check-whitespace-file {
 
 echo "" > "$GLOBAL_DIFF"
 
+fd . ./kes-agent -e hs
 for FILE in $(fd . ./kes-agent -e hs); do
+    echo "Checking: $FILE"
     check-whitespace-file "$FILE"
     check-stylish-file "$FILE"
 done
