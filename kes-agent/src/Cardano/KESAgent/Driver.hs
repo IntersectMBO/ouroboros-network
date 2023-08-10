@@ -134,7 +134,7 @@ driver s tracer = Driver
         oc <- unsafeDeserialize' <$> receiveBS s l
 
         skpVar <- newCRefWith
-                    (return 0xdeadbeef) (contramap DriverCRefEvent tracer)
+                    (contramap DriverCRefEvent tracer)
                     (forgetSignKeyKES . skWithoutPeriodKES) (SignKeyWithPeriodKES sk t)
         succeeded <- isEmptyMVar noReadVar
         if succeeded then do

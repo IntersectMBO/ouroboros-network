@@ -751,6 +751,9 @@ testOneKeyThroughChain p
     withAddress =
   withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
     traceMVar <- newMVar []
+    crefTracker <- newCRefTracker
+    let crefTracer = crtTracer crefTracker <> mvarPrettyTracer traceMVar
+    let newCRef = newCRefWith crefTracer
 
     -- convert quickcheck-generated inputs into things we can use
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
@@ -787,7 +790,9 @@ testOneKeyThroughChain p
         [(delayFromWord controlDelay, controlScript)]
         [(delayFromWord nodeDelay, nodeScript)]
       log <- takeMVar traceMVar
-      return $ (counterexample $ unlines log) prop
+      crefCheck <- crtCheck crefTracker
+      return $ counterexample (unlines log)
+             $ prop .&. crefCheck
 
 testConcurrentPushes :: forall c m n fd addr
                       . MonadKES m c
@@ -819,6 +824,9 @@ testConcurrentPushes proxyCrypto
     withAddress =
   do
     traceMVar <- newMVar []
+    crefTracker <- newCRefTracker
+    let crefTracer = crtTracer crefTracker <> mvarPrettyTracer traceMVar
+    let newCRef = newCRefWith crefTracer
     -- Debug.Trace.traceM $ "Concurrent pushes: " ++ show (length controlDelaysAndSeedsKESPSB)
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
@@ -892,12 +900,19 @@ testConcurrentPushes proxyCrypto
         timeout = do
           threadDelay $ 5000000 + delayFromWord (maximum (agentDelay : nodeDelay : controlDelays))
 
-    (race timeout go >>= either (error "TIMEOUT") return) `catch` \(e :: SomeException) -> do
+    result <- race timeout go
+    case result of
+      Left () -> do
         log <- readMVar traceMVar
-        return $
-          counterexample (unlines log) $
-          counterexample (show e) $
-          False
+        return $ counterexample "TIMEOUT"
+               $ counterexample (unlines log)
+               $ property False
+      Right prop -> do
+        log <- readMVar traceMVar
+        crefCheck <- crtCheck crefTracker
+        return $ counterexample (unlines log) 
+               $ prop .&. crefCheck
+
 
 testOutOfOrderPushes :: forall c m n fd addr
                       . MonadKES m c
@@ -927,20 +942,9 @@ testOutOfOrderPushes proxyCrypto
     withAddress =
   do
     traceMVar <- newMVar []
-    crefIDCounter <- newMVar 10000
-    let (genCRefID :: m CRefID) = do
-            n <- takeMVar crefIDCounter
-            putMVar crefIDCounter (succ n)
-            return n
-    crefLedger <- newMVar Map.empty
-    let crefTracer :: Tracer m CRefEvent = Tracer $ \ev -> do
-          traceWith (mvarPrettyTracer traceMVar) ev
-          modifyMVar_ crefLedger $
-              case ev of
-                CRefCreate cid count -> return . Map.insertWith (+) cid 1
-                CRefAcquire cid count -> return . Map.insertWith (+) cid 1
-                CRefRelease cid count -> return . Map.insertWith (+) cid (-1)
-    let newCRef = newCRefWith genCRefID crefTracer
+    crefTracker <- newCRefTracker
+    let crefTracer = crtTracer crefTracker <> mvarPrettyTracer traceMVar
+    let newCRef = newCRefWith crefTracer
 
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
@@ -1022,10 +1026,8 @@ testOutOfOrderPushes proxyCrypto
             [(delayFromWord 2000, nodeScript)]
           traceWith strTracer "Finished test network"
           mapM_ (releaseCRef . fst) sortedSKOs
-          log <- readMVar traceMVar
           actualSerialized <- readMVar receivedVar
-          return $ counterexample (unlines log)
-                 $ counterexample (show shuffledSerialized)
+          return $ counterexample (show shuffledSerialized)
                  $ map fst actualSerialized === map fst expectedSerialized
 
     let timeout :: m ()
@@ -1034,7 +1036,7 @@ testOutOfOrderPushes proxyCrypto
 
     result <- race timeout go
     case result of
-      Left _ -> do
+      Left () -> do
         log <- readMVar traceMVar
         actualSerialized <- readMVar receivedVar
         return $ counterexample "TIMEOUT"
@@ -1042,13 +1044,10 @@ testOutOfOrderPushes proxyCrypto
                $ counterexample (show shuffledSerialized)
                $ property False
       Right prop -> do
-        ledger <- readMVar crefLedger
         log <- readMVar traceMVar
-        let nonempty = Map.filter (/= 0) ledger
-        let crefCheck = counterexample (show nonempty)
-                      $ counterexample (unlines log)
-                      $ Map.null nonempty
-        return $ prop .&. crefCheck
+        crefCheck <- crtCheck crefTracker
+        return $ counterexample (unlines log) 
+               $ prop .&. crefCheck
 
 -- Show instances for signing keys violate mlocking guarantees, but for testing
 -- purposes, this is fine, so we'll declare orphan instances here.
@@ -1121,3 +1120,30 @@ toBearerInfo abi =
 
 delayFromWord :: Word -> Int
 delayFromWord wordDelay = fromIntegral wordDelay
+
+data CRefTracker m =
+  CRefTracker
+    { crtResult :: m (Map CRefID CRefCount)
+    , crtTracer :: Tracer m CRefEvent
+    }
+
+crtCheck :: Monad m => CRefTracker m -> m Property
+crtCheck crefTracker = do
+    ledger <- crtResult crefTracker
+    let nonempty = Map.filter (/= 0) ledger
+    return $ counterexample (show nonempty)
+           $ Map.null nonempty
+
+newCRefTracker :: MonadMVar m => m (CRefTracker m)
+newCRefTracker = do
+  trackerVar <- newMVar Map.empty
+  return CRefTracker
+    { crtResult = readMVar trackerVar
+    , crtTracer = Tracer $ \ev ->
+        modifyMVar_ trackerVar $
+          case ev of
+            CRefCreate cid count -> return . Map.insertWith (+) cid 1
+            CRefAcquire cid count -> return . Map.insertWith (+) cid 1
+            CRefRelease cid count -> return . Map.insertWith (+) cid (-1)
+    }
+

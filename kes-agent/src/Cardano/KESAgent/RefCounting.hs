@@ -4,6 +4,9 @@
 -- timely destruction (i.e., we cannot rely on GC to run finalizers).
 module Cardano.KESAgent.RefCounting
   ( CRef
+  , CRefCount
+  , CRefEvent (..)
+  , CRefID
   , ReferenceCountUnderflow (..)
   , acquireCRef
   , getCRefCount
@@ -14,23 +17,28 @@ module Cardano.KESAgent.RefCounting
   , withCRef
   , withCRefValue
   , withNewCRef
-  , withNewCRefWith
   , withNewCRefValue
   , withNewCRefValueWith
-  , CRefID
-  , CRefCount
-  , CRefEvent (..)
+  , withNewCRefWith
   ) where
 
+import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad ( when )
+import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
+import Control.Monad.ST.Unsafe ( unsafeIOToST )
 import Control.Tracer
 import Data.Word
+import System.IO.Unsafe ( unsafePerformIO )
 
 type CRefCount = Int
 
 type CRefID = Word32
+
+{-# NOINLINE nextCRefIDVar #-}
+nextCRefIDVar :: MVar IO CRefID
+nextCRefIDVar = unsafePerformIO $ newMVar 0
 
 data CRef m a =
   CRef
@@ -106,13 +114,24 @@ readCRef cref = bracket
 
 -- | Create a fresh 'CRef'. Its counter will be initialized to 1; the caller is
 -- responsible for calling 'releaseCRef' to release it.
-newCRef :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> m (CRef m a)
-newCRef = newCRefWith (return 0) nullTracer
+newCRef :: (MonadST m, MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> m (CRef m a)
+newCRef = newCRefWith nullTracer
 
-newCRefWith :: (MonadSTM m, MonadThrow m) => m CRefID -> Tracer m CRefEvent -> (a -> m ()) -> a -> m (CRef m a)
-newCRefWith genID tracer finalizer val = do
+genCRefID :: (MonadST m) => m CRefID
+genCRefID = withLiftST $ \liftST ->
+  liftST . unsafeIOToST $ do
+    n <- takeMVar nextCRefIDVar
+    putMVar nextCRefIDVar (succ n)
+    return n
+
+newCRefWith :: (MonadST m, MonadSTM m, MonadThrow m)
+            => Tracer m CRefEvent
+            -> (a -> m ())
+            -> a
+            -> m (CRef m a)
+newCRefWith tracer finalizer val = do
   counter <- newTMVarIO 1
-  cid <- genID
+  cid <- genCRefID
   let cref = CRef
         { cDeref = val
         , cFinalize = finalizer
@@ -132,13 +151,13 @@ withCRef cref action =
     (releaseCRef cref)
     (action cref)
 
-withNewCRef :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (CRef m a -> m b) -> m b
-withNewCRef = withNewCRefWith (return 0) nullTracer
+withNewCRef :: (MonadST m, MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (CRef m a -> m b) -> m b
+withNewCRef = withNewCRefWith nullTracer
 
-withNewCRefWith :: (MonadSTM m, MonadThrow m) => m CRefID -> Tracer m CRefEvent -> (a -> m ()) -> a -> (CRef m a -> m b) -> m b
-withNewCRefWith genID tracer finalizer val action = do
+withNewCRefWith :: (MonadST m, MonadSTM m, MonadThrow m) => Tracer m CRefEvent -> (a -> m ()) -> a -> (CRef m a -> m b) -> m b
+withNewCRefWith tracer finalizer val action = do
   bracket
-    (newCRefWith genID tracer finalizer val)
+    (newCRefWith tracer finalizer val)
     releaseCRef
     action
 
@@ -151,12 +170,12 @@ withCRefValue cref action =
     (releaseCRef cref)
     (action $ cDeref cref)
 
-withNewCRefValue :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (a -> m b) -> m b
-withNewCRefValue = withNewCRefValueWith (return 0) nullTracer
+withNewCRefValue :: (MonadST m, MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (a -> m b) -> m b
+withNewCRefValue = withNewCRefValueWith nullTracer
 
-withNewCRefValueWith :: (MonadSTM m, MonadThrow m) => m CRefID -> Tracer m CRefEvent -> (a -> m ()) -> a -> (a -> m b) -> m b
-withNewCRefValueWith genID tracer finalizer val action = do
+withNewCRefValueWith :: (MonadST m, MonadSTM m, MonadThrow m) => Tracer m CRefEvent -> (a -> m ()) -> a -> (a -> m b) -> m b
+withNewCRefValueWith tracer finalizer val action = do
   bracket
-    (newCRefWith genID tracer finalizer val)
+    (newCRefWith tracer finalizer val)
     releaseCRef
     (action . cDeref)
