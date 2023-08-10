@@ -753,7 +753,7 @@ testOneKeyThroughChain p
     traceMVar <- newMVar []
     crefTracker <- newCRefTracker
     let crefTracer = crtTracer crefTracker <> mvarPrettyTracer traceMVar
-    let newCRef = newCRefWith crefTracer
+    let withNewCRef = withNewCRefWith crefTracer
 
     -- convert quickcheck-generated inputs into things we can use
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
@@ -892,15 +892,16 @@ testConcurrentPushes proxyCrypto
             ]
             [(delayFromWord nodeDelay + 5000, nodeScript)]
           traceWith strTracer "Finished test network"
-          mapM_ (releaseCRef . fst) expectedSKOs
           log <- readMVar traceMVar
           return $ (counterexample $ unlines log) prop
 
+    let cleanup = mapM_ (releaseCRef . fst) expectedSKOs
+
     let timeout :: m ()
         timeout = do
-          threadDelay $ 5000000 + delayFromWord (maximum (agentDelay : nodeDelay : controlDelays))
+          threadDelay . delayFromWord $ 5000000 + maximum (agentDelay : nodeDelay : controlDelays)
 
-    result <- race timeout go
+    result <- race timeout go `finally` cleanup
     case result of
       Left () -> do
         log <- readMVar traceMVar
@@ -1025,16 +1026,17 @@ testOutOfOrderPushes proxyCrypto
             ]
             [(delayFromWord 2000, nodeScript)]
           traceWith strTracer "Finished test network"
-          mapM_ (releaseCRef . fst) sortedSKOs
           actualSerialized <- readMVar receivedVar
           return $ counterexample (show shuffledSerialized)
                  $ map fst actualSerialized === map fst expectedSerialized
+
+    let cleanup = mapM_ (releaseCRef . fst) sortedSKOs
 
     let timeout :: m ()
         timeout = do
           threadDelay 10000000
 
-    result <- race timeout go
+    result <- race timeout go `finally` cleanup
     case result of
       Left () -> do
         log <- readMVar traceMVar
