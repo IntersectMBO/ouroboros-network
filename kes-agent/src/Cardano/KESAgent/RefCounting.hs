@@ -8,24 +8,49 @@ module Cardano.KESAgent.RefCounting
   , acquireCRef
   , getCRefCount
   , newCRef
+  , newCRefWith
   , readCRef
   , releaseCRef
   , withCRef
   , withCRefValue
   , withNewCRef
+  , withNewCRefWith
   , withNewCRefValue
+  , withNewCRefValueWith
+  , CRefID
+  , CRefCount
+  , CRefEvent (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad ( when )
 import Control.Monad.Class.MonadThrow
+import Control.Tracer
+import Data.Word
+
+type CRefCount = Int
+
+type CRefID = Word32
 
 data CRef m a =
   CRef
     { cDeref :: !a
     , cFinalize :: a -> m ()
-    , cCount :: !(TMVar m Int)
+    , cCount :: !(TMVar m CRefCount)
+    , cID :: CRefID
+    , cTracer :: Tracer m CRefEvent
     }
+
+data CRefEvent
+  = CRefCreate CRefID CRefCount
+  | CRefAcquire CRefID CRefCount
+  | CRefRelease CRefID CRefCount
+  deriving (Show, Eq)
+
+traceCRef :: MonadSTM m => (CRefID -> CRefCount -> CRefEvent) -> CRef m a -> m ()
+traceCRef event cref = do
+  count <- atomically $ readTMVar (cCount cref)
+  traceWith (cTracer cref) (event (cID cref) count)
 
 data ReferenceCountUnderflow =
   ReferenceCountUnderflow
@@ -47,6 +72,7 @@ acquireCRef cref = do
     let count' = succ count
     putTMVar (cCount cref) count'
     return (count, cDeref cref)
+  traceCRef CRefAcquire cref
   when (count <= 0) (throwIO ReferenceCountUnderflow)
   return val
 
@@ -61,8 +87,9 @@ releaseCRef cref = do
     let count' = pred count
     putTMVar (cCount cref) count'
     return count'
-  when (count' < 0) (throwIO ReferenceCountUnderflow)
   when (count' == 0) (cFinalize cref (cDeref cref))
+  traceCRef CRefRelease cref
+  when (count' < 0) (throwIO ReferenceCountUnderflow)
 
 -- | Read a 'CRef' without acquiring it. The caller is responsible for making
 -- sure the 'CRef' has been acquired appropriately for the duration of the
@@ -80,13 +107,21 @@ readCRef cref = bracket
 -- | Create a fresh 'CRef'. Its counter will be initialized to 1; the caller is
 -- responsible for calling 'releaseCRef' to release it.
 newCRef :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> m (CRef m a)
-newCRef finalizer val = do
+newCRef = newCRefWith (return 0) nullTracer
+
+newCRefWith :: (MonadSTM m, MonadThrow m) => m CRefID -> Tracer m CRefEvent -> (a -> m ()) -> a -> m (CRef m a)
+newCRefWith genID tracer finalizer val = do
   counter <- newTMVarIO 1
-  return CRef
-    { cDeref = val
-    , cFinalize = finalizer
-    , cCount = counter
-    }
+  cid <- genID
+  let cref = CRef
+        { cDeref = val
+        , cFinalize = finalizer
+        , cCount = counter
+        , cID = cid
+        , cTracer = tracer
+        }
+  traceCRef CRefCreate cref
+  return cref
 
 -- | Operate on a 'CRef'. The 'CRef' is guaranteed to not finalize for the
 -- duration of the wrapped function call.
@@ -98,9 +133,12 @@ withCRef cref action =
     (action cref)
 
 withNewCRef :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (CRef m a -> m b) -> m b
-withNewCRef finalizer val action = do
+withNewCRef = withNewCRefWith (return 0) nullTracer
+
+withNewCRefWith :: (MonadSTM m, MonadThrow m) => m CRefID -> Tracer m CRefEvent -> (a -> m ()) -> a -> (CRef m a -> m b) -> m b
+withNewCRefWith genID tracer finalizer val action = do
   bracket
-    (newCRef finalizer val)
+    (newCRefWith genID tracer finalizer val)
     releaseCRef
     action
 
@@ -114,8 +152,11 @@ withCRefValue cref action =
     (action $ cDeref cref)
 
 withNewCRefValue :: (MonadSTM m, MonadThrow m) => (a -> m ()) -> a -> (a -> m b) -> m b
-withNewCRefValue finalizer val action = do
+withNewCRefValue = withNewCRefValueWith (return 0) nullTracer
+
+withNewCRefValueWith :: (MonadSTM m, MonadThrow m) => m CRefID -> Tracer m CRefEvent -> (a -> m ()) -> a -> (a -> m b) -> m b
+withNewCRefValueWith genID tracer finalizer val action = do
   bracket
-    (newCRef finalizer val)
+    (newCRefWith genID tracer finalizer val)
     releaseCRef
     (action . cDeref)

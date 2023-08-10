@@ -80,6 +80,7 @@ test-suite kes-agent-tests
                  , cardano-crypto-class
                  , cardano-crypto-tests
                  , contra-tracer
+                 , containers
                  , directory >=1.3.6.1 && <1.4.0.0
                  , ghc-prim
                  , io-classes

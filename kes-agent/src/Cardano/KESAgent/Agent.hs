@@ -25,9 +25,11 @@ import Cardano.KESAgent.Protocol ( KESProtocol )
 import Cardano.KESAgent.RefCounting
   ( CRef
   , acquireCRef
-  , newCRef
+  , newCRefWith
   , releaseCRef
   , withCRefValue
+  , CRefEvent (..)
+  , CRefID
   )
 
 import Cardano.Crypto.KES.Class
@@ -79,7 +81,7 @@ import Control.Monad.Class.MonadTime ( MonadTime (..) )
 import Control.Monad.Class.MonadTimer ( threadDelay )
 import Control.Tracer ( Tracer, traceWith )
 import Data.ByteString ( ByteString )
-import Data.Functor.Contravariant ( (>$<) )
+import Data.Functor.Contravariant ( (>$<), contramap )
 import Data.Maybe ( fromJust )
 import Data.Proxy ( Proxy (..) )
 import Data.Time ( NominalDiffTime )
@@ -115,6 +117,7 @@ data AgentTrace
   | AgentLockRequest String
   | AgentLockAcquired String
   | AgentLockReleased String
+  | AgentCRefEvent CRefEvent
   deriving (Show)
 
 data AgentOptions m fd addr =
@@ -162,6 +165,12 @@ runAgent proxy mrb options tracer = do
   -- about those references, which is what the 'CRef' type achieves.
   currentKeyVar :: TMVar m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) <- atomically newEmptyTMVar
   nextKeyChan <- atomically newBroadcastTChan
+  crefIDCounter <- atomically $ newTMVar 0
+  let (genCRefID :: m CRefID) = atomically $ do
+          n <- takeTMVar crefIDCounter
+          putTMVar crefIDCounter (succ n)
+          return n
+  let crefTracer = contramap AgentCRefEvent tracer
 
   -- The key update lock is required because we need to distinguish between two
   -- different situations in which the currentKey TMVar may be empty:
@@ -224,7 +233,7 @@ runAgent proxy mrb options tracer = do
                   traceWith tracer AgentKeyExpired
                 Just key' -> do
                   traceWith tracer AgentKeyEvolved
-                  keyVar' <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) key'
+                  keyVar' <- newCRefWith genCRefID crefTracer (forgetSignKeyKES . skWithoutPeriodKES) key'
                   void . atomically $ putTMVar currentKeyVar (keyVar', oc)
               releaseCRef keyVar
             else do

@@ -36,6 +36,7 @@ import Control.Tracer ( Tracer, traceWith )
 import Data.Binary ( decode, encode )
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Functor.Contravariant (contramap)
 import Data.Proxy
 import Data.Typeable
 import Data.Word
@@ -61,6 +62,7 @@ data DriverTrace
   | DriverDecliningKey
   | DriverDeclinedKey
   | DriverConnectionClosed
+  | DriverCRefEvent CRefEvent
   deriving (Show)
 
 driver :: forall c m f t p
@@ -131,7 +133,9 @@ driver s tracer = Driver
              )
         oc <- unsafeDeserialize' <$> receiveBS s l
 
-        skpVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) (SignKeyWithPeriodKES sk t)
+        skpVar <- newCRefWith
+                    (return 0xdeadbeef) (contramap DriverCRefEvent tracer)
+                    (forgetSignKeyKES . skWithoutPeriodKES) (SignKeyWithPeriodKES sk t)
         succeeded <- isEmptyMVar noReadVar
         if succeeded then do
           traceWith tracer $ DriverReceivedKey (ocertN oc)

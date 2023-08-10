@@ -96,6 +96,8 @@ import Control.Tracer ( Tracer (..), nullTracer, traceWith )
 import Data.ByteString ( ByteString )
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Primitive
 import Data.Proxy
 import Data.Text qualified as Text
@@ -255,6 +257,9 @@ instance TracePretty ServiceClientTrace where
 
 instance TracePretty DriverTrace where
   tracePretty x = drop (strLength "Driver") (show x)
+
+instance TracePretty CRefEvent where
+  tracePretty = show
 
 -- | The operations a control client can perform: sending keys, and waiting.
 data ControlClientHooks m c
@@ -922,6 +927,21 @@ testOutOfOrderPushes proxyCrypto
     withAddress =
   do
     traceMVar <- newMVar []
+    crefIDCounter <- newMVar 10000
+    let (genCRefID :: m CRefID) = do
+            n <- takeMVar crefIDCounter
+            putMVar crefIDCounter (succ n)
+            return n
+    crefLedger <- newMVar Map.empty
+    let crefTracer :: Tracer m CRefEvent = Tracer $ \ev -> do
+          traceWith (mvarPrettyTracer traceMVar) ev
+          modifyMVar_ crefLedger $
+              case ev of
+                CRefCreate cid count -> return . Map.insertWith (+) cid 1
+                CRefAcquire cid count -> return . Map.insertWith (+) cid 1
+                CRefRelease cid count -> return . Map.insertWith (+) cid (-1)
+    let newCRef = newCRefWith genCRefID crefTracer
+
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
     let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
@@ -1001,7 +1021,7 @@ testOutOfOrderPushes proxyCrypto
             ]
             [(delayFromWord 2000, nodeScript)]
           traceWith strTracer "Finished test network"
-          mapM_ (releaseCRef . fst) expectedSKOs
+          mapM_ (releaseCRef . fst) sortedSKOs
           log <- readMVar traceMVar
           actualSerialized <- readMVar receivedVar
           return $ counterexample (unlines log)
@@ -1021,8 +1041,14 @@ testOutOfOrderPushes proxyCrypto
                $ counterexample (unlines log)
                $ counterexample (show shuffledSerialized)
                $ property False
-      Right prop ->
-        return prop
+      Right prop -> do
+        ledger <- readMVar crefLedger
+        log <- readMVar traceMVar
+        let nonempty = Map.filter (/= 0) ledger
+        let crefCheck = counterexample (show nonempty)
+                      $ counterexample (unlines log)
+                      $ Map.null nonempty
+        return $ prop .&. crefCheck
 
 -- Show instances for signing keys violate mlocking guarantees, but for testing
 -- purposes, this is fine, so we'll declare orphan instances here.
