@@ -23,10 +23,7 @@ kesReceiver :: forall (c :: *) (m :: * -> *)
             => (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ())
             -> Peer (KESProtocol m c) AsClient InitialState m ()
 kesReceiver receiveKey =
-  Effect $ do
-    return $
-      Await (ServerAgency TokInitial) $ \VersionMessage ->
-        Effect $ return go
+    Await (ServerAgency TokInitial) $ \VersionMessage -> go
   where
     go :: Peer (KESProtocol m c) AsClient IdleState m ()
     go = Await (ServerAgency TokIdle) $ \case

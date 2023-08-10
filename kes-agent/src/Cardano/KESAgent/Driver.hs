@@ -58,6 +58,8 @@ data DriverTrace
   | DriverReceivedKey Word64
   | DriverConfirmingKey
   | DriverConfirmedKey
+  | DriverDecliningKey
+  | DriverDeclinedKey
   | DriverConnectionClosed
   deriving (Show)
 
@@ -96,8 +98,12 @@ driver s tracer = Driver
           traceWith tracer $ DriverSentKey (ocertN oc)
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
+      (ClientAgency TokWaitForConfirmation, RecvErrorMessage) -> do
+        traceWith tracer DriverDecliningKey
+        void $ sendWord32 s 0x00000000
       (ClientAgency TokWaitForConfirmation, ConfirmMessage) -> do
         traceWith tracer DriverConfirmingKey
+        void $ sendWord32 s 0x12345678
 
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
@@ -137,8 +143,13 @@ driver s tracer = Driver
           traceWith tracer DriverConnectionClosed
           return (SomeMessage EndMessage, ())
       (ClientAgency TokWaitForConfirmation) -> do
-        traceWith tracer DriverConfirmedKey
-        return (SomeMessage ConfirmMessage, ())
+        nonce <- receiveWord32 s
+        if nonce == Just 0x12345678 then do
+          traceWith tracer DriverConfirmedKey
+          return (SomeMessage ConfirmMessage, ())
+        else do
+          traceWith tracer DriverDeclinedKey
+          return (SomeMessage RecvErrorMessage, ())
 
   , startDState = ()
   }

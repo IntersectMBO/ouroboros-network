@@ -123,6 +123,7 @@ instance Protocol (KESProtocol m c) where
                      -> OCert c
                      -> Message (KESProtocol m c) IdleState WaitForConfirmationState
           ConfirmMessage :: Message (KESProtocol m c) WaitForConfirmationState IdleState
+          RecvErrorMessage :: Message (KESProtocol m c) WaitForConfirmationState IdleState
           EndMessage :: Message (KESProtocol m c) IdleState EndState
 
   -- | Server always has agency, except between sending a key and confirming it
