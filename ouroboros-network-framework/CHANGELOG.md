@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.8.0.0 -- 2023-08-09
+
+### Breaking changes
+
 * `MuxProtocolBundle` type alias was removed, since it was just reduced to
   a list of 'MiniProtocol's.
 

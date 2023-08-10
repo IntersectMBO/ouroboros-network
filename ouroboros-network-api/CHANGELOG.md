@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.5.1.0 -- 2023-08-09
+
+### Breaking changes
+
+### Non-breaking changes
+
 * Added `IsBigLedgerPeer` type to
   `Ouroboros.Network.PeerSelection.LedgerPeers.Type`.
 

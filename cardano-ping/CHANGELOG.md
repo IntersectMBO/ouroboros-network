@@ -1,5 +1,15 @@
 # Revision history for cardano-ping
 
+## next version
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.2.0.6 -- 2023-08-09
+
+* Use `io-classes-1.2`
+
 ## 0.2.0.5 -- 2023-06-15
 
 * Fixed support of `node-to-client` protocol on Unix sockets.
