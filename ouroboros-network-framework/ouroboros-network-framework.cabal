@@ -177,6 +177,7 @@ test-suite test
                      , text
                      , time
                      , quiet
+                     , with-utf8
 
                      , QuickCheck
                      , quickcheck-instances

@@ -1,5 +1,6 @@
 module Main (main) where
 
+import           Main.Utf8 (withUtf8)
 import           Test.Tasty
 
 import qualified Test.Ouroboros.Network.ConnectionManager as ConnectionManager
@@ -11,7 +12,7 @@ import qualified Test.Ouroboros.Network.Subscription as Subscription
 import qualified Test.Simulation.Network.Snocket as Snocket
 
 main :: IO ()
-main = defaultMain tests
+main = withUtf8 $ defaultMain tests
 
 tests :: TestTree
 tests =
