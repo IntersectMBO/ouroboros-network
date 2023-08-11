@@ -54,7 +54,7 @@ jobs:
 
     - name: "Configure cabal.project.local"
       run: |
-        cp .github/workflows/cabal.project.local.${{ runner.os }} cabal.project.local
+        cp scripts/ci/cabal.project.local.${{ runner.os }} cabal.project.local
 
     - name: Update PATH
       if: runner.os == 'Windows'

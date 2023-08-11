@@ -38,15 +38,21 @@
         defaultCompiler = "ghc8107";
         # We use cabalProject' to ensure we don't build the plan for
         # all systems.
-        cabalProject = nixpkgs.haskell-nix.cabalProject' ({config, ...}: {
+        cabalProject = nixpkgs.haskell-nix.cabalProject' ({config, pkgs, ...}: {
+          # pkgs - nixpkgs instatiated for cross compilation, so
+          # stdenv.hostPlatform.isWindows will work as expected
           src = ./.;
           name = "ouroboros-network";
           compiler-nix-name = lib.mkDefault defaultCompiler;
+          cabalProjectLocal = if pkgs.stdenv.hostPlatform.isWindows
+                              then lib.readFile ./scripts/ci/cabal.project.local.Windows.CrossCompile
+                              else lib.readFile ./scripts/ci/cabal.project.local.Linux;
 
           # we also want cross compilation to windows on linux (and only with default compiler).
           crossPlatforms = p:
-            lib.optional (system == "x86_64-linux" && config.compiler-nix-name == defaultCompiler)
-            p.mingwW64;
+            lib.optionals nixpkgs.stdenv.hostPlatform.isLinux [p.mingwW64];
+            # lib.optional (system == "x86_64-linux" && config.compiler-nix-name == defaultCompiler)
+            # p.mingwW64;
 
           # CHaP input map, so we can find CHaP packages (needs to be more
           # recent than the index-state we set!). Can be updated with
@@ -84,17 +90,9 @@
           # specific enough, or doesn't allow setting these.
           modules = [
             ({pkgs, ...}: {
-              packages.network-mux.configureFlags                 = ["--ghc-option=-Werror"];
-              packages.ouroboros-network-api.configureFlags       = ["--ghc-option=-Werror"];
-              packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ nixpkgs.cddl nixpkgs.cbor-diag ];
+              # pkgs are instatiated for the host platform
+              packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
               packages.ouroboros-network-protocols.components.tests.cddl.preCheck    = "export HOME=`pwd`";
-              packages.ouroboros-network-framework.configureFlags = ["--ghc-option=-Werror"];
-              packages.ouroboros-network-mock.configureFlags      = ["--ghc-option=-Werror"];
-              packages.ouroboros-network-testing.configureFlags   = ["--ghc-option=-Werror"];
-              packages.ouroboros-network.configureFlags           = ["--ghc-option=-Werror"];
-              packages.cardano-ping.configureFlags                = ["--ghc-option=-Werror"];
-              packages.cardano-client.configureFlags              = ["--ghc-option=-Werror"];
-              packages.ntp-client.configureFlags                  = ["--ghc-option=-Werror"];
             })
           ];
         });

@@ -1,16 +1,22 @@
 max-backjumps: 5000
 reorder-goals: True
-tests: True
-benchmarks: True
+tests:         True
+benchmarks:    True
+
+-- IPv6 and nothunks tests are DISABLED on Windows
 
 package strict-checked-vars
-  flags: +checktvarinvariants +checkmvarinvariants
+  flags: -checktvarinvariants -checkmvarinvariants
+
+package monoidal-synchronisation
+  ghc-options: -fno-ignore-asserts -Werror
 
 package ntp-client
   flags: +demo
+  ghc-options: -fno-ignore-asserts -Werror
 
 package network-mux
-  flags: +ipv6
+  flags: -ipv6
   ghc-options: -fno-ignore-asserts -Werror
 
 package ouroboros-network-api
@@ -24,7 +30,7 @@ package ouroboros-network-testing
   ghc-options: -fno-ignore-asserts -Werror
 
 package ouroboros-network-framework
-  flags: +ipv6
+  flags: -ipv6
   ghc-options: -fno-ignore-asserts -Werror
 
 package ouroboros-network-protocols
