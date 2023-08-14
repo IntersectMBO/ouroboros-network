@@ -17,6 +17,10 @@
       "x86_64-darwin"
       "aarch64-darwin"
     ];
+    # default compiler used on all systems
+    defaultCompiler = "ghc8107";
+    # alternative compilers only used on Linux
+    otherCompilers  = ["ghc962"];
   in
     {inherit (inputs);}
     // inputs.flake-utils.lib.eachSystem supportedSystems (
@@ -35,7 +39,7 @@
         haskellNix = import inputs.haskellNix { };
 
         # see flake `variants` below for alternative compilers
-        defaultCompiler = "ghc8107";
+        inherit defaultCompiler;
         # We use cabalProject' to ensure we don't build the plan for
         # all systems.
         cabalProject = nixpkgs.haskell-nix.cabalProject' ({config, pkgs, ...}: {
@@ -51,8 +55,6 @@
           # we also want cross compilation to windows on linux (and only with default compiler).
           crossPlatforms = p:
             lib.optionals nixpkgs.stdenv.hostPlatform.isLinux [p.mingwW64];
-            # lib.optional (system == "x86_64-linux" && config.compiler-nix-name == defaultCompiler)
-            # p.mingwW64;
 
           # CHaP input map, so we can find CHaP packages (needs to be more
           # recent than the index-state we set!). Can be updated with
@@ -100,7 +102,7 @@
         flake = cabalProject.flake (
           lib.optionalAttrs (system == "x86_64-linux") {
             # on linux, build/test other supported compilers
-            variants = lib.genAttrs ["ghc8107"] (compiler-nix-name: {
+            variants = lib.genAttrs otherCompilers (compiler-nix-name: {
               inherit compiler-nix-name;
             });
           }
