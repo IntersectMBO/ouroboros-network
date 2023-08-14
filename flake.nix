@@ -19,6 +19,8 @@
     ];
     # default compiler used on all systems
     defaultCompiler = "ghc8107";
+    # the compiler used for cross compilation
+    crossGHCVersion = "ghc8107"
     # alternative compilers only used on Linux
     otherCompilers  = ["ghc962"];
   in
@@ -53,8 +55,11 @@
                               else lib.readFile ./scripts/ci/cabal.project.local.Linux;
 
           # we also want cross compilation to windows on linux (and only with default compiler).
-          crossPlatforms = p:
-            lib.optionals nixpkgs.stdenv.hostPlatform.isLinux [p.mingwW64];
+          crossPlatforms =
+            p: lib.optionals (nixpkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [p.mingwW64];
+
+          flake.variants = lib.optionalAttrs (system == "x86_64-linux") (lib.genAttrs otherCompilers
+                              (compiler-nix-name: { inherit compiler-nix-name; }));
 
           # CHaP input map, so we can find CHaP packages (needs to be more
           # recent than the index-state we set!). Can be updated with
@@ -79,7 +84,7 @@
                 };
               # TODO: haskell-language-server doesn't build with `ghc-8.10.7` (a
               # dependency fails to build)
-              #haskell-language-server = "2.0.0.1";
+              # haskell-language-server = "2.0.0.1";
             };
           # and from nixpkgs or other inputs
           shell.nativeBuildInputs = with nixpkgs; [ gh jq ];
@@ -98,15 +103,9 @@
             })
           ];
         });
+
         # ... and construct a flake from the cabal project
-        flake = cabalProject.flake (
-          lib.optionalAttrs (system == "x86_64-linux") {
-            # on linux, build/test other supported compilers
-            variants = lib.genAttrs otherCompilers (compiler-nix-name: {
-              inherit compiler-nix-name;
-            });
-          }
-        );
+        flake = cabalProject.flake {};
         network-docs = nixpkgs.callPackage ./nix/network-docs.nix { };
         check-stylish = nixpkgs.callPackage ./nix/check-stylish.nix { };
       in
