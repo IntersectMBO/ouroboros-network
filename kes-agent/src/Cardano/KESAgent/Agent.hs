@@ -70,6 +70,7 @@ import Control.Concurrent.Class.MonadSTM.TMVar
 import Control.Monad ( forever, void )
 import Control.Monad.Class.MonadAsync ( concurrently, concurrently_ )
 import Control.Monad.Class.MonadSTM ( atomically )
+import Control.Monad.Class.MonadFork ( labelThread, myThreadId )
 import Control.Monad.Class.MonadThrow
   ( SomeException
   , bracket
@@ -340,6 +341,7 @@ runAgent proxy mrb options tracer = do
 
 
   let runService = do
+        labelMyThread "service"
         nextKeyChanRcv <- atomically $ dupTChan nextKeyChan
 
         let currentKey = atomically $ readTMVar currentKeyVar
@@ -354,7 +356,8 @@ runAgent proxy mrb options tracer = do
           AgentServiceDriverTrace
           (kesPusher currentKey nextKey)
 
-  let runControl =
+  let runControl = do
+        labelMyThread "control"
         runListener
           (agentControlAddr options)
           AgentListeningOnControlSocket
@@ -365,3 +368,7 @@ runAgent proxy mrb options tracer = do
           (kesReceiver pushKey)
 
   void $ runService `concurrently` runControl -- `concurrently` runEvolution
+
+labelMyThread label = do
+  tid <- myThreadId
+  labelThread tid label

@@ -45,19 +45,18 @@ data CRef m a =
     { cDeref :: !a
     , cFinalize :: a -> m ()
     , cCount :: !(TMVar m CRefCount)
-    , cID :: CRefID
+    , cID :: !CRefID
     , cTracer :: Tracer m CRefEvent
     }
 
 data CRefEvent
-  = CRefCreate CRefID CRefCount
-  | CRefAcquire CRefID CRefCount
-  | CRefRelease CRefID CRefCount
+  = CRefCreate !CRefID !CRefCount
+  | CRefAcquire !CRefID !CRefCount
+  | CRefRelease !CRefID !CRefCount
   deriving (Show, Eq)
 
-traceCRef :: MonadSTM m => (CRefID -> CRefCount -> CRefEvent) -> CRef m a -> m ()
-traceCRef event cref = do
-  count <- atomically $ readTMVar (cCount cref)
+traceCRef :: MonadSTM m => (CRefID -> CRefCount -> CRefEvent) -> CRef m a -> CRefCount -> m ()
+traceCRef event cref count = do
   traceWith (cTracer cref) (event (cID cref) count)
 
 data ReferenceCountUnderflow =
@@ -80,7 +79,7 @@ acquireCRef cref = do
     let count' = succ count
     putTMVar (cCount cref) count'
     return (count, cDeref cref)
-  traceCRef CRefAcquire cref
+  traceCRef CRefAcquire cref count
   when (count <= 0) (throwIO ReferenceCountUnderflow)
   return val
 
@@ -96,7 +95,7 @@ releaseCRef cref = do
     putTMVar (cCount cref) count'
     return count'
   when (count' == 0) (cFinalize cref (cDeref cref))
-  traceCRef CRefRelease cref
+  traceCRef CRefRelease cref count'
   when (count' < 0) (throwIO ReferenceCountUnderflow)
 
 -- | Read a 'CRef' without acquiring it. The caller is responsible for making
@@ -139,7 +138,7 @@ newCRefWith tracer finalizer val = do
         , cID = cid
         , cTracer = tracer
         }
-  traceCRef CRefCreate cref
+  traceCRef CRefCreate cref 1
   return cref
 
 -- | Operate on a 'CRef'. The 'CRef' is guaranteed to not finalize for the

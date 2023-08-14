@@ -342,7 +342,7 @@ data AddressPoolData
       }
 
 newAddressPool :: MonadMVar m => m (AddressPool m)
-newAddressPool = newMVar (APD 0 [])
+newAddressPool = newMVar (APD 1 [])
 
 allocatePoolAddress :: (MonadMVar m, MonadST m) => AddressPool m -> m Word
 allocatePoolAddress pool = do
@@ -752,7 +752,7 @@ testOneKeyThroughChain p
   withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
     traceMVar <- newMVar []
     crefTracker <- newCRefTracker
-    let crefTracer = crtTracer crefTracker <> mvarPrettyTracer traceMVar
+    let crefTracer = crtTracer crefTracker -- <> mvarPrettyTracer traceMVar
     let withNewCRef = withNewCRefWith crefTracer
 
     -- convert quickcheck-generated inputs into things we can use
@@ -762,7 +762,7 @@ testOneKeyThroughChain p
     let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
     expectedSKBS <- rawSerialiseSignKeyKES expectedSK
 
-    withNewCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP $ \expectedSKPVar -> do
+    result <- withNewCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP $ \expectedSKPVar -> do
       vkHot <- deriveVerKeyKES expectedSK
       let kesPeriod = KESPeriod 0
       let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
@@ -781,18 +781,28 @@ testOneKeyThroughChain p
               , runNodeScript = const $ return ()
               }
 
-      prop <- runTestNetwork p mrb
-        (mvarPrettyTracer traceMVar)
-        snocket
-        genesisTimestamp
-        withAddress
-        (delayFromWord agentDelay)
-        [(delayFromWord controlDelay, controlScript)]
-        [(delayFromWord nodeDelay, nodeScript)]
-      log <- takeMVar traceMVar
-      crefCheck <- crtCheck crefTracker
-      return $ counterexample (unlines log)
-             $ prop .&. crefCheck
+      let go = runTestNetwork p mrb
+                  (mvarPrettyTracer traceMVar)
+                  snocket
+                  genesisTimestamp
+                  withAddress
+                  (delayFromWord agentDelay)
+                  [(delayFromWord controlDelay, controlScript)]
+                  [(delayFromWord nodeDelay, nodeScript)]
+
+      let timeout :: m ()
+          timeout = threadDelay . delayFromWord $ 1000000
+
+      race timeout go
+
+    log <- takeMVar traceMVar
+    crefCheck <- crtCheck crefTracker
+    return $ counterexample (unlines log)
+           $ case result of
+                Right prop ->
+                  prop .&. crefCheck
+                Left () ->
+                  counterexample "KILLED" $ property False
 
 testConcurrentPushes :: forall c m n fd addr
                       . MonadKES m c
@@ -827,7 +837,6 @@ testConcurrentPushes proxyCrypto
     crefTracker <- newCRefTracker
     let crefTracer = crtTracer crefTracker <> mvarPrettyTracer traceMVar
     let newCRef = newCRefWith crefTracer
-    -- Debug.Trace.traceM $ "Concurrent pushes: " ++ show (length controlDelaysAndSeedsKESPSB)
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
     let (controlDelays, seedsKESRaw) = unzip controlDelaysAndSeedsKESPSB
@@ -892,8 +901,7 @@ testConcurrentPushes proxyCrypto
             ]
             [(delayFromWord nodeDelay + 5000, nodeScript)]
           traceWith strTracer "Finished test network"
-          log <- readMVar traceMVar
-          return $ (counterexample $ unlines log) prop
+          return prop
 
     let cleanup = mapM_ (releaseCRef . fst) expectedSKOs
 
@@ -944,7 +952,7 @@ testOutOfOrderPushes proxyCrypto
   do
     traceMVar <- newMVar []
     crefTracker <- newCRefTracker
-    let crefTracer = crtTracer crefTracker <> mvarPrettyTracer traceMVar
+    let crefTracer = crtTracer crefTracker -- <> mvarPrettyTracer traceMVar
     let newCRef = newCRefWith crefTracer
 
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
