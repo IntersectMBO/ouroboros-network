@@ -12,19 +12,23 @@
   };
 
   outputs = inputs: let
+    # all platforms on which we build
     supportedSystems = [
       "x86_64-linux"
       "x86_64-darwin"
       "aarch64-darwin"
     ];
+
     # default compiler used on all systems, also provided within the shell
     defaultCompiler = "ghc962";
+
     # the compiler used for cross compilation
     # alternative compilers only used on Linux
     #
-    # Note: cross compilation with `ghc-9.6.2` doesn't currently work
+    # NOTE: cross compilation with `ghc-9.6.2` doesn't currently work
     # https://ci.iog.io/build/623082/nixlog/2
     crossGHCVersion = "ghc8107";
+
     # alternative compilers
     otherCompilers  = ["ghc810"];
   in
@@ -46,6 +50,11 @@
 
         # see flake `variants` below for alternative compilers
         inherit defaultCompiler;
+
+        #
+        # === CABAL PROJECT ===
+        #
+
         # We use cabalProject' to ensure we don't build the plan for
         # all systems.
         cabalProject = nixpkgs.haskell-nix.cabalProject' ({config, pkgs, ...}: {
@@ -58,12 +67,24 @@
                               then lib.readFile ./scripts/ci/cabal.project.local.Windows.CrossCompile
                               else lib.readFile ./scripts/ci/cabal.project.local.Linux;
 
+          #
+          # CROSS COMPILATION
+          # -----------------
+
           # we also want cross compilation to windows on linux (and only with default compiler).
           crossPlatforms =
             p: lib.optionals (nixpkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [p.mingwW64];
 
+          #
+          # VARIANTS
+          # --------
+
+          # using different compilers
           flake.variants = (lib.genAttrs otherCompilers
                               (compiler-nix-name: { inherit compiler-nix-name; }));
+          #
+          # CHaP
+          # ----
 
           # CHaP input map, so we can find CHaP packages (needs to be more
           # recent than the index-state we set!). Can be updated with
@@ -73,6 +94,11 @@
           inputMap = {
             "https://input-output-hk.github.io/cardano-haskell-packages" = inputs.CHaP;
           };
+
+          #
+          # SHELL
+          # -----
+
           # tools we want in our shell, from hackage
           shell.tools =
             {
@@ -91,6 +117,10 @@
           # Skip cross compilers for the shell
           shell.crossPlatforms = _: [];
 
+          #
+          # MODULES
+          # -------
+
           # package customizations as needed. Where cabal.project is not
           # specific enough, or doesn't allow setting these.
           modules = [
@@ -102,8 +132,12 @@
           ];
         });
 
-        # ... and construct a flake from the cabal project
         flake = cabalProject.flake {};
+
+        #
+        # HYDRA JOBS
+        # ----------
+
         network-docs = nixpkgs.callPackage ./nix/network-docs.nix { };
         check-stylish = nixpkgs.callPackage ./nix/check-stylish.nix { };
       in
@@ -129,7 +163,7 @@
           };
           devShells = let
             profillingShell = p: {
-              # `nix develop .#profiling` (or `.#ghc8107.profiling): a shell with profiling enabled
+              # `nix develop .#profiling`
               profiling = (p.appendModule {modules = [{enableLibraryProfiling = true;}];}).shell;
             };
           in
