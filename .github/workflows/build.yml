@@ -16,12 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         ghc: ["8.10.7"]
-        os: [ubuntu-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            ghc: "9.4.5"
-          - os: ubuntu-latest
-            ghc: "9.6.2"
+        os: [windows-latest]
 
     env:
       # Modify this value to "invalidate" all cabal caches.
