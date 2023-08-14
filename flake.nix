@@ -17,12 +17,16 @@
       "x86_64-darwin"
       "aarch64-darwin"
     ];
-    # default compiler used on all systems
-    defaultCompiler = "ghc8107";
+    # default compiler used on all systems, also provided within the shell
+    defaultCompiler = "ghc962";
     # the compiler used for cross compilation
-    crossGHCVersion = "ghc8107"
     # alternative compilers only used on Linux
-    otherCompilers  = ["ghc962"];
+    #
+    # Note: cross compilation with `ghc-9.6.2` doesn't currently work
+    # https://ci.iog.io/build/623082/nixlog/2
+    crossGHCVersion = "ghc8107";
+    # alternative compilers
+    otherCompilers  = ["ghc810"];
   in
     {inherit (inputs);}
     // inputs.flake-utils.lib.eachSystem supportedSystems (
@@ -58,7 +62,7 @@
           crossPlatforms =
             p: lib.optionals (nixpkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [p.mingwW64];
 
-          flake.variants = lib.optionalAttrs (system == "x86_64-linux") (lib.genAttrs otherCompilers
+          flake.variants = (lib.genAttrs otherCompilers
                               (compiler-nix-name: { inherit compiler-nix-name; }));
 
           # CHaP input map, so we can find CHaP packages (needs to be more
@@ -77,14 +81,8 @@
             }
             // lib.optionalAttrs (config.compiler-nix-name == defaultCompiler) {
               # tools that work only with default compiler
-              stylish-haskell =
-                { version = "0.14.4.0";
-                  # GHC-8.10.7 requires:
-                  cabalProjectLocal = "allow-older: ghc-lib-parser:base";
-                };
-              # TODO: haskell-language-server doesn't build with `ghc-8.10.7` (a
-              # dependency fails to build)
-              # haskell-language-server = "2.0.0.1";
+              stylish-haskell = "0.14.5.0";
+              haskell-language-server = "2.0.0.1";
             };
           # and from nixpkgs or other inputs
           shell.nativeBuildInputs = with nixpkgs; [ gh jq ];
