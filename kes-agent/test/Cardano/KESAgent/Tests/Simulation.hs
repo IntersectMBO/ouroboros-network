@@ -16,6 +16,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Cardano.KESAgent.Tests.Simulation
   ( Lock
@@ -605,6 +606,15 @@ testOneKeyThroughChainIOSim
     nodeDelay
     controlDelay
 
+newtype OutOfOrderPushesSeeds c =
+  OutOfOrderPushesSeeds { outOfOrderPushesSeeds :: [PinnedSizedBytes (SeedSizeKES (KES c))] }
+  deriving newtype (Show)
+
+instance (KESAlgorithm (KES c)) => Arbitrary (OutOfOrderPushesSeeds c) where
+  arbitrary =
+    resize 5 arbitrary
+  shrink = map OutOfOrderPushesSeeds . shrink . outOfOrderPushesSeeds
+
 testOutOfOrderPushesIO :: forall c
                           . MonadKES IO c
                        => ContextDSIGN (DSIGN c) ~ ()
@@ -666,7 +676,7 @@ testConcurrentPushesIO :: forall c
                        => UnsoundKESAlgorithm (KES c)
                        => Proxy c
                        -> Lock IO
-                       -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
+                       -> ConcurrentPushesDelaysAndSeeds c
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
                        -> Word
@@ -679,7 +689,6 @@ testConcurrentPushesIO proxyCrypto
     genesisTimestamp
     agentDelay
     nodeDelay =
-  not (null controlDelaysAndSeedsKESPSB) ==>
   testIO lock $ testConcurrentPushes
     proxyCrypto
     controlDelaysAndSeedsKESPSB
@@ -696,7 +705,7 @@ testConcurrentPushesIOSim :: forall c kes
                          => UnsoundKESAlgorithm kes
                          => KES c ~ kes
                          => Proxy c
-                         -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
+                         -> ConcurrentPushesDelaysAndSeeds c
                          -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                          -> Integer
                          -> Word
@@ -708,7 +717,6 @@ testConcurrentPushesIOSim proxyCrypto
     genesisTimestamp
     agentDelay
     nodeDelay =
-  not (null controlDelaysAndSeedsKESPSB) ==>
   testIOSim $ testConcurrentPushes
     proxyCrypto
     controlDelaysAndSeedsKESPSB
@@ -804,6 +812,21 @@ testOneKeyThroughChain p
                 Left () ->
                   counterexample "KILLED" $ property False
 
+newtype ConcurrentPushesDelaysAndSeeds c =
+  ConcurrentPushesDelaysAndSeeds { concurrentPushesDelaysAndSeeds :: [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))] }
+  deriving newtype (Show)
+
+instance (KESAlgorithm (KES c)) => Arbitrary (ConcurrentPushesDelaysAndSeeds c) where
+  arbitrary = resize 10 $
+    fmap ConcurrentPushesDelaysAndSeeds $
+    listOf1 $ do
+      delay <- fromIntegral <$> chooseInt (0, 100000)
+      key <- arbitrary
+      return (delay, key)
+
+  shrink (ConcurrentPushesDelaysAndSeeds x) =
+    map ConcurrentPushesDelaysAndSeeds $ shrink x
+
 testConcurrentPushes :: forall c m n fd addr
                       . MonadKES m c
                      => Show addr
@@ -814,7 +837,7 @@ testConcurrentPushes :: forall c m n fd addr
                      => Show (SignKeyWithPeriodKES (KES c))
                      => UnsoundKESAlgorithm (KES c)
                      => Proxy c
-                     -> [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))]
+                     -> ConcurrentPushesDelaysAndSeeds c
                      -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                      -> Integer
                      -> Word
@@ -839,7 +862,7 @@ testConcurrentPushes proxyCrypto
     let newCRef = newCRefWith crefTracer
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
-    let (controlDelays, seedsKESRaw) = unzip controlDelaysAndSeedsKESPSB
+    let (controlDelays, seedsKESRaw) = unzip . concurrentPushesDelaysAndSeeds $ controlDelaysAndSeedsKESPSB
     let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
     let strTracer :: Tracer m String = mvarStringTracer traceMVar
 
