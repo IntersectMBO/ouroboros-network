@@ -975,51 +975,68 @@ testOutOfOrderPushes proxyCrypto
   do
     traceMVar <- newMVar []
     crefTracker <- newCRefTracker
-    let crefTracer = crtTracer crefTracker -- <> mvarPrettyTracer traceMVar
-    let newCRef = newCRefWith crefTracer
+    let crefTracer :: Tracer m CRefEvent
+        crefTracer = crtTracer crefTracker -- <> mvarPrettyTracer traceMVar
+    let newCRef :: forall a. (a -> m ()) -> a -> m (CRef m a)
+        newCRef = newCRefWith crefTracer
 
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
-    let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
+    let skCold :: SignKeyDSIGN (DSIGN c)
+        skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
     let strTracer :: Tracer m String = mvarStringTracer traceMVar
 
-    sortedSKOs <- forM (zip [0..] seedsKESRaw) $ \(certN, seedKESPSB) ->
-        withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
-          expectedSK <- genKeyKES @(KES c) seedKES
-          let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
-          expectedSKPVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP
-          vkHot <- deriveVerKeyKES expectedSK
-          let kesPeriod = KESPeriod 0
-              expectedOC = makeOCert vkHot certN kesPeriod skCold
-          return (expectedSKPVar, expectedOC)
+    let withSKP :: PinnedSizedBytes (SeedSizeKES (KES c)) -> (CRef m (SignKeyWithPeriodKES (KES c)) -> m a) -> m a
+        withSKP seed action = do
+          sk :: SignKeyKES (KES c) <- withMLockedSeedFromPSB seed $ genKeyKES @(KES c)
+          let skp = SignKeyWithPeriodKES sk expectedPeriod
+          skpVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) skp
+          withCRef skpVar action `finally` releaseCRef skpVar
+
+    let withBundle :: (Word64, PinnedSizedBytes (SeedSizeKES (KES c))) -> ((CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m a) -> m a
+        withBundle (certN, seed) action = do
+          withSKP seed $ \skpVar -> do
+            vkHot <- withCRefValue skpVar $ \skp -> deriveVerKeyKES (skWithoutPeriodKES skp)
+            let kesPeriod = KESPeriod 0
+            let oc = makeOCert (vkHot :: VerKeyKES (KES c)) certN kesPeriod skCold
+            action (skpVar, oc)
+
+    let makeSerializedSKO :: (Word64, PinnedSizedBytes (SeedSizeKES (KES c))) -> m (Word64, (PrettyBS, Period))
+        makeSerializedSKO (certN, seed) = do
+          withSKP seed $ \skpVar -> do
+            withCRefValue skpVar $ \skp -> do
+              vkHot <- deriveVerKeyKES (skWithoutPeriodKES skp)
+              serialized <- rawSerialiseSignKeyKES . skWithoutPeriodKES $ skp
+              let kesPeriod = KESPeriod 0
+                  (oc :: OCert c) = makeOCert (vkHot :: VerKeyKES (KES c)) certN kesPeriod skCold
+              return (ocertN oc, (PrettyBS serialized, periodKES skp))
+            
+
+    let sortedSeeds = zip [0..] seedsKESRaw
 
     -- Shuffle: swap any two adjacent SKs, such that the second one comes first
-    let shuffleIndex = abs oooIndex `mod` (length sortedSKOs - 1)
-    let shuffledSKOs =
-          take shuffleIndex sortedSKOs ++ 
-          (take 1 . drop (shuffleIndex + 1)) sortedSKOs ++
-          (take 1 . drop shuffleIndex) sortedSKOs ++
-          drop (shuffleIndex + 2) sortedSKOs
-    let expectedSKOs =
-          take shuffleIndex sortedSKOs ++ 
-          (take 1 . drop (shuffleIndex + 1)) sortedSKOs ++
-          drop (shuffleIndex + 2) sortedSKOs
+    let shuffleIndex = abs oooIndex `mod` (length sortedSeeds - 1)
+    let shuffledSeeds =
+          take shuffleIndex sortedSeeds ++ 
+          (take 1 . drop (shuffleIndex + 1)) sortedSeeds ++
+          (take 1 . drop shuffleIndex) sortedSeeds ++
+          drop (shuffleIndex + 2) sortedSeeds
+    let expectedSeeds =
+          take shuffleIndex sortedSeeds ++ 
+          (take 1 . drop (shuffleIndex + 1)) sortedSeeds ++
+          drop (shuffleIndex + 2) sortedSeeds
 
-    shuffledSerialized <- forM shuffledSKOs $ \(skpVar, oc) -> do
-        withCRefValue skpVar $ \skp -> do
-            serialized <- rawSerialiseSignKeyKES . skWithoutPeriodKES $ skp
-            return (ocertN oc, (PrettyBS serialized, periodKES skp))
-    expectedSerialized <- forM expectedSKOs $ \(skpVar, oc) -> do
-        withCRefValue skpVar $ \skp -> do
-            serialized <- rawSerialiseSignKeyKES . skWithoutPeriodKES $ skp
-            return (ocertN oc, (PrettyBS serialized, periodKES skp))
+    sortedSerialized <- mapM makeSerializedSKO sortedSeeds
+    shuffledSerialized <- mapM makeSerializedSKO shuffledSeeds
+    expectedSerialized <- mapM makeSerializedSKO expectedSeeds
 
-    let maxOCertN = ocertN . snd $ last sortedSKOs
+    let maxOCertN = fst $ last sortedSerialized
 
-    let controlScript hooks = forM_ shuffledSKOs $ \bundle -> do
+    let controlScript hooks = forM_ shuffledSeeds $ \seedBundle -> do
           threadDelay (delayFromWord 1000)
-          traceWith strTracer $ "ControlScript Sending: " ++ (show . ocertN $ snd bundle)
-          sendKey hooks bundle
+          withBundle seedBundle $ \bundle -> do 
+            traceWith strTracer $ "ControlScript Sending: " ++ (show . ocertN $ snd bundle)
+            sendKey hooks bundle
 
     receivedVar <- newMVar []
     let nodeScript =
@@ -1061,13 +1078,11 @@ testOutOfOrderPushes proxyCrypto
           return $ counterexample (show shuffledSerialized)
                  $ map fst actualSerialized === map fst expectedSerialized
 
-    let cleanup = mapM_ (releaseCRef . fst) sortedSKOs
-
     let timeout :: m ()
         timeout = do
           threadDelay 10000000
 
-    result <- race timeout go `finally` cleanup
+    result <- race timeout go
     case result of
       Left () -> do
         log <- readMVar traceMVar
