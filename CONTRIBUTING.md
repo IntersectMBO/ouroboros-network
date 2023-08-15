@@ -51,23 +51,18 @@ which contains some `IOG` specific `nix` configuration options (e.g. our `nix`
 cache, which considerably speeds up bootstrapping the project); the official
 [guide](https://nixos.org/download.html) might be helpful too.
 
-`nix` is very helpful for cross-compilation, e.g.
+To build all the required jobs (which are necessary to pass through CI), you can run:
 
 ```sh
-nix build -f release.nix x86_64-w64-mingw32.libs.ouroboros-network-framework.x86_64-linux
+nix build .\#hydraJobs.required
 ```
 
-will cross compile `ouroboros-network-framework` package on `Linux` for
-`Windows`.
-
-To inspect what can be build use `nix repl` (there are also available shell
-decent shell compilation scripts), for example:
+To inspect what can be build use `nix repl` , for example:
 ```
-nix-repl> a = import ./release.nix {}
-nix-repl> a.x86_64-w64-mingw32.<TAB>
-a.x86_64-w64-mingw32.benchmarks       a.x86_64-w64-mingw32.exes             a.x86_64-w64-mingw32.nightly-checks
-a.x86_64-w64-mingw32.checks           a.x86_64-w64-mingw32.haskellPackages  a.x86_64-w64-mingw32.shell
-a.x86_64-w64-mingw32.coveredProject   a.x86_64-w64-mingw32.network-docs     a.x86_64-w64-mingw32.version
+nix-repl> :lf .
+nix-repl> hydraJobs.<TAB>
+nix-repl> hydraJobs.
+hydraJobs.aarch64-darwin  hydraJobs.x86_64-darwin   hydraJobs.x86_64-linux
 ```
 
 In various packages we use `CPP` pragmas to compile different code depending
@@ -318,37 +313,27 @@ Our Haskell packages come from two package repositories:
 The `index-state` of each repository is pinned to a particular time in
 `cabal.project`.  This tells Cabal to treat the repository as if it was
 the specified time, ensuring reproducibility.  If you want to use a package
-version from repository X which was added after the pinned index state
-time, you need to bump the index state for X.  This is not a big deal,
-since all it does is change what packages `cabal` considers to be available
-when doing solving, but it will change what package versions cabal picks
-for the plan, and so will likely result in significant recompilation, and
-potentially some breakage.  That typically just means that we need to fix
-the breakage (increasing the lower-bound on the problematic package if fix
-is not backward compatible), or delay that work and instead decrease the
-upper-bound on the problematic package for now.
+version from repository X which was added after the pinned index state time,
+you need to bump the index state for X.  This is not a big deal, since all it
+does is change what packages `cabal` considers to be available when doing
+solving, but it will change what package versions cabal picks for the plan, and
+so will likely result in significant recompilation, and potentially some
+breakage.  That typically just means that we need to fix the breakage
+(increasing the lower-bound on the problematic package if fix is not backward
+compatible), or delay that work and instead decrease the upper-bound on the
+problematic package for now.
 
 Note that `cabal`'s own persistent state includes which index states it is
 aware of, so when you bump the pinned index state you may need to
 call `cabal update` in order for `cabal` to be happy.
 
-The Nix code which builds our packages also needs some information relating
-to the index-state. This information needs to be new enough to include
-the index-state specified in `cabal.project`. The information is represented
-by inputs managed by `niv`:
-You can update these by running:
-- `niv update hackage.nix` for Hackage
-- `niv update CHaP` for CHaP
+To make `nix` happy you will need to run `nix flake lock --update-input CHaP`,
+whenever you update the `index-state` for `CHaP`.
 
 If you fail to do this you may get an error like this from Nix:
 ```
 error: Unknown index-state 2021-08-08T00:00:00Z, the latest index-state I know about is 2021-08-06T00:00:00Z. You may need to update to a newer hackage.nix.
 ```
-
-The `index-state` of the tools is pinned in `./nix/local-config.nix` to ensure
-that an incompatible change in the set of packages available in Hackage doesn't
-break the shell. From time to time, this `index-state` should be updated
-manually.
 
 ### Use of `source-repository-package`s
 
@@ -370,44 +355,6 @@ of the content. There are two relatively straightforward ways to do this:
 1. The TOFU approach: put in the wrong hash and then Nix will tell you the correct one, which you can copy in.
 2. Calculate the hash with `nix-shell -p nix-prefetch-git --run 'nix-prefetch-git <URL> <COMMIT_HASH>'`
 
-## Coverage Reports
-
-### Generating Coverage Reports
-
-A haskell.nix project with coverage enabled for all project packages is exposed under the `coveredProject` attribute of `default.nix`:
-
-```sh
-nix build -f default.nix coveredProject
-```
-
-A coverage report for the entire project can be generated and viewed with:
-
-```sh
-nix build -f default.nix .projectCoverageReport
-xdg-open ./result/share/hpc/vanilla/html/index.html
-```
-
-Coverage reports for each individual package can be generated with:
-
-```sh
-nix build -f default.nix coveredProject.hsPkgs.$pkg.coverageReport
-xdg-open ./result/share/hpc/vanilla/html/index.html
-```
-
-Although individual package reports are also available in the entire project coverage report.
-
-### Debugging Coverage Reports
-
-The Nix derivation used to generate coverage reports can be debugged with:
-
-```sh
-nix shell -f default.nix coveredProject.projectCoverageReport
-# OR `nix shell -f default.nix coveredProject.hsPkgs.$pkg.coverageReport`
-cd $(mktemp -d)
-out=$(pwd) genericBuild
-```
-
-Build logs are written to stdout and artifacts written to the current directory.
 
 [CODEOWNERS]: https://github.com/input-output-hk/ouroboros-network/blob/master/.github/CODEOWNERS
 [`ghcup`]: https://www.haskell.org/ghcup/

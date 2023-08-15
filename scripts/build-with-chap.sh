@@ -23,9 +23,10 @@ for cf in $cabal_files; do
   tag="$name-$version"
   echo "$tag ($(git rev-parse $tag))"
   git restore --source="$name-$version" -- $name
-  revdir="$CHAP_RID/_sources/$name/$version/revisions"
+  revdir="$CHAP_DIR/_sources/$name/$version/revisions"
   if [[ -d $revdir ]]; then
     rev=$(ls $revdir | sort | tail -1)
+    echo "copy revision $revdir/$rev to $name/$name.cabal"
     cp $revdir/$rev "$name/$name.cabal"
   fi
 done
