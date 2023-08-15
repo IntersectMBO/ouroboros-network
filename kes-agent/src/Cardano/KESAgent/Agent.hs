@@ -19,9 +19,9 @@ module Cardano.KESAgent.Agent
 import Cardano.KESAgent.Classes ( MonadKES )
 import Cardano.KESAgent.Driver ( DriverTrace (..), driver )
 import Cardano.KESAgent.Evolution ( getCurrentKESPeriodWith, updateKESTo )
-import Cardano.KESAgent.OCert ( KES, KESPeriod (..), OCert (..) )
+import Cardano.KESAgent.OCert ( KES, KESPeriod (..), OCert (..), Crypto (..) )
 import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
-import Cardano.KESAgent.Protocol ( KESProtocol )
+import Cardano.KESAgent.Protocol ( KESProtocol, VersionedProtocol )
 import Cardano.KESAgent.RefCounting
   ( CRef
   , acquireCRef
@@ -32,8 +32,14 @@ import Cardano.KESAgent.RefCounting
   , CRefID
   )
 
+import Cardano.Crypto.DirectSerialise
+  ( DirectSerialise (..)
+  , DirectDeserialise (..)
+  )
 import Cardano.Crypto.KES.Class
-  ( SignKeyWithPeriodKES (..)
+  ( KESAlgorithm (..)
+  , SignKeyWithPeriodKES (..)
+  , ContextKES
   , forgetSignKeyKES
   , rawSerialiseSignKeyKES
   )
@@ -49,10 +55,13 @@ import Control.Concurrent.Class.MonadMVar
   , readMVar
   , tryTakeMVar
   , withMVar
+  , MonadMVar
   )
-import Control.Concurrent.Class.MonadSTM ( retry )
+import Control.Monad.Class.MonadST ( MonadST )
+import Control.Concurrent.Class.MonadSTM ( MonadSTM, retry )
 import Control.Concurrent.Class.MonadSTM.TChan
-  ( newBroadcastTChan
+  ( TChan
+  , newBroadcastTChan
   , dupTChan
   , readTChan
   , writeTChan
@@ -68,11 +77,13 @@ import Control.Concurrent.Class.MonadSTM.TMVar
   , tryReadTMVar
   )
 import Control.Monad ( forever, void )
-import Control.Monad.Class.MonadAsync ( concurrently, concurrently_ )
+import Control.Monad.Class.MonadAsync ( MonadAsync, concurrently, concurrently_ )
 import Control.Monad.Class.MonadSTM ( atomically )
 import Control.Monad.Class.MonadFork ( labelThread, myThreadId )
 import Control.Monad.Class.MonadThrow
-  ( SomeException
+  ( MonadThrow
+  , MonadCatch
+  , SomeException
   , bracket
   , catch
   , finally
@@ -87,6 +98,7 @@ import Data.Maybe ( fromJust )
 import Data.Proxy ( Proxy (..) )
 import Data.Time ( NominalDiffTime )
 import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
+import Data.Typeable ( Typeable )
 import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
 import Network.TypedProtocol.Driver ( runPeerWithDriver )
 import Text.Printf
@@ -150,7 +162,57 @@ defAgentOptions = AgentOptions
   , agentGetCurrentTime = utcTimeToPOSIXSeconds <$> getCurrentTime
   }
 
-runAgent :: forall c m fd addr
+-- | A bundle of a KES key with a period, plus the matching op cert.
+-- The key itself is stored as a 'CRef', rather than directly, which
+-- allows us to pass keys around and forget them exactly when the last
+-- reference is dropped. The downside to this is that we need to be
+-- explicit about those references, which is what the 'CRef' type
+-- achieves.
+type KESBundle m c = (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
+
+-- The key update lock is required because we need to distinguish between two
+-- different situations in which the currentKey TMVar may be empty:
+-- - No key has been pushed yet (or the previous key has expired).
+-- - The key is currently being updated.
+-- In both cases, we want consumers to block until a key is present, but
+-- producers need to distinguish these cases:
+-- - If no key has been pushed yet, or the previous key has expired, the
+--   key pusher is allowed to install a new key; the key evolver can't do
+--   anything useful, so it will just sleep and try again later (it cannot
+--   block, because that would make it impossible for the pusher to install
+--   a key, resulting in a deadlock).
+-- - If a key has been pushed, but it is currently being evolved, then the
+--   pusher must wait until the evolution has finished, and then install the
+--   new key.
+-- - If the evolver is about to run, but the key is currently being
+--   overwritten, then the evolver should wait for the overwriting to finish,
+--   and then attempt to evolve the new key.
+-- The keyLock setup achieves this, by allowing only one producer at a
+-- time to manipulate the currentKeyVar, regardless of whether it is
+-- currently empty or not, while consumers are free to perform blocking reads
+-- on it without touching the keyLock.
+--
+-- Concretely, the rules for accessing currentKeyVar are:
+--
+-- - readTMVar is allowed, and should be done without acquiring the
+--   keyLock.
+-- - tryReadTMVar is always allowed, but may not be useful.
+-- - takeTMVar is not allowed, since it would 1) block, and 2) require
+--   acquisition of keyLock, resulting in a deadlock.
+-- - tryTakeTMVar is allowed, but only while holding the keyLock.
+data Agent c m fd addr =
+  Agent
+    { agentMRB :: MakeRawBearer m fd
+    , agentOptions :: AgentOptions m fd addr
+    , agentTracer :: Tracer m AgentTrace
+    , agentCurrentKeyVar :: TMVar m (KESBundle m c)
+    , agentNextKeyChan :: TChan m (KESBundle m c)
+    , agentKeyLock :: MVar m ()
+    , agentServiceFD :: fd
+    , agentControlFD :: fd
+    }
+
+newAgent :: forall c m fd addr
           . MonadKES m c
          => Show addr
          => Show fd
@@ -158,197 +220,209 @@ runAgent :: forall c m fd addr
          -> MakeRawBearer m fd
          -> AgentOptions m fd addr
          -> Tracer m AgentTrace
-         -> m ()
-runAgent proxy mrb options tracer = do
-  -- The key itself is stored as a 'CRef', rather than directly, which
-  -- allows us to pass keys around and forget them exactly when the last
-  -- reference is dropped. The downside to this is that we need to be explicit
-  -- about those references, which is what the 'CRef' type achieves.
+         -> m (Agent c m fd addr)
+newAgent _p mrb options tracer = do
   currentKeyVar :: TMVar m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) <- atomically newEmptyTMVar
   nextKeyChan <- atomically newBroadcastTChan
-  let crefTracer = contramap AgentCRefEvent tracer
-
-  -- The key update lock is required because we need to distinguish between two
-  -- different situations in which the currentKey TMVar may be empty:
-  -- - No key has been pushed yet (or the previous key has expired).
-  -- - The key is currently being updated.
-  -- In both cases, we want consumers to block until a key is present, but
-  -- producers need to distinguish these cases:
-  -- - If no key has been pushed yet, or the previous key has expired, the
-  --   key pusher is allowed to install a new key; the key evolver can't do
-  --   anything useful, so it will just sleep and try again later (it cannot
-  --   block, because that would make it impossible for the pusher to install
-  --   a key, resulting in a deadlock).
-  -- - If a key has been pushed, but it is currently being evolved, then the
-  --   pusher must wait until the evolution has finished, and then install the
-  --   new key.
-  -- - If the evolver is about to run, but the key is currently being
-  --   overwritten, then the evolver should wait for the overwriting to finish,
-  --   and then attempt to evolve the new key.
-  -- The keyLock setup achieves this, by allowing only one producer at a
-  -- time to manipulate the currentKeyVar, regardless of whether it is
-  -- currently empty or not, while consumers are free to perform blocking reads
-  -- on it without touching the keyLock.
-  --
-  -- Concretely, the rules for accessing currentKeyVar are:
-  --
-  -- - readTMVar is allowed, and should be done without acquiring the
-  --   keyLock.
-  -- - tryReadTMVar is always allowed, but may not be useful.
-  -- - takeTMVar is not allowed, since it would 1) block, and 2) require
-  --   acquisition of keyLock, resulting in a deadlock.
-  -- - tryTakeTMVar is allowed, but only while holding the keyLock.
   keyLock :: MVar m () <- newMVar ()
-  let withKeyUpdateLock :: forall a. String -> m a -> m a
-      withKeyUpdateLock context a = do
-        traceWith tracer $ AgentLockRequest context
-        withMVar keyLock $ \() -> do
-          traceWith tracer (AgentLockAcquired context)
-          result <- a
-          traceWith tracer (AgentLockReleased context)
-          return result
+  let s = agentSnocket options
 
-  let checkEvolution = withKeyUpdateLock "checkEvolution" $ do
-        p' <- getCurrentKESPeriodWith (agentGetCurrentTime options) (agentGenesisTimestamp options)
-        traceWith tracer $ AgentCheckEvolution p'
-        keyOcMay <- atomically $ tryTakeTMVar currentKeyVar
-        case keyOcMay of
+  serviceFD <- open s (addrFamily s (agentServiceAddr options))
+  bind s serviceFD (agentServiceAddr options)
+
+  controlFD <- open s (addrFamily s (agentControlAddr options))
+  bind s controlFD (agentControlAddr options)
+
+  return Agent
+    { agentMRB = mrb
+    , agentOptions = options
+    , agentTracer = tracer
+    , agentCurrentKeyVar = currentKeyVar
+    , agentNextKeyChan = nextKeyChan
+    , agentKeyLock = keyLock
+    , agentServiceFD = serviceFD
+    , agentControlFD = controlFD
+    }
+
+finalizeAgent :: Monad m => Agent c m fd addr -> m ()
+finalizeAgent agent = do
+  let s = agentSnocket (agentOptions agent)
+  close s (agentServiceFD agent)
+  close s (agentControlFD agent)
+
+agentTrace :: Agent c m fd addr -> AgentTrace -> m ()
+agentTrace agent = traceWith (agentTracer agent)
+
+agentCRefTracer :: Agent c m fd addr -> Tracer m CRefEvent
+agentCRefTracer = contramap AgentCRefEvent . agentTracer
+
+withKeyUpdateLock :: MonadMVar m => Agent c m fd addr -> String -> m a -> m a
+withKeyUpdateLock agent context a = do
+  agentTrace agent $ AgentLockRequest context
+  withMVar (agentKeyLock agent) $ \() -> do
+    agentTrace agent (AgentLockAcquired context)
+    result <- a
+    agentTrace agent (AgentLockReleased context)
+    return result
+
+formatKey :: OCert c -> String
+formatKey ocert =
+  let serialNumber = ocertN ocert
+  in printf "%i" serialNumber
+
+checkEvolution :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ()) => Agent c m fd addr -> m ()
+checkEvolution agent = withKeyUpdateLock agent "checkEvolution" $ do
+  p' <- getCurrentKESPeriodWith (agentGetCurrentTime $ agentOptions agent) (agentGenesisTimestamp $ agentOptions agent)
+  agentTrace agent $ AgentCheckEvolution p'
+  keyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
+  case keyOcMay of
+    Nothing -> do
+      agentTrace agent AgentNoKeyToEvolve
+      return ()
+    Just (keyVar, oc) -> withCRefValue keyVar $ \key -> do
+      let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
+      if p /= p' then do
+        keyMay' <- updateKESTo () p' oc key
+        case keyMay' of
           Nothing -> do
-            traceWith tracer AgentNoKeyToEvolve
-            return ()
-          Just (keyVar, oc) -> withCRefValue keyVar $ \key -> do
-            let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
-            if p /= p' then do
-              keyMay' <- updateKESTo
-                            ()
-                            p'
-                            oc
-                            key
-              case keyMay' of
-                Nothing -> do
-                  traceWith tracer AgentKeyExpired
-                Just key' -> do
-                  traceWith tracer AgentKeyEvolved
-                  keyVar' <- newCRefWith crefTracer (forgetSignKeyKES . skWithoutPeriodKES) key'
-                  void . atomically $ putTMVar currentKeyVar (keyVar', oc)
-              releaseCRef keyVar
-            else do
-              traceWith tracer $ AgentKeyNotEvolved p p'
-              void . atomically $ putTMVar currentKeyVar (keyVar, oc)
+            agentTrace agent AgentKeyExpired
+          Just key' -> do
+            agentTrace agent AgentKeyEvolved
+            keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
+            void . atomically $ putTMVar (agentCurrentKeyVar agent) (keyVar', oc)
+        releaseCRef keyVar
+      else do
+        agentTrace agent $ AgentKeyNotEvolved p p'
+        void . atomically $ putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
 
-  let formatKey :: OCert c -> String
-      formatKey ocert =
-        let serialNumber = ocertN ocert
-        in printf "%i" serialNumber
+pushKey :: (MonadMVar m, MonadST m, MonadSTM m, KESAlgorithm (KES c), ContextKES (KES c) ~ (), MonadThrow m) => Agent c m fd addr -> CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ()
+pushKey agent keyVar oc = do
+  withKeyUpdateLock agent "pushKey" $ do
+    acquireCRef keyVar
+    let keyStr = formatKey oc
+    -- Empty the var in case there's anything there already
+    oldKeyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
 
-  let pushKey :: CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ()
-      pushKey keyVar oc = do
-        withKeyUpdateLock "pushKey" $ do
-          acquireCRef keyVar
-          let keyStr = formatKey oc
-          -- Empty the var in case there's anything there already
-          oldKeyOcMay <- atomically $ tryTakeTMVar currentKeyVar
+    case oldKeyOcMay of
+      Just (oldKeyVar, oldOC) -> do
+        let oldKeyStr = formatKey oldOC
+        if ocertN oldOC >= ocertN oc then do
+          releaseCRef keyVar
+          agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
+          atomically $ putTMVar (agentCurrentKeyVar agent) (oldKeyVar, oldOC)
+        else do
+          releaseCRef oldKeyVar
+          agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
+          atomically $ do
+            writeTChan (agentNextKeyChan agent) (keyVar, oc)
+            putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
+      Nothing -> do
+        agentTrace agent $ AgentInstallingNewKey keyStr
+        -- The TMVar is now empty; we write to the next key signal channel
+        -- /before/ putting the new key in the MVar, because we want to make it
+        -- such that when the consumer picks up the signal, the next update
+        -- will be the correct one. Since the MVar is empty at this point, the
+        -- consumers will block until we put the key back in.
+        atomically $ do
+          writeTChan (agentNextKeyChan agent) (keyVar, oc)
+          putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
 
-          case oldKeyOcMay of
-            Just (oldKeyVar, oldOC) -> do
-              let oldKeyStr = formatKey oldOC
-              if ocertN oldOC >= ocertN oc then do
-                releaseCRef keyVar
-                traceWith tracer $ AgentSkippingOldKey oldKeyStr keyStr
-                atomically $ putTMVar currentKeyVar (oldKeyVar, oldOC)
-              else do
-                releaseCRef oldKeyVar
-                traceWith tracer $ AgentReplacingPreviousKey oldKeyStr keyStr
-                atomically $ do
-                  writeTChan nextKeyChan (keyVar, oc)
-                  putTMVar currentKeyVar (keyVar, oc)
-            Nothing -> do
-              traceWith tracer $ AgentInstallingNewKey keyStr
-              -- The TMVar is now empty; we write to the next key signal channel
-              -- /before/ putting the new key in the MVar, because we want to make it
-              -- such that when the consumer picks up the signal, the next update
-              -- will be the correct one. Since the MVar is empty at this point, the
-              -- consumers will block until we put the key back in.
-              atomically $ do
-                writeTChan nextKeyChan (keyVar, oc)
-                putTMVar currentKeyVar (keyVar, oc)
+  checkEvolution agent
 
-        checkEvolution
+runListener :: forall m c fd addr st (pr :: PeerRole) a
+             . MonadThrow m
+            => MonadFail m
+            => MonadST m
+            => MonadSTM m
+            => MonadMVar m
+            => MonadAsync m
+            => MonadCatch m
+            => Show fd
+            => Crypto c
+            => Typeable c
+            => VersionedProtocol (KESProtocol m c)
+            => DirectSerialise m (SignKeyKES (KES c))
+            => DirectDeserialise m (SignKeyKES (KES c))
+            => Snocket m fd addr
+            -> fd
+            -> String
+            -> MakeRawBearer m fd
+            -> Tracer m AgentTrace
+            -> (String -> AgentTrace)
+            -> (String -> AgentTrace)
+            -> (String -> AgentTrace)
+            -> (String -> AgentTrace)
+            -> (DriverTrace -> AgentTrace)
+            -> Peer (KESProtocol m c) pr st m a
+            -> m ()
+runListener
+      s
+      fd
+      addrStr
+      mrb
+      tracer
+      tListeningOnSocket
+      tSocketClosed
+      tClientConnected
+      tSocketError
+      tDriverTrace
+      peer = do
+  listen s fd
+  traceWith tracer (tListeningOnSocket addrStr)
 
+  let handleConnection fd' = do
+        traceWith tracer (tClientConnected $ show fd')
+        bearer <- getRawBearer mrb fd'
+        void $ runPeerWithDriver
+          (driver bearer $ tDriverTrace >$< tracer)
+          peer
+          ()
+
+  let loop :: Accept m fd addr -> m ()
+      loop a = do
+        accepted <- runAccept a
+        case accepted of
+          (AcceptFailure e, next) -> do
+            throwIO e
+          (Accepted fd' addr', next) ->
+            concurrently_
+              (loop next)
+              (handleConnection fd'
+                `finally`
+                close s fd' >> traceWith tracer (tSocketClosed $ show fd')
+              )
+
+  (accept s fd >>= loop) `catch` \(e :: SomeException) -> do
+    traceWith tracer $ tSocketError (show e)
+    throwIO e
+
+runAgent :: forall c m fd addr
+          . MonadKES m c
+         => Show addr
+         => Show fd
+         => Agent c m fd addr
+         -> m ()
+runAgent agent = do
   let runEvolution = do
         forever $ do
           -- Check time every 100 milliseconds, update key when period flips
           -- over.
           threadDelay 100_0000
-          checkEvolution
-
-  let runListener :: addr
-                  -> (String -> AgentTrace)
-                  -> (String -> AgentTrace)
-                  -> (String -> AgentTrace)
-                  -> (String -> AgentTrace)
-                  -> (DriverTrace -> AgentTrace)
-                  -> Peer (KESProtocol m c) (pr :: PeerRole) st m a
-                  -> m ()
-      runListener
-        addr
-        tListeningOnSocket
-        tSocketClosed
-        tClientConnected
-        tSocketError
-        tDriverTrace
-        peer =
-          let s = agentSnocket options
-          in void $ bracket
-            (open s (addrFamily s addr))
-            (\fd -> do
-                close s fd
-                traceWith tracer (tSocketClosed $ show addr)
-            )
-            (\fd -> do
-              bind s fd addr
-              listen s fd
-              traceWith tracer (tListeningOnSocket $ show addr)
-
-              let handleConnection fd' = do
-                    traceWith tracer (tClientConnected $ show fd')
-                    bearer <- getRawBearer mrb fd'
-                    void $ runPeerWithDriver
-                      (driver bearer $ tDriverTrace >$< tracer)
-                      peer
-                      ()
-
-              let loop :: Accept m fd addr -> m ()
-                  loop a = do
-                    accepted <- runAccept a
-                    case accepted of
-                      (AcceptFailure e, next) -> do
-                        throwIO e
-                      (Accepted fd' addr', next) ->
-                        concurrently_
-                          (loop next)
-                          (handleConnection fd'
-                            `finally`
-                            close s fd' >> traceWith tracer (tSocketClosed $ show fd')
-                          )
-
-              (accept s fd >>= loop) `catch` \(e :: SomeException) -> do
-                traceWith tracer $ tSocketError (show e)
-                throwIO e
-            )
-
-
-
+          checkEvolution agent
 
   let runService = do
         labelMyThread "service"
-        nextKeyChanRcv <- atomically $ dupTChan nextKeyChan
+        nextKeyChanRcv <- atomically $ dupTChan (agentNextKeyChan agent)
 
-        let currentKey = atomically $ readTMVar currentKeyVar
+        let currentKey = atomically $ readTMVar (agentCurrentKeyVar agent)
         let nextKey = atomically $ Just <$> readTChan nextKeyChanRcv
 
         runListener
-          (agentServiceAddr options)
+          (agentSnocket (agentOptions agent))
+          (agentServiceFD agent)
+          (show $ agentServiceAddr (agentOptions agent))
+          (agentMRB agent)
+          (agentTracer agent)
           AgentListeningOnServiceSocket
           AgentServiceSocketClosed
           AgentServiceClientConnected
@@ -359,15 +433,19 @@ runAgent proxy mrb options tracer = do
   let runControl = do
         labelMyThread "control"
         runListener
-          (agentControlAddr options)
+          (agentSnocket (agentOptions agent))
+          (agentControlFD agent)
+          (show $ agentControlAddr (agentOptions agent))
+          (agentMRB agent)
+          (agentTracer agent)
           AgentListeningOnControlSocket
           AgentControlSocketClosed
           AgentControlClientConnected
           AgentControlSocketError
           AgentControlDriverTrace
-          (kesReceiver pushKey)
+          (kesReceiver $ pushKey agent)
 
-  void $ runService `concurrently` runControl -- `concurrently` runEvolution
+  void $ runService `concurrently` runControl `concurrently` runEvolution
 
 labelMyThread label = do
   tid <- myThreadId

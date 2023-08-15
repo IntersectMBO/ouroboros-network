@@ -19,8 +19,12 @@ common project-config
      ghc-options:
          -threaded -with-rtsopts
 
+common base-dependencies
+    build-depends: base ^>=4.14.0.0
+
 library
     import: project-config
+    import: base-dependencies
     exposed-modules: Cardano.KESAgent.Protocol
                    , Cardano.KESAgent.OCert
                    , Cardano.KESAgent.Driver
@@ -33,11 +37,7 @@ library
                    , Cardano.KESAgent.RefCounting
                    , Cardano.KESAgent.Classes
 
-    -- other-modules:
-
-    -- other-extensions:
-    build-depends: base ^>=4.14.0.0
-                 , async
+    build-depends: async
                  , binary
                  , bytestring >=0.11
                  , cardano-crypto-class
@@ -64,16 +64,24 @@ library
     hs-source-dirs:   src
     default-language: Haskell2010
 
+executable kes-agent
+    import: project-config
+    import: base-dependencies
+    default-language: Haskell2010
+    hs-source-dirs: ci
+    main-is: AgentMain.hs
+    build-depends: kes-agent
+
 test-suite kes-agent-tests
     import: project-config
+    import: base-dependencies
     type: exitcode-stdio-1.0
     default-language: Haskell2010
     hs-source-dirs: test
     main-is: Main.hs
     other-modules: Cardano.KESAgent.Tests.Simulation
                  , Cardano.KESAgent.Tests.RefCounting
-    build-depends: base ^>=4.14.0.0
-                 , kes-agent
+    build-depends: kes-agent
                  , async
                  , bytestring
                  , cardano-binary

@@ -415,7 +415,11 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
 
             -- Run the single agent.
             agent :: HasCallStack => Tracer m AgentTrace -> m ()
-            agent tracer = runAgent p mrb agentOptions tracer
+            agent tracer = do
+              bracket
+                (newAgent (Proxy @c) mrb agentOptions tracer)
+                finalizeAgent
+                runAgent
 
             -- Run one node.
             node :: HasCallStack
