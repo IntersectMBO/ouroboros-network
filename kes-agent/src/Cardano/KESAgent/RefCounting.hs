@@ -6,6 +6,7 @@ module Cardano.KESAgent.RefCounting
   ( CRef
   , CRefCount
   , CRefEvent (..)
+  , CRefEventType (..)
   , CRefID
   , ReferenceCountUnderflow (..)
   , acquireCRef
@@ -49,15 +50,24 @@ data CRef m a =
     , cTracer :: Tracer m CRefEvent
     }
 
-data CRefEvent
-  = CRefCreate !CRefID !CRefCount
-  | CRefAcquire !CRefID !CRefCount
-  | CRefRelease !CRefID !CRefCount
+data CRefEventType
+  = CRefCreate
+  | CRefAcquire
+  | CRefRelease
   deriving (Show, Eq)
 
-traceCRef :: MonadSTM m => (CRefID -> CRefCount -> CRefEvent) -> CRef m a -> CRefCount -> m ()
-traceCRef event cref count = do
-  traceWith (cTracer cref) (event (cID cref) count)
+data CRefEvent
+  = CRefEvent
+      { creType :: !CRefEventType
+      , creID :: !CRefID
+      , creCountBefore :: !CRefCount
+      , creCountAfter :: !CRefCount
+      }
+      deriving (Show, Eq)
+
+traceCRef :: MonadSTM m => CRefEventType -> CRef m a -> CRefCount -> CRefCount -> m ()
+traceCRef event cref before after = do
+  traceWith (cTracer cref) (CRefEvent event (cID cref) before after)
 
 data ReferenceCountUnderflow =
   ReferenceCountUnderflow
@@ -74,12 +84,12 @@ getCRefCount = atomically . readTMVar . cCount
 -- 'releaseCRef' it again.
 acquireCRef :: (MonadSTM m, MonadThrow m) => CRef m a -> m a
 acquireCRef cref = do
-  (count, val) <- atomically $ do
+  (count, count', val) <- atomically $ do
     count <- takeTMVar (cCount cref)
     let count' = succ count
     putTMVar (cCount cref) count'
-    return (count, cDeref cref)
-  traceCRef CRefAcquire cref count
+    return (count, count', cDeref cref)
+  traceCRef CRefAcquire cref count count'
   when (count <= 0) (throwIO ReferenceCountUnderflow)
   return val
 
@@ -89,13 +99,13 @@ acquireCRef cref = do
 -- 'ReferenceCountUnderflow' exceptions.
 releaseCRef :: (MonadSTM m, MonadThrow m) => CRef m a -> m ()
 releaseCRef cref = do
-  count' <- atomically $ do
+  (count, count') <- atomically $ do
     count <- takeTMVar (cCount cref)
     let count' = pred count
     putTMVar (cCount cref) count'
-    return count'
+    return (count, count')
   when (count' == 0) (cFinalize cref (cDeref cref))
-  traceCRef CRefRelease cref count'
+  traceCRef CRefRelease cref count count'
   when (count' < 0) (throwIO ReferenceCountUnderflow)
 
 -- | Read a 'CRef' without acquiring it. The caller is responsible for making
@@ -138,7 +148,7 @@ newCRefWith tracer finalizer val = do
         , cID = cid
         , cTracer = tracer
         }
-  traceCRef CRefCreate cref 1
+  traceCRef CRefCreate cref 0 1
   return cref
 
 -- | Operate on a 'CRef'. The 'CRef' is guaranteed to not finalize for the

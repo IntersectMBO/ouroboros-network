@@ -835,7 +835,7 @@ testConcurrentPushes proxyCrypto
   do
     traceMVar <- newMVar []
     crefTracker <- newCRefTracker
-    let crefTracer = crtTracer crefTracker <> mvarPrettyTracer traceMVar
+    let crefTracer = crtTracer crefTracker -- <> mvarPrettyTracer traceMVar
     let newCRef = newCRefWith crefTracer
     let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
         expectedPeriod = 0
@@ -1146,14 +1146,33 @@ crtCheck crefTracker = do
 
 newCRefTracker :: MonadMVar m => m (CRefTracker m)
 newCRefTracker = do
-  trackerVar <- newMVar Map.empty
+  trackerVar <- newMVar (Map.empty :: Map CRefID CRefCount)
   return CRefTracker
     { crtResult = readMVar trackerVar
-    , crtTracer = Tracer $ \ev ->
-        modifyMVar_ trackerVar $
-          case ev of
-            CRefCreate cid count -> return . Map.insertWith (+) cid 1
-            CRefAcquire cid count -> return . Map.insertWith (+) cid 1
-            CRefRelease cid count -> return . Map.insertWith (+) cid (-1)
+    , crtTracer = Tracer $ \ev -> do
+        (m :: Map CRefID CRefCount) <- takeMVar trackerVar
+        (m' :: Map CRefID CRefCount) <- case creType ev of
+                CRefCreate -> do
+                  when (creCountAfter ev /= 1) (error "Invalid CRef count after creation")
+                  case Map.lookup (creID ev) m of
+                    Nothing -> return $ Map.insert (creID ev) 1 m
+                    Just _ -> error $ "Duplicate CRefID " ++ show (creID ev)
+                CRefAcquire -> do
+                  case Map.lookup (creID ev) m of
+                    Nothing -> error $ "Attempt to acquire nonexistent CRef " ++ show (creID ev)
+                    Just v -> do
+                      let v' = succ v
+                      when (creCountBefore ev /= v) (error $ "CRef count mismatch before acquire; expected " ++ show (creCountBefore ev) ++ ", but found " ++ show v)
+                      when (creCountAfter ev /= v') (error $ "CRef count mismatch after acquire; expected " ++ show (creCountAfter ev) ++ ", but found " ++ show v')
+                      return $ Map.insert (creID ev) v' m
+                CRefRelease -> do
+                  case Map.lookup (creID ev) m of
+                    Nothing -> error $ "Attempt to release nonexistent CRef " ++ show (creID ev)
+                    Just v -> do
+                      let v' = pred v
+                      when (creCountBefore ev /= v) (error $ "CRef count mismatch before release; expected " ++ show (creCountBefore ev) ++ ", but found " ++ show v)
+                      when (creCountAfter ev /= v') (error $ "CRef count mismatch after release; expected " ++ show (creCountAfter ev) ++ ", but found " ++ show v')
+                      return $ Map.insert (creID ev) v' m
+        putMVar trackerVar m'
     }
 
