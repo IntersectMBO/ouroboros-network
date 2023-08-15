@@ -611,9 +611,13 @@ newtype OutOfOrderPushesSeeds c =
   deriving newtype (Show)
 
 instance (KESAlgorithm (KES c)) => Arbitrary (OutOfOrderPushesSeeds c) where
-  arbitrary =
-    resize 5 arbitrary
-  shrink = map OutOfOrderPushesSeeds . shrink . outOfOrderPushesSeeds
+  arbitrary = resize 5 . fmap OutOfOrderPushesSeeds $ do
+    a <- arbitrary
+    b <- arbitrary
+    xs <- arbitrary
+    return $ a:b:xs
+  shrink (OutOfOrderPushesSeeds xs) =
+    map OutOfOrderPushesSeeds $ filter ((>= 2) . length) (shrink xs)
 
 testOutOfOrderPushesIO :: forall c
                           . MonadKES IO c
@@ -623,7 +627,7 @@ testOutOfOrderPushesIO :: forall c
                        => UnsoundKESAlgorithm (KES c)
                        => Proxy c
                        -> Lock IO
-                       -> [PinnedSizedBytes (SeedSizeKES (KES c))]
+                       -> OutOfOrderPushesSeeds c
                        -> Int
                        -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                        -> Integer
@@ -634,7 +638,6 @@ testOutOfOrderPushesIO proxyCrypto
     oooIndex
     seedDSIGNPSB
     genesisTimestamp =
-  (length seedsKESRaw > 1) ==>
   testIO lock $ testOutOfOrderPushes
     proxyCrypto
     seedsKESRaw
@@ -650,7 +653,7 @@ testOutOfOrderPushesIOSim :: forall c kes
                          => UnsoundKESAlgorithm kes
                          => KES c ~ kes
                          => Proxy c
-                         -> [PinnedSizedBytes (SeedSizeKES (KES c))]
+                         -> OutOfOrderPushesSeeds c
                          -> Int
                          -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                          -> Integer
@@ -660,7 +663,6 @@ testOutOfOrderPushesIOSim proxyCrypto
     oooIndex
     seedDSIGNPSB
     genesisTimestamp =
-  (length seedsKESRaw > 1) ==>
   testIOSim $ testOutOfOrderPushes
     proxyCrypto
     seedsKESRaw
@@ -956,7 +958,7 @@ testOutOfOrderPushes :: forall c m n fd addr
                      => Show (SignKeyWithPeriodKES (KES c))
                      => UnsoundKESAlgorithm (KES c)
                      => Proxy c
-                     -> [PinnedSizedBytes (SeedSizeKES (KES c))]
+                     -> OutOfOrderPushesSeeds c
                      -> Int
                      -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                      -> Integer
@@ -1012,7 +1014,7 @@ testOutOfOrderPushes proxyCrypto
               return (ocertN oc, (PrettyBS serialized, periodKES skp))
             
 
-    let sortedSeeds = zip [0..] seedsKESRaw
+    let sortedSeeds = zip [0..] (outOfOrderPushesSeeds seedsKESRaw)
 
     -- Shuffle: swap any two adjacent SKs, such that the second one comes first
     let shuffleIndex = abs oooIndex `mod` (length sortedSeeds - 1)
