@@ -4,6 +4,7 @@ module Main
 
 import Cardano.KESAgent.Tests.RefCounting qualified as RefCounting
 import Cardano.KESAgent.Tests.Simulation qualified as Simulation
+import Cardano.KESAgent.Tests.EndToEnd qualified as EndToEnd
 
 import Cardano.Crypto.Libsodium
 
@@ -24,4 +25,5 @@ tests :: Simulation.Lock IO -> IOManager -> TestTree
 tests lock ioManager = testGroup "KES Agent"
   [ RefCounting.tests
   , Simulation.tests lock nullTracer ioManager
+  , EndToEnd.tests
   ]

@@ -130,6 +130,7 @@ test-suite kes-agent-tests
                  , ouroboros-network-framework
                  , ouroboros-network-testing
                  , primitive >=0.7.4 && <0.8
+                 , process
                  , QuickCheck
                  , random >=1.2.1 && <1.3
                  , socket-unix >=0.2.0.0 && <0.3.0.0
