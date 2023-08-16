@@ -35,6 +35,7 @@ import Cardano.KESAgent.OCert
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.RefCounting
 import Cardano.KESAgent.ServiceClient
+import Cardano.KESAgent.Pretty
 
 import Cardano.Binary ( FromCBOR )
 import Cardano.Crypto.DirectSerialise
@@ -142,7 +143,7 @@ import Test.Tasty.QuickCheck
 import Text.Printf ( printf )
 
 tests :: Lock IO
-      -> (forall a. (Show a, TracePretty a) => Tracer IO a)
+      -> (forall a. (Show a, Pretty a) => Tracer IO a)
       -> IOManager
       -> TestTree
 tests lock tracer ioManager =
@@ -182,7 +183,7 @@ testCrypto :: forall c kes
            => Show (SignKeyWithPeriodKES (KES c))
            => Proxy c
            -> Lock IO
-           -> (forall a. (Show a, TracePretty a) => Tracer IO a)
+           -> (forall a. (Show a, Pretty a) => Tracer IO a)
            -> IOManager
            -> TestTree
 testCrypto proxyC lock tracer ioManager =
@@ -214,10 +215,10 @@ testCrypto proxyC lock tracer ioManager =
 
 mvarPrettyTracer :: (MonadTime m, MonadMVar m)
                  => MVar m [String]
-                 -> (forall a. (Show a, TracePretty a) => Tracer m a)
+                 -> (forall a. (Show a, Pretty a) => Tracer m a)
 mvarPrettyTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
   t <- utcTimeToPOSIXSeconds <$> getCurrentTime
-  let str = printf "%015.4f %s" (realToFrac t :: Double) (tracePretty x)
+  let str = printf "%015.4f %s" (realToFrac t :: Double) (pretty x)
   return $ strs ++ [str]
 
 mvarStringTracer :: (MonadTime m, MonadMVar m)
@@ -228,39 +229,6 @@ mvarStringTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
   let str = printf "%015.4f %s" (realToFrac t :: Double) x
   return $ strs ++ [str]
 
-
-class TracePretty a where
-  tracePretty :: a -> String
-
-strLength :: String -> Int
-strLength = length
-
-instance TracePretty AgentTrace where
-  tracePretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ tracePretty d
-  tracePretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ tracePretty d
-  tracePretty (AgentServiceClientConnected a) = "Agent: ServiceClientConnected: " ++ a
-  tracePretty (AgentServiceClientDisconnected a) = "Agent: ServiceClientDisconnected: " ++ a
-  tracePretty (AgentServiceSocketError e) = "Agent: ServiceSocketError: " ++ e
-  tracePretty (AgentControlClientConnected a) = "Agent: ControlClientConnected: " ++ a
-  tracePretty (AgentControlClientDisconnected a) = "Agent: ControlClientDisconnected: " ++ a
-  tracePretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
-  tracePretty x = "Agent: " ++ drop (strLength "Agent") (show x)
-
-instance TracePretty ControlClientTrace where
-  tracePretty (ControlClientDriverTrace d) = "Control: Driver: " ++ tracePretty d
-  tracePretty ControlClientConnected = "Control: Connected"
-  tracePretty x = "Control: " ++ drop (strLength "ControlClient") (show x)
-
-instance TracePretty ServiceClientTrace where
-  tracePretty (ServiceClientDriverTrace d) = "Service: Driver: " ++ tracePretty d
-  tracePretty ServiceClientConnected = "Service: Connected"
-  tracePretty x = "Service: " ++ drop (strLength "ServiceClient") (show x)
-
-instance TracePretty DriverTrace where
-  tracePretty x = drop (strLength "Driver") (show x)
-
-instance TracePretty CRefEvent where
-  tracePretty = show
 
 -- | The operations a control client can perform: sending keys, and waiting.
 data ControlClientHooks m c
@@ -387,7 +355,7 @@ runTestNetwork :: forall c m fd addr
                => Show (SignKeyWithPeriodKES (KES c))
                => Proxy c
                -> MakeRawBearer m fd
-               -> (forall a. (Show a, TracePretty a) => Tracer m a)
+               -> (forall a. (Show a, Pretty a) => Tracer m a)
                -> Snocket m fd addr
                -> Integer
                -> (forall a. (addr -> m a) -> m a)
@@ -404,20 +372,20 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
     timeVar <- newMVar (fromInteger genesisTimestamp) :: m (MVar m NominalDiffTime)
     withAddress $ \controlAddress -> do
       withAddress $ \serviceAddress -> do
-        let agentOptions  :: AgentOptions m fd addr
+        let agentOptions  :: AgentOptions m addr
             agentOptions = AgentOptions
                               { agentGenesisTimestamp = genesisTimestamp
                               , agentGetCurrentTime = readMVar timeVar
                               , agentControlAddr = controlAddress
                               , agentServiceAddr = serviceAddress
-                              , agentSnocket = snocket
+                              , agentTracer = tracer
                               }
 
             -- Run the single agent.
             agent :: HasCallStack => Tracer m AgentTrace -> m ()
             agent tracer = do
               bracket
-                (newAgent (Proxy @c) mrb agentOptions tracer)
+                (newAgent (Proxy @c) snocket mrb agentOptions)
                 finalizeAgent
                 runAgent
 

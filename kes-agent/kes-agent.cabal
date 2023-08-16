@@ -36,6 +36,7 @@ library
                    , Cardano.KESAgent.RetrySocket
                    , Cardano.KESAgent.RefCounting
                    , Cardano.KESAgent.Classes
+                   , Cardano.KESAgent.Pretty
 
     build-depends: async
                  , binary
@@ -71,10 +72,16 @@ executable kes-agent
     hs-source-dirs: cli
     main-is: AgentMain.hs
     build-depends: kes-agent
+                 , bytestring
                  , contra-tracer
+                 , hdaemonize
+                 , hsyslog
                  , io-classes
                  , network
                  , ouroboros-network-framework
+                 , optparse-applicative
+                 , text
+                 , time
                  , Win32-network
 
 test-suite kes-agent-tests

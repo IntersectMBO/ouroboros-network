@@ -91,7 +91,7 @@ import Control.Monad.Class.MonadThrow
   )
 import Control.Monad.Class.MonadTime ( MonadTime (..) )
 import Control.Monad.Class.MonadTimer ( threadDelay )
-import Control.Tracer ( Tracer, traceWith )
+import Control.Tracer ( Tracer, traceWith, nullTracer )
 import Data.ByteString ( ByteString )
 import Data.Functor.Contravariant ( (>$<), contramap )
 import Data.Maybe ( fromJust )
@@ -133,12 +133,11 @@ data AgentTrace
   | AgentCRefEvent CRefEvent
   deriving (Show)
 
-data AgentOptions m fd addr =
+data AgentOptions m addr =
   AgentOptions
-    { agentSnocket :: Snocket m fd addr
+    { agentTracer :: Tracer m AgentTrace
       -- | Socket on which the agent will be listening for control messages,
       -- i.e., KES keys being pushed from a control server.
-
     , agentControlAddr :: addr
 
       -- | Socket on which the agent will send KES keys to any connected nodes.
@@ -153,13 +152,13 @@ data AgentOptions m fd addr =
     , agentGetCurrentTime :: m NominalDiffTime
     }
 
-defAgentOptions :: MonadTime m => AgentOptions m fd addr
+defAgentOptions :: MonadTime m => AgentOptions m addr
 defAgentOptions = AgentOptions
-  { agentSnocket = error "default"
-  , agentControlAddr = error "default"
+  { agentControlAddr = error "default"
   , agentServiceAddr = error "default"
   , agentGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
   , agentGetCurrentTime = utcTimeToPOSIXSeconds <$> getCurrentTime
+  , agentTracer = nullTracer
   }
 
 -- | A bundle of a KES key with a period, plus the matching op cert.
@@ -202,9 +201,9 @@ type KESBundle m c = (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
 -- - tryTakeTMVar is allowed, but only while holding the keyLock.
 data Agent c m fd addr =
   Agent
-    { agentMRB :: MakeRawBearer m fd
-    , agentOptions :: AgentOptions m fd addr
-    , agentTracer :: Tracer m AgentTrace
+    { agentSnocket :: Snocket m fd addr
+    , agentMRB :: MakeRawBearer m fd
+    , agentOptions :: AgentOptions m addr
     , agentCurrentKeyVar :: TMVar m (KESBundle m c)
     , agentNextKeyChan :: TChan m (KESBundle m c)
     , agentKeyLock :: MVar m ()
@@ -217,15 +216,14 @@ newAgent :: forall c m fd addr
          => Show addr
          => Show fd
          => Proxy c
+         -> Snocket m fd addr
          -> MakeRawBearer m fd
-         -> AgentOptions m fd addr
-         -> Tracer m AgentTrace
+         -> AgentOptions m addr
          -> m (Agent c m fd addr)
-newAgent _p mrb options tracer = do
+newAgent _p s mrb options = do
   currentKeyVar :: TMVar m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) <- atomically newEmptyTMVar
   nextKeyChan <- atomically newBroadcastTChan
   keyLock :: MVar m () <- newMVar ()
-  let s = agentSnocket options
 
   serviceFD <- open s (addrFamily s (agentServiceAddr options))
   bind s serviceFD (agentServiceAddr options)
@@ -234,9 +232,9 @@ newAgent _p mrb options tracer = do
   bind s controlFD (agentControlAddr options)
 
   return Agent
-    { agentMRB = mrb
+    { agentSnocket = s
+    , agentMRB = mrb
     , agentOptions = options
-    , agentTracer = tracer
     , agentCurrentKeyVar = currentKeyVar
     , agentNextKeyChan = nextKeyChan
     , agentKeyLock = keyLock
@@ -246,15 +244,15 @@ newAgent _p mrb options tracer = do
 
 finalizeAgent :: Monad m => Agent c m fd addr -> m ()
 finalizeAgent agent = do
-  let s = agentSnocket (agentOptions agent)
+  let s = agentSnocket agent
   close s (agentServiceFD agent)
   close s (agentControlFD agent)
 
 agentTrace :: Agent c m fd addr -> AgentTrace -> m ()
-agentTrace agent = traceWith (agentTracer agent)
+agentTrace agent = traceWith (agentTracer . agentOptions $ agent)
 
 agentCRefTracer :: Agent c m fd addr -> Tracer m CRefEvent
-agentCRefTracer = contramap AgentCRefEvent . agentTracer
+agentCRefTracer = contramap AgentCRefEvent . agentTracer . agentOptions
 
 withKeyUpdateLock :: MonadMVar m => Agent c m fd addr -> String -> m a -> m a
 withKeyUpdateLock agent context a = do
@@ -418,11 +416,11 @@ runAgent agent = do
         let nextKey = atomically $ Just <$> readTChan nextKeyChanRcv
 
         runListener
-          (agentSnocket (agentOptions agent))
+          (agentSnocket agent)
           (agentServiceFD agent)
           (show $ agentServiceAddr (agentOptions agent))
           (agentMRB agent)
-          (agentTracer agent)
+          (agentTracer . agentOptions $ agent)
           AgentListeningOnServiceSocket
           AgentServiceSocketClosed
           AgentServiceClientConnected
@@ -433,11 +431,11 @@ runAgent agent = do
   let runControl = do
         labelMyThread "control"
         runListener
-          (agentSnocket (agentOptions agent))
+          (agentSnocket agent)
           (agentControlFD agent)
           (show $ agentControlAddr (agentOptions agent))
           (agentMRB agent)
-          (agentTracer agent)
+          (agentTracer . agentOptions $ agent)
           AgentListeningOnControlSocket
           AgentControlSocketClosed
           AgentControlClientConnected
