@@ -36,7 +36,7 @@ data ServiceClientOptions m fd addr =
 data ServiceClientTrace
   = ServiceClientDriverTrace DriverTrace
   | ServiceClientSocketClosed
-  | ServiceClientConnected -- (SocketAddress Unix)
+  | ServiceClientConnected String
   | ServiceClientAttemptReconnect Int Int String
   | ServiceClientReceivedKey
   | ServiceClientAbnormalTermination String
@@ -44,12 +44,13 @@ data ServiceClientTrace
 
 instance Pretty ServiceClientTrace where
   pretty (ServiceClientDriverTrace d) = "Service: Driver: " ++ pretty d
-  pretty ServiceClientConnected = "Service: Connected"
+  pretty (ServiceClientConnected a) = "Service: Connected to " ++ a
   pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
 
 runServiceClient :: forall c m fd addr
                   . MonadKES m c
                  => MonadMVar m
+                 => Show addr
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr
@@ -84,7 +85,7 @@ runServiceClient proxy mrb options handleKey tracer = do
     (\fd -> do
       retrySocket (\(e :: SomeException) n i -> traceWith tracer $ ServiceClientAttemptReconnect n i (show e)) $
         connect s fd (serviceClientAddress options)
-      traceWith tracer ServiceClientConnected
+      traceWith tracer $ ServiceClientConnected (show $ serviceClientAddress options)
       bearer <- getRawBearer mrb fd
       void $ runPeerWithDriver
         (driver bearer $ ServiceClientDriverTrace >$< tracer)

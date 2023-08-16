@@ -8,6 +8,8 @@ import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Pretty
 
+import Cardano.Crypto.Libsodium (sodiumInit)
+
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
@@ -80,7 +82,7 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
         withMVar lock $ \_ -> do
           printf "%15.3f %-8s %s\n"
             (realToFrac timestamp :: Double)
-            (show $ agentTracePrio msg)
+            (show prio)
             (pretty msg)
   
 
@@ -115,6 +117,7 @@ runNormally = withIOManager $ \ioManager -> do
     runAgent
 
 main = do
+  sodiumInit
   args <- getArgs
   case args of
     "-D":_ -> runNormally

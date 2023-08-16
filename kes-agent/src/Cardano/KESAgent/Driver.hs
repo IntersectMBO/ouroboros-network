@@ -64,9 +64,11 @@ data DriverTrace
   | DriverDeclinedKey
   | DriverConnectionClosed
   | DriverCRefEvent CRefEvent
+  | DriverMisc String
   deriving (Show)
 
 instance Pretty DriverTrace where
+  pretty (DriverMisc x) = x
   pretty x = drop (strLength "Driver") (show x)
 
 driver :: forall c m f t p
@@ -124,18 +126,29 @@ driver s tracer = Driver
       (ServerAgency TokIdle) -> do
         traceWith tracer DriverReceivingKey
         noReadVar <- newEmptyMVar
+        traceWith tracer $ DriverMisc "waiting for sign key bytes..."
         sk <- directDeserialise
-                (\buf bufSize -> unsafeReceiveN s buf bufSize >>= \case
-                    0 -> putMVar noReadVar ()
-                    n -> when (fromIntegral n /= bufSize) (error "BBBBBB")
+                (\buf bufSize -> do
+                    traceWith tracer $ DriverMisc ("attempting to read " ++ show bufSize ++ " bytes...")
+                    unsafeReceiveN s buf bufSize >>= \case
+                      0 -> do
+                        traceWith tracer $ DriverMisc "NO READ"
+                        putMVar noReadVar ()
+                      n -> do
+                        traceWith tracer $ DriverMisc ("read " ++ show n ++ " bytes")
+                        when (fromIntegral n /= bufSize) (error "BBBBBB")
                 )
+        traceWith tracer $ DriverMisc "receiving t..."
         t <- fromIntegral <$> (
               maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s
              )
+        traceWith tracer $ DriverMisc "receiving l..."
         l <- fromIntegral <$> (
               maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s
              )
+        traceWith tracer $ DriverMisc "receiving oc..."
         oc <- unsafeDeserialize' <$> receiveBS s l
+        traceWith tracer $ DriverMisc "done receiving"
 
         skpVar <- newCRefWith
                     (contramap DriverCRefEvent tracer)
