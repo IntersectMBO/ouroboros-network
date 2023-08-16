@@ -23,6 +23,8 @@ module Cardano.KESAgent.RefCounting
   , withNewCRefWith
   ) where
 
+import Cardano.KESAgent.Pretty ( Pretty (..) )
+
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad ( when )
@@ -64,6 +66,13 @@ data CRefEvent
       , creCountAfter :: !CRefCount
       }
       deriving (Show, Eq)
+
+instance Pretty CRefEvent where
+  pretty e =
+    drop (length "CRef") (show $ creType e) ++
+    " #" ++ show (creID e) ++ " " ++
+    show (creCountBefore e) ++ " -> " ++
+    show (creCountAfter e)
 
 traceCRef :: MonadSTM m => CRefEventType -> CRef m a -> CRefCount -> CRefCount -> m ()
 traceCRef event cref before after = do

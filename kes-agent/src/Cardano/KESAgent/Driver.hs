@@ -12,6 +12,7 @@ module Cardano.KESAgent.Driver
   where
 
 import Cardano.KESAgent.OCert
+import Cardano.KESAgent.Pretty
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.RefCounting
 
@@ -64,6 +65,9 @@ data DriverTrace
   | DriverConnectionClosed
   | DriverCRefEvent CRefEvent
   deriving (Show)
+
+instance Pretty DriverTrace where
+  pretty x = drop (strLength "Driver") (show x)
 
 driver :: forall c m f t p
         . Crypto c

@@ -10,6 +10,7 @@ import Cardano.KESAgent.Classes ( MonadKES )
 import Cardano.KESAgent.Driver ( DriverTrace, driver )
 import Cardano.KESAgent.OCert ( Crypto (..), OCert (..) )
 import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
+import Cardano.KESAgent.Pretty ( Pretty (..) )
 import Cardano.KESAgent.RefCounting ( CRef )
 import Cardano.KESAgent.RetrySocket ( retrySocket )
 
@@ -40,6 +41,11 @@ data ServiceClientTrace
   | ServiceClientReceivedKey
   | ServiceClientAbnormalTermination String
   deriving (Show)
+
+instance Pretty ServiceClientTrace where
+  pretty (ServiceClientDriverTrace d) = "Service: Driver: " ++ pretty d
+  pretty ServiceClientConnected = "Service: Connected"
+  pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
 
 runServiceClient :: forall c m fd addr
                   . MonadKES m c

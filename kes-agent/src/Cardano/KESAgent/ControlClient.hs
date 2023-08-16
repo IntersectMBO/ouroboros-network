@@ -9,6 +9,7 @@ module Cardano.KESAgent.ControlClient
 import Cardano.KESAgent.Classes ( MonadKES )
 import Cardano.KESAgent.Driver ( DriverTrace, driver )
 import Cardano.KESAgent.OCert ( Crypto (..), OCert (..) )
+import Cardano.KESAgent.Pretty ( Pretty (..) )
 import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
 import Cardano.KESAgent.RefCounting ( CRef, withCRef )
 import Cardano.KESAgent.RetrySocket ( retrySocket )
@@ -40,6 +41,11 @@ data ControlClientTrace
   | ControlClientSendingKey
   | ControlClientAbnormalTermination String
   deriving (Show)
+
+instance Pretty ControlClientTrace where
+  pretty (ControlClientDriverTrace d) = "Control: Driver: " ++ pretty d
+  pretty ControlClientConnected = "Control: Connected"
+  pretty x = "Control: " ++ drop (length "ControlClient") (show x)
 
 -- | A simple control client: push one KES key, then exit.
 runControlClient1 :: forall c m fd addr

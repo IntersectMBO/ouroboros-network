@@ -21,6 +21,7 @@ import Cardano.KESAgent.Driver ( DriverTrace (..), driver )
 import Cardano.KESAgent.Evolution ( getCurrentKESPeriodWith, updateKESTo )
 import Cardano.KESAgent.OCert ( KES, KESPeriod (..), OCert (..), Crypto (..) )
 import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
+import Cardano.KESAgent.Pretty ( Pretty (..), strLength )
 import Cardano.KESAgent.Protocol ( KESProtocol, VersionedProtocol )
 import Cardano.KESAgent.RefCounting
   ( CRef
@@ -132,6 +133,17 @@ data AgentTrace
   | AgentLockReleased String
   | AgentCRefEvent CRefEvent
   deriving (Show)
+
+instance Pretty AgentTrace where
+  pretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ pretty d
+  pretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ pretty d
+  pretty (AgentServiceClientConnected a) = "Agent: ServiceClientConnected: " ++ a
+  pretty (AgentServiceClientDisconnected a) = "Agent: ServiceClientDisconnected: " ++ a
+  pretty (AgentServiceSocketError e) = "Agent: ServiceSocketError: " ++ e
+  pretty (AgentControlClientConnected a) = "Agent: ControlClientConnected: " ++ a
+  pretty (AgentControlClientDisconnected a) = "Agent: ControlClientDisconnected: " ++ a
+  pretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
+  pretty x = "Agent: " ++ drop (strLength "Agent") (show x)
 
 data AgentOptions m addr =
   AgentOptions
