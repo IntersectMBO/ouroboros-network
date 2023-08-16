@@ -202,6 +202,22 @@
         "type": "github"
       }
     },
+    "hackageNix": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1692145451,
+        "narHash": "sha256-kqfyD3Mu5kgiH5W2ZshUhzO46H0zYDpwD1SWz+POMrk=",
+        "owner": "input-output-hk",
+        "repo": "hackage.nix",
+        "rev": "9d2daeca0e09002bc6fb552a097a1802a2f3a4e3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "input-output-hk",
+        "repo": "hackage.nix",
+        "type": "github"
+      }
+    },
     "haskellNix": {
       "inputs": {
         "HTTP": "HTTP",
@@ -575,6 +591,7 @@
       "inputs": {
         "CHaP": "CHaP",
         "flake-utils": "flake-utils",
+        "hackageNix": "hackageNix",
         "haskellNix": "haskellNix",
         "iohkNix": "iohkNix",
         "nixpkgs": [
