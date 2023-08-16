@@ -113,6 +113,8 @@ test-suite kes-agent-tests
     main-is: Main.hs
     other-modules: Cardano.KESAgent.Tests.Simulation
                  , Cardano.KESAgent.Tests.RefCounting
+                 , Cardano.KESAgent.Tests.EndToEnd
+    build-tool-depends: kes-agent:kes-agent
     build-depends: kes-agent
                  , async
                  , bytestring

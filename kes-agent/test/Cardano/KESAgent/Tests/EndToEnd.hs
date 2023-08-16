@@ -3,10 +3,20 @@ module Cardano.KESAgent.Tests.EndToEnd
   where
 
 import Test.Tasty
+import Test.Tasty.HUnit
 import System.Process
+import System.Exit ( ExitCode (..) )
+import System.Environment ( unsetEnv )
 
 tests :: TestTree
 tests =
   testGroup "end to end"
-    [
+    [ testCase "kes-agent --help" kesAgentHelp
     ]
+
+kesAgentHelp :: Assertion
+kesAgentHelp = do
+  kesAgentPath <- readProcess "which" [ "kes-agent" ] ""
+  unsetEnv "GHCRTS"
+  (exitCode, stdout, stderr) <- readProcessWithExitCode "kes-agent" [ "--help" ] ""
+  assertEqual (stdout ++ "\n" ++ stderr) ExitSuccess exitCode
