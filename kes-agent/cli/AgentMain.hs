@@ -30,11 +30,126 @@ import Data.ByteString (ByteString)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text as Text
 import Text.Printf
+import Options.Applicative
 
-getOptions :: IOManager -> IO (AgentOptions IO SockAddr)
-getOptions ioManager = do
-  servicePath <- fromMaybe "/tmp/kes-agent-service.socket" <$> lookupEnv "KES_AGENT_SERVICE_PATH"
-  controlPath <- fromMaybe "/tmp/kes-agent-control.socket" <$> lookupEnv "KES_AGENT_CONTROL_PATH"
+data NormalModeOptions
+  = NormalModeOptions
+      { nmoServicePath :: Maybe String
+      , nmoControlPath :: Maybe String
+      , nmoLogLevel :: Maybe Priority
+      }
+  deriving (Show)
+
+instance Semigroup NormalModeOptions where
+  NormalModeOptions sp1 cp1 ll1 <> NormalModeOptions sp2 cp2 ll2 =
+    NormalModeOptions (sp1 <|> sp2) (cp1 <|> cp2) (ll1 <|> ll2)
+
+defNormalModeOptions :: NormalModeOptions
+defNormalModeOptions =
+  NormalModeOptions
+    { nmoServicePath = Just "/tmp/kes-agent-service.socket"
+    , nmoControlPath = Just "/tmp/kes-agent-control.socket"
+    , nmoLogLevel = Just Syslog.Notice
+    }
+
+data ServiceModeOptions
+  = ServiceModeOptions
+      { smoServicePath :: Maybe String
+      , smoControlPath :: Maybe String
+      }
+  deriving (Show)
+
+instance Semigroup ServiceModeOptions where
+  ServiceModeOptions sp1 cp1 <> ServiceModeOptions sp2 cp2 =
+    ServiceModeOptions (sp1 <|> sp2) (cp1 <|> cp2)
+
+defServiceModeOptions :: ServiceModeOptions
+defServiceModeOptions =
+  ServiceModeOptions
+    { smoServicePath = Just "/tmp/kes-agent-service.socket"
+    , smoControlPath = Just "/tmp/kes-agent-control.socket"
+    }
+
+data ProgramOptions
+  = RunAsService ServiceModeOptions
+  | RunNormally NormalModeOptions
+  deriving (Show)
+
+pProgramOptions = subparser
+    (  command "start" (info (pure $ RunAsService defServiceModeOptions) idm)
+    <> command "stop" (info (pure $ RunAsService defServiceModeOptions) idm)
+    <> command "restart" (info (pure $ RunAsService defServiceModeOptions) idm)
+    <> command "status" (info (pure $ RunAsService defServiceModeOptions) idm)
+    <> command "run" (info (RunNormally <$> pNormalModeOptions) idm)
+    )
+
+pNormalModeOptions =
+  NormalModeOptions
+    <$> option (Just <$> str)
+          (  long "service-address"
+          <> short 's'
+          <> value Nothing
+          <> metavar "PATH"
+          <> help "Socket address for 'service' connections"
+          )
+    <*> option (Just <$> str)
+          (  long "control-address"
+          <> short 'c'
+          <> value Nothing
+          <> metavar "PATH"
+          <> help "Socket address for 'control' connections"
+          )
+    <*> option (Just <$> eitherReader readLogLevel)
+          (  long "log-level"
+          <> short 'l'
+          <> value Nothing
+          <> metavar "LEVEL"
+          <> help "Logging level. One of 'debug', 'info', 'notice', 'warn', 'error', 'critical', 'emergency'."
+          )
+
+readLogLevel :: String -> Either String Priority
+readLogLevel "debug" = Right Syslog.Debug
+readLogLevel "info" = Right Syslog.Info
+readLogLevel "warn" = Right Syslog.Warning
+readLogLevel "notice" = Right Syslog.Notice
+readLogLevel "error" = Right Syslog.Error
+readLogLevel "critical" = Right Syslog.Critical
+readLogLevel "emergency" = Right Syslog.Emergency
+readLogLevel x = Left $ "Invalid log level " ++ show x
+
+nmoFromEnv :: IO NormalModeOptions
+nmoFromEnv = do
+  servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
+  controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
+  logLevel <- fmap (either error id . readLogLevel) <$> lookupEnv "KES_AGENT_LOG_LEVEL"
+  return NormalModeOptions
+    { nmoServicePath = servicePath
+    , nmoControlPath = controlPath
+    , nmoLogLevel = logLevel
+    }
+
+smoFromEnv :: IO ServiceModeOptions
+smoFromEnv = do
+  servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
+  controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
+  return ServiceModeOptions
+    { smoServicePath = servicePath
+    , smoControlPath = controlPath
+    }
+
+nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr)
+nmoToAgentOptions nmo = do
+  servicePath <- maybe (error "No service address") return (nmoServicePath nmo)
+  controlPath <- maybe (error "No control address") return (nmoControlPath nmo)
+  return defAgentOptions
+            { agentServiceAddr = SockAddrUnix servicePath
+            , agentControlAddr = SockAddrUnix controlPath
+            }
+
+smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr)
+smoToAgentOptions smo = do
+  servicePath <- maybe (error "No service address") return (smoServicePath smo)
+  controlPath <- maybe (error "No control address") return (smoControlPath smo)
   return defAgentOptions
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
@@ -86,9 +201,11 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
             (pretty msg)
   
 
-runAsService :: IO ()
-runAsService = withIOManager $ \ioManager -> do
-  agentOptions <- getOptions ioManager
+runAsService :: ServiceModeOptions -> IO ()
+runAsService smo' = withIOManager $ \ioManager -> do
+  smoEnv <- smoFromEnv
+  let smo = smo' <> smoEnv <> defServiceModeOptions
+  agentOptions <- smoToAgentOptions smo
   serviced
     simpleDaemon
       { privilegedAction = do
@@ -101,11 +218,14 @@ runAsService = withIOManager $ \ioManager -> do
           runAgent agent `finally` finalizeAgent agent
       }
 
-runNormally :: IO ()
-runNormally = withIOManager $ \ioManager -> do
+runNormally :: NormalModeOptions -> IO ()
+runNormally nmo' = withIOManager $ \ioManager -> do
+  nmoEnv <- nmoFromEnv
+  let nmo = nmo' <> nmoEnv <> defNormalModeOptions
+  agentOptions <- nmoToAgentOptions nmo
+  maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
+
   logLock <- newMVar ()
-  let maxPrio = Syslog.Notice
-  agentOptions <- getOptions ioManager
   bracket
     (newAgent
       (Proxy @StandardCrypto)
@@ -116,9 +236,11 @@ runNormally = withIOManager $ \ioManager -> do
     finalizeAgent
     runAgent
 
+programDesc = fullDesc
+
 main = do
   sodiumInit
-  args <- getArgs
-  case args of
-    "-D":_ -> runNormally
-    _ -> runAsService
+  programOptions <- execParser (info (pProgramOptions <**> helper) programDesc)
+  case programOptions of
+    RunNormally nmo -> runNormally nmo
+    RunAsService smo -> runAsService smo
