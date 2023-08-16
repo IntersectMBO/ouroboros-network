@@ -80,6 +80,7 @@
 ### Non-breaking changes
 
 * Fixed query shutdown timeout in the legacy (non-p2p) mode (20s).
+* Added RawBearer API (typeclass and instances).
 
 ## 0.6.0.1 -- 2023-05-15
 
