@@ -17,7 +17,7 @@ maintainer:         tobias@well-typed.com
 
 common project-config
      ghc-options:
-         -threaded -with-rtsopts
+         -threaded -rtsopts -with-rtsopts
 
 common base-dependencies
     build-depends: base ^>=4.14.0.0
