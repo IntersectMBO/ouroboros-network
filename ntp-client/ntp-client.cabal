@@ -59,6 +59,7 @@ test-suite test
   default-language:   Haskell2010
   ghc-options:        -Wall
                       -Wunused-packages
+                      -threaded
 
 executable demo-ntp-client
   hs-source-dirs:     demo

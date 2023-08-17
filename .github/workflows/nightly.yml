@@ -1,12 +1,13 @@
-name: Haskell CI
+name: Nightly Haskell CI
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 on:
-  pull_request:
-  merge_group:
+  schedule:
+    - cron: 0 3 * * *
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,8 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10.7"]
-        os: [windows-latest]
+        ghc: ["8.10.7", "9.6.2"]
+        os: [ubuntu-latest]
 
     env:
       # Modify this value to "invalidate" all cabal caches.
@@ -45,17 +46,33 @@ jobs:
           libtool
           make
 
+    - name: Set up Ruby
+      if: runner.os == 'Linux'
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: 2.7
+
+    - name: Install cddl
+      if: runner.os == 'Linux'
+      run: |
+        gem install cddl -v 0.8.27
+
     - uses: actions/checkout@v3
 
     - name: "Configure cabal.project.local"
       run: |
-        cp scripts/ci/cabal.project.local.${{ runner.os }} cabal.project.local
+        cp ./scripts/ci/cabal.project.nightly${{ runner.os }} cabal.project.local
 
-    - name: Update PATH
+    - name: Update PATH (Windows)
       if: runner.os == 'Windows'
       run: |
         $env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)
         echo "PATH=$env:PATH" >> $env:GITHUB_ENV
+
+    - name: Update PATH (Linux)
+      if: runner.os == 'Linux'
+      run:
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Update Hackage and CHaP
       run: cabal update
@@ -68,6 +85,7 @@ jobs:
 
     - uses: actions/cache/restore@v3
       name: "Restore cache: `cabal store`"
+      id: restore-cabal-store
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
@@ -113,14 +131,12 @@ jobs:
       # TODO: enable `+RTS -N`
       run: cabal run ouroboros-network-framework:test
 
-    # TODO: run CDDL
-
     - name: ouroboros-network-protocols [test]
       run: cabal run ouroboros-network-protocols:test -- +RTS -maxN2 -RTS
 
-    # We don't run cddl in GitHub actions (only on Hydra).
-    # - name: ouroboros-network-protocols [cddl]
-    #   run: cabal run ouroboros-network-protocols-test:cddl
+    - name: ouroboros-netowrk-protocols [cddl]
+      if: runner.os == 'Linux'
+      run: cabal run ouroboros-network-protocols:cddl -- +RTS -maxN2 -RTS
 
     - name: ouroboros-network [test]
       run: cabal run ouroboros-network:test -- +RTS -maxN2 -RTS
@@ -136,8 +152,9 @@ jobs:
     # to restore the original path.  Do note that some test might need msys2
     # and will silently fail if msys2 is not in path. See the "Run tests" step.
     #
-    # - name: Setup tmate session
+    # - name: Set up tmate session
     #   if: ${{ failure() }}
     #   uses: mxschmitt/action-tmate@v3
     #   with:
     #     limit-access-to-actor: true
+

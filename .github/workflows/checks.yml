@@ -11,7 +11,6 @@ on:
 jobs:
   check-git-dependencies:
     name: Check git dependencies
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,7 +23,6 @@ jobs:
 
   check-changelogs:
     name: Check changelogs
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     defaults:
       run:

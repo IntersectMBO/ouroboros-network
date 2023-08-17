@@ -1,17 +1,13 @@
 max-backjumps: 5000
 reorder-goals: True
-tests:         True
-benchmarks:    True
+tests: True
+benchmarks: True
 
 package strict-checked-vars
   flags: +checktvarinvariants +checkmvarinvariants
 
-package monoidal-synchronisation
-  ghc-options: -fno-ignore-asserts -Werror
-
 package ntp-client
   flags: +demo
-  ghc-options: -fno-ignore-asserts -Werror
 
 package network-mux
   flags: +ipv6
@@ -25,6 +21,7 @@ package ouroboros-network-mock
   ghc-options: -fno-ignore-asserts -Werror
 
 package ouroboros-network-testing
+  flags: +nightly
   ghc-options: -fno-ignore-asserts -Werror
 
 -- IPv6 tests are DISABLED
@@ -44,3 +41,4 @@ package cardano-ping
 
 package cardano-client
   ghc-options: -fno-ignore-asserts -Werror
+
