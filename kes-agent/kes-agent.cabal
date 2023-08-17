@@ -83,6 +83,7 @@ executable kes-agent
                  , optparse-applicative
                  , text
                  , time
+                 , unix
                  , Win32-network
 
 executable kes-service-client-demo

@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main
 where
@@ -14,7 +15,7 @@ import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
 import Control.Monad ( when )
-import Control.Monad.Class.MonadThrow ( bracket, finally )
+import Control.Monad.Class.MonadThrow ( bracket, finally, catch, SomeException )
 import Control.Monad.Class.MonadTime ( getCurrentTime )
 import Control.Concurrent.Class.MonadMVar
 import Control.Tracer
@@ -30,7 +31,11 @@ import Data.ByteString (ByteString)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text as Text
 import Text.Printf
+import Text.Read ( readMaybe )
 import Options.Applicative
+import System.Posix.Files as Posix
+import System.Posix.Types as Posix
+import System.Posix.User as Posix
 
 data NormalModeOptions
   = NormalModeOptions
@@ -56,18 +61,31 @@ data ServiceModeOptions
   = ServiceModeOptions
       { smoServicePath :: Maybe String
       , smoControlPath :: Maybe String
+      , smoUser :: Maybe String
+      , smoGroup :: Maybe String
       }
   deriving (Show)
 
 instance Semigroup ServiceModeOptions where
-  ServiceModeOptions sp1 cp1 <> ServiceModeOptions sp2 cp2 =
-    ServiceModeOptions (sp1 <|> sp2) (cp1 <|> cp2)
+  ServiceModeOptions sp1 cp1 uid1 gid1 <> ServiceModeOptions sp2 cp2 uid2 gid2 =
+    ServiceModeOptions (sp1 <|> sp2) (cp1 <|> cp2) (uid1 <|> uid2) (gid1 <|> gid2)
 
 defServiceModeOptions :: ServiceModeOptions
 defServiceModeOptions =
   ServiceModeOptions
     { smoServicePath = Just "/tmp/kes-agent-service.socket"
     , smoControlPath = Just "/tmp/kes-agent-control.socket"
+    , smoUser = Just "kes-agent"
+    , smoGroup = Just "kes-agent"
+    }
+
+nullServiceModeOptions :: ServiceModeOptions
+nullServiceModeOptions =
+  ServiceModeOptions
+    { smoServicePath = Nothing
+    , smoControlPath = Nothing
+    , smoUser = Nothing
+    , smoGroup = Nothing
     }
 
 data ProgramOptions
@@ -76,10 +94,10 @@ data ProgramOptions
   deriving (Show)
 
 pProgramOptions = subparser
-    (  command "start" (info (pure $ RunAsService defServiceModeOptions) idm)
-    <> command "stop" (info (pure $ RunAsService defServiceModeOptions) idm)
-    <> command "restart" (info (pure $ RunAsService defServiceModeOptions) idm)
-    <> command "status" (info (pure $ RunAsService defServiceModeOptions) idm)
+    (  command "start" (info (pure $ RunAsService nullServiceModeOptions) idm)
+    <> command "stop" (info (pure $ RunAsService nullServiceModeOptions) idm)
+    <> command "restart" (info (pure $ RunAsService nullServiceModeOptions) idm)
+    <> command "status" (info (pure $ RunAsService nullServiceModeOptions) idm)
     <> command "run" (info (RunNormally <$> pNormalModeOptions) idm)
     )
 
@@ -132,9 +150,13 @@ smoFromEnv :: IO ServiceModeOptions
 smoFromEnv = do
   servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
   controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
+  groupSpec <- lookupEnv "KES_AGENT_GROUP"
+  userSpec <- lookupEnv "KES_AGENT_USER"
   return ServiceModeOptions
     { smoServicePath = servicePath
     , smoControlPath = controlPath
+    , smoUser = userSpec
+    , smoGroup = groupSpec
     }
 
 nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr)
@@ -202,21 +224,38 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
   
 
 runAsService :: ServiceModeOptions -> IO ()
-runAsService smo' = withIOManager $ \ioManager -> do
-  smoEnv <- smoFromEnv
-  let smo = smo' <> smoEnv <> defServiceModeOptions
-  agentOptions <- smoToAgentOptions smo
-  serviced
-    simpleDaemon
-      { privilegedAction = do
-          newAgent
-            (Proxy @StandardCrypto)
-            (socketSnocket ioManager)
-            makeSocketRawBearer
-            agentOptions { agentTracer = syslogAgentTracer }
-      , program = \agent -> do
-          runAgent agent `finally` finalizeAgent agent
-      }
+runAsService smo' =
+  go `catch` (\(e :: SomeException) ->
+    syslog Syslog.Critical (encodeUtf8 . Text.pack $ show e))
+  where
+    go :: IO ()
+    go =  withIOManager $ \ioManager -> do
+      smoEnv <- smoFromEnv
+      let smo = smo' <> smoEnv <> defServiceModeOptions
+      agentOptions <- smoToAgentOptions smo
+      groupName <- maybe (error "Invalid group") return $ smoGroup smo
+      userName <- maybe (error "Invalid user") return $ smoUser smo
+      servicePath <- maybe (error "Invalid service address") return $ smoServicePath smo
+      controlPath <- maybe (error "Invalid control address") return $ smoControlPath smo
+
+      serviced
+        simpleDaemon
+          { privilegedAction = do
+              gid <- groupID <$> Posix.getGroupEntryForName groupName
+              uid <- userID <$> Posix.getUserEntryForName userName
+              Posix.setFileCreationMask 0770
+              agent <- newAgent
+                (Proxy @StandardCrypto)
+                (socketSnocket ioManager)
+                makeSocketRawBearer
+                agentOptions { agentTracer = syslogAgentTracer }
+              setOwnerAndGroup servicePath uid gid
+              setOwnerAndGroup controlPath uid gid
+              return agent
+          , program = \agent -> do
+              runAgent agent `finally` finalizeAgent agent
+          , group = Just groupName
+          }
 
 runNormally :: NormalModeOptions -> IO ()
 runNormally nmo' = withIOManager $ \ioManager -> do
