@@ -16,7 +16,5 @@ tests =
 
 kesAgentHelp :: Assertion
 kesAgentHelp = do
-  kesAgentPath <- readProcess "which" [ "kes-agent" ] ""
-  print kesAgentPath
   (exitCode, stdout, stderr) <- readProcessWithExitCode "kes-agent" [ "--help" ] ""
   assertEqual (stdout ++ "\n" ++ stderr) ExitSuccess exitCode
