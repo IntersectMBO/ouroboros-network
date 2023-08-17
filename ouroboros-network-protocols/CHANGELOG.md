@@ -16,6 +16,10 @@
 * Add a 3673s timeout to chainsync's StIdle state.
 * Add a 97s timeout to keepalive's StClient state.
 
+- Add a test to check that Peer Sharing values after handshake are symmetric
+  relative to the initiator and responder side.
+- Adds cddl specs and tests for `NodeToNodeV_13` and handshake
+
 ## 0.5.2.0 -- 2023-09-08
 
 ### Non-breaking changes

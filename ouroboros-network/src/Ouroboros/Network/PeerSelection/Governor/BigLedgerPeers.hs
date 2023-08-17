@@ -116,7 +116,7 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestBigLedgerPeers }
 
             knownPeers'
                      = KnownPeers.insert
-                         (Map.fromSet (\_ -> ( Just NoPeerSharing
+                         (Map.fromSet (\_ -> ( Just PeerSharingDisabled
                                                -- the peer sharing flag will be
                                                -- updated once we negotiate
                                                -- the connection

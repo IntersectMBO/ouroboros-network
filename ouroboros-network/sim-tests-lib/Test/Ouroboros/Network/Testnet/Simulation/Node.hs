@@ -193,7 +193,7 @@ data NodeArgs =
     , naAddr                   :: NtNAddr
       -- ^ 'Arguments' 'aIPAddress' value
     , naPeerSharing            :: PeerSharing
-      -- ^ 'Arguments' 'aIPAddress' value
+      -- ^ 'Arguments' 'aOwnPeerSharing' value
     , naLocalRootPeers         :: [( HotValency
                                    , WarmValency
                                    , Map RelayAccessPoint PeerAdvertise

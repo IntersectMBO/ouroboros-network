@@ -26,7 +26,8 @@ import           Network.TypedProtocol.Codec
 
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..),
+                     combinePeerSharing)
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -82,8 +83,8 @@ data DataFlowProtocolData =
   deriving (Eq, Show)
 
 instance Acceptable DataFlowProtocolData where
-  acceptableVersion (DataFlowProtocolData local _) (DataFlowProtocolData remote ps) =
-    Accept (DataFlowProtocolData (local `min` remote) ps)
+  acceptableVersion (DataFlowProtocolData local lps) (DataFlowProtocolData remote rps) =
+    Accept (DataFlowProtocolData (local `min` remote) (combinePeerSharing lps rps))
 
 instance Queryable DataFlowProtocolData where
   queryVersion (DataFlowProtocolData _ _) = False
@@ -92,20 +93,25 @@ dataFlowProtocolDataCodec :: UnversionedProtocol -> CodecCBORTerm Text DataFlowP
 dataFlowProtocolDataCodec _ = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: DataFlowProtocolData -> CBOR.Term
-      encodeTerm (DataFlowProtocolData Unidirectional NoPeerSharing)      = CBOR.TList [CBOR.TBool False, CBOR.TInt 0]
-      encodeTerm (DataFlowProtocolData Unidirectional PeerSharingPrivate) = CBOR.TList [CBOR.TBool False, CBOR.TInt 1]
-      encodeTerm (DataFlowProtocolData Unidirectional PeerSharingPublic)  = CBOR.TList [CBOR.TBool False, CBOR.TInt 2]
-      encodeTerm (DataFlowProtocolData Duplex NoPeerSharing)      = CBOR.TList [CBOR.TBool True, CBOR.TInt 0]
-      encodeTerm (DataFlowProtocolData Duplex PeerSharingPrivate) = CBOR.TList [CBOR.TBool True, CBOR.TInt 1]
-      encodeTerm (DataFlowProtocolData Duplex PeerSharingPublic)  = CBOR.TList [CBOR.TBool True, CBOR.TInt 2]
+      encodeTerm (DataFlowProtocolData Unidirectional ps) =
+        let peerSharing = case ps of
+              PeerSharingDisabled -> 0
+              PeerSharingEnabled  -> 1
+         in CBOR.TList [CBOR.TBool False, CBOR.TInt peerSharing]
+      encodeTerm (DataFlowProtocolData Duplex ps) =
+        let peerSharing = case ps of
+              PeerSharingDisabled -> 0
+              PeerSharingEnabled  -> 1
+         in CBOR.TList [CBOR.TBool True, CBOR.TInt peerSharing]
+
+      toPeerSharing :: Int -> PeerSharing
+      toPeerSharing 0 = PeerSharingDisabled
+      toPeerSharing 1 = PeerSharingEnabled
+      toPeerSharing _ = error "toPeerSharing: out of bounds"
 
       decodeTerm :: CBOR.Term -> Either Text DataFlowProtocolData
-      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt 0]) = Right (DataFlowProtocolData Unidirectional NoPeerSharing)
-      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt 1]) = Right (DataFlowProtocolData Unidirectional PeerSharingPrivate)
-      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt 2]) = Right (DataFlowProtocolData Unidirectional PeerSharingPublic)
-      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt 0])  = Right (DataFlowProtocolData Duplex NoPeerSharing)
-      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt 1])  = Right (DataFlowProtocolData Duplex PeerSharingPrivate)
-      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt 2])  = Right (DataFlowProtocolData Duplex PeerSharingPublic)
+      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = Right (DataFlowProtocolData Unidirectional (toPeerSharing a))
+      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = Right (DataFlowProtocolData Duplex (toPeerSharing a))
       decodeTerm t                  = Left $ T.pack $ "unexpected term: " ++ show t
 
 dataFlowProtocol :: DataFlow
@@ -114,7 +120,7 @@ dataFlowProtocol :: DataFlow
                              DataFlowProtocolData
                              app
 dataFlowProtocol dataFlow =
-    simpleSingletonVersions UnversionedProtocol (DataFlowProtocolData dataFlow NoPeerSharing)
+    simpleSingletonVersions UnversionedProtocol (DataFlowProtocolData dataFlow PeerSharingDisabled)
 
 -- | 'Handshake' codec used in various tests.
 --

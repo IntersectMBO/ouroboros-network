@@ -153,7 +153,6 @@ tests =
 -- Server tests
 --
 
-
 prop_unidirectional_Sim :: ClientAndServerData Int
                         -> Property
 prop_unidirectional_Sim clientAndServerData =

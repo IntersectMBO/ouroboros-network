@@ -32,10 +32,9 @@ instance Arbitrary NodeToNodeVersionData where
         <*> oneof [ pure InitiatorOnlyDiffusionMode
                   , pure InitiatorAndResponderDiffusionMode
                   ]
-        <*> oneof [ pure NoPeerSharing
-                  , pure PeerSharingPrivate
-                  , pure PeerSharingPublic
-                  ]
+        <*> elements [ PeerSharingDisabled
+                     , PeerSharingEnabled
+                     ]
         <*> arbitrary
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool

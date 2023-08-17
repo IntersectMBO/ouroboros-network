@@ -1368,7 +1368,7 @@ governorEventuallyTakesPeerShareOpportunities peerSharing =
      && isNothing peerShareEvent
 
         -- Peer Sharing must be enabled
-     && peerSharing /= NoPeerSharing
+     && peerSharing /= PeerSharingDisabled
 
         -- Note that if a peer share does take place, we do /not/ require
         -- the peer sharing target to be a member of the peerShareOpportunities.
@@ -2883,7 +2883,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
                 peerSharing              = peerSharing,
                 readPeerSelectionTargets = return targets,
                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
-                peerConnToPeerSharing    = \ps -> ps,
+                peerConnToPeerSharing    = id,
                 requestPublicRootPeers   = \_ -> return (Map.empty, 0),
                 readNewInboundConnection = retry,
                 requestBigLedgerPeers    = \_ -> return (Set.empty, 0),
@@ -2926,10 +2926,10 @@ prop_issue_3550 :: Property
 prop_issue_3550 = prop_governor_target_established_below $
   GovernorMockEnvironment {
       peerGraph = PeerGraph
-        [ (PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
-          (PeerAddr 14,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
-          (PeerAddr 16,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
-          (PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})
+        [ (PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
+          (PeerAddr 14,[],GovernorScripts {peerShareScript = Script (Nothing :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
+          (PeerAddr 16,[],GovernorScripts {peerShareScript = Script (Nothing :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
+          (PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})
         ],
       localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 16,DoAdvertisePeer)]),(1,1,Map.fromList [(PeerAddr 4,DoAdvertisePeer)])],
       publicRootPeers = Map.fromList
@@ -2950,7 +2950,7 @@ prop_issue_3550 = prop_governor_target_established_below $
       pickHotPeersToDemote = Script (PickSome (Set.fromList [PeerAddr 29]) :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingPublic
+      peerSharing = PeerSharingEnabled
     }
 
 -- | issue #3515
@@ -2967,6 +2967,7 @@ prop_issue_3515 = prop_governor_nolivelock $
       peerGraph = PeerGraph
         [(PeerAddr 10,[],GovernorScripts {
                            peerShareScript = Script (Nothing :| []),
+                           peerSharingScript = Script (PeerSharingDisabled :| []),
                            connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                          })],
       localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10,DoAdvertisePeer)])],
@@ -2984,7 +2985,7 @@ prop_issue_3515 = prop_governor_nolivelock $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingPublic
+      peerSharing = PeerSharingEnabled
     }
 
 -- | issue #3494
@@ -2999,6 +3000,7 @@ prop_issue_3494 = prop_governor_nofail $
   GovernorMockEnvironment {
       peerGraph = PeerGraph [(PeerAddr 64,[],GovernorScripts {
                                                 peerShareScript = Script (Nothing :| []),
+                                                peerSharingScript = Script (PeerSharingDisabled :| []),
                                                 connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                                               })],
       localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64,DoAdvertisePeer)])],
@@ -3018,7 +3020,7 @@ prop_issue_3494 = prop_governor_nofail $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingPublic
+      peerSharing = PeerSharingEnabled
     }
 
 -- | issue #3233
@@ -3029,6 +3031,7 @@ prop_issue_3233 = prop_governor_nolivelock $
       peerGraph = PeerGraph
         [(PeerAddr 4,[],GovernorScripts {
                           peerShareScript = Script (Nothing :| []),
+                          peerSharingScript = Script (PeerSharingDisabled :| []),
                           connectionScript = Script ((ToCold,NoDelay)
                                                  :| [(ToCold,NoDelay),
                                                      (Noop,NoDelay),
@@ -3037,8 +3040,8 @@ prop_issue_3233 = prop_governor_nolivelock $
                                                      (Noop,NoDelay)
                                                     ])
                         }),
-         (PeerAddr 13,[],GovernorScripts {peerShareScript = Script (Nothing :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
-         (PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), connectionScript = Script ((Noop,NoDelay) :| [])})
+         (PeerAddr 13,[],GovernorScripts {peerShareScript = Script (Nothing :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
+         (PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])})
         ],
       localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 15,DoAdvertisePeer)]),(1,1,Map.fromList [(PeerAddr 13,DoAdvertisePeer)])],
       publicRootPeers = Map.fromList [(PeerAddr 4, (DoNotAdvertisePeer, IsNotLedgerPeer))],
@@ -3064,7 +3067,7 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingPublic
+      peerSharing = PeerSharingEnabled
     }
 
 

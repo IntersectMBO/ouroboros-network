@@ -141,7 +141,8 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         cmPrunePolicy         :: PrunePolicy peerAddr (STM m),
         cmConnectionsLimits   :: AcceptedConnectionsLimit,
 
-        -- | How to extract PeerSharing information from versionData
+        -- | How to extract remote side's PeerSharing information from
+        -- versionData
         cmGetPeerSharing      :: versionData -> PeerSharing
       }
 
@@ -1843,11 +1844,11 @@ withConnectionManager ConnectionManagerArguments {
                           let connState' = OutboundDupState connId connThread handle Ticking
                               notifyInboundGov =
                                 case provenance' of
-                                  Inbound  -> False
                                   -- This is a connection to oneself; We don't
                                   -- need to notify the inbound governor, as
                                   -- it's already done by
                                   -- `includeInboundConnectionImpl`
+                                  Inbound  -> False
                                   Outbound -> True
                           writeTVar connVar connState'
                           case inboundGovernorInfoChannel of

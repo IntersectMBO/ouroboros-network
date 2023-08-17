@@ -116,6 +116,8 @@ tests =
               prop_query_version_NodeToNode_IO
           , testProperty "query version SimNet"
               prop_query_version_NodeToNode_SimNet
+          , testProperty "peerSharing symmetry"
+              prop_peerSharing_symmetric_NodeToNode_SimNet
           ]
 
         , testGroup "NodeToClient"
@@ -657,9 +659,9 @@ newtype ArbitraryNodeToNodeVersionData =
 -- between parties.
 --
 instance Eq ArbitraryNodeToNodeVersionData where
-  (==) (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm dm _ _))
-       (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm' dm' _ _))
-    = nm == nm' && dm == dm'
+  (==) (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm dm ps _))
+       (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm' dm' ps' _))
+    = nm == nm' && dm == dm' && ps == ps'
 
 instance Queryable ArbitraryNodeToNodeVersionData where
     queryVersion = queryVersion . getNodeToNodeVersionData
@@ -671,9 +673,8 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
              <*> elements [ InitiatorOnlyDiffusionMode
                           , InitiatorAndResponderDiffusionMode
                           ]
-             <*> elements [ NoPeerSharing
-                          , PeerSharingPrivate
-                          , PeerSharingPublic
+             <*> elements [ PeerSharingDisabled
+                          , PeerSharingEnabled
                           ]
              <*> arbitrary
     shrink (ArbitraryNodeToNodeVersionData
@@ -697,9 +698,8 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
         shrinkMode InitiatorOnlyDiffusionMode = []
         shrinkMode InitiatorAndResponderDiffusionMode = [InitiatorOnlyDiffusionMode]
 
-        shrinkPeerSharing PeerSharingPublic  = [PeerSharingPrivate, NoPeerSharing]
-        shrinkPeerSharing PeerSharingPrivate = [NoPeerSharing]
-        shrinkPeerSharing NoPeerSharing      = []
+        shrinkPeerSharing PeerSharingDisabled = []
+        shrinkPeerSharing PeerSharingEnabled  = [PeerSharingDisabled]
 
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions
@@ -831,8 +831,12 @@ prop_query_version_NodeToNode_ST
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_12)
-                    (\(ArbitraryNodeToNodeVersionData vd) -> ArbitraryNodeToNodeVersionData $ vd {NTN.query = True})
+                    (>= NodeToNodeV_13)
+                    (\(ArbitraryNodeToNodeVersionData vd) ->
+                      ArbitraryNodeToNodeVersionData $
+                        vd { NTN.query = True
+                           , NTN.peerSharing = PeerSharingEnabled
+                           })
 
 -- | Run 'prop_query_version' in the IO monad.
 --
@@ -848,8 +852,12 @@ prop_query_version_NodeToNode_IO
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_12)
-                    (\(ArbitraryNodeToNodeVersionData vd) -> ArbitraryNodeToNodeVersionData $ vd {NTN.query = True})
+                    (>= NodeToNodeV_13)
+                    (\(ArbitraryNodeToNodeVersionData vd) ->
+                      ArbitraryNodeToNodeVersionData $
+                        vd { NTN.query = True
+                           , NTN.peerSharing = PeerSharingEnabled
+                           })
 
 -- | Run 'prop_query_version' with SimNet.
 --
@@ -865,8 +873,12 @@ prop_query_version_NodeToNode_SimNet
                     (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
                     clientVersions
                     serverVersions
-                    (>= NodeToNodeV_12)
-                    (\(ArbitraryNodeToNodeVersionData vd) -> ArbitraryNodeToNodeVersionData $ vd {NTN.query = True})
+                    (>= NodeToNodeV_13)
+                    (\(ArbitraryNodeToNodeVersionData vd) ->
+                      ArbitraryNodeToNodeVersionData $
+                        vd { NTN.query = True
+                           , NTN.peerSharing = PeerSharingEnabled
+                           })
 
 -- | Run 'prop_query_version' in the simulation monad.
 --
@@ -970,6 +982,66 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
     setQueryVersions (Versions vs) = Versions $ (\k v -> if supportsQuery k then v { versionData = setQuery (versionData v) } else v) `Map.mapWithKey` vs
     clientVersions' = setQueryVersions clientVersions
 
+
+-- | Run a query for the server's supported version.
+--
+prop_peerSharing_symmetric :: ( MonadAsync m
+                           , MonadCatch m
+                           , MonadST m
+                           )
+                           => m (Channel m ByteString, Channel m ByteString)
+                           -> Codec (Handshake NodeToNodeVersion CBOR.Term)
+                                     CBOR.DeserialiseFailure m ByteString
+                           -> VersionDataCodec CBOR.Term NodeToNodeVersion ArbitraryNodeToNodeVersionData
+                           -> Versions NodeToNodeVersion ArbitraryNodeToNodeVersionData Bool
+                           -> Versions NodeToNodeVersion ArbitraryNodeToNodeVersionData Bool
+                           -> m Property
+prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions serverVersions = do
+  (clientRes, serverRes) <-
+    runConnectedPeers
+      createChannels nullTracer codec
+      (handshakeClientPeer
+        versionDataCodec
+        acceptableVersion
+        clientVersions)
+      (handshakeServerPeer
+        versionDataCodec
+        acceptableVersion
+        queryVersion
+        serverVersions)
+  pure $ case (clientRes, serverRes) of
+    (  Right (HandshakeNegotiationResult _ v (ArbitraryNodeToNodeVersionData clientResult))
+     , Right (HandshakeNegotiationResult _ v' (ArbitraryNodeToNodeVersionData serverResult))
+     ) | v == v'
+       , v >= NodeToNodeV_13 ->
+         counterexample
+              (  "VersionNumber: " ++ show v ++ "\n"
+              ++ "Client Result:\n" ++ show clientResult ++ "\n"
+              ++ "Server Result:\n" ++ show serverResult
+              )
+          $ clientResult == serverResult
+       | v == v'
+       , v < NodeToNodeV_13  -> property True
+       | otherwise  -> counterexample "Version mismatch" False
+    (Right _, Left _) -> counterexample "Acceptance mismatch" False
+    (Left _, Right _) -> counterexample "Acceptance mismatch" False
+    _ -> property True
+
+-- | Run 'prop_peerSharing_symmetric' with SimNet.
+--
+prop_peerSharing_symmetric_NodeToNode_SimNet
+  :: ArbitraryNodeToNodeVersions
+  -> ArbitraryNodeToNodeVersions
+  -> Property
+prop_peerSharing_symmetric_NodeToNode_SimNet
+     (ArbitraryNodeToNodeVersions clientVersions)
+     (ArbitraryNodeToNodeVersions serverVersions) =
+   runSimOrThrow $ prop_peerSharing_symmetric
+                    createConnectedChannels
+                    (codecHandshake nodeToNodeVersionCodec)
+                    (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
+                    clientVersions
+                    serverVersions
 
 -- | 'acceptOrRefuse' is symmetric in the following sense:
 --

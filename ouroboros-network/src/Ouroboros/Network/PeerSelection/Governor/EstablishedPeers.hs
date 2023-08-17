@@ -413,8 +413,6 @@ jobPromoteColdPeer PeerSelectionActions {
         let establishedPeers' = EstablishedPeers.insert peeraddr peerconn
                                                         establishedPeers
             -- Update PeerSharing value in KnownPeers
-            -- This will compute the appropriate peer sharing value using
-            -- 'combinePeerInformation'
             knownPeers'       = KnownPeers.insert (Map.singleton peeraddr (Just peerSharing, Nothing, Nothing))
                               $ KnownPeers.clearTepidFlag peeraddr $
                                     KnownPeers.resetFailCount

@@ -773,7 +773,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
                 },
               cmTimeWaitTimeout = testTimeWaitTimeout,
               cmOutboundIdleTimeout = testOutboundIdleTimeout,
-              cmGetPeerSharing = \_ -> NoPeerSharing
+              cmGetPeerSharing = \_ -> PeerSharingDisabled
             }
             connectionHandler
             (\_ -> HandshakeFailure)

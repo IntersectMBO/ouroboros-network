@@ -262,7 +262,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        peerSharing :: PeerSharing,
 
-       -- | Get a PeerSharing value from 'peerconn'
+       -- | Get the remote's side PeerSharing value from 'peerconn'
        --
        -- 'peerconn' ideally comes from a call to 'establishPeerConnection'.
        -- This will establish a connection and perform handshake. The returned

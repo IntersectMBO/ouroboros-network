@@ -61,7 +61,7 @@ import           Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
                      ScriptDelay (..), TimedScript, arbitraryPickScript,
                      arbitraryScriptOf, initScript', interpretPickScript,
                      playTimedScript, prop_shrink_Script, singletonScript,
-                     stepScript)
+                     stepScript, stepScriptSTM')
 import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
                      arbitrarySubset, nightlyTest, prop_shrink_nonequal,
                      prop_shrink_valid)
@@ -74,7 +74,8 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
                      IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing,
+                     combinePeerSharing)
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
                      PeerSharingResult (..))
@@ -261,12 +262,14 @@ mockPeerSelectionActions tracer
                          policy = do
     scripts <- Map.fromList <$>
                  sequence
-                   [ (\a b -> (addr, (a, b)))
+                   [ (\a b c -> (addr, (a, b, c)))
                      <$> initScript' peerShareScript
+                     <*> initScript' peerSharingScript
                      <*> initScript' connectionScript
                    | let PeerGraph adjacency = peerGraph
                    , (addr, _, GovernorScripts {
                                  peerShareScript,
+                                 peerSharingScript,
                                  connectionScript
                                }) <- adjacency
                    ]
@@ -302,7 +305,7 @@ mockPeerSelectionActions' :: forall m.
                           => Tracer m TraceMockEnv
                           -> GovernorMockEnvironment
                           -> PeerSelectionPolicy PeerAddr m
-                          -> Map PeerAddr (TVar m PeerShareScript, TVar m ConnectionScript)
+                          -> Map PeerAddr (TVar m PeerShareScript, TVar m PeerSharingScript, TVar m ConnectionScript)
                           -> TVar m PeerSelectionTargets
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
                           -> PeerSelectionActions PeerAddr (PeerConn m) m
@@ -361,7 +364,7 @@ mockPeerSelectionActions' tracer
 
     requestPeerShare :: PeerSharingAmount -> PeerAddr -> m (PeerSharingResult PeerAddr)
     requestPeerShare _ addr = do
-      let Just (peerShareScript, _) = Map.lookup addr scripts
+      let Just (peerShareScript, _, _) = Map.lookup addr scripts
       mPeerShare <- stepScript peerShareScript
       traceWith tracer (TraceEnvPeerShareRequest addr mPeerShare)
       _ <- async $ do
@@ -382,13 +385,14 @@ mockPeerSelectionActions' tracer
       --TODO: add support for variable delays and synchronous failure
       traceWith tracer (TraceEnvEstablishConn peeraddr)
       threadDelay 1
+      let Just (_, peerSharingScript, connectScript) = Map.lookup peeraddr scripts
       conn@(PeerConn _ _ v) <- atomically $ do
         conn  <- newTVar PeerWarm
         conns <- readTVar connsVar
         let !conns' = Map.insert peeraddr conn conns
         writeTVar connsVar conns'
-        return (PeerConn peeraddr peerSharing conn)
-      let Just (_, connectScript) = Map.lookup peeraddr scripts
+        remotePeerSharing <- stepScriptSTM' peerSharingScript
+        return (PeerConn peeraddr (combinePeerSharing peerSharing remotePeerSharing) conn)
       _ <- async $
         -- monitoring loop which does asynchronous demotions. It will terminate
         -- as soon as either of the events:
@@ -480,7 +484,7 @@ mockPeerSelectionActions' tracer
 
     monitorPeerConnection :: PeerConn m -> STM m (PeerStatus, Maybe ReconnectDelay)
     monitorPeerConnection (PeerConn _peeraddr _ conn) = (,) <$> readTVar conn
-                                                            <*> pure Nothing
+                                                              <*> pure Nothing
 
 
 snapshotPeersStatus :: MonadInspectSTM m

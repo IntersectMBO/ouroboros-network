@@ -286,7 +286,7 @@ nodeToNodeProtocols miniProtocolParameters protocols version ownPeerSharing =
           -- Only register PeerSharing Protocol if version >= NodeToNodeV_11 and if peer
           -- has PeerSharing enabled
           NodeToNodeProtocols { keepAliveProtocol, peerSharingProtocol }
-            | version >= NodeToNodeV_11 && ownPeerSharing /= NoPeerSharing ->
+            | version >= NodeToNodeV_11 && ownPeerSharing /= PeerSharingDisabled ->
             [ MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
