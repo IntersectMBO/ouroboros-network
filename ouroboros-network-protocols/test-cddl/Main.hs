@@ -1,19 +1,20 @@
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE StandaloneDeriving    #-}
-{-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE QuantifiedConstraints      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -Wno-orphans        #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
@@ -57,7 +58,7 @@ import           Ouroboros.Network.Block (Point, SlotNo, Tip, decodeTip,
                      encodeTip, unwrapCBORinCBOR, wrapCBORinCBOR)
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.Mock.ConcreteBlock (Block, BlockHeader (..))
+import qualified Ouroboros.Network.Mock.ConcreteBlock as Concrete (Block)
 
 import           Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
                      NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
@@ -86,6 +87,9 @@ import           Ouroboros.Network.Protocol.KeepAlive.Codec (codecKeepAlive_v2)
 import           Ouroboros.Network.Protocol.KeepAlive.Test ()
 import           Ouroboros.Network.Protocol.KeepAlive.Type (KeepAlive)
 import qualified Ouroboros.Network.Protocol.KeepAlive.Type as KeepAlive
+import           Ouroboros.Network.Protocol.LocalStateQuery.Codec
+                     (codecLocalStateQuery)
+import qualified Ouroboros.Network.Protocol.LocalStateQuery.Codec as LocalStateQuery
 import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test as LocalStateQuery
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
                      (LocalStateQuery)
@@ -115,7 +119,11 @@ import           Ouroboros.Network.Protocol.PeerSharing.Test ()
 import           Ouroboros.Network.Protocol.PeerSharing.Type
                      (ClientHasAgency (TokIdle), ServerHasAgency (..))
 import qualified Ouroboros.Network.Protocol.PeerSharing.Type as PeerSharing
-import           Test.QuickCheck
+
+import           Test.ChainGenerators ()
+import           Test.Data.CDDL (Any (..))
+
+import           Test.QuickCheck hiding (Result (..))
 import           Test.QuickCheck.Instances.ByteString ()
 import           Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)
 import           Test.Tasty.HUnit
@@ -177,7 +185,7 @@ tests CDDLSpecs { cddlChainSync
                                                cddlKeepAlive)
       , testProperty "LocalTxSubmission" (prop_encodeLocalTxSubmission
                                                cddlLocalTxSubmission)
-      , testProperty "LocalTxMonitor" (prop_encodeLocalTxMonitor
+      , testProperty "LocalTxMonitor"    (prop_encodeLocalTxMonitor
                                                cddlLocalTxMonitor)
       , testProperty "LocalStateQuery"   (prop_encodeLocalStateQuery
                                                cddlLocalStateQuery)
@@ -210,7 +218,7 @@ tests CDDLSpecs { cddlChainSync
                                            cddlKeepAlive)
       , testCase "LocalTxSubmission" (unit_decodeLocalTxSubmission
                                            cddlLocalTxSubmission)
-      , testCase "LocalTxMonitor" (unit_decodeLocalTxMonitor
+      , testCase "LocalTxMonitor"    (unit_decodeLocalTxMonitor
                                            cddlLocalTxMonitor)
       , testCase "LocalStateQuery"   (unit_decodeLocalStateQuery
                                            cddlLocalStateQuery)
@@ -232,20 +240,15 @@ data CDDLSpecs = CDDLSpecs {
     cddlHandshakeNodeToClient        :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
     cddlHandshakeNodeToNodeV7To10    :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
     cddlHandshakeNodeToNodeV11ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
-    cddlChainSync                    :: CDDLSpec (ChainSync
-                                                    BlockHeader
-                                                    (Point BlockHeader)
-                                                    (Tip BlockHeader)),
-    cddlBlockFetch                   :: CDDLSpec (BlockFetch Block (Point Block)),
+    cddlChainSync                    :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip),
+    cddlBlockFetch                   :: CDDLSpec (BlockFetch Block BlockPoint),
     cddlTxSubmission2                :: CDDLSpec (TxSubmission2 TxId Tx),
     cddlKeepAlive                    :: CDDLSpec KeepAlive,
     cddlLocalTxSubmission            :: CDDLSpec (LocalTxSubmission
                                                     LocalTxSubmission.Tx
                                                     LocalTxSubmission.Reject),
     cddlLocalTxMonitor               :: CDDLSpec (LocalTxMonitor TxId Tx SlotNo),
-    cddlLocalStateQuery              :: CDDLSpec (LocalStateQuery
-                                                    Block (Point Block)
-                                                    LocalStateQuery.Query),
+    cddlLocalStateQuery              :: CDDLSpec (LocalStateQuery Block BlockPoint Query),
     cddlPeerSharing                  :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
 
     cddlNodeToNodeVersionDataV7To10    :: CDDLSpec NodeToNodeVersionData,
@@ -299,28 +302,63 @@ readCDDLSpecs = do
         cddlNodeToNodeVersionDataV11ToLast = CDDLSpec nodeToNodeVersionDataV11ToLast
       }
 
+
+newtype BlockHeader = BlockHeader Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+newtype HeaderPoint = HeaderPoint Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+newtype HeaderTip = HeaderTip Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+newtype Block = Block Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+newtype BlockPoint = BlockPoint Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+newtype Result = Result Any
+  deriving (Eq, Show, Arbitrary, Serialise)
+
+-- TODO: add payload to the query
+data Query result where
+    Query :: Any -> Query Result
+
+encodeQuery :: Query result -> CBOR.Encoding
+encodeQuery (Query a) = Serialise.encode a
+
+decodeQuery :: forall s. CBOR.Decoder s (LocalStateQuery.Some Query)
+decodeQuery = LocalStateQuery.Some . Query <$> Serialise.decode
+
+instance LocalStateQuery.ShowQuery Query where
+    showResult (Query query) result = show (query, result)
+deriving instance Show (Query result)
+instance Arbitrary (Query Result) where
+    arbitrary = Query <$> arbitrary
+
 --
 -- Mini-Protocol Codecs
 --
 
-chainSyncCodec :: Codec (ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader))
+chainSyncCodec :: Codec (ChainSync BlockHeader HeaderPoint HeaderTip)
                         CBOR.DeserialiseFailure IO BL.ByteString
 chainSyncCodec =
     codecChainSync
-      (wrapCBORinCBOR Serialise.encode)
-      (unwrapCBORinCBOR (const <$> Serialise.decode))
       Serialise.encode
       Serialise.decode
-      (encodeTip Serialise.encode)
-      (decodeTip Serialise.decode)
+      Serialise.encode
+      Serialise.decode
+      Serialise.encode
+      Serialise.decode
 
 
-blockFetchCodec :: Codec (BlockFetch Block (Point Block))
+blockFetchCodec :: Codec (BlockFetch Block BlockPoint)
                          CBOR.DeserialiseFailure IO BL.ByteString
 blockFetchCodec =
     codecBlockFetch
-      (wrapCBORinCBOR Serialise.encode)
-      (unwrapCBORinCBOR (const <$> Serialise.decode))
+      Serialise.encode
+      Serialise.decode
       Serialise.encode
       Serialise.decode
 
@@ -354,10 +392,14 @@ localTxMonitorCodec =
       Serialise.encode Serialise.decode
 
 
-localStateQueryCodec :: Codec (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
+localStateQueryCodec :: Codec (LocalStateQuery Block BlockPoint Query)
                               CBOR.DeserialiseFailure IO BL.ByteString
 localStateQueryCodec =
-    LocalStateQuery.codec
+    codecLocalStateQuery
+      Serialise.encode Serialise.decode
+      encodeQuery decodeQuery
+      (\Query{} -> Serialise.encode) (\Query{} -> Serialise.decode)
+
 
 
 --
@@ -413,7 +455,7 @@ validateCBORTermEncoder spec
           $ a
     terms = CBOR.deserialiseFromBytes CBOR.decodeTerm blob
 
--- | Match encoded cbor against cddl specifiction.
+-- | Match encoded CBOR against cddl specification.
 --
 validateCBOR :: CDDLSpec ps
              -> BL.ByteString
@@ -569,18 +611,18 @@ prop_encodeHandshakeNodeToClient spec = validateEncoder spec nodeToClientHandsha
 
 prop_encodeChainSync
     :: CDDLSpec            (ChainSync BlockHeader
-                                      (Point BlockHeader)
-                                      (Tip BlockHeader))
+                                      HeaderPoint
+                                      HeaderTip)
     -> AnyMessageAndAgency (ChainSync BlockHeader
-                                      (Point BlockHeader)
-                                      (Tip BlockHeader))
+                                      HeaderPoint
+                                      HeaderTip)
     -> Property
 prop_encodeChainSync spec = validateEncoder spec chainSyncCodec
 
 
 prop_encodeBlockFetch
-    :: CDDLSpec            (BlockFetch Block (Point Block))
-    -> AnyMessageAndAgency (BlockFetch Block (Point Block))
+    :: CDDLSpec            (BlockFetch Block BlockPoint)
+    -> AnyMessageAndAgency (BlockFetch Block BlockPoint)
     -> Property
 prop_encodeBlockFetch spec = validateEncoder spec blockFetchCodec
 
@@ -614,10 +656,10 @@ prop_encodeLocalTxMonitor
 prop_encodeLocalTxMonitor spec = validateEncoder spec localTxMonitorCodec
 
 prop_encodeLocalStateQuery
-    :: CDDLSpec            (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
-    -> AnyMessageAndAgency (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
+    :: CDDLSpec            (LocalStateQuery Block BlockPoint Query)
+    -> LocalStateQuery.AnyMessageAndAgencyWithResult Block BlockPoint Query Result
     -> Property
-prop_encodeLocalStateQuery spec = validateEncoder spec localStateQueryCodec
+prop_encodeLocalStateQuery spec (LocalStateQuery.AnyMessageAndAgencyWithResult msg) = validateEncoder spec localStateQueryCodec msg
 
 instance Arbitrary PortNumber where
   arbitrary = fromIntegral @Word16 <$> arbitrary
@@ -797,13 +839,13 @@ generateCBORFromSpec spec rounds = do
                 . readProcessWithExitCode "diag2cbor.rb" ["-"]
 
 
--- | Try decode at all given agencies.  If one suceeds return
+-- | Try decode at all given agencies.  If one succeeds return
 -- 'Nothing' otherwise return all 'DeserialiseFailure's.
 --
 decodeMsg :: forall ps.
              Codec ps CBOR.DeserialiseFailure IO BL.ByteString
           -> [SomeAgency ps]
-          -- ^ list of all gencies to try
+          -- ^ list of all agencies to try
           -> BL.ByteString
           -> IO (Maybe [CBOR.DeserialiseFailure])
 decodeMsg codec stoks bs =
@@ -813,7 +855,7 @@ decodeMsg codec stoks bs =
         decoder <- decode codec stok
         res <- runDecoder [bs] decoder
         return $ case res of
-          Left err -> Just (err)
+          Left err -> Just err
           Right {} -> Nothing
 
 
@@ -842,7 +884,7 @@ unit_decodeHandshakeNodeToClient spec =
 
 
 unit_decodeChainSync
-    :: CDDLSpec (ChainSync BlockHeader (Point BlockHeader) (Tip BlockHeader))
+    :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip)
     -> Assertion
 unit_decodeChainSync spec =
     validateDecoder Nothing
@@ -856,7 +898,7 @@ unit_decodeChainSync spec =
 
 
 unit_decodeBlockFetch
-    :: CDDLSpec (BlockFetch Block (Point Block))
+    :: CDDLSpec (BlockFetch Block BlockPoint)
     -> Assertion
 unit_decodeBlockFetch spec =
     validateDecoder Nothing
@@ -931,9 +973,8 @@ unit_decodeLocalTxMonitor spec =
       ]
       100
 
-
 unit_decodeLocalStateQuery
-    :: CDDLSpec (LocalStateQuery Block (Point Block) LocalStateQuery.Query)
+    :: CDDLSpec (LocalStateQuery Block BlockPoint Query)
     -> Assertion
 unit_decodeLocalStateQuery spec =
     validateDecoder Nothing
@@ -941,7 +982,10 @@ unit_decodeLocalStateQuery spec =
       [ SomeAgency $ ClientAgency LocalStateQuery.TokIdle
       , SomeAgency $ ClientAgency LocalStateQuery.TokAcquired
       , SomeAgency $ ServerAgency LocalStateQuery.TokAcquiring
-      , SomeAgency $ ServerAgency (LocalStateQuery.TokQuerying LocalStateQuery.QueryPoint)
+      , SomeAgency $ ServerAgency (LocalStateQuery.TokQuerying
+                                  (Query (error "invariant violation: lazy value")))
+        -- note: we use a bottom, because the `codecLocalStateQuery` via
+        -- `decodeQuery` will not scrutinize the query payload.
       ]
       100
 

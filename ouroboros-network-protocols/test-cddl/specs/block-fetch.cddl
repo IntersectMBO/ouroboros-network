@@ -17,6 +17,5 @@ msgRequestRange = [0, point, point]
 msgClientDone   = [1]
 msgStartBatch   = [2]
 msgNoBlocks     = [3]
-msgBlock        = [4, #6.24(bytes .cbor block)]
+msgBlock        = [4, block]
 msgBatchDone    = [5]
-
