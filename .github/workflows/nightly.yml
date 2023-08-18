@@ -61,7 +61,7 @@ jobs:
 
     - name: "Configure cabal.project.local"
       run: |
-        cp ./scripts/ci/cabal.project.nightly${{ runner.os }} cabal.project.local
+        cp ./scripts/ci/cabal.project.nightly.${{ runner.os }} cabal.project.local
 
     - name: Update PATH (Windows)
       if: runner.os == 'Windows'
