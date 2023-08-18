@@ -3,6 +3,10 @@
 
   inputs = {
     haskellNix.url = "github:input-output-hk/haskell.nix";
+    hackageNix = {
+      url = "github:input-output-hk/hackage.nix";
+      flake = false;
+    };
     nixpkgs.follows = "haskellNix/nixpkgs-unstable";
     iohkNix.url = "github:input-output-hk/iohk-nix";
     flake-utils.url = "github:hamishmack/flake-utils/hkm/nested-hydraJobs";
@@ -64,7 +68,7 @@
           name = "ouroboros-network";
           compiler-nix-name = lib.mkDefault defaultCompiler;
           cabalProjectLocal = if pkgs.stdenv.hostPlatform.isWindows
-                              then lib.readFile ./scripts/ci/cabal.project.local.Windows.CrossCompile
+                              then lib.readFile ./scripts/ci/cabal.project.local.Windows
                               else lib.readFile ./scripts/ci/cabal.project.local.Linux;
 
           #
@@ -128,6 +132,15 @@
               # pkgs are instatiated for the host platform
               packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
               packages.ouroboros-network-protocols.components.tests.cddl.preCheck    = "export HOME=`pwd`";
+
+              # don't run checks using Wine when cross compiling
+              packages.ntp-client.components.tests.test.doCheck                  = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.network-mux.components.tests.test.doCheck                 = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-api.components.tests.test.doCheck       = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-protocols.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-framework.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network.components.tests.test.doCheck           = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.cardano-client.components.tests.test.doCheck              = !pkgs.stdenv.hostPlatform.isWindows;
             })
           ];
         });

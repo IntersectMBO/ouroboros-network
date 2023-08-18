@@ -34,7 +34,7 @@ package ouroboros-network-framework
   ghc-options: -fno-ignore-asserts -Werror
 
 package ouroboros-network-protocols
-  flags: +cddl
+  flags: -cddl
   ghc-options: -fno-ignore-asserts -Werror
 
 package ouroboros-network
