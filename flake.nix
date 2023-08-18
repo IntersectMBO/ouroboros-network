@@ -42,12 +42,12 @@
         # setup our nixpkgs with the haskell.nix overlays, and the iohk-nix
         # overlays...
         nixpkgs = import inputs.nixpkgs {
+          inherit system;
+          inherit (inputs.haskellNix) config;
           overlays = [
             # haskellNix.overlay can be configured by later overlays, so need to come before them.
             inputs.haskellNix.overlay
           ];
-          inherit system;
-          inherit (inputs.haskellNix) config;
         };
         inherit (nixpkgs) lib;
         haskellNix = import inputs.haskellNix { };
@@ -155,25 +155,26 @@
         check-stylish = nixpkgs.callPackage ./nix/check-stylish.nix { };
       in
         lib.recursiveUpdate flake rec {
-          project = cabalProject;
           # add a required job, that's basically all hydraJobs.
           hydraJobs =
             nixpkgs.callPackages inputs.iohkNix.utils.ciJobsAggregates
-            {
-              ciJobs =
-                flake.hydraJobs
-                // {
-                  # This ensure hydra send a status for the required job (even if no change other than commit hash)
-                  revision = nixpkgs.writeText "revision" (inputs.self.rev or "dirty");
-                  inherit network-docs check-stylish;
-                };
-            };
-          legacyPackages = rec {
-            inherit cabalProject nixpkgs;
-            # also provide hydraJobs through legacyPackages to allow building without system prefix:
-            inherit hydraJobs;
-            inherit network-docs check-stylish;
-          };
+              {
+                ciJobs =
+                  flake.hydraJobs
+                  // {
+                    # This ensure hydra send a status for the required job (even if no change other than commit hash)
+                    revision = nixpkgs.writeText "revision" (inputs.self.rev or "dirty");
+                    inherit network-docs check-stylish;
+                  };
+              }
+            # add network-docs & check-stylish to support
+            # `nix build .\#hydraJobs.x86_64-linux.network-docs` and
+            # `nix build .\#hydraJobs.x86_64-linux.check-stylis`.
+            // { inherit network-docs check-stylish; };
+          # also provide hydraJobs through legacyPackages to allow building without system prefix, e.g.
+          # `nix build .\#network-mux:lib:network-mux`
+          # `nix build .\#network-docs`
+          legacyPackages = { inherit hydraJobs network-docs check-stylish; };
           devShells = let
             profillingShell = p: {
               # `nix develop .#profiling`
