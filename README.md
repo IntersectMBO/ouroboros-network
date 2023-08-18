@@ -9,7 +9,7 @@ This repository contains the core components of the network code for the Cardano
 node. It is a dependency when building the node from the cardano-node
 repository.
 
-The following graph shows the dependency tree.  The top level package is
+The following graph shows the dependency tree.  The top-level package is
 `ouroboros-consensus-diffusion` which is part of [ouroboros-consensus]
 
 ```mermaid
@@ -41,20 +41,20 @@ The following graph shows the dependency tree.  The top level package is
 
 * `network-mux` - implementation of a general network multiplexer.
 * `ouroboros-network-api` - shared API between `network` and `consensus` components.
-* `ouroboros-network-framework` - low level network components, e.g. snockets,
+* `ouroboros-network-framework` - low-level network components, e.g. snockets,
   connection manager, inbound governor, handshake mini-protocol, network
   simulator. 
 * `ouroboros-network-protocols` - implementation of all /node-to-node/
   & /node-to-client/ protocols.  Also contains a testing library which is
   implementing various applications for testing purposes.
-* `ouroboros-network`- top level integration of all network components also
+* `ouroboros-network`- top-level integration of all network components also
   defines `node-to-node` and `node-to-client` API.  It contains the implementation
-  of outbound governor.
+  of the outbound governor.
 * `ouroboros-network-mock` & `ouroboros-network-testing` - shared testing code.
 * `ntp-client` - an `ntp` client (used by `cardano-wallet`).
 * `cardano-ping` - a library which implements the core functionality of
   `cardano-cli ping` command.
-* `cardano-client` - a subscription for `node-to-client` which want to connect
+* `cardano-client` - a subscription for `node-to-client` which wants to connect
   to a `cardano-node`.
 
 Libraries:
@@ -77,7 +77,7 @@ the Cardano Shelley implementation:
 * [The Shelley Networking Protocol](https://input-output-hk.github.io/ouroboros-network/pdfs/network-spec)
 
   This document is a technical specification of the networking protocol.  It
-  includes serialisation formats, necessary details of multiplexer and
+  includes serialisation formats, necessary details of the multiplexer and
   technical specifications of mini-protocols used by either _node-to-node_ and
   _node-to-client_ flavours of the protocol.
 
@@ -90,7 +90,7 @@ the Cardano Shelley implementation:
 
 ### Work progress
 
-On a biweekly basis we publish updates on [cardano-updates].
+On a biweekly basis, we publish updates on [cardano-updates].
 We are also tracking our current work in the [Ouroboros Network Project][ouroboros-network-project].
 Our quarterly goals are published in the [Cardano Node Product Backlog][cardano-node-backlog].
 
@@ -104,11 +104,11 @@ The code of conduct is available [here][code-of-conduct].
 
 The API consists of three layers:
 
-• mini-protocol API's, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol` (defined in `ouroboros-network-protocols` package); this hides heavy type machinery of session types.  One only needs the typed `Peer` type  when one is using `runPeer` or `runPeerPipelined` function and each protocol exposes a function to create it (e.g. `Ouroboros.Network.Protocol.ChainSync.Client.chainSyncClientPeer`)
+• mini-protocol APIs, which are GADTs for each mini-protocol under `Ouroboros.Network.Protocol` (defined in `ouroboros-network-protocols` package); this hides heavy type machinery of session types.  One only needs the [`Peer`] or [`PeerPipelined`] type  when one is using [`runPeer`] or [`runPeerPipelined`] function and each protocol exposes a function to create it (e.g. [`chainSyncClientPeer`].  There is also API which allows to run a [`Peer`] or [`PipelinedPeer`] with limits (i.e. per state timeouts & per message size limits).
 
-• callback `ptcl -> channel -> m ()` where `ptcl` is enumeration for each mini-protocol, this is either `NodeToNodeProtocols` or `NodeToClientProtocols`.  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator / responder (or client / server) callbacks.
+• callback [`MiniProtocolCb`].  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator/responder (or client/server) callbacks.
 
-• versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use `simpleSingletonVersion` if your application does not depend on negotiated version data.  However, `Ouroboros.Network.NodeToNode` and `Ouroboros.Network.NodeToClient` expose `V1` api which hides versioning from the caller.
+• versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use [`simpleSingletonVersion`] if your application does not depend on negotiated version data.  However, [`Ouroboros.Network.NodeToNode`] and [`Ouroboros.Network.NodeToClient`] expose API which hides versioning from the caller.
 
 
 ## Demo applications
@@ -139,3 +139,13 @@ arguments it will specify what arguments it needs.
 [contributing-guide]: ./CONTRIBUTING.md
 [code-of-conduct]: ./CODE_OF_CONDUCT.md
 [style-guide]: ./docs/StyleGuide.md
+[`MiniProtocolCb`]: https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Mux.html#t:MiniProtocolCb
+[`Peer`]: https://input-output-hk.github.io/typed-protocols/typed-protocols/Network-TypedProtocol-Core.html#t:Peer
+[`PeerPipelines`]: https://input-output-hk.github.io/typed-protocols/typed-protocols/Network-TypedProtocol-Pipelined.html#t:PeerPipelined
+[`runPeer`]: https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Driver.html#v:runPeer
+[`runPipelinedPeer`]: https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Driver.html#v:runPipelinedPeer
+[`chainSyncClientPeer`]: https://input-output-hk.github.io/ouroboros-network/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html#v:chainSyncClientPeer
+[`OuroborosApplication`]: https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Mux.html#t:OuroborosApplication
+[`simpleSingletonVersion`]: https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#v:simpleSingletonVersions
+[`Ouroboros.Network.NodeToNode`]: https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-NodeToNode.html
+[`Ouroboros.Network.NodeToClient`]: https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-NodeToClient.html
