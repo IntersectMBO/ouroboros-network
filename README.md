@@ -88,6 +88,18 @@ the Cardano Shelley implementation:
   Specifically the section "Explore Cardano" is helpful, since it talks about the [Cardano Architecture](https://docs.cardano.org/explore-cardano/cardano-architecture), [Cardano Design Rationale](https://docs.cardano.org/explore-cardano/cardano-design-rationale), the [Cardano Network](https://docs.cardano.org/explore-cardano/cardano-network/about-the-cardano-network), etc.
   Although the Cardano documentation is less detailed, it is a good place to start and refresh some more basic concepts about Cardano.
 
+### Work progress
+
+On a biweekly basis we publish updates on [cardano-updates].
+We are also tracking our current work in the [Ouroboros Network Project][ouroboros-network-project].
+Our quarterly goals are published in the [Cardano Node Product Backlog][cardano-node-backlog].
+
+### For Contributors
+
+The contributing guide is available [here][contributing-guide].
+The style guide is available [here][style-guide].
+The code of conduct is available [here][code-of-conduct].
+
 ## Ouroboros-Network API
 
 The API consists of three layers:
@@ -97,6 +109,7 @@ The API consists of three layers:
 • callback `ptcl -> channel -> m ()` where `ptcl` is enumeration for each mini-protocol, this is either `NodeToNodeProtocols` or `NodeToClientProtocols`.  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator / responder (or client / server) callbacks.
 
 • versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use `simpleSingletonVersion` if your application does not depend on negotiated version data.  However, `Ouroboros.Network.NodeToNode` and `Ouroboros.Network.NodeToClient` expose `V1` api which hides versioning from the caller.
+
 
 ## Demo applications
 
@@ -120,3 +133,9 @@ arguments it will specify what arguments it needs.
 
 [ouroboros-consensus]: https://github.com/input-output-hk/ouroboros-consensus
 [ouroboros-network]: https://input-output-hk.github.io/ouroboros-network
+[cardano-updates]: https://input-output-hk.github.com/cardano-updates
+[ouroboros-network-project]: https://github.com/orgs/input-output-hk/projects/19/views/23
+[cardno-node-backlog]: https://github.com/orgs/input-output-hk/projects/39/views/30
+[contributing-guide]: ./CONTRIBUTING.md
+[code-of-conduct]: ./CODE_OF_CONDUCT.md
+[style-guide]: ./docs/StyleGuide.md
