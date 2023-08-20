@@ -65,7 +65,7 @@ import qualified Network.Socket as Socket
 import           Network.Mux as Mx (MakeBearer)
 
 import           Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
-                     LocalSnocket, LocalSocket (..), Snocket, SocketSnocket,
+                     LocalSocket (..), Snocket,
                      localSocketFileDescriptor, makeLocalBearer,
                      makeSocketBearer)
 import qualified Ouroboros.Network.Snocket as Snocket
@@ -837,11 +837,10 @@ runM Interfaces
     let remoteThread :: m Void
         remoteThread = do
           lookupReqs <- case (cmIPv4Address, cmIPv6Address) of
-                               (Just _, Nothing) -> return LookupReqAOnly
-                               (Nothing, Just _) -> return LookupReqAAAAOnly
-                               (Just _, Just _)  -> return LookupReqAAndAAAA
-                               _                 ->
-                                   throwIO NoSocket
+                               (Just _ , Nothing) -> return LookupReqAOnly
+                               (Nothing, Just _ ) -> return LookupReqAAAAOnly
+                               (Just _ , Just _ ) -> return LookupReqAAndAAAA
+                               (Nothing, Nothing) -> throwIO NoSocket
 
           -- control channel for the server; only required in
           -- @'InitiatorResponderMode' :: 'MuxMode'@
@@ -906,6 +905,7 @@ runM Interfaces
                           cmConfigureSocket     = diNtnConfigureSocket,
                           connectionDataFlow    = diNtnDataFlow,
                           cmPrunePolicy         = simplePrunePolicy,
+
                           -- Server is not running, it will not be able to
                           -- advise which connections to prune.  It's also not
                           -- expected that the governor targets will be larger
@@ -1046,23 +1046,6 @@ runM Interfaces
                           cmOutboundIdleTimeout = daProtocolIdleTimeout,
                           cmGetPeerSharing      = diNtnPeerSharing
                         }
-
-                    computePeerSharingPeers :: STM m (PublicPeerSelectionState ntnAddr)
-                                            -> StdGen
-                                            -> PeerSharingAmount
-                                            -> m [ntnAddr]
-                    computePeerSharingPeers readPublicState gen amount = do
-                      publicState <- atomically readPublicState
-                      let availableToShareSet = availableToShare
-                                              $ publicState
-                          is = nub
-                             $ take (fromIntegral amount)
-                             $ randomRs (0, length availableToShareSet - 1) gen
-                          randomList = map (`elemAt` availableToShareSet) is
-                      if null availableToShareSet
-                         then return []
-                         else return randomList
-
 
                     connectionHandler
                       :: NodeToNodeConnectionHandler
@@ -1223,6 +1206,23 @@ runM Interfaces
     exitPolicy :: ExitPolicy a
     exitPolicy = stdExitPolicy daReturnPolicy
 
+    computePeerSharingPeers :: STM m (PublicPeerSelectionState ntnAddr)
+                            -> StdGen
+                            -> PeerSharingAmount
+                            -> m [ntnAddr]
+    computePeerSharingPeers readPublicState gen amount = do
+      publicState <- atomically readPublicState
+      let availableToShareSet = availableToShare
+                              $ publicState
+          is = nub
+             $ take (fromIntegral amount)
+             $ randomRs (0, length availableToShareSet - 1) gen
+          randomList = map (`elemAt` availableToShareSet) is
+      if null availableToShareSet
+         then return []
+         else return randomList
+
+
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
@@ -1261,13 +1261,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                (\e -> traceWith tracer (DiffusionErrored e)
                    >> throwIO (DiffusionError e))
          $ withIOManager $ \iocp -> do
-             let diNtnSnocket :: SocketSnocket
-                 diNtnSnocket = Snocket.socketSnocket iocp
-
-                 diNtcSnocket :: LocalSnocket
-                 diNtcSnocket = Snocket.localSnocket iocp
-
-                 diNtnHandshakeArguments =
+             let diNtnHandshakeArguments =
                    HandshakeArguments {
                        haHandshakeTracer = dtHandshakeTracer tracers,
                        haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
@@ -1324,7 +1318,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
              diRng <- newStdGen
              runM
                Interfaces {
-                 diNtnSnocket,
+                 diNtnSnocket = Snocket.socketSnocket iocp,
                  diNtnBearer = makeSocketBearer,
                  diNtnConfigureSocket = configureSocket,
                  diNtnConfigureSystemdSocket =
@@ -1337,7 +1331,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diNtnToPeerAddr = curry IP.toSockAddr,
                  diNtnDomainResolver,
 
-                 diNtcSnocket,
+                 diNtcSnocket = Snocket.localSnocket iocp,
                  diNtcBearer = makeLocalBearer,
                  diNtcHandshakeArguments,
                  diNtcGetFileDescriptor = localSocketFileDescriptor,
