@@ -744,25 +744,6 @@ runM Interfaces
           Just (_ :: IOManagerError) -> ShutdownNode
           Nothing                    -> mempty
 
-    exitPolicy :: ExitPolicy a
-    exitPolicy = stdExitPolicy daReturnPolicy
-
-    computePeerSharingPeers :: STM m (PublicPeerSelectionState ntnAddr)
-                            -> StdGen
-                            -> PeerSharingAmount
-                            -> m [ntnAddr]
-    computePeerSharingPeers readPublicState gen amount = do
-      publicState <- atomically readPublicState
-      let availableToShareSet = availableToShare
-                              $ publicState
-          is = nub
-             $ take (fromIntegral amount)
-             $ randomRs (0, length availableToShareSet - 1) gen
-          randomList = map (`elemAt` availableToShareSet) is
-      if null availableToShareSet
-         then return []
-         else return randomList
-
 
     -- | mkLocalThread - create local connection manager
 
@@ -856,6 +837,26 @@ runM Interfaces
         
     mkRemoteThread :: ThreadId m -> m Void
     mkRemoteThread mainThreadId = do
+      let
+        exitPolicy :: ExitPolicy a
+        exitPolicy = stdExitPolicy daReturnPolicy
+
+        computePeerSharingPeers :: STM m (PublicPeerSelectionState ntnAddr)
+                                -> StdGen
+                                -> PeerSharingAmount
+                                -> m [ntnAddr]
+        computePeerSharingPeers readPublicState gen amount = do
+          publicState <- atomically readPublicState
+          let availableToShareSet = availableToShare
+                                  $ publicState
+              is = nub
+                 $ take (fromIntegral amount)
+                 $ randomRs (0, length availableToShareSet - 1) gen
+              randomList = map (`elemAt` availableToShareSet) is
+          if null availableToShareSet
+             then return []
+             else return randomList
+
       cmIPv4Address
         <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
                     daIPv4Address
