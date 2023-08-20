@@ -720,31 +720,31 @@ runM Interfaces
     -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
     mainThreadId <- myThreadId
 
-    cmIPv4Address
-      <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
-                  daIPv4Address
-    case cmIPv4Address of
-      Just addr | Just IPv4Address <- diNtnAddressType addr
-                -> pure ()
-                | otherwise
-                -> throwIO (UnexpectedIPv4Address addr)
-      Nothing   -> pure ()
-
-    cmIPv6Address
-      <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
-                  daIPv6Address
-    case cmIPv6Address of
-      Just addr | Just IPv6Address <- diNtnAddressType addr
-                -> pure ()
-                | otherwise
-                -> throwIO (UnexpectedIPv6Address addr)
-      Nothing   -> pure ()
-
     --
     -- remote connection manager
     --
     let remoteThread :: m Void
         remoteThread = do
+          cmIPv4Address
+            <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
+                        daIPv4Address
+          case cmIPv4Address of
+            Just addr | Just IPv4Address <- diNtnAddressType addr
+                      -> pure ()
+                      | otherwise
+                      -> throwIO (UnexpectedIPv4Address addr)
+            Nothing   -> pure ()
+
+          cmIPv6Address
+            <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
+                        daIPv6Address
+          case cmIPv6Address of
+            Just addr | Just IPv6Address <- diNtnAddressType addr
+                      -> pure ()
+                      | otherwise
+                      -> throwIO (UnexpectedIPv6Address addr)
+            Nothing   -> pure ()
+
           lookupReqs <- case (cmIPv4Address, cmIPv6Address) of
                                (Just _ , Nothing) -> return LookupReqAOnly
                                (Nothing, Just _ ) -> return LookupReqAAAAOnly
