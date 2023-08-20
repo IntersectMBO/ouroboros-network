@@ -45,7 +45,6 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (asum)
 import           Data.IP (IP)
 import qualified Data.IP as IP
-import           Data.Kind (Type)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map (Map)
 import           Data.Maybe (catMaybes, maybeToList)
@@ -72,8 +71,7 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.Context (ExpandedInitiatorContext,
-                     ResponderContext)
+import           Ouroboros.Network.Context (ResponderContext)
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -84,8 +82,7 @@ import           Data.List (nub)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (InboundGovernorInfoChannel, InformationChannel (..),
-                     OutboundGovernorInfoChannel, newInformationChannel)
+                     (InformationChannel (..), newInformationChannel)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
 import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
@@ -328,40 +325,6 @@ data ApplicationsExtra ntnAddr m a =
     --
     , daPeerSharingRegistry :: PeerSharingRegistry ntnAddr m
   }
-
--- | Diffusion will always run initiator of node-to-node protocols, but in some
--- configurations, i.e. 'InitiatorOnlyDiffusionMode', it will not run the
--- responder side.  This type allows to reflect this.
---
--- This is only used internally by 'run'; This type allows to
--- construct configuration upfront, before all services like connection manager
--- or server are initialised \/ started.
---
--- This is an existential wrapper for the higher order type @f :: MuxMode ->
--- Type@, like @'ConnectionManagerDataInMode' (mode :: MuxMode)@ below.
---
-data HasMuxMode (f :: MuxMode -> Type) where
-    HasInitiator :: !(f InitiatorMode)
-                 -> HasMuxMode f
-
-    HasInitiatorResponder
-                 :: !(f InitiatorResponderMode)
-                 -> HasMuxMode f
-
--- | Node-To-Node connection manager requires extra data when running in
--- 'InitiatorResponderMode'.
---
-data ConnectionManagerDataInMode peerAddr versionData m a (mode :: MuxMode) where
-    CMDInInitiatorMode
-      :: ConnectionManagerDataInMode peerAddr versionData m a InitiatorMode
-
-    CMDInInitiatorResponderMode
-      :: InboundGovernorInfoChannel InitiatorResponderMode
-                                    (ExpandedInitiatorContext peerAddr m)
-                                    peerAddr versionData ByteString  m a ()
-      -> OutboundGovernorInfoChannel peerAddr m
-      -> StrictTVar m Server.InboundGovernorObservableState
-      -> ConnectionManagerDataInMode peerAddr versionData m a InitiatorResponderMode
 
 
 --
@@ -883,20 +846,6 @@ runM Interfaces
                            (Just _ , Just _ ) -> return LookupReqAAndAAAA
                            (Nothing, Nothing) -> throwIO NoSocket
 
-      -- control channel for the server; only required in
-      -- @'InitiatorResponderMode' :: 'MuxMode'@
-      cmdInMode
-        <- case diffusionMode of
-            InitiatorOnlyDiffusionMode ->
-              -- action which we pass to connection handler
-              pure (HasInitiator CMDInInitiatorMode)
-            InitiatorAndResponderDiffusionMode ->
-              HasInitiatorResponder <$>
-                (CMDInInitiatorResponderMode
-                  <$> newInformationChannel
-                  <*> newInformationChannel
-                  <*> Server.newObservableStateVar ntnInbgovRng)
-
       -- RNGs used for picking random peers from the ledger and for
       -- demoting/promoting peers.
       policyRngVar <- newTVarIO policyRng
@@ -921,11 +870,9 @@ runM Interfaces
         daLedgerPeersCtx
         (diNtnDomainResolver lookupReqs)
         $ \requestLedgerPeers ledgerPeerThread ->
-        case cmdInMode of
-          -- InitiatorOnlyMode
-          --
-          -- Run peer selection only
-          HasInitiator CMDInInitiatorMode -> do
+        case diffusionMode of
+          -- Run peer selection only:
+          InitiatorOnlyDiffusionMode -> do
             let connectionManagerArguments
                   :: NodeToNodeConnectionManagerArguments
                        InitiatorMode
@@ -1060,8 +1007,10 @@ runM Interfaces
           --
           -- Run peer selection and the server.
           --
-          HasInitiatorResponder
-            (CMDInInitiatorResponderMode inboundInfoChannel outboundInfoChannel observableStateVar) -> do
+          InitiatorAndResponderDiffusionMode -> do
+            inboundInfoChannel  <- newInformationChannel
+            outboundInfoChannel <- newInformationChannel
+            observableStateVar <- Server.newObservableStateVar ntnInbgovRng
             let connectionManagerArguments
                   :: NodeToNodeConnectionManagerArguments
                       InitiatorResponderMode
