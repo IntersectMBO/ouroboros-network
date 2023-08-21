@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE DerivingVia       #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
@@ -52,7 +53,9 @@ instance Arbitrary ArbitraryPortNumber where
               $ map (ArbitraryPortNumber . read . show)
               $ ([1000..1100] :: [Int])
 
-newtype ArbitraryRelayAccessPoint = ArbitraryRelayAccessPoint RelayAccessPoint
+newtype ArbitraryRelayAccessPoint =
+  ArbitraryRelayAccessPoint { getArbitraryRelayAccessPoint :: RelayAccessPoint }
+  deriving (Eq, Ord) via RelayAccessPoint
 
 instance Arbitrary ArbitraryRelayAccessPoint where
     arbitrary =

@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+- Removes `updatePeerSharing` from `KnownPeers` module API
+
 ### Non-breaking changes
 
 ## 0.9.0.0 -- 2023-08-09

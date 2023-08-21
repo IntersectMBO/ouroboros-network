@@ -21,9 +21,6 @@ import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.State.KnownPeers
@@ -190,9 +187,9 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                 knownPeers = KnownPeers.insert
                                                (Map.fromList
                                                 $ map (\a -> ( a
-                                                             , ( NoPeerSharing
-                                                               , DoAdvertisePeer
-                                                               , IsNotLedgerPeer))
+                                                             , ( Nothing
+                                                               , Nothing
+                                                               , Nothing))
                                                       )
                                                       newPeers)
                                                (knownPeers st),
@@ -234,9 +231,9 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                  knownPeers = KnownPeers.insert
                                                 (Map.fromList
                                                  $ map (\a -> ( a
-                                                              , ( NoPeerSharing
-                                                                , DoAdvertisePeer
-                                                                , IsNotLedgerPeer))
+                                                              , ( Nothing
+                                                                , Nothing
+                                                                , Nothing))
                                                        )
                                                        newPeers)
                                                 (knownPeers st),
@@ -298,9 +295,9 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                              knownPeers = KnownPeers.insert
                                             (Map.fromList
                                              $ map (\a -> ( a
-                                                          , ( NoPeerSharing
-                                                            , DoAdvertisePeer
-                                                            , IsNotLedgerPeer))
+                                                          , ( Nothing
+                                                            , Nothing
+                                                            , Nothing))
                                                    )
                                                    newPeers)
                                             (knownPeers st),

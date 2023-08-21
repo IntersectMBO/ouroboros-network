@@ -13,6 +13,7 @@ import qualified Test.Ouroboros.Network.NodeToClient.Version (tests)
 import qualified Test.Ouroboros.Network.NodeToNode.Version (tests)
 import qualified Test.Ouroboros.Network.PeerSelection (tests)
 import qualified Test.Ouroboros.Network.PeerSelection.Json (tests)
+import qualified Test.Ouroboros.Network.PeerSelection.KnownPeers
 import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
 import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
 import qualified Test.Ouroboros.Network.PeerSelection.PeerMetric
@@ -42,6 +43,7 @@ tests =
   , Test.Ouroboros.Network.BlockFetch.tests
   , Test.Ouroboros.Network.PeerSelection.tests
   , Test.Ouroboros.Network.PeerSelection.Json.tests
+  , Test.Ouroboros.Network.PeerSelection.KnownPeers.tests
   , Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
   , Test.Ouroboros.Network.PeerSelection.MockEnvironment.tests
   , Test.Ouroboros.Network.PeerSelection.PeerMetric.tests

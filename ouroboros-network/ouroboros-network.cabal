@@ -165,6 +165,7 @@ test-suite test
                        Test.Ouroboros.Network.TxSubmission
                        Test.Ouroboros.Network.PeerSelection
                        Test.Ouroboros.Network.PeerSelection.Instances
+                       Test.Ouroboros.Network.PeerSelection.KnownPeers
                        Test.Ouroboros.Network.PeerSelection.LocalRootPeers
                        Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                        Test.Ouroboros.Network.PeerSelection.Json
