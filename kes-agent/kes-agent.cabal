@@ -15,6 +15,11 @@ maintainer:         tobias@well-typed.com
 -- category:
 -- extra-source-files:
 
+data-files: fixtures/*.vkey
+          , fixtures/*.skey
+          , fixtures/opcert.cert
+          , fixtures/opcert.counter
+
 common project-config
      ghc-options:
          -threaded -rtsopts -with-rtsopts
@@ -122,6 +127,7 @@ test-suite kes-agent-tests
                  , Cardano.KESAgent.Tests.RefCounting
                  , Cardano.KESAgent.Tests.Serialization
                  , Cardano.KESAgent.Tests.EndToEnd
+                 , Paths_kes_agent
     build-tool-depends: kes-agent:kes-agent
     build-depends: kes-agent
                  , aeson >=2.0

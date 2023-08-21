@@ -1,12 +1,13 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | A stripped-down version of the @OCert@ and @Crypto@ types used in
 -- @cardano-ledger@. We only replicate what we need here, so as to avoid
@@ -53,6 +54,15 @@ newtype KESPeriod = KESPeriod {unKESPeriod :: Word}
 data OCertSignable c
   = OCertSignable !(VerKeyKES (KES c)) !Word64 !KESPeriod
 
+instance (Typeable c, ToCBOR (VerKeyKES (KES c))) => ToCBOR (OCertSignable c) where
+  toCBOR (OCertSignable vk opcertN kesPeriod) =
+    toCBOR (vk, opcertN, kesPeriod)
+
+instance (Typeable c, FromCBOR (VerKeyKES (KES c))) => FromCBOR (OCertSignable c) where
+  fromCBOR = do
+    (vk, opcertN, kesPeriod) <- fromCBOR
+    return $ OCertSignable vk opcertN kesPeriod
+
 instance
   forall c.
   Crypto c =>
@@ -76,6 +86,9 @@ data OCert c = OCert
     ocertSigma :: !(SignedDSIGN (DSIGN c) (OCertSignable c))
   }
   deriving (Generic, Typeable)
+
+deriving instance (DSIGNAlgorithm (DSIGN c), Show (VerKeyKES (KES c))) => Show (OCert c)
+deriving instance (DSIGNAlgorithm (DSIGN c), Eq (VerKeyKES (KES c))) => Eq (OCert c)
 
 -- | NB this CBOR format is incompatible with the one defined in
 -- cardano-ledger.

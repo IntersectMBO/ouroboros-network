@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Cardano.KESAgent.Tests.Serialization
 where
@@ -16,12 +17,24 @@ import Test.Crypto.Instances
 
 import Control.Monad.Class.MonadThrow ( bracket )
 import qualified Data.Aeson as JSON
+import Data.Proxy
+import Data.Word (Word64)
 import Test.Tasty
 import Test.Tasty.QuickCheck
+import Test.Tasty.HUnit
+
+import Paths_kes_agent
 
 tests :: TestTree
 tests = testGroup "serialization"
-  [ testGroup "properties"
+  [ testGroup "fixtures"
+    [ testDeserializeFixture "Cold VerKey" "fixtures/cold.vkey" (Proxy @(ColdVerKey StandardCrypto))
+    , testDeserializeFixture "Cold SignKey" "fixtures/cold.skey" (Proxy @(ColdSignKey StandardCrypto))
+    , testDeserializeFixture "KES VerKey" "fixtures/kes.vkey" (Proxy @(KESVerKey StandardCrypto))
+    , testDeserializeFixture "OpCert Counter" "fixtures/opcert.counter" (Proxy @(OpCertCounter StandardCrypto))
+    , testDeserializeFixture "OpCert" "fixtures/opcert.cert" (Proxy @(OpCert StandardCrypto))
+    ]
+  , testGroup "properties"
     [ testGroup "KES"
       [ testSerializable "VerKey" mkVerKeyKES
       ]
@@ -29,8 +42,20 @@ tests = testGroup "serialization"
       [ testSerializable "VerKey" mkColdVerKey
       , testSerializable "SignKey" mkColdSignKey
       ]
+    , testGroup "OpCert"
+      [ testSerializable "Counter" mkOpCertCounter
+      , testSerializable "Cert" mkOpCert
+      ]
     ]
   ]
+
+testDeserializeFixture :: forall a. HasTextEnvelope a => String -> FilePath -> Proxy a -> TestTree
+testDeserializeFixture label srcFile proxy =
+  testCase label $ do
+    path <- getDataFileName srcFile
+    Just json <- JSON.decodeFileStrict' path
+    result <- either error return $ fromTextEnvelope @a json
+    return ()
 
 mkVerKeyKES :: PinnedSizedBytes (SeedSizeKES (KES StandardCrypto)) -> IO (KESVerKey StandardCrypto)
 mkVerKeyKES seed = KESVerKey <$> do
@@ -45,6 +70,19 @@ mkColdSignKey seed = return . ColdSignKey $ genKeyDSIGN (mkSeedFromBytes . psbTo
 
 mkColdVerKey :: PinnedSizedBytes (SeedSizeDSIGN (DSIGN StandardCrypto)) -> IO (ColdVerKey StandardCrypto)
 mkColdVerKey seed = ColdVerKey . deriveVerKeyDSIGN . coldSignKey <$> mkColdSignKey seed
+
+mkOpCertCounter :: (PinnedSizedBytes (SeedSizeDSIGN (DSIGN StandardCrypto)), Word64) -> IO (OpCertCounter StandardCrypto)
+mkOpCertCounter (seed, count) = do
+  ColdVerKey vk <- mkColdVerKey seed
+  return $ OpCertCounter count vk
+
+mkOpCert :: (Word64, Word, PinnedSizedBytes (SeedSizeDSIGN (DSIGN StandardCrypto)), PinnedSizedBytes (SeedSizeKES (KES StandardCrypto))) -> IO (OpCert StandardCrypto)
+mkOpCert (n, kesPeriod, seedDSIGN, seedKES) = do
+  ColdSignKey coldSignKey <- mkColdSignKey seedDSIGN
+  let coldVerKey = deriveVerKeyDSIGN coldSignKey
+  KESVerKey kesVerKey <- mkVerKeyKES seedKES
+  let ocert = makeOCert kesVerKey n (KESPeriod kesPeriod) coldSignKey
+  return $ OpCert ocert coldVerKey
 
 testSerializable :: forall a seed.
                     ( HasTextEnvelope a, Eq a, Show a, Arbitrary seed, Show seed )

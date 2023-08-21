@@ -66,8 +66,8 @@ fromTextEnvelope :: forall a m. (HasTextEnvelope a) => TextEnvelope -> Either St
 fromTextEnvelope TextEnvelope { teType, teRawCBOR } = do
   when (teType /= getTEType proxy)
       (Left $
-        "Unexpected text envelope type, expected " ++ teType ++
-        ", but found " ++ getTEType proxy
+        "Unexpected text envelope type, expected " ++ getTEType proxy ++
+        ", but found " ++ teType
       )
   first (Formatting.formatToString Formatting.build) $ decodeFull' teRawCBOR
   where
