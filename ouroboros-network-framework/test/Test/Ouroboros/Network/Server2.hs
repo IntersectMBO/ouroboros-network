@@ -580,7 +580,7 @@ withBidirectionalConnectionManager name timeouts
                         <> assertRethrowPolicy))
           (\_ -> HandshakeFailure)
           (InResponderMode inbgovInfoChannel)
-          (InResponderMode outgovInfoChannel)
+          (InResponderMode $ Just outgovInfoChannel)
       $ \connectionManager ->
           do
             serverAddr <- Snocket.getLocalAddr snocket socket

@@ -751,7 +751,6 @@ runM Interfaces
               Just $ withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
                        $ \localSocket -> do
                 localInbInfoChannel <- newInformationChannel
-                localOutInfoChannel <- newInformationChannel
                 localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
 
                 let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
@@ -803,7 +802,7 @@ runM Interfaces
                   localConnectionHandler
                   classifyHandleError
                   (InResponderMode localInbInfoChannel)
-                  (InResponderMode localOutInfoChannel)
+                  (InResponderMode Nothing)
                   $ \(localConnectionManager :: NodeToClientConnectionManager
                                                   ntcFd ntcAddr ntcVersion
                                                   ntcVersionData m)
@@ -1083,7 +1082,9 @@ runM Interfaces
                   connectionHandler
                   classifyHandleError
                   (InResponderMode inboundInfoChannel)
-                  (InResponderMode outboundInfoChannel)
+                  (if daOwnPeerSharing /= NoPeerSharing
+                     then InResponderMode (Just outboundInfoChannel)
+                     else InResponderMode Nothing)
                   $ \(connectionManager
                         :: NodeToNodeConnectionManager
                              InitiatorResponderMode ntnFd ntnAddr ntnVersionData ntnVersion m a ()
