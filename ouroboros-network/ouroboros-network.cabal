@@ -155,7 +155,6 @@ test-suite sim-tests
   other-modules:       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
 
-                       Test.LedgerPeers
                        Test.Ouroboros.Network.Diffusion.Node
                        Test.Ouroboros.Network.Diffusion.Node.NodeKernel
                        Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
@@ -163,6 +162,8 @@ test-suite sim-tests
                        Test.Ouroboros.Network.Diffusion.Policies
                        Test.Ouroboros.Network.BlockFetch
                        Test.Ouroboros.Network.KeepAlive
+                       Test.Ouroboros.Network.LedgerPeers
+                       Test.Ouroboros.Network.Mux
                        Test.Ouroboros.Network.MockNode
                        Test.Ouroboros.Network.TxSubmission
                        Test.Ouroboros.Network.PeerSelection
@@ -174,15 +175,14 @@ test-suite sim-tests
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
                        Test.Ouroboros.Network.PeerSelection.PeerMetric
+                       Test.Ouroboros.Network.PeerState
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
                        Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.ShrinkCarefully
                        Test.Ouroboros.Network.Testnet
                        Test.Ouroboros.Network.Testnet.Simulation.Node
-                       Test.Mux
-                       Test.PeerState
-                       Test.Version
+                       Test.Ouroboros.Network.Version
   default-language:    Haskell2010
   build-depends:       base >=4.14 && <4.19,
                        bytestring,

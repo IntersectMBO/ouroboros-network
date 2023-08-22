@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Test.PeerState (tests) where
+module Test.Ouroboros.Network.PeerState (tests) where
 
 
 import           Control.Exception (ArithException (..), AsyncException (..),
@@ -40,7 +40,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
-tests = testGroup "Subscription.PeerState"
+tests = testGroup "Ouroboros.Network.Subscription.PeerState"
   [ testProperty "SuspendDecision semigroup" (prop_SuspendDecisionSemigroup @Int)
   , testProperty "Suspend semigroup action on PeerState (up to constructor)"
       (prop_SuspendDecisionAction @IO)

@@ -4,7 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 
-module Test.LedgerPeers where
+module Test.Ouroboros.Network.LedgerPeers where
 
 import           Control.Exception (SomeException (..))
 import           Control.Monad.Class.MonadAsync
@@ -40,7 +40,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Printf
 
 tests :: TestTree
-tests = testGroup "LedgerPeers"
+tests = testGroup "Ouroboros.Network.LedgerPeers"
   [ testProperty "Pick 100%" prop_pick100
   , testProperty "Pick" prop_pick
   , testProperty "accBigPoolStake" prop_accBigPoolStake

@@ -2,7 +2,7 @@
 
 -- | Test `NodeToNodeVersion` and `NodeToClientVersion` codecs.
 --
-module Test.Version (tests) where
+module Test.Ouroboros.Network.Version (tests) where
 
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..),

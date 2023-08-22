@@ -8,7 +8,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans            #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-module Test.Mux (tests) where
+module Test.Ouroboros.Network.Mux (tests) where
 
 import           Codec.Serialise (Serialise (..))
 
@@ -51,7 +51,7 @@ import           Ouroboros.Network.Mux as Mx
 
 tests :: TestTree
 tests =
-    testGroup "Mux"
+    testGroup "Ouroboros.Network.Mux"
   [ testProperty "ChainSync Demo (IO)"  prop_mux_demo_io
   , testProperty "ChainSync Demo (Sim)" prop_mux_demo_sim
   ]
