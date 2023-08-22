@@ -90,6 +90,10 @@ pProgramOptions = subparser
   (  command "new-key" (info (RunNewKey <$> pNewKeyOptions) idm)
   )
 
+eitherError :: Either String a -> IO a
+eitherError (Left err) = error err
+eitherError (Right x) = return x
+
 runNewKey :: NewKeyOptions -> IO ()
 runNewKey nko' = withIOManager $ \ioManager -> do
   nkoEnv <- nkoFromEnv
@@ -106,19 +110,16 @@ runNewKey nko' = withIOManager $ \ioManager -> do
   sk <- genKeyKESIO
   ( do
       vkKES :: VerKeyKES (KES StandardCrypto) <- deriveVerKeyKES sk
-      let vkEnv = toTextEnvelope (KESVerKey vkKES :: KESVerKey StandardCrypto)
 
-      JSON.encodeFile verKeyFilename vkEnv
+      encodeTextEnvelopeFile verKeyFilename (KESVerKey vkKES)
       putStrLn $ "KES VerKey written to " ++ verKeyFilename
       putStrLn $ "OpCert will be read from " ++ ocertFilename
-      hPutStrLn stderr "Press ENTER to continue..."
+      putStrLn "Press ENTER to continue..."
       _ <- getLine
-      json <- maybe (error "Error decoding JSON envelope") return =<<
-                JSON.decodeFileStrict' ocertFilename
-      oc <- either error return $ fromTextEnvelope @(OpCert StandardCrypto) json
+      oc <- eitherError =<< decodeTextEnvelopeFile ocertFilename
       withNewCRef
         (forgetSignKeyKES . skWithoutPeriodKES)
-        (SignKeyWithPeriodKES sk (unKESPeriod . ocertKESPeriod . opCert $ oc)) $ \skpVar -> do
+        (SignKeyWithPeriodKES sk 0) $ \skpVar -> do
           runControlClient1
             (Proxy @StandardCrypto)
             makeSocketRawBearer

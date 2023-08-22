@@ -25,56 +25,56 @@ import Data.Word (Word64)
 
 -- * Stake pool keys (\'Cold\' keys)
 
-newtype ColdVerKey c =
-  ColdVerKey { coldVerKey :: VerKeyDSIGN (DSIGN c) }
+newtype ColdVerKey d =
+  ColdVerKey { coldVerKey :: VerKeyDSIGN d }
 
-deriving newtype instance (Typeable c, ToCBOR (VerKeyDSIGN (DSIGN c))) => ToCBOR (ColdVerKey c)
-deriving newtype instance (Typeable c, FromCBOR (VerKeyDSIGN (DSIGN c))) => FromCBOR (ColdVerKey c)
-deriving newtype instance (Typeable c, Eq (VerKeyDSIGN (DSIGN c))) => Eq (ColdVerKey c)
-deriving newtype instance (Typeable c, Show (VerKeyDSIGN (DSIGN c))) => Show (ColdVerKey c)
+deriving newtype instance (Typeable d, ToCBOR (VerKeyDSIGN d)) => ToCBOR (ColdVerKey d)
+deriving newtype instance (Typeable d, FromCBOR (VerKeyDSIGN d)) => FromCBOR (ColdVerKey d)
+deriving newtype instance (Typeable d, Eq (VerKeyDSIGN d)) => Eq (ColdVerKey d)
+deriving newtype instance (Typeable d, Show (VerKeyDSIGN d)) => Show (ColdVerKey d)
 
-instance ( Typeable c
-         , ToCBOR (VerKeyDSIGN (DSIGN c))
-         , FromCBOR (VerKeyDSIGN (DSIGN c))
-         , DSIGNAlgorithm (DSIGN c)
-         ) => HasTextEnvelope (ColdVerKey c) where
-  getTEType _ = "StakePoolVerificationKey_" ++ algorithmNameDSIGN (Proxy @(DSIGN c))
+instance ( Typeable d
+         , ToCBOR (VerKeyDSIGN d)
+         , FromCBOR (VerKeyDSIGN d)
+         , DSIGNAlgorithm d
+         ) => HasTextEnvelope (ColdVerKey d) where
+  getTEType _ = "StakePoolVerificationKey_" ++ algorithmNameDSIGN (Proxy @d)
   getTEDescription _ = "Cold verification key for stake pools"
 
-newtype ColdSignKey c =
-  ColdSignKey { coldSignKey :: SignKeyDSIGN (DSIGN c) }
+newtype ColdSignKey d =
+  ColdSignKey { coldSignKey :: SignKeyDSIGN d }
 
-deriving newtype instance (Typeable c, ToCBOR (SignKeyDSIGN (DSIGN c))) => ToCBOR (ColdSignKey c)
-deriving newtype instance (Typeable c, FromCBOR (SignKeyDSIGN (DSIGN c))) => FromCBOR (ColdSignKey c)
-deriving newtype instance (Typeable c, Eq (SignKeyDSIGN (DSIGN c))) => Eq (ColdSignKey c)
-deriving newtype instance (Typeable c, Show (SignKeyDSIGN (DSIGN c))) => Show (ColdSignKey c)
+deriving newtype instance (Typeable d, ToCBOR (SignKeyDSIGN d)) => ToCBOR (ColdSignKey d)
+deriving newtype instance (Typeable d, FromCBOR (SignKeyDSIGN d)) => FromCBOR (ColdSignKey d)
+deriving newtype instance (Typeable d, Eq (SignKeyDSIGN d)) => Eq (ColdSignKey d)
+deriving newtype instance (Typeable d, Show (SignKeyDSIGN d)) => Show (ColdSignKey d)
 
-instance ( Typeable c
-         , ToCBOR (SignKeyDSIGN (DSIGN c))
-         , FromCBOR (SignKeyDSIGN (DSIGN c))
-         , DSIGNAlgorithm (DSIGN c)
-         ) => HasTextEnvelope (ColdSignKey c) where
-  getTEType _ = "StakePoolSigningKey_" ++ algorithmNameDSIGN (Proxy @(DSIGN c))
+instance ( Typeable d
+         , ToCBOR (SignKeyDSIGN d)
+         , FromCBOR (SignKeyDSIGN d)
+         , DSIGNAlgorithm d
+         ) => HasTextEnvelope (ColdSignKey d) where
+  getTEType _ = "StakePoolSigningKey_" ++ algorithmNameDSIGN (Proxy @d)
   getTEDescription _ = "Cold signing key for stake pools"
 
 -- * KES keys
 -- NB: No types are provided for serializing KES sign keys, because the whole
 -- purpose of KES Agent is to never write KES sign keys to disk.
 
-newtype KESVerKey c =
-  KESVerKey { kesVerKey :: VerKeyKES (KES c) }
+newtype KESVerKey k =
+  KESVerKey { kesVerKey :: VerKeyKES k }
 
-deriving newtype instance (Typeable c, ToCBOR (VerKeyKES (KES c))) => ToCBOR (KESVerKey c)
-deriving newtype instance (Typeable c, FromCBOR (VerKeyKES (KES c))) => FromCBOR (KESVerKey c)
-deriving newtype instance (Typeable c, Eq (VerKeyKES (KES c))) => Eq (KESVerKey c)
-deriving newtype instance (Typeable c, Show (VerKeyKES (KES c))) => Show (KESVerKey c)
+deriving newtype instance (Typeable k, ToCBOR (VerKeyKES k)) => ToCBOR (KESVerKey k)
+deriving newtype instance (Typeable k, FromCBOR (VerKeyKES k)) => FromCBOR (KESVerKey k)
+deriving newtype instance (Typeable k, Eq (VerKeyKES k)) => Eq (KESVerKey k)
+deriving newtype instance (Typeable k, Show (VerKeyKES k)) => Show (KESVerKey k)
 
-instance ( Typeable c
-         , ToCBOR (VerKeyKES (KES c))
-         , FromCBOR (VerKeyKES (KES c))
-         , KESAlgorithm (KES c)
-         ) => HasTextEnvelope (KESVerKey c) where
-  getTEType _ = "KesVerificationKey_" ++ algorithmNameKES (Proxy @(KES c))
+instance ( Typeable k
+         , ToCBOR (VerKeyKES k)
+         , FromCBOR (VerKeyKES k)
+         , KESAlgorithm k
+         ) => HasTextEnvelope (KESVerKey k) where
+  getTEType _ = "KesVerificationKey_" ++ algorithmNameKES (Proxy @k)
   getTEDescription _ = "KES verification"
 
 -- * Operational Certificates

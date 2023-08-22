@@ -126,8 +126,8 @@ data AgentTrace
   | AgentUpdateKESPeriod KESPeriod KESPeriod
   | AgentKeyNotEvolved KESPeriod KESPeriod
   | AgentNoKeyToEvolve
-  | AgentKeyEvolved
-  | AgentKeyExpired
+  | AgentKeyEvolved KESPeriod KESPeriod
+  | AgentKeyExpired KESPeriod KESPeriod
   | AgentLockRequest String
   | AgentLockAcquired String
   | AgentLockReleased String
@@ -291,13 +291,13 @@ checkEvolution agent = withKeyUpdateLock agent "checkEvolution" $ do
       return ()
     Just (keyVar, oc) -> withCRefValue keyVar $ \key -> do
       let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
-      if p /= p' then do
+      if p < p' then do
         keyMay' <- updateKESTo () p' oc key
         case keyMay' of
           Nothing -> do
-            agentTrace agent AgentKeyExpired
+            agentTrace agent $ AgentKeyExpired p p'
           Just key' -> do
-            agentTrace agent AgentKeyEvolved
+            agentTrace agent $ AgentKeyEvolved p p'
             keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
             void . atomically $ putTMVar (agentCurrentKeyVar agent) (keyVar', oc)
         releaseCRef keyVar

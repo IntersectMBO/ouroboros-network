@@ -9,9 +9,10 @@ import Cardano.Binary ( FromCBOR (..), ToCBOR (..), serialize', decodeFull' )
 import qualified Cardano.Binary as Binary
 import qualified Formatting
 
-import Control.Monad ( when )
+import Control.Monad ( when, (<=<) )
 import Data.Bifunctor ( first )
 import Data.ByteString ( ByteString )
+import qualified Data.ByteString.Lazy as LBS
 import Data.Aeson
   ( ToJSON (..)
   , FromJSON (..)
@@ -21,9 +22,25 @@ import Data.Aeson
   , (.=)
   , (.:)
   )
+import qualified Data.Aeson as JSON
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.ByteString.Base16 as Base16
 import Data.Proxy ( Proxy (..) )
+
+encodeTextEnvelopeFile :: HasTextEnvelope a => FilePath -> a -> IO ()
+encodeTextEnvelopeFile path value = do
+  JSON.encodeFile path $ toTextEnvelope value
+
+decodeTextEnvelopeFile :: HasTextEnvelope a => FilePath -> IO (Either String a)
+decodeTextEnvelopeFile path = do
+  result <- JSON.eitherDecodeFileStrict' path
+  return $ result >>= fromTextEnvelope
+
+encodeTextEnvelope :: HasTextEnvelope a => a -> ByteString
+encodeTextEnvelope = LBS.toStrict . JSON.encode . toTextEnvelope
+
+decodeTextEnvelope :: HasTextEnvelope a => ByteString -> Either String a
+decodeTextEnvelope = fromTextEnvelope <=< JSON.eitherDecodeStrict
 
 data TextEnvelope =
   TextEnvelope
