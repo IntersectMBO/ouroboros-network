@@ -63,7 +63,7 @@ import           Ouroboros.Network.Subscription.Subscriber
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
                      WorkerParams (..))
 
-import           Test.Ouroboros.Network.Orphans ()
+import           Ouroboros.Network.Test.Orphans ()
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)

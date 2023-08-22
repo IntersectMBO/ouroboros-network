@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wno-orphans     #-}
-module Test.Ouroboros.Network.Orphans () where
+module Ouroboros.Network.Test.Orphans () where
 
 import           Network.TypedProtocol.PingPong.Type (PingPong)
 import           Network.TypedProtocol.ReqResp.Type (ReqResp)
