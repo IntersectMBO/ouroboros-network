@@ -86,15 +86,22 @@ mkVersionIdentifier raw =
 
 instance VersionedProtocol (KESProtocol m StandardCrypto) where
   versionIdentifier _ =
-    mkVersionIdentifier "StandardCrypto:0.2"
+    mkVersionIdentifier "StandardCrypto:0.3"
 
 instance VersionedProtocol (KESProtocol m SingleCrypto) where
   versionIdentifier _ =
-    mkVersionIdentifier "SingleCrypto:0.2"
+    mkVersionIdentifier "SingleCrypto:0.3"
 
 instance VersionedProtocol (KESProtocol m MockCrypto) where
   versionIdentifier _ =
-    mkVersionIdentifier "MockCrypto:0.2"
+    mkVersionIdentifier "MockCrypto:0.3"
+
+data RecvResult
+  = RecvOK
+  | RecvErrorKeyOutdated -- ^ Newer key is already present
+  | RecvErrorInvalidOpCert -- ^ OpCert did not validate
+  | RecvErrorUnknown -- ^ Something else went wrong, we don't know what
+  deriving (Show, Read, Eq, Ord, Bounded, Enum)
 
 -- | The protocol for pushing KES keys.
 --
@@ -123,7 +130,8 @@ instance Protocol (KESProtocol m c) where
                      -> OCert c
                      -> Message (KESProtocol m c) IdleState WaitForConfirmationState
           ConfirmMessage :: Message (KESProtocol m c) WaitForConfirmationState IdleState
-          RecvErrorMessage :: Message (KESProtocol m c) WaitForConfirmationState IdleState
+          RecvErrorMessage :: RecvResult
+                           -> Message (KESProtocol m c) WaitForConfirmationState IdleState
           EndMessage :: Message (KESProtocol m c) IdleState EndState
 
   -- | Server always has agency, except between sending a key and confirming it

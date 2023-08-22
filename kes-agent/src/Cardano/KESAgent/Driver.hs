@@ -106,12 +106,12 @@ driver s tracer = Driver
           traceWith tracer $ DriverSentKey (ocertN oc)
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
-      (ClientAgency TokWaitForConfirmation, RecvErrorMessage) -> do
+      (ClientAgency TokWaitForConfirmation, RecvErrorMessage reason) -> do
         traceWith tracer DriverDecliningKey
-        void $ sendWord32 s 0x00000000
+        void $ sendWord32 s (encodeRecvResult reason)
       (ClientAgency TokWaitForConfirmation, ConfirmMessage) -> do
         traceWith tracer DriverConfirmingKey
-        void $ sendWord32 s 0x12345678
+        void $ sendWord32 s (encodeRecvResult RecvOK)
 
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
@@ -164,13 +164,13 @@ driver s tracer = Driver
           traceWith tracer DriverConnectionClosed
           return (SomeMessage EndMessage, ())
       (ClientAgency TokWaitForConfirmation) -> do
-        nonce <- receiveWord32 s
-        if nonce == Just 0x12345678 then do
+        result <- maybe RecvErrorUnknown decodeRecvResult <$> receiveWord32 s
+        if result == RecvOK then do
           traceWith tracer DriverConfirmedKey
           return (SomeMessage ConfirmMessage, ())
         else do
           traceWith tracer DriverDeclinedKey
-          return (SomeMessage RecvErrorMessage, ())
+          return (SomeMessage (RecvErrorMessage result), ())
 
   , startDState = ()
   }
@@ -224,3 +224,15 @@ unsafeReceiveN s buf bufSize = do
       return 0
     else
       return bufSize
+
+encodeRecvResult :: RecvResult -> Word32
+encodeRecvResult RecvOK = 0
+encodeRecvResult RecvErrorKeyOutdated = 1
+encodeRecvResult RecvErrorInvalidOpCert = 2
+encodeRecvResult RecvErrorUnknown = 0xFFFF
+
+decodeRecvResult :: Word32 -> RecvResult
+decodeRecvResult 0 = RecvOK
+decodeRecvResult 1 = RecvErrorKeyOutdated
+decodeRecvResult 2 = RecvErrorInvalidOpCert
+decodeRecvResult _ = RecvErrorUnknown

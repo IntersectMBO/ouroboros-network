@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A stripped-down version of the @OCert@ and @Crypto@ types used in
 -- @cardano-ledger@. We only replicate what we need here, so as to avoid
@@ -27,6 +28,7 @@ import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Util ( SignableRepresentation (..) )
 
+import Control.Monad ( when )
 import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BSB
 import Data.ByteString.Builder.Extra qualified as BSB
@@ -131,3 +133,21 @@ makeOCert vkHot n kesPeriod skCold =
   where
     signable = OCertSignable vkHot n kesPeriod
     sig = signedDSIGN () signable skCold
+
+validateOCert :: forall c
+               . Crypto c
+              => ContextDSIGN (DSIGN c) ~ ()
+              => DSIGN.Signable (DSIGN c) (OCertSignable c)
+              => VerKeyDSIGN (DSIGN c)
+              -> VerKeyKES (KES c)
+              -> OCert c
+              -> Either String ()
+validateOCert vkCold vkHot ocert = do
+  when (ocertVkHot ocert /= vkHot) (Left "Verification key does not match")
+  verifyDSIGN () vkCold signable sig
+  where
+    signable :: OCertSignable c
+    signable = OCertSignable (ocertVkHot ocert) (ocertN ocert) (ocertKESPeriod ocert)
+
+    sig :: SigDSIGN (DSIGN c)
+    SignedDSIGN sig = ocertSigma ocert

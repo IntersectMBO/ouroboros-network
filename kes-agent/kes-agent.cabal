@@ -146,6 +146,7 @@ test-suite kes-agent-tests
     main-is: Main.hs
     other-modules: Cardano.KESAgent.Tests.Simulation
                  , Cardano.KESAgent.Tests.RefCounting
+                 , Cardano.KESAgent.Tests.OCert
                  , Cardano.KESAgent.Tests.Serialization
                  , Cardano.KESAgent.Tests.EndToEnd
                  , Paths_kes_agent

@@ -22,7 +22,7 @@ import Cardano.KESAgent.Evolution ( getCurrentKESPeriodWith, updateKESTo )
 import Cardano.KESAgent.OCert ( KES, KESPeriod (..), OCert (..), Crypto (..) )
 import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
 import Cardano.KESAgent.Pretty ( Pretty (..), strLength )
-import Cardano.KESAgent.Protocol ( KESProtocol, VersionedProtocol )
+import Cardano.KESAgent.Protocol ( KESProtocol, VersionedProtocol, RecvResult (..) )
 import Cardano.KESAgent.RefCounting
   ( CRef
   , acquireCRef
@@ -305,9 +305,13 @@ checkEvolution agent = withKeyUpdateLock agent "checkEvolution" $ do
         agentTrace agent $ AgentKeyNotEvolved p p'
         void . atomically $ putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
 
-pushKey :: (MonadMVar m, MonadST m, MonadSTM m, KESAlgorithm (KES c), ContextKES (KES c) ~ (), MonadThrow m) => Agent c m fd addr -> CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ()
+pushKey :: (MonadMVar m, MonadST m, MonadSTM m, KESAlgorithm (KES c), ContextKES (KES c) ~ (), MonadThrow m)
+        => Agent c m fd addr
+        -> CRef m (SignKeyWithPeriodKES (KES c))
+        -> OCert c
+        -> m RecvResult
 pushKey agent keyVar oc = do
-  withKeyUpdateLock agent "pushKey" $ do
+  result <- withKeyUpdateLock agent "pushKey" $ do
     acquireCRef keyVar
     let keyStr = formatKey oc
     -- Empty the var in case there's anything there already
@@ -320,12 +324,14 @@ pushKey agent keyVar oc = do
           releaseCRef keyVar
           agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
           atomically $ putTMVar (agentCurrentKeyVar agent) (oldKeyVar, oldOC)
+          return RecvErrorKeyOutdated
         else do
           releaseCRef oldKeyVar
           agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
           atomically $ do
             writeTChan (agentNextKeyChan agent) (keyVar, oc)
             putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
+          return RecvOK
       Nothing -> do
         agentTrace agent $ AgentInstallingNewKey keyStr
         -- The TMVar is now empty; we write to the next key signal channel
@@ -336,8 +342,11 @@ pushKey agent keyVar oc = do
         atomically $ do
           writeTChan (agentNextKeyChan agent) (keyVar, oc)
           putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
+        return RecvOK
 
   checkEvolution agent
+
+  return result
 
 runListener :: forall m c fd addr st (pr :: PeerRole) a
              . MonadThrow m

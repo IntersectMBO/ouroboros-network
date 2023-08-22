@@ -258,7 +258,7 @@ data NodeHooks m c
 data NodeScript m c
   = NodeScript
       { runNodeScript :: NodeHooks m c -> m ()
-      , keyReceived :: NodeHooks m c -> (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
+      , keyReceived :: NodeHooks m c -> (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m RecvResult
       }
 
 newtype PrettyBS
@@ -760,6 +760,7 @@ testOneKeyThroughChain p
                     return (skp, periodKES resultSKP)
                   reportProperty hooks
                     ((PrettyBS expectedSKBS, expectedPeriod) === (PrettyBS resultSKBS, resultPeriod))
+                  return RecvOK
               , runNodeScript = const $ return ()
               }
 
@@ -880,6 +881,7 @@ testConcurrentPushes proxyCrypto
                 when (ocertN resultOC == maxOCertN) $ do
                   traceWith strTracer "Received last key"
                   reportProperty hooks (sent === received)
+                return RecvOK
             , runNodeScript = const $ return ()
             }
 
@@ -1031,6 +1033,7 @@ testOutOfOrderPushes proxyCrypto
                     traceWith strTracer "Exit"
                     reportProperty hooks (actualSerialized === expectedSerialized)
                   return actualSerialized
+                return RecvOK
             , runNodeScript = const $ return ()
             }
 

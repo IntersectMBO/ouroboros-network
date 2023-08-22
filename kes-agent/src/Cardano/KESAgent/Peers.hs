@@ -20,7 +20,7 @@ import Network.TypedProtocol.Core
 kesReceiver :: forall (c :: *) (m :: * -> *)
              . KESAlgorithm (KES c)
             => Monad m
-            => (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ())
+            => (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m RecvResult)
             -> Peer (KESProtocol m c) AsClient InitialState m ()
 kesReceiver receiveKey =
     Await (ServerAgency TokInitial) $ \VersionMessage -> go

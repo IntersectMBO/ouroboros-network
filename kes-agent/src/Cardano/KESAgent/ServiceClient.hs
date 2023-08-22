@@ -10,6 +10,7 @@ import Cardano.KESAgent.Classes ( MonadKES )
 import Cardano.KESAgent.Driver ( DriverTrace, driver )
 import Cardano.KESAgent.OCert ( Crypto (..), OCert (..) )
 import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
+import Cardano.KESAgent.Protocol ( RecvResult (..) )
 import Cardano.KESAgent.Pretty ( Pretty (..) )
 import Cardano.KESAgent.RefCounting ( CRef )
 import Cardano.KESAgent.RetrySocket ( retrySocket )
@@ -54,7 +55,7 @@ runServiceClient :: forall c m fd addr
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr
-                 -> (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m ())
+                 -> (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m RecvResult)
                  -> Tracer m ServiceClientTrace
                  -> m ()
 runServiceClient proxy mrb options handleKey tracer = do
@@ -73,8 +74,10 @@ runServiceClient proxy mrb options handleKey tracer = do
             if ocertN ocert > latestOCNum then do
               putMVar latestOCNumVar (Just $ ocertN ocert)
               handleKey keyRef ocert
+              return RecvOK
             else do
               putMVar latestOCNumVar (Just latestOCNum)
+              return RecvErrorKeyOutdated
 
   void $ bracket
     (openToConnect s (serviceClientAddress options))

@@ -75,13 +75,14 @@ stdoutStringTracer maxPrio lock = Tracer $ \(prio, msg) -> do
 handleKey :: UnsoundKESAlgorithm (KES c)
           => CRef IO (SignKeyWithPeriodKES (KES c))
           -> OCert c
-          -> IO ()
+          -> IO RecvResult
 handleKey skpVar ocert = withCRefValue skpVar $ \skp -> do
   skSer <- rawSerialiseSignKeyKES (skWithoutPeriodKES skp)
   let period = periodKES skp
   let certN = ocertN ocert
   printf "KES key %i @%i: %s\n"
       certN period (hexShowBS skSer)
+  return RecvOK
 
 hexShowBS :: ByteString -> String
 hexShowBS = concatMap (printf "%02x") . BS.unpack
