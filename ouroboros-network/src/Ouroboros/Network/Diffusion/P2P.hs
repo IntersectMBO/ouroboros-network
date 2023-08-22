@@ -992,7 +992,7 @@ runM Interfaces
                     spsCloseConnectionTimeout =
                       Diffusion.Policies.closeConnectionTimeout,
                     spsConnectionManager = connectionManager,
-                    spsExitPolicy = stdExitPolicy daReturnPolicy
+                    spsExitPolicy = exitPolicy
                   }
                 $ \(peerStateActions
                       :: NodeToNodePeerStateActions
