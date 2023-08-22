@@ -129,9 +129,8 @@ instance Protocol (KESProtocol m c) where
           KeyMessage :: CRef m (SignKeyWithPeriodKES (KES c))
                      -> OCert c
                      -> Message (KESProtocol m c) IdleState WaitForConfirmationState
-          ConfirmMessage :: Message (KESProtocol m c) WaitForConfirmationState IdleState
-          RecvErrorMessage :: RecvResult
-                           -> Message (KESProtocol m c) WaitForConfirmationState IdleState
+          RecvResultMessage :: RecvResult
+                            -> Message (KESProtocol m c) WaitForConfirmationState IdleState
           EndMessage :: Message (KESProtocol m c) IdleState EndState
 
   -- | Server always has agency, except between sending a key and confirming it

@@ -106,12 +106,12 @@ driver s tracer = Driver
           traceWith tracer $ DriverSentKey (ocertN oc)
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
-      (ClientAgency TokWaitForConfirmation, RecvErrorMessage reason) -> do
-        traceWith tracer DriverDecliningKey
+      (ClientAgency TokWaitForConfirmation, RecvResultMessage reason) -> do
+        if reason == RecvOK then
+          traceWith tracer DriverConfirmingKey
+        else
+          traceWith tracer DriverDecliningKey
         void $ sendWord32 s (encodeRecvResult reason)
-      (ClientAgency TokWaitForConfirmation, ConfirmMessage) -> do
-        traceWith tracer DriverConfirmingKey
-        void $ sendWord32 s (encodeRecvResult RecvOK)
 
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
@@ -165,12 +165,11 @@ driver s tracer = Driver
           return (SomeMessage EndMessage, ())
       (ClientAgency TokWaitForConfirmation) -> do
         result <- maybe RecvErrorUnknown decodeRecvResult <$> receiveWord32 s
-        if result == RecvOK then do
+        if result == RecvOK then
           traceWith tracer DriverConfirmedKey
-          return (SomeMessage ConfirmMessage, ())
-        else do
+        else
           traceWith tracer DriverDeclinedKey
-          return (SomeMessage (RecvErrorMessage result), ())
+        return (SomeMessage (RecvResultMessage result), ())
 
   , startDState = ()
   }

@@ -359,6 +359,7 @@ runTestNetwork :: forall c m fd addr
                -> Snocket m fd addr
                -> Integer
                -> (forall a. (addr -> m a) -> m a)
+               -> VerKeyDSIGN (DSIGN c)
                -> Int
                   -- | control clients: startup delay, script
                -> [(Int, ControlClientScript m c)]
@@ -366,19 +367,20 @@ runTestNetwork :: forall c m fd addr
                -> [(Int, NodeScript m c)]
                -> m Property
 runTestNetwork p mrb tracer snocket genesisTimestamp
-               withAddress
+               withAddress coldVK
                agentDelay senders receivers = do
     propertyVar <- newEmptyMVar :: m (MVar m Property)
     timeVar <- newMVar (fromInteger genesisTimestamp) :: m (MVar m NominalDiffTime)
     withAddress $ \controlAddress -> do
       withAddress $ \serviceAddress -> do
-        let agentOptions  :: AgentOptions m addr
+        let agentOptions  :: AgentOptions m addr c
             agentOptions = AgentOptions
                               { agentGenesisTimestamp = genesisTimestamp
                               , agentGetCurrentTime = readMVar timeVar
                               , agentControlAddr = controlAddress
                               , agentServiceAddr = serviceAddress
                               , agentTracer = tracer
+                              , agentColdVerKey = coldVK
                               }
 
             -- Run the single agent.
@@ -748,6 +750,7 @@ testOneKeyThroughChain p
       vkHot <- deriveVerKeyKES expectedSK
       let kesPeriod = KESPeriod 0
       let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
+          vkCold = deriveVerKeyDSIGN skCold
           expectedOC = makeOCert vkHot certN kesPeriod skCold
 
       let controlScript sim = sendKey sim (expectedSKPVar, expectedOC)
@@ -769,6 +772,7 @@ testOneKeyThroughChain p
                   snocket
                   genesisTimestamp
                   withAddress
+                  vkCold
                   (delayFromWord agentDelay)
                   [(delayFromWord controlDelay, controlScript)]
                   [(delayFromWord nodeDelay, nodeScript)]
@@ -839,6 +843,7 @@ testConcurrentPushes proxyCrypto
         expectedPeriod = 0
     let (controlDelays, seedsKESRaw) = unzip . concurrentPushesDelaysAndSeeds $ controlDelaysAndSeedsKESPSB
     let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
+        vkCold = deriveVerKeyDSIGN skCold
     let strTracer :: Tracer m String = mvarStringTracer traceMVar
 
     forM_ controlDelays $ \delay -> traceWith strTracer $ "Control delay: " ++ show (delayFromWord delay)
@@ -894,6 +899,7 @@ testConcurrentPushes proxyCrypto
             snocket
             genesisTimestamp
             withAddress
+            vkCold
             (delayFromWord agentDelay)
             [ (delayFromWord controlDelay + 5000, controlScript sko)
             | (controlDelay, sko) <- zip controlDelays expectedSKOs
@@ -960,6 +966,7 @@ testOutOfOrderPushes proxyCrypto
         expectedPeriod = 0
     let skCold :: SignKeyDSIGN (DSIGN c)
         skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
+        vkCold = deriveVerKeyDSIGN skCold
     let strTracer :: Tracer m String = mvarStringTracer traceMVar
 
     let withSKP :: PinnedSizedBytes (SeedSizeKES (KES c)) -> (CRef m (SignKeyWithPeriodKES (KES c)) -> m a) -> m a
@@ -1046,6 +1053,7 @@ testOutOfOrderPushes proxyCrypto
             snocket
             genesisTimestamp
             withAddress
+            vkCold
             (delayFromWord 0)
             [ (delayFromWord 1000, controlScript)
             ]

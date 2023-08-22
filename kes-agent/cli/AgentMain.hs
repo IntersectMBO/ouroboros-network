@@ -42,12 +42,13 @@ data NormalModeOptions
       { nmoServicePath :: Maybe String
       , nmoControlPath :: Maybe String
       , nmoLogLevel :: Maybe Priority
+      , nmoColdVerKeyFile :: Maybe FilePath
       }
   deriving (Show)
 
 instance Semigroup NormalModeOptions where
-  NormalModeOptions sp1 cp1 ll1 <> NormalModeOptions sp2 cp2 ll2 =
-    NormalModeOptions (sp1 <|> sp2) (cp1 <|> cp2) (ll1 <|> ll2)
+  NormalModeOptions sp1 cp1 ll1 vkp1 <> NormalModeOptions sp2 cp2 ll2 vkp2=
+    NormalModeOptions (sp1 <|> sp2) (cp1 <|> cp2) (ll1 <|> ll2) (vkp1 <|> vkp2)
 
 defNormalModeOptions :: NormalModeOptions
 defNormalModeOptions =
@@ -55,6 +56,7 @@ defNormalModeOptions =
     { nmoServicePath = Just "/tmp/kes-agent-service.socket"
     , nmoControlPath = Just "/tmp/kes-agent-control.socket"
     , nmoLogLevel = Just Syslog.Notice
+    , nmoColdVerKeyFile = Just "./cold.vkey"
     }
 
 data ServiceModeOptions
@@ -124,6 +126,12 @@ pNormalModeOptions =
           <> metavar "LEVEL"
           <> help "Logging level. One of 'debug', 'info', 'notice', 'warn', 'error', 'critical', 'emergency'."
           )
+    <*> option (Just <$> str)
+          (  long "cold-verification-key"
+          <> value Nothing
+          <> metavar "PATH"
+          <> help "Cold verification key file, used to validate OpCerts upon receipt"
+          )
 
 readLogLevel :: String -> Either String Priority
 readLogLevel "debug" = Right Syslog.Debug
@@ -139,11 +147,13 @@ nmoFromEnv :: IO NormalModeOptions
 nmoFromEnv = do
   servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
   controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
+  coldVerKeyPath <- lookupEnv "KES_AGENT_COLD_VK"
   logLevel <- fmap (either error id . readLogLevel) <$> lookupEnv "KES_AGENT_LOG_LEVEL"
   return NormalModeOptions
     { nmoServicePath = servicePath
     , nmoControlPath = controlPath
     , nmoLogLevel = logLevel
+    , nmoColdVerKeyFile = coldVerKeyPath
     }
 
 smoFromEnv :: IO ServiceModeOptions
@@ -159,7 +169,7 @@ smoFromEnv = do
     , smoGroup = groupSpec
     }
 
-nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr)
+nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
 nmoToAgentOptions nmo = do
   servicePath <- maybe (error "No service address") return (nmoServicePath nmo)
   controlPath <- maybe (error "No control address") return (nmoControlPath nmo)
@@ -168,7 +178,7 @@ nmoToAgentOptions nmo = do
             , agentControlAddr = SockAddrUnix controlPath
             }
 
-smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr)
+smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
 smoToAgentOptions smo = do
   servicePath <- maybe (error "No service address") return (smoServicePath smo)
   controlPath <- maybe (error "No control address") return (smoControlPath smo)
@@ -181,6 +191,7 @@ agentTracePrio :: AgentTrace -> Priority
 agentTracePrio AgentServiceDriverTrace {} = Syslog.Debug
 agentTracePrio AgentControlDriverTrace {} = Syslog.Debug
 agentTracePrio AgentReplacingPreviousKey {} = Syslog.Notice
+agentTracePrio AgentRejectingKey {} = Syslog.Warning
 agentTracePrio AgentInstallingNewKey {} = Syslog.Notice
 agentTracePrio AgentSkippingOldKey {} = Syslog.Info
 agentTracePrio AgentServiceSocketClosed {} = Syslog.Notice

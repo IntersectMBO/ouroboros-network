@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Main
 where
@@ -25,6 +26,7 @@ import Control.Tracer
 import qualified Data.Aeson as JSON
 import Data.Maybe (fromMaybe)
 import Data.Proxy
+import qualified Data.Text.IO as Text
 import Network.Socket
 import Options.Applicative
 import System.Environment
@@ -94,6 +96,18 @@ eitherError :: Either String a -> IO a
 eitherError (Left err) = error err
 eitherError (Right x) = return x
 
+humanFriendlyControlTracer :: Tracer IO ControlClientTrace
+humanFriendlyControlTracer = Tracer $ \case
+  ControlClientKeyAccepted -> putStrLn "Key accepted."
+  ControlClientKeyRejected reason -> putStrLn $ "Key rejected: " ++ formatReason reason
+  _ -> return ()
+
+formatReason :: RecvResult -> String
+formatReason RecvOK = "no error"
+formatReason RecvErrorInvalidOpCert = "OpCert validation failed"
+formatReason RecvErrorKeyOutdated = "KES key outdated"
+formatReason RecvErrorUnknown = "unknown error"
+
 runNewKey :: NewKeyOptions -> IO ()
 runNewKey nko' = withIOManager $ \ioManager -> do
   nkoEnv <- nkoFromEnv
@@ -115,7 +129,7 @@ runNewKey nko' = withIOManager $ \ioManager -> do
       putStrLn $ "KES VerKey written to " ++ verKeyFilename
       putStrLn $ "OpCert will be read from " ++ ocertFilename
       putStrLn "Press ENTER to continue..."
-      _ <- getLine
+      _ <- Text.getLine
       oc <- eitherError =<< decodeTextEnvelopeFile ocertFilename
       withNewCRef
         (forgetSignKeyKES . skWithoutPeriodKES)
@@ -125,7 +139,7 @@ runNewKey nko' = withIOManager $ \ioManager -> do
             makeSocketRawBearer
             controlClientOptions
             skpVar (opCert oc)
-            nullTracer
+            humanFriendlyControlTracer
     ) `catch` (\(e :: SomeException) -> forgetSignKeyKES sk >> throwIO e)
 
 genKeyKESIO :: KESAlgorithm k => IO (SignKeyKES k)

@@ -19,16 +19,18 @@ module Cardano.KESAgent.Agent
 import Cardano.KESAgent.Classes ( MonadKES )
 import Cardano.KESAgent.Driver ( DriverTrace (..), driver )
 import Cardano.KESAgent.Evolution ( getCurrentKESPeriodWith, updateKESTo )
-import Cardano.KESAgent.OCert ( KES, KESPeriod (..), OCert (..), Crypto (..) )
+import Cardano.KESAgent.OCert ( KES, KESPeriod (..), OCert (..), Crypto (..), validateOCert, OCertSignable )
 import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
 import Cardano.KESAgent.Pretty ( Pretty (..), strLength )
 import Cardano.KESAgent.Protocol ( KESProtocol, VersionedProtocol, RecvResult (..) )
+import Cardano.KESAgent.TextEnvelope ( decodeTextEnvelopeFile )
 import Cardano.KESAgent.RefCounting
   ( CRef
   , acquireCRef
   , newCRefWith
   , releaseCRef
   , withCRefValue
+  , readCRef
   , CRefEvent (..)
   , CRefID
   )
@@ -36,6 +38,11 @@ import Cardano.KESAgent.RefCounting
 import Cardano.Crypto.DirectSerialise
   ( DirectSerialise (..)
   , DirectDeserialise (..)
+  )
+import qualified Cardano.Crypto.DSIGN.Class as DSIGN
+import Cardano.Crypto.DSIGN.Class
+  ( DSIGNAlgorithm (..)
+  , VerKeyDSIGN
   )
 import Cardano.Crypto.KES.Class
   ( KESAlgorithm (..)
@@ -110,6 +117,7 @@ data AgentTrace
   = AgentServiceDriverTrace DriverTrace
   | AgentControlDriverTrace DriverTrace
   | AgentReplacingPreviousKey String String
+  | AgentRejectingKey String
   | AgentInstallingNewKey String
   | AgentSkippingOldKey String String
   | AgentServiceSocketClosed String
@@ -145,7 +153,7 @@ instance Pretty AgentTrace where
   pretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
   pretty x = "Agent: " ++ drop (strLength "Agent") (show x)
 
-data AgentOptions m addr =
+data AgentOptions m addr c =
   AgentOptions
     { agentTracer :: Tracer m AgentTrace
       -- | Socket on which the agent will be listening for control messages,
@@ -162,15 +170,18 @@ data AgentOptions m addr =
       -- 'getPOSIXTime', but overriding this may be desirable for testing
       -- purposes.
     , agentGetCurrentTime :: m NominalDiffTime
+
+    , agentColdVerKey :: VerKeyDSIGN (DSIGN c)
     }
 
-defAgentOptions :: MonadTime m => AgentOptions m addr
+defAgentOptions :: MonadTime m => AgentOptions m addr c
 defAgentOptions = AgentOptions
-  { agentControlAddr = error "default"
-  , agentServiceAddr = error "default"
+  { agentControlAddr = error "missing control address"
+  , agentServiceAddr = error "missing service address"
   , agentGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
   , agentGetCurrentTime = utcTimeToPOSIXSeconds <$> getCurrentTime
   , agentTracer = nullTracer
+  , agentColdVerKey = error "missing cold verification key file"
   }
 
 -- | A bundle of a KES key with a period, plus the matching op cert.
@@ -215,7 +226,7 @@ data Agent c m fd addr =
   Agent
     { agentSnocket :: Snocket m fd addr
     , agentMRB :: MakeRawBearer m fd
-    , agentOptions :: AgentOptions m addr
+    , agentOptions :: AgentOptions m addr c
     , agentCurrentKeyVar :: TMVar m (KESBundle m c)
     , agentNextKeyChan :: TChan m (KESBundle m c)
     , agentKeyLock :: MVar m ()
@@ -230,7 +241,7 @@ newAgent :: forall c m fd addr
          => Proxy c
          -> Snocket m fd addr
          -> MakeRawBearer m fd
-         -> AgentOptions m addr
+         -> AgentOptions m addr c
          -> m (Agent c m fd addr)
 newAgent _p s mrb options = do
   currentKeyVar :: TMVar m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) <- atomically newEmptyTMVar
@@ -305,48 +316,72 @@ checkEvolution agent = withKeyUpdateLock agent "checkEvolution" $ do
         agentTrace agent $ AgentKeyNotEvolved p p'
         void . atomically $ putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
 
-pushKey :: (MonadMVar m, MonadST m, MonadSTM m, KESAlgorithm (KES c), ContextKES (KES c) ~ (), MonadThrow m)
+pushKey :: forall c m fd addr.
+           ( MonadMVar m
+           , MonadST m
+           , MonadSTM m
+           , Crypto c
+           , DSIGN.Signable (DSIGN c) (OCertSignable c)
+           , KESAlgorithm (KES c)
+           , ContextKES (KES c) ~ ()
+           , DSIGNAlgorithm (DSIGN c)
+           , ContextDSIGN (DSIGN c) ~ ()
+           , MonadThrow m
+           )
         => Agent c m fd addr
         -> CRef m (SignKeyWithPeriodKES (KES c))
         -> OCert c
         -> m RecvResult
 pushKey agent keyVar oc = do
-  result <- withKeyUpdateLock agent "pushKey" $ do
-    acquireCRef keyVar
-    let keyStr = formatKey oc
-    -- Empty the var in case there's anything there already
-    oldKeyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
+  vkKES <- withCRefValue keyVar (deriveVerKeyKES . skWithoutPeriodKES)
 
-    case oldKeyOcMay of
-      Just (oldKeyVar, oldOC) -> do
-        let oldKeyStr = formatKey oldOC
-        if ocertN oldOC >= ocertN oc then do
-          releaseCRef keyVar
-          agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
-          atomically $ putTMVar (agentCurrentKeyVar agent) (oldKeyVar, oldOC)
-          return RecvErrorKeyOutdated
-        else do
-          releaseCRef oldKeyVar
-          agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
+  let validationResult =
+        validateOCert
+          (agentColdVerKey (agentOptions agent))
+          vkKES
+          oc
+  case validationResult of
+    Left err ->  do
+      agentTrace agent $ AgentRejectingKey err
+      return RecvErrorInvalidOpCert
+    Right () ->
+      go
+
+  where
+    go = withKeyUpdateLock agent "pushKey" $ do
+      acquireCRef keyVar
+      let keyStr = formatKey oc
+      -- Empty the var in case there's anything there already
+      oldKeyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
+
+      case oldKeyOcMay of
+        Just (oldKeyVar, oldOC) -> do
+          let oldKeyStr = formatKey oldOC
+          if ocertN oldOC >= ocertN oc then do
+            releaseCRef keyVar
+            agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
+            atomically $ putTMVar (agentCurrentKeyVar agent) (oldKeyVar, oldOC)
+            return RecvErrorKeyOutdated
+          else do
+            releaseCRef oldKeyVar
+            agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
+            atomically $ do
+              writeTChan (agentNextKeyChan agent) (keyVar, oc)
+              putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
+            checkEvolution agent
+            return RecvOK
+        Nothing -> do
+          agentTrace agent $ AgentInstallingNewKey keyStr
+          -- The TMVar is now empty; we write to the next key signal channel
+          -- /before/ putting the new key in the MVar, because we want to make it
+          -- such that when the consumer picks up the signal, the next update
+          -- will be the correct one. Since the MVar is empty at this point, the
+          -- consumers will block until we put the key back in.
           atomically $ do
             writeTChan (agentNextKeyChan agent) (keyVar, oc)
             putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
+          checkEvolution agent
           return RecvOK
-      Nothing -> do
-        agentTrace agent $ AgentInstallingNewKey keyStr
-        -- The TMVar is now empty; we write to the next key signal channel
-        -- /before/ putting the new key in the MVar, because we want to make it
-        -- such that when the consumer picks up the signal, the next update
-        -- will be the correct one. Since the MVar is empty at this point, the
-        -- consumers will block until we put the key back in.
-        atomically $ do
-          writeTChan (agentNextKeyChan agent) (keyVar, oc)
-          putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
-        return RecvOK
-
-  checkEvolution agent
-
-  return result
 
 runListener :: forall m c fd addr st (pr :: PeerRole) a
              . MonadThrow m
@@ -417,6 +452,8 @@ runListener
 
 runAgent :: forall c m fd addr
           . MonadKES m c
+         => ContextDSIGN (DSIGN c) ~ ()
+         => DSIGN.Signable (DSIGN c) (OCertSignable c)
          => Show addr
          => Show fd
          => Agent c m fd addr
@@ -436,6 +473,8 @@ runAgent agent = do
         let currentKey = atomically $ readTMVar (agentCurrentKeyVar agent)
         let nextKey = atomically $ Just <$> readTChan nextKeyChanRcv
 
+        let reportPushResult = const (return ())
+
         runListener
           (agentSnocket agent)
           (agentServiceFD agent)
@@ -447,7 +486,7 @@ runAgent agent = do
           AgentServiceClientConnected
           AgentServiceSocketError
           AgentServiceDriverTrace
-          (kesPusher currentKey nextKey)
+          (kesPusher currentKey nextKey reportPushResult)
 
   let runControl = do
         labelMyThread "control"

@@ -11,6 +11,7 @@ import Cardano.KESAgent.Driver ( DriverTrace, driver )
 import Cardano.KESAgent.OCert ( Crypto (..), OCert (..) )
 import Cardano.KESAgent.Pretty ( Pretty (..) )
 import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
+import Cardano.KESAgent.Protocol ( RecvResult (..) )
 import Cardano.KESAgent.RefCounting ( CRef, withCRef )
 import Cardano.KESAgent.RetrySocket ( retrySocket )
 
@@ -40,6 +41,8 @@ data ControlClientTrace
   | ControlClientAttemptReconnect Int
   | ControlClientSendingKey
   | ControlClientAbnormalTermination String
+  | ControlClientKeyAccepted
+  | ControlClientKeyRejected RecvResult
   deriving (Show)
 
 instance Pretty ControlClientTrace where
@@ -75,6 +78,14 @@ runControlClient1 proxy mrb options key oc tracer = withCRef key $ \key -> do
       bearer <- getRawBearer mrb fd
       void $ runPeerWithDriver
         (driver bearer $ ControlClientDriverTrace >$< tracer)
-        (kesPusher (traceWith tracer ControlClientSendingKey >> return (key, oc)) (return Nothing))
+        (kesPusher
+            (traceWith tracer ControlClientSendingKey >> return (key, oc))
+            (return Nothing)
+            (\reason -> do
+                case reason of
+                  RecvOK -> traceWith tracer ControlClientKeyAccepted
+                  err -> traceWith tracer (ControlClientKeyRejected err)
+            )
+        )
         ()
     )

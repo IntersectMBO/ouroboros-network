@@ -50,44 +50,62 @@ kesAgentControlNewKey =
     let serviceLogFile = tmpdir </> "service.log"
     let kesKeyFile = tmpdir </> "kes.vkey"
     opcertFile <- getDataFileName "fixtures/opcert.cert"
-    withRunningAgent $ do
-      controlOutStr <- withServiceDemo serviceLogFile $ \servicePH -> do
-        (controlIn, controlOut, controlPH) <-
-              spawnProcessDuplex "kes-agent-control"
-                    [ "new-key"
-                    , "--opcert-file", opcertFile
-                    , "--kes-verification-key-file", kesKeyFile
-                    , "--control-address", "/tmp/kes-agent-control.socket"
-                    ]
-        ((), controlOutStr) <-
-                concurrently
-                  (hPutStrLn controlIn "")
-                  (Text.unpack <$> Text.hGetContents controlOut)
-        waitForProcess controlPH
-        threadDelay 100000
-        return controlOutStr
+    controlOutStr <- withRunningAgent $
+      withServiceDemo serviceLogFile $ \servicePH -> do
+        withControlClient opcertFile kesKeyFile $ \(Just controlIn) (Just controlOut) _ controlPH -> do
+          hPutStrLn controlIn ""
+          line1 <- Text.hGetLine controlOut
+          Text.putStrLn line1
+          line2 <- Text.hGetLine controlOut
+          Text.putStrLn line2
+          line3 <- Text.hGetLine controlOut
+          Text.putStrLn line3
+          let controlOutStr = Text.unpack $ Text.unlines [line1, line2, line3]
+          waitForProcess controlPH
+          threadDelay 100000
+          return controlOutStr
 
-      serviceOutStr <- Text.unpack <$> Text.readFile serviceLogFile
-      let serviceOutLines = lines serviceOutStr
+    serviceOutStr <- Text.unpack <$> Text.readFile serviceLogFile
+    let serviceOutLines = lines serviceOutStr
 
-      assertEqual "control out"
-        [ "KES VerKey written to " ++ kesKeyFile
-        , "OpCert will be read from " ++ opcertFile
-        , "Press ENTER to continue..."
-        ]
-        (lines controlOutStr)
+    assertEqual "control out"
+      [ "KES VerKey written to " ++ kesKeyFile
+      , "OpCert will be read from " ++ opcertFile
+      , "Press ENTER to continue..."
+      ]
+      (lines controlOutStr)
 
-      let keyReceivedLines = [ l | l <- serviceOutLines, "ReceivedKey" `elem` words l ]
+    let keyReceivedLines = [ l | l <- serviceOutLines, "ReceivedKey" `elem` words l ]
 
-      assertBool serviceOutStr (not . null $ keyReceivedLines)
+    assertBool serviceOutStr (not . null $ keyReceivedLines)
 
 
 withRunningAgent :: IO a -> IO a
-withRunningAgent action =
+withRunningAgent action = do
+  coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
   bracket
-    (spawnProcess "kes-agent" [ "run" ])
+    (spawnProcess "kes-agent"
+                    [ "run"
+                    , "--cold-verification-key", coldVerKeyFile
+                    ])
     terminateProcess
     (const action)
+
+withControlClient :: FilePath -> FilePath -> (Maybe Handle -> Maybe Handle -> Maybe Handle -> ProcessHandle -> IO a) -> IO a
+withControlClient opcertFile kesKeyFile action = do
+  let cp' = proc "kes-agent-control"
+              [ "new-key"
+              , "--opcert-file", opcertFile
+              , "--kes-verification-key-file", kesKeyFile
+              , "--control-address", "/tmp/kes-agent-control.socket"
+              ]
+      cp = cp'
+            { std_in = CreatePipe
+            , std_out = CreatePipe
+            , std_err = Inherit
+            }
+  withCreateProcess cp action
+      
 
 spawnProcessDuplex :: String -> [String] -> IO (Handle, Handle, ProcessHandle)
 spawnProcessDuplex cmd args = do

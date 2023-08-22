@@ -29,8 +29,8 @@ kesReceiver receiveKey =
     go = Await (ServerAgency TokIdle) $ \case
           KeyMessage sk oc ->
             Effect $ do
-              receiveKey sk oc
-              return $ Yield (ClientAgency TokWaitForConfirmation) ConfirmMessage go
+              result <- receiveKey sk oc
+              return $ Yield (ClientAgency TokWaitForConfirmation) (RecvResultMessage result) go
           EndMessage ->
             Done TokEnd ()
 
@@ -40,18 +40,20 @@ kesPusher :: forall (c :: *) (m :: (* -> *))
           => MonadThrow m
           => m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
           -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
+          -> (RecvResult -> m ())
           -> Peer (KESProtocol m c) AsServer InitialState m ()
-kesPusher currentKey nextKey =
+kesPusher currentKey nextKey handleResult =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
       (sk, oc) <- currentKey
       return (
           Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
-          Await (ClientAgency TokWaitForConfirmation) $ \ConfirmMessage -> go
+          Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> go result
         )
   where
-    go :: Peer (KESProtocol m c) AsServer IdleState m ()
-    go = Effect $ do
+    go :: RecvResult -> Peer (KESProtocol m c) AsServer IdleState m ()
+    go result = Effect $ do
+      handleResult result
       skOcMay <- nextKey
       case skOcMay of
         Nothing -> return $
@@ -59,4 +61,4 @@ kesPusher currentKey nextKey =
           Done TokEnd ()
         Just (sk, oc) -> return $
           Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
-          Await (ClientAgency TokWaitForConfirmation) $ \ConfirmMessage -> go
+          Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> go result
