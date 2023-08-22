@@ -127,9 +127,13 @@ jobs:
     - name: ourobors-network-testing [test]
       run: cabal run ouroboros-network-testing:test -- +RTS -maxN2 -RTS
 
-    - name: ourobors-network-framework [test]
+    - name: ourobors-network-framework [sim-tests]
       # TODO: enable `+RTS -N`
-      run: cabal run ouroboros-network-framework:test
+      run: cabal run ouroboros-network-framework:sim-test
+
+    - name: ourobors-network-framework [io-tests]
+      # TODO: enable `+RTS -N`
+      run: cabal run ouroboros-network-framework:io-tests
 
     - name: ouroboros-network-protocols [test]
       run: cabal run ouroboros-network-protocols:test -- +RTS -maxN2 -RTS
