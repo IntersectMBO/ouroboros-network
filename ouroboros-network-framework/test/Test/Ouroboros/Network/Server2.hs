@@ -128,13 +128,15 @@ import           Test.Simulation.Network.Snocket hiding (tests)
 
 import           Ouroboros.Network.ConnectionManager.InformationChannel
                      (newInformationChannel)
-import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
-                     allValidTransitionsNames, validTransitionMap,
-                     verifyAbstractTransition, verifyAbstractTransitionOrder)
-import           TestLib.InboundGovernor (allValidRemoteTransitionsNames,
+import           Ouroboros.Network.ConnectionManager.Test.Timeouts
+import           Ouroboros.Network.ConnectionManager.Test.Utils
+                     (abstractStateIsFinalTransition, allValidTransitionsNames,
+                     validTransitionMap, verifyAbstractTransition,
+                     verifyAbstractTransitionOrder)
+import           Ouroboros.Network.InboundGovernor.Test.Utils
+                     (allValidRemoteTransitionsNames,
                      remoteStrIsFinalTransition, validRemoteTransitionMap,
                      verifyRemoteTransition, verifyRemoteTransitionOrder)
-import           TestLib.Utils
 
 tests :: TestTree
 tests =

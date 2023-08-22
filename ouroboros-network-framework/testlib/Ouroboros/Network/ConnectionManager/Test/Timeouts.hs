@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module TestLib.Utils where
+module Ouroboros.Network.ConnectionManager.Test.Timeouts where
 
 import           Control.Monad.Class.MonadTime.SI (DiffTime, Time, diffTime)
 import           Control.Monad.IOSim

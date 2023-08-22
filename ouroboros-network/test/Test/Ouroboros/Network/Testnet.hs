@@ -69,6 +69,19 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState (..))
+import           Ouroboros.Network.ConnectionManager.Test.Timeouts
+                     (AllProperty (..), TestProperty (..), classifyActivityType,
+                     classifyEffectiveDataFlow, classifyNegotiatedDataFlow,
+                     classifyPrunings, classifyTermination, groupConns,
+                     mkProperty, ppTransition, verifyAllTimeouts)
+import           Ouroboros.Network.ConnectionManager.Test.Utils
+                     (abstractStateIsFinalTransition, connectionManagerTraceMap,
+                     validTransitionMap, verifyAbstractTransition,
+                     verifyAbstractTransitionOrder)
+import           Ouroboros.Network.InboundGovernor.Test.Utils
+                     (inboundGovernorTraceMap, remoteStrIsFinalTransition,
+                     serverTraceMap, validRemoteTransitionMap,
+                     verifyRemoteTransition, verifyRemoteTransitionOrder)
 import           Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
@@ -76,18 +89,6 @@ import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..))
-import           TestLib.ConnectionManager (abstractStateIsFinalTransition,
-                     connectionManagerTraceMap, validTransitionMap,
-                     verifyAbstractTransition, verifyAbstractTransitionOrder)
-import           TestLib.InboundGovernor (inboundGovernorTraceMap,
-                     remoteStrIsFinalTransition, serverTraceMap,
-                     validRemoteTransitionMap, verifyRemoteTransition,
-                     verifyRemoteTransitionOrder)
-import           TestLib.Utils (AllProperty (..), TestProperty (..),
-                     classifyActivityType, classifyEffectiveDataFlow,
-                     classifyNegotiatedDataFlow, classifyPrunings,
-                     classifyTermination, groupConns, mkProperty, ppTransition,
-                     verifyAllTimeouts)
 
 tests :: TestTree
 tests =

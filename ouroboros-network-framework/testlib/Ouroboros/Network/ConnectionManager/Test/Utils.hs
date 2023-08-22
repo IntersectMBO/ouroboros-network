@@ -1,15 +1,15 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module TestLib.ConnectionManager where
+module Ouroboros.Network.ConnectionManager.Test.Utils where
 
 import           Prelude hiding (read)
 
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import           Ouroboros.Network.ConnectionManager.Test.Timeouts
 import           Ouroboros.Network.ConnectionManager.Types
 
 import           Test.QuickCheck (counterexample, property)
 
-import           TestLib.Utils
 
 verifyAbstractTransition :: AbstractTransition
                          -> Bool

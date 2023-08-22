@@ -58,6 +58,8 @@ import           Test.Tasty.QuickCheck (testProperty)
 
 import           Ouroboros.Network.ConnectionId (ConnectionId (..))
 import           Ouroboros.Network.ConnectionManager.Core
+import           Ouroboros.Network.ConnectionManager.Test.Utils
+                     (verifyAbstractTransition)
 import           Ouroboros.Network.ConnectionManager.Types
 import           Ouroboros.Network.MuxMode
 import           Ouroboros.Network.Server.RateLimiting
@@ -68,7 +70,6 @@ import           Ouroboros.Network.ConnectionManager.InformationChannel
                      (newInformationChannel)
 import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           TestLib.ConnectionManager (verifyAbstractTransition)
 
 
 

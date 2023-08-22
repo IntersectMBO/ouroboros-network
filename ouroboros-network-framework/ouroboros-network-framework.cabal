@@ -126,9 +126,9 @@ library testlib
     visibility: public
     hs-source-dirs: testlib
 
-    exposed-modules: TestLib.ConnectionManager
-                     TestLib.InboundGovernor
-                     TestLib.Utils
+    exposed-modules: Ouroboros.Network.ConnectionManager.Test.Timeouts
+                     Ouroboros.Network.ConnectionManager.Test.Utils
+                     Ouroboros.Network.InboundGovernor.Test.Utils
 
     other-modules:
 
