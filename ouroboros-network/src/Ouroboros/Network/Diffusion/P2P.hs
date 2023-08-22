@@ -363,15 +363,6 @@ type NodeToClientConnectionManagerArguments
       ntcVersionData
       m
 
-type NodeToClientConnectionManager
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
-    ConnectionManager
-      ResponderMode
-      ntcFd
-      ntcAddr
-      (NodeToClientHandle ntcAddr ntcVersionData m)
-      (NodeToClientHandleError ntcVersion)
-      m
 
 --
 -- Node-To-Node type aliases
@@ -383,32 +374,6 @@ type NodeToNodeHandle
        (mode :: MuxMode)
        ntnAddr ntnVersionData m a b =
     HandleWithExpandedCtx mode ntnAddr ntnVersionData ByteString m a b
-
-type NodeToNodeConnectionHandler
-       (mode :: MuxMode)
-       ntnFd ntnAddr ntnVersion ntnVersionData m a b =
-    ConnectionHandler
-      mode
-      (ConnectionHandlerTrace ntnVersion ntnVersionData)
-      ntnFd
-      ntnAddr
-      (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
-      (HandleError mode ntnVersion)
-      (ntnVersion, ntnVersionData)
-      m
-
-type NodeToNodeConnectionManagerArguments
-       (mode :: MuxMode)
-       ntnFd ntnAddr ntnVersion ntnVersionData m a b =
-    ConnectionManagerArguments
-      (ConnectionHandlerTrace ntnVersion ntnVersionData)
-      ntnFd
-      ntnAddr
-      (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
-      (HandleError mode ntnVersion)
-      ntnVersion
-      ntnVersionData
-      m
 
 type NodeToNodeConnectionManager
        (mode :: MuxMode)
@@ -768,11 +733,7 @@ runM Interfaces
           classifyHandleError
           (InResponderMode localInbInfoChannel)
           (InResponderMode localOutInfoChannel)
-          $ \(localConnectionManager :: NodeToClientConnectionManager
-                                          ntcFd ntcAddr ntcVersion
-                                          ntcVersionData m)
-            -> do
-
+          $ \localConnectionManager-> do
             --
             -- run local server
             --
@@ -846,6 +807,77 @@ runM Interfaces
 
       publicStateVar <- newTVarIO emptyPublicPeerSelectionState
 
+      let
+          connectionManagerArguments'
+            :: PrunePolicy ntnAddr (STM m)
+            -> ConnectionManagerArguments
+                 (ConnectionHandlerTrace ntnVersion ntnVersionData)
+                 ntnFd ntnAddr handle handleError ntnVersion ntnVersionData m
+          connectionManagerArguments' prunePolicy =
+            ConnectionManagerArguments {
+                cmTracer              = dtConnectionManagerTracer,
+                cmTrTracer            =
+                  fmap abstractState
+                  `contramap` dtConnectionManagerTransitionTracer,
+                cmMuxTracer           = dtMuxTracer,
+                cmIPv4Address,
+                cmIPv6Address,
+                cmAddressType         = diNtnAddressType,
+                cmSnocket             = diNtnSnocket,
+                cmMakeBearer          = diNtnBearer,
+                cmConfigureSocket     = diNtnConfigureSocket,
+                connectionDataFlow    = diNtnDataFlow,
+                cmPrunePolicy         = prunePolicy,
+                cmConnectionsLimits   = daAcceptedConnectionsLimit,
+                cmTimeWaitTimeout     = daTimeWaitTimeout,
+                cmOutboundIdleTimeout = daProtocolIdleTimeout,
+                cmGetPeerSharing      = diNtnPeerSharing
+              }
+
+          makeConnectionHandler' ::
+               SingMuxMode muxMode
+            -> Versions ntnVersion ntnVersionData
+                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a1 b)
+            -> MuxConnectionHandler
+                 muxMode socket initiatorCtx responderCtx ntnAddr
+                 ntnVersion ntnVersionData ByteString m a1 b
+          makeConnectionHandler' muxMode versions =
+            makeConnectionHandler
+              dtMuxTracer
+              muxMode
+              diNtnHandshakeArguments
+              versions
+              (mainThreadId, rethrowPolicy <> daRethrowPolicy)
+
+          -- Capture the two variations (InitiatorMode,InitiatorResponderMode) of
+          -- withConnectionManager:
+          
+          iomWithConnectionManager =
+            withConnectionManager
+              (connectionManagerArguments' simplePrunePolicy)
+                 -- Server is not running, it will not be able to
+                 -- advise which connections to prune.  It's also not
+                 -- expected that the governor targets will be larger
+                 -- than limits imposed by 'cmConnectionsLimits'.
+              (makeConnectionHandler'
+                SingInitiatorMode
+                daApplicationInitiatorMode)
+              classifyHandleError
+              NotInResponderMode
+              NotInResponderMode
+              
+          irmWithConnectionManager inboundInfoChannel outboundInfoChannel observableStateVar =
+            withConnectionManager
+              (connectionManagerArguments'
+                 $ Diffusion.Policies.prunePolicy observableStateVar)
+              (makeConnectionHandler'
+                 SingInitiatorResponderMode
+                 (daApplicationInitiatorResponderMode
+                    (computePeerSharingPeers (readTVar publicStateVar) peerSharingRng)))
+              classifyHandleError
+              (InResponderMode inboundInfoChannel)
+              (InResponderMode outboundInfoChannel)
+
       withLedgerPeers
         ledgerPeersRng
         diNtnToPeerAddr
@@ -855,62 +887,11 @@ runM Interfaces
         (diNtnDomainResolver lookupReqs)
         $ \requestLedgerPeers ledgerPeerThread ->
         case diffusionMode of
-          -- Run peer selection only:
-          InitiatorOnlyDiffusionMode -> do
-            let connectionManagerArguments
-                  :: NodeToNodeConnectionManagerArguments
-                       InitiatorMode
-                       ntnFd ntnAddr ntnVersion ntnVersionData
-                       m a Void
-                connectionManagerArguments =
-                  ConnectionManagerArguments {
-                      cmTracer              = dtConnectionManagerTracer,
-                      cmTrTracer            =
-                        fmap abstractState
-                        `contramap` dtConnectionManagerTransitionTracer,
-                      cmMuxTracer           = dtMuxTracer,
-                      cmIPv4Address,
-                      cmIPv6Address,
-                      cmAddressType         = diNtnAddressType,
-                      cmSnocket             = diNtnSnocket,
-                      cmMakeBearer          = diNtnBearer,
-                      cmConfigureSocket     = diNtnConfigureSocket,
-                      connectionDataFlow    = diNtnDataFlow,
-                      cmPrunePolicy         = simplePrunePolicy,
 
-                      -- Server is not running, it will not be able to
-                      -- advise which connections to prune.  It's also not
-                      -- expected that the governor targets will be larger
-                      -- than limits imposed by 'cmConnectionsLimits'.
-                      cmConnectionsLimits   = daAcceptedConnectionsLimit,
-                      cmTimeWaitTimeout     = daTimeWaitTimeout,
-                      cmOutboundIdleTimeout = daProtocolIdleTimeout,
-                      cmGetPeerSharing      = diNtnPeerSharing
-                    }
-
-                connectionHandler
-                  :: NodeToNodeConnectionHandler
-                       InitiatorMode
-                       ntnFd ntnAddr ntnVersion ntnVersionData
-                       m a Void
-                connectionHandler =
-                  makeConnectionHandler
-                    dtMuxTracer
-                    SingInitiatorMode
-                    diNtnHandshakeArguments
-                    daApplicationInitiatorMode
-                    (mainThreadId, rethrowPolicy <> daRethrowPolicy)
-
-            withConnectionManager
-              connectionManagerArguments
-              connectionHandler
-              classifyHandleError
-              NotInResponderMode
-              NotInResponderMode
-              $ \(connectionManager
-                  :: NodeToNodeConnectionManager
-                       InitiatorMode ntnFd ntnAddr ntnVersionData ntnVersion m a Void)
-                -> do
+          -- InitiatorOnly mode, run peer selection only:
+          InitiatorOnlyDiffusionMode ->
+            iomWithConnectionManager
+              $ \connectionManager-> do
               diInstallSigUSR1Handler connectionManager
 
               --
@@ -987,64 +968,14 @@ runM Interfaces
                                , churnGovernorThread
                                ]
 
-          -- InitiatorResponderMode
-          --
-          -- Run peer selection and the server.
-          --
+          -- InitiatorAndResponder mode, run peer selection and the server.
+
           InitiatorAndResponderDiffusionMode -> do
             inboundInfoChannel  <- newInformationChannel
             outboundInfoChannel <- newInformationChannel
             observableStateVar <- Server.newObservableStateVar ntnInbgovRng
-            let connectionManagerArguments
-                  :: NodeToNodeConnectionManagerArguments
-                      InitiatorResponderMode
-                      ntnFd ntnAddr ntnVersion ntnVersionData
-                      m a ()
-                connectionManagerArguments =
-                  ConnectionManagerArguments {
-                      cmTracer              = dtConnectionManagerTracer,
-                      cmTrTracer            =
-                        fmap abstractState
-                        `contramap` dtConnectionManagerTransitionTracer,
-                      cmMuxTracer           = dtMuxTracer,
-                      cmIPv4Address,
-                      cmIPv6Address,
-                      cmAddressType         = diNtnAddressType,
-                      cmSnocket             = diNtnSnocket,
-                      cmMakeBearer          = diNtnBearer,
-                      cmConfigureSocket     = diNtnConfigureSocket,
-                      connectionDataFlow    = diNtnDataFlow,
-                      cmPrunePolicy         = Diffusion.Policies.prunePolicy observableStateVar,
-                      cmConnectionsLimits   = daAcceptedConnectionsLimit,
-                      cmTimeWaitTimeout     = daTimeWaitTimeout,
-                      cmOutboundIdleTimeout = daProtocolIdleTimeout,
-                      cmGetPeerSharing      = diNtnPeerSharing
-                    }
-
-                connectionHandler
-                  :: NodeToNodeConnectionHandler
-                      InitiatorResponderMode
-                      ntnFd ntnAddr ntnVersion ntnVersionData
-                      m a ()
-                connectionHandler =
-                  makeConnectionHandler
-                     dtMuxTracer
-                     SingInitiatorResponderMode
-                     diNtnHandshakeArguments
-                     (daApplicationInitiatorResponderMode
-                        (computePeerSharingPeers (readTVar publicStateVar) peerSharingRng))
-                     (mainThreadId, rethrowPolicy <> daRethrowPolicy)
-
-            withConnectionManager
-              connectionManagerArguments
-              connectionHandler
-              classifyHandleError
-              (InResponderMode inboundInfoChannel)
-              (InResponderMode outboundInfoChannel)
-              $ \(connectionManager
-                    :: NodeToNodeConnectionManager
-                         InitiatorResponderMode ntnFd ntnAddr ntnVersionData ntnVersion m a ()
-                 ) -> do
+            irmWithConnectionManager inboundInfoChannel outboundInfoChannel observableStateVar
+              $ \connectionManager-> do
               diInstallSigUSR1Handler connectionManager
 
               --
