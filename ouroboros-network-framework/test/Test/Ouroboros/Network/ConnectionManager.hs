@@ -777,7 +777,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
             connectionHandler
             (\_ -> HandshakeFailure)
             (InResponderMode inbgovInfoChannel)
-            (InResponderMode outgovInfoChannel)
+            (InResponderMode $ Just outgovInfoChannel)
           $ \(connectionManager
                 :: ConnectionManager InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do

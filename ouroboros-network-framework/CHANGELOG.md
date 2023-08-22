@@ -6,6 +6,15 @@
 
 ### Non-breaking changes
 
+## 0.9.0.0 -- 2023-08-21
+
+### Breaking changes
+
+* Pass `Maybe InformationChannel` to connection manger. This gives us a way to
+  disable light peer sharing.
+
+### Non-breaking changes
+
 ## 0.8.0.0 -- 2023-08-09
 
 ### Breaking changes

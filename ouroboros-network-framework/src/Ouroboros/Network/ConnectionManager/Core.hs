@@ -559,7 +559,7 @@ withConnectionManager
     -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
-    -> InResponderMode muxMode (InformationChannel (peerAddr, PeerSharing) m)
+    -> InResponderMode muxMode (Maybe (InformationChannel (peerAddr, PeerSharing) m))
     -- ^ On inbound duplex connections we need to notify the outbound governor about
     -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
@@ -1203,7 +1203,8 @@ withConnectionManager ConnectionManagerArguments {
                             -- this case we don't need to notify the outbound
                             -- governor.
                     case outboundGovernorInfoChannel of
-                      InResponderMode infoChannel | notifyOutboundGov ->
+                      InResponderMode (Just infoChannel) | notifyOutboundGov
+                                                         ->
                         atomically $ InfoChannel.writeMessage
                                        infoChannel
                                        (peerAddr, cmGetPeerSharing versionData)

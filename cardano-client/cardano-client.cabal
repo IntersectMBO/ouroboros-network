@@ -23,7 +23,7 @@ library
                        containers,
                        ouroboros-network-api       ^>= 0.5.1,
                        ouroboros-network           ^>= 0.9,
-                       ouroboros-network-framework ^>= 0.8,
+                       ouroboros-network-framework  >= 0.8 && < 0.10,
                        network-mux                 ^>= 0.4,
 
   ghc-options:         -Wall
