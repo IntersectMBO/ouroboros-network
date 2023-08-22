@@ -4,7 +4,7 @@ runCommand "check-stylish" {
   meta.platforms = with lib.platforms; [ linux ];
   buildInputs = [ fd stylish-haskell ];
   src = haskell-nix.haskellLib.cleanGit {
-    name = "ouroboros-network-src";
+    name = "check-stylish";
     src = ../.;
   };
 } ''
