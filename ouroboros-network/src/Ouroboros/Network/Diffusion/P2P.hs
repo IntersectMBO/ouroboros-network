@@ -71,7 +71,7 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.Context (ResponderContext)
+import           Ouroboros.Network.Context (ExpandedInitiatorContext,ResponderContext)
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -834,8 +834,8 @@ runM Interfaces
                 cmGetPeerSharing      = diNtnPeerSharing
               }
 
-          makeConnectionHandler' ::
-               SingMuxMode muxMode
+          makeConnectionHandler'
+            :: SingMuxMode muxMode
             -> Versions ntnVersion ntnVersionData
                  (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a1 b)
             -> MuxConnectionHandler
@@ -878,6 +878,30 @@ runM Interfaces
               (InResponderMode inboundInfoChannel)
               (InResponderMode outboundInfoChannel)
 
+          withPeerStateActions'
+            :: forall (muxMode :: MuxMode) x responderCtx socket b.
+               HasInitiator muxMode ~ True
+               => MuxConnectionManager
+                    muxMode socket (ExpandedInitiatorContext ntnAddr m)
+                    responderCtx ntnAddr ntnVersionData ntnVersion
+                    ByteString m a b
+               -> (Governor.PeerStateActions
+                     ntnAddr
+                     (PeerConnectionHandle muxMode responderCtx ntnAddr
+                        ntnVersionData ByteString m a b)
+                     m -> m x)
+               -> m x
+          withPeerStateActions' connectionManager =
+            withPeerStateActions           
+              PeerStateActionsArguments {
+                    spsTracer = dtPeerSelectionActionsTracer,
+                    spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
+                    spsCloseConnectionTimeout =
+                      Diffusion.Policies.closeConnectionTimeout,
+                    spsConnectionManager = connectionManager,
+                    spsExitPolicy = exitPolicy
+                  }
+            
       withLedgerPeers
         ledgerPeersRng
         diNtnToPeerAddr
@@ -891,9 +915,13 @@ runM Interfaces
           -- InitiatorOnly mode, run peer selection only:
           InitiatorOnlyDiffusionMode ->
             iomWithConnectionManager
-              $ \connectionManager-> do
-              diInstallSigUSR1Handler connectionManager
+              $ \(connectionManager
+                  :: NodeToNodeConnectionManager
+                       InitiatorMode ntnFd ntnAddr ntnVersionData ntnVersion m a Void)
+                 -> do
 
+              diInstallSigUSR1Handler connectionManager
+ 
               --
               -- peer state actions
               --
@@ -901,15 +929,8 @@ runM Interfaces
               -- tracks threads forked by 'PeerStateActions'
               --
 
-              withPeerStateActions
-                PeerStateActionsArguments {
-                    spsTracer = dtPeerSelectionActionsTracer,
-                    spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
-                    spsCloseConnectionTimeout =
-                      Diffusion.Policies.closeConnectionTimeout,
-                    spsConnectionManager = connectionManager,
-                    spsExitPolicy = exitPolicy
-                  }
+              let
+              withPeerStateActions' connectionManager
                 $ \(peerStateActions
                       :: NodeToNodePeerStateActions InitiatorMode ntnAddr versionData m a Void) ->
                 --
@@ -975,7 +996,10 @@ runM Interfaces
             outboundInfoChannel <- newInformationChannel
             observableStateVar <- Server.newObservableStateVar ntnInbgovRng
             irmWithConnectionManager inboundInfoChannel outboundInfoChannel observableStateVar
-              $ \connectionManager-> do
+              $ \(connectionManager
+                  :: NodeToNodeConnectionManager
+                       InitiatorResponderMode ntnFd ntnAddr ntnVersionData ntnVersion m a ()
+                 ) -> do
               diInstallSigUSR1Handler connectionManager
 
               --
@@ -985,15 +1009,7 @@ runM Interfaces
               -- tracks threads forked by 'PeerStateActions'
               --
 
-              withPeerStateActions
-                PeerStateActionsArguments {
-                    spsTracer = dtPeerSelectionActionsTracer,
-                    spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
-                    spsCloseConnectionTimeout =
-                      Diffusion.Policies.closeConnectionTimeout,
-                    spsConnectionManager = connectionManager,
-                    spsExitPolicy = exitPolicy
-                  }
+              withPeerStateActions' connectionManager
                 $ \(peerStateActions
                       :: NodeToNodePeerStateActions
                            InitiatorResponderMode ntnAddr versionData m a ()) ->
