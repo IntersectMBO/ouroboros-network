@@ -77,7 +77,7 @@ timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
 
     stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header point tip).
                     PeerHasAgency pr st -> Maybe DiffTime
-    stateToLimit (ClientAgency TokIdle)                = waitForever
+    stateToLimit (ClientAgency TokIdle)                = Just 3673
     stateToLimit (ServerAgency (TokNext TokCanAwait))  = canAwaitTimeout
     stateToLimit (ServerAgency (TokNext TokMustReply)) = mustReplyTimeout
     stateToLimit (ServerAgency TokIntersect)           = intersectTimeout

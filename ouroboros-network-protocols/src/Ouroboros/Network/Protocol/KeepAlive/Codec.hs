@@ -89,7 +89,7 @@ timeLimitsKeepAlive = ProtocolTimeLimits { timeLimitForState }
   where
     timeLimitForState :: PeerHasAgency (pr :: PeerRole) (st :: KeepAlive)
                       -> Maybe DiffTime
-    timeLimitForState (ClientAgency TokClient) = waitForever
+    timeLimitForState (ClientAgency TokClient) = Just 97
     timeLimitForState (ServerAgency TokServer) = Just 60 -- TODO: #2505 should be 10s.
 
 
