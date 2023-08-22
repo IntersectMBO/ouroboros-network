@@ -142,8 +142,11 @@ jobs:
       if: runner.os == 'Linux'
       run: cabal run ouroboros-network-protocols:cddl -- +RTS -maxN2 -RTS
 
-    - name: ouroboros-network [test]
-      run: cabal run ouroboros-network:test -- +RTS -maxN2 -RTS
+    - name: ouroboros-network [io-tests]
+      run: cabal run ouroboros-network:io-tests -- +RTS -maxN2 -RTS
+
+    - name: ouroboros-network [sim-tests]
+      run: cabal run ouroboros-network:sim-tests -- +RTS -maxN2 -RTS
 
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and

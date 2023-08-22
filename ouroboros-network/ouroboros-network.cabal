@@ -142,13 +142,15 @@ library
                        -Wpartial-fields
                        -Widentities
                        -Wredundant-constraints
-                       -Wunused-packages
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
-test-suite test
+-- Simulation tests, and IO tests which don't require native system calls.
+-- (i.e. they don't require system call API provided by `Win32-network` or
+-- `network` dependency).  test-suite sim-tests
+test-suite sim-tests
   type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
+  hs-source-dirs:      sim-tests
   main-is:             Main.hs
   other-modules:       Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
@@ -179,15 +181,12 @@ test-suite test
                        Test.Ouroboros.Network.Testnet
                        Test.Ouroboros.Network.Testnet.Simulation.Node
                        Test.Mux
-                       Test.Pipe
-                       Test.Socket
                        Test.PeerState
                        Test.Version
   default-language:    Haskell2010
   build-depends:       base >=4.14 && <4.19,
                        bytestring,
                        QuickCheck,
-                       quickcheck-instances,
                        aeson,
                        array,
                        cborg,
@@ -230,6 +229,47 @@ test-suite test
                        strict-stm,
                        typed-protocols,
                        typed-protocols-examples,
+                       with-utf8,
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
+                       -fno-ignore-asserts
+                       -threaded
+                       -rtsopts
+                       +RTS -T -RTS
+
+-- Tests which require system calls provided by `Win32-network` or `network`
+-- library.  These tests are compiled natively & run on all supported
+-- platforms: x86_64-w64-mingw32 (Windows), x86_64-linux, x86-64-darwin and
+-- aarch64-darwin.
+test-suite io-tests
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      io-tests
+  main-is:             Main.hs
+  other-modules:       Test.Ouroboros.Network.Pipe
+                       Test.Ouroboros.Network.Socket
+  default-language:    Haskell2010
+  build-depends:       base >=4.14 && <4.19,
+                       bytestring,
+                       QuickCheck,
+                       network,
+                       serialise,
+                       tasty,
+                       tasty-quickcheck,
+
+                       contra-tracer,
+
+                       io-classes,
+                       network-mux,
+                       ouroboros-network,
+                       ouroboros-network-api,
+                       ouroboros-network-framework,
+                       ouroboros-network-mock,
+                       ouroboros-network-protocols,
+                       ouroboros-network-protocols:testlib,
+                       ouroboros-network-framework:testlib,
+                       ouroboros-network-testing ^>= 0.3,
+                       si-timers,
+                       strict-stm,
                        with-utf8,
 
   if os(windows)

@@ -7,7 +7,7 @@
 {-# OPTIONS_GHC -Wno-orphans     #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Test.Pipe (tests) where
+module Test.Ouroboros.Network.Pipe (tests) where
 
 import           Codec.Serialise (Serialise (..))
 import           Control.Concurrent.Class.MonadSTM.Strict

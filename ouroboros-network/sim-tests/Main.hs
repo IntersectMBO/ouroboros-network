@@ -21,8 +21,6 @@ import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import qualified Test.Ouroboros.Network.Testnet (tests)
 import qualified Test.Ouroboros.Network.TxSubmission (tests)
 import qualified Test.PeerState (tests)
-import qualified Test.Pipe (tests)
-import qualified Test.Socket (tests)
 import qualified Test.Version (tests)
 
 main :: IO ()
@@ -30,15 +28,12 @@ main = withUtf8 $ defaultMain tests
 
 tests :: TestTree
 tests =
-  testGroup "ouroboros-network"
-
+  testGroup "ouroboros-network:sim-tests"
     -- data structures
   [ Test.ChainProducerState.tests
 
     -- network logic
   , Test.Version.tests
-  , Test.Pipe.tests
-  , Test.Socket.tests
   , Test.PeerState.tests
   , Test.Ouroboros.Network.BlockFetch.tests
   , Test.Ouroboros.Network.PeerSelection.tests
