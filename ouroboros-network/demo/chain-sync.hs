@@ -699,7 +699,7 @@ chainSyncServer prng slotLength =
     nextState :: [Block]
               -> ChainSync.ServerStNext
                    BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
-    nextState [] = error "chainSyncServer: impossible"
+    nextState [] = error "chainSyncServer: reached end of infinite `Block` list"
     nextState (block:blocks) =
       ChainSync.SendMsgRollForward
         (blockHeader block)
