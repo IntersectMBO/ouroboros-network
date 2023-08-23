@@ -292,6 +292,7 @@ executable demo-chain-sync
                        bytestring,
                        containers,
                        directory,
+                       infinite-list,
                        optparse-applicative,
                        random,
                        serialise,

@@ -17,6 +17,8 @@ import qualified Data.ByteString.Lazy as LBS
 import           Data.Foldable (traverse_)
 import           Data.Functor (void)
 import           Data.List
+import           Data.List.Infinite (Infinite ((:<)))
+import qualified Data.List.Infinite as Inf
 import qualified Data.Map as Map
 import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
@@ -685,7 +687,7 @@ chainSyncServer prng slotLength =
     let blocks = chainGenerator prng in
     ChainSync.ChainSyncServer (return (idleState blocks))
   where
-    idleState :: [Block]
+    idleState :: Infinite Block
               -> ChainSync.ServerStIdle
                    BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     idleState blocks =
@@ -696,24 +698,23 @@ chainSyncServer prng slotLength =
         ChainSync.recvMsgDoneClient    = return ()
       }
 
-    nextState :: [Block]
+    nextState :: Infinite Block
               -> ChainSync.ServerStNext
                    BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
-    nextState [] = error "chainSyncServer: reached end of infinite `Block` list"
-    nextState (block:blocks) =
+    nextState (block :< blocks) =
       ChainSync.SendMsgRollForward
         (blockHeader block)
          -- pretend chain head is next one:
-        (blockPoint (blockHeader (head blocks)))
+        (blockPoint (blockHeader (Inf.head blocks)))
         (ChainSync.ChainSyncServer (return (idleState blocks)))
 
-    intersectState :: [Block]
+    intersectState :: Infinite Block
                    -> ChainSync.ServerStIntersect
                         BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     intersectState blocks =
       ChainSync.SendMsgIntersectNotFound
          -- pretend chain head is next one:
-        (blockPoint (blockHeader (head blocks)))
+        (blockPoint (blockHeader (Inf.head blocks)))
         (ChainSync.ChainSyncServer (return (idleState blocks)))
 
 
@@ -746,23 +747,22 @@ blockFetchServer prng =
         return (sendingState batch blocks)
 
 selectBlockRange :: BlockFetch.ChainRange (Point Block)
-                 -> [Block]
-                 -> Maybe ([Block], [Block])
+                 -> Infinite Block
+                 -> Maybe ([Block], Infinite Block)
 selectBlockRange (BlockFetch.ChainRange lower upper) blocks0 = do
     (_,  blocks1)     <- splitBeforePoint lower blocks0
-    (bs, b:remaining) <- splitBeforePoint upper blocks1
+    (bs, b :< remaining) <- splitBeforePoint upper blocks1
     return (bs ++ [b], remaining)
 
-splitBeforePoint :: Point Block -> [Block] -> Maybe ([Block], [Block])
+splitBeforePoint :: Point Block -> Infinite Block -> Maybe ([Block], Infinite Block)
 splitBeforePoint pt = go []
   where
-    go acc (b:bs) =
+    go acc (b :< bs) =
       case compare (At (blockSlot b)) (pointSlot pt) of
         LT -> go (b:acc) bs
         EQ | pt == castPoint (blockPoint b)
-           -> Just (reverse acc, b:bs)
+           -> Just (reverse acc, b :< bs)
         _  -> Nothing
-    go _ [] = Nothing
 
 
 --
@@ -773,16 +773,16 @@ prop_chainGenerator :: RandomGen g => g -> Bool
 prop_chainGenerator =
     Chain.valid
   . Chain.fromOldestFirst
-  . take 1000
+  . Inf.take 1000
   . chainGenerator
 
-chainGenerator :: RandomGen g => g -> [Block]
+chainGenerator :: RandomGen g => g -> Infinite Block
 chainGenerator g =
     genBlockChain g Nothing
 
-genBlockChain :: RandomGen g => g -> Maybe BlockHeader -> [Block]
+genBlockChain :: RandomGen g => g -> Maybe BlockHeader -> Infinite Block
 genBlockChain !g prevHeader =
-    block : genBlockChain g'' (Just (blockHeader block))
+    block :< genBlockChain g'' (Just (blockHeader block))
   where
     block     = genBlock g' prevHeader
     (g', g'') = split g
