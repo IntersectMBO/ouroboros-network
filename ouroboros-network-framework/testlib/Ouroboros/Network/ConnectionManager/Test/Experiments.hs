@@ -753,45 +753,6 @@ unidirectionalExperiment timeouts snocket makeBearer confSock socket clientAndSe
                 (property True)
                 $ zip rs (expectedResult clientAndServerData clientAndServerData)
 
-{-
-prop_unidirectional_Sim :: ClientAndServerData Int
-                        -> Property
-prop_unidirectional_Sim clientAndServerData =
-  simulatedPropertyWithTimeout 7200 $
-    withSnocket nullTracer
-                noAttenuation
-                Map.empty
-      $ \snock _ ->
-        bracket (Snocket.open snock Snocket.TestFamily)
-                (Snocket.close snock) $ \fd -> do
-          Snocket.bind   snock fd serverAddr
-          Snocket.listen snock fd
-          unidirectionalExperiment simTimeouts snock makeFDBearer mempty fd clientAndServerData
-  where
-    serverAddr = Snocket.TestAddress (0 :: Int)
-
-prop_unidirectional_IO
-  :: ClientAndServerData Int
-  -> Property
-prop_unidirectional_IO clientAndServerData =
-    ioProperty $ do
-      withIOManager $ \iomgr ->
-        bracket
-          (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
-          Socket.close
-          $ \socket -> do
-              associateWithIOManager iomgr (Right socket)
-              addr <- head <$> Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-              Socket.bind socket (Socket.addrAddress addr)
-              Socket.listen socket maxBound
-              unidirectionalExperiment
-                ioTimeouts
-                (socketSnocket iomgr)
-                Mux.makeSocketBearer
-                (flip configureSocket Nothing)
-                socket
-                clientAndServerData
--}
 
 -- | Bidirectional send and receive.
 --

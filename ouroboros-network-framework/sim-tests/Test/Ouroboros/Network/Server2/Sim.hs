@@ -200,10 +200,13 @@ prop_bidirectional_Sim data0 data1 =
                                         addr0 addr1
                                         data0 data1
 
---- Multi-node experiment
+--
+-- Multi-node experiment
+--
 
--- | A test case for the multi-node property contains a sequence of connection events. The
---   `DiffTime` in each constructor is relative to the previous event in the sequence.
+-- | A test case for the multi-node property contains a sequence of connection
+-- events. The `DiffTime` in each constructor is relative to the previous event
+-- in the sequence.
 data ConnectionEvent req peerAddr
   = StartClient DiffTime peerAddr
     -- ^ Start a new client at the given address
@@ -245,11 +248,12 @@ data MultiNodePruningScript req = MultiNodePruningScript
   }
   deriving (Show)
 
--- | To generate well-formed scripts we need to keep track of what nodes are started and what
---   connections they've made.
+-- | To generate well-formed scripts we need to keep track of what nodes are
+-- started and what connections they've made.
 --
---   Note: this does not track failures, e.g. `requestOutboundConnection` when there's
---   already a `Unidirectional` inbound connection (i.e. a `ForbiddenOperation`).
+-- NOTE: this does not track failures, e.g. `requestOutboundConnection` when
+-- there's already a `Unidirectional` inbound connection (i.e.
+-- a `ForbiddenOperation`).
 --
 data ScriptState peerAddr = ScriptState { startedClients      :: [peerAddr]
                                         , startedServers      :: [peerAddr]
