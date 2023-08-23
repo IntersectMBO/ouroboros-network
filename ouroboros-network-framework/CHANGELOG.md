@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Split `test` component into `io-tests` and `sim-tests`.
+
 ## 0.9.0.0 -- 2023-08-21
 
 ### Breaking changes

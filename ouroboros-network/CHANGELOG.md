@@ -10,6 +10,7 @@
 
 * Disable light peer sharing if peer sharing is not enabled.
 * Do not use light peer sharing in `node-to-client` case (which leads to a memory leak).
+* Split `test` component into `io-tests` and `sim-tests`.
 
 ## 0.9.0.0 -- 2023-08-09
 
