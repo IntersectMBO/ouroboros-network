@@ -28,6 +28,7 @@ import Control.Tracer
 import Data.Proxy (Proxy (..))
 import Data.Maybe
 import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
+import System.IO (hFlush, stdout)
 import System.IOManager
 import Network.Socket
 import System.Environment
@@ -36,11 +37,44 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text as Text
+import Options.Applicative
 import Text.Printf
 
-getOptions :: IOManager -> IO (ServiceClientOptions IO Socket SockAddr)
-getOptions ioManager = do
-  servicePath <- fromMaybe "/tmp/kes-agent-service.socket" <$> lookupEnv "KES_AGENT_SERVICE_PATH"
+data ServiceDemoOptions =
+  ServiceDemoOptions
+    { sdoServicePath :: Maybe String
+    }
+
+instance Semigroup ServiceDemoOptions where
+  ServiceDemoOptions sp1 <> ServiceDemoOptions sp2 =
+    ServiceDemoOptions (sp1 <|> sp2)
+
+defServiceDemoOptions :: ServiceDemoOptions
+defServiceDemoOptions =
+  ServiceDemoOptions
+    { sdoServicePath = Just "/tmp/kes-agent-service.socket"
+    }
+
+pServiceDemoOptions =
+  ServiceDemoOptions
+    <$> option (Just <$> str)
+          (  long "service-address"
+          <> short 's'
+          <> value Nothing
+          <> metavar "PATH"
+          <> help "Socket address for 'service' connections"
+          )
+
+sdoFromEnv :: IO ServiceDemoOptions
+sdoFromEnv = do
+  servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
+  return defServiceDemoOptions
+          { sdoServicePath = servicePath
+          }
+
+sdoToServiceClientOptions :: IOManager -> ServiceDemoOptions -> IO (ServiceClientOptions IO Socket SockAddr)
+sdoToServiceClientOptions ioManager sdo = do
+  servicePath <- maybe (error "Service address not configured") return $ sdoServicePath sdo
   return ServiceClientOptions
             { serviceClientSnocket = socketSnocket ioManager
             , serviceClientAddress = SockAddrUnix servicePath
@@ -71,6 +105,7 @@ stdoutStringTracer maxPrio lock = Tracer $ \(prio, msg) -> do
             (realToFrac timestamp :: Double)
             (show prio)
             msg
+          hFlush stdout
   
 handleKey :: UnsoundKESAlgorithm (KES c)
           => CRef IO (SignKeyWithPeriodKES (KES c))
@@ -87,13 +122,19 @@ handleKey skpVar ocert = withCRefValue skpVar $ \skp -> do
 hexShowBS :: ByteString -> String
 hexShowBS = concatMap (printf "%02x") . BS.unpack
 
+programDesc = fullDesc
+
 main :: IO ()
 main = do
   sodiumInit
+  sdo' <- execParser (info (pServiceDemoOptions <**> helper) programDesc)
+  sdoEnv <- sdoFromEnv
+  let sdo = sdo' <> sdoEnv <> defServiceDemoOptions
+
   withIOManager $ \ioManager -> do
+    serviceClientOptions <- sdoToServiceClientOptions ioManager sdo
     logLock <- newMVar ()
     let maxPrio = Syslog.Debug
-    serviceClientOptions <- getOptions ioManager
     let tracer = stdoutStringTracer maxPrio logLock
     let go = runServiceClient
                 (Proxy @StandardCrypto)

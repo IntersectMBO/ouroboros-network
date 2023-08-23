@@ -8,6 +8,8 @@ where
 import Cardano.KESAgent.Agent
 import Cardano.KESAgent.Protocol
 import Cardano.KESAgent.Pretty
+import Cardano.KESAgent.TextEnvelope
+import Cardano.KESAgent.Serialization
 
 import Cardano.Crypto.Libsodium (sodiumInit)
 
@@ -22,6 +24,7 @@ import Control.Tracer
 import Data.Proxy (Proxy (..))
 import Data.Maybe
 import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
+import System.IO (hFlush, stdout)
 import System.IOManager
 import Network.Socket
 import System.Environment
@@ -173,9 +176,12 @@ nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr StandardC
 nmoToAgentOptions nmo = do
   servicePath <- maybe (error "No service address") return (nmoServicePath nmo)
   controlPath <- maybe (error "No control address") return (nmoControlPath nmo)
+  coldVerKeyPath <- maybe (error "No cold verification key") return (nmoColdVerKeyFile nmo)
+  (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
   return defAgentOptions
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
+            , agentColdVerKey = coldVerKey
             }
 
 smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
@@ -232,6 +238,7 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
             (realToFrac timestamp :: Double)
             (show prio)
             (pretty msg)
+          hFlush stdout
   
 
 runAsService :: ServiceModeOptions -> IO ()

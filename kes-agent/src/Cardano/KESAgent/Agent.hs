@@ -368,7 +368,6 @@ pushKey agent keyVar oc = do
             atomically $ do
               writeTChan (agentNextKeyChan agent) (keyVar, oc)
               putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
-            checkEvolution agent
             return RecvOK
         Nothing -> do
           agentTrace agent $ AgentInstallingNewKey keyStr
@@ -380,7 +379,6 @@ pushKey agent keyVar oc = do
           atomically $ do
             writeTChan (agentNextKeyChan agent) (keyVar, oc)
             putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
-          checkEvolution agent
           return RecvOK
 
 runListener :: forall m c fd addr st (pr :: PeerRole) a

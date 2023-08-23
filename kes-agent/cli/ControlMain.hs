@@ -30,7 +30,7 @@ import qualified Data.Text.IO as Text
 import Network.Socket
 import Options.Applicative
 import System.Environment
-import System.IO (hPutStrLn, stderr, hFlush)
+import System.IO (hPutStrLn, stdout, stderr, hFlush)
 import System.IOManager
 
 data NewKeyOptions =
@@ -129,6 +129,7 @@ runNewKey nko' = withIOManager $ \ioManager -> do
       putStrLn $ "KES VerKey written to " ++ verKeyFilename
       putStrLn $ "OpCert will be read from " ++ ocertFilename
       putStrLn "Press ENTER to continue..."
+      hFlush stdout
       _ <- Text.getLine
       oc <- eitherError =<< decodeTextEnvelopeFile ocertFilename
       withNewCRef
