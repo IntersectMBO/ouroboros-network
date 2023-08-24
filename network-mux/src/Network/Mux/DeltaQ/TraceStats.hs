@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Network.Mux.DeltaQ.TraceStats
   ( step
   , OneWayDeltaQSample (..)
@@ -8,6 +10,7 @@ module Network.Mux.DeltaQ.TraceStats
 
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
+import           Data.Time (picosecondsToDiffTime)
 import           Data.Word (Word32)
 
 import           Control.Monad.Class.MonadTime.SI
@@ -27,8 +30,9 @@ step remoteTS localTS obsSize s =
     Nothing -> -- first observation this sample period
       step remoteTS localTS obsSize
           (s { referenceTimePoint = Just $! (unRemoteClockModel remoteTS, localTS)
-             , nextSampleAt       = sampleInterval `addTime` localTS
-             , timeLastObs        = localTS -- for single observation in sample case
+             , nextSampleAt =
+                picosecondsToDiffTime $sampleIntervalPicoseconds `addTime` localTS
+             , timeLastObs = localTS -- for single observation in sample case
              })
     Just refTimePoint | localTS <= nextSampleAt s ->   -- still in a sample period
       let transitTime = calcTransitTime refTimePoint remoteTS localTS
@@ -233,22 +237,6 @@ makePerSizeRecord tt = PSR
   , sumTransitTime   = tt
   , sumTransitTimeSq = squareSISec tt
   }
-
--- May want to make this a configuration variable
-
--- NOTE this interval must be less than the wrap around time of the
--- `RemoteClockModel`. The remote clock model has a precision of
--- `remoteClockPrecision`.
-sampleInterval :: DiffTime
-sampleInterval = check 10
-  where
-    check n
-     | n > 0 && n < wrapInterval
-       = n
-     | otherwise
-       = error "Infeasible sampleInterval"
-    wrapInterval
-      = remoteClockPrecision * (fromIntegral $ unRemoteClockModel maxBound)
 
 nan :: Double
 nan = 0/0
