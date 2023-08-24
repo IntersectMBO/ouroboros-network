@@ -337,6 +337,10 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
 -- The local and public root sets are disjoint, and their union is the
 -- overall root set.
 --
+-- Documentation of individual fields describes some of the invariants these
+-- structures should maintain. For the entire picture, see
+-- 'assertPeerSelectionState'.
+--
 data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        targets                     :: !PeerSelectionTargets,
@@ -651,6 +655,7 @@ pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
                available numClamped)
   where
     precondition         = not (Set.null available) && num > 0
+                        && available `Set.isSubsetOf` KnownPeers.toSet knownPeers
     postcondition picked = not (Set.null picked)
                         && Set.size picked <= numClamped
                         && picked `Set.isSubsetOf` available
@@ -670,6 +675,11 @@ pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
         fromMaybe errorUnavailable $
           KnownPeers.lookupTepidFlag p knownPeers
 
+    -- This error can trigger if `available` is not a subset of `knownPeers`. In
+    -- practice, values supplied by callers as `available` tend to be
+    -- constructed from the `PeerSelectionState` passed here, and `knownPeers`
+    -- represents a superset of the peers in the state. We also check this
+    -- relationship in this function's precondition.
     errorUnavailable =
         error $ "A pick policy requested an attribute for peer address "
              ++ " which is outside of the set given to pick from"
