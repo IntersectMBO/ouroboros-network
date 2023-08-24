@@ -152,15 +152,22 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
       -- Forget the worst performing non-active peers.
       atomically $ modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfRootPeers =
-            decrease (targetNumberOfRootPeers base)
+            decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
+            + targetNumberOfEstablishedPeers base
         , targetNumberOfKnownPeers =
-            decrease (targetNumberOfKnownPeers base)
+            decrease (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
+            + targetNumberOfEstablishedPeers base
         , targetNumberOfEstablishedPeers =
-            decrease (targetNumberOfEstablishedPeers base)
+            decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
+            + targetNumberOfActivePeers base
         , targetNumberOfKnownBigLedgerPeers =
-            decrease (targetNumberOfKnownBigLedgerPeers base)
+            decrease (targetNumberOfKnownBigLedgerPeers base -
+                      targetNumberOfEstablishedBigLedgerPeers base)
+            + targetNumberOfEstablishedBigLedgerPeers base
         , targetNumberOfEstablishedBigLedgerPeers =
-            decrease (targetNumberOfEstablishedBigLedgerPeers base)
+            decrease (targetNumberOfEstablishedBigLedgerPeers base -
+                      targetNumberOfActiveBigLedgerPeers base)
+            + targetNumberOfActiveBigLedgerPeers base
         })
 
       -- Give the governor time to properly demote them.
@@ -202,9 +209,9 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
     shortDelay :: StdGen -> DiffTime -> m StdGen
     shortDelay = fuzzyDelay' bulkChurnInterval 60
 
-    -- Replace 20% or at least on peer every churnInterval.
+    -- Replace 20% or at least one peer every churnInterval.
     decrease :: Int -> Int
-    decrease v = v  - max 1 (v `div` 5)
+    decrease v = max 0 $ v  - max 1 (v `div` 5)
 
 
 
