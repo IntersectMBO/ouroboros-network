@@ -159,25 +159,25 @@ nodeToNodeCodecCBORTerm version
         decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
           | x >= 0
           , x <= 0xffffffff
-          , peerSharing >= 0
-          , peerSharing <= 2
-          = Right
-              NodeToNodeVersionData {
-                  networkMagic = NetworkMagic (fromIntegral x),
-                  diffusionMode = if diffusionMode
-                                  then InitiatorOnlyDiffusionMode
-                                  else InitiatorAndResponderDiffusionMode,
-                  peerSharing = case peerSharing of
-                                  0 -> NoPeerSharing
-                                  1 -> PeerSharingPrivate
-                                  2 -> PeerSharingPublic
-                                  _ -> error "decodeTerm: impossible happened!",
-                  query = query
-                }
-          | x < 0 || x > 0xffffffff
-          = Left $ T.pack $ "networkMagic out of bound: " <> show x
-          | otherwise -- peerSharing < 0 || peerSharing > 2
-          = Left $ T.pack $ "peerSharing out of bound: " <> show peerSharing
+          = case peerSharing of
+            0 -> good NoPeerSharing
+            1 -> good PeerSharingPrivate
+            2 -> good PeerSharingPublic
+            _ -> bad
+          | otherwise -- x < 0 || x > 0xffffffff
+          = Left $ T.pack $ "networkMagic out of expected range [0..ffffffff]: " <> show x
+          where
+            good sharing
+              = Right
+                  NodeToNodeVersionData {
+                      networkMagic = NetworkMagic (fromIntegral x),
+                      diffusionMode = if diffusionMode
+                                      then InitiatorOnlyDiffusionMode
+                                      else InitiatorAndResponderDiffusionMode,
+                      peerSharing = sharing,
+                      query = query
+                    }
+            bad = Left $ T.pack $ "peerSharing out of expected range [0..2]: " <> show peerSharing
         decodeTerm _ t
           = Left $ T.pack $ "unknown encoding: " ++ show t
      in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
