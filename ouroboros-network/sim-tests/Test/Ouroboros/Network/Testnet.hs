@@ -1936,8 +1936,13 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteHotBigLedgerPeerFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
                        DiffusionConnectionManagerTrace TrShutdown ->
                            Just $ Left Nothing
+
                        _ -> Nothing
                 )
             $ events
