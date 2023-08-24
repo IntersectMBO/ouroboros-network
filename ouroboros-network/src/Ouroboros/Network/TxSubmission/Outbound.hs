@@ -110,21 +110,46 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           -- peer has acknowledged.
           let !unackedSeq' = Seq.drop (fromIntegral ackNo) unackedSeq
 
+          -- Update our tracking state with any extra txs available.
+          let update txs =
+                -- These txs should all be fresh
+                assert (all (\(_, idx, _) -> idx > lastIdx) txs) $
+                  let !unackedSeq'' = unackedSeq' <> Seq.fromList
+                                        [ (txid, idx) | (txid, idx, _) <- txs ]
+                      !lastIdx'
+                        | null txs  = lastIdx
+                        | otherwise = idx where (_, idx, _) = last txs
+                      txs'         :: [(txid, TxSizeInBytes)]
+                      txs'          = [ (txid, size) | (txid, _, size) <- txs ]
+                      client'       = client unackedSeq'' lastIdx'
+                  in  (txs', client')
+
           -- Grab info about any new txs after the last tx idx we've seen,
-          -- up to  the number that the peer has requested.
-          mbtxs <- case blocking of
+          -- up to the number that the peer has requested.
+          case blocking of
             TokBlocking -> do
               when (reqNo == 0) $
                 throwIO ProtocolErrorRequestedNothing
               unless (Seq.null unackedSeq') $
                 throwIO ProtocolErrorRequestBlocking
 
-              timeoutWithControlMessage controlMessageSTM $
+              mbtxs <- timeoutWithControlMessage controlMessageSTM $
                 do
                   MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
                   let txs = mempoolTxIdsAfter lastIdx
                   check (not $ null txs)
                   pure (take (fromIntegral reqNo) txs)
+
+              case mbtxs of
+                Nothing -> pure (SendMsgDone ())
+                Just txs ->
+                  let !(txs', client') = update txs
+                      txs'' = case NonEmpty.nonEmpty txs' of
+                        Just x -> x
+                        -- Assert txs is non-empty: we blocked until txs was non-null,
+                        -- and we know reqNo > 0, hence `take reqNo txs` is non-null.
+                        Nothing -> error "txSubmissionOutbound: empty transaction's list"
+                  in  pure (SendMsgReplyTxIds (BlockingReply txs'') client')
 
             TokNonBlocking -> do
               when (reqNo == 0 && ackNo == 0) $
@@ -132,38 +157,13 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
               when (Seq.null unackedSeq') $
                 throwIO ProtocolErrorRequestNonBlocking
 
-              atomically $ do
+              txs <- atomically $ do
                 MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
                 let txs = mempoolTxIdsAfter lastIdx
-                return (Just $ take (fromIntegral reqNo) txs)
+                return (take (fromIntegral reqNo) txs)
 
-          return $! case (mbtxs, blocking) of
-            (Nothing, TokBlocking)    -> SendMsgDone ()
-            (Nothing, TokNonBlocking) -> error "txSubmissionOutbound: impossible happend!"
-            (Just txs, _) ->
-              -- These txs should all be fresh
-              assert (all (\(_, idx, _) -> idx > lastIdx) txs) $
-                -- Update our tracking state with any extra txs available.
-                let !unackedSeq'' = unackedSeq' <> Seq.fromList
-                                      [ (txid, idx) | (txid, idx, _) <- txs ]
-                    !lastIdx'
-                      | null txs  = lastIdx
-                      | otherwise = idx where (_, idx, _) = last txs
-                    txs'         :: [(txid, TxSizeInBytes)]
-                    txs'          = [ (txid, size) | (txid, _, size) <- txs ]
-                    client'       = client unackedSeq'' lastIdx'
-
-                -- Our reply type is different in the blocking vs non-blocking cases
-                in case blocking of
-                    TokNonBlocking -> SendMsgReplyTxIds (NonBlockingReply txs') client'
-                    TokBlocking    -> SendMsgReplyTxIds (BlockingReply   txs'') client'
-                      where
-                        txs'' = case NonEmpty.nonEmpty txs' of
-                          Just  x -> x
-                          Nothing -> error "txSubmissionOutbound: empty transaction's list"
-                        -- Assert txs is non-empty: we blocked until txs was non-null,
-                        -- and we know reqNo > 0, hence take reqNo txs is non-null.
-
+              let !(txs', client') = update txs
+              pure (SendMsgReplyTxIds (NonBlockingReply txs') client')
 
         recvMsgRequestTxs :: [txid]
                           -> m (ClientStTxs txid tx m ())
