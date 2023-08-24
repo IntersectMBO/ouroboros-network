@@ -214,7 +214,7 @@ localRootPeersProvider tracer
                   ((\(a, res) ->
                       let domain :: DomainAccessPoint
                           domain = case a `elemIndex` as of
-                            Nothing  -> error "localRootPeersProvider: impossible happened"
+                            Nothing  -> error "localRootPeersProvider: `waitAnyCatchSTM` yielded an action not present in its original list"
                             Just idx -> case domains !! idx of x -> x
                       in either (Left . (domain,)) absurd res)
                     -- the monitoring thread cannot return, it can only error
