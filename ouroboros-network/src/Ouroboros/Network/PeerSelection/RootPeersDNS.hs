@@ -37,6 +37,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS
   ) where
 
 import           Data.Foldable (foldlM)
+import           Data.List (elemIndex)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -212,10 +213,9 @@ localRootPeersProvider tracer
                   -- wait until any of the monitoring threads errors
                   ((\(a, res) ->
                       let domain :: DomainAccessPoint
-                          domain = case lookup a (zip as domains) of
-                            Nothing  ->
-                              error "localRootPeersProvider: `waitAnyCatchSTM` yielded an action not present in its original list"
-                            Just d -> d
+                          domain = case a `elemIndex` as of
+                            Nothing  -> error "localRootPeersProvider: impossible happened"
+                            Just idx -> case domains !! idx of x -> x
                       in either (Left . (domain,)) absurd res)
                     -- the monitoring thread cannot return, it can only error
                     <$> waitAnyCatchSTM as)
