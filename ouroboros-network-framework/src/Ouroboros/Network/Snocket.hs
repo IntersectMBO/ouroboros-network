@@ -538,7 +538,8 @@ localSnocket ioManager =
   where
     toLocalAddress :: SockAddr -> LocalAddress
     toLocalAddress (SockAddrUnix path) = LocalAddress path
-    toLocalAddress _                   = error "localSnocket.toLocalAddr: impossible happened"
+    toLocalAddress (SockAddrInet {})   = error "localSnocket.toLocalAddress: saw IPV4 socket"
+    toLocalAddress (SockAddrInet6 {})  = error "localSnocket.toLocalAddress: saw IPV6 socket"
 
     fromLocalAddress :: LocalAddress -> SockAddr
     fromLocalAddress = SockAddrUnix . getFilePath
