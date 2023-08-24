@@ -4,7 +4,15 @@
 
 ### Breaking changes
 
-- Removes `updatePeerSharing` from `KnownPeers` module API
+### Non-breaking changes
+
+* Less aggresive churning of established and known peers.
+
+## 0.9.1.0 -- 2023-08-22
+
+### Breaking changes
+
+* Removes `updatePeerSharing` from `KnownPeers` module API
 
 ### Non-breaking changes
 
