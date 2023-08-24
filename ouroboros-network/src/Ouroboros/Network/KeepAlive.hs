@@ -100,7 +100,7 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
       now <- getMonotonicTime
       case decision of
         -- 'decisionSTM' above cannot return 'Quiesce'
-        Quiesce   -> error "keepAlive: impossible happened"
+        Quiesce   -> error "keepAliveClient: impossible happened"
         Continue  ->
             let (cookie, rng') = random rng in
             pure (SendMsgKeepAlive (Cookie cookie) $ go rng' $ Just now)
