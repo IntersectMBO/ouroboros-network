@@ -10,6 +10,7 @@
 module Network.NTP.Client.Query (
     NtpSettings(..)
   , NtpStatus(..)
+  , CompletedNtpStatus(..)
   , ntpQuery
 
   -- * Logging
@@ -85,6 +86,16 @@ data NtpStatus =
       -- `ntpResponseTimeout` from at least `ntpRequiredNumberOfResults`
       -- servers.
     | NtpSyncUnavailable deriving (Eq, Show)
+
+
+-- | A version of 'NtpStatus' specialized to the two "completed" states of that
+-- type: 'NtpDrift' and 'NtpSyncUnavailable'.
+--
+data CompletedNtpStatus =
+    -- | Corresponds to 'NtpDrift'
+    CNtpDrift !NtpOffset
+    -- | Corresponds to 'NtpSyncUnavailable'
+  | CNtpSyncUnavailable
 
 
 -- | Wait for at least three replies and report the minimum of the reported
@@ -215,6 +226,10 @@ instance Show a => Show (ResultOrFailure a) where
 -- families for which we have a local address.  This is to avoid trying to send
 -- IPv4\/6 requests if IPv4\/6 gateway is not configured.
 --
+-- We produce a 'CompletedNtpStatus' rather than an 'NtpStatus' because we would
+-- never construct an 'NtpStatus' using 'NtpSyncPending', so callers can avoid
+-- catching and killing that case.
+--
 -- It may throw an `IOException`:
 --
 -- * if neither IPv4 nor IPv6 address is configured
@@ -224,7 +239,7 @@ ntpQuery
     :: IOManager
     -> Tracer IO NtpTrace
     -> NtpSettings
-    -> IO NtpStatus
+    -> IO CompletedNtpStatus
 ntpQuery ioManager tracer ntpSettings@NtpSettings { ntpRequiredNumberOfResults } = do
     traceWith tracer NtpTraceClientStartQuery
     (v4Servers,   v6Servers) <- lookupNtpServers tracer ntpSettings
@@ -264,13 +279,18 @@ ntpQuery ioManager tracer ntpSettings@NtpSettings { ntpRequiredNumberOfResults }
     runProtocol protocol  (Just addr) servers = do
        runNtpQueries ioManager tracer protocol ntpSettings addr servers
 
-    handleResults :: [NtpOffset] -> IO NtpStatus
+    handleResults :: [NtpOffset] -> IO CompletedNtpStatus
     handleResults results = do
-      let result =
-            maybe NtpSyncUnavailable NtpDrift
-              $ minimumOfSome ntpRequiredNumberOfResults results
-      traceWith tracer (NtpTraceResult result)
-      return result
+      let result = minimumOfSome ntpRequiredNumberOfResults results
+      traceWith tracer (NtpTraceResult (ntpStatus result))
+      return (completedNtpStatus result)
+
+    ntpStatus :: Maybe NtpOffset -> NtpStatus
+    ntpStatus = maybe NtpSyncUnavailable NtpDrift
+
+    completedNtpStatus :: Maybe NtpOffset -> CompletedNtpStatus
+    completedNtpStatus = maybe CNtpSyncUnavailable CNtpDrift
+
 
 
 -- | Run an ntp query towards each address
