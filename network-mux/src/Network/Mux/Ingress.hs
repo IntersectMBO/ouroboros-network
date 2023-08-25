@@ -157,7 +157,7 @@ setupDispatchTable ptcls =
             [ (pnum, Nothing)    | pnum <- [minpnum..maxpnum] ]
 
             -- And override with the ones actually used.
-         ++ [ (pnum, Just pix)   | (pix, pnum) <- zip [0..] pnums ]
+         ++ [ (pnum, Just pix)   | (pnum, pix) <- zip pnums [0..] ]
 
     ptclArray :: Array (MiniProtocolIx, MiniProtocolDir)
                        (MiniProtocolDispatchInfo m)
