@@ -866,7 +866,7 @@ runM Interfaces
               NotInResponderMode
               NotInResponderMode
               
-          irmWithConnectionManager inboundInfoChannel outboundInfoChannel observableStateVar =
+          irmWithConnectionManager inbndInfoChannel outbndInfoChannel observableStateVar =
             withConnectionManager
               (connectionManagerArguments'
                  $ Diffusion.Policies.prunePolicy observableStateVar)
@@ -875,9 +875,11 @@ runM Interfaces
                  (daApplicationInitiatorResponderMode
                     (computePeerSharingPeers (readTVar publicStateVar) peerSharingRng)))
               classifyHandleError
-              (InResponderMode inboundInfoChannel)
-              (InResponderMode outboundInfoChannel)
+              (InResponderMode inbndInfoChannel)
+              (InResponderMode outbndInfoChannel)
 
+          -- | overloaded & parameterized version of 'withPeerStateActions' applied
+          --   to the arguments:
           withPeerStateActions'
             :: forall (muxMode :: MuxMode) x responderCtx socket b.
                HasInitiator muxMode ~ True
@@ -889,7 +891,8 @@ runM Interfaces
                      ntnAddr
                      (PeerConnectionHandle muxMode responderCtx ntnAddr
                         ntnVersionData ByteString m a b)
-                     m -> m x)
+                     m
+                   -> m x)
                -> m x
           withPeerStateActions' connectionManager =
             withPeerStateActions           
