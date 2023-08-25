@@ -106,7 +106,8 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      PeerSelectionCounters (..), PublicPeerSelectionState (..),
                      TracePeerSelection (..), emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (UseLedgerAfter (..), withLedgerPeers)
+                     (UseLedgerAfter (..), NumberOfPeers, LedgerPeersKind,
+                      withLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSelectionActions
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -904,6 +905,40 @@ runM Interfaces
                     spsConnectionManager = connectionManager,
                     spsExitPolicy = exitPolicy
                   }
+
+          withPeerSelectionActions'
+            :: forall muxMode responderCtx peerAddr bytes m1 a1 b a2.
+                      STM m (ntnAddr, PeerSharing)
+                   -> Governor.PeerStateActions
+                        ntnAddr
+                        (PeerConnectionHandle
+                           muxMode responderCtx peerAddr ntnVersionData bytes m1 a1 b)
+                        m
+                   -> (Ouroboros.Network.PeerSelection.LedgerPeers.NumberOfPeers
+                       -> Ouroboros.Network.PeerSelection.LedgerPeers.LedgerPeersKind
+                       -> m (Maybe (Set ntnAddr, DiffTime)))
+                   -> (Async m Void
+                       -> Governor.PeerSelectionActions
+                            ntnAddr
+                            (PeerConnectionHandle
+                               muxMode responderCtx peerAddr ntnVersionData bytes m1 a1 b)
+                             m
+                       -> m a2)
+                   -> m a2
+          
+          withPeerSelectionActions' =
+              withPeerSelectionActions
+                  dtTraceLocalRootPeersTracer
+                  dtTracePublicRootPeersTracer
+                  diNtnToPeerAddr
+                  diLocalAndPublicRootDnsSemaphore
+                  (diDnsActions lookupReqs)
+                  (readTVar peerSelectionTargetsVar)
+                  daReadLocalRootPeers
+                  daReadPublicRootPeers
+                  daOwnPeerSharing
+                  (pchPeerSharing diNtnPeerSharing)
+                  (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
             
       withLedgerPeers
         ledgerPeersRng
@@ -940,18 +975,7 @@ runM Interfaces
                 -- Run peer selection (p2p governor)
                 --
 
-                withPeerSelectionActions
-                  dtTraceLocalRootPeersTracer
-                  dtTracePublicRootPeersTracer
-                  diNtnToPeerAddr
-                  diLocalAndPublicRootDnsSemaphore
-                  (diDnsActions lookupReqs)
-                  (readTVar peerSelectionTargetsVar)
-                  daReadLocalRootPeers
-                  daReadPublicRootPeers
-                  daOwnPeerSharing
-                  (pchPeerSharing diNtnPeerSharing)
-                  (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
+                withPeerSelectionActions'
                   retry -- Will never receive inbound connections
                   peerStateActions
                   requestLedgerPeers
@@ -1021,18 +1045,7 @@ runM Interfaces
                 -- Run peer selection (p2p governor)
                 --
 
-                withPeerSelectionActions
-                  dtTraceLocalRootPeersTracer
-                  dtTracePublicRootPeersTracer
-                  diNtnToPeerAddr
-                  diLocalAndPublicRootDnsSemaphore
-                  (diDnsActions lookupReqs)
-                  (readTVar peerSelectionTargetsVar)
-                  daReadLocalRootPeers
-                  daReadPublicRootPeers
-                  daOwnPeerSharing
-                  (pchPeerSharing diNtnPeerSharing)
-                  (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
+                withPeerSelectionActions'
                   (readMessage outboundInfoChannel)
                   peerStateActions
                   requestLedgerPeers
