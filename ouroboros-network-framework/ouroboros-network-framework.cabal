@@ -126,21 +126,33 @@ library testlib
     visibility: public
     hs-source-dirs: testlib
 
-    exposed-modules: TestLib.ConnectionManager
-                     TestLib.InboundGovernor
-                     TestLib.Utils
+    exposed-modules: Ouroboros.Network.ConnectionManager.Test.Experiments
+                     Ouroboros.Network.ConnectionManager.Test.Timeouts
+                     Ouroboros.Network.ConnectionManager.Test.Utils
+                     Ouroboros.Network.InboundGovernor.Test.Utils
+                     Ouroboros.Network.Test.Orphans
 
     other-modules:
 
     build-depends:   base              >=4.14 && <4.19
+                   , bytestring
+                   , cborg
                    , containers
+                   , serialise
 
                    , QuickCheck
 
+                   , contra-tracer
                    , io-sim
+                   , io-classes
+                   , network-mux
                    , si-timers
+                   , strict-stm
                    , typed-protocols
+                   , typed-protocols-examples
+                   , ouroboros-network-api
                    , ouroboros-network-framework
+                   , ouroboros-network-testing
 
   default-language:  Haskell2010
   ghc-options:       -Wall
@@ -150,16 +162,15 @@ library testlib
                      -Wpartial-fields
                      -Widentities
                      -Wredundant-constraints
+                     -Wno-unticked-promoted-constructors
                      -Wunused-packages
 
-test-suite test
+test-suite sim-tests
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
-  hs-source-dirs:      test
+  hs-source-dirs:      sim-tests
   other-modules:       Test.Ouroboros.Network.ConnectionManager
-                       Test.Ouroboros.Network.Driver
-                       Test.Ouroboros.Network.Orphans
-                       Test.Ouroboros.Network.Server2
+                       Test.Ouroboros.Network.Server2.Sim
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
                        Test.Ouroboros.Network.RateLimiting
@@ -221,8 +232,62 @@ test-suite test
   if flag(ipv6)
     cpp-options:       -DOUROBOROS_NETWORK_IPV6
 
+test-suite io-tests
+  type:                exitcode-stdio-1.0
+  main-is:             Main.hs
+  hs-source-dirs:      io-tests
+  other-modules:
+                       Test.Ouroboros.Network.Driver
+                       Test.Ouroboros.Network.Server2.IO
+                       Test.Ouroboros.Network.Socket
+                       Test.Ouroboros.Network.Subscription
+
+  build-depends:       base              >=4.14 && <4.19
+                     , bytestring
+                     , containers
+                     , dns
+                     , iproute
+                     , network
+                     , time
+                     , with-utf8
+
+                     , QuickCheck
+                     , tasty
+                     , tasty-quickcheck
+
+                     , contra-tracer
+
+                     , io-sim
+                     , io-classes
+                     , si-timers
+                     , strict-stm
+                     , network-mux
+                     , ouroboros-network-framework
+                     , ouroboros-network-framework:testlib
+                     , typed-protocols
+                     , typed-protocols-examples
+
+  if os(windows)
+    build-depends:     Win32-network <0.2
+  else
+    build-depends:     directory
+
+  default-language:    Haskell2010
+  ghc-options:         -rtsopts
+                       -threaded
+                       -Wall
+                       -Wcompat
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wpartial-fields
+                       -Widentities
+                       -Wredundant-constraints
+                       -Wno-unticked-promoted-constructors
+                       -Wunused-packages
+
+
 executable demo-ping-pong
-  hs-source-dirs:      demo test
+  hs-source-dirs:      demo
   main-is:             ping-pong.hs
   build-depends:       base >=4.14 && <4.19,
                        async,
@@ -249,7 +314,7 @@ executable demo-ping-pong
                        -Wunused-packages
 
 executable demo-connection-manager
-  hs-source-dirs:      demo test
+  hs-source-dirs:      demo
   main-is:             connection-manager.hs
   build-depends:       base >=4.14 && <4.19,
                        bytestring,

@@ -134,13 +134,15 @@
               packages.ouroboros-network-protocols.components.tests.cddl.preCheck    = "export HOME=`pwd`";
 
               # don't run checks using Wine when cross compiling
-              packages.ntp-client.components.tests.test.doCheck                  = !pkgs.stdenv.hostPlatform.isWindows;
-              packages.network-mux.components.tests.test.doCheck                 = !pkgs.stdenv.hostPlatform.isWindows;
-              packages.ouroboros-network-api.components.tests.test.doCheck       = !pkgs.stdenv.hostPlatform.isWindows;
-              packages.ouroboros-network-protocols.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-              packages.ouroboros-network-framework.components.tests.test.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
-              packages.ouroboros-network.components.tests.test.doCheck           = !pkgs.stdenv.hostPlatform.isWindows;
-              packages.cardano-client.components.tests.test.doCheck              = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ntp-client.components.tests.test.doCheck                       = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.network-mux.components.tests.test.doCheck                      = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-api.components.tests.test.doCheck            = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-protocols.components.tests.test.doCheck      = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-framework.components.tests.io-tests.doCheck  = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network.components.tests.sim-tests.doCheck           = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network.components.tests.io-tests.doCheck            = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.cardano-client.components.tests.test.doCheck                   = !pkgs.stdenv.hostPlatform.isWindows;
             })
           ];
         });

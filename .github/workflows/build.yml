@@ -109,9 +109,13 @@ jobs:
     - name: ourobors-network-testing [test]
       run: cabal run ouroboros-network-testing:test -- +RTS -maxN2 -RTS
 
-    - name: ourobors-network-framework [test]
+    - name: ourobors-network-framework [io-tests]
       # TODO: enable `+RTS -N`
-      run: cabal run ouroboros-network-framework:test
+      run: cabal run ouroboros-network-framework:io-tests
+
+    - name: ourobors-network-framework [sim-tests]
+      if: runner.os != 'Windows'
+      run: cabal run ouroboros-network-framework:sim-tests -- +RTS -maxN2 -RTS
 
     # TODO: run CDDL
 
@@ -122,8 +126,12 @@ jobs:
     # - name: ouroboros-network-protocols [cddl]
     #   run: cabal run ouroboros-network-protocols-test:cddl
 
-    - name: ouroboros-network [test]
-      run: cabal run ouroboros-network:test -- +RTS -maxN2 -RTS
+    - name: ouroboros-network [io-tests]
+      run: cabal run ouroboros-network:io-tests -- +RTS -maxN2 -RTS
+
+    - name: ouroboros-network [sim-tests]
+      if: runner.os != 'Windows'
+      run: cabal run ouroboros-network:sim-tests -- +RTS -maxN2 -RTS
 
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and
