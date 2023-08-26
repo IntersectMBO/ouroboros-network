@@ -792,8 +792,8 @@ runM Interfaces
       churnModeVar <- newTVarIO ChurnModeNormal
 
       peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
-          -- Start with a smaller number of active peers, the churn governor will increase
-          -- it to the configured value after a delay.
+          -- Start with a smaller number of active peers, the churn governor
+          -- will increase it to the configured value after a delay.
           targetNumberOfActivePeers =
             min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
         }
@@ -872,6 +872,13 @@ runM Interfaces
               (InResponderMode inbndInfoChannel)
               (InResponderMode outbndInfoChannel)
 
+          --
+          -- peer state actions
+          --
+          -- Peer state actions run a job pool in the background which
+          -- tracks threads forked by 'PeerStateActions'
+          --
+
           -- | overloaded & parameterized version of 'withPeerStateActions' applied
           --   to the arguments:
           withPeerStateActions'
@@ -899,6 +906,9 @@ runM Interfaces
                     spsExitPolicy = exitPolicy
                   }
 
+          --
+          -- Run peer selection (p2p governor)
+          --
           withPeerSelectionActions'
             :: forall muxMode responderCtx peerAddr bytes m1 a1 b a2.
                       STM m (ntnAddr, PeerSharing)
@@ -970,6 +980,9 @@ runM Interfaces
                 ]
               )
 
+          --
+          -- Run server
+          --
           serverRun' sockets connectionManager inboundInfoChannel observableStateVar =
             Server.run
               ServerArguments {
@@ -1030,16 +1043,13 @@ runM Interfaces
                   (readMessage outboundInfoChannel)
                   peerStateActions
                   requestLedgerPeers
-                  $ \localPeerRootProviderThread peerSelectionActions ->
+                  $ \localPeerRootProviderThread peerSelectionActions->
                   Async.withAsync
                     (peerSelectionGovernor'
                        dtDebugPeerSelectionInitiatorResponderTracer
                        peerSelectionActions)
                     $ \governorThread ->
                       withSockets' $ \sockets addresses -> do
-                      --
-                      -- Run server
-                      --
                       traceWith tracer (RunServer addresses)
                       Async.withAsync
                         (serverRun' sockets connectionManager inboundInfoChannel
@@ -1047,7 +1057,7 @@ runM Interfaces
                             $ \serverThread ->
                                Async.withAsync peerChurnGovernor'
                                 $ \churnGovernorThread ->
-                                  -- wait for any thread to fail
+                                  -- wait for any thread to fail:
                                   snd <$> Async.waitAny
                                        [ localPeerRootProviderThread
                                        , serverThread
