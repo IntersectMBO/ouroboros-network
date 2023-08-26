@@ -9,9 +9,13 @@ set -e
 # - `ouroboros-network-framework`
 # - `ouroboros-network-protocols`
 # Tier 2 contains files from:
-# - `ouroboros-network-testing`
-# - `ouroboros-network-mock`
-# - `ntp-client`
+# - cardano-client
+# - cardano-ping
+# - monoidal-synchronisation
+# - network-mux
+# - ntp-client
+# - ouroboros-network-mock
+# - ouroboros-network-testing
 
 function nontest () {
     # Find Haskell source files that aren't tests.
