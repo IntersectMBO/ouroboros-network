@@ -1034,38 +1034,37 @@ runM Interfaces
           InitiatorAndResponderDiffusionMode -> do
             inboundInfoChannel  <- newInformationChannel
             outboundInfoChannel <- newInformationChannel
-            observableStateVar <- Server.newObservableStateVar ntnInbgovRng
-            irmWithConnectionManager inboundInfoChannel outboundInfoChannel observableStateVar
-              $ \connectionManager-> do
+            observableStateVar  <- Server.newObservableStateVar ntnInbgovRng
+            irmWithConnectionManager
+              inboundInfoChannel outboundInfoChannel
+              observableStateVar $ \connectionManager-> do
               diInstallSigUSR1Handler connectionManager
               withPeerStateActions' connectionManager $ \peerStateActions->
                 withPeerSelectionActions'
                   (readMessage outboundInfoChannel)
                   peerStateActions
                   requestLedgerPeers
-                  $ \localPeerRootProviderThread peerSelectionActions->
-                  Async.withAsync
-                    (peerSelectionGovernor'
-                       dtDebugPeerSelectionInitiatorResponderTracer
-                       peerSelectionActions)
-                    $ \governorThread ->
-                      withSockets' $ \sockets addresses -> do
-                      traceWith tracer (RunServer addresses)
-                      Async.withAsync
-                        (serverRun' sockets connectionManager inboundInfoChannel
-                          observableStateVar)
-                            $ \serverThread ->
-                               Async.withAsync peerChurnGovernor'
-                                $ \churnGovernorThread ->
-                                  -- wait for any thread to fail:
-                                  snd <$> Async.waitAny
-                                       [ localPeerRootProviderThread
-                                       , serverThread
-                                       , governorThread
-                                       , ledgerPeerThread
-                                       , churnGovernorThread
-                                       ]
-
+                    $ \localPeerRootProviderThread peerSelectionActions->
+                Async.withAsync
+                  (peerSelectionGovernor'
+                     dtDebugPeerSelectionInitiatorResponderTracer
+                     peerSelectionActions) $ \governorThread ->
+                -- begin, unique to InitiatorAndResponder mode:
+                withSockets' $ \sockets addresses -> do
+                traceWith tracer (RunServer addresses)
+                Async.withAsync
+                  (serverRun' sockets connectionManager inboundInfoChannel
+                   observableStateVar) $ \serverThread ->
+                -- end, unique to ...
+                  Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+                  -- wait for any thread to fail:
+                  snd <$> Async.waitAny
+                       [ localPeerRootProviderThread
+                       , serverThread
+                       , governorThread
+                       , ledgerPeerThread
+                       , churnGovernorThread
+                       ]
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
