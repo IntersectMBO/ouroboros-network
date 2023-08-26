@@ -845,8 +845,8 @@ runM Interfaces
 
           -- Capture the two variations (InitiatorMode,InitiatorResponderMode) of
           -- withConnectionManager:
-          
-          iomWithConnectionManager =
+
+          withConnectionManagerInitiatorOnlyMode =
             withConnectionManager
               (connectionManagerArguments' simplePrunePolicy)
                  -- Server is not running, it will not be able to
@@ -860,17 +860,18 @@ runM Interfaces
               NotInResponderMode
               NotInResponderMode
               
-          irmWithConnectionManager inbndInfoChannel outbndInfoChannel observableStateVar =
-            withConnectionManager
-              (connectionManagerArguments'
-                 $ Diffusion.Policies.prunePolicy observableStateVar)
-              (makeConnectionHandler'
-                 SingInitiatorResponderMode
-                 (daApplicationInitiatorResponderMode
-                    (computePeerSharingPeers (readTVar publicStateVar) peerSharingRng)))
-              classifyHandleError
-              (InResponderMode inbndInfoChannel)
-              (InResponderMode outbndInfoChannel)
+          withConnectionManagerInitiatorAndResponderMode
+            inbndInfoChannel outbndInfoChannel observableStateVar =
+              withConnectionManager
+                (connectionManagerArguments'
+                   $ Diffusion.Policies.prunePolicy observableStateVar)
+                (makeConnectionHandler'
+                   SingInitiatorResponderMode
+                   (daApplicationInitiatorResponderMode
+                      (computePeerSharingPeers (readTVar publicStateVar) peerSharingRng)))
+                classifyHandleError
+                (InResponderMode inbndInfoChannel)
+                (InResponderMode outbndInfoChannel)
 
           --
           -- peer state actions
@@ -1010,7 +1011,7 @@ runM Interfaces
 
           -- InitiatorOnly mode, run peer selection only:
           InitiatorOnlyDiffusionMode ->
-            iomWithConnectionManager $ \connectionManager-> do
+            withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
             diInstallSigUSR1Handler connectionManager
             withPeerStateActions' connectionManager $ \peerStateActions->
               withPeerSelectionActions' retry peerStateActions requestLedgerPeers
@@ -1035,7 +1036,7 @@ runM Interfaces
             inboundInfoChannel  <- newInformationChannel
             outboundInfoChannel <- newInformationChannel
             observableStateVar  <- Server.newObservableStateVar ntnInbgovRng
-            irmWithConnectionManager
+            withConnectionManagerInitiatorAndResponderMode
               inboundInfoChannel outboundInfoChannel
               observableStateVar $ \connectionManager-> do
               diInstallSigUSR1Handler connectionManager
