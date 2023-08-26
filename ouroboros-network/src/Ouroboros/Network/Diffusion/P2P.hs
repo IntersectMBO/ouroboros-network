@@ -960,6 +960,31 @@ runM Interfaces
                                  daPeerSelectionTargets
                                  peerSelectionTargetsVar
 
+          withSockets' =
+            withSockets tracer diNtnSnocket
+              (\sock addr -> diNtnConfigureSocket sock (Just addr))
+              (\sock addr -> diNtnConfigureSystemdSocket sock addr)
+              ( catMaybes
+                [ daIPv4Address
+                , daIPv6Address
+                ]
+              )
+
+          serverRun' sockets connectionManager inboundInfoChannel observableStateVar =
+            Server.run
+              ServerArguments {
+                  serverSockets               = sockets,
+                  serverSnocket               = diNtnSnocket,
+                  serverTracer                = dtServerTracer,
+                  serverTrTracer              = dtInboundGovernorTransitionTracer,
+                  serverInboundGovernorTracer = dtInboundGovernorTracer,
+                  serverConnectionLimits      = daAcceptedConnectionsLimit,
+                  serverConnectionManager     = connectionManager,
+                  serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
+                  serverInboundInfoChannel    = inboundInfoChannel,
+                  serverObservableStateVar    = observableStateVar
+                }
+
       withLedgerPeers
         ledgerPeersRng
         diNtnToPeerAddr
@@ -1011,33 +1036,14 @@ runM Interfaces
                        dtDebugPeerSelectionInitiatorResponderTracer
                        peerSelectionActions)
                     $ \governorThread ->
-                      withSockets tracer diNtnSnocket
-                                  (\sock addr -> diNtnConfigureSocket sock (Just addr))
-                                  (\sock addr -> diNtnConfigureSystemdSocket sock addr)
-                                  ( catMaybes
-                                      [ daIPv4Address
-                                      , daIPv6Address
-                                      ]
-                                  )
-                                  $ \sockets addresses -> do
+                      withSockets' $ \sockets addresses -> do
                       --
                       -- Run server
                       --
                       traceWith tracer (RunServer addresses)
                       Async.withAsync
-                        (Server.run
-                          ServerArguments {
-                              serverSockets               = sockets,
-                              serverSnocket               = diNtnSnocket,
-                              serverTracer                = dtServerTracer,
-                              serverTrTracer              = dtInboundGovernorTransitionTracer,
-                              serverInboundGovernorTracer = dtInboundGovernorTracer,
-                              serverConnectionLimits      = daAcceptedConnectionsLimit,
-                              serverConnectionManager     = connectionManager,
-                              serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
-                              serverInboundInfoChannel    = inboundInfoChannel,
-                              serverObservableStateVar    = observableStateVar
-                            })
+                        (serverRun' sockets connectionManager inboundInfoChannel
+                          observableStateVar)
                             $ \serverThread ->
                                Async.withAsync peerChurnGovernor'
                                 $ \churnGovernorThread ->
