@@ -6,6 +6,9 @@
 
 ### Non-breaking changes
 
+* Restructured `decodeTerm` to prevent an impossible case and eliminate the
+  associated `error`.
+
 
 ## 0.5.1.1 -- 2023-10-26
 

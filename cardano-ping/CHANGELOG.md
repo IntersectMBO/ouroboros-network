@@ -6,6 +6,9 @@
 
 ### Non-breaking changes
 
+* Use `NonEmpty` for `handshakeReqEnc`'s parameter to eliminate an impossible
+  `error`.
+
 ## 0.2.0.7 -- 2023-10-20
 
 * In presence of flag `-j`, output json when printing
