@@ -731,7 +731,6 @@ runM Interfaces
             --
             -- run local server
             --
-
             traceWith tracer . RunLocalServer
               =<< Snocket.getLocalAddr diNtcSnocket localSocket
 
@@ -798,12 +797,34 @@ runM Interfaces
             min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
         }
 
-
       publicStateVar <- newTVarIO emptyPublicPeerSelectionState
 
-      let
-          connectionManagerArguments'
-            :: PrunePolicy ntnAddr (STM m)
+      -- Design notes:
+      --  - We split the following code into two parts:
+      --    - Part (a): plumb data flow (in particular arguments and tracersr)
+      --      and define common functions as a sequence of 'let's in which we
+      --      define needed 'withXXX' functions (and similar) which
+      --       - are used in Part (b),
+      --       - handle the plumbing of tracers, and
+      --       - capture commonalities between the two cases.
+      -- 
+      --    - Part (b): capturing the major control-flow of runM:
+      --      in particular, two different case alternatives in which is captured 
+      --      the monadic flow of the program stripped down to its essence:
+      ---     ```
+      --       <setup...>
+      --       case diffusionMode of
+      --         InitiatorOnlyDiffusionMode -> ...
+      --         InitiatorAndResponderDiffusionMode -> ...
+      --      ```
+
+      -- 
+      -- Part (a): plumb data flow and define common functions
+      -- 
+
+      let connectionManagerArguments'
+            :: forall handle handleError.
+               PrunePolicy ntnAddr (STM m)
             -> ConnectionManagerArguments
                  (ConnectionHandlerTrace ntnVersion ntnVersionData)
                  ntnFd ntnAddr handle handleError ntnVersion ntnVersionData m
@@ -828,13 +849,14 @@ runM Interfaces
                 cmGetPeerSharing      = diNtnPeerSharing
               }
 
-          makeConnectionHandler'
-            :: SingMuxMode muxMode
+      let makeConnectionHandler' 
+            :: forall muxMode socket initiatorCtx responderCtx b c.
+               SingMuxMode muxMode
             -> Versions ntnVersion ntnVersionData
-                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a1 b)
+                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m b c)
             -> MuxConnectionHandler
                  muxMode socket initiatorCtx responderCtx ntnAddr
-                 ntnVersion ntnVersionData ByteString m a1 b
+                 ntnVersion ntnVersionData ByteString m b c
           makeConnectionHandler' muxMode versions =
             makeConnectionHandler
               dtMuxTracer
@@ -843,8 +865,8 @@ runM Interfaces
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
 
-          -- Capture the two variations (InitiatorMode,InitiatorResponderMode) of
-          -- withConnectionManager:
+          -- | Capture the two variations (InitiatorMode,InitiatorResponderMode) of
+          --   withConnectionManager:
 
           withConnectionManagerInitiatorOnlyMode =
             withConnectionManager
@@ -868,34 +890,34 @@ runM Interfaces
                 (makeConnectionHandler'
                    SingInitiatorResponderMode
                    (daApplicationInitiatorResponderMode
-                      (computePeerSharingPeers (readTVar publicStateVar) peerSharingRng)))
+                      (computePeerSharingPeers (readTVar publicStateVar)
+                       peerSharingRng)))
                 classifyHandleError
                 (InResponderMode inbndInfoChannel)
                 (InResponderMode outbndInfoChannel)
 
-          --
-          -- peer state actions
-          --
-          -- Peer state actions run a job pool in the background which
-          -- tracks threads forked by 'PeerStateActions'
-          --
-
-          -- | overloaded & parameterized version of 'withPeerStateActions' applied
-          --   to the arguments:
+      --
+      -- peer state actions
+      --
+      -- Peer state actions run a job pool in the background which
+      -- tracks threads forked by 'PeerStateActions'
+      --
+          
+      let -- | parameterized version of 'withPeerStateActions'
           withPeerStateActions'
-            :: forall (muxMode :: MuxMode) x responderCtx socket b.
+            :: forall (muxMode :: MuxMode) responderCtx socket b c.
                HasInitiator muxMode ~ True
-               => MuxConnectionManager
-                    muxMode socket (ExpandedInitiatorContext ntnAddr m)
-                    responderCtx ntnAddr ntnVersionData ntnVersion
-                    ByteString m a b
-               -> (Governor.PeerStateActions
-                     ntnAddr
-                     (PeerConnectionHandle muxMode responderCtx ntnAddr
-                        ntnVersionData ByteString m a b)
-                     m
-                   -> m x)
-               -> m x
+            => MuxConnectionManager
+                 muxMode socket (ExpandedInitiatorContext ntnAddr m)
+                 responderCtx ntnAddr ntnVersionData ntnVersion
+                 ByteString m a b
+            -> (Governor.PeerStateActions
+                  ntnAddr
+                  (PeerConnectionHandle muxMode responderCtx ntnAddr
+                     ntnVersionData ByteString m a b)
+                  m
+                -> m c)
+            -> m c
           withPeerStateActions' connectionManager =
             withPeerStateActions           
               PeerStateActionsArguments {
@@ -907,28 +929,28 @@ runM Interfaces
                     spsExitPolicy = exitPolicy
                   }
 
-          --
-          -- Run peer selection (p2p governor)
-          --
-          withPeerSelectionActions'
-            :: forall muxMode responderCtx peerAddr bytes m1 a1 b a2.
-                      STM m (ntnAddr, PeerSharing)
-                   -> Governor.PeerStateActions
-                        ntnAddr
-                        (PeerConnectionHandle
-                           muxMode responderCtx peerAddr ntnVersionData bytes m1 a1 b)
-                        m
-                   -> (Ouroboros.Network.PeerSelection.LedgerPeers.NumberOfPeers
-                       -> Ouroboros.Network.PeerSelection.LedgerPeers.LedgerPeersKind
-                       -> m (Maybe (Set ntnAddr, DiffTime)))
-                   -> (Async m Void
-                       -> Governor.PeerSelectionActions
-                            ntnAddr
-                            (PeerConnectionHandle
-                               muxMode responderCtx peerAddr ntnVersionData bytes m1 a1 b)
-                             m
-                       -> m a2)
-                   -> m a2
+      --
+      -- Run peer selection (p2p governor)
+      --
+      let withPeerSelectionActions'
+            :: forall muxMode responderCtx peerAddr bytes a1 b c.
+               STM m (ntnAddr, PeerSharing)
+            -> Governor.PeerStateActions
+                 ntnAddr
+                 (PeerConnectionHandle
+                    muxMode responderCtx peerAddr ntnVersionData bytes m a1 b)
+                 m
+            -> (NumberOfPeers
+                -> LedgerPeersKind
+                -> m (Maybe (Set ntnAddr, DiffTime)))
+            -> (Async m Void
+                -> Governor.PeerSelectionActions
+                     ntnAddr
+                     (PeerConnectionHandle
+                        muxMode responderCtx peerAddr ntnVersionData bytes m a1 b)
+                      m
+                -> m c)
+            -> m c
           withPeerSelectionActions' =
               withPeerSelectionActions
                   dtTraceLocalRootPeersTracer
@@ -946,8 +968,8 @@ runM Interfaces
           peerSelectionGovernor'
             :: forall (muxMode :: MuxMode) b.
                Tracer m (DebugPeerSelection ntnAddr)
-               -> NodeToNodePeerSelectionActions muxMode ntnAddr ntnVersionData m a b
-               -> m Void
+            -> NodeToNodePeerSelectionActions muxMode ntnAddr ntnVersionData m a b
+            -> m Void
           peerSelectionGovernor' peerSelectionTracer peerSelectionActions =
               (Governor.peerSelectionGovernor
                 dtTracePeerSelectionTracer
@@ -960,7 +982,10 @@ runM Interfaces
                    policyRngVar (readTVar churnModeVar)
                    daPeerMetrics (epErrorDelay exitPolicy)))
 
-          peerChurnGovernor' = Governor.peerChurnGovernor
+      --
+      -- The peer churn goveror:
+      -- 
+      let peerChurnGovernor' = Governor.peerChurnGovernor
                                  dtTracePeerSelectionTracer
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
@@ -970,8 +995,13 @@ runM Interfaces
                                  daBlockFetchMode
                                  daPeerSelectionTargets
                                  peerSelectionTargetsVar
-
-          withSockets' =
+                                 
+      --
+      -- Two functions only used in InitiatorAndResponder mode
+      --  
+      let
+          -- create sockets
+          withSockets' f =
             withSockets tracer diNtnSnocket
               (\sock addr -> diNtnConfigureSocket sock (Just addr))
               (\sock addr -> diNtnConfigureSystemdSocket sock addr)
@@ -980,10 +1010,9 @@ runM Interfaces
                 , daIPv6Address
                 ]
               )
-
-          --
-          -- Run server
-          --
+              f
+              
+          -- run server
           serverRun' sockets connectionManager inboundInfoChannel observableStateVar =
             Server.run
               ServerArguments {
@@ -999,6 +1028,9 @@ runM Interfaces
                   serverObservableStateVar    = observableStateVar
                 }
 
+      --
+      -- Part (b): capturing the major control-flow of runM:
+      -- 
       withLedgerPeers
         ledgerPeersRng
         diNtnToPeerAddr
