@@ -21,8 +21,8 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe (fromJust)
 import           System.Random (StdGen, random)
 
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
+import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
+import qualified Ouroboros.Network.ControlMessage as CM
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Protocol.KeepAlive.Client
 import           Ouroboros.Network.Protocol.KeepAlive.Server
@@ -37,6 +37,11 @@ data TraceKeepAliveClient peer =
 instance Show peer => Show (TraceKeepAliveClient peer) where
     show (AddSample peer rtt gsv) = "AddSample " ++ show peer ++ " sample: " ++ show rtt
         ++ " gsv: " ++ show gsv
+
+-- | A version of `CM.ControlMessage` restricted to its `Continue` and
+-- `Terminate` constructors, suitable for use in `decisionSTM`, a function local
+-- to `keepAliveClient` that never returns `Quiesce`.
+data ControlMessage = Continue | Terminate
 
 keepAliveClient
     :: forall m peer.
@@ -61,7 +66,7 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
     decisionSTM delayVar = do
        controlMessage <- controlMessageSTM
        case controlMessage of
-            Terminate -> return Terminate
+            CM.Terminate -> return Terminate
 
             -- Continue
             _  -> do
@@ -99,8 +104,6 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
       decision <- atomically (decisionSTM delayVar)
       now <- getMonotonicTime
       case decision of
-        -- 'decisionSTM' above cannot return 'Quiesce'
-        Quiesce   -> error "keepAliveClient: impossible happened"
         Continue  ->
             let (cookie, rng') = random rng in
             pure (SendMsgKeepAlive (Cookie cookie) $ go rng' $ Just now)
