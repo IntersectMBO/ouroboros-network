@@ -60,7 +60,7 @@ library
                        statistics-linreg
                                        >=0.3 && <0.4,
                        vector          >=0.12 && <0.14,
-                       template-haskell ^>=2.18.0.0,
+                       template-haskell >=2.15.0.0 && <2.25.0.0,
                        time            >=1.9.1 && <1.14,
                        quiet
 
