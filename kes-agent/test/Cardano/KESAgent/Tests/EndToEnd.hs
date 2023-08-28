@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Cardano.KESAgent.Tests.EndToEnd
   ( tests )
@@ -9,6 +10,7 @@ import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.KES.Evolution ( getCurrentKESPeriod )
 import Paths_kes_agent
@@ -40,9 +42,9 @@ tests =
   testGroup "end to end"
     [ testCase "kes-agent --help" kesAgentHelp
     , testCase "kes-agent-control --help" kesAgentControlHelp
-    , testGroup "kes-agent-control new-key"
-      [ testCase "valid" kesAgentControlNewKeyValid
-      , testCase "invalid opcert" kesAgentControlNewKeyInvalidOpCert
+    , testGroup "kes-agent-control gen-key install-key"
+      [ testCase "valid" kesAgentControlGenInstallValid
+      , testCase "invalid opcert" kesAgentControlGenInstallInvalidOpCert
       ]
     ]
 
@@ -53,7 +55,7 @@ kesAgentHelp = do
 
 kesAgentControlHelp :: Assertion
 kesAgentControlHelp = do
-  (exitCode, stdout, stderr) <- readProcessWithExitCode "kes-agent-control" [ "--help" ] ""
+  (exitCode, stdout, stderr) <- controlClient ["--help"]
   assertEqual (stdout ++ "\n" ++ stderr) ExitSuccess exitCode
 
 prependMVar :: MVar IO [a] -> a -> IO ()
@@ -70,10 +72,12 @@ logHandle h = do
   reverse <$> readMVar var
 
 
-kesAgentControlNewKeyValid :: Assertion
-kesAgentControlNewKeyValid = 
+kesAgentControlGenInstallValid :: Assertion
+kesAgentControlGenInstallValid = 
   withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
-    let kesKeyFile = tmpdir </> "kes.vkey"
+    let controlAddr = tmpdir </> "control.socket"
+        serviceAddr = tmpdir </> "service.socket"
+        kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
     coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
     coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
@@ -87,90 +91,69 @@ kesAgentControlNewKeyValid =
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
           return ()
 
-    (agentOutLines, serviceOutLines, controlOutLines) <-
-      runNetwork tmpdir kesKeyFile opcertFile coldVerKeyFile makeCert
+    withAgent controlAddr serviceAddr coldVerKeyFile $ \_ _ _ agentPH -> do
+      withService serviceAddr $ \_ (Just serviceOut) _ servicePH -> do
+        (e1, out1, err1) <- controlClient [ "gen-key", "--kes-verification-key-file", kesKeyFile, "--control-address", controlAddr ]
+        assertEqual (err1 ++ out1) ExitSuccess e1
+        let outLines = lines out1
+        assertEqual out1
+          [ "Asking agent to generate a key..."
+          , "KES VerKey written to " ++ kesKeyFile
+          ]
+          outLines
+        makeCert
+        (e2, out2, err2) <- controlClient [ "install-key", "--opcert-file", opcertFile, "--control-address", controlAddr ]
+        let outLines = lines out2
+        assertEqual out2
+          [ "KES key installed."
+          ]
+          outLines
+        assertEqual (err2 ++ out2) ExitSuccess e2
+        terminateProcess servicePH
+        serviceOutLines <- Text.lines <$> Text.hGetContents serviceOut
+        let interestingLines = filter ("KES key 0 " `Text.isPrefixOf`) serviceOutLines
+        assertBool (Text.unpack . Text.unlines $ serviceOutLines) (not . null $ interestingLines)
 
-    let log =
-          "--- AGENT ---\n" ++
-          unlines agentOutLines ++
-          "--- NODE ---\n" ++
-          unlines serviceOutLines ++
-          "--- CONTROL ---\n" ++
-          unlines controlOutLines
-
-    assertEqual log
-      [ "KES VerKey written to " ++ kesKeyFile
-      , "OpCert will be read from " ++ opcertFile
-      , "Press ENTER to continue..."
-      , "Key accepted."
-      ]
-      controlOutLines
-
-kesAgentControlNewKeyInvalidOpCert :: Assertion
-kesAgentControlNewKeyInvalidOpCert = 
+kesAgentControlGenInstallInvalidOpCert :: Assertion
+kesAgentControlGenInstallInvalidOpCert = 
   withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
-    let kesKeyFile = tmpdir </> "kes.vkey"
+    let controlAddr = tmpdir </> "control.socket"
+        serviceAddr = tmpdir </> "service.socket"
+        kesKeyFile = tmpdir </> "kes.vkey"
     opcertFile <- getDataFileName "fixtures/opcert.cert"
+    coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
     coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
 
-    (agentOutLines, serviceOutLines, controlOutLines) <-
-      runNetwork tmpdir kesKeyFile opcertFile coldVerKeyFile (return ())
-
-    let log =
-          "--- AGENT ---\n" ++
-          unlines agentOutLines ++
-          "--- NODE ---\n" ++
-          unlines serviceOutLines ++
-          "--- CONTROL ---\n" ++
-          unlines controlOutLines
-
-    assertEqual log
-      [ "KES VerKey written to " ++ kesKeyFile
-      , "OpCert will be read from " ++ opcertFile
-      , "Press ENTER to continue..."
-      , "Key rejected: OpCert validation failed"
-      ]
-      controlOutLines
-
-runNetwork :: FilePath -> FilePath -> FilePath -> FilePath -> IO () -> IO ([String], [String], [String])
-runNetwork tmpdir kesKeyFile opcertFile coldVerKeyFile makeCert = do
-  let controlAddr = tmpdir </> "control.socket"
-      serviceAddr = tmpdir </> "service.socket"
-  (agentOutLines, (serviceOutLines, controlOutLines)) <- withAgent controlAddr serviceAddr coldVerKeyFile $ \_ (Just agentOut) _ agentPH -> do
-    concurrently (logHandle agentOut) $ do
+    withAgent controlAddr serviceAddr coldVerKeyFile $ \_ (Just agentOut) _ agentPH -> do
       withService serviceAddr $ \_ (Just serviceOut) _ servicePH -> do
-        concurrently (logHandle serviceOut) $ do
-          withControlClient controlAddr opcertFile kesKeyFile $ \(Just controlIn) (Just controlOut) _ controlPH -> do
-            hSetBuffering controlIn NoBuffering
-            hSetBuffering controlOut NoBuffering
-
-            line1 <- hGetLine controlOut
-            line2 <- hGetLine controlOut
-            line3 <- hGetLine controlOut
-
-            makeCert
-
-            hPutStrLn controlIn ""
-            hFlush controlIn
-
-            line4 <- either id (const "*** timeout ***") <$>
-                        race (hGetLine controlOut) (threadDelay 100000 >> terminateProcess controlPH)
-            waitForProcess controlPH
-            terminateProcess servicePH
-            terminateProcess agentPH
-
-            return [line1, line2, line3, line4]
-  return (agentOutLines, serviceOutLines, controlOutLines)
-
-
-withControlClient :: FilePath -> FilePath -> FilePath -> (Maybe Handle -> Maybe Handle -> Maybe Handle -> ProcessHandle -> IO a) -> IO a
-withControlClient controlAddr opcertFile kesKeyFile =
-  withSpawnProcess "kes-agent-control"
-              [ "new-key"
-              , "--opcert-file", opcertFile
-              , "--kes-verification-key-file", kesKeyFile
-              , "--control-address", controlAddr
-              ]
+        (e1, out1, err1) <- controlClient [ "gen-key", "--kes-verification-key-file", kesKeyFile, "--control-address", controlAddr ]
+        assertEqual (err1 ++ out1) ExitSuccess e1
+        let outLines = lines out1
+        assertEqual out1
+          [ "Asking agent to generate a key..."
+          , "KES VerKey written to " ++ kesKeyFile
+          ]
+          outLines
+        (e2, out2, err2) <- controlClient [ "install-key", "--opcert-file", opcertFile, "--control-address", controlAddr ]
+        assertEqual (err2 ++ out2) (ExitFailure (fromEnum RecvErrorInvalidOpCert)) e2
+        let outLines = lines out2
+        assertEqual out2
+          [ "Error: OpCert validation failed"
+          ]
+          outLines
+        terminateProcess servicePH
+        serviceOutLines <- Text.lines <$> Text.hGetContents serviceOut
+        let interestingLines = filter ("KES key 0 " `Text.isPrefixOf`) serviceOutLines
+        assertBool (Text.unpack . Text.unlines $ serviceOutLines) (null interestingLines)
+      terminateProcess agentPH
+      agentOutLines <- Text.lines <$> Text.hGetContents agentOut
+      let interestingLines =
+            [ l | l <- agentOutLines, let (_ : "Warning" : "Agent:" : "RejectingKey" : _) = Text.words l ]
+      assertBool (Text.unpack . Text.unlines $ agentOutLines) (not . null $ interestingLines)
+      
+controlClient :: [String] -> IO (ExitCode, String, String)
+controlClient args =
+  readProcessWithExitCode "kes-agent-control" args ""
 
 withAgent :: FilePath -> FilePath -> FilePath -> (Maybe Handle -> Maybe Handle -> Maybe Handle -> ProcessHandle -> IO a) -> IO a
 withAgent controlAddr serviceAddr coldVerKeyFile =

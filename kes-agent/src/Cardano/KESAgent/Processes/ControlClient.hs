@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.Processes.ControlClient
@@ -11,12 +12,15 @@ import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace, serviceDr
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert ( OCert (..) )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
-import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher, serviceReceiver )
-import Cardano.KESAgent.Protocols.Service.Protocol ( RecvResult (..) )
+import Cardano.KESAgent.Protocols.Control.Peers
+import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.Control.Driver
+import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
+import Cardano.KESAgent.Protocols.VersionedProtocol ( NamedCrypto )
 import Cardano.KESAgent.Util.RefCounting ( CRef, withCRef )
 import Cardano.KESAgent.Util.RetrySocket ( retrySocket )
 
-import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..) )
+import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..), VerKeyKES )
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Snocket (..) )
@@ -27,6 +31,7 @@ import Control.Tracer ( Tracer, traceWith )
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy ( Proxy (..) )
 import Network.TypedProtocol.Driver ( runPeerWithDriver )
+import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
 
 data ControlClientOptions m fd addr =
   ControlClientOptions
@@ -36,7 +41,7 @@ data ControlClientOptions m fd addr =
     }
 
 data ControlClientTrace
-  = ControlClientDriverTrace ServiceDriverTrace
+  = ControlClientDriverTrace ControlDriverTrace
   | ControlClientSocketClosed
   | ControlClientConnected -- (SocketAddress Unix)
   | ControlClientAttemptReconnect Int
@@ -51,19 +56,19 @@ instance Pretty ControlClientTrace where
   pretty ControlClientConnected = "Control: Connected"
   pretty x = "Control: " ++ drop (length "ControlClient") (show x)
 
--- | A simple control client: push one KES key, then exit.
-runControlClient1 :: forall c m fd addr
+runControlClient1 :: forall c m fd addr a
                    . MonadKES m c
-                  => Proxy c
+                  => Crypto c
+                  => NamedCrypto c
+                  => Peer (ControlProtocol m c) AsServer InitialState m a
+                  -> Proxy c
                   -> MakeRawBearer m fd
                   -> ControlClientOptions m fd addr
-                  -> CRef m (SignKeyWithPeriodKES (KES c))
-                  -> OCert c
                   -> Tracer m ControlClientTrace
-                  -> m ()
-runControlClient1 proxy mrb options key oc tracer = withCRef key $ \key -> do
+                  -> m a
+runControlClient1 peer proxy mrb options tracer = do
   let s = controlClientSnocket options
-  void $ bracket
+  bracket
     (openToConnect s (controlClientAddress options))
     (\fd -> do
       close s fd
@@ -75,18 +80,10 @@ runControlClient1 proxy mrb options key oc tracer = withCRef key $ \key -> do
         Nothing -> return ()
       retrySocket (\(e :: SomeException) n i -> traceWith tracer $ ControlClientAttemptReconnect n) $
         connect s fd (controlClientAddress options)
-      traceWith tracer $ ControlClientConnected -- (controlClientSocketAddress options)
+      traceWith tracer $ ControlClientConnected
       bearer <- getRawBearer mrb fd
-      void $ runPeerWithDriver
-        (serviceDriver bearer $ ControlClientDriverTrace >$< tracer)
-        (servicePusher
-            (traceWith tracer ControlClientSendingKey >> return (key, oc))
-            (return Nothing)
-            (\reason -> do
-                case reason of
-                  RecvOK -> traceWith tracer ControlClientKeyAccepted
-                  err -> traceWith tracer (ControlClientKeyRejected err)
-            )
-        )
-        ()
+      fst <$> runPeerWithDriver
+                (controlDriver bearer $ ControlClientDriverTrace >$< tracer)
+                peer
+                ()
     )

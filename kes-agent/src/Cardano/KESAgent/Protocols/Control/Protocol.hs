@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Cardano.KESAgent.Protocols.Service.Protocol
+module Cardano.KESAgent.Protocols.Control.Protocol
   where
 
 import Cardano.KESAgent.KES.Crypto
@@ -40,31 +40,28 @@ import Network.TypedProtocol.Core
 import NoThunks.Class ( NoThunks (..) )
 import Quiet
 
-data ServiceProtocol (m :: * -> *) (k :: *) where
+data ControlProtocol (m :: * -> *) (k :: *) where
   -- | Default state after connecting, but before the protocol version has been
   -- negotiated.
-  InitialState :: ServiceProtocol m k
+  InitialState :: ControlProtocol m k
 
   -- | System is idling, waiting for the server to push the next key.
-  IdleState :: ServiceProtocol m k
+  IdleState :: ControlProtocol m k
 
-  -- | A new key has been pushed, client must now confirm that the key has been
-  -- received.
-  WaitForConfirmationState :: ServiceProtocol m k
+  -- | Client has requested a new KES key to be generated in the staging area.
+  WaitForPublicKeyState :: ControlProtocol m k
+
+  -- | An OpCert has been pushed, client must now confirm that it has been
+  -- received, and that it matches the staged KES key.
+  WaitForConfirmationState :: ControlProtocol m k
 
   -- | The server has closed the connection, thus signalling the end of the
   -- session.
-  EndState :: ServiceProtocol m k
+  EndState :: ControlProtocol m k
 
 -- | The protocol for pushing KES keys.
 --
 -- Intended use:
---
--- - The Node acts as the Client, the Agent acts as a Server
--- - When a Node connects, the Agent will push the current key
--- - When the Agent generates a new key, it will push the new key
---
--- **OR:**
 --
 -- - The Agent acts as the Client, and the Control Server as a Server
 -- - When the Control Server connects, it pushes a key to the Agent
@@ -76,15 +73,39 @@ data ServiceProtocol (m :: * -> *) (k :: *) where
 -- also helps make things more predictable in testing, because it means that
 -- sending keys is now synchronous.
 --
-instance Protocol (ServiceProtocol m c) where
-  data Message (ServiceProtocol m c) st st' where
-          VersionMessage :: Message (ServiceProtocol m c) InitialState IdleState
-          KeyMessage :: CRef m (SignKeyWithPeriodKES (KES c))
-                     -> OCert c
-                     -> Message (ServiceProtocol m c) IdleState WaitForConfirmationState
-          RecvResultMessage :: RecvResult
-                            -> Message (ServiceProtocol m c) WaitForConfirmationState IdleState
-          EndMessage :: Message (ServiceProtocol m c) IdleState EndState
+instance Protocol (ControlProtocol m c) where
+  data Message (ControlProtocol m c) st st' where
+          VersionMessage :: Message (ControlProtocol m c) InitialState IdleState
+
+          -- | Request the agent to generate a fresh KES sign key and store it
+          -- in the staging area.
+          GenStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
+
+          -- | Query the agent for the key currently stored in the staging area.
+          QueryStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
+
+          -- | Request that the agent erase the key currently stored in the
+          -- staging area.
+          DropStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
+
+          -- | Respond to a request for a staged key. Only the public key (vkey)
+          -- will be returned however.
+          PublicKeyMessage :: Maybe (VerKeyKES (KES c))
+                           -> Message (ControlProtocol m c) WaitForPublicKeyState IdleState
+
+          -- | Upload an OpCert, and request that the agent bundle it with the
+          -- key in the staging are and install it.
+          InstallKeyMessage :: OCert c
+                            -> Message (ControlProtocol m c) IdleState WaitForConfirmationState
+
+          -- | Report the result of installing an OpCert + KES key back from the
+          -- agent.
+          InstallResultMessage :: RecvResult
+                               -> Message (ControlProtocol m c) WaitForConfirmationState IdleState
+
+          AbortMessage :: Message (ControlProtocol m c) InitialState EndState
+
+          EndMessage :: Message (ControlProtocol m c) IdleState EndState
 
   -- | Server always has agency, except between sending a key and confirming it
   data ServerHasAgency st where
@@ -94,6 +115,7 @@ instance Protocol (ServiceProtocol m c) where
   -- | Client only has agency between sending a key and confirming it
   data ClientHasAgency st where
     TokWaitForConfirmation :: ClientHasAgency WaitForConfirmationState
+    TokWaitForPublicKey :: ClientHasAgency WaitForPublicKeyState
 
   -- | Someone, i.e., the server, always has agency
   data NobodyHasAgency st where
@@ -103,13 +125,15 @@ instance Protocol (ServiceProtocol m c) where
     case tok1 of
       TokWaitForConfirmation ->
         case tok2 of {}
+      TokWaitForPublicKey ->
+        case tok2 of {}
   exclusionLemma_NobodyAndClientHaveAgency _ _ = undefined
   exclusionLemma_NobodyAndServerHaveAgency _ _ = undefined
 
-instance NamedCrypto c => VersionedProtocol (ServiceProtocol m c) where
-  versionIdentifier = spVersionIdentifier
+instance NamedCrypto c => VersionedProtocol (ControlProtocol m c) where
+  versionIdentifier = cpVersionIdentifier
 
-spVersionIdentifier :: forall m c. NamedCrypto c => Proxy (ServiceProtocol m c) -> VersionIdentifier
-spVersionIdentifier _ =
+cpVersionIdentifier :: forall m c. NamedCrypto c => Proxy (ControlProtocol m c) -> VersionIdentifier
+cpVersionIdentifier _ =
   mkVersionIdentifier $
-    "Service:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.3"
+    "Control:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.3"

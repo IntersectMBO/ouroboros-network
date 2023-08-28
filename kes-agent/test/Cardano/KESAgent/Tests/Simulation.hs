@@ -1,6 +1,3 @@
--- TODO: replace psbFromBytes with something non-deprecated and remove this pragma
-{-# OPTIONS_GHC -Wno-deprecations#-}
-
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -34,8 +31,11 @@ import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Processes.ControlClient
 import Cardano.KESAgent.Processes.ServiceClient
 import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.Control.Peers
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -66,7 +66,7 @@ import Ouroboros.Network.Testing.Data.AbsBearerInfo qualified as ABI ( delay )
 
 import Control.Monad ( forM, forM_, forever, void, when )
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadMVar
+import Control.Concurrent.Class.MonadMVar
   ( MVar
   , MonadMVar
   , modifyMVar_
@@ -182,6 +182,8 @@ testCrypto :: forall c kes
            => UnsoundKESAlgorithm kes
            => DSIGN.Signable (DSIGN c) (OCertSignable c)
            => ContextDSIGN (DSIGN c) ~ ()
+           => Crypto c
+           => NamedCrypto c
            => Show (SignKeyWithPeriodKES (KES c))
            => Proxy c
            -> Lock IO
@@ -212,8 +214,8 @@ testCrypto proxyC lock tracer ioManager =
 
     name = Text.unpack .
            decodeUtf8 .
-           unVersionIdentifier .
-           versionIdentifier $ (Proxy @(ServiceProtocol IO c))
+           unCryptoName .
+           cryptoName $ (Proxy @c)
 
 mvarPrettyTracer :: (MonadTime m, MonadMVar m)
                  => MVar m [String]
@@ -235,7 +237,7 @@ mvarStringTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
 -- | The operations a control client can perform: sending keys, and waiting.
 data ControlClientHooks m c
   = ControlClientHooks
-      { sendKey :: (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m ()
+      { controlClientExec :: forall a. ControlPeer c m a -> m a
       , controlClientWait :: Int -> m ()
       }
 
@@ -354,6 +356,8 @@ runTestNetwork :: forall c m fd addr
                => MonadTimer m
                => DSIGN.Signable (DSIGN c) (OCertSignable c)
                => ContextDSIGN (DSIGN c) ~ ()
+               => Crypto c
+               => NamedCrypto c
                => Show (SignKeyWithPeriodKES (KES c))
                => Proxy c
                -> MakeRawBearer m fd
@@ -363,6 +367,7 @@ runTestNetwork :: forall c m fd addr
                -> (forall a. (addr -> m a) -> m a)
                -> VerKeyDSIGN (DSIGN c)
                -> Int
+               -> [PinnedSizedBytes (SeedSizeKES (KES c))]
                   -- | control clients: startup delay, script
                -> [(Int, ControlClientScript m c)]
                   -- | nodes: startup delay, script
@@ -370,11 +375,29 @@ runTestNetwork :: forall c m fd addr
                -> m Property
 runTestNetwork p mrb tracer snocket genesisTimestamp
                withAddress coldVK
-               agentDelay senders receivers = do
+               agentDelay
+               agentKESSeeds
+               senders receivers = do
     propertyVar <- newEmptyMVar :: m (MVar m Property)
     timeVar <- newMVar (fromInteger genesisTimestamp) :: m (MVar m NominalDiffTime)
     withAddress $ \controlAddress -> do
       withAddress $ \serviceAddress -> do
+        agentSeedVar <- newMVar agentKESSeeds
+
+        let agentNextSeed :: m (MLockedSeed (SeedSizeKES (KES c)))
+            agentNextSeed = do
+              seeds <- takeMVar agentSeedVar
+              (result, seeds') <- case seeds of
+                [] ->
+                  return (Nothing, [])
+                (seed:seeds') -> do
+                  result <- mlockedSeedFromPSB seed
+                  return (Just result, seeds')
+              putMVar agentSeedVar seeds'
+              case result of
+                Just seed -> return seed
+                Nothing -> error "Out of entropy"
+                  
         let agentOptions  :: AgentOptions m addr c
             agentOptions = AgentOptions
                               { agentGenesisTimestamp = genesisTimestamp
@@ -383,6 +406,7 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
                               , agentServiceAddr = serviceAddress
                               , agentTracer = tracer
                               , agentColdVerKey = coldVK
+                              , agentGenSeed = agentNextSeed
                               }
 
             -- Run the single agent.
@@ -434,17 +458,20 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
             controlClient tracer (startupDelay, script) = do
               threadDelay startupDelay
               script $ ControlClientHooks
-                { sendKey = \(sk, oc) -> do
-                    runControlClient1 p mrb
+                { controlClientExec = \peer -> do
+                    runControlClient1 peer
+                      p mrb
                       ControlClientOptions
                         { controlClientSnocket = snocket
                         , controlClientAddress = controlAddress
                         , controlClientLocalAddress = Nothing
                         }
-                      sk oc
                       tracer
-                      `catch` (\(e :: AsyncCancelled) -> return ())
-                      `catch` (\(e :: SomeException) -> traceWith tracer $ ControlClientAbnormalTermination ("CONTROL: " ++ show e))
+                      `catch` (\(e :: AsyncCancelled) -> throwIO e)
+                      `catch` (\(e :: SomeException) -> do
+                                  traceWith tracer $ ControlClientAbnormalTermination ("CONTROL: " ++ show e)
+                                  throwIO e
+                              )
                 , controlClientWait = threadDelay
                 }
 
@@ -514,6 +541,8 @@ testOneKeyThroughChainIO :: forall c
                           . MonadKES IO c
                        => ContextDSIGN (DSIGN c) ~ ()
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                       => Crypto c
+                       => NamedCrypto c
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
                        => Proxy c
@@ -551,6 +580,8 @@ testOneKeyThroughChainIOSim :: forall c kes
                             => (UnsoundKESAlgorithm kes)
                             => ContextDSIGN (DSIGN c) ~ ()
                             => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                            => Crypto c
+                            => NamedCrypto c
                             => Show (SignKeyWithPeriodKES  kes)
                             => (forall s. VersionedProtocol (ServiceProtocol (IOSim s) c))
                             => Proxy c
@@ -599,6 +630,8 @@ testOutOfOrderPushesIO :: forall c
                           . MonadKES IO c
                        => ContextDSIGN (DSIGN c) ~ ()
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                       => Crypto c
+                       => NamedCrypto c
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
                        => Proxy c
@@ -625,6 +658,8 @@ testOutOfOrderPushesIOSim :: forall c kes
                           . (forall s. MonadKES (IOSim s) c)
                          => ContextDSIGN (DSIGN c) ~ ()
                          => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                         => Crypto c
+                         => NamedCrypto c
                          => Show (SignKeyWithPeriodKES (KES c))
                          => UnsoundKESAlgorithm kes
                          => KES c ~ kes
@@ -652,6 +687,8 @@ testConcurrentPushesIO :: forall c
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
+                       => Crypto c
+                       => NamedCrypto c
                        => Proxy c
                        -> Lock IO
                        -> ConcurrentPushesDelaysAndSeeds c
@@ -679,6 +716,8 @@ testConcurrentPushesIOSim :: forall c kes
                           . (forall s. MonadKES (IOSim s) c)
                          => ContextDSIGN (DSIGN c) ~ ()
                          => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                         => Crypto c
+                         => NamedCrypto c
                          => Show (SignKeyWithPeriodKES (KES c))
                          => UnsoundKESAlgorithm kes
                          => KES c ~ kes
@@ -710,6 +749,8 @@ testOneKeyThroughChain :: forall c m fd addr
                        => MonadTimer m
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => ContextDSIGN (DSIGN c) ~ ()
+                       => Crypto c
+                       => NamedCrypto c
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
                        => Proxy c
@@ -755,7 +796,10 @@ testOneKeyThroughChain p
           vkCold = deriveVerKeyDSIGN skCold
           expectedOC = makeOCert vkHot certN kesPeriod skCold
 
-      let controlScript sim = sendKey sim (expectedSKPVar, expectedOC)
+      let controlScript sim = do
+            controlClientExec sim $ controlGenKey
+            controlClientExec sim $ controlInstallKey expectedOC
+            return ()
 
       let nodeScript =
             NodeScript
@@ -776,6 +820,7 @@ testOneKeyThroughChain p
                   withAddress
                   vkCold
                   (delayFromWord agentDelay)
+                  [seedKESPSB]
                   [(delayFromWord controlDelay, controlScript)]
                   [(delayFromWord nodeDelay, nodeScript)]
 
@@ -815,6 +860,8 @@ testConcurrentPushes :: forall c m n fd addr
                      => MonadTimer m
                      => DSIGN.Signable (DSIGN c) (OCertSignable c)
                      => ContextDSIGN (DSIGN c) ~ ()
+                     => Crypto c
+                     => NamedCrypto c
                      => Show (SignKeyWithPeriodKES (KES c))
                      => UnsoundKESAlgorithm (KES c)
                      => Proxy c
@@ -870,8 +917,11 @@ testConcurrentPushes proxyCrypto
     let maxOCertN = fst $ last expectedSerialized
 
     let controlScript bundle hooks = do
+          traceWith strTracer $ "Generating key..."
+          controlClientExec hooks $ controlGenKey
           traceWith strTracer $ "Sending: " ++ (show . ocertN $ snd bundle)
-          sendKey hooks bundle
+          controlClientExec hooks $ controlInstallKey (snd bundle)
+          return ()
 
     let nodeScript =
           NodeScript
@@ -903,6 +953,7 @@ testConcurrentPushes proxyCrypto
             withAddress
             vkCold
             (delayFromWord agentDelay)
+            seedsKESRaw
             [ (delayFromWord controlDelay + 5000, controlScript sko)
             | (controlDelay, sko) <- zip controlDelays expectedSKOs
             ]
@@ -937,6 +988,8 @@ testOutOfOrderPushes :: forall c m n fd addr
                      => MonadTimer m
                      => DSIGN.Signable (DSIGN c) (OCertSignable c)
                      => ContextDSIGN (DSIGN c) ~ ()
+                     => Crypto c
+                     => NamedCrypto c
                      => Show (SignKeyWithPeriodKES (KES c))
                      => UnsoundKESAlgorithm (KES c)
                      => Proxy c
@@ -1020,8 +1073,11 @@ testOutOfOrderPushes proxyCrypto
     let controlScript hooks = forM_ shuffledSeeds $ \seedBundle -> do
           threadDelay (delayFromWord 1000)
           withBundle seedBundle $ \bundle -> do 
-            traceWith strTracer $ "ControlScript Sending: " ++ (show . ocertN $ snd bundle)
-            sendKey hooks bundle
+            traceWith strTracer $ "Generating key..."
+            controlClientExec hooks $ controlGenKey
+            traceWith strTracer $ "Sending: " ++ (show . ocertN $ snd bundle)
+            controlClientExec hooks $ controlInstallKey (snd bundle)
+            return ()
 
     receivedVar <- newMVar []
     let nodeScript =
@@ -1057,6 +1113,7 @@ testOutOfOrderPushes proxyCrypto
             withAddress
             vkCold
             (delayFromWord 0)
+            (outOfOrderPushesSeeds seedsKESRaw)
             [ (delayFromWord 1000, controlScript)
             ]
             [(delayFromWord 2000, nodeScript)]
@@ -1201,3 +1258,8 @@ newCRefTracker = do
         putMVar trackerVar m'
     }
 
+mlockedSeedFromPSB :: (MonadST m, KnownNat n) => PinnedSizedBytes n -> m (MLockedSeed n)
+mlockedSeedFromPSB = fmap MLockedSeed . mlsbFromPSB
+
+mlsbFromPSB :: (MonadST m, KnownNat n) => PinnedSizedBytes n -> m (MLockedSizedBytes n)
+mlsbFromPSB = mlsbFromByteString . psbToByteString

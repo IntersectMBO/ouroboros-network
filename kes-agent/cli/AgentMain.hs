@@ -13,6 +13,7 @@ import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Serialization.CBOR
 
 import Cardano.Crypto.Libsodium (sodiumInit)
+import Cardano.Crypto.Libsodium.MLockedSeed
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
@@ -183,6 +184,7 @@ nmoToAgentOptions nmo = do
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
             , agentColdVerKey = coldVerKey
+            , agentGenSeed = mlockedSeedNewRandom
             }
 
 smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
@@ -192,6 +194,7 @@ smoToAgentOptions smo = do
   return defAgentOptions
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
+            , agentGenSeed = mlockedSeedNewRandom
             }
 
 agentTracePrio :: AgentTrace -> Priority

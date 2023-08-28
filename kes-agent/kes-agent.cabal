@@ -40,10 +40,15 @@ library
                    Cardano.KESAgent.Processes.ServiceClient
                    Cardano.KESAgent.Serialization.CBOR
                    Cardano.KESAgent.Serialization.TextEnvelope
+                   Cardano.KESAgent.Serialization.RawUtil
                    Cardano.KESAgent.Protocols.Service.Driver
                    Cardano.KESAgent.Protocols.Service.Peers
                    Cardano.KESAgent.Protocols.Service.Protocol
+                   Cardano.KESAgent.Protocols.Control.Driver
+                   Cardano.KESAgent.Protocols.Control.Peers
+                   Cardano.KESAgent.Protocols.Control.Protocol
                    Cardano.KESAgent.Protocols.VersionedProtocol
+                   Cardano.KESAgent.Protocols.RecvResult
                    Cardano.KESAgent.Protocols.StandardCrypto
                    Cardano.KESAgent.Util.Pretty
                    Cardano.KESAgent.Util.RefCounting
@@ -97,6 +102,7 @@ executable kes-agent
                  , optparse-applicative
                  , text
                  , time
+                 , typed-protocols
                  , unix
                  , Win32-network
 
@@ -117,6 +123,7 @@ executable kes-service-client-demo
                  , optparse-applicative
                  , text
                  , time
+                 , typed-protocols
                  , Win32-network
 
 executable kes-agent-control
@@ -137,6 +144,7 @@ executable kes-agent-control
                  , optparse-applicative
                  , text
                  , time
+                 , typed-protocols
                  , Win32-network
 
 

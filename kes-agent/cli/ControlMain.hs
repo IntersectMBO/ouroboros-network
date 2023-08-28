@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 
 module Main
 where
@@ -9,8 +11,10 @@ where
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Processes.ControlClient
-import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.Control.Peers
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Util.Pretty
@@ -26,6 +30,7 @@ import Control.Monad ( (>=>) )
 import Control.Monad.Class.MonadThrow (bracket, throwIO, catch, SomeException)
 import Control.Tracer
 import qualified Data.Aeson as JSON
+import qualified Data.ByteString as BS
 import Data.Maybe (fromMaybe)
 import Data.Proxy
 import qualified Data.Text.IO as Text
@@ -34,38 +39,128 @@ import Options.Applicative
 import System.Environment
 import System.IO (hPutStrLn, stdout, stderr, hFlush)
 import System.IOManager
+import System.Exit
 
-data NewKeyOptions =
-  NewKeyOptions
-    { nkoControlPath :: Maybe String
-    , nkoKESVerificationKeyFile :: Maybe FilePath
-    , nkoOpCertFile :: Maybe FilePath
+data CommonOptions =
+  CommonOptions
+    { optControlPath :: Maybe String
     }
     deriving (Show, Eq)
 
-instance Semigroup NewKeyOptions where
-  NewKeyOptions c1 vk1 oc1 <> NewKeyOptions c2 vk2 oc2 =
-    NewKeyOptions (c1 <|> c2) (vk1 <|> vk2) (oc1 <|> oc2)
+instance Semigroup CommonOptions where
+  CommonOptions p1 <> CommonOptions p2 =
+    CommonOptions (p1 <|> p2)
 
-defNewKeyOptions :: NewKeyOptions =
-  NewKeyOptions
-    { nkoControlPath = Just "/tmp/kes-agent-control.socket"
-    , nkoKESVerificationKeyFile = Just "kes.vkey"
-    , nkoOpCertFile = Just "ocert.cert"
+defCommonOptions :: CommonOptions =
+  CommonOptions
+    { optControlPath = Just "/tmp/kes-agent-control.socket"
     }
 
-nkoFromEnv :: IO NewKeyOptions
-nkoFromEnv = do
+optFromEnv :: IO CommonOptions
+optFromEnv = do
   controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
-  return NewKeyOptions
-    { nkoControlPath = controlPath
-    , nkoKESVerificationKeyFile = Nothing
-    , nkoOpCertFile = Nothing
+  return
+    CommonOptions
+      { optControlPath = controlPath
+      }
+
+data GenKeyOptions =
+  GenKeyOptions
+    { gkoCommon :: CommonOptions
+    , gkoKESVerificationKeyFile :: Maybe FilePath
+    }
+    deriving (Show, Eq)
+
+instance Semigroup GenKeyOptions where
+  GenKeyOptions c1 vk1 <> GenKeyOptions c2 vk2 =
+    GenKeyOptions (c1 <> c2) (vk1 <|> vk2)
+
+defGenKeyOptions :: GenKeyOptions =
+  GenKeyOptions
+    { gkoCommon = defCommonOptions
+    , gkoKESVerificationKeyFile = Just "kes.vkey"
+    }
+
+gkoFromEnv :: IO GenKeyOptions
+gkoFromEnv = do
+  common <- optFromEnv
+  return defGenKeyOptions
+    { gkoCommon = common
+    }
+
+data QueryKeyOptions =
+  QueryKeyOptions
+    { qkoCommon :: CommonOptions
+    , qkoKESVerificationKeyFile :: Maybe FilePath
+    }
+    deriving (Show, Eq)
+
+instance Semigroup QueryKeyOptions where
+  QueryKeyOptions c1 vk1 <> QueryKeyOptions c2 vk2 =
+    QueryKeyOptions (c1 <> c2) (vk1 <|> vk2)
+
+defQueryKeyOptions :: QueryKeyOptions =
+  QueryKeyOptions
+    { qkoCommon = defCommonOptions
+    , qkoKESVerificationKeyFile = Just "kes.vkey"
+    }
+
+qkoFromEnv :: IO QueryKeyOptions
+qkoFromEnv = do
+  common <- optFromEnv
+  return defQueryKeyOptions
+    { qkoCommon = common
+    }
+
+newtype DropKeyOptions =
+  DropKeyOptions
+    { dkoCommon :: CommonOptions
+    }
+    deriving (Show, Eq)
+
+instance Semigroup DropKeyOptions where
+  DropKeyOptions c1 <> DropKeyOptions c2 =
+    DropKeyOptions (c1 <> c2)
+
+defDropKeyOptions :: DropKeyOptions =
+  DropKeyOptions
+    { dkoCommon = defCommonOptions
+    }
+
+dkoFromEnv :: IO DropKeyOptions
+dkoFromEnv = do
+  common <- optFromEnv
+  return defDropKeyOptions
+    { dkoCommon = common
+    }
+
+data InstallKeyOptions =
+  InstallKeyOptions
+    { ikoCommon :: CommonOptions
+    , ikoOpCertFile :: Maybe FilePath
+    }
+    deriving (Show, Eq)
+
+instance Semigroup InstallKeyOptions where
+  InstallKeyOptions c1 vk1 <> InstallKeyOptions c2 vk2 =
+    InstallKeyOptions (c1 <> c2) (vk1 <|> vk2)
+
+defInstallKeyOptions :: InstallKeyOptions =
+  InstallKeyOptions
+    { ikoCommon = defCommonOptions
+    , ikoOpCertFile = Just "kes.vkey"
+    }
+
+ikoFromEnv :: IO InstallKeyOptions
+ikoFromEnv = do
+  common <- optFromEnv
+  return defInstallKeyOptions
+    { ikoCommon = common
     }
 
 
-pNewKeyOptions =
-  NewKeyOptions
+pCommonOptions =
+  CommonOptions
     <$> option (Just <$> str)
           (  long "control-address"
           <> short 'c'
@@ -73,25 +168,54 @@ pNewKeyOptions =
           <> metavar "ADDR"
           <> help "Socket address for 'control' connections to a running kes-agent process"
           )
-    <*> option (Just <$> str)
-          (  long "kes-verification-key-file"
-          <> value Nothing
-          <> metavar "FILE"
-          <> help "File to write KES verification key to"
-          )
-    <*> option (Just <$> str)
-          (  long "opcert-file"
-          <> value Nothing
-          <> metavar "FILE"
-          <> help "File to read OpCert from"
-          )
+
+pGenKeyOptions =
+  GenKeyOptions
+    <$> pCommonOptions
+    <*> pVerKeyFile
+
+pQueryKeyOptions =
+  QueryKeyOptions
+    <$> pCommonOptions
+    <*> pVerKeyFile
+
+pDropKeyOptions =
+  DropKeyOptions
+    <$> pCommonOptions
+
+pInstallKeyOptions =
+  InstallKeyOptions
+    <$> pCommonOptions
+    <*> pOpCertFile
+
+pVerKeyFile =
+    option (Just <$> str)
+      (  long "kes-verification-key-file"
+      <> value Nothing
+      <> metavar "FILE"
+      <> help "File to write KES verification key to"
+      )
+
+pOpCertFile =
+    option (Just <$> str)
+      (  long "opcert-file"
+      <> value Nothing
+      <> metavar "FILE"
+      <> help "File to read OpCert from"
+      )
 
 data ProgramOptions
-  = RunNewKey NewKeyOptions
+  = RunGenKey GenKeyOptions
+  | RunQueryKey QueryKeyOptions
+  | RunDropKey DropKeyOptions
+  | RunInstallKey InstallKeyOptions
   deriving (Show, Eq)
 
 pProgramOptions = subparser
-  (  command "new-key" (info (RunNewKey <$> pNewKeyOptions) idm)
+  (  command "gen-key" (info (RunGenKey <$> pGenKeyOptions) idm)
+  <> command "drop-key" (info (RunDropKey <$> pDropKeyOptions) idm)
+  <> command "get-public-key" (info (RunQueryKey <$> pQueryKeyOptions) idm)
+  <> command "install-key" (info (RunInstallKey <$> pInstallKeyOptions) idm)
   )
 
 eitherError :: Either String a -> IO a
@@ -103,54 +227,106 @@ humanFriendlyControlTracer = Tracer $ \case
   ControlClientKeyAccepted -> putStrLn "Key accepted."
   ControlClientKeyRejected reason -> putStrLn $ "Key rejected: " ++ formatReason reason
   _ -> return ()
+  -- x -> print x
 
 formatReason :: RecvResult -> String
 formatReason RecvOK = "no error"
 formatReason RecvErrorInvalidOpCert = "OpCert validation failed"
 formatReason RecvErrorKeyOutdated = "KES key outdated"
+formatReason RecvErrorNoKey = "No KES key found"
 formatReason RecvErrorUnknown = "unknown error"
 
-runNewKey :: NewKeyOptions -> IO ()
-runNewKey nko' = withIOManager $ \ioManager -> do
-  nkoEnv <- nkoFromEnv
-  let nko = nko' <> nkoEnv <> defNewKeyOptions
-  verKeyFilename <- maybe (error "Missing KES VerKey file") return (nkoKESVerificationKeyFile nko)
-  ocertFilename <- maybe (error "Missing OpCert file") return (nkoOpCertFile nko)
-  controlPath <- maybe (error "No control address") return (nkoControlPath nko)
-  let controlClientOptions =
-        ControlClientOptions
-          { controlClientSnocket = socketSnocket ioManager
-          , controlClientAddress = SockAddrUnix controlPath
-          , controlClientLocalAddress = Nothing
-          }
-  sk <- genKeyKESIO
-  ( do
-      vkKES :: VerKeyKES (KES StandardCrypto) <- deriveVerKeyKES sk
+mkControlClientOptions :: CommonOptions -> IOManager -> IO (ControlClientOptions IO Socket SockAddr)
+mkControlClientOptions opts ioManager = do
+  controlPath <- maybe (error "No control address") return (optControlPath opts)
+  return ControlClientOptions
+            { controlClientSnocket = socketSnocket ioManager
+            , controlClientAddress = SockAddrUnix controlPath
+            , controlClientLocalAddress = Nothing
+            }
 
+runControlClientCommand :: CommonOptions
+                        -> IOManager
+                        -> ControlPeer StandardCrypto IO a
+                        -> IO a
+runControlClientCommand opts ioManager peer = do
+  controlClientOptions <- mkControlClientOptions opts ioManager
+  runControlClient1
+    peer
+    (Proxy @StandardCrypto)
+    makeSocketRawBearer
+    controlClientOptions
+    humanFriendlyControlTracer
+
+runGenKey :: GenKeyOptions -> IO ()
+runGenKey gko' = withIOManager $ \ioManager -> do
+  putStrLn "Asking agent to generate a key..."
+  gkoEnv <- gkoFromEnv
+  let gko = gko' <> gkoEnv <> defGenKeyOptions
+  verKeyFilename <- maybe (error "Missing KES VerKey file") return (gkoKESVerificationKeyFile gko)
+  vkKESMay <- runControlClientCommand
+                (gkoCommon gko)
+                ioManager
+                controlGenKey
+  case vkKESMay of
+    Nothing -> do
+      putStrLn "Key generation has failed. Please check KES agent log for details."
+    Just vkKES -> do
       encodeTextEnvelopeFile verKeyFilename (KESVerKey vkKES)
       putStrLn $ "KES VerKey written to " ++ verKeyFilename
-      putStrLn $ "OpCert will be read from " ++ ocertFilename
-      putStrLn "Press ENTER to continue..."
-      hFlush stdout
-      _ <- Text.getLine
-      oc <- eitherError =<< decodeTextEnvelopeFile ocertFilename
-      withNewCRef
-        (forgetSignKeyKES . skWithoutPeriodKES)
-        (SignKeyWithPeriodKES sk 0) $ \skpVar -> do
-          runControlClient1
-            (Proxy @StandardCrypto)
-            makeSocketRawBearer
-            controlClientOptions
-            skpVar (opCert oc)
-            humanFriendlyControlTracer
-    ) `catch` (\(e :: SomeException) -> forgetSignKeyKES sk >> throwIO e)
 
-genKeyKESIO :: KESAlgorithm k => IO (SignKeyKES k)
-genKeyKESIO =
-  bracket
-    mlockedSeedNewRandom
-    mlockedSeedFinalize
-    genKeyKES
+runQueryKey :: QueryKeyOptions -> IO ()
+runQueryKey qko' = withIOManager $ \ioManager -> do
+  qkoEnv <- qkoFromEnv
+  let qko = qko' <> qkoEnv <> defQueryKeyOptions
+  verKeyFilename <- maybe (error "Missing KES VerKey file") return (qkoKESVerificationKeyFile qko)
+  vkKESMay <- runControlClientCommand
+                (qkoCommon qko)
+                ioManager
+                controlQueryKey
+  case vkKESMay of
+    Nothing -> do
+      putStrLn "Key generation has failed. Please check KES agent log for details."
+    Just vkKES -> do
+      encodeTextEnvelopeFile verKeyFilename (KESVerKey vkKES)
+      putStrLn $ "KES VerKey written to " ++ verKeyFilename
+
+runDropKey :: DropKeyOptions -> IO ()
+runDropKey dko' = withIOManager $ \ioManager -> do
+  dkoEnv <- dkoFromEnv
+  let dko = dko' <> dkoEnv <> defDropKeyOptions
+  vkKESMay <- runControlClientCommand
+                (dkoCommon dko)
+                ioManager
+                controlDropKey
+  case vkKESMay of
+    Nothing -> do
+      putStrLn "Staged key dropped."
+    Just vkKES -> do
+      putStrLn "Staged key not dropped:"
+      BS.putStr $ encodeTextEnvelope (KESVerKey vkKES)
+      putStrLn ""
+
+runInstallKey :: InstallKeyOptions -> IO ()
+runInstallKey iko' = withIOManager $ \ioManager -> do
+  ikoEnv <- ikoFromEnv
+  let iko = iko' <> ikoEnv <> defInstallKeyOptions
+  ikoKeyFile <- maybe (error "Missing OpCert file") return (ikoOpCertFile iko)
+
+  opCertEither <- decodeTextEnvelopeFile ikoKeyFile
+  case opCertEither of
+    Left err -> do
+      putStrLn $ "Error: " ++ err
+    Right (OpCert oc _) -> do
+      result <- runControlClientCommand
+                    (ikoCommon iko)
+                    ioManager
+                    (controlInstallKey oc)
+      if result == RecvOK then
+        putStrLn "KES key installed."
+      else do
+        putStrLn $ "Error: " ++ formatReason result
+        exitWith $ ExitFailure (fromEnum result)
 
 programDesc = fullDesc
 
@@ -159,4 +335,7 @@ main = do
   sodiumInit
   programOptions <- execParser (info (pProgramOptions <**> helper) programDesc)
   case programOptions of
-    RunNewKey nko' -> runNewKey nko'
+    RunGenKey opts' -> runGenKey opts'
+    RunQueryKey opts' -> runQueryKey opts'
+    RunDropKey opts' -> runDropKey opts'
+    RunInstallKey opts' -> runInstallKey opts'

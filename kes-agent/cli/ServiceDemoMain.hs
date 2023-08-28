@@ -9,6 +9,7 @@ where
 import Cardano.KESAgent.Processes.ServiceClient
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
