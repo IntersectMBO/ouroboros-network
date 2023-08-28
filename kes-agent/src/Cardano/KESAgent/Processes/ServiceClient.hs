@@ -3,17 +3,18 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Clients for the KES Agent.
-module Cardano.KESAgent.ServiceClient
+module Cardano.KESAgent.Processes.ServiceClient
   where
 
-import Cardano.KESAgent.Classes ( MonadKES )
-import Cardano.KESAgent.Driver ( DriverTrace, driver )
-import Cardano.KESAgent.OCert ( Crypto (..), OCert (..) )
-import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
-import Cardano.KESAgent.Protocol ( RecvResult (..) )
-import Cardano.KESAgent.Pretty ( Pretty (..) )
-import Cardano.KESAgent.RefCounting ( CRef )
-import Cardano.KESAgent.RetrySocket ( retrySocket )
+import Cardano.KESAgent.KES.Classes ( MonadKES )
+import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
+import Cardano.KESAgent.KES.OCert ( OCert (..) )
+import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace, serviceDriver )
+import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher, serviceReceiver )
+import Cardano.KESAgent.Protocols.Service.Protocol ( RecvResult (..) )
+import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
+import Cardano.KESAgent.Util.RefCounting ( CRef )
+import Cardano.KESAgent.Util.RetrySocket ( retrySocket )
 
 import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..) )
 
@@ -35,7 +36,7 @@ data ServiceClientOptions m fd addr =
     }
 
 data ServiceClientTrace
-  = ServiceClientDriverTrace DriverTrace
+  = ServiceClientDriverTrace ServiceDriverTrace
   | ServiceClientSocketClosed
   | ServiceClientConnected String
   | ServiceClientAttemptReconnect Int Int String
@@ -44,7 +45,7 @@ data ServiceClientTrace
   deriving (Show)
 
 instance Pretty ServiceClientTrace where
-  pretty (ServiceClientDriverTrace d) = "Service: Driver: " ++ pretty d
+  pretty (ServiceClientDriverTrace d) = "Service: ServiceDriver: " ++ pretty d
   pretty (ServiceClientConnected a) = "Service: Connected to " ++ a
   pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
 
@@ -91,7 +92,7 @@ runServiceClient proxy mrb options handleKey tracer = do
       traceWith tracer $ ServiceClientConnected (show $ serviceClientAddress options)
       bearer <- getRawBearer mrb fd
       void $ runPeerWithDriver
-        (driver bearer $ ServiceClientDriverTrace >$< tracer)
-        (kesReceiver $ \k o -> handleKey' k o <* traceWith tracer ServiceClientReceivedKey)
+        (serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+        (serviceReceiver $ \k o -> handleKey' k o <* traceWith tracer ServiceClientReceivedKey)
         ()
     )

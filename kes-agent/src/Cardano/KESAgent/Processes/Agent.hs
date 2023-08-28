@@ -13,41 +13,48 @@
 --   push new keys into the agent.
 -- - A \"service\" socket, to which a Node can connect in order to receive the
 --   current KES key and future key updates.
-module Cardano.KESAgent.Agent
+module Cardano.KESAgent.Processes.Agent
   where
 
-import Cardano.KESAgent.Classes ( MonadKES )
-import Cardano.KESAgent.Driver ( DriverTrace (..), driver )
-import Cardano.KESAgent.Evolution ( getCurrentKESPeriodWith, updateKESTo )
-import Cardano.KESAgent.OCert ( KES, KESPeriod (..), OCert (..), Crypto (..), validateOCert, OCertSignable )
-import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
-import Cardano.KESAgent.Pretty ( Pretty (..), strLength )
-import Cardano.KESAgent.Protocol ( KESProtocol, VersionedProtocol, RecvResult (..) )
-import Cardano.KESAgent.TextEnvelope ( decodeTextEnvelopeFile )
-import Cardano.KESAgent.RefCounting
+import Cardano.KESAgent.KES.Classes ( MonadKES )
+import Cardano.KESAgent.KES.Evolution ( getCurrentKESPeriodWith, updateKESTo )
+import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
+import Cardano.KESAgent.KES.OCert
+  ( KESPeriod (..)
+  , OCert (..)
+  , OCertSignable
+  , validateOCert
+  )
+import Cardano.KESAgent.Serialization.TextEnvelope ( decodeTextEnvelopeFile )
+import Cardano.KESAgent.Protocols.VersionedProtocol ( VersionedProtocol (..) )
+import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace (..), serviceDriver )
+import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher, serviceReceiver )
+import Cardano.KESAgent.Protocols.Service.Protocol
+  ( RecvResult (..)
+  , ServiceProtocol
+  )
+import Cardano.KESAgent.Util.Pretty ( Pretty (..), strLength )
+import Cardano.KESAgent.Util.RefCounting
   ( CRef
-  , acquireCRef
-  , newCRefWith
-  , releaseCRef
-  , withCRefValue
-  , readCRef
   , CRefEvent (..)
   , CRefID
+  , acquireCRef
+  , newCRefWith
+  , readCRef
+  , releaseCRef
+  , withCRefValue
   )
 
 import Cardano.Crypto.DirectSerialise
-  ( DirectSerialise (..)
-  , DirectDeserialise (..)
+  ( DirectDeserialise (..)
+  , DirectSerialise (..)
   )
+import Cardano.Crypto.DSIGN.Class ( DSIGNAlgorithm (..), VerKeyDSIGN )
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
-import Cardano.Crypto.DSIGN.Class
-  ( DSIGNAlgorithm (..)
-  , VerKeyDSIGN
-  )
 import Cardano.Crypto.KES.Class
-  ( KESAlgorithm (..)
+  ( ContextKES
+  , KESAlgorithm (..)
   , SignKeyWithPeriodKES (..)
-  , ContextKES
   , forgetSignKeyKES
   , rawSerialiseSignKeyKES
   )
@@ -57,20 +64,19 @@ import Ouroboros.Network.Snocket ( Accept (..), Accepted (..), Snocket (..) )
 
 import Control.Concurrent.Class.MonadMVar
   ( MVar
+  , MonadMVar
   , newEmptyMVar
   , newMVar
   , putMVar
   , readMVar
   , tryTakeMVar
   , withMVar
-  , MonadMVar
   )
-import Control.Monad.Class.MonadST ( MonadST )
 import Control.Concurrent.Class.MonadSTM ( MonadSTM, retry )
 import Control.Concurrent.Class.MonadSTM.TChan
   ( TChan
-  , newBroadcastTChan
   , dupTChan
+  , newBroadcastTChan
   , readTChan
   , writeTChan
   )
@@ -80,17 +86,22 @@ import Control.Concurrent.Class.MonadSTM.TMVar
   , newTMVar
   , putTMVar
   , readTMVar
-  , tryTakeTMVar
   , takeTMVar
   , tryReadTMVar
+  , tryTakeTMVar
   )
 import Control.Monad ( forever, void )
-import Control.Monad.Class.MonadAsync ( MonadAsync, concurrently, concurrently_ )
-import Control.Monad.Class.MonadSTM ( atomically )
+import Control.Monad.Class.MonadAsync
+  ( MonadAsync
+  , concurrently
+  , concurrently_
+  )
 import Control.Monad.Class.MonadFork ( labelThread, myThreadId )
+import Control.Monad.Class.MonadST ( MonadST )
+import Control.Monad.Class.MonadSTM ( atomically )
 import Control.Monad.Class.MonadThrow
-  ( MonadThrow
-  , MonadCatch
+  ( MonadCatch
+  , MonadThrow
   , SomeException
   , bracket
   , catch
@@ -99,9 +110,9 @@ import Control.Monad.Class.MonadThrow
   )
 import Control.Monad.Class.MonadTime ( MonadTime (..) )
 import Control.Monad.Class.MonadTimer ( threadDelay )
-import Control.Tracer ( Tracer, traceWith, nullTracer )
+import Control.Tracer ( Tracer, nullTracer, traceWith )
 import Data.ByteString ( ByteString )
-import Data.Functor.Contravariant ( (>$<), contramap )
+import Data.Functor.Contravariant ( contramap, (>$<) )
 import Data.Maybe ( fromJust )
 import Data.Proxy ( Proxy (..) )
 import Data.Time ( NominalDiffTime )
@@ -114,8 +125,8 @@ import Text.Printf
 {-HLINT ignore "Use underscore" -}
 
 data AgentTrace
-  = AgentServiceDriverTrace DriverTrace
-  | AgentControlDriverTrace DriverTrace
+  = AgentServiceDriverTrace ServiceDriverTrace
+  | AgentControlDriverTrace ServiceDriverTrace
   | AgentReplacingPreviousKey String String
   | AgentRejectingKey String
   | AgentInstallingNewKey String
@@ -392,7 +403,7 @@ runListener :: forall m c fd addr st (pr :: PeerRole) a
             => Show fd
             => Crypto c
             => Typeable c
-            => VersionedProtocol (KESProtocol m c)
+            => VersionedProtocol (ServiceProtocol m c)
             => DirectSerialise m (SignKeyKES (KES c))
             => DirectDeserialise m (SignKeyKES (KES c))
             => Snocket m fd addr
@@ -404,8 +415,8 @@ runListener :: forall m c fd addr st (pr :: PeerRole) a
             -> (String -> AgentTrace)
             -> (String -> AgentTrace)
             -> (String -> AgentTrace)
-            -> (DriverTrace -> AgentTrace)
-            -> Peer (KESProtocol m c) pr st m a
+            -> (ServiceDriverTrace -> AgentTrace)
+            -> Peer (ServiceProtocol m c) pr st m a
             -> m ()
 runListener
       s
@@ -426,7 +437,7 @@ runListener
         traceWith tracer (tClientConnected $ show fd')
         bearer <- getRawBearer mrb fd'
         void $ runPeerWithDriver
-          (driver bearer $ tDriverTrace >$< tracer)
+          (serviceDriver bearer $ tDriverTrace >$< tracer)
           peer
           ()
 
@@ -484,7 +495,7 @@ runAgent agent = do
           AgentServiceClientConnected
           AgentServiceSocketError
           AgentServiceDriverTrace
-          (kesPusher currentKey nextKey reportPushResult)
+          (servicePusher currentKey nextKey reportPushResult)
 
   let runControl = do
         labelMyThread "control"
@@ -499,7 +510,7 @@ runAgent agent = do
           AgentControlClientConnected
           AgentControlSocketError
           AgentControlDriverTrace
-          (kesReceiver $ pushKey agent)
+          (serviceReceiver $ pushKey agent)
 
   void $ runService `concurrently` runControl `concurrently` runEvolution
 

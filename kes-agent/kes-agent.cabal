@@ -30,21 +30,24 @@ common base-dependencies
 library
     import: project-config
     import: base-dependencies
-    exposed-modules: Cardano.KESAgent.Protocol
-                   , Cardano.KESAgent.OCert
-                   , Cardano.KESAgent.TextEnvelope
-                   , Cardano.KESAgent.Serialization
-                   , Cardano.KESAgent.Driver
-                   , Cardano.KESAgent.Evolution
-                   , Cardano.KESAgent.Peers
-                   , Cardano.KESAgent.Agent
-                   , Cardano.KESAgent.ServiceClient
-                   , Cardano.KESAgent.ControlClient
-                   , Cardano.KESAgent.RetrySocket
-                   , Cardano.KESAgent.RefCounting
-                   , Cardano.KESAgent.Classes
-                   , Cardano.KESAgent.Pretty
-
+    exposed-modules: 
+                   Cardano.KESAgent.KES.Classes
+                   Cardano.KESAgent.KES.Evolution
+                   Cardano.KESAgent.KES.Crypto
+                   Cardano.KESAgent.KES.OCert
+                   Cardano.KESAgent.Processes.Agent
+                   Cardano.KESAgent.Processes.ControlClient
+                   Cardano.KESAgent.Processes.ServiceClient
+                   Cardano.KESAgent.Serialization.CBOR
+                   Cardano.KESAgent.Serialization.TextEnvelope
+                   Cardano.KESAgent.Protocols.Service.Driver
+                   Cardano.KESAgent.Protocols.Service.Peers
+                   Cardano.KESAgent.Protocols.Service.Protocol
+                   Cardano.KESAgent.Protocols.VersionedProtocol
+                   Cardano.KESAgent.Protocols.StandardCrypto
+                   Cardano.KESAgent.Util.Pretty
+                   Cardano.KESAgent.Util.RefCounting
+                   Cardano.KESAgent.Util.RetrySocket
     build-depends: async
                  , aeson >=2.0
                  , base16-bytestring

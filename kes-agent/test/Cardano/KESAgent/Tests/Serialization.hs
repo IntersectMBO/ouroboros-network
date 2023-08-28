@@ -4,10 +4,11 @@
 module Cardano.KESAgent.Tests.Serialization
 where
 
-import Cardano.KESAgent.TextEnvelope
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.Serialization
+import Cardano.KESAgent.Serialization.TextEnvelope
+import Cardano.KESAgent.Serialization.CBOR
+import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.Protocols.StandardCrypto
 
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class

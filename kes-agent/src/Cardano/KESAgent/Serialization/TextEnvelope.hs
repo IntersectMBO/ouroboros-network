@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Cardano.KESAgent.TextEnvelope
+module Cardano.KESAgent.Serialization.TextEnvelope
 where
 
 import Cardano.Binary ( FromCBOR (..), ToCBOR (..), serialize', decodeFull' )

@@ -8,11 +8,12 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Cardano.KESAgent.Classes
+module Cardano.KESAgent.KES.Classes
   where
 
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Protocols.Service.Protocol
 
 import Cardano.Binary
 import Cardano.Crypto.DirectSerialise
@@ -63,7 +64,7 @@ deriving anyclass instance {-# OVERLAPPING #-}
 class ( Crypto c
       , Typeable c
       , ContextKES (KES c) ~ ()
-      , VersionedProtocol (KESProtocol m c)
+      , VersionedProtocol (ServiceProtocol m c)
       , KESAlgorithm (KES c)
       , DirectDeserialise m (SignKeyKES (KES c))
       , DirectSerialise m (SignKeyKES (KES c))
@@ -74,7 +75,7 @@ deriving anyclass instance {-# OVERLAPPING #-}
       ( Crypto c
       , Typeable c
       , ContextKES (KES c) ~ ()
-      , VersionedProtocol (KESProtocol m c)
+      , VersionedProtocol (ServiceProtocol m c)
       , KESAlgorithm (KES c)
       , DirectDeserialise m (SignKeyKES (KES c))
       , DirectSerialise m (SignKeyKES (KES c))

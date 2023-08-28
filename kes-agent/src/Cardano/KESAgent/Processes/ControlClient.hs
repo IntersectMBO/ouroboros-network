@@ -3,17 +3,18 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | Clients for the KES Agent.
-module Cardano.KESAgent.ControlClient
+module Cardano.KESAgent.Processes.ControlClient
   where
 
-import Cardano.KESAgent.Classes ( MonadKES )
-import Cardano.KESAgent.Driver ( DriverTrace, driver )
-import Cardano.KESAgent.OCert ( Crypto (..), OCert (..) )
-import Cardano.KESAgent.Pretty ( Pretty (..) )
-import Cardano.KESAgent.Peers ( kesPusher, kesReceiver )
-import Cardano.KESAgent.Protocol ( RecvResult (..) )
-import Cardano.KESAgent.RefCounting ( CRef, withCRef )
-import Cardano.KESAgent.RetrySocket ( retrySocket )
+import Cardano.KESAgent.KES.Classes ( MonadKES )
+import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace, serviceDriver )
+import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
+import Cardano.KESAgent.KES.OCert ( OCert (..) )
+import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
+import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher, serviceReceiver )
+import Cardano.KESAgent.Protocols.Service.Protocol ( RecvResult (..) )
+import Cardano.KESAgent.Util.RefCounting ( CRef, withCRef )
+import Cardano.KESAgent.Util.RetrySocket ( retrySocket )
 
 import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..) )
 
@@ -35,7 +36,7 @@ data ControlClientOptions m fd addr =
     }
 
 data ControlClientTrace
-  = ControlClientDriverTrace DriverTrace
+  = ControlClientDriverTrace ServiceDriverTrace
   | ControlClientSocketClosed
   | ControlClientConnected -- (SocketAddress Unix)
   | ControlClientAttemptReconnect Int
@@ -46,7 +47,7 @@ data ControlClientTrace
   deriving (Show)
 
 instance Pretty ControlClientTrace where
-  pretty (ControlClientDriverTrace d) = "Control: Driver: " ++ pretty d
+  pretty (ControlClientDriverTrace d) = "Control: ServiceDriver: " ++ pretty d
   pretty ControlClientConnected = "Control: Connected"
   pretty x = "Control: " ++ drop (length "ControlClient") (show x)
 
@@ -77,8 +78,8 @@ runControlClient1 proxy mrb options key oc tracer = withCRef key $ \key -> do
       traceWith tracer $ ControlClientConnected -- (controlClientSocketAddress options)
       bearer <- getRawBearer mrb fd
       void $ runPeerWithDriver
-        (driver bearer $ ControlClientDriverTrace >$< tracer)
-        (kesPusher
+        (serviceDriver bearer $ ControlClientDriverTrace >$< tracer)
+        (servicePusher
             (traceWith tracer ControlClientSendingKey >> return (key, oc))
             (return Nothing)
             (\reason -> do

@@ -20,8 +20,10 @@
 -- much to replicate here, and since the KES Agent protocols are not
 -- performance critical, the small overhead introduced by using the default
 -- CBOR serialization seems like an acceptable tradeoff.
-module Cardano.KESAgent.OCert
+module Cardano.KESAgent.KES.OCert
   where
+
+import Cardano.KESAgent.KES.Crypto
 
 import Cardano.Binary
 import Cardano.Crypto.DSIGN.Class as DSIGN
@@ -38,14 +40,6 @@ import Data.Word
 import GHC.Generics ( Generic )
 import NoThunks.Class ( NoThunks (..) )
 import Quiet ( Quiet (..) )
-
--- | Convenience class that bundles associated KES and DSIGN algorithms into a
--- single typeclass
-class ( KESAlgorithm (KES c)
-      , DSIGNAlgorithm (DSIGN c)
-      ) => Crypto c where
-  type KES c :: *
-  type DSIGN c :: *
 
 newtype KESPeriod = KESPeriod {unKESPeriod :: Word}
   deriving (Eq, Generic, Ord, Typeable)

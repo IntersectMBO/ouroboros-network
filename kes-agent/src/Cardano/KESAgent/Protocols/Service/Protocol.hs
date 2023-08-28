@@ -4,17 +4,20 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-module Cardano.KESAgent.Protocol
+
+module Cardano.KESAgent.Protocols.Service.Protocol
   where
 
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.RefCounting
+import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Binary
 import Cardano.Crypto.DSIGN.Class
@@ -36,65 +39,21 @@ import Network.TypedProtocol.Core
 import NoThunks.Class ( NoThunks (..) )
 import Quiet
 
-data KESProtocol (m :: * -> *) (k :: *) where
+data ServiceProtocol (m :: * -> *) (k :: *) where
   -- | Default state after connecting, but before the protocol version has been
   -- negotiated.
-  InitialState :: KESProtocol m k
+  InitialState :: ServiceProtocol m k
 
   -- | System is idling, waiting for the server to push the next key.
-  IdleState :: KESProtocol m k
+  IdleState :: ServiceProtocol m k
 
   -- | A new key has been pushed, client must now confirm that the key has been
   -- received.
-  WaitForConfirmationState :: KESProtocol m k
+  WaitForConfirmationState :: ServiceProtocol m k
 
   -- | The server has closed the connection, thus signalling the end of the
   -- session.
-  EndState :: KESProtocol m k
-
-class VersionedProtocol (p :: *) where
-  versionIdentifier :: Proxy p -> VersionIdentifier
-
-newtype VersionIdentifier =
-  VersionIdentifier { unVersionIdentifier :: ByteString }
-  deriving newtype (Show, Eq)
-
-data StandardCrypto
-
-data SingleCrypto
-
-data MockCrypto
-
-instance Crypto StandardCrypto where
-  type KES StandardCrypto = Sum6KES Ed25519DSIGN Blake2b_256
-  type DSIGN StandardCrypto = Ed25519DSIGN
-
-instance Crypto SingleCrypto where
-  type KES SingleCrypto = SingleKES Ed25519DSIGN
-  type DSIGN SingleCrypto = Ed25519DSIGN
-
-instance Crypto MockCrypto where
-  type KES MockCrypto = MockKES 128
-  type DSIGN MockCrypto = Ed25519DSIGN
-
-versionIdentifierLength :: Num a => a
-versionIdentifierLength = 32
-
-mkVersionIdentifier :: ByteString -> VersionIdentifier
-mkVersionIdentifier raw =
-  VersionIdentifier $ BS.take versionIdentifierLength $ raw <> BS.replicate versionIdentifierLength 0
-
-instance VersionedProtocol (KESProtocol m StandardCrypto) where
-  versionIdentifier _ =
-    mkVersionIdentifier "StandardCrypto:0.3"
-
-instance VersionedProtocol (KESProtocol m SingleCrypto) where
-  versionIdentifier _ =
-    mkVersionIdentifier "SingleCrypto:0.3"
-
-instance VersionedProtocol (KESProtocol m MockCrypto) where
-  versionIdentifier _ =
-    mkVersionIdentifier "MockCrypto:0.3"
+  EndState :: ServiceProtocol m k
 
 data RecvResult
   = RecvOK
@@ -123,15 +82,15 @@ data RecvResult
 -- also helps make things more predictable in testing, because it means that
 -- sending keys is now synchronous.
 --
-instance Protocol (KESProtocol m c) where
-  data Message (KESProtocol m c) st st' where
-          VersionMessage :: Message (KESProtocol m c) InitialState IdleState
+instance Protocol (ServiceProtocol m c) where
+  data Message (ServiceProtocol m c) st st' where
+          VersionMessage :: Message (ServiceProtocol m c) InitialState IdleState
           KeyMessage :: CRef m (SignKeyWithPeriodKES (KES c))
                      -> OCert c
-                     -> Message (KESProtocol m c) IdleState WaitForConfirmationState
+                     -> Message (ServiceProtocol m c) IdleState WaitForConfirmationState
           RecvResultMessage :: RecvResult
-                            -> Message (KESProtocol m c) WaitForConfirmationState IdleState
-          EndMessage :: Message (KESProtocol m c) IdleState EndState
+                            -> Message (ServiceProtocol m c) WaitForConfirmationState IdleState
+          EndMessage :: Message (ServiceProtocol m c) IdleState EndState
 
   -- | Server always has agency, except between sending a key and confirming it
   data ServerHasAgency st where
@@ -152,3 +111,11 @@ instance Protocol (KESProtocol m c) where
         case tok2 of {}
   exclusionLemma_NobodyAndClientHaveAgency _ _ = undefined
   exclusionLemma_NobodyAndServerHaveAgency _ _ = undefined
+
+instance NamedCrypto c => VersionedProtocol (ServiceProtocol m c) where
+  versionIdentifier = spVersionIdentifier
+
+spVersionIdentifier :: forall m c. NamedCrypto c => Proxy (ServiceProtocol m c) -> VersionIdentifier
+spVersionIdentifier _ =
+  mkVersionIdentifier $
+    unCryptoName (cryptoName (Proxy @c)) <> ":0.3"

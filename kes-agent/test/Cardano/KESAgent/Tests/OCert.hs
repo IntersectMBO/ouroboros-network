@@ -3,8 +3,10 @@
 module Cardano.KESAgent.Tests.OCert
 where
 
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.Protocol
+import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.StandardCrypto
 
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class

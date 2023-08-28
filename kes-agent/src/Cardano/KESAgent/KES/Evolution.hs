@@ -2,10 +2,11 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Cardano.KESAgent.Evolution
+module Cardano.KESAgent.KES.Evolution
   where
 
-import Cardano.KESAgent.OCert
+import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.KES.Crypto
 
 import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.KES.Class

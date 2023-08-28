@@ -6,11 +6,13 @@
 module Main
 where
 
-import Cardano.KESAgent.ServiceClient
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.Pretty
-import Cardano.KESAgent.RefCounting
-import Cardano.KESAgent.OCert ( Crypto (..), OCert (..), KESPeriod (..) )
+import Cardano.KESAgent.Processes.ServiceClient
+import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Util.Pretty
+import Cardano.KESAgent.Util.RefCounting
+import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
+import Cardano.KESAgent.KES.OCert ( OCert (..), KESPeriod (..) )
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Libsodium (sodiumInit)

@@ -2,7 +2,7 @@
 -- shared pointers.
 -- This is useful to implement shared access to scarce resources that require
 -- timely destruction (i.e., we cannot rely on GC to run finalizers).
-module Cardano.KESAgent.RefCounting
+module Cardano.KESAgent.Util.RefCounting
   ( CRef
   , CRefCount
   , CRefEvent (..)
@@ -23,7 +23,7 @@ module Cardano.KESAgent.RefCounting
   , withNewCRefWith
   ) where
 
-import Cardano.KESAgent.Pretty ( Pretty (..) )
+import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
 
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM

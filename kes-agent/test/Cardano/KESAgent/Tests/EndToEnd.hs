@@ -4,11 +4,13 @@
 module Cardano.KESAgent.Tests.EndToEnd
   ( tests )
   where
-import Cardano.KESAgent.TextEnvelope
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.Serialization
-import Cardano.KESAgent.Evolution ( getCurrentKESPeriod )
+import Cardano.KESAgent.Serialization.TextEnvelope
+import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Serialization.CBOR
+import Cardano.KESAgent.KES.Evolution ( getCurrentKESPeriod )
 import Paths_kes_agent
 
 import Cardano.Crypto.KES.Class

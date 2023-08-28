@@ -5,11 +5,12 @@
 module Main
 where
 
-import Cardano.KESAgent.Agent
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.Pretty
-import Cardano.KESAgent.TextEnvelope
-import Cardano.KESAgent.Serialization
+import Cardano.KESAgent.Processes.Agent
+import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Util.Pretty
+import Cardano.KESAgent.Serialization.TextEnvelope
+import Cardano.KESAgent.Serialization.CBOR
 
 import Cardano.Crypto.Libsodium (sodiumInit)
 

@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Cardano.KESAgent.RetrySocket
+module Cardano.KESAgent.Util.RetrySocket
   where
 
 import Control.Exception ( Exception )

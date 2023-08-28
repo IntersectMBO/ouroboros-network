@@ -2,7 +2,7 @@ module Cardano.KESAgent.Tests.RefCounting
   ( tests
   ) where
 
-import Cardano.KESAgent.RefCounting
+import Cardano.KESAgent.Util.RefCounting
 
 import Control.Concurrent ( threadDelay )
 import Control.Concurrent.Async ( concurrently_ )

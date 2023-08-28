@@ -26,16 +26,18 @@ module Cardano.KESAgent.Tests.Simulation
   , withLock
   ) where
 
-import Cardano.KESAgent.Agent
-import Cardano.KESAgent.Classes
-import Cardano.KESAgent.ControlClient
-import Cardano.KESAgent.Driver ( DriverTrace (..) )
-import Cardano.KESAgent.Evolution
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.RefCounting
-import Cardano.KESAgent.ServiceClient
-import Cardano.KESAgent.Pretty
+import Cardano.KESAgent.KES.Classes
+import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.KES.Evolution
+import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.Processes.Agent
+import Cardano.KESAgent.Processes.ControlClient
+import Cardano.KESAgent.Processes.ServiceClient
+import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Util.Pretty
+import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Binary ( FromCBOR )
 import Cardano.Crypto.DirectSerialise
@@ -211,7 +213,7 @@ testCrypto proxyC lock tracer ioManager =
     name = Text.unpack .
            decodeUtf8 .
            unVersionIdentifier .
-           versionIdentifier $ (Proxy @(KESProtocol IO c))
+           versionIdentifier $ (Proxy @(ServiceProtocol IO c))
 
 mvarPrettyTracer :: (MonadTime m, MonadMVar m)
                  => MVar m [String]
@@ -550,7 +552,7 @@ testOneKeyThroughChainIOSim :: forall c kes
                             => ContextDSIGN (DSIGN c) ~ ()
                             => DSIGN.Signable (DSIGN c) (OCertSignable c)
                             => Show (SignKeyWithPeriodKES  kes)
-                            => (forall s. VersionedProtocol (KESProtocol (IOSim s) c))
+                            => (forall s. VersionedProtocol (ServiceProtocol (IOSim s) c))
                             => Proxy c
 
                             -> PinnedSizedBytes (SeedSizeKES (KES c))

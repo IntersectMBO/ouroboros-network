@@ -4,12 +4,13 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Cardano.KESAgent.Peers
+module Cardano.KESAgent.Protocols.Service.Peers
   where
 
-import Cardano.KESAgent.OCert
-import Cardano.KESAgent.Protocol
-import Cardano.KESAgent.RefCounting
+import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Crypto.KES.Class
 
@@ -17,15 +18,15 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Network.TypedProtocol.Core
 
-kesReceiver :: forall (c :: *) (m :: * -> *)
+serviceReceiver :: forall (c :: *) (m :: * -> *)
              . KESAlgorithm (KES c)
             => Monad m
             => (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m RecvResult)
-            -> Peer (KESProtocol m c) AsClient InitialState m ()
-kesReceiver receiveKey =
+            -> Peer (ServiceProtocol m c) AsClient InitialState m ()
+serviceReceiver receiveKey =
     Await (ServerAgency TokInitial) $ \VersionMessage -> go
   where
-    go :: Peer (KESProtocol m c) AsClient IdleState m ()
+    go :: Peer (ServiceProtocol m c) AsClient IdleState m ()
     go = Await (ServerAgency TokIdle) $ \case
           KeyMessage sk oc ->
             Effect $ do
@@ -34,15 +35,15 @@ kesReceiver receiveKey =
           EndMessage ->
             Done TokEnd ()
 
-kesPusher :: forall (c :: *) (m :: (* -> *))
+servicePusher :: forall (c :: *) (m :: (* -> *))
            . KESAlgorithm (KES c)
           => MonadSTM m
           => MonadThrow m
           => m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
           -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
           -> (RecvResult -> m ())
-          -> Peer (KESProtocol m c) AsServer InitialState m ()
-kesPusher currentKey nextKey handleResult =
+          -> Peer (ServiceProtocol m c) AsServer InitialState m ()
+servicePusher currentKey nextKey handleResult =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
       (sk, oc) <- currentKey
@@ -51,7 +52,7 @@ kesPusher currentKey nextKey handleResult =
           Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> go result
         )
   where
-    go :: RecvResult -> Peer (KESProtocol m c) AsServer IdleState m ()
+    go :: RecvResult -> Peer (ServiceProtocol m c) AsServer IdleState m ()
     go result = Effect $ do
       handleResult result
       skOcMay <- nextKey
