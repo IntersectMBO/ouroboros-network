@@ -212,9 +212,9 @@ data ProgramOptions
   deriving (Show, Eq)
 
 pProgramOptions = subparser
-  (  command "gen-key" (info (RunGenKey <$> pGenKeyOptions) idm)
-  <> command "drop-key" (info (RunDropKey <$> pDropKeyOptions) idm)
-  <> command "get-public-key" (info (RunQueryKey <$> pQueryKeyOptions) idm)
+  (  command "gen-staged-key" (info (RunGenKey <$> pGenKeyOptions) idm)
+  <> command "drop-staged-key" (info (RunDropKey <$> pDropKeyOptions) idm)
+  <> command "export-staged-vkey" (info (RunQueryKey <$> pQueryKeyOptions) idm)
   <> command "install-key" (info (RunInstallKey <$> pInstallKeyOptions) idm)
   )
 
@@ -263,7 +263,7 @@ runGenKey gko' = withIOManager $ \ioManager -> do
   putStrLn "Asking agent to generate a key..."
   gkoEnv <- gkoFromEnv
   let gko = gko' <> gkoEnv <> defGenKeyOptions
-  verKeyFilename <- maybe (error "Missing KES VerKey file") return (gkoKESVerificationKeyFile gko)
+  let verKeyFilenameMay = gkoKESVerificationKeyFile gko
   vkKESMay <- runControlClientCommand
                 (gkoCommon gko)
                 ioManager
@@ -272,24 +272,37 @@ runGenKey gko' = withIOManager $ \ioManager -> do
     Nothing -> do
       putStrLn "Key generation has failed. Please check KES agent log for details."
     Just vkKES -> do
-      encodeTextEnvelopeFile verKeyFilename (KESVerKey vkKES)
-      putStrLn $ "KES VerKey written to " ++ verKeyFilename
+      putStrLn "KES SignKey generated."
+      case verKeyFilenameMay of
+        Just "-" -> do
+          BS.putStr $ encodeTextEnvelope (KESVerKey vkKES)
+          putStrLn ""
+        Just verKeyFilename -> do
+          encodeTextEnvelopeFile verKeyFilename (KESVerKey vkKES)
+          putStrLn $ "KES VerKey written to " ++ verKeyFilename
+        Nothing ->
+          return ()
 
 runQueryKey :: QueryKeyOptions -> IO ()
 runQueryKey qko' = withIOManager $ \ioManager -> do
   qkoEnv <- qkoFromEnv
   let qko = qko' <> qkoEnv <> defQueryKeyOptions
-  verKeyFilename <- maybe (error "Missing KES VerKey file") return (qkoKESVerificationKeyFile qko)
+  let verKeyFilename = fromMaybe "-" (qkoKESVerificationKeyFile qko)
   vkKESMay <- runControlClientCommand
                 (qkoCommon qko)
                 ioManager
                 controlQueryKey
   case vkKESMay of
     Nothing -> do
-      putStrLn "Key generation has failed. Please check KES agent log for details."
+      putStrLn "No key available."
     Just vkKES -> do
-      encodeTextEnvelopeFile verKeyFilename (KESVerKey vkKES)
-      putStrLn $ "KES VerKey written to " ++ verKeyFilename
+      case verKeyFilename of
+        "-" -> do
+          BS.putStr $ encodeTextEnvelope (KESVerKey vkKES)
+          putStrLn ""
+        _ -> do
+          encodeTextEnvelopeFile verKeyFilename (KESVerKey vkKES)
+          putStrLn $ "KES VerKey written to " ++ verKeyFilename
 
 runDropKey :: DropKeyOptions -> IO ()
 runDropKey dko' = withIOManager $ \ioManager -> do

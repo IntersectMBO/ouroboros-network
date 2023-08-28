@@ -135,6 +135,7 @@ receiveVKeyMay s = do
   lMay <- fmap fromIntegral <$> receiveWord32 s
   case lMay of
     Nothing -> return Nothing
+    Just 0 -> return Nothing
     Just l -> do
       keyBytes <- receiveBS s l
       return $ rawDeserialiseVerKeyKES keyBytes
