@@ -926,6 +926,17 @@ runM Interfaces
                   (pchPeerSharing diNtnPeerSharing)
                   (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
 
+      let peerChurnGovernor' = Governor.peerChurnGovernor
+                                 dtTracePeerSelectionTracer
+                                 daDeadlineChurnInterval
+                                 daBulkChurnInterval
+                                 daPeerMetrics
+                                 churnModeVar
+                                 churnRng
+                                 daBlockFetchMode
+                                 daPeerSelectionTargets
+                                 peerSelectionTargetsVar
+
       withLedgerPeers
         ledgerPeersRng
         diNtnToPeerAddr
@@ -970,18 +981,7 @@ runM Interfaces
                          policyRngVar (readTVar churnModeVar)
                          daPeerMetrics (epErrorDelay exitPolicy)))
                     $ \governorThread ->
-                      Async.withAsync
-                      (Governor.peerChurnGovernor
-                        dtTracePeerSelectionTracer
-                        daDeadlineChurnInterval
-                        daBulkChurnInterval
-                        daPeerMetrics
-                        churnModeVar
-                        churnRng
-                        daBlockFetchMode
-                        daPeerSelectionTargets
-                        peerSelectionTargetsVar)
-                      $ \churnGovernorThread ->
+                      Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
                             -- wait for any thread to fail
                             snd <$> Async.waitAny
                                [ localPeerSelectionActionsThread
@@ -1059,17 +1059,7 @@ runM Interfaces
                               serverObservableStateVar    = observableStateVar
                             })
                             $ \serverThread ->
-                              Async.withAsync
-                                (Governor.peerChurnGovernor
-                                  dtTracePeerSelectionTracer
-                                  daDeadlineChurnInterval
-                                  daBulkChurnInterval
-                                  daPeerMetrics
-                                  churnModeVar
-                                  churnRng
-                                  daBlockFetchMode
-                                  daPeerSelectionTargets
-                                  peerSelectionTargetsVar)
+                               Async.withAsync peerChurnGovernor'
                                 $ \churnGovernorThread ->
 
                                   -- wait for any thread to fail
