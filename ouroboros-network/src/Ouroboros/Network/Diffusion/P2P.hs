@@ -983,7 +983,7 @@ runM Interfaces
                    daPeerMetrics (epErrorDelay exitPolicy)))
 
       --
-      -- The peer churn goveror:
+      -- The peer churn governor:
       -- 
       let peerChurnGovernor' = Governor.peerChurnGovernor
                                  dtTracePeerSelectionTracer
