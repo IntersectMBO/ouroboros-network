@@ -932,7 +932,7 @@ runM Interfaces
                   (pchPeerSharing diNtnPeerSharing)
                   (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
 
-      let peerSelectionGovernor'
+          peerSelectionGovernor'
             :: forall (muxMode :: MuxMode) b.
                Tracer m (DebugPeerSelection ntnAddr)
                -> NodeToNodePeerSelectionActions muxMode ntnAddr ntnVersionData m a b
@@ -948,7 +948,8 @@ runM Interfaces
                 (Diffusion.Policies.simplePeerSelectionPolicy
                    policyRngVar (readTVar churnModeVar)
                    daPeerMetrics (epErrorDelay exitPolicy)))
-      let peerChurnGovernor' = Governor.peerChurnGovernor
+
+          peerChurnGovernor' = Governor.peerChurnGovernor
                                  dtTracePeerSelectionTracer
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
@@ -972,41 +973,26 @@ runM Interfaces
           -- InitiatorOnly mode, run peer selection only:
           InitiatorOnlyDiffusionMode ->
             iomWithConnectionManager $ \connectionManager-> do
-              diInstallSigUSR1Handler connectionManager
- 
-              --
-              -- peer state actions
-              --
-              -- Peer state actions run a job pool in the background which
-              -- tracks threads forked by 'PeerStateActions'
-              --
+            diInstallSigUSR1Handler connectionManager
+            withPeerStateActions' connectionManager $ \peerStateActions->
+              withPeerSelectionActions' retry peerStateActions requestLedgerPeers
+                 $ \localPeerSelectionActionsThread peerSelectionActions->
 
-              withPeerStateActions' connectionManager $ \peerStateActions->
-                --
-                -- Run peer selection (p2p governor)
-                --
-
-                withPeerSelectionActions'
-                  retry -- Will never receive inbound connections
-                  peerStateActions
-                  requestLedgerPeers
-                  $ \localPeerSelectionActionsThread  peerSelectionActions ->
-                    Async.withAsync
-                    (peerSelectionGovernor'
+                 Async.withAsync
+                   (peerSelectionGovernor'
                       dtDebugPeerSelectionInitiatorTracer
                       peerSelectionActions)
-                    $ \governorThread ->
-                      Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
-                            -- wait for any thread to fail
-                            snd <$> Async.waitAny
-                               [ localPeerSelectionActionsThread
-                               , governorThread
-                               , ledgerPeerThread
-                               , churnGovernorThread
-                               ]
+                 $ \governorThread ->
+                 Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+              -- wait for any thread to fail:
+              snd <$> Async.waitAny
+                 [ localPeerSelectionActionsThread
+                 , governorThread
+                 , ledgerPeerThread
+                 , churnGovernorThread
+                 ]
 
-          -- InitiatorAndResponder mode, run peer selection and the server.
-
+          -- InitiatorAndResponder mode, run peer selection and the server:
           InitiatorAndResponderDiffusionMode -> do
             inboundInfoChannel  <- newInformationChannel
             outboundInfoChannel <- newInformationChannel
@@ -1014,30 +1000,16 @@ runM Interfaces
             irmWithConnectionManager inboundInfoChannel outboundInfoChannel observableStateVar
               $ \connectionManager-> do
               diInstallSigUSR1Handler connectionManager
-
-              --
-              -- peer state actions
-              --
-              -- Peer state actions run a job pool in the background which
-              -- tracks threads forked by 'PeerStateActions'
-              --
-
               withPeerStateActions' connectionManager $ \peerStateActions->
-
-                --
-                -- Run peer selection (p2p governor)
-                --
-
                 withPeerSelectionActions'
                   (readMessage outboundInfoChannel)
                   peerStateActions
                   requestLedgerPeers
                   $ \localPeerRootProviderThread peerSelectionActions ->
-
                   Async.withAsync
                     (peerSelectionGovernor'
-                      dtDebugPeerSelectionInitiatorResponderTracer
-                      peerSelectionActions)
+                       dtDebugPeerSelectionInitiatorResponderTracer
+                       peerSelectionActions)
                     $ \governorThread ->
                       withSockets tracer diNtnSnocket
                                   (\sock addr -> diNtnConfigureSocket sock (Just addr))
@@ -1069,7 +1041,6 @@ runM Interfaces
                             $ \serverThread ->
                                Async.withAsync peerChurnGovernor'
                                 $ \churnGovernorThread ->
-
                                   -- wait for any thread to fail
                                   snd <$> Async.waitAny
                                        [ localPeerRootProviderThread
