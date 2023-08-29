@@ -1092,7 +1092,7 @@ runM Interfaces
       $ asum
       $ Async.Concurrently <$>
           ( remoteThread
-          : maybeToList (mkLocalThread mainThreadId)
+          : maybeToList (mkLocalThread' mainThreadId)
           )
 
   where
@@ -1133,12 +1133,16 @@ runM Interfaces
 
     -- | mkLocalThread - create local connection manager
 
-    mkLocalThread :: ThreadId m -> Maybe (m Void)
-    mkLocalThread mainThreadId =
+    mkLocalThread' :: ThreadId m -> Maybe (m Void)
+    mkLocalThread' mainThreadId =
       case daLocalAddress of
         Nothing -> Nothing
         Just localAddr ->
-          Just $ withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
+          Just $ mkLocalThread mainThreadId localAddr
+
+    mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
+    mkLocalThread mainThreadId localAddr =
+      withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
           $ \localSocket -> do
             localInbInfoChannel <- newInformationChannel
             localOutInfoChannel <- newInformationChannel
