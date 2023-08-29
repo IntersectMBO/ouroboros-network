@@ -77,6 +77,7 @@ import Control.Concurrent.Class.MonadMVar
   , swapMVar
   , takeMVar
   , tryTakeMVar
+  , tryReadMVar
   , withMVar
   )
 import Control.Monad.Class.MonadST ( MonadST, withLiftST )
@@ -102,6 +103,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Maybe (fromMaybe)
 import Data.Primitive
 import Data.Proxy
 import Data.Text qualified as Text
@@ -194,19 +196,11 @@ testCrypto proxyC lock tracer ioManager =
   testGroup name
     [ testGroup "IO"
       [ testProperty "one key through chain" $
-          testOneKeyThroughChainIO proxyC lock
-      , testProperty "out-of-order pushes" $
-          testOutOfOrderPushesIO proxyC lock
-      , testProperty "concurrent pushes" $
-          testConcurrentPushesIO proxyC lock
+          testIO lock (testOneKeyThroughChain proxyC)
       ]
     , testGroup "IOSim"
       [ testProperty "one key through chain" $
-          testOneKeyThroughChainIOSim proxyC
-      , testProperty "out-of-order pushes" $
-          testOutOfOrderPushesIOSim proxyC
-      , testProperty "concurrent pushes" $
-          testConcurrentPushesIOSim proxyC
+          testIOSim (testOneKeyThroughChain proxyC)
       ]
     ]
   where
@@ -239,6 +233,7 @@ data ControlClientHooks m c
   = ControlClientHooks
       { controlClientExec :: forall a. ControlPeer c m a -> m a
       , controlClientWait :: Int -> m ()
+      , controlClientReportProperty :: Property -> m ()
       }
 
 -- | A control client script is just a monadic action that runs an arbitrary
@@ -250,8 +245,9 @@ type ControlClientScript m c =
 -- will be forwarded to the test result), and waiting.
 data NodeHooks m c
   = NodeHooks
-      { reportProperty :: Property -> m ()
+      { nodeReportProperty :: Property -> m ()
       , nodeWait :: Int -> m ()
+      , nodeDone :: m ()
       }
 
 -- | A node script actually consists of two parts: the 'runNodeScript' action
@@ -344,11 +340,15 @@ ioAddressPool = unsafePerformIO newAddressPool
 instance Show (FD (IOSim s) (TestAddress Int)) where
   show _ = "???"
 
--- | Run a test network, consisting of one Agent, and an arbitrary number of scripted
--- control clients and nodes.
+-- | Run a test network, consisting of one Agent, and an arbitrary number of
+-- scripted control clients and nodes.
 -- Control clients and nodes are defined as scripts (see 'NodeScript' and
--- 'ControlClientScript'), each with a startup delay, which allows us to randomize the
--- timing of the network components starting up and doing their things.
+-- 'ControlClientScript'), each with a startup delay, which allows us to
+-- randomize the timing of the network components starting up and doing their
+-- things.
+-- The agent is initialized with a list of seeds, which it will use as a source
+-- of "entropy" when generating KES keys. This makes it possible to compare KES
+-- keys received by the node against the expected keys.
 runTestNetwork :: forall c m fd addr
                 . MonadKES m c
                => Show addr
@@ -361,26 +361,30 @@ runTestNetwork :: forall c m fd addr
                => Show (SignKeyWithPeriodKES (KES c))
                => Proxy c
                -> MakeRawBearer m fd
-               -> (forall a. (Show a, Pretty a) => Tracer m a)
                -> Snocket m fd addr
                -> Integer
                -> (forall a. (addr -> m a) -> m a)
                -> VerKeyDSIGN (DSIGN c)
                -> Int
+                  -- | agent KES seeds
                -> [PinnedSizedBytes (SeedSizeKES (KES c))]
                   -- | control clients: startup delay, script
                -> [(Int, ControlClientScript m c)]
                   -- | nodes: startup delay, script
                -> [(Int, NodeScript m c)]
                -> m Property
-runTestNetwork p mrb tracer snocket genesisTimestamp
+runTestNetwork p mrb snocket genesisTimestamp
                withAddress coldVK
                agentDelay
                agentKESSeeds
                senders receivers = do
-    propertyVar <- newEmptyMVar :: m (MVar m Property)
+    traceMVar <- newMVar []
+    let tracer :: forall a. (Show a, Pretty a) => Tracer m a
+        tracer = mvarPrettyTracer traceMVar
+    propertyVar <- newMVar (property True)
+    doneVar <- newEmptyMVar :: m (MVar m ())
     timeVar <- newMVar (fromInteger genesisTimestamp) :: m (MVar m NominalDiffTime)
-    withAddress $ \controlAddress -> do
+    result <- withAddress $ \controlAddress -> do
       withAddress $ \serviceAddress -> do
         agentSeedVar <- newMVar agentKESSeeds
 
@@ -391,6 +395,7 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
                 [] ->
                   return (Nothing, [])
                 (seed:seeds') -> do
+                  traceWith tracer (PrettyStr $ "Consuming seed: " ++ (show . PrettyBS . psbToByteString $ seed))
                   result <- mlockedSeedFromPSB seed
                   return (Just result, seeds')
               putMVar agentSeedVar seeds'
@@ -417,15 +422,18 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
                 finalizeAgent
                 runAgent
 
+            reportProperty :: Property -> m ()
+            reportProperty prop = modifyMVar_ propertyVar (return . (.&. prop))
+
             -- Run one node.
             node :: HasCallStack
                  => Tracer m ServiceClientTrace
-                 -> MVar m Property
                  -> (Int, NodeScript m c)
                  -> m ()
-            node tracer mvar (startupDelay, script) = do
+            node tracer (startupDelay, script) = do
               let hooks = NodeHooks
-                            { reportProperty = putMVar propertyVar
+                            { nodeReportProperty = reportProperty
+                            , nodeDone = putMVar doneVar ()
                             , nodeWait = threadDelay
                             }
               threadDelay startupDelay
@@ -473,15 +481,16 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
                                   throwIO e
                               )
                 , controlClientWait = threadDelay
+                , controlClientReportProperty = reportProperty
                 }
 
             -- | Run all the nodes.
-            nodes tracer mvar = forConcurrently_ receivers $ node tracer mvar
+            nodes tracer = forConcurrently_ receivers $ node tracer
 
             -- | Run all the control clients.
             controlClients tracer = forConcurrently_ senders $ controlClient tracer
 
-            -- | This is our watchdog; it will terminate as soon as property is
+            -- | This is our watchdog; it will terminate as soon as a value is
             -- pushed to the shared MVar.
             watch :: HasCallStack => MVar m a -> m a
             watch mvar = do
@@ -490,25 +499,37 @@ runTestNetwork p mrb tracer snocket genesisTimestamp
         output <- race
                 -- run these to "completion"
                 ( agent tracer `concurrently_`
-                  nodes tracer propertyVar `concurrently_`
+                  nodes tracer `concurrently_`
                   controlClients tracer
                 )
-                -- ...until this one finishes
-                (watch propertyVar)
+                -- ...until we get a property, or the thread delay kicks in.
+                (threadDelay 1000000 `race` watch doneVar)
 
+        prop <- fromMaybe (counterexample "Interrupted" $ property False) <$>
+                  tryReadMVar propertyVar
         case output of
-            Left err   -> error ("EXCEPTION\n" ++ show err)
-            Right prop -> return prop
+          Left err ->
+            error ("EXCEPTION\n" ++ show err)
+          Right (Left ()) ->
+            return $ counterexample "(KILLED)" $ prop
+          Right (Right ()) -> do
+            return prop
+
+    log <- takeMVar traceMVar
+    return $ counterexample (unlines log) result
 
 -- | Run a generic test in IOSim
-testIOSim :: ( forall s.
+testIOSim :: forall params.
+             ( forall s.
                MakeRawBearer (IOSim s) (FD (IOSim s) (TestAddress Int)) ->
                Snocket (IOSim s) (FD (IOSim s) (TestAddress Int)) (TestAddress Int) ->
                (forall a. (TestAddress Int -> IOSim s a) -> IOSim s a) ->
+               params ->
                IOSim s Property
              )
+          -> params
           -> Property
-testIOSim test =
+testIOSim test params =
   iosimProperty $ do
     ap <- newAddressPool
     SimSnocket.withSnocket
@@ -519,99 +540,26 @@ testIOSim test =
           (makeFDRawBearer nullTracer)
           snocket
           (withTestAddressIOSim ap)
+          params
 
 -- | Run a generic test in IO
 testIO :: Lock IO
        -> ( MakeRawBearer IO Socket ->
             Snocket IO Socket SockAddr ->
             (forall a. (SockAddr -> IO a) -> IO a) ->
+            params ->
             IO Property
           )
+       -> params
        -> Property
-testIO lock test =
+testIO lock test params =
   ioProperty . withIOManager $ \ioManager ->
     withLock lock $ do
       test
         makeSocketRawBearer
         (socketSnocket ioManager)
         withTestAddressIO
-
-
-testOneKeyThroughChainIO :: forall c
-                          . MonadKES IO c
-                       => ContextDSIGN (DSIGN c) ~ ()
-                       => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                       => Crypto c
-                       => NamedCrypto c
-                       => Show (SignKeyWithPeriodKES (KES c))
-                       => UnsoundKESAlgorithm (KES c)
-                       => Proxy c
-                       -> Lock IO
-                       -> PinnedSizedBytes (SeedSizeKES (KES c))
-                       -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                       -> Integer
-                       -> Word64
-                       -> Word
-                       -> Word
-                       -> Word
-                       -> Property
-testOneKeyThroughChainIO p
-    lock
-    seedKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    certN
-    agentDelay
-    nodeDelay
-    controlDelay =
-  testIO lock $ testOneKeyThroughChain
-        p
-        seedKESPSB
-        seedDSIGNPSB
-        genesisTimestamp
-        certN
-        agentDelay
-        nodeDelay
-        controlDelay
-
-testOneKeyThroughChainIOSim :: forall c kes
-                             . KES c ~ kes
-                            => (forall s. MonadKES (IOSim s) c)
-                            => (UnsoundKESAlgorithm kes)
-                            => ContextDSIGN (DSIGN c) ~ ()
-                            => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                            => Crypto c
-                            => NamedCrypto c
-                            => Show (SignKeyWithPeriodKES  kes)
-                            => (forall s. VersionedProtocol (ServiceProtocol (IOSim s) c))
-                            => Proxy c
-
-                            -> PinnedSizedBytes (SeedSizeKES (KES c))
-                            -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                            -> Integer
-                            -> Word64
-                            -> Word
-                            -> Word
-                            -> Word
-                            -> Property
-testOneKeyThroughChainIOSim
-    p
-    seedKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    certN
-    agentDelay
-    nodeDelay
-    controlDelay =
-  testIOSim $ testOneKeyThroughChain
-    p
-    seedKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    certN
-    agentDelay
-    nodeDelay
-    controlDelay
+        params
 
 newtype OutOfOrderPushesSeeds c =
   OutOfOrderPushesSeeds { outOfOrderPushesSeeds :: [PinnedSizedBytes (SeedSizeKES (KES c))] }
@@ -626,122 +574,6 @@ instance (KESAlgorithm (KES c)) => Arbitrary (OutOfOrderPushesSeeds c) where
   shrink (OutOfOrderPushesSeeds xs) =
     map OutOfOrderPushesSeeds $ filter ((>= 2) . length) (shrink xs)
 
-testOutOfOrderPushesIO :: forall c
-                          . MonadKES IO c
-                       => ContextDSIGN (DSIGN c) ~ ()
-                       => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                       => Crypto c
-                       => NamedCrypto c
-                       => Show (SignKeyWithPeriodKES (KES c))
-                       => UnsoundKESAlgorithm (KES c)
-                       => Proxy c
-                       -> Lock IO
-                       -> OutOfOrderPushesSeeds c
-                       -> Int
-                       -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                       -> Integer
-                       -> Property
-testOutOfOrderPushesIO proxyCrypto
-    lock
-    seedsKESRaw
-    oooIndex
-    seedDSIGNPSB
-    genesisTimestamp =
-  testIO lock $ testOutOfOrderPushes
-    proxyCrypto
-    seedsKESRaw
-    oooIndex
-    seedDSIGNPSB
-    genesisTimestamp
-
-testOutOfOrderPushesIOSim :: forall c kes
-                          . (forall s. MonadKES (IOSim s) c)
-                         => ContextDSIGN (DSIGN c) ~ ()
-                         => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                         => Crypto c
-                         => NamedCrypto c
-                         => Show (SignKeyWithPeriodKES (KES c))
-                         => UnsoundKESAlgorithm kes
-                         => KES c ~ kes
-                         => Proxy c
-                         -> OutOfOrderPushesSeeds c
-                         -> Int
-                         -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                         -> Integer
-                         -> Property
-testOutOfOrderPushesIOSim proxyCrypto
-    seedsKESRaw
-    oooIndex
-    seedDSIGNPSB
-    genesisTimestamp =
-  testIOSim $ testOutOfOrderPushes
-    proxyCrypto
-    seedsKESRaw
-    oooIndex
-    seedDSIGNPSB
-    genesisTimestamp
-
-testConcurrentPushesIO :: forall c
-                          . MonadKES IO c
-                       => ContextDSIGN (DSIGN c) ~ ()
-                       => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                       => Show (SignKeyWithPeriodKES (KES c))
-                       => UnsoundKESAlgorithm (KES c)
-                       => Crypto c
-                       => NamedCrypto c
-                       => Proxy c
-                       -> Lock IO
-                       -> ConcurrentPushesDelaysAndSeeds c
-                       -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                       -> Integer
-                       -> Word
-                       -> Word
-                       -> Property
-testConcurrentPushesIO proxyCrypto
-    lock
-    controlDelaysAndSeedsKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    agentDelay
-    nodeDelay =
-  testIO lock $ testConcurrentPushes
-    proxyCrypto
-    controlDelaysAndSeedsKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    agentDelay
-    nodeDelay
-
-testConcurrentPushesIOSim :: forall c kes
-                          . (forall s. MonadKES (IOSim s) c)
-                         => ContextDSIGN (DSIGN c) ~ ()
-                         => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                         => Crypto c
-                         => NamedCrypto c
-                         => Show (SignKeyWithPeriodKES (KES c))
-                         => UnsoundKESAlgorithm kes
-                         => KES c ~ kes
-                         => Proxy c
-                         -> ConcurrentPushesDelaysAndSeeds c
-                         -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                         -> Integer
-                         -> Word
-                         -> Word
-                         -> Property
-testConcurrentPushesIOSim proxyCrypto
-    controlDelaysAndSeedsKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    agentDelay
-    nodeDelay =
-  testIOSim $ testConcurrentPushes
-    proxyCrypto
-    controlDelaysAndSeedsKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    agentDelay
-    nodeDelay
-
 testOneKeyThroughChain :: forall c m fd addr
                         . MonadKES m c
                        => Show addr
@@ -754,392 +586,78 @@ testOneKeyThroughChain :: forall c m fd addr
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
                        => Proxy c
-                       -> PinnedSizedBytes (SeedSizeKES (KES c))
-                       -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                       -> Integer
-                       -> Word64
-                       -> Word
-                       -> Word
-                       -> Word
                        -> MakeRawBearer m fd
                        -> Snocket m fd addr
                        -> (forall a. (addr -> m a) -> m a)
+                       -> ( PinnedSizedBytes (SeedSizeKES (KES c))
+                          , PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+                          , Integer
+                          , Word64
+                          , Word
+                          , Word
+                          , Word
+                          )
                        -> m Property
-testOneKeyThroughChain p
-    seedKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    certN
-    agentDelay
-    nodeDelay
-    controlDelay
-    mrb
-    snocket
-    withAddress =
-  withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
-    traceMVar <- newMVar []
-    crefTracker <- newCRefTracker
-    let crefTracer = crtTracer crefTracker -- <> mvarPrettyTracer traceMVar
-    let withNewCRef = withNewCRefWith crefTracer
+testOneKeyThroughChain
+    p mrb snocket withAddress
+    ( seedKESPSB
+    , seedDSIGNPSB
+    , genesisTimestamp
+    , certN
+    , agentDelay
+    , nodeDelay
+    , controlDelay
+    ) = do
+  -- convert quickcheck-generated inputs into things we can use
+  let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
+      expectedPeriod = 0
 
-    -- convert quickcheck-generated inputs into things we can use
-    let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
-        expectedPeriod = 0
-    expectedSK <- genKeyKES @(KES c) seedKES
-    let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
-    expectedSKBS <- rawSerialiseSignKeyKES expectedSK
+  expectedSK <- withMLockedSeedFromPSB seedKESPSB $ genKeyKES @(KES c)
+  expectedSKBS <- rawSerialiseSignKeyKES expectedSK
+  let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
 
-    result <- withNewCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP $ \expectedSKPVar -> do
-      vkHot <- deriveVerKeyKES expectedSK
-      let kesPeriod = KESPeriod 0
-      let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
-          vkCold = deriveVerKeyDSIGN skCold
-          expectedOC = makeOCert vkHot certN kesPeriod skCold
+  expectedVK <- deriveVerKeyKES expectedSK
+  let expectedVKBS = rawSerialiseVerKeyKES expectedVK
 
-      let controlScript sim = do
-            controlClientExec sim $ controlGenKey
-            controlClientExec sim $ controlInstallKey expectedOC
-            return ()
+  vkHot <- deriveVerKeyKES expectedSK
+  let kesPeriod = KESPeriod 0
+  let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
+      vkCold = deriveVerKeyDSIGN skCold
+      expectedOC = makeOCert vkHot certN kesPeriod skCold
 
-      let nodeScript =
-            NodeScript
-              { keyReceived = \hooks (resultSKPVar, resultOC) -> do
-                  (resultSKBS, resultPeriod) <- withCRefValue resultSKPVar $ \resultSKP -> do
-                    skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
-                    return (skp, periodKES resultSKP)
-                  reportProperty hooks
-                    ((PrettyBS expectedSKBS, expectedPeriod) === (PrettyBS resultSKBS, resultPeriod))
-                  return RecvOK
-              , runNodeScript = const $ return ()
-              }
+  let controlScript hooks = do
+        generatedVK <- controlClientExec hooks controlGenKey
+        let generatedVKBS = rawSerialiseVerKeyKES <$> generatedVK
+        controlClientReportProperty hooks $
+          counterexample "Generated vs. expected VK:" $
+          (PrettyBS <$> generatedVKBS) === Just (PrettyBS expectedVKBS)
+        controlClientExec hooks $ controlInstallKey expectedOC
+        return ()
 
-      let go = runTestNetwork p mrb
-                  (mvarPrettyTracer traceMVar)
-                  snocket
-                  genesisTimestamp
-                  withAddress
-                  vkCold
-                  (delayFromWord agentDelay)
-                  [seedKESPSB]
-                  [(delayFromWord controlDelay, controlScript)]
-                  [(delayFromWord nodeDelay, nodeScript)]
+  let nodeScript =
+        NodeScript
+          { keyReceived = \hooks (resultSKPVar, resultOC) -> do
+              (resultSKBS, resultPeriod) <- withCRefValue resultSKPVar $ \resultSKP -> do
+                skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
+                return (skp, periodKES resultSKP)
+              let expectedPretty = PrettyBS expectedSKBS
+                  resultPretty = PrettyBS resultSKBS
+              nodeReportProperty hooks
+                ((expectedPretty, expectedPeriod) === (resultPretty, resultPeriod))
+              nodeDone hooks
+              return RecvOK
+          , runNodeScript = const $ return ()
+          }
 
-      let timeout :: m ()
-          timeout = threadDelay . delayFromWord $ 1000000
-
-      race timeout go
-
-    log <- takeMVar traceMVar
-    crefCheck <- crtCheck crefTracker
-    return $ counterexample (unlines log)
-           $ case result of
-                Right prop ->
-                  prop .&. crefCheck
-                Left () ->
-                  counterexample "KILLED" $ property False
-
-newtype ConcurrentPushesDelaysAndSeeds c =
-  ConcurrentPushesDelaysAndSeeds { concurrentPushesDelaysAndSeeds :: [(Word, PinnedSizedBytes (SeedSizeKES (KES c)))] }
-  deriving newtype (Show)
-
-instance (KESAlgorithm (KES c)) => Arbitrary (ConcurrentPushesDelaysAndSeeds c) where
-  arbitrary = resize 10 $
-    fmap ConcurrentPushesDelaysAndSeeds $
-    listOf1 $ do
-      delay <- fromIntegral <$> chooseInt (0, 100000)
-      key <- arbitrary
-      return (delay, key)
-
-  shrink (ConcurrentPushesDelaysAndSeeds x) =
-    map ConcurrentPushesDelaysAndSeeds $ shrink x
-
-testConcurrentPushes :: forall c m n fd addr
-                      . MonadKES m c
-                     => Show addr
-                     => Show fd
-                     => MonadTimer m
-                     => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                     => ContextDSIGN (DSIGN c) ~ ()
-                     => Crypto c
-                     => NamedCrypto c
-                     => Show (SignKeyWithPeriodKES (KES c))
-                     => UnsoundKESAlgorithm (KES c)
-                     => Proxy c
-                     -> ConcurrentPushesDelaysAndSeeds c
-                     -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                     -> Integer
-                     -> Word
-                     -> Word
-                     -> MakeRawBearer m fd
-                     -> Snocket m fd addr
-                     -> (forall a. (addr -> m a) -> m a)
-                     -> m Property
-testConcurrentPushes proxyCrypto
-    controlDelaysAndSeedsKESPSB
-    seedDSIGNPSB
-    genesisTimestamp
-    agentDelay
-    nodeDelay
-    mrb
-    snocket
-    withAddress =
-  do
-    traceMVar <- newMVar []
-    crefTracker <- newCRefTracker
-    let crefTracer = crtTracer crefTracker -- <> mvarPrettyTracer traceMVar
-    let newCRef = newCRefWith crefTracer
-    let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
-        expectedPeriod = 0
-    let (controlDelays, seedsKESRaw) = unzip . concurrentPushesDelaysAndSeeds $ controlDelaysAndSeedsKESPSB
-    let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
-        vkCold = deriveVerKeyDSIGN skCold
-    let strTracer :: Tracer m String = mvarStringTracer traceMVar
-
-    forM_ controlDelays $ \delay -> traceWith strTracer $ "Control delay: " ++ show (delayFromWord delay)
-    traceWith strTracer $ "Node delay: " ++ show (delayFromWord nodeDelay)
-    traceWith strTracer $ "Agent delay: " ++ show (delayFromWord agentDelay)
-
-    expectedSKOs <- forM (zip [0..] seedsKESRaw) $ \(certN, seedKESPSB) ->
-        withMLockedSeedFromPSB seedKESPSB $ \seedKES -> do
-          expectedSK <- genKeyKES @(KES c) seedKES
-          let expectedSKP = SignKeyWithPeriodKES expectedSK expectedPeriod
-          expectedSKPVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) expectedSKP
-          vkHot <- deriveVerKeyKES expectedSK
-          let kesPeriod = KESPeriod 0
-              expectedOC = makeOCert vkHot certN kesPeriod skCold
-          return (expectedSKPVar, expectedOC)
-
-    expectedSerialized <- forM expectedSKOs $ \(skpVar, oc) -> do
-        withCRefValue skpVar $ \skp -> do
-            serialized <- rawSerialiseSignKeyKES . skWithoutPeriodKES $ skp
-            return (ocertN oc, (PrettyBS serialized, periodKES skp))
-
-    let maxOCertN = fst $ last expectedSerialized
-
-    let controlScript bundle hooks = do
-          traceWith strTracer $ "Generating key..."
-          controlClientExec hooks $ controlGenKey
-          traceWith strTracer $ "Sending: " ++ (show . ocertN $ snd bundle)
-          controlClientExec hooks $ controlInstallKey (snd bundle)
-          return ()
-
-    let nodeScript =
-          NodeScript
-            { keyReceived = \hooks (resultSKPVar, resultOC) -> do
-                received <- withCRefValue resultSKPVar $ \resultSKP -> do
-                                skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
-                                return $ Just (PrettyBS skp, periodKES resultSKP)
-                let actualOCertN = ocertN resultOC
-                traceWith strTracer $ "Received: " ++ show actualOCertN
-                let sent = lookup actualOCertN expectedSerialized
-                traceWith strTracer $
-                    show (ocertN resultOC) ++ "/" ++ show maxOCertN ++
-                    (if ocertN resultOC == maxOCertN then "*" else "")
-                when (ocertN resultOC == maxOCertN) $ do
-                  traceWith strTracer "Received last key"
-                  reportProperty hooks (sent === received)
-                return RecvOK
-            , runNodeScript = const $ return ()
-            }
-
-    traceWith strTracer "Start test network"
-
-    let go = do
-          prop <- runTestNetwork proxyCrypto
-            mrb
-            nullTracer -- (mvarPrettyTracer traceMVar)
-            snocket
-            genesisTimestamp
-            withAddress
-            vkCold
-            (delayFromWord agentDelay)
-            seedsKESRaw
-            [ (delayFromWord controlDelay + 5000, controlScript sko)
-            | (controlDelay, sko) <- zip controlDelays expectedSKOs
-            ]
-            [(delayFromWord nodeDelay + 5000, nodeScript)]
-          traceWith strTracer "Finished test network"
-          return prop
-
-    let cleanup = mapM_ (releaseCRef . fst) expectedSKOs
-
-    let timeout :: m ()
-        timeout = do
-          threadDelay . delayFromWord $ 5000000 + maximum (agentDelay : nodeDelay : controlDelays)
-
-    result <- race timeout go `finally` cleanup
-    case result of
-      Left () -> do
-        log <- readMVar traceMVar
-        return $ counterexample "TIMEOUT"
-               $ counterexample (unlines log)
-               $ property False
-      Right prop -> do
-        log <- readMVar traceMVar
-        crefCheck <- crtCheck crefTracker
-        return $ counterexample (unlines log) 
-               $ prop .&. crefCheck
-
-
-testOutOfOrderPushes :: forall c m n fd addr
-                      . MonadKES m c
-                     => Show addr
-                     => Show fd
-                     => MonadTimer m
-                     => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                     => ContextDSIGN (DSIGN c) ~ ()
-                     => Crypto c
-                     => NamedCrypto c
-                     => Show (SignKeyWithPeriodKES (KES c))
-                     => UnsoundKESAlgorithm (KES c)
-                     => Proxy c
-                     -> OutOfOrderPushesSeeds c
-                     -> Int
-                     -> PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
-                     -> Integer
-                     -> MakeRawBearer m fd
-                     -> Snocket m fd addr
-                     -> (forall a. (addr -> m a) -> m a)
-                     -> m Property
-testOutOfOrderPushes proxyCrypto
-    seedsKESRaw
-    oooIndex
-    seedDSIGNPSB
-    genesisTimestamp
-    mrb
-    snocket
-    withAddress =
-  do
-    traceMVar <- newMVar []
-    crefTracker <- newCRefTracker
-    let crefTracer :: Tracer m CRefEvent
-        crefTracer = crtTracer crefTracker -- <> mvarPrettyTracer traceMVar
-    let newCRef :: forall a. (a -> m ()) -> a -> m (CRef m a)
-        newCRef = newCRefWith crefTracer
-
-    let seedDSIGNP = mkSeedFromBytes . psbToByteString $ seedDSIGNPSB
-        expectedPeriod = 0
-    let skCold :: SignKeyDSIGN (DSIGN c)
-        skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
-        vkCold = deriveVerKeyDSIGN skCold
-    let strTracer :: Tracer m String = mvarStringTracer traceMVar
-
-    let withSKP :: PinnedSizedBytes (SeedSizeKES (KES c)) -> (CRef m (SignKeyWithPeriodKES (KES c)) -> m a) -> m a
-        withSKP seed action = do
-          sk :: SignKeyKES (KES c) <- withMLockedSeedFromPSB seed $ genKeyKES @(KES c)
-          let skp = SignKeyWithPeriodKES sk expectedPeriod
-          skpVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) skp
-          withCRef skpVar action `finally` releaseCRef skpVar
-
-    let withBundle :: (Word64, PinnedSizedBytes (SeedSizeKES (KES c))) -> ((CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m a) -> m a
-        withBundle (certN, seed) action = do
-          withSKP seed $ \skpVar -> do
-            vkHot <- withCRefValue skpVar $ \skp -> deriveVerKeyKES (skWithoutPeriodKES skp)
-            let kesPeriod = KESPeriod 0
-            let oc = makeOCert (vkHot :: VerKeyKES (KES c)) certN kesPeriod skCold
-            action (skpVar, oc)
-
-    let makeSerializedSKO :: (Word64, PinnedSizedBytes (SeedSizeKES (KES c))) -> m (Word64, (PrettyBS, Period))
-        makeSerializedSKO (certN, seed) = do
-          withSKP seed $ \skpVar -> do
-            withCRefValue skpVar $ \skp -> do
-              vkHot <- deriveVerKeyKES (skWithoutPeriodKES skp)
-              serialized <- rawSerialiseSignKeyKES . skWithoutPeriodKES $ skp
-              let kesPeriod = KESPeriod 0
-                  (oc :: OCert c) = makeOCert (vkHot :: VerKeyKES (KES c)) certN kesPeriod skCold
-              return (ocertN oc, (PrettyBS serialized, periodKES skp))
-            
-
-    let sortedSeeds = zip [0..] (outOfOrderPushesSeeds seedsKESRaw)
-
-    -- Shuffle: swap any two adjacent SKs, such that the second one comes first
-    let shuffleIndex = abs oooIndex `mod` (length sortedSeeds - 1)
-    let shuffledSeeds =
-          take shuffleIndex sortedSeeds ++ 
-          (take 1 . drop (shuffleIndex + 1)) sortedSeeds ++
-          (take 1 . drop shuffleIndex) sortedSeeds ++
-          drop (shuffleIndex + 2) sortedSeeds
-    let expectedSeeds =
-          take shuffleIndex sortedSeeds ++ 
-          (take 1 . drop (shuffleIndex + 1)) sortedSeeds ++
-          drop (shuffleIndex + 2) sortedSeeds
-
-    sortedSerialized <- mapM makeSerializedSKO sortedSeeds
-    shuffledSerialized <- mapM makeSerializedSKO shuffledSeeds
-    expectedSerialized <- mapM makeSerializedSKO expectedSeeds
-
-    let maxOCertN = fst $ last sortedSerialized
-
-    let controlScript hooks = forM_ shuffledSeeds $ \seedBundle -> do
-          threadDelay (delayFromWord 1000)
-          withBundle seedBundle $ \bundle -> do 
-            traceWith strTracer $ "Generating key..."
-            controlClientExec hooks $ controlGenKey
-            traceWith strTracer $ "Sending: " ++ (show . ocertN $ snd bundle)
-            controlClientExec hooks $ controlInstallKey (snd bundle)
-            return ()
-
-    receivedVar <- newMVar []
-    let nodeScript =
-          NodeScript
-            { keyReceived = \hooks (resultSKPVar, resultOC) -> do
-                received <- withCRefValue resultSKPVar $ \resultSKP -> do
-                                skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
-                                return (PrettyBS skp, periodKES resultSKP)
-                let actualOCertN = ocertN resultOC
-                traceWith strTracer $ "NodeScript Received: " ++ show actualOCertN
-                let sent = lookup actualOCertN expectedSerialized
-                traceWith strTracer $
-                    show (ocertN resultOC) ++ "/" ++ show maxOCertN ++
-                    (if ocertN resultOC == maxOCertN then "*" else "")
-                modifyMVar_ receivedVar $ \xs-> do
-                  let actualSerialized = xs ++ [(ocertN resultOC, received)]
-                  when (ocertN resultOC == maxOCertN) $ do
-                    traceWith strTracer "Exit"
-                    reportProperty hooks (actualSerialized === expectedSerialized)
-                  return actualSerialized
-                return RecvOK
-            , runNodeScript = const $ return ()
-            }
-
-    traceWith strTracer "Start test network"
-
-    let go = do
-          prop <- runTestNetwork proxyCrypto
-            mrb
-            (mvarPrettyTracer traceMVar)
-            snocket
-            genesisTimestamp
-            withAddress
-            vkCold
-            (delayFromWord 0)
-            (outOfOrderPushesSeeds seedsKESRaw)
-            [ (delayFromWord 1000, controlScript)
-            ]
-            [(delayFromWord 2000, nodeScript)]
-          traceWith strTracer "Finished test network"
-          actualSerialized <- readMVar receivedVar
-          return $ counterexample (show shuffledSerialized)
-                 $ map fst actualSerialized === map fst expectedSerialized
-
-    let timeout :: m ()
-        timeout = do
-          threadDelay 10000000
-
-    result <- race timeout go
-    case result of
-      Left () -> do
-        log <- readMVar traceMVar
-        actualSerialized <- readMVar receivedVar
-        return $ counterexample "TIMEOUT"
-               $ counterexample (unlines log)
-               $ counterexample (show shuffledSerialized)
-               $ property False
-      Right prop -> do
-        log <- readMVar traceMVar
-        crefCheck <- crtCheck crefTracker
-        return $ counterexample (unlines log) 
-               $ prop .&. crefCheck
+  runTestNetwork p mrb
+     snocket
+     genesisTimestamp
+     withAddress
+     vkCold
+     (delayFromWord agentDelay)
+     [seedKESPSB]
+     [(delayFromWord controlDelay, controlScript)]
+     [(delayFromWord nodeDelay, nodeScript)]
 
 -- Show instances for signing keys violate mlocking guarantees, but for testing
 -- purposes, this is fine, so we'll declare orphan instances here.

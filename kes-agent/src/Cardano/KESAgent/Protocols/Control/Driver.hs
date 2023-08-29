@@ -38,6 +38,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
 import Control.Tracer ( Tracer, traceWith )
 import Data.Binary ( decode, encode )
+import Data.ByteString ( ByteString )
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Functor.Contravariant ( (>$<) )
@@ -54,14 +55,17 @@ import Text.Printf
 
 -- | Logging messages that the Driver may send
 data ControlDriverTrace
-  = ControlDriverSendingVersionID VersionIdentifier
+  = ControlDriverSendingVersionID !VersionIdentifier
   | ControlDriverReceivingVersionID
-  | ControlDriverReceivedVersionID VersionIdentifier
+  | ControlDriverReceivedVersionID !VersionIdentifier
   | ControlDriverInvalidVersion
-  | ControlDriverSendingCommand Command
-  | ControlDriverSentCommand Command
+  | ControlDriverSendingCommand !Command
+  | ControlDriverSentCommand !Command
   | ControlDriverReceivingKey
-  | ControlDriverReceivedKey Word64
+  | ControlDriverReceivedKey !ByteString
+  | ControlDriverInvalidKey
+  | ControlDriverReceivingCommand
+  | ControlDriverReceivedCommand !Command
   | ControlDriverConfirmingKey
   | ControlDriverConfirmedKey
   | ControlDriverDecliningKey
@@ -106,9 +110,9 @@ receiveCommand s = do
   wMay <- receiveWord32 s
   return $ do
     w <- fromIntegral <$> wMay
-    if w > fromEnum (maxBound :: Command) then
+    if w > fromEnum (maxBound :: Command) then do
       Nothing
-    else
+    else do
       Just $ toEnum w
 
 sendVKeyMay :: ( MonadST m
@@ -202,23 +206,33 @@ controlDriver s tracer = Driver
             return (SomeMessage AbortMessage, ())
 
       (ServerAgency TokIdle) -> do
+        traceWith tracer $ ControlDriverReceivingCommand
         cmdMay <- receiveCommand s
         case cmdMay of
           Nothing -> do
             traceWith tracer ControlDriverInvalidCommand
             return (SomeMessage EndMessage, ())
-          Just GenStagedKeyCmd ->
-            return (SomeMessage GenStagedKeyMessage, ())
-          Just QueryStagedKeyCmd ->
-            return (SomeMessage QueryStagedKeyMessage, ())
-          Just DropStagedKeyCmd ->
-            return (SomeMessage DropStagedKeyMessage, ())
-          Just InstallKeyCmd -> do
-            oc <- receiveOC s (ControlDriverMisc >$< tracer)
-            return (SomeMessage (InstallKeyMessage oc), ())
+          Just cmd -> do
+            traceWith tracer $ ControlDriverReceivedCommand cmd
+            case cmd of
+              GenStagedKeyCmd ->
+                return (SomeMessage GenStagedKeyMessage, ())
+              QueryStagedKeyCmd ->
+                return (SomeMessage QueryStagedKeyMessage, ())
+              DropStagedKeyCmd ->
+                return (SomeMessage DropStagedKeyMessage, ())
+              InstallKeyCmd -> do
+                oc <- receiveOC s (ControlDriverMisc >$< tracer)
+                return (SomeMessage (InstallKeyMessage oc), ())
 
       (ClientAgency TokWaitForPublicKey) -> do
+        traceWith tracer $ ControlDriverReceivingKey
         vkeyMay <- receiveVKeyMay s
+        traceWith tracer $ 
+          maybe
+            ControlDriverInvalidKey
+            (ControlDriverReceivedKey . rawSerialiseVerKeyKES)
+            vkeyMay
         return (SomeMessage (PublicKeyMessage vkeyMay), ())
 
       (ClientAgency TokWaitForConfirmation) -> do

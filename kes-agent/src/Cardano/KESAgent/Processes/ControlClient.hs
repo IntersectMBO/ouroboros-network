@@ -8,7 +8,6 @@ module Cardano.KESAgent.Processes.ControlClient
   where
 
 import Cardano.KESAgent.KES.Classes ( MonadKES )
-import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace, serviceDriver )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert ( OCert (..) )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
@@ -52,7 +51,7 @@ data ControlClientTrace
   deriving (Show)
 
 instance Pretty ControlClientTrace where
-  pretty (ControlClientDriverTrace d) = "Control: ServiceDriver: " ++ pretty d
+  pretty (ControlClientDriverTrace d) = "Control: ControlDriver: " ++ pretty d
   pretty ControlClientConnected = "Control: Connected"
   pretty x = "Control: " ++ drop (length "ControlClient") (show x)
 

@@ -52,7 +52,7 @@ package cardano-crypto-class
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-base
-  tag: 8a1f1ce25567c081a5ef221a25f38051eb64a8d8
+  tag: 4df99b4329e988abd5134a84e5a6f26945e1db0e
   --sha256: 0944wg2nqazmhlmsynwgdwxxj6ay0hb9qig9l128isb2cjia0hlp
   subdir:
     cardano-binary

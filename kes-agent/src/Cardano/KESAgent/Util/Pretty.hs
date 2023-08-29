@@ -8,3 +8,9 @@ strLength = length
 
 class Pretty a where
   pretty :: a -> String
+
+newtype PrettyStr = PrettyStr String
+  deriving (Show)
+
+instance Pretty PrettyStr where
+  pretty (PrettyStr s) = s
