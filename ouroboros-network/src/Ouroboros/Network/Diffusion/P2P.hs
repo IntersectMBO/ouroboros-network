@@ -400,6 +400,12 @@ type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a
       ByteString
       m a b
 
+type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr ntnVersionData m a b =
+    Governor.PeerSelectionActions
+      ntnAddr
+      (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
+      m
+
 data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver resolverError
@@ -926,6 +932,22 @@ runM Interfaces
                   (pchPeerSharing diNtnPeerSharing)
                   (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
 
+      let peerSelectionGovernor'
+            :: forall (muxMode :: MuxMode) b.
+               Tracer m (DebugPeerSelection ntnAddr)
+               -> NodeToNodePeerSelectionActions muxMode ntnAddr ntnVersionData m a b
+               -> m Void
+          peerSelectionGovernor' peerSelectionTracer peerSelectionActions =
+              (Governor.peerSelectionGovernor
+                dtTracePeerSelectionTracer
+                peerSelectionTracer
+                dtTracePeerSelectionCounters
+                fuzzRng
+                publicStateVar
+                peerSelectionActions
+                (Diffusion.Policies.simplePeerSelectionPolicy
+                   policyRngVar (readTVar churnModeVar)
+                   daPeerMetrics (epErrorDelay exitPolicy)))
       let peerChurnGovernor' = Governor.peerChurnGovernor
                                  dtTracePeerSelectionTracer
                                  daDeadlineChurnInterval
@@ -970,16 +992,9 @@ runM Interfaces
                   requestLedgerPeers
                   $ \localPeerSelectionActionsThread  peerSelectionActions ->
                     Async.withAsync
-                    (Governor.peerSelectionGovernor
-                      dtTracePeerSelectionTracer
+                    (peerSelectionGovernor'
                       dtDebugPeerSelectionInitiatorTracer
-                      dtTracePeerSelectionCounters
-                      fuzzRng
-                      publicStateVar
-                      peerSelectionActions
-                      (Diffusion.Policies.simplePeerSelectionPolicy
-                         policyRngVar (readTVar churnModeVar)
-                         daPeerMetrics (epErrorDelay exitPolicy)))
+                      peerSelectionActions)
                     $ \governorThread ->
                       Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
                             -- wait for any thread to fail
@@ -1020,16 +1035,9 @@ runM Interfaces
                   $ \localPeerRootProviderThread peerSelectionActions ->
 
                   Async.withAsync
-                    (Governor.peerSelectionGovernor
-                      dtTracePeerSelectionTracer
+                    (peerSelectionGovernor'
                       dtDebugPeerSelectionInitiatorResponderTracer
-                      dtTracePeerSelectionCounters
-                      fuzzRng
-                      publicStateVar
-                      peerSelectionActions
-                      (Diffusion.Policies.simplePeerSelectionPolicy
-                         policyRngVar (readTVar churnModeVar)
-                         daPeerMetrics (epErrorDelay exitPolicy)))
+                      peerSelectionActions)
                     $ \governorThread ->
                       withSockets tracer diNtnSnocket
                                   (\sock addr -> diNtnConfigureSocket sock (Just addr))
