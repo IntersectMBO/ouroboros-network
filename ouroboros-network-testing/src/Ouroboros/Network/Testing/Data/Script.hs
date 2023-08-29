@@ -217,9 +217,9 @@ interpretPickScript :: (MonadSTM m, Ord peeraddr)
                     -> STM m (Set peeraddr)
 interpretPickScript scriptVar available pickNum
   | Set.null available
-  = error "interpretPickScript: given empty map to pick from"
+  = error "interpretPickScript: given empty map to pick from" -- TODO
   | pickNum <= 0
-  = error "interpretPickScript: given invalid pickNum"
+  = error "interpretPickScript: given invalid pickNum" -- TODO
 
   | otherwise
   = do pickmembers <- stepScriptSTM scriptVar
