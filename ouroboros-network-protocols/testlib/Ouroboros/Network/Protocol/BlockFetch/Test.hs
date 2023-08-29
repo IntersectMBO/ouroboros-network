@@ -495,7 +495,7 @@ pointsToRanges chain points =
   where
     go (x : y : ys) =
       if x `Chain.pointOnChain` chain
-         -- otherwise `Chain.successorBlock` will error
+         -- otherwise `Chain.successorBlock` will have undefined behavior
         then case Chain.successorBlock x chain of
           Nothing -> ChainRange x y : go (y : ys)
           Just x' -> ChainRange (Chain.blockPoint x') y : go (y : ys)
