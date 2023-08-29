@@ -741,97 +741,6 @@ runM Interfaces
       Nothing   -> pure ()
 
     --
-    -- local connection manager
-    --
-    let localThread :: Maybe (m Void)
-        localThread =
-          case daLocalAddress of
-            Nothing -> Nothing
-            Just localAddr ->
-              Just $ withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
-                       $ \localSocket -> do
-                localInbInfoChannel <- newInformationChannel
-                localOutInfoChannel <- newInformationChannel
-                localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
-
-                let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
-
-                    localConnectionHandler :: NodeToClientConnectionHandler
-                                                ntcFd ntcAddr ntcVersion ntcVersionData m
-                    localConnectionHandler =
-                      makeConnectionHandler
-                        dtLocalMuxTracer
-                        SingResponderMode
-                        diNtcHandshakeArguments
-                        ( ( \ (OuroborosApplication apps)
-                           -> TemperatureBundle
-                                (WithHot apps)
-                                (WithWarm [])
-                                (WithEstablished [])
-                          ) <$> daLocalResponderApplication )
-                        (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
-
-                    localConnectionManagerArguments
-                      :: NodeToClientConnectionManagerArguments
-                           ntcFd ntcAddr ntcVersion ntcVersionData m
-                    localConnectionManagerArguments =
-                      ConnectionManagerArguments {
-                          cmTracer              = dtLocalConnectionManagerTracer,
-                          cmTrTracer            = nullTracer, -- TODO: issue #3320
-                          cmMuxTracer           = dtLocalMuxTracer,
-                          cmIPv4Address         = Nothing,
-                          cmIPv6Address         = Nothing,
-                          cmAddressType         = const Nothing,
-                          cmSnocket             = diNtcSnocket,
-                          cmMakeBearer          = diNtcBearer,
-                          cmConfigureSocket     = \_ _ -> return (),
-                          cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
-                          cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
-                          connectionDataFlow    = localDataFlow,
-                          cmPrunePolicy         = Diffusion.Policies.prunePolicy
-                                                    localServerStateVar,
-                          cmConnectionsLimits   = localConnectionLimits,
-
-                          -- local thread does not start a Outbound Governor
-                          -- so it doesn't matter what we put here.
-                          -- 'NoPeerSharing' is set for all connections.
-                          cmGetPeerSharing = \_ -> NoPeerSharing
-                        }
-
-                withConnectionManager
-                  localConnectionManagerArguments
-                  localConnectionHandler
-                  classifyHandleError
-                  (InResponderMode localInbInfoChannel)
-                  (InResponderMode localOutInfoChannel)
-                  $ \(localConnectionManager :: NodeToClientConnectionManager
-                                                  ntcFd ntcAddr ntcVersion
-                                                  ntcVersionData m)
-                    -> do
-
-                    --
-                    -- run local server
-                    --
-
-                    traceWith tracer . RunLocalServer
-                      =<< Snocket.getLocalAddr diNtcSnocket localSocket
-
-                    Async.withAsync
-                      (Server.run
-                        ServerArguments {
-                            serverSockets               = localSocket :| [],
-                            serverSnocket               = diNtcSnocket,
-                            serverTracer                = dtLocalServerTracer,
-                            serverTrTracer              = nullTracer, -- TODO: issue #3320
-                            serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
-                            serverInboundIdleTimeout    = Nothing,
-                            serverConnectionLimits      = localConnectionLimits,
-                            serverConnectionManager     = localConnectionManager,
-                            serverInboundInfoChannel    = localInbInfoChannel,
-                            serverObservableStateVar    = localServerStateVar
-                          }) Async.wait
-
-    --
     -- remote connection manager
     --
     let remoteThread :: m Void
@@ -1183,7 +1092,7 @@ runM Interfaces
       $ asum
       $ Async.Concurrently <$>
           ( remoteThread
-          : maybeToList localThread
+          : maybeToList (mkLocalThread mainThreadId)
           )
 
   where
@@ -1221,6 +1130,96 @@ runM Interfaces
       if null availableToShareSet
          then return []
          else return randomList
+
+    -- | mkLocalThread - create local connection manager
+
+    mkLocalThread :: ThreadId m -> Maybe (m Void)
+    mkLocalThread mainThreadId =
+      case daLocalAddress of
+        Nothing -> Nothing
+        Just localAddr ->
+          Just $ withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
+          $ \localSocket -> do
+            localInbInfoChannel <- newInformationChannel
+            localOutInfoChannel <- newInformationChannel
+            localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
+
+            let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
+
+                localConnectionHandler :: NodeToClientConnectionHandler
+                                            ntcFd ntcAddr ntcVersion ntcVersionData m
+                localConnectionHandler =
+                  makeConnectionHandler
+                    dtLocalMuxTracer
+                    SingResponderMode
+                    diNtcHandshakeArguments
+                    ( ( \ (OuroborosApplication apps)
+                       -> TemperatureBundle
+                            (WithHot apps)
+                            (WithWarm [])
+                            (WithEstablished [])
+                      ) <$> daLocalResponderApplication )
+                    (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
+
+                localConnectionManagerArguments
+                  :: NodeToClientConnectionManagerArguments
+                       ntcFd ntcAddr ntcVersion ntcVersionData m
+                localConnectionManagerArguments =
+                  ConnectionManagerArguments {
+                      cmTracer              = dtLocalConnectionManagerTracer,
+                      cmTrTracer            = nullTracer, -- TODO: issue #3320
+                      cmMuxTracer           = dtLocalMuxTracer,
+                      cmIPv4Address         = Nothing,
+                      cmIPv6Address         = Nothing,
+                      cmAddressType         = const Nothing,
+                      cmSnocket             = diNtcSnocket,
+                      cmMakeBearer          = diNtcBearer,
+                      cmConfigureSocket     = \_ _ -> return (),
+                      cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
+                      cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
+                      connectionDataFlow    = localDataFlow,
+                      cmPrunePolicy         = Diffusion.Policies.prunePolicy
+                                                localServerStateVar,
+                      cmConnectionsLimits   = localConnectionLimits,
+
+                      -- local thread does not start a Outbound Governor
+                      -- so it doesn't matter what we put here.
+                      -- 'NoPeerSharing' is set for all connections.
+                      cmGetPeerSharing = \_ -> NoPeerSharing
+                    }
+
+            withConnectionManager
+              localConnectionManagerArguments
+              localConnectionHandler
+              classifyHandleError
+              (InResponderMode localInbInfoChannel)
+              (InResponderMode localOutInfoChannel)
+              $ \(localConnectionManager :: NodeToClientConnectionManager
+                                              ntcFd ntcAddr ntcVersion
+                                              ntcVersionData m)
+                -> do
+
+                --
+                -- run local server
+                --
+
+                traceWith tracer . RunLocalServer
+                  =<< Snocket.getLocalAddr diNtcSnocket localSocket
+
+                Async.withAsync
+                  (Server.run
+                    ServerArguments {
+                        serverSockets               = localSocket :| [],
+                        serverSnocket               = diNtcSnocket,
+                        serverTracer                = dtLocalServerTracer,
+                        serverTrTracer              = nullTracer, -- TODO: issue #3320
+                        serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
+                        serverInboundIdleTimeout    = Nothing,
+                        serverConnectionLimits      = localConnectionLimits,
+                        serverConnectionManager     = localConnectionManager,
+                        serverInboundInfoChannel    = localInbInfoChannel,
+                        serverObservableStateVar    = localServerStateVar
+                      }) Async.wait
 
 
 
