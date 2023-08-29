@@ -84,6 +84,7 @@ instance Protocol (ServiceProtocol m c) where
                      -> Message (ServiceProtocol m c) IdleState WaitForConfirmationState
           RecvResultMessage :: RecvResult
                             -> Message (ServiceProtocol m c) WaitForConfirmationState IdleState
+          AbortMessage :: Message (ServiceProtocol m c) InitialState EndState
           EndMessage :: Message (ServiceProtocol m c) IdleState EndState
 
   -- | Server always has agency, except between sending a key and confirming it

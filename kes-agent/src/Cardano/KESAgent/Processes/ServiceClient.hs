@@ -27,6 +27,7 @@ import Control.Concurrent.Class.MonadMVar
 import Control.Tracer ( Tracer, traceWith )
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy ( Proxy (..) )
+import Data.Word ( Word64 )
 import Network.TypedProtocol.Driver ( runPeerWithDriver )
 
 data ServiceClientOptions m fd addr =
@@ -36,12 +37,13 @@ data ServiceClientOptions m fd addr =
     }
 
 data ServiceClientTrace
-  = ServiceClientDriverTrace ServiceDriverTrace
+  = ServiceClientDriverTrace !ServiceDriverTrace
   | ServiceClientSocketClosed
-  | ServiceClientConnected String
-  | ServiceClientAttemptReconnect Int Int String
+  | ServiceClientConnected !String
+  | ServiceClientAttemptReconnect !Int !Int !String
   | ServiceClientReceivedKey
-  | ServiceClientAbnormalTermination String
+  | ServiceClientOpCertNumberCheck !Word64 !Word64
+  | ServiceClientAbnormalTermination !String
   deriving (Show)
 
 instance Pretty ServiceClientTrace where
@@ -72,10 +74,10 @@ runServiceClient proxy mrb options handleKey tracer = do
           Just latestOCNum -> do
             -- Have already handled a key before, so check that the received key
             -- is newer; if not, discard it.
+            traceWith tracer $ ServiceClientOpCertNumberCheck (ocertN ocert) latestOCNum
             if ocertN ocert > latestOCNum then do
               putMVar latestOCNumVar (Just $ ocertN ocert)
               handleKey keyRef ocert
-              return RecvOK
             else do
               putMVar latestOCNumVar (Just latestOCNum)
               return RecvErrorKeyOutdated

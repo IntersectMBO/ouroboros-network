@@ -95,7 +95,7 @@ import Control.Concurrent.Class.MonadSTM.TMVar
   , tryReadTMVar
   , tryTakeTMVar
   )
-import Control.Monad ( forever, void )
+import Control.Monad ( forever, void, when )
 import Control.Monad.Class.MonadAsync
   ( MonadAsync
   , concurrently
@@ -420,38 +420,41 @@ pushKey agent keyVar oc = do
       go
 
   where
-    go = withKeyUpdateLock agent "pushKey" $ do
-      acquireCRef keyVar
-      let keyStr = formatKey oc
-      -- Empty the var in case there's anything there already
-      oldKeyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
+    go = do
+      result <- withKeyUpdateLock agent "pushKey" $ do
+        acquireCRef keyVar
+        let keyStr = formatKey oc
+        -- Empty the var in case there's anything there already
+        oldKeyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
 
-      case oldKeyOcMay of
-        Just (oldKeyVar, oldOC) -> do
-          let oldKeyStr = formatKey oldOC
-          if ocertN oldOC >= ocertN oc then do
-            releaseCRef keyVar
-            agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
-            atomically $ putTMVar (agentCurrentKeyVar agent) (oldKeyVar, oldOC)
-            return RecvErrorKeyOutdated
-          else do
-            releaseCRef oldKeyVar
-            agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
-            atomically $ do
+        let report keyVar oc = atomically $ do
+              -- The TMVar is now empty; we write to the next key signal channel
+              -- /before/ putting the new key in the MVar, because we want to make it
+              -- such that when the consumer picks up the signal, the next update
+              -- will be the correct one. Since the MVar is empty at this point, the
+              -- consumers will block until we put the key back in.
               writeTChan (agentNextKeyChan agent) (keyVar, oc)
               putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
+
+        case oldKeyOcMay of
+          Just (oldKeyVar, oldOC) -> do
+            let oldKeyStr = formatKey oldOC
+            if ocertN oldOC >= ocertN oc then do
+              releaseCRef keyVar
+              agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
+              atomically $ putTMVar (agentCurrentKeyVar agent) (oldKeyVar, oldOC)
+              return RecvErrorKeyOutdated
+            else do
+              releaseCRef oldKeyVar
+              agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
+              report keyVar oc
+              return RecvOK
+          Nothing -> do
+            agentTrace agent $ AgentInstallingNewKey keyStr
+            report keyVar oc
             return RecvOK
-        Nothing -> do
-          agentTrace agent $ AgentInstallingNewKey keyStr
-          -- The TMVar is now empty; we write to the next key signal channel
-          -- /before/ putting the new key in the MVar, because we want to make it
-          -- such that when the consumer picks up the signal, the next update
-          -- will be the correct one. Since the MVar is empty at this point, the
-          -- consumers will block until we put the key back in.
-          atomically $ do
-            writeTChan (agentNextKeyChan agent) (keyVar, oc)
-            putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
-          return RecvOK
+      checkEvolution agent
+      return result
 
 runListener :: forall m c fd addr st (pr :: PeerRole) t a
              . MonadThrow m
@@ -494,23 +497,26 @@ runListener
         bearer <- getRawBearer mrb fd'
         handle bearer (tDriverTrace >$< tracer)
 
+  let logAndContinue :: SomeException -> m ()
+      logAndContinue e = traceWith tracer (tSocketError (show e))
+
   let loop :: Accept m fd addr -> m ()
       loop a = do
         accepted <- runAccept a
         case accepted of
           (AcceptFailure e, next) -> do
-            throwIO e
+            traceWith tracer $ tSocketError (show e)
+            loop next
           (Accepted fd' addr', next) ->
             concurrently_
               (loop next)
               (handleConnection fd'
                 `finally`
-                close s fd' >> traceWith tracer (tSocketClosed $ show fd')
+                  (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
+                `catch` logAndContinue
               )
 
-  (accept s fd >>= loop) `catch` \(e :: SomeException) -> do
-    traceWith tracer $ tSocketError (show e)
-    throwIO e
+  (accept s fd >>= loop) `catch` logAndContinue
 
 runAgent :: forall c m fd addr
           . MonadKES m c

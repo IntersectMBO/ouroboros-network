@@ -90,6 +90,7 @@ serviceTracePrio ServiceClientConnected {} = Syslog.Notice
 serviceTracePrio ServiceClientAttemptReconnect {} = Syslog.Info
 serviceTracePrio ServiceClientReceivedKey {} = Syslog.Notice
 serviceTracePrio ServiceClientAbnormalTermination {} = Syslog.Error
+serviceTracePrio ServiceClientOpCertNumberCheck {} = Syslog.Debug
 
 serviceTraceFormatBS :: ServiceClientTrace -> ByteString
 serviceTraceFormatBS = encodeUtf8 . Text.pack . pretty

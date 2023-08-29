@@ -57,13 +57,14 @@ data ServiceDriverTrace
   = ServiceDriverSendingVersionID VersionIdentifier
   | ServiceDriverReceivingVersionID
   | ServiceDriverReceivedVersionID VersionIdentifier
+  | ServiceDriverInvalidVersion
   | ServiceDriverSendingKey Word64
   | ServiceDriverSentKey Word64
   | ServiceDriverReceivingKey
   | ServiceDriverReceivedKey Word64
   | ServiceDriverConfirmingKey
   | ServiceDriverConfirmedKey
-  | ServiceDriverDecliningKey
+  | ServiceDriverDecliningKey RecvResult
   | ServiceDriverDeclinedKey
   | ServiceDriverConnectionClosed
   | ServiceDriverCRefEvent CRefEvent
@@ -94,17 +95,21 @@ serviceDriver s tracer = Driver
       (ServerAgency TokInitial, VersionMessage) -> do
         let VersionIdentifier v = versionIdentifier (Proxy @(ServiceProtocol m c))
         sendVersion (Proxy @(ServiceProtocol m c)) s (ServiceDriverSendingVersionID >$< tracer)
+      (ServerAgency TokInitial, AbortMessage) -> do
+        return ()
+
       (ServerAgency TokIdle, KeyMessage skpRef oc) -> do
         traceWith tracer $ ServiceDriverSendingKey (ocertN oc)
         sendBundle s skpRef oc
         traceWith tracer $ ServiceDriverSentKey (ocertN oc)
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
+
       (ClientAgency TokWaitForConfirmation, RecvResultMessage reason) -> do
         if reason == RecvOK then
           traceWith tracer ServiceDriverConfirmingKey
         else
-          traceWith tracer ServiceDriverDecliningKey
+          traceWith tracer $ ServiceDriverDecliningKey reason
         sendRecvResult s reason
 
   , recvMessage = \agency () -> case agency of
@@ -114,8 +119,9 @@ serviceDriver s tracer = Driver
         case result of
           Right _ ->  
             return (SomeMessage VersionMessage, ())
-          Left (expectedV, v) ->
-            fail $ "DRIVER: Invalid version, expected " ++ show expectedV ++ ", but got " ++ show v
+          Left (expectedV, v) -> do
+            traceWith tracer $ ServiceDriverInvalidVersion
+            return (SomeMessage AbortMessage, ())
       (ServerAgency TokIdle) -> do
         traceWith tracer ServiceDriverReceivingKey
         result <- receiveBundle s (ServiceDriverMisc >$< tracer)
