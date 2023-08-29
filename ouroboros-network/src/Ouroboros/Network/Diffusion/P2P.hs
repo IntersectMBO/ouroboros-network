@@ -925,7 +925,7 @@ runM Interfaces
                   daOwnPeerSharing
                   (pchPeerSharing diNtnPeerSharing)
                   (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
-            
+
       withLedgerPeers
         ledgerPeersRng
         diNtnToPeerAddr
@@ -938,8 +938,7 @@ runM Interfaces
 
           -- InitiatorOnly mode, run peer selection only:
           InitiatorOnlyDiffusionMode ->
-            iomWithConnectionManager
-              $ \connectionManager-> do
+            iomWithConnectionManager $ \connectionManager-> do
               diInstallSigUSR1Handler connectionManager
  
               --
@@ -949,7 +948,6 @@ runM Interfaces
               -- tracks threads forked by 'PeerStateActions'
               --
 
-              let
               withPeerStateActions' connectionManager $ \peerStateActions->
                 --
                 -- Run peer selection (p2p governor)
@@ -1009,8 +1007,7 @@ runM Interfaces
               -- tracks threads forked by 'PeerStateActions'
               --
 
-              withPeerStateActions' connectionManager
-                $ \peerStateActions->
+              withPeerStateActions' connectionManager $ \peerStateActions->
 
                 --
                 -- Run peer selection (p2p governor)
