@@ -1092,7 +1092,7 @@ runM Interfaces
       $ asum
       $ Async.Concurrently <$>
           ( remoteThread
-          : maybeToList (mkLocalThread' mainThreadId)
+          : maybeToList (mkLocalThread mainThreadId <$> daLocalAddress)
           )
 
   where
@@ -1132,10 +1132,6 @@ runM Interfaces
          else return randomList
 
     -- | mkLocalThread - create local connection manager
-
-    mkLocalThread' :: ThreadId m -> Maybe (m Void)
-    mkLocalThread' mainThreadId =
-      mkLocalThread mainThreadId <$> daLocalAddress
 
     mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
     mkLocalThread mainThreadId localAddr =
