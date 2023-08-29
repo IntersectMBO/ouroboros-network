@@ -32,6 +32,7 @@ import Cardano.Crypto.Libsodium.Memory
 import Ouroboros.Network.RawBearer
 
 import Control.Monad ( void, when )
+import Control.Monad.Trans ( lift )
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
@@ -54,21 +55,24 @@ import Text.Printf
 
 -- | Logging messages that the Driver may send
 data ServiceDriverTrace
-  = ServiceDriverSendingVersionID VersionIdentifier
+  = ServiceDriverSendingVersionID !VersionIdentifier
   | ServiceDriverReceivingVersionID
-  | ServiceDriverReceivedVersionID VersionIdentifier
-  | ServiceDriverInvalidVersion
-  | ServiceDriverSendingKey Word64
-  | ServiceDriverSentKey Word64
+  | ServiceDriverReceivedVersionID !VersionIdentifier
+  | ServiceDriverInvalidVersion !VersionIdentifier !VersionIdentifier
+  | ServiceDriverSendingKey !Word64
+  | ServiceDriverSentKey !Word64
   | ServiceDriverReceivingKey
-  | ServiceDriverReceivedKey Word64
+  | ServiceDriverReceivedKey !Word64
   | ServiceDriverConfirmingKey
   | ServiceDriverConfirmedKey
-  | ServiceDriverDecliningKey RecvResult
+  | ServiceDriverDecliningKey !RecvResult
   | ServiceDriverDeclinedKey
   | ServiceDriverConnectionClosed
-  | ServiceDriverCRefEvent CRefEvent
+  | ServiceDriverCRefEvent !CRefEvent
+  | ServiceDriverProtocolError !String
   | ServiceDriverMisc String
+  | ServiceDriverPing
+  | ServiceDriverPong
   deriving (Show)
 
 instance Pretty ServiceDriverTrace where
@@ -100,9 +104,30 @@ serviceDriver s tracer = Driver
 
       (ServerAgency TokIdle, KeyMessage skpRef oc) -> do
         traceWith tracer $ ServiceDriverSendingKey (ocertN oc)
+        sendWord32 s 1
         sendBundle s skpRef oc
         traceWith tracer $ ServiceDriverSentKey (ocertN oc)
+
+      (ServerAgency TokIdle, NoKeyYetMessage) -> do
+        -- traceWith tracer ServiceDriverPing
+        sendWord32 s 0
+
+      (ServerAgency TokIdle, PingMessage) -> do
+        -- traceWith tracer ServiceDriverPing
+        sendWord32 s 0
+
       (ServerAgency TokIdle, EndMessage) -> do
+        return ()
+
+      (ServerAgency _, ProtocolErrorMessage) -> do
+        return ()
+
+      (ClientAgency _, ProtocolErrorMessage) -> do
+        return ()
+
+      (ClientAgency TokWaitForPong, PongMessage) -> do
+        -- traceWith tracer ServiceDriverPong
+        sendWord32 s 0
         return ()
 
       (ClientAgency TokWaitForConfirmation, RecvResultMessage reason) -> do
@@ -117,28 +142,68 @@ serviceDriver s tracer = Driver
         traceWith tracer ServiceDriverReceivingVersionID
         result <- receiveVersion (Proxy @(ServiceProtocol m c)) s (ServiceDriverReceivedVersionID >$< tracer)
         case result of
-          Right _ ->  
+          ReadOK _ ->  
             return (SomeMessage VersionMessage, ())
-          Left (expectedV, v) -> do
-            traceWith tracer $ ServiceDriverInvalidVersion
+          err -> do
+            traceWith tracer $ readErrorToServiceDriverTrace err
             return (SomeMessage AbortMessage, ())
       (ServerAgency TokIdle) -> do
-        traceWith tracer ServiceDriverReceivingKey
-        result <- receiveBundle s (ServiceDriverMisc >$< tracer)
+        result <- runReadResultT $ do
+          i <- ReadResultT (receiveWord32 s)
+          case i of
+            0 -> do
+              -- lift $ traceWith tracer ServiceDriverPing
+              return (SomeMessage PingMessage, ())
+            1 -> do
+              lift $ traceWith tracer ServiceDriverReceivingKey
+              (skpVar, oc) <- ReadResultT $ receiveBundle s (ServiceDriverMisc >$< tracer)
+              lift $ traceWith tracer $ ServiceDriverReceivedKey (ocertN oc)
+              return (SomeMessage (KeyMessage skpVar oc), ())
+            n -> readResultT $ ReadMalformed "ping"
         case result of
-          Just (skpVar, oc) -> do
-            traceWith tracer $ ServiceDriverReceivedKey (ocertN oc)
-            return (SomeMessage (KeyMessage skpVar oc), ())
-          Nothing -> do
-            traceWith tracer ServiceDriverConnectionClosed
+          ReadOK msg ->
+            return msg
+          err -> do
+            traceWith tracer $ readErrorToServiceDriverTrace err
             return (SomeMessage EndMessage, ())
+
+      (ClientAgency TokWaitForPong) -> do
+        r <- receiveWord32 s
+        case r of
+          ReadOK 0 -> do
+            -- traceWith tracer ServiceDriverPong
+            return (SomeMessage PongMessage, ())
+          ReadOK n -> do
+            return (SomeMessage ProtocolErrorMessage, ())
+          err -> do
+            traceWith tracer $ readErrorToServiceDriverTrace err
+            return (SomeMessage ProtocolErrorMessage, ())
+
+
       (ClientAgency TokWaitForConfirmation) -> do
         result <- receiveRecvResult s
-        if result == RecvOK then
-          traceWith tracer ServiceDriverConfirmedKey
-        else
-          traceWith tracer ServiceDriverDeclinedKey
-        return (SomeMessage (RecvResultMessage result), ())
+        case result of
+          ReadOK response -> do
+            case response of
+              RecvOK ->
+                traceWith tracer ServiceDriverConfirmedKey
+              err ->
+                traceWith tracer ServiceDriverDeclinedKey
+            return (SomeMessage (RecvResultMessage response), ())
+          err -> do
+            traceWith tracer $ readErrorToServiceDriverTrace err
+            return (SomeMessage ProtocolErrorMessage, ())
 
   , startDState = ()
   }
+
+readErrorToServiceDriverTrace :: ReadResult a -> ServiceDriverTrace
+readErrorToServiceDriverTrace (ReadOK _) =
+  ServiceDriverMisc "This should not happen"
+readErrorToServiceDriverTrace ReadEOF =
+  ServiceDriverConnectionClosed
+readErrorToServiceDriverTrace (ReadMalformed what) =
+  ServiceDriverProtocolError what
+readErrorToServiceDriverTrace (ReadVersionMismatch expected actual) =
+  ServiceDriverInvalidVersion expected actual
+

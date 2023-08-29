@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DeriveFunctor #-}
 
 module Cardano.KESAgent.Serialization.RawUtil
 where
@@ -31,7 +32,9 @@ import Cardano.Crypto.Libsodium.Memory
 
 import Ouroboros.Network.RawBearer
 
+import Control.Applicative
 import Control.Monad ( void, when )
+import Control.Monad.Trans
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
@@ -52,6 +55,44 @@ import Foreign.Marshal.Utils ( copyBytes )
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
+
+data ReadResult a
+  = ReadOK a
+  | ReadMalformed !String
+  | ReadVersionMismatch !VersionIdentifier !VersionIdentifier
+  | ReadEOF
+  deriving (Show, Eq, Functor)
+
+newtype ReadResultT m a = ReadResultT { runReadResultT :: m (ReadResult a) }
+  deriving (Functor)
+
+readResultT :: Applicative m => ReadResult a -> ReadResultT m a
+readResultT r = ReadResultT (pure r)
+
+instance (Functor m, Applicative m, Monad m) => Applicative (ReadResultT m) where
+  pure = ReadResultT . pure . ReadOK
+
+  liftA2 f a b = ReadResultT $ do
+    rA <- runReadResultT a
+    case rA of
+      ReadOK valA -> do
+        rB <- runReadResultT b
+        case rB of
+          ReadOK valB -> do
+            pure . ReadOK $ f valA valB
+          x -> pure $ undefined <$ x
+      x -> pure $ undefined <$ x
+
+instance Monad m => Monad (ReadResultT m) where
+  ReadResultT aM >>= f =
+    ReadResultT $ do
+      r <- aM
+      case r of
+        ReadOK x -> runReadResultT (f x)
+        _ -> pure $ undefined <$ r
+
+instance MonadTrans ReadResultT where
+  lift = ReadResultT . fmap ReadOK
 
 sendVersion :: ( VersionedProtocol protocol
                , MonadST m
@@ -76,15 +117,15 @@ receiveVersion :: forall protocol m.
                => Proxy protocol
                -> RawBearer m
                -> Tracer m VersionIdentifier
-               -> m (Either (VersionIdentifier, VersionIdentifier) VersionIdentifier)
-receiveVersion p s tracer = do
-  v <- VersionIdentifier <$> receiveBS s versionIdentifierLength
-  traceWith tracer v
+               -> m (ReadResult VersionIdentifier)
+receiveVersion p s tracer = runReadResultT $ do
+  v <- VersionIdentifier <$> ReadResultT (receiveBS s versionIdentifierLength)
+  lift $ traceWith tracer v
   let expectedV = versionIdentifier p
   if v == expectedV then
-    return $ Right v
+    return v
   else
-    return $ Left (expectedV, v)
+    readResultT $ ReadVersionMismatch expectedV v
 
 sendBundle :: ( MonadST m
               , MonadSTM m
@@ -141,15 +182,46 @@ receiveBundle :: ( MonadST m
                  )
               => RawBearer m
               -> Tracer m String
-              -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
-receiveBundle s tracer = do
-  skpMay <- receiveSKP s tracer
-  case skpMay of
-    Just skp -> do
-      oc <- receiveOC s tracer
-      return $ Just (skp, oc)
-    Nothing ->
-      return Nothing
+              -> m (ReadResult (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
+receiveBundle s tracer = runReadResultT $ do
+  skp <- ReadResultT $ receiveSKP s tracer
+  oc <- ReadResultT $ receiveOC s tracer
+  return (skp, oc)
+
+receiveSK :: ( MonadST m
+             , MonadSTM m
+             , MonadMVar m
+             , MonadThrow m
+             , KESAlgorithm k
+             , DirectDeserialise m (SignKeyKES k)
+             )
+           => RawBearer m
+           -> Tracer m String
+           -> m (ReadResult (SignKeyKES k))
+receiveSK s tracer = do
+  errVar <- newEmptyMVar
+  traceWith tracer "waiting for sign key bytes..."
+  sk <- directDeserialise
+    (\buf bufSize -> do
+        traceWith tracer ("attempting to read " ++ show bufSize ++ " bytes...")
+        unsafeReceiveN s buf bufSize >>= \case
+          ReadOK n -> do
+            traceWith tracer ("read " ++ show n ++ " bytes")
+            when (fromIntegral n /= bufSize) (error "BBBBBB")
+          x ->  do
+            traceWith tracer "NO READ"
+            _ <- tryTakeMVar errVar
+            putMVar errVar x
+    )
+  err <- tryTakeMVar errVar
+  case err of
+    Nothing -> do
+      return $ ReadOK sk
+    Just (ReadOK _) -> do
+      return $ ReadOK sk
+    Just result -> do
+      forgetSignKeyKES sk
+      return $ undefined <$ result
 
 receiveSKP :: ( MonadST m
                  , MonadSTM m
@@ -160,37 +232,15 @@ receiveSKP :: ( MonadST m
                  )
               => RawBearer m
               -> Tracer m String
-              -> m (Maybe (CRef m (SignKeyWithPeriodKES k)))
-receiveSKP s tracer = do
-  noReadVar <- newEmptyMVar
-  traceWith tracer "waiting for sign key bytes..."
-  sk <- directDeserialise
-          (\buf bufSize -> do
-              traceWith tracer ("attempting to read " ++ show bufSize ++ " bytes...")
-              unsafeReceiveN s buf bufSize >>= \case
-                0 -> do
-                  traceWith tracer "NO READ"
-                  putMVar noReadVar ()
-                n -> do
-                  traceWith tracer ("read " ++ show n ++ " bytes")
-                  when (fromIntegral n /= bufSize) (error "BBBBBB")
-          )
-  traceWith tracer "receiving t..."
-  t <- fromIntegral <$> (
-        maybe (putMVar noReadVar () >> return 0) return =<< receiveWord32 s
-       )
-  skpVar <- newCRef
-              (forgetSignKeyKES . skWithoutPeriodKES)
-              (SignKeyWithPeriodKES sk t)
-
-  succeeded <- isEmptyMVar noReadVar
-  if succeeded then
-    return $ Just skpVar
-  else do
-    -- We're not actually returning the key, so we must release it
-    -- before exiting.
-    releaseCRef skpVar
-    return Nothing
+              -> m (ReadResult (CRef m (SignKeyWithPeriodKES k)))
+receiveSKP s tracer = runReadResultT $ do
+  lift $ traceWith tracer "waiting for sign key bytes..."
+  sk <- ReadResultT $ receiveSK s tracer
+  lift $ traceWith tracer "receiving t..."
+  t <- fromIntegral <$> ReadResultT (receiveWord32 s)
+  lift $ newCRef
+    (forgetSignKeyKES . skWithoutPeriodKES)
+    (SignKeyWithPeriodKES sk t)
 
 receiveOC :: ( MonadST m
                  , MonadSTM m
@@ -202,25 +252,26 @@ receiveOC :: ( MonadST m
                  )
               => RawBearer m
               -> Tracer m String
-              -> m (OCert c)
-receiveOC s tracer = do
-  traceWith tracer "receiving l..."
-  l <- fromIntegral . fromMaybe 0 <$> receiveWord32 s
-  traceWith tracer "receiving oc..."
-  oc <- unsafeDeserialize' <$> receiveBS s l
-  traceWith tracer "done receiving"
+              -> m (ReadResult (OCert c))
+receiveOC s tracer = runReadResultT $ do
+  lift $ traceWith tracer "receiving l..."
+  l <- fromIntegral <$> ReadResultT (receiveWord32 s)
+  lift $ traceWith tracer "receiving oc..."
+  oc <- unsafeDeserialize' <$> ReadResultT (receiveBS s l)
+  lift $ traceWith tracer "done receiving"
   return oc
 
 receiveBS :: (MonadST m, MonadThrow m)
           => RawBearer m
           -> Int
-          -> m BS.ByteString
+          -> m (ReadResult BS.ByteString)
 receiveBS s size =
-  allocaBytes size $ \buf -> do
-    bytesRead <- unsafeReceiveN s buf (fromIntegral size)
-    case bytesRead of
-      0 -> return ""
-      n -> packByteStringCStringLen (buf, fromIntegral n)
+  allocaBytes size $ \buf -> runReadResultT $ do
+    bytesRead <- ReadResultT $ unsafeReceiveN s buf (fromIntegral size)
+    if bytesRead /= fromIntegral size then
+      readResultT $ ReadMalformed $ "ByteString of length " ++ show size
+    else
+      lift $ packByteStringCStringLen (buf, fromIntegral bytesRead)
 
 sendBS :: (MonadST m, MonadThrow m)
        => RawBearer m
@@ -234,11 +285,11 @@ sendBS s bs =
 
 receiveWord32 :: (MonadThrow m, MonadST m)
               => RawBearer m
-              -> m (Maybe Word32)
-receiveWord32 s =
-  receiveBS s 4 >>= \case
-    "" -> return Nothing
-    xs -> (return . Just . fromIntegral) (decode @Word32 $ LBS.fromStrict xs)
+              -> m (ReadResult Word32)
+receiveWord32 s = runReadResultT $ do
+  buf <- ReadResultT $ receiveBS s 4
+  let decoded = decode @Word32 $ LBS.fromStrict buf
+  return decoded
 
 sendWord32 :: (MonadThrow m, MonadST m)
            => RawBearer m
@@ -247,17 +298,17 @@ sendWord32 :: (MonadThrow m, MonadST m)
 sendWord32 s val =
   void $ sendBS s (LBS.toStrict $ encode val)
 
-unsafeReceiveN :: Monad m => RawBearer m -> Ptr CChar -> CSize -> m CSize
+unsafeReceiveN :: Monad m => RawBearer m -> Ptr CChar -> CSize -> m (ReadResult CSize)
 unsafeReceiveN s buf bufSize = do
   n <- recv s (castPtr buf) (fromIntegral bufSize)
   if fromIntegral n == bufSize then
-    return bufSize
+    return (ReadOK bufSize)
   else if n == 0 then
-    return 0
-  else do
-    n' <- unsafeReceiveN s (plusPtr buf (fromIntegral n)) (bufSize - fromIntegral n)
+    return ReadEOF
+  else runReadResultT $ do
+    n' <- ReadResultT $ unsafeReceiveN s (plusPtr buf (fromIntegral n)) (bufSize - fromIntegral n)
     if n' == 0 then
-      return 0
+      readResultT ReadEOF
     else
       return bufSize
 
@@ -271,9 +322,10 @@ sendRecvResult s r =
 receiveRecvResult :: ( MonadST m
                     , MonadThrow m
                     )
-                 => RawBearer m -> m RecvResult
-receiveRecvResult s =
-  maybe RecvErrorUnknown decodeRecvResult <$> receiveWord32 s
+                 => RawBearer m -> m (ReadResult RecvResult)
+receiveRecvResult s = runReadResultT $ do
+  w <- ReadResultT $ receiveWord32 s
+  return $ decodeRecvResult w
 
 encodeRecvResult :: RecvResult -> Word32
 encodeRecvResult RecvOK = 0

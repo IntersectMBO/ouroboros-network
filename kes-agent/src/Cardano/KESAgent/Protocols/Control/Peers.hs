@@ -52,6 +52,9 @@ controlReceiver genKey dropKey queryKey installKey =
           EndMessage ->
             Done TokEnd ()
 
+          ProtocolErrorMessage ->
+            Done TokEnd ()
+
 type ControlPeer c m a = Peer (ControlProtocol m c) AsServer InitialState m a
 
 controlGenKey :: forall (c :: *) (m :: (* -> *))

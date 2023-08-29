@@ -32,6 +32,7 @@ import Cardano.Crypto.Libsodium.Memory
 import Ouroboros.Network.RawBearer
 
 import Control.Monad ( void, when )
+import Control.Monad.Trans (lift)
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
@@ -58,7 +59,7 @@ data ControlDriverTrace
   = ControlDriverSendingVersionID !VersionIdentifier
   | ControlDriverReceivingVersionID
   | ControlDriverReceivedVersionID !VersionIdentifier
-  | ControlDriverInvalidVersion
+  | ControlDriverInvalidVersion !VersionIdentifier !VersionIdentifier
   | ControlDriverSendingCommand !Command
   | ControlDriverSentCommand !Command
   | ControlDriverReceivingKey
@@ -75,6 +76,7 @@ data ControlDriverTrace
   | ControlDriverConnectionClosed
   | ControlDriverCRefEvent CRefEvent
   | ControlDriverInvalidCommand
+  | ControlDriverProtocolError String
   | ControlDriverMisc String
   deriving (Show)
 
@@ -105,15 +107,13 @@ receiveCommand :: ( MonadST m
                   , MonadThrow m
                   )
                => RawBearer m
-               -> m (Maybe Command)
-receiveCommand s = do
-  wMay <- receiveWord32 s
-  return $ do
-    w <- fromIntegral <$> wMay
-    if w > fromEnum (maxBound :: Command) then do
-      Nothing
-    else do
-      Just $ toEnum w
+               -> m (ReadResult Command)
+receiveCommand s = runReadResultT $ do
+  w <- fromIntegral <$> ReadResultT (receiveWord32 s)
+  if w > fromEnum (maxBound :: Command) then
+    readResultT (ReadMalformed "Command")
+  else
+    return $ toEnum w
 
 sendVKeyMay :: ( MonadST m
                , MonadThrow m
@@ -134,15 +134,16 @@ receiveVKeyMay :: ( MonadST m
                , KESAlgorithm k
                )
             => RawBearer m
-            -> m (Maybe (VerKeyKES k))
-receiveVKeyMay s = do
-  lMay <- fmap fromIntegral <$> receiveWord32 s
-  case lMay of
-    Nothing -> return Nothing
-    Just 0 -> return Nothing
-    Just l -> do
-      keyBytes <- receiveBS s l
-      return $ rawDeserialiseVerKeyKES keyBytes
+            -> m (ReadResult (Maybe (VerKeyKES k)))
+receiveVKeyMay s = runReadResultT $ do
+  l <- fromIntegral <$> ReadResultT (receiveWord32 s)
+  if l == 0 then
+    return Nothing
+  else do
+    keyBytes <- ReadResultT (receiveBS s l)
+    case rawDeserialiseVerKeyKES keyBytes of
+      Nothing -> readResultT (ReadMalformed "KES VerKey")
+      Just vk -> return (Just vk)
 
 controlDriver :: forall c m f t p
                . Crypto c
@@ -181,6 +182,12 @@ controlDriver s tracer = Driver
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
 
+      (ServerAgency _, ProtocolErrorMessage) -> do
+        return ()
+
+      (ClientAgency _, ProtocolErrorMessage) -> do
+        return ()
+
       (ClientAgency TokWaitForPublicKey, PublicKeyMessage vkeyMay) -> do
         case vkeyMay of
           Nothing -> traceWith tracer ControlDriverNoPublicKeyToReturn
@@ -199,45 +206,72 @@ controlDriver s tracer = Driver
         traceWith tracer ControlDriverReceivingVersionID
         result <- receiveVersion (Proxy @(ControlProtocol m c)) s (ControlDriverReceivedVersionID >$< tracer)
         case result of
-          Right _ ->  
+          ReadOK _ ->  
             return (SomeMessage VersionMessage, ())
-          Left (expectedV, v) -> do
-            traceWith tracer ControlDriverInvalidVersion
+          err -> do
+            traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage AbortMessage, ())
 
       (ServerAgency TokIdle) -> do
-        traceWith tracer $ ControlDriverReceivingCommand
-        cmdMay <- receiveCommand s
-        case cmdMay of
-          Nothing -> do
-            traceWith tracer ControlDriverInvalidCommand
+        result <- runReadResultT $ do
+          lift $ traceWith tracer ControlDriverReceivingCommand
+          cmd <- ReadResultT $ receiveCommand s
+          lift $ traceWith tracer (ControlDriverReceivedCommand cmd)
+          case cmd of
+            GenStagedKeyCmd ->
+              return (SomeMessage GenStagedKeyMessage, ())
+            QueryStagedKeyCmd ->
+              return (SomeMessage QueryStagedKeyMessage, ())
+            DropStagedKeyCmd ->
+              return (SomeMessage DropStagedKeyMessage, ())
+            InstallKeyCmd -> do
+              oc <- ReadResultT $ receiveOC s (ControlDriverMisc >$< tracer)
+              return (SomeMessage (InstallKeyMessage oc), ())
+        case result of
+          ReadOK msg ->
+            return msg
+          err -> do
+            traceWith tracer $ readErrorToControlDriverTrace err
             return (SomeMessage EndMessage, ())
-          Just cmd -> do
-            traceWith tracer $ ControlDriverReceivedCommand cmd
-            case cmd of
-              GenStagedKeyCmd ->
-                return (SomeMessage GenStagedKeyMessage, ())
-              QueryStagedKeyCmd ->
-                return (SomeMessage QueryStagedKeyMessage, ())
-              DropStagedKeyCmd ->
-                return (SomeMessage DropStagedKeyMessage, ())
-              InstallKeyCmd -> do
-                oc <- receiveOC s (ControlDriverMisc >$< tracer)
-                return (SomeMessage (InstallKeyMessage oc), ())
+
 
       (ClientAgency TokWaitForPublicKey) -> do
-        traceWith tracer $ ControlDriverReceivingKey
-        vkeyMay <- receiveVKeyMay s
-        traceWith tracer $ 
-          maybe
-            ControlDriverInvalidKey
-            (ControlDriverReceivedKey . rawSerialiseVerKeyKES)
-            vkeyMay
-        return (SomeMessage (PublicKeyMessage vkeyMay), ())
+        result <- runReadResultT $ do
+          lift $ traceWith tracer ControlDriverReceivingKey
+          vkMay <- ReadResultT $ receiveVKeyMay s
+          lift $ traceWith tracer
+            (maybe
+              ControlDriverNoPublicKeyToReturn
+              (ControlDriverReceivedKey . rawSerialiseVerKeyKES)
+              vkMay
+            )
+          return (SomeMessage (PublicKeyMessage vkMay), ())
+        case result of
+          ReadOK msg ->
+            return msg
+          err -> do
+            traceWith tracer $ readErrorToControlDriverTrace err
+            return (SomeMessage ProtocolErrorMessage, ())
 
       (ClientAgency TokWaitForConfirmation) -> do
-        reason <- receiveRecvResult s
-        return (SomeMessage (InstallResultMessage reason), ())
+        result <- receiveRecvResult s
+        case result of
+          ReadOK reason ->
+            return (SomeMessage (InstallResultMessage reason), ())
+          err -> do
+            traceWith tracer $ readErrorToControlDriverTrace err
+            return (SomeMessage ProtocolErrorMessage, ())
 
   , startDState = ()
   }
+
+readErrorToControlDriverTrace :: ReadResult a -> ControlDriverTrace
+readErrorToControlDriverTrace (ReadOK _) =
+  ControlDriverMisc "This should not happen"
+readErrorToControlDriverTrace ReadEOF =
+  ControlDriverConnectionClosed
+readErrorToControlDriverTrace (ReadMalformed what) =
+  ControlDriverProtocolError what
+readErrorToControlDriverTrace (ReadVersionMismatch expected actual) =
+  ControlDriverInvalidVersion expected actual
+

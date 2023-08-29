@@ -17,6 +17,8 @@ import Cardano.Crypto.KES.Class
 
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadTimer
 import Network.TypedProtocol.Core
 
 serviceReceiver :: forall (c :: *) (m :: * -> *)
@@ -33,6 +35,12 @@ serviceReceiver receiveKey =
             Effect $ do
               result <- receiveKey sk oc
               return $ Yield (ClientAgency TokWaitForConfirmation) (RecvResultMessage result) go
+          NoKeyYetMessage ->
+            Yield (ClientAgency TokWaitForPong) PongMessage go
+          PingMessage ->
+            Yield (ClientAgency TokWaitForPong) PongMessage go
+          ProtocolErrorMessage ->
+            Done TokEnd ()
           EndMessage ->
             Done TokEnd ()
 
@@ -40,6 +48,8 @@ servicePusher :: forall (c :: *) (m :: (* -> *))
            . KESAlgorithm (KES c)
           => MonadSTM m
           => MonadThrow m
+          => MonadAsync m
+          => MonadTimer m
           => m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
           -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
           -> (RecvResult -> m ())
@@ -47,20 +57,37 @@ servicePusher :: forall (c :: *) (m :: (* -> *))
 servicePusher currentKey nextKey handleResult =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
-      (sk, oc) <- currentKey
-      return (
-          Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
-          Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> go result
-        )
+      keyOrNoneAvail <- race (threadDelay 1000000) currentKey
+      case keyOrNoneAvail of
+        Right (sk, oc) ->
+          return $
+            Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
+              Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result
+        Left () ->
+          return $
+            Yield (ServerAgency TokIdle) NoKeyYetMessage $
+              Await (ClientAgency TokWaitForPong) $ \PongMessage ->
+                Effect go
   where
-    go :: RecvResult -> Peer (ServiceProtocol m c) AsServer IdleState m ()
-    go result = Effect $ do
+    goR :: RecvResult -> Peer (ServiceProtocol m c) AsServer IdleState m ()
+    goR result = Effect $ do
       handleResult result
-      skOcMay <- nextKey
-      case skOcMay of
-        Nothing -> return $
-          Yield (ServerAgency TokIdle) EndMessage $
-          Done TokEnd ()
-        Just (sk, oc) -> return $
-          Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
-          Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> go result
+      go
+
+    go :: m (Peer (ServiceProtocol m c) AsServer IdleState m ())
+    go = do
+      keyOrPing <- race (threadDelay 1000000) nextKey
+      case keyOrPing of
+        Left () ->
+          return $
+            Yield (ServerAgency TokIdle) PingMessage $
+              Await (ClientAgency TokWaitForPong) $ \PongMessage ->
+                Effect go
+        Right Nothing ->
+          return $
+            Yield (ServerAgency TokIdle) EndMessage $
+              Done TokEnd ()
+        Right (Just (sk, oc)) ->
+          return $
+            Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
+              Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result

@@ -71,6 +71,7 @@ library
                  , formatting
                  , ghc-prim
                  , io-classes
+                 , mtl
                  , network
                  , network-mux
                  , nothunks

@@ -104,8 +104,8 @@ instance Protocol (ControlProtocol m c) where
                                -> Message (ControlProtocol m c) WaitForConfirmationState IdleState
 
           AbortMessage :: Message (ControlProtocol m c) InitialState EndState
-
           EndMessage :: Message (ControlProtocol m c) IdleState EndState
+          ProtocolErrorMessage :: Message (ControlProtocol m c) a EndState
 
   -- | Server always has agency, except between sending a key and confirming it
   data ServerHasAgency st where

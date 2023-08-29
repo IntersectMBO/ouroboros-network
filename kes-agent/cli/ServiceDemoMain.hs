@@ -140,14 +140,15 @@ main = do
     logLock <- newMVar ()
     let maxPrio = Syslog.Debug
     let tracer = stdoutStringTracer maxPrio logLock
-    let go = runServiceClient
-                (Proxy @StandardCrypto)
-                makeSocketRawBearer
-                serviceClientOptions
-                handleKey
-                (contramap formatServiceTrace tracer)
-                      `catch` (\(e :: AsyncCancelled) ->
-                                  return ())
-                      `catch` (\(e :: SomeException) ->
-                                  traceWith tracer (Syslog.Emergency, show e))
-    concurrently_ (forever $ threadDelay 1000) go
+    forever $ do
+      runServiceClient
+        (Proxy @StandardCrypto)
+        makeSocketRawBearer
+        serviceClientOptions
+        handleKey
+        (contramap formatServiceTrace tracer)
+              `catch` (\(e :: AsyncCancelled) ->
+                          return ())
+              `catch` (\(e :: SomeException) ->
+                          traceWith tracer (Syslog.Emergency, show e))
+      threadDelay 10000000

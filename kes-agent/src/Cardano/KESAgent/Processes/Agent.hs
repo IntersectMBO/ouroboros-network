@@ -114,7 +114,7 @@ import Control.Monad.Class.MonadThrow
   , throwIO
   )
 import Control.Monad.Class.MonadTime ( MonadTime (..) )
-import Control.Monad.Class.MonadTimer ( threadDelay )
+import Control.Monad.Class.MonadTimer ( threadDelay, MonadTimer )
 import Control.Tracer ( Tracer, nullTracer, traceWith )
 import Data.ByteString ( ByteString )
 import Data.Functor.Contravariant ( contramap, (>$<) )
@@ -511,15 +511,15 @@ runListener
             concurrently_
               (loop next)
               (handleConnection fd'
-                `finally`
-                  (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
                 `catch` logAndContinue
+                `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
               )
 
   (accept s fd >>= loop) `catch` logAndContinue
 
 runAgent :: forall c m fd addr
           . MonadKES m c
+         => MonadTimer m
          => ContextDSIGN (DSIGN c) ~ ()
          => DSIGN.Signable (DSIGN c) (OCertSignable c)
          => Crypto c
