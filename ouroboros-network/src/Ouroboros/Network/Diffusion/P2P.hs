@@ -1135,10 +1135,7 @@ runM Interfaces
 
     mkLocalThread' :: ThreadId m -> Maybe (m Void)
     mkLocalThread' mainThreadId =
-      case daLocalAddress of
-        Nothing -> Nothing
-        Just localAddr ->
-          Just $ mkLocalThread mainThreadId localAddr
+      mkLocalThread mainThreadId <$> daLocalAddress
 
     mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
     mkLocalThread mainThreadId localAddr =
