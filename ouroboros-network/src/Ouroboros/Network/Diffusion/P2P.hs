@@ -400,19 +400,6 @@ type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a
       ByteString
       m a b
 
-type NodeToNodePeerStateActions (mode :: MuxMode) ntnAddr ntnVersionData m a b =
-    Governor.PeerStateActions
-      ntnAddr
-      (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
-      m
-
-type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr ntnVersionData m a b =
-    Governor.PeerSelectionActions
-      ntnAddr
-      (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
-      m
-
-
 data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver resolverError
@@ -925,7 +912,6 @@ runM Interfaces
                              m
                        -> m a2)
                    -> m a2
-          
           withPeerSelectionActions' =
               withPeerSelectionActions
                   dtTraceLocalRootPeersTracer
@@ -953,11 +939,7 @@ runM Interfaces
           -- InitiatorOnly mode, run peer selection only:
           InitiatorOnlyDiffusionMode ->
             iomWithConnectionManager
-              $ \(connectionManager
-                  :: NodeToNodeConnectionManager
-                       InitiatorMode ntnFd ntnAddr ntnVersionData ntnVersion m a Void)
-                 -> do
-
+              $ \connectionManager-> do
               diInstallSigUSR1Handler connectionManager
  
               --
@@ -968,9 +950,7 @@ runM Interfaces
               --
 
               let
-              withPeerStateActions' connectionManager
-                $ \(peerStateActions
-                      :: NodeToNodePeerStateActions InitiatorMode ntnAddr versionData m a Void) ->
+              withPeerStateActions' connectionManager $ \peerStateActions->
                 --
                 -- Run peer selection (p2p governor)
                 --
@@ -979,11 +959,7 @@ runM Interfaces
                   retry -- Will never receive inbound connections
                   peerStateActions
                   requestLedgerPeers
-                  $ \localPeerSelectionActionsThread
-                    (peerSelectionActions
-                       :: NodeToNodePeerSelectionActions
-                            InitiatorMode ntnAddr versionData m a Void) ->
-
+                  $ \localPeerSelectionActionsThread  peerSelectionActions ->
                     Async.withAsync
                     (Governor.peerSelectionGovernor
                       dtTracePeerSelectionTracer
@@ -1023,10 +999,7 @@ runM Interfaces
             outboundInfoChannel <- newInformationChannel
             observableStateVar <- Server.newObservableStateVar ntnInbgovRng
             irmWithConnectionManager inboundInfoChannel outboundInfoChannel observableStateVar
-              $ \(connectionManager
-                  :: NodeToNodeConnectionManager
-                       InitiatorResponderMode ntnFd ntnAddr ntnVersionData ntnVersion m a ()
-                 ) -> do
+              $ \connectionManager-> do
               diInstallSigUSR1Handler connectionManager
 
               --
@@ -1037,9 +1010,7 @@ runM Interfaces
               --
 
               withPeerStateActions' connectionManager
-                $ \(peerStateActions
-                      :: NodeToNodePeerStateActions
-                           InitiatorResponderMode ntnAddr versionData m a ()) ->
+                $ \peerStateActions->
 
                 --
                 -- Run peer selection (p2p governor)
@@ -1049,10 +1020,7 @@ runM Interfaces
                   (readMessage outboundInfoChannel)
                   peerStateActions
                   requestLedgerPeers
-                  $ \localPeerRootProviderThread
-                    (peerSelectionActions
-                       :: NodeToNodePeerSelectionActions
-                            InitiatorResponderMode ntnAddr versionData m a ()) ->
+                  $ \localPeerRootProviderThread peerSelectionActions ->
 
                   Async.withAsync
                     (Governor.peerSelectionGovernor
