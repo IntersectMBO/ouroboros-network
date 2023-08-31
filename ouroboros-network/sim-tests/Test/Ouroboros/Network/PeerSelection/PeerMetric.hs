@@ -12,7 +12,6 @@ import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.DeepSeq (NFData (..))
 import           Control.Monad (when)
-import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..), traceWith)
@@ -29,6 +28,9 @@ import           Network.Mux.Trace (TraceLabelPeer (..))
 
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.PeerSelection.PeerMetric
+                   (PeerMetricsConfiguration(..),ReportPeerMetrics (..),PeerMetrics,
+                    newPeerMetric,reportMetric,
+                    joinedPeerMetricAt,upstreamyness,fetchynessBytes,fetchynessBlocks)
 import           Ouroboros.Network.SizeInBytes
 
 import           Cardano.Slotting.Slot (SlotNo (..))
@@ -156,8 +158,7 @@ data PeerMetricsTrace = PeerMetricsTrace {
 
 simulatePeerMetricScript
   :: forall m.
-     ( MonadAsync m
-     , MonadDelay m
+     ( MonadDelay m
      , MonadTimer m
      , MonadMonotonicTime m
      , MonadLabelledSTM m
@@ -219,10 +220,11 @@ simulatePeerMetricScript tracer config script = do
           threadDelay (interpretScriptDelay delay)
           go v peerMetrics reporter
 
-      interpretScriptDelay NoDelay       = 0
-      interpretScriptDelay ShortDelay    = 1
-      interpretScriptDelay LongDelay     = 3600
-      interpretScriptDelay (Delay delay) = delay
+interpretScriptDelay :: ScriptDelay -> DiffTime
+interpretScriptDelay NoDelay       = 0
+interpretScriptDelay ShortDelay    = 1
+interpretScriptDelay LongDelay     = 3600
+interpretScriptDelay (Delay delay) = delay
 
 
 -- | Check that newly added peer is never in the 20% worst performing peers (if
