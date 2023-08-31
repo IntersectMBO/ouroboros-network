@@ -27,10 +27,10 @@ import qualified Data.Set as Set
 import           Network.Mux.Trace (TraceLabelPeer (..))
 
 import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.PeerSelection.PeerMetric
-                   (PeerMetricsConfiguration(..),ReportPeerMetrics (..),PeerMetrics,
-                    newPeerMetric,reportMetric,
-                    joinedPeerMetricAt,upstreamyness,fetchynessBytes,fetchynessBlocks)
+import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
+                     PeerMetricsConfiguration (..), ReportPeerMetrics (..),
+                     fetchynessBlocks, fetchynessBytes, joinedPeerMetricAt,
+                     newPeerMetric, reportMetric, upstreamyness)
 import           Ouroboros.Network.SizeInBytes
 
 import           Cardano.Slotting.Slot (SlotNo (..))
@@ -430,3 +430,119 @@ prop_bounded_size (Positive maxEntriesToTrack) script =
                                ++ show maxEntriesToTrack)
                              ( Map.size pmtFetchynessBlocks <= bound )
                          )
+
+--
+-- The following are focused on creating micro-benchmarks
+-- (rather than property testing):
+--
+
+-- | microbenchmark1 n - one test of simple property on a FixedScript of length n:
+--   one input, one property, one test.
+--
+-- We split into generating input and running/checking it so we can
+-- more accurately measure the latter.
+
+microbenchmark1GenerateInput :: Bool -> Int -> IO FixedScript
+microbenchmark1GenerateInput verbose' n =
+  do
+  es <- generate (vector n)
+  let fixedScript = mkFixedScript (Script (NonEmpty.fromList es))
+  when verbose' $
+    mapM_ print (let FixedScript s = fixedScript in s)
+  return fixedScript
+
+microbenchmark1ProcessInput :: FixedScript -> IO ()
+microbenchmark1ProcessInput =
+  quickCheckWith (stdArgs{maxSuccess=1}) . prop_simScript
+
+microbenchmark1 :: Bool -> Int -> IO ()
+microbenchmark1 verbose' n =
+  microbenchmark1GenerateInput verbose' n >>= microbenchmark1ProcessInput
+
+
+-- | one simple property (pmtUpstreamyness >= 0) checked on the trace of a script:
+prop_simScript :: FixedScript -> Property
+prop_simScript script =
+    getAllProperty $ go $ last trace
+
+  where
+    config :: PeerMetricsConfiguration
+    config = PeerMetricsConfiguration { maxEntriesToTrack = 500 }
+
+    sim :: IOSim s ()
+    sim = simulatePeerMetricScriptWithoutDelays (Tracer traceM) config script
+
+    trace :: [PeerMetricsTrace]
+    trace = selectTraceEventsDynamic (runSimTrace sim)
+
+    go :: PeerMetricsTrace -> AllProperty
+    go PeerMetricsTrace { pmtUpstreamyness,
+                          pmtFetchynessBytes=_,
+                          pmtFetchynessBlocks=_
+                        } =
+         foldMap (\a -> AllProperty
+                      $ counterexample
+                          (show ("upstreamyness", a, pmtUpstreamyness))
+                          (a >= 0))
+                 pmtUpstreamyness
+
+-- | similar to 'simulatePeerMetricScript': but we don't do in
+-- "real/simulated" time: not calling getMonotonicTime and
+-- threadDelay.
+simulatePeerMetricScriptWithoutDelays
+  :: forall m.
+     ( MonadLabelledSTM m )
+  => Tracer m PeerMetricsTrace
+  -> PeerMetricsConfiguration
+  -> FixedScript
+  -> m ()
+simulatePeerMetricScriptWithoutDelays tracer config script = do
+      peerMetrics <- newPeerMetric config
+      let reporter :: ReportPeerMetrics m (ConnectionId TestAddress)
+          reporter = reportMetric config peerMetrics
+      v <- atomically (initScript timedScript)
+      go v peerMetrics reporter (Time 0)
+    where
+      timedScript ::  TimedScript Event
+      timedScript = mkTimedScript script
+
+      go :: LazySTM.TVar m (TimedScript Event)
+         -> PeerMetrics m TestAddress
+         -> ReportPeerMetrics m (ConnectionId TestAddress)
+         -> Time
+         -> m ()
+      go v peerMetrics reporter@ReportPeerMetrics { reportHeader, reportFetch } time = do
+        (continue, (ev, delay)) <- (\case Left  a -> (False, a)
+                                          Right a -> (True,  a))
+                               <$> stepScriptOrFinish v
+        peer <- case ev of
+          FetchedHeader peer slotNo -> do
+            atomically $ traceWith reportHeader
+                       $ TraceLabelPeer ConnectionId {
+                                            localAddress  = TestAddress 0,
+                                            remoteAddress = peer
+                                          }
+                                        (slotNo, time)
+            return peer
+
+          FetchedBlock peer slotNo size -> do
+            atomically $ traceWith reportFetch
+                       $ TraceLabelPeer ConnectionId {
+                                            localAddress  = TestAddress 0,
+                                            remoteAddress = peer
+                                          }
+                                        (size, slotNo, time)
+            return peer
+
+        trace <- atomically $
+           PeerMetricsTrace
+                 <$> pure peer
+                 <*> pure (eventSlot ev)
+                 <*> upstreamyness      peerMetrics
+                 <*> fetchynessBytes    peerMetrics
+                 <*> fetchynessBlocks   peerMetrics
+                 <*> joinedPeerMetricAt peerMetrics
+        traceWith tracer trace
+
+        when continue $
+          go v peerMetrics reporter (interpretScriptDelay delay `addTime` time)
