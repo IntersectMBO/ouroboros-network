@@ -145,7 +145,7 @@ library
   if flag(asserts)
     ghc-options:       -fno-ignore-asserts
 
-    
+
 common sim-tests-common
   default-language:    Haskell2010
   build-depends:       base >=4.14 && <4.19,
@@ -198,7 +198,7 @@ common sim-tests-common
                        -Wno-unticked-promoted-constructors
                        -fno-ignore-asserts
                        +RTS -T -RTS
-       
+
 
 -- Simulation Test Library
 library sim-tests-lib
@@ -326,3 +326,24 @@ executable demo-chain-sync
   ghc-options:         -Wall
                        -threaded
                        -rtsopts
+
+benchmark sim-benchmarks
+  import:              sim-tests-common
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      bench
+  main-is:             Main.hs
+  build-depends:
+                       ouroboros-network:sim-tests-lib,
+                       tasty-bench,
+                       deepseq
+
+  ghc-options:
+                       -rtsopts
+                       -with-rtsopts=-A32m
+                       +RTS -T -RTS
+
+  -- We use this option to avoid skewed results due to changes in cache-line
+  -- alignment. See
+  -- https://github.com/Bodigrim/tasty-bench#comparison-against-baseline
+  if impl(ghc >=8.6)
+    ghc-options: -fproc-alignment=64
