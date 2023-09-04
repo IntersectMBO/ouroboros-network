@@ -128,19 +128,19 @@ tests =
 -- instances.
 --
 data GovernorMockEnvironment = GovernorMockEnvironment {
-       peerGraph                  :: PeerGraph,
-       localRootPeers             :: LocalRootPeers PeerAddr,
-       publicRootPeers            :: PublicRootPeers PeerAddr,
-       targets                    :: TimedScript PeerSelectionTargets,
-       pickKnownPeersForPeerShare :: PickScript PeerAddr,
-       pickColdPeersToPromote     :: PickScript PeerAddr,
-       pickWarmPeersToPromote     :: PickScript PeerAddr,
-       pickHotPeersToDemote       :: PickScript PeerAddr,
-       pickWarmPeersToDemote      :: PickScript PeerAddr,
-       pickColdPeersToForget      :: PickScript PeerAddr,
-       peerSharing                :: PeerSharing,
-       useBootstrapPeers          :: TimedScript UseBootstrapPeers,
-       ledgerStateJudgement       :: TimedScript LedgerStateJudgement
+       peerGraph                  :: !PeerGraph,
+       localRootPeers             :: !(LocalRootPeers PeerAddr),
+       publicRootPeers            :: !(PublicRootPeers PeerAddr),
+       targets                    :: !(TimedScript PeerSelectionTargets),
+       pickKnownPeersForPeerShare :: !(PickScript PeerAddr),
+       pickColdPeersToPromote     :: !(PickScript PeerAddr),
+       pickWarmPeersToPromote     :: !(PickScript PeerAddr),
+       pickHotPeersToDemote       :: !(PickScript PeerAddr),
+       pickWarmPeersToDemote      :: !(PickScript PeerAddr),
+       pickColdPeersToForget      :: !(PickScript PeerAddr),
+       peerSharing                :: !PeerSharing,
+       useBootstrapPeers          :: !(TimedScript UseBootstrapPeers),
+       ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement)
      }
   deriving (Show, Eq)
 
@@ -180,15 +180,15 @@ validGovernorMockEnvironment GovernorMockEnvironment {
                                publicRootPeers,
                                targets
                              } =
-        counterexample "invalid peer graph"
-        (validPeerGraph peerGraph)
-   .&&. counterexample "local roots not a subset of all peers"
-        (LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet)
-   .&&. (PublicRootPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
-   .&&. foldl (\p (a,_) -> p .&&. counterexample ("in sane targets: " ++ show a) (sanePeerSelectionTargets a))
-              (property True) targets
-   .&&. counterexample "big ledger peers not a subset of public roots"
-        (PublicRootPeers.invariant publicRootPeers)
+   conjoin [ counterexample "invalid peer graph"
+              (validPeerGraph peerGraph)
+           , counterexample "local roots not a subset of all peers"
+              (LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet)
+           , property (PublicRootPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
+           , property (foldl (\ !p (!a,_) -> p && sanePeerSelectionTargets a) True targets)
+           , counterexample "big ledger peers not a subset of public roots"
+                (PublicRootPeers.invariant publicRootPeers)
+           ]
   where
     allPeersSet = allPeers peerGraph
 
@@ -850,7 +850,9 @@ instance Arbitrary GovernorMockEnvironment where
          pickHotPeersToDemote',
          pickWarmPeersToDemote',
          pickColdPeersToForget',
-         ledgerStateJudgement')
+         ledgerStateJudgement',
+         useBootstrapPeers'
+        )
           <- shrink (targets,
                      pickKnownPeersForPeerShare,
                      pickColdPeersToPromote,
@@ -858,18 +860,16 @@ instance Arbitrary GovernorMockEnvironment where
                      pickHotPeersToDemote,
                      pickWarmPeersToDemote,
                      pickColdPeersToForget,
-                     fmap (first ArbitraryLedgerStateJudgement) ledgerStateJudgement
+                     fmap (first ArbitraryLedgerStateJudgement) ledgerStateJudgement,
+                     useBootstrapPeers
                     ),
          localRootPeers' <- shrinkLocalRootPeers localRootPeers,
-         publicRootPeers' <- shrinkPublicRootPeers publicRootPeers,
-         useBootstrapPeers' <- shrink useBootstrapPeers
+         publicRootPeers' <- shrinkPublicRootPeers publicRootPeers
       ]
     where
       shrinkLocalRootPeers (LocalRootPeers m g) =
-        [ LocalRootPeers (Map.restrictKeys m' s) g'
-          | g' <- shrink g
-          , (_, _, s) <- g'
-          , m' <- shrink m
+        [ LocalRootPeers m' g'
+          | (m', g') <- shrink (m, g)
         ]
       shrinkPublicRootPeers (PublicRootPeers pp bsp lp blp) =
         [ PublicRootPeers pp' bsp' lp' blp'

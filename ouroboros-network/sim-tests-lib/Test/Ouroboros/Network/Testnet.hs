@@ -16,9 +16,9 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time),
                      addTime, diffTime)
 import           Control.Monad.IOSim
-import           Data.Bifoldable (bifoldMap, bitraverse_)
+import           Data.Bifoldable (bifoldMap)
 
-import           Data.List (find, intercalate, tails)
+import           Data.List (find, foldl', intercalate, tails)
 import qualified Data.List.Trace as Trace
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -68,7 +68,6 @@ import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
 import           Control.Exception (AssertionFailed (..), catch, evaluate)
-import           Data.Foldable (foldl')
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState (..))
 import           Ouroboros.Network.ConnectionManager.Test.Timeouts
                      (AllProperty (..), TestProperty (..), classifyActivityType,
@@ -112,7 +111,7 @@ tests =
                    prop_diffusionScript_commandScript_valid
     ]
 #if !defined(mingw32_HOST_OS)
-  , testProperty "no fail"
+  , testProperty "no failure"
                  prop_diffusion_nofail
   , testProperty "no livelock"
                  prop_diffusion_nolivelock
@@ -198,6 +197,51 @@ tests =
 
 traceFromList :: [a] -> Trace (SimResult ()) a
 traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Just "main")) () [])
+
+-- | As a basic property we run the governor to explore its state space a bit
+-- and check it does not throw any exceptions (assertions such as invariant
+-- violations).
+--
+-- We do /not/ assume freedom from livelock for this property, so we run the
+-- governor for a maximum number of trace events rather than for a fixed
+-- simulated time.
+--
+prop_diffusion_nofail :: AbsBearerInfo
+                      -> DiffusionScript
+                      -> Property
+prop_diffusion_nofail defaultBearerInfo diffScript =
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                iosimTracer
+
+      ioSimTrace = runSimTrace sim
+
+      trace = Trace.toList
+            . fmap (\(WithTime t (WithName _ b)) -> (t, b))
+            . withTimeNameTraceEvents
+               @DiffusionTestTrace
+               @NtNAddr
+            . traceFromList
+            . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+            . take 125000
+            . traceEvents
+            $ ioSimTrace
+
+   -- run in `IO` so we can catch the pure 'AssertionFailed' exception
+   in ioProperty $ do
+     r <-
+       evaluate ( foldl' (flip seq) True
+              $ [ assertPeerSelectionState st ()
+                | (_, DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st)) <- trace ]
+              )
+       `catch` \(AssertionFailed _) -> return False
+     case r of
+       True  -> return $ property True
+       False -> do
+         putStrLn $ intercalate "\n" $ map show trace
+         -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
+         error "impossible!"
 
 -- | This test coverage of ConnectionManagerTrace constructors.
 --
@@ -1015,51 +1059,6 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
    -- TODO: Add checkCoverage here
    in tabulate "peer selection trace" eventsSeenNames
       True
-
--- | A variant of 'Test.Ouroboros.Network.PeerSelection.prop_governor_nofail'
--- but for running on Diffusion.
---
-prop_diffusion_nofail :: AbsBearerInfo
-                      -> DiffusionScript
-                      -> Property
-prop_diffusion_nofail defaultBearerInfo diffScript =
-    let sim :: SimTrace Void
-        sim = runSimTrace
-            $ diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        trace :: [(Time, DiffusionTestTrace)]
-        trace = Trace.toList
-              . fmap (\(WithTime t (WithName _ b)) -> (t, b))
-              . withTimeNameTraceEvents
-                 @DiffusionTestTrace
-                 @NtNAddr
-              . traceFromList
-              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-              . take 125000
-              . traceEvents
-              $ sim
-
-        -- lastTime :: Time
-        -- lastTime = fst (last trace)
-
-     -- run in `IO` so we can catch the pure 'AssertionFailed' exception
-     in ioProperty $ do
-       r <-
-         evaluate ( foldl' (flip seq) True
-                $ [ assertPeerSelectionState st ()
-                  | (_, DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st)) <- trace ]
-                )
-         `catch` \(AssertionFailed _) -> return False
-       case r of
-         True  -> return $ property True
-         False -> do
-           bitraverse_ (putStrLn . show)
-                       (putStrLn . ppSimEvent 20 20 20)
-                       sim
-           -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
-           error "impossible!"
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.ConnectionHandler.Network.PeerSelection.prop_governor_nolivelock'

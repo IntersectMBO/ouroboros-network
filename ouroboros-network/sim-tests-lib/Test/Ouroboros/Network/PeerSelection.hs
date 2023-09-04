@@ -309,9 +309,9 @@ isEmptyEnv GovernorMockEnvironment {
 prop_governor_nofail :: GovernorMockEnvironment -> Property
 prop_governor_nofail env =
     let ioSimTrace = runGovernorInMockEnvironment env
-        trace = take 5000 .
-                selectPeerSelectionTraceEvents $
-                ioSimTrace
+        trace = take 5000
+              . selectPeerSelectionTraceEvents
+              $ ioSimTrace
 
     -- run in `IO` so we can catch the pure 'AssertionFailed' exception
     in ioProperty $ do
@@ -2546,12 +2546,12 @@ prop_governor_target_established_above (MaxTime maxTime) env =
         signalProperty 20 show
           (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
           ((,,,,,,) <$> govTargetsSig
-                   <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
-                   <*> govEstablishedPeersSig
-                   <*> govActivePeersSig
-                   <*> demotionOpportunities
-                   <*> govInProgressDemoteToColdSig
-                   <*> demotionOpportunitiesIgnoredTooLong)
+                    <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                    <*> govEstablishedPeersSig
+                    <*> govActivePeersSig
+                    <*> demotionOpportunities
+                    <*> govInProgressDemoteToColdSig
+                    <*> demotionOpportunitiesIgnoredTooLong)
 
 
 -- | Like 'prop_governor_target_established_above' but for big ledger peers.
