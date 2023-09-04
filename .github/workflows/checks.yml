@@ -17,7 +17,7 @@ jobs:
         shell: bash
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Check Dependencies
       run: ./scripts/ci/check-git-dependencies.sh
 
@@ -32,7 +32,7 @@ jobs:
     - name: Install dependencies
       run: sudo apt install -y fd-find
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: git fetch
       run: git fetch origin master:master
@@ -57,7 +57,7 @@ jobs:
       with:
         cabal-version: "3.10.1.0"
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Check cabal files
       run: ./scripts/ci/check-cabal-files.sh
