@@ -70,6 +70,9 @@ instance Arbitrary UseBootstrapPeers where
                         , (1, UseBootstrapPeers <$> arbitrary)
                         ]
 
+  shrink DontUseBootstrapPeers = []
+  shrink (UseBootstrapPeers _) = [DontUseBootstrapPeers]
+
 instance Arbitrary PeerTrustable where
   arbitrary = elements [ IsNotTrustable, IsTrustable ]
 
