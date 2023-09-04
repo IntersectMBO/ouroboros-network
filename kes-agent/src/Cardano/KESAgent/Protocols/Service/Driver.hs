@@ -7,14 +7,18 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Cardano.KESAgent.Protocols.Service.Driver
   where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
@@ -31,12 +35,15 @@ import Cardano.Crypto.Libsodium.Memory
 
 import Ouroboros.Network.RawBearer
 
-import Control.Monad ( void, when )
-import Control.Monad.Trans ( lift )
+import Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM.TChan
+import Control.Monad ( void, when, forever, forM_ )
+import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
+import Control.Monad.Class.MonadThrow ( MonadThrow, bracket, throwIO, Exception )
+import Control.Monad.Trans ( lift )
+import Control.Monad.ST.Unsafe ( unsafeIOToST )
 import Control.Tracer ( Tracer, traceWith )
 import Data.Binary ( decode, encode )
 import Data.ByteString qualified as BS
@@ -45,7 +52,7 @@ import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy
 import Data.Typeable
 import Data.Word
-import Foreign ( Ptr, castPtr, plusPtr )
+import Foreign ( Ptr, castPtr, plusPtr, poke )
 import Foreign.C.Types ( CChar, CSize )
 import Foreign.Marshal.Alloc ( free, mallocBytes )
 import Foreign.Marshal.Utils ( copyBytes )
@@ -79,6 +86,53 @@ instance Pretty ServiceDriverTrace where
   pretty (ServiceDriverMisc x) = x
   pretty x = drop (strLength "ServiceDriver") (show x)
 
+data BearerConnectionClosed =
+  BearerConnectionClosed
+  deriving (Show)
+
+instance Exception BearerConnectionClosed where
+
+withDuplexBearer :: forall m a.
+                    ( MonadST m
+                    , MonadSTM m
+                    , MonadThrow m
+                    , MonadAsync m
+                    )
+                  => RawBearer m
+                  -> (RawBearer m -> m a)
+                  -> m a
+withDuplexBearer s action = do
+  recvChan :: TChan m Word8 <- newTChanIO
+  let receiver :: m BearerConnectionClosed
+      receiver = do
+        allocaBytes bufferSize $ \buf -> do
+          let go = do
+                bytesRead <- recv s buf bufferSize
+                case bytesRead of
+                  0 -> return BearerConnectionClosed
+                  n -> go
+          go
+      s' = RawBearer
+            { send = send s
+            , recv = recv'
+            }
+
+      recv' buf numBytes = do
+          forM_ [0 .. numBytes-1] $ \n -> do
+            b <- atomically $ readTChan recvChan
+            withLiftST $ \liftST -> liftST . unsafeIOToST $
+              poke (buf `plusPtr` n) b
+          return numBytes
+  let sender = action s'
+  result <- race receiver sender
+  case result of
+    Left e -> throwIO e
+    Right x -> return x
+  where
+    bufferSize = 1024
+        
+  
+
 serviceDriver :: forall c m f t p
                . Crypto c
               => Typeable c
@@ -103,20 +157,15 @@ serviceDriver s tracer = Driver
         return ()
 
       (ServerAgency TokIdle, KeyMessage skpRef oc) -> do
-        traceWith tracer $ ServiceDriverSendingKey (ocertN oc)
         sendWord32 s 1
+        traceWith tracer $ ServiceDriverSendingKey (ocertN oc)
         sendBundle s skpRef oc
         traceWith tracer $ ServiceDriverSentKey (ocertN oc)
 
       (ServerAgency TokIdle, NoKeyYetMessage) -> do
-        -- traceWith tracer ServiceDriverPing
         sendWord32 s 0
 
-      (ServerAgency TokIdle, PingMessage) -> do
-        -- traceWith tracer ServiceDriverPing
-        sendWord32 s 0
-
-      (ServerAgency TokIdle, EndMessage) -> do
+      (ServerAgency TokIdle, ServerDisconnectMessage) -> do
         return ()
 
       (ServerAgency _, ProtocolErrorMessage) -> do
@@ -125,17 +174,16 @@ serviceDriver s tracer = Driver
       (ClientAgency _, ProtocolErrorMessage) -> do
         return ()
 
-      (ClientAgency TokWaitForPong, PongMessage) -> do
-        -- traceWith tracer ServiceDriverPong
-        sendWord32 s 0
-        return ()
-
       (ClientAgency TokWaitForConfirmation, RecvResultMessage reason) -> do
         if reason == RecvOK then
           traceWith tracer ServiceDriverConfirmingKey
         else
           traceWith tracer $ ServiceDriverDecliningKey reason
         sendRecvResult s reason
+
+      (ClientAgency TokWaitForConfirmation, ClientDisconnectMessage) -> do
+        return ()
+
 
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
@@ -152,33 +200,21 @@ serviceDriver s tracer = Driver
           i <- ReadResultT (receiveWord32 s)
           case i of
             0 -> do
-              -- lift $ traceWith tracer ServiceDriverPing
-              return (SomeMessage PingMessage, ())
+              return (SomeMessage NoKeyYetMessage, ())
             1 -> do
               lift $ traceWith tracer ServiceDriverReceivingKey
               (skpVar, oc) <- ReadResultT $ receiveBundle s (ServiceDriverMisc >$< tracer)
               lift $ traceWith tracer $ ServiceDriverReceivedKey (ocertN oc)
               return (SomeMessage (KeyMessage skpVar oc), ())
-            n -> readResultT $ ReadMalformed "ping"
+            n -> readResultT $ ReadMalformed "Key"
         case result of
           ReadOK msg ->
             return msg
-          err -> do
-            traceWith tracer $ readErrorToServiceDriverTrace err
-            return (SomeMessage EndMessage, ())
-
-      (ClientAgency TokWaitForPong) -> do
-        r <- receiveWord32 s
-        case r of
-          ReadOK 0 -> do
-            -- traceWith tracer ServiceDriverPong
-            return (SomeMessage PongMessage, ())
-          ReadOK n -> do
-            return (SomeMessage ProtocolErrorMessage, ())
+          ReadEOF ->
+            return (SomeMessage ServerDisconnectMessage, ())
           err -> do
             traceWith tracer $ readErrorToServiceDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())
-
 
       (ClientAgency TokWaitForConfirmation) -> do
         result <- receiveRecvResult s
@@ -190,6 +226,8 @@ serviceDriver s tracer = Driver
               err ->
                 traceWith tracer ServiceDriverDeclinedKey
             return (SomeMessage (RecvResultMessage response), ())
+          ReadEOF ->
+            return (SomeMessage ClientDisconnectMessage, ())
           err -> do
             traceWith tracer $ readErrorToServiceDriverTrace err
             return (SomeMessage ProtocolErrorMessage, ())

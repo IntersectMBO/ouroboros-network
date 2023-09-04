@@ -52,6 +52,7 @@ tests =
       , testCase "invalid opcert" kesAgentControlInstallInvalidOpCert
       , testCase "no key" kesAgentControlInstallNoKey
       , testCase "dropped key" kesAgentControlInstallDroppedKey
+      , testCase "multiple nodes" kesAgentControlInstallMultiNodes
       ]
     ]
 
@@ -118,7 +119,7 @@ kesAgentControlInstallValid =
           ]
           ExitSuccess
           [ "KES key installed." ]
-    assertMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines
+    assertMatchingOutputLinesWith (Text.unpack . Text.unlines $ agentOutLines) 0 ["KES", "key", "0"] serviceOutLines
 
 kesAgentControlInstallInvalidOpCert :: Assertion
 kesAgentControlInstallInvalidOpCert =
@@ -237,6 +238,57 @@ kesAgentControlInstallDroppedKey =
 
     assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines
 
+kesAgentControlInstallMultiNodes :: Assertion
+kesAgentControlInstallMultiNodes =
+  withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+    let controlAddr = tmpdir </> "control.socket"
+        serviceAddr = tmpdir </> "service.socket"
+        kesKeyFile = tmpdir </> "kes.vkey"
+        opcertFile = tmpdir </> "opcert.cert"
+    coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
+    coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
+
+    let makeCert = do
+          ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
+          ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
+          KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
+          kesPeriod <- getCurrentKESPeriod defGenesisTimestamp
+          let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
+          encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
+          return ()
+
+    (agentOutLines, (serviceOutLines1, serviceOutLines2)) <-
+      withAgent controlAddr serviceAddr coldVerKeyFile $ do
+        (serviceOutLines1, ()) <- withService serviceAddr $ do
+          -- Little bit of delay here to allow for the version handshake to
+          -- finish
+          threadDelay 10000
+          return ()
+        (serviceOutLines2, ()) <- withService serviceAddr $ do
+          controlClientCheck
+            [ "gen-staged-key"
+            , "--kes-verification-key-file", kesKeyFile
+            , "--control-address", controlAddr
+            ]
+            ExitSuccess
+            [ "Asking agent to generate a key..."
+            , "KES SignKey generated."
+            , "KES VerKey written to " <> kesKeyFile
+            ]
+          makeCert
+          controlClientCheck
+            [ "install-key"
+            , "--opcert-file", opcertFile
+            , "--control-address", controlAddr
+            ]
+            ExitSuccess
+            [ "KES key installed." ]
+        return (serviceOutLines1, serviceOutLines2)
+
+    assertNoMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines1
+    assertMatchingOutputLines 4 ["ReceivedVersionID"] serviceOutLines1
+    assertMatchingOutputLines 0 ["KES", "key", "0"] serviceOutLines2
+
 matchOutputLine :: Int -> [Text] -> Text -> Bool
 matchOutputLine ignore pattern line =
   pattern `isPrefixOf` drop ignore (Text.words line)
@@ -250,8 +302,11 @@ matchNoOutputLines ignore pattern =
   not . any (matchOutputLine ignore pattern)
 
 assertMatchingOutputLines :: Int -> [Text] -> [Text] -> Assertion
-assertMatchingOutputLines ignore pattern lines =
-  assertBool (Text.unpack . Text.unlines $ lines) (matchOutputLines ignore pattern lines)
+assertMatchingOutputLines = assertMatchingOutputLinesWith ""
+
+assertMatchingOutputLinesWith :: String -> Int -> [Text] -> [Text] -> Assertion
+assertMatchingOutputLinesWith extraInfo ignore pattern lines =
+  assertBool (extraInfo ++ (Text.unpack . Text.unlines $ lines)) (matchOutputLines ignore pattern lines)
 
 assertNoMatchingOutputLines :: Int -> [Text] -> [Text] -> Assertion
 assertNoMatchingOutputLines ignore pattern lines =

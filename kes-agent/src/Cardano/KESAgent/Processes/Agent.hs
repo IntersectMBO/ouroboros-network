@@ -27,7 +27,7 @@ import Cardano.KESAgent.KES.OCert
   )
 import Cardano.KESAgent.Serialization.TextEnvelope ( decodeTextEnvelopeFile )
 import Cardano.KESAgent.Protocols.VersionedProtocol ( VersionedProtocol (..), NamedCrypto (..) )
-import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace (..), serviceDriver )
+import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
 import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher )
 import Cardano.KESAgent.Protocols.Service.Protocol ( ServiceProtocol )
 import Cardano.KESAgent.Protocols.Control.Driver ( ControlDriverTrace (..), controlDriver )
@@ -160,10 +160,13 @@ data AgentTrace
 
 instance Pretty AgentTrace where
   pretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ pretty d
-  pretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ pretty d
+  pretty (AgentServiceSocketClosed a) = "Agent: ServiceSocketClosed: " ++ a
   pretty (AgentServiceClientConnected a) = "Agent: ServiceClientConnected: " ++ a
   pretty (AgentServiceClientDisconnected a) = "Agent: ServiceClientDisconnected: " ++ a
   pretty (AgentServiceSocketError e) = "Agent: ServiceSocketError: " ++ e
+
+  pretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ pretty d
+  pretty (AgentControlSocketClosed a) = "Agent: ControlSocketClosed: " ++ a
   pretty (AgentControlClientConnected a) = "Agent: ControlClientConnected: " ++ a
   pretty (AgentControlClientDisconnected a) = "Agent: ControlClientDisconnected: " ++ a
   pretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
@@ -474,6 +477,7 @@ runListener :: forall m c fd addr st (pr :: PeerRole) t a
             -> (String -> AgentTrace)
             -> (String -> AgentTrace)
             -> (String -> AgentTrace)
+            -> (String -> AgentTrace)
             -> (t -> AgentTrace)
             -> (RawBearer m -> Tracer m t -> m ())
             -> m ()
@@ -486,6 +490,7 @@ runListener
       tListeningOnSocket
       tSocketClosed
       tClientConnected
+      tClientDisconnected
       tSocketError
       tDriverTrace
       handle = do
@@ -500,6 +505,10 @@ runListener
   let logAndContinue :: SomeException -> m ()
       logAndContinue e = traceWith tracer (tSocketError (show e))
 
+      handleClientDisconnect :: fd -> BearerConnectionClosed -> m ()
+      handleClientDisconnect fd _ =
+        traceWith tracer (tClientDisconnected $ show fd)
+
   let loop :: Accept m fd addr -> m ()
       loop a = do
         accepted <- runAccept a
@@ -511,6 +520,7 @@ runListener
             concurrently_
               (loop next)
               (handleConnection fd'
+                `catch` handleClientDisconnect fd'
                 `catch` logAndContinue
                 `finally` (close s fd' >> traceWith tracer (tSocketClosed $ show fd'))
               )
@@ -554,14 +564,16 @@ runAgent agent = do
           AgentListeningOnServiceSocket
           AgentServiceSocketClosed
           AgentServiceClientConnected
+          AgentServiceClientDisconnected
           AgentServiceSocketError
           AgentServiceDriverTrace
           (\bearer tracer' ->
-            void $
-              runPeerWithDriver
-                (serviceDriver bearer tracer')
-                (servicePusher currentKey nextKey reportPushResult)
-                ()
+            withDuplexBearer bearer $ \bearer' -> do
+              void $
+                runPeerWithDriver
+                  (serviceDriver bearer' tracer')
+                  (servicePusher currentKey nextKey reportPushResult)
+                  ()
           )
 
   let runControl = do
@@ -575,6 +587,7 @@ runAgent agent = do
           AgentListeningOnControlSocket
           AgentControlSocketClosed
           AgentControlClientConnected
+          AgentControlClientDisconnected
           AgentControlSocketError
           AgentControlDriverTrace
           (\bearer tracer' ->

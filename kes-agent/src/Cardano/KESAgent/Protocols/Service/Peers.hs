@@ -36,12 +36,10 @@ serviceReceiver receiveKey =
               result <- receiveKey sk oc
               return $ Yield (ClientAgency TokWaitForConfirmation) (RecvResultMessage result) go
           NoKeyYetMessage ->
-            Yield (ClientAgency TokWaitForPong) PongMessage go
-          PingMessage ->
-            Yield (ClientAgency TokWaitForPong) PongMessage go
+            Yield (ClientAgency TokWaitForConfirmation) (RecvResultMessage RecvOK) go
           ProtocolErrorMessage ->
             Done TokEnd ()
-          EndMessage ->
+          ServerDisconnectMessage ->
             Done TokEnd ()
 
 servicePusher :: forall (c :: *) (m :: (* -> *))
@@ -57,17 +55,10 @@ servicePusher :: forall (c :: *) (m :: (* -> *))
 servicePusher currentKey nextKey handleResult =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
-      keyOrNoneAvail <- race (threadDelay 1000000) currentKey
-      case keyOrNoneAvail of
-        Right (sk, oc) ->
-          return $
-            Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
-              Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result
-        Left () ->
-          return $
-            Yield (ServerAgency TokIdle) NoKeyYetMessage $
-              Await (ClientAgency TokWaitForPong) $ \PongMessage ->
-                Effect go
+      (sk, oc) <- currentKey
+      return $
+        Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
+          Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result
   where
     goR :: RecvResult -> Peer (ServiceProtocol m c) AsServer IdleState m ()
     goR result = Effect $ do
@@ -76,18 +67,13 @@ servicePusher currentKey nextKey handleResult =
 
     go :: m (Peer (ServiceProtocol m c) AsServer IdleState m ())
     go = do
-      keyOrPing <- race (threadDelay 1000000) nextKey
-      case keyOrPing of
-        Left () ->
+      key <- nextKey
+      case key of
+        Nothing ->
           return $
-            Yield (ServerAgency TokIdle) PingMessage $
-              Await (ClientAgency TokWaitForPong) $ \PongMessage ->
-                Effect go
-        Right Nothing ->
-          return $
-            Yield (ServerAgency TokIdle) EndMessage $
+            Yield (ServerAgency TokIdle) ServerDisconnectMessage $
               Done TokEnd ()
-        Right (Just (sk, oc)) ->
+        Just (sk, oc) ->
           return $
             Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
               Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result

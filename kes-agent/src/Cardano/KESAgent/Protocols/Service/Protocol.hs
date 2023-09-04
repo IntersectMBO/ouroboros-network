@@ -52,9 +52,6 @@ data ServiceProtocol (m :: * -> *) (k :: *) where
   -- received.
   WaitForConfirmationState :: ServiceProtocol m k
 
-  -- | A heartbeat message has been sent, client must respond or be disconnected.
-  WaitForPongState :: ServiceProtocol m k
-
   -- | The server has closed the connection, thus signalling the end of the
   -- session.
   EndState :: ServiceProtocol m k
@@ -86,16 +83,14 @@ instance Protocol (ServiceProtocol m c) where
                      -> OCert c
                      -> Message (ServiceProtocol m c) IdleState WaitForConfirmationState
 
-          NoKeyYetMessage :: Message (ServiceProtocol m c) IdleState WaitForPongState
+          NoKeyYetMessage :: Message (ServiceProtocol m c) IdleState WaitForConfirmationState
 
           RecvResultMessage :: RecvResult
                             -> Message (ServiceProtocol m c) WaitForConfirmationState IdleState
 
-          PingMessage :: Message (ServiceProtocol m c) IdleState WaitForPongState
-          PongMessage :: Message (ServiceProtocol m c) WaitForPongState IdleState
-
           AbortMessage :: Message (ServiceProtocol m c) InitialState EndState
-          EndMessage :: Message (ServiceProtocol m c) IdleState EndState
+          ServerDisconnectMessage :: Message (ServiceProtocol m c) IdleState EndState
+          ClientDisconnectMessage :: Message (ServiceProtocol m c) WaitForConfirmationState EndState
           ProtocolErrorMessage :: Message (ServiceProtocol m c) a EndState
 
   -- | Server always has agency, except between sending a key and confirming it
@@ -106,7 +101,6 @@ instance Protocol (ServiceProtocol m c) where
   -- | Client only has agency between sending a key and confirming it
   data ClientHasAgency st where
     TokWaitForConfirmation :: ClientHasAgency WaitForConfirmationState
-    TokWaitForPong :: ClientHasAgency WaitForPongState
 
   -- | Someone, i.e., the server, always has agency
   data NobodyHasAgency st where
@@ -115,7 +109,6 @@ instance Protocol (ServiceProtocol m c) where
   exclusionLemma_ClientAndServerHaveAgency tok1 tok2 =
     case tok1 of
       TokWaitForConfirmation -> case tok2 of {}
-      TokWaitForPong -> case tok2 of {}
   exclusionLemma_NobodyAndClientHaveAgency _ _ = undefined
   exclusionLemma_NobodyAndServerHaveAgency _ _ = undefined
 
