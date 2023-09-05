@@ -25,6 +25,7 @@ import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Snocket (..) )
 
 import Control.Monad ( forever, void )
+import Control.Monad.Extra ( whenJust )
 import Control.Monad.Class.MonadThrow ( SomeException, bracket )
 import Control.Tracer ( Tracer, traceWith )
 import Data.Functor.Contravariant ( (>$<) )

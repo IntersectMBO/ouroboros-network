@@ -69,6 +69,7 @@ library
                    -- packages have the same name, we can only disambiguate
                    -- them by demanding a version that only one of them has.
                  , contra-tracer ==0.1.0.1
+                 , extra >=1.7.12 && <1.8
                  , formatting
                  , ghc-prim
                  , io-classes
@@ -140,6 +141,7 @@ executable kes-agent-control
                  , bytestring
                  , cardano-crypto-class
                  , contra-tracer
+                 , extra >=1.7.12 && <1.8
                  , hsyslog
                  , io-classes
                  , network

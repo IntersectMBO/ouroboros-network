@@ -33,6 +33,7 @@ import Cardano.Crypto.Libsodium.Memory
 import Ouroboros.Network.RawBearer
 
 import Control.Monad ( void, when )
+import Control.Monad.Extra ( whenJust )
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
@@ -249,10 +250,6 @@ whenFlag flag flags action =
   else
     pure Nothing
   
-
-whenJust :: Applicative m => Maybe a -> (a -> m ()) -> m ()
-whenJust Nothing _ = pure ()
-whenJust (Just x) f = f x
 
 sendInfo :: ( MonadST m
             , MonadThrow m

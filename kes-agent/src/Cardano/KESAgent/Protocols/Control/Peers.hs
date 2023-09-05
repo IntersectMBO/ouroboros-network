@@ -116,9 +116,8 @@ controlGetInfo :: forall (c :: *) (m :: (* -> *))
                . KESAlgorithm (KES c)
               => MonadSTM m
               => MonadThrow m
-              => OCert c
-              -> ControlPeer c m (AgentInfo c)
-controlGetInfo oc = do
+              => ControlPeer c m (AgentInfo c)
+controlGetInfo = do
   Yield (ServerAgency TokInitial) VersionMessage $
     Yield (ServerAgency TokIdle) RequestInfoMessage $
       Await (ClientAgency TokWaitForInfo) $ \(InfoMessage info) ->

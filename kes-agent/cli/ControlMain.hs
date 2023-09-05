@@ -11,23 +11,25 @@ where
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Processes.ControlClient
-import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.Control.Peers
-import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Crypto.Libsodium (sodiumInit)
+import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class
+import Cardano.Crypto.Libsodium (sodiumInit)
 import Cardano.Crypto.Libsodium.MLockedSeed (mlockedSeedNewRandom, mlockedSeedFinalize)
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
-import Control.Monad ( (>=>) )
+import Control.Monad ( (>=>), when )
 import Control.Monad.Class.MonadThrow (bracket, throwIO, catch, SomeException)
+import Control.Monad.Extra ( whenJust )
 import Control.Tracer
 import qualified Data.Aeson as JSON
 import qualified Data.ByteString as BS
@@ -37,23 +39,27 @@ import qualified Data.Text.IO as Text
 import Network.Socket
 import Options.Applicative
 import System.Environment
+import System.Exit
 import System.IO (hPutStrLn, stdout, stderr, hFlush)
 import System.IOManager
-import System.Exit
+import System.Posix.Syslog.Priority as Syslog
+import Text.Printf
 
 data CommonOptions =
   CommonOptions
     { optControlPath :: Maybe String
+    , optVerbosity :: Maybe Int
     }
     deriving (Show, Eq)
 
 instance Semigroup CommonOptions where
-  CommonOptions p1 <> CommonOptions p2 =
-    CommonOptions (p1 <|> p2)
+  CommonOptions p1 v1 <> CommonOptions p2 v2 =
+    CommonOptions (p1 <|> p2) (v1 <|> v2)
 
 defCommonOptions :: CommonOptions =
   CommonOptions
     { optControlPath = Just "/tmp/kes-agent-control.socket"
+    , optVerbosity = Just 0
     }
 
 optFromEnv :: IO CommonOptions
@@ -62,6 +68,7 @@ optFromEnv = do
   return
     CommonOptions
       { optControlPath = controlPath
+      , optVerbosity = Nothing
       }
 
 data GenKeyOptions =
@@ -168,6 +175,12 @@ pCommonOptions =
           <> metavar "ADDR"
           <> help "Socket address for 'control' connections to a running kes-agent process"
           )
+    <*> option auto
+          (  long "verbose"
+          <> short 'v'
+          <> value (Just 1)
+          <> help "Set verbosity"
+          )
 
 pGenKeyOptions =
   GenKeyOptions
@@ -209,6 +222,7 @@ data ProgramOptions
   | RunQueryKey QueryKeyOptions
   | RunDropKey DropKeyOptions
   | RunInstallKey InstallKeyOptions
+  | RunGetInfo CommonOptions -- for now
   deriving (Show, Eq)
 
 pProgramOptions = subparser
@@ -216,18 +230,22 @@ pProgramOptions = subparser
   <> command "drop-staged-key" (info (RunDropKey <$> pDropKeyOptions) idm)
   <> command "export-staged-vkey" (info (RunQueryKey <$> pQueryKeyOptions) idm)
   <> command "install-key" (info (RunInstallKey <$> pInstallKeyOptions) idm)
+  <> command "info" (info (RunGetInfo <$> pCommonOptions) idm)
   )
 
 eitherError :: Either String a -> IO a
 eitherError (Left err) = error err
 eitherError (Right x) = return x
 
-humanFriendlyControlTracer :: Tracer IO ControlClientTrace
-humanFriendlyControlTracer = Tracer $ \case
+humanFriendlyControlTracer :: Int -> Tracer IO ControlClientTrace
+humanFriendlyControlTracer verbosity = Tracer $ \case
   ControlClientKeyAccepted -> putStrLn "Key accepted."
   ControlClientKeyRejected reason -> putStrLn $ "Key rejected: " ++ formatReason reason
-  _ -> return ()
-  -- x -> print x
+  ControlClientAttemptReconnect 1 -> when (verbosity > 0) $ do
+    printf "Connection to agent failed, will try again 1 more time\n"
+  ControlClientAttemptReconnect n -> when (verbosity > 0) $ do
+    printf "Connection to agent failed, will try again %i more times\n" n
+  x -> when (verbosity > 1) (putStrLn $ "kes-agent-control:" ++ show x)
 
 formatReason :: RecvResult -> String
 formatReason RecvOK = "no error"
@@ -251,12 +269,13 @@ runControlClientCommand :: CommonOptions
                         -> IO a
 runControlClientCommand opts ioManager peer = do
   controlClientOptions <- mkControlClientOptions opts ioManager
+  let verbosity = fromMaybe 0 $ optVerbosity opts
   runControlClient1
     peer
     (Proxy @StandardCrypto)
     makeSocketRawBearer
     controlClientOptions
-    humanFriendlyControlTracer
+    (humanFriendlyControlTracer verbosity)
 
 runGenKey :: GenKeyOptions -> IO ()
 runGenKey gko' = withIOManager $ \ioManager -> do
@@ -341,7 +360,29 @@ runInstallKey iko' = withIOManager $ \ioManager -> do
         putStrLn $ "Error: " ++ formatReason result
         exitWith $ ExitFailure (fromEnum result)
 
+runGetInfo :: CommonOptions -> IO ()
+runGetInfo opt' = withIOManager $ \ioManager -> do
+  optEnv <- optFromEnv
+  let opt = opt' <> optEnv <> defCommonOptions
+  info <- runControlClientCommand opt ioManager controlGetInfo
+  printf "Current time: %s\n" $ show (agentInfoCurrentTime info)
+  printf "Current KES period: %u\n" (unKESPeriod $ agentInfoCurrentKESPeriod info)
+  whenJust (agentInfoCurrentBundle info) $ \bundleInfo -> do
+    printf "--- Installed KES SignKey ---\n"
+    printf "VerKey: %s\n" (hexShowBS . rawSerialiseVerKeyKES $ bundleInfoVK bundleInfo)
+    printf "Valid from period: %u\n" (unKESPeriod $ bundleInfoStartKESPeriod bundleInfo)
+    printf "Current evolution: %u / %u\n" (bundleInfoEvolution bundleInfo) (totalPeriodsKES (Proxy @(KES StandardCrypto)))
+    printf "OpCert number: %u\n" (bundleInfoOCertN bundleInfo)
+    let (SignedDSIGN sig) = bundleInfoSigma bundleInfo
+    printf "OpCert signature: %s\n" (hexShowBS . rawSerialiseSigDSIGN $ sig)
+  whenJust (agentInfoStagedKey info) $ \keyInfo -> do
+    printf "--- Staged KES SignKey ---\n"
+    printf "VerKey: %s\n" (hexShowBS . rawSerialiseVerKeyKES $ keyInfoVK keyInfo)
+
 programDesc = fullDesc
+
+hexShowBS :: BS.ByteString -> String
+hexShowBS = concatMap (printf "%02x") . BS.unpack
 
 main :: IO ()
 main = do
@@ -352,3 +393,4 @@ main = do
     RunQueryKey opts' -> runQueryKey opts'
     RunDropKey opts' -> runDropKey opts'
     RunInstallKey opts' -> runInstallKey opts'
+    RunGetInfo opts' -> runGetInfo opts'
