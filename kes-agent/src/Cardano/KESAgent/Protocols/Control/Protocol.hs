@@ -39,6 +39,29 @@ import GHC.Generics ( Generic )
 import Network.TypedProtocol.Core
 import NoThunks.Class ( NoThunks (..) )
 import Quiet
+import Data.Time (UTCTime)
+
+data AgentInfo c =
+  AgentInfo
+    { agentInfoCurrentBundle :: !(Maybe (BundleInfo c))
+    , agentInfoStagedKey :: !(Maybe (KeyInfo c))
+    , agentInfoCurrentTime :: !UTCTime
+    , agentInfoCurrentKESPeriod :: !KESPeriod
+    }
+
+data BundleInfo c =
+  BundleInfo
+    { bundleInfoEvolution :: !Word32
+    , bundleInfoStartKESPeriod :: !KESPeriod
+    , bundleInfoOCertN :: !Word64
+    , bundleInfoVK :: !(VerKeyKES (KES c))
+    , bundleInfoSigma :: !(SignedDSIGN (DSIGN c) (OCertSignable c))
+    }
+
+newtype KeyInfo c =
+  KeyInfo
+    { keyInfoVK :: VerKeyKES (KES c)
+    }
 
 data ControlProtocol (m :: * -> *) (k :: *) where
   -- | Default state after connecting, but before the protocol version has been
@@ -50,6 +73,9 @@ data ControlProtocol (m :: * -> *) (k :: *) where
 
   -- | Client has requested a new KES key to be generated in the staging area.
   WaitForPublicKeyState :: ControlProtocol m k
+
+  -- | Client has requested agent information
+  WaitForInfoState :: ControlProtocol m k
 
   -- | An OpCert has been pushed, client must now confirm that it has been
   -- received, and that it matches the staged KES key.
@@ -103,6 +129,11 @@ instance Protocol (ControlProtocol m c) where
           InstallResultMessage :: RecvResult
                                -> Message (ControlProtocol m c) WaitForConfirmationState IdleState
 
+          RequestInfoMessage :: Message (ControlProtocol m c) IdleState WaitForInfoState
+
+          InfoMessage :: AgentInfo c
+                      -> Message (ControlProtocol m c) WaitForInfoState IdleState
+
           AbortMessage :: Message (ControlProtocol m c) InitialState EndState
           EndMessage :: Message (ControlProtocol m c) IdleState EndState
           ProtocolErrorMessage :: Message (ControlProtocol m c) a EndState
@@ -116,6 +147,7 @@ instance Protocol (ControlProtocol m c) where
   data ClientHasAgency st where
     TokWaitForConfirmation :: ClientHasAgency WaitForConfirmationState
     TokWaitForPublicKey :: ClientHasAgency WaitForPublicKeyState
+    TokWaitForInfo :: ClientHasAgency WaitForInfoState
 
   -- | Someone, i.e., the server, always has agency
   data NobodyHasAgency st where
@@ -127,6 +159,8 @@ instance Protocol (ControlProtocol m c) where
         case tok2 of {}
       TokWaitForPublicKey ->
         case tok2 of {}
+      TokWaitForInfo ->
+        case tok2 of {}
   exclusionLemma_NobodyAndClientHaveAgency _ _ = undefined
   exclusionLemma_NobodyAndServerHaveAgency _ _ = undefined
 
@@ -136,4 +170,4 @@ instance NamedCrypto c => VersionedProtocol (ControlProtocol m c) where
 cpVersionIdentifier :: forall m c. NamedCrypto c => Proxy (ControlProtocol m c) -> VersionIdentifier
 cpVersionIdentifier _ =
   mkVersionIdentifier $
-    "Control:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.3"
+    "Control:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.4"

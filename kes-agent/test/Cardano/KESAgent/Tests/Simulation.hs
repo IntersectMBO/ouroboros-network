@@ -114,7 +114,11 @@ import Data.Time
   , diffTimeToPicoseconds
   , picosecondsToDiffTime
   )
-import Data.Time.Clock.POSIX ( getPOSIXTime, utcTimeToPOSIXSeconds )
+import Data.Time.Clock.POSIX
+  ( getPOSIXTime
+  , utcTimeToPOSIXSeconds
+  , posixSecondsToUTCTime
+  )
 import Data.Typeable
 import Data.Word
 import Debug.Trace
@@ -383,7 +387,7 @@ runTestNetwork p mrb snocket genesisTimestamp
         tracer = mvarPrettyTracer traceMVar
     propertyVar <- newMVar (property True)
     doneVar <- newEmptyMVar :: m (MVar m ())
-    timeVar <- newMVar (fromInteger genesisTimestamp) :: m (MVar m NominalDiffTime)
+    timeVar <- newMVar (posixSecondsToUTCTime $ fromInteger genesisTimestamp) :: m (MVar m UTCTime)
     result <- withAddress $ \controlAddress -> do
       withAddress $ \serviceAddress -> do
         agentSeedVar <- newMVar agentKESSeeds
@@ -407,7 +411,7 @@ runTestNetwork p mrb snocket genesisTimestamp
             agentOptions = AgentOptions
                               { agentEvolutionConfig =
                                     EvolutionConfig
-                                      { genesisTimestamp = genesisTimestamp
+                                      { systemStart = posixSecondsToUTCTime (fromInteger genesisTimestamp)
                                       , slotsPerKESPeriod = 12900
                                       , slotLength = 1
                                       }

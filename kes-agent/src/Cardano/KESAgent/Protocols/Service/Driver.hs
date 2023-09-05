@@ -157,13 +157,9 @@ serviceDriver s tracer = Driver
         return ()
 
       (ServerAgency TokIdle, KeyMessage skpRef oc) -> do
-        sendWord32 s 1
         traceWith tracer $ ServiceDriverSendingKey (ocertN oc)
         sendBundle s skpRef oc
         traceWith tracer $ ServiceDriverSentKey (ocertN oc)
-
-      (ServerAgency TokIdle, NoKeyYetMessage) -> do
-        sendWord32 s 0
 
       (ServerAgency TokIdle, ServerDisconnectMessage) -> do
         return ()
@@ -197,16 +193,10 @@ serviceDriver s tracer = Driver
             return (SomeMessage AbortMessage, ())
       (ServerAgency TokIdle) -> do
         result <- runReadResultT $ do
-          i <- ReadResultT (receiveWord32 s)
-          case i of
-            0 -> do
-              return (SomeMessage NoKeyYetMessage, ())
-            1 -> do
-              lift $ traceWith tracer ServiceDriverReceivingKey
-              (skpVar, oc) <- ReadResultT $ receiveBundle s (ServiceDriverMisc >$< tracer)
-              lift $ traceWith tracer $ ServiceDriverReceivedKey (ocertN oc)
-              return (SomeMessage (KeyMessage skpVar oc), ())
-            n -> readResultT $ ReadMalformed "Key"
+          lift $ traceWith tracer ServiceDriverReceivingKey
+          (skpVar, oc) <- ReadResultT $ receiveBundle s (ServiceDriverMisc >$< tracer)
+          lift $ traceWith tracer $ ServiceDriverReceivedKey (ocertN oc)
+          return (SomeMessage (KeyMessage skpVar oc), ())
         case result of
           ReadOK msg ->
             return msg

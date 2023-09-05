@@ -5,6 +5,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -47,7 +48,7 @@ import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher )
 import Cardano.KESAgent.Protocols.Service.Protocol ( ServiceProtocol )
 import Cardano.KESAgent.Protocols.Control.Driver ( ControlDriverTrace (..), controlDriver )
 import Cardano.KESAgent.Protocols.Control.Peers ( controlReceiver )
-import Cardano.KESAgent.Protocols.Control.Protocol ( ControlProtocol )
+import Cardano.KESAgent.Protocols.Control.Protocol ( ControlProtocol, AgentInfo (..), BundleInfo (..), KeyInfo (..) )
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..), strLength )
 import Cardano.KESAgent.Util.RefCounting
@@ -104,6 +105,7 @@ import Control.Concurrent.Class.MonadSTM.TMVar
   ( TMVar
   , newEmptyTMVar
   , newTMVar
+  , newTMVarIO
   , putTMVar
   , readTMVar
   , takeTMVar
@@ -135,8 +137,7 @@ import Data.ByteString ( ByteString )
 import Data.Functor.Contravariant ( contramap, (>$<) )
 import Data.Maybe ( fromJust )
 import Data.Proxy ( Proxy (..) )
-import Data.Time ( NominalDiffTime )
-import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
+import Data.Time ( UTCTime )
 import Data.Typeable ( Typeable )
 import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
 import Network.TypedProtocol.Driver ( runPeerWithDriver )
@@ -200,10 +201,10 @@ data AgentOptions m addr c =
       -- | Evolution configuration: genesis, slot duration, slots per KES period
     , agentEvolutionConfig :: EvolutionConfig
 
-      -- | Return the current POSIX time. Should normally be set to
+      -- | Return the current time. Should normally be set to
       -- 'getPOSIXTime', but overriding this may be desirable for testing
       -- purposes.
-    , agentGetCurrentTime :: m NominalDiffTime
+    , agentGetCurrentTime :: m UTCTime
 
     , agentColdVerKey :: VerKeyDSIGN (DSIGN c)
 
@@ -215,7 +216,7 @@ defAgentOptions = AgentOptions
   { agentControlAddr = error "missing control address"
   , agentServiceAddr = error "missing service address"
   , agentEvolutionConfig = defEvolutionConfig
-  , agentGetCurrentTime = utcTimeToPOSIXSeconds <$> getCurrentTime
+  , agentGetCurrentTime = getCurrentTime
   , agentTracer = nullTracer
   , agentColdVerKey = error "missing cold verification key file"
   , agentGenSeed = error "missing seed generator"
@@ -264,10 +265,9 @@ data Agent c m fd addr =
     { agentSnocket :: Snocket m fd addr
     , agentMRB :: MakeRawBearer m fd
     , agentOptions :: AgentOptions m addr c
-    , agentCurrentKeyVar :: TMVar m (KESBundle m c)
-    , agentStagedKeyVar :: TMVar m (CRef m (SignKeyWithPeriodKES (KES c)))
+    , agentCurrentKeyVar :: TMVar m (Maybe (KESBundle m c))
+    , agentStagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
     , agentNextKeyChan :: TChan m (KESBundle m c)
-    , agentKeyLock :: MVar m ()
     , agentServiceFD :: fd
     , agentControlFD :: fd
     }
@@ -282,10 +282,11 @@ newAgent :: forall c m fd addr
          -> AgentOptions m addr c
          -> m (Agent c m fd addr)
 newAgent _p s mrb options = do
-  stagedKeyVar :: TMVar m (CRef m (SignKeyWithPeriodKES (KES c))) <- atomically newEmptyTMVar
-  currentKeyVar :: TMVar m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) <- atomically newEmptyTMVar
+  stagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
+               <- newTMVarIO Nothing
+  currentKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
+                <- newTMVarIO Nothing
   nextKeyChan <- atomically newBroadcastTChan
-  keyLock :: MVar m () <- newMVar ()
 
   serviceFD <- open s (addrFamily s (agentServiceAddr options))
   bind s serviceFD (agentServiceAddr options)
@@ -300,7 +301,6 @@ newAgent _p s mrb options = do
     , agentStagedKeyVar = stagedKeyVar
     , agentCurrentKeyVar = currentKeyVar
     , agentNextKeyChan = nextKeyChan
-    , agentKeyLock = keyLock
     , agentServiceFD = serviceFD
     , agentControlFD = controlFD
     }
@@ -317,14 +317,62 @@ agentTrace agent = traceWith (agentTracer . agentOptions $ agent)
 agentCRefTracer :: Agent c m fd addr -> Tracer m CRefEvent
 agentCRefTracer = contramap AgentCRefEvent . agentTracer . agentOptions
 
-withKeyUpdateLock :: MonadMVar m => Agent c m fd addr -> String -> m a -> m a
-withKeyUpdateLock agent context a = do
+alterBundle :: (MonadSTM m, MonadThrow m)
+          => Agent c m fd addr
+          -> String
+          -> (Maybe (KESBundle m c) -> m (Maybe (KESBundle m c), a))
+          -> m a
+alterBundle agent context f = do
   agentTrace agent $ AgentLockRequest context
-  withMVar (agentKeyLock agent) $ \() -> do
+  atomically (takeTMVar (agentCurrentKeyVar agent)) >>= \bundle -> do
     agentTrace agent (AgentLockAcquired context)
-    result <- a
+    (bundle', retval) <- f bundle
+    atomically $ putTMVar (agentCurrentKeyVar agent) bundle'
     agentTrace agent (AgentLockReleased context)
-    return result
+    return retval
+
+withBundle :: (MonadSTM m, MonadThrow m)
+          => Agent c m fd addr
+          -> String
+          -> (Maybe (KESBundle m c) -> m a)
+          -> m a
+withBundle agent context f = do
+  agentTrace agent $ AgentLockRequest context
+  atomically (takeTMVar (agentCurrentKeyVar agent)) >>= \bundle -> do
+    agentTrace agent (AgentLockAcquired context)
+    retval <- f bundle
+    atomically $ putTMVar (agentCurrentKeyVar agent) bundle
+    agentTrace agent (AgentLockReleased context)
+    return retval
+
+alterStagedKey :: (MonadSTM m, MonadThrow m)
+          => Agent c m fd addr
+          -> String
+          -> (Maybe (CRef m (SignKeyWithPeriodKES (KES c))) -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))), a))
+          -> m a
+alterStagedKey agent context f = do
+  agentTrace agent $ AgentLockRequest context
+  atomically (takeTMVar (agentStagedKeyVar agent)) >>= \skp -> do
+    agentTrace agent (AgentLockAcquired context)
+    (skp', retval) <- f skp
+    atomically $ putTMVar (agentStagedKeyVar agent) skp'
+    agentTrace agent (AgentLockReleased context)
+    return retval
+
+withStagedKey :: (MonadSTM m, MonadThrow m)
+          => Agent c m fd addr
+          -> String
+          -> (Maybe (CRef m (SignKeyWithPeriodKES (KES c))) -> m a)
+          -> m a
+withStagedKey agent context f = do
+  agentTrace agent $ AgentLockRequest context
+  atomically (takeTMVar (agentStagedKeyVar agent)) >>= \skp -> do
+    agentTrace agent (AgentLockAcquired context)
+    retval <- f skp
+    atomically $ putTMVar (agentStagedKeyVar agent) skp
+    agentTrace agent (AgentLockReleased context)
+    return retval
+
 
 formatKey :: OCert c -> String
 formatKey ocert =
@@ -338,29 +386,31 @@ genKey agent = do
     (agentGenSeed . agentOptions $ agent)
     mlockedSeedFinalize $ \seed -> do
       sk <- genKeyKES seed
-      oldSKVarMay <- atomically $ tryTakeTMVar (agentStagedKeyVar agent)
+      oldSKVarMay <- atomically $ takeTMVar (agentStagedKeyVar agent)
       maybe (return ()) releaseCRef oldSKVarMay
       newSKVar <- newCRef (forgetSignKeyKES . skWithoutPeriodKES) (SignKeyWithPeriodKES sk 0)
-      atomically $ putTMVar (agentStagedKeyVar agent) newSKVar
+      atomically $ putTMVar (agentStagedKeyVar agent) (Just newSKVar)
       vk <- deriveVerKeyKES sk
       return $ Just vk
 
 dropKey :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ())
         => Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
 dropKey agent = do
-  keyMay <- atomically $ tryTakeTMVar (agentStagedKeyVar agent)
+  keyMay <- atomically $ takeTMVar (agentStagedKeyVar agent)
   maybe (return ()) releaseCRef keyMay
   return Nothing
+  `finally` do
+    atomically $ putTMVar (agentStagedKeyVar agent) Nothing
 
 queryKey :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ())
          => Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
 queryKey agent = do
-  keyMay <- atomically $ tryReadTMVar (agentStagedKeyVar agent)
-  case keyMay of
-    Nothing -> return Nothing
-    Just skpVar -> withCRefValue skpVar $ \skp -> do
-      vk <- deriveVerKeyKES (skWithoutPeriodKES skp)
-      return $ Just vk
+  withStagedKey agent "queryKey" $ \keyMay -> do
+    case keyMay of
+      Nothing -> return Nothing
+      Just skpVar -> withCRefValue skpVar $ \skp -> do
+        vk <- deriveVerKeyKES (skWithoutPeriodKES skp)
+        return $ Just vk
 
 installKey :: ( MonadThrow m
               , MonadST m
@@ -374,39 +424,91 @@ installKey :: ( MonadThrow m
               )
          => Agent c m fd addr -> OCert c -> m RecvResult
 installKey agent oc = do
-  keyMay <- atomically $ tryTakeTMVar (agentStagedKeyVar agent)
-  case keyMay of
-    Nothing ->
-      return RecvErrorNoKey
-    Just skpVar ->
-      pushKey agent skpVar oc
+  newKeyMay <- alterStagedKey agent "install staged key" $ \keyMay -> do
+    return (Nothing, keyMay)
+    case keyMay of
+      Nothing -> do
+        return (Nothing, Nothing)
+      Just skpVar -> do
+        return (Nothing, Just skpVar)
+  maybe
+    (return RecvErrorNoKey)
+    (\newKey -> pushKey agent newKey oc)
+    newKeyMay
 
+getInfo :: ( MonadThrow m
+           , MonadST m
+           , MonadSTM m
+           , MonadMVar m
+           , Crypto c
+           , NamedCrypto c
+           , ContextKES (KES c) ~ ()
+           , ContextDSIGN (DSIGN c) ~ ()
+           , DSIGN.Signable (DSIGN c) (OCertSignable c)
+           )
+        => Agent c m fd addr -> m (AgentInfo c)
+getInfo agent = do
+  bundleInfoMay <- do
+      withBundle agent "get info" $ \case
+        Nothing ->
+          return Nothing
+        Just (skpRef, ocert) ->
+          withCRefValue skpRef $ \skp -> do
+            return $ Just BundleInfo
+                        { bundleInfoEvolution = fromIntegral $ periodKES skp
+                        , bundleInfoStartKESPeriod = ocertKESPeriod ocert
+                        , bundleInfoOCertN = ocertN ocert
+                        , bundleInfoVK = ocertVkHot ocert
+                        , bundleInfoSigma = ocertSigma ocert
+                        }
+
+  keyInfoMay <- do
+      withStagedKey agent "get info" $ \case
+        Nothing -> do
+          return Nothing
+        Just skpVar -> withCRefValue skpVar $ \skp -> do
+          vk <- deriveVerKeyKES (skWithoutPeriodKES skp)
+          return $ Just (KeyInfo vk)
+
+  now <- agentGetCurrentTime (agentOptions agent)
+  kesPeriod <- getCurrentKESPeriodWith
+                (agentGetCurrentTime $ agentOptions agent)
+                (agentEvolutionConfig $ agentOptions agent)
+  return AgentInfo
+    { agentInfoCurrentBundle = bundleInfoMay
+    , agentInfoStagedKey = keyInfoMay
+    , agentInfoCurrentTime = now
+    , agentInfoCurrentKESPeriod = kesPeriod
+    }
+      
 checkEvolution :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ()) => Agent c m fd addr -> m ()
-checkEvolution agent = withKeyUpdateLock agent "checkEvolution" $ do
+checkEvolution agent = do
   p' <- getCurrentKESPeriodWith
           (agentGetCurrentTime $ agentOptions agent)
           (agentEvolutionConfig $ agentOptions agent)
   agentTrace agent $ AgentCheckEvolution p'
-  keyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
-  case keyOcMay of
-    Nothing -> do
-      agentTrace agent AgentNoKeyToEvolve
-      return ()
-    Just (keyVar, oc) -> withCRefValue keyVar $ \key -> do
-      let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
-      if p < p' then do
-        keyMay' <- updateKESTo () p' oc key
-        case keyMay' of
-          Nothing -> do
-            agentTrace agent $ AgentKeyExpired p p'
-          Just key' -> do
-            agentTrace agent $ AgentKeyEvolved p p'
-            keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
-            void . atomically $ putTMVar (agentCurrentKeyVar agent) (keyVar', oc)
-        releaseCRef keyVar
-      else do
-        agentTrace agent $ AgentKeyNotEvolved p p'
-        void . atomically $ putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
+  alterBundle agent "checkEvolution" $ \bundleMay -> do
+    case bundleMay of
+      Nothing -> do
+        agentTrace agent AgentNoKeyToEvolve
+        return (Nothing, ())
+      Just (keyVar, oc) -> withCRefValue keyVar $ \key -> do
+        let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
+        if p < p' then do
+          keyMay' <- updateKESTo () p' oc key
+          case keyMay' of
+            Nothing -> do
+              agentTrace agent $ AgentKeyExpired p p'
+              releaseCRef keyVar
+              return (Nothing, ())
+            Just key' -> do
+              agentTrace agent $ AgentKeyEvolved p p'
+              keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
+              releaseCRef keyVar
+              return (Just (keyVar', oc), ())
+        else do
+          agentTrace agent $ AgentKeyNotEvolved p p'
+          return (bundleMay, ())
 
 pushKey :: forall c m fd addr.
            ( MonadMVar m
@@ -441,11 +543,9 @@ pushKey agent keyVar oc = do
 
   where
     go = do
-      result <- withKeyUpdateLock agent "pushKey" $ do
+      result <- alterBundle agent "pushKey" $ \oldKeyOcMay -> do
         acquireCRef keyVar
         let keyStr = formatKey oc
-        -- Empty the var in case there's anything there already
-        oldKeyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
 
         let report keyVar oc = atomically $ do
               -- The TMVar is now empty; we write to the next key signal channel
@@ -454,7 +554,7 @@ pushKey agent keyVar oc = do
               -- will be the correct one. Since the MVar is empty at this point, the
               -- consumers will block until we put the key back in.
               writeTChan (agentNextKeyChan agent) (keyVar, oc)
-              putTMVar (agentCurrentKeyVar agent) (keyVar, oc)
+              return (Just (keyVar, oc), RecvOK)
 
         case oldKeyOcMay of
           Just (oldKeyVar, oldOC) -> do
@@ -462,17 +562,14 @@ pushKey agent keyVar oc = do
             if ocertN oldOC >= ocertN oc then do
               releaseCRef keyVar
               agentTrace agent $ AgentSkippingOldKey oldKeyStr keyStr
-              atomically $ putTMVar (agentCurrentKeyVar agent) (oldKeyVar, oldOC)
-              return RecvErrorKeyOutdated
+              return (oldKeyOcMay, RecvErrorKeyOutdated)
             else do
               releaseCRef oldKeyVar
               agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
               report keyVar oc
-              return RecvOK
           Nothing -> do
             agentTrace agent $ AgentInstallingNewKey keyStr
             report keyVar oc
-            return RecvOK
       checkEvolution agent
       return result
 
@@ -567,8 +664,9 @@ runAgent agent = do
         labelMyThread "service"
         nextKeyChanRcv <- atomically $ dupTChan (agentNextKeyChan agent)
 
-        let currentKey = atomically $ readTMVar (agentCurrentKeyVar agent)
-        let nextKey = atomically $ Just <$> readTChan nextKeyChanRcv
+        let currentKey = atomically $ do
+              readTMVar (agentCurrentKeyVar agent) >>= maybe retry return
+        let nextKey = atomically $ readTChan nextKeyChanRcv
 
         let reportPushResult = const (return ())
 
@@ -615,7 +713,8 @@ runAgent agent = do
                   (genKey agent)
                   (dropKey agent)
                   (queryKey agent)
-                  (installKey agent))
+                  (installKey agent)
+                  (getInfo agent))
                 ()
           )
 

@@ -55,6 +55,8 @@ import Foreign.Marshal.Utils ( copyBytes )
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
+import Data.Time ( UTCTime )
+import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds, posixSecondsToUTCTime )
 
 data ReadResult a
   = ReadOK a
@@ -283,6 +285,22 @@ sendBS s bs =
       copyMem buf bsbuf (fromIntegral size)
     fromIntegral <$> send s (castPtr buf) (fromIntegral $ BS.length bs)
 
+receiveWord8 :: (MonadThrow m, MonadST m)
+              => RawBearer m
+              -> m (ReadResult Word8)
+receiveWord8 s = runReadResultT $ do
+  buf <- ReadResultT $ receiveBS s 1
+  let decoded = decode @Word8 $ LBS.fromStrict buf
+  return decoded
+
+receiveWord16 :: (MonadThrow m, MonadST m)
+              => RawBearer m
+              -> m (ReadResult Word16)
+receiveWord16 s = runReadResultT $ do
+  buf <- ReadResultT $ receiveBS s 2
+  let decoded = decode @Word16 $ LBS.fromStrict buf
+  return decoded
+
 receiveWord32 :: (MonadThrow m, MonadST m)
               => RawBearer m
               -> m (ReadResult Word32)
@@ -291,12 +309,56 @@ receiveWord32 s = runReadResultT $ do
   let decoded = decode @Word32 $ LBS.fromStrict buf
   return decoded
 
+receiveWord64 :: (MonadThrow m, MonadST m)
+              => RawBearer m
+              -> m (ReadResult Word64)
+receiveWord64 s = runReadResultT $ do
+  buf <- ReadResultT $ receiveBS s 8
+  let decoded = decode @Word64 $ LBS.fromStrict buf
+  return decoded
+
+receiveUTCTime :: (MonadThrow m, MonadST m)
+            => RawBearer m
+            -> m (ReadResult UTCTime)
+receiveUTCTime s = runReadResultT $ do
+  posix <- ReadResultT $ receiveWord64 s
+  return $ posixSecondsToUTCTime . fromIntegral $ posix
+
+
+sendWord8 :: (MonadThrow m, MonadST m)
+           => RawBearer m
+           -> Word8
+           -> m ()
+sendWord8 s val =
+  void $ sendBS s (LBS.toStrict $ encode val)
+
+sendWord16 :: (MonadThrow m, MonadST m)
+           => RawBearer m
+           -> Word16
+           -> m ()
+sendWord16 s val =
+  void $ sendBS s (LBS.toStrict $ encode val)
+
 sendWord32 :: (MonadThrow m, MonadST m)
            => RawBearer m
            -> Word32
            -> m ()
 sendWord32 s val =
   void $ sendBS s (LBS.toStrict $ encode val)
+
+sendWord64 :: (MonadThrow m, MonadST m)
+           => RawBearer m
+           -> Word64
+           -> m ()
+sendWord64 s val =
+  void $ sendBS s (LBS.toStrict $ encode val)
+
+sendUTCTime :: (MonadThrow m, MonadST m)
+            => RawBearer m
+            -> UTCTime
+            -> m ()
+sendUTCTime s utc =
+  sendWord64 s $ floor . utcTimeToPOSIXSeconds $ utc
 
 unsafeReceiveN :: Monad m => RawBearer m -> Ptr CChar -> CSize -> m (ReadResult CSize)
 unsafeReceiveN s buf bufSize = do

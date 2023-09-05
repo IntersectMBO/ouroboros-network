@@ -19,6 +19,7 @@ data-files: fixtures/*.vkey
           , fixtures/*.skey
           , fixtures/opcert.cert
           , fixtures/opcert.counter
+          , fixtures/mainnet-shelley-genesis.json
 
 common project-config
      ghc-options:

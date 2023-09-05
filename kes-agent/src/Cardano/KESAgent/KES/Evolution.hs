@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Cardano.KESAgent.KES.Evolution
   where
@@ -15,37 +16,43 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime
 import Data.Time ( NominalDiffTime, nominalDiffTimeToSeconds )
-import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
+import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds, posixSecondsToUTCTime )
+
+import Data.Aeson.TH (deriveJSON)
+import qualified Data.Aeson as JSON
+import qualified Data.Aeson.TH as JSON
 
 data EvolutionConfig =
   EvolutionConfig
     { slotLength :: Int
     , slotsPerKESPeriod :: Int
-    , genesisTimestamp :: Integer
+    , systemStart :: UTCTime
     }
     deriving (Show, Eq, Ord)
+
+deriveJSON JSON.defaultOptions ''EvolutionConfig
 
 defEvolutionConfig :: EvolutionConfig
 defEvolutionConfig =
   EvolutionConfig
-    { genesisTimestamp = 1506203091 -- real-world genesis on the production ledger
+    { systemStart = posixSecondsToUTCTime 1506203091 -- real-world genesis on the production ledger
     , slotsPerKESPeriod = 129600
     , slotLength = 1
     }
 
-getCurrentKESPeriod :: MonadTime m => EvolutionConfig -> m KESPeriod
-getCurrentKESPeriod ec = do
-  now <- utcTimeToPOSIXSeconds <$> getCurrentTime
-  getCurrentKESPeriodWith (pure now) ec
+evolutionConfigFromGenesisFile :: FilePath -> IO (Either String EvolutionConfig)
+evolutionConfigFromGenesisFile = JSON.eitherDecodeFileStrict'
 
-getCurrentKESPeriodWith :: Monad m => m NominalDiffTime -> EvolutionConfig -> m KESPeriod
-getCurrentKESPeriodWith now ec =
-  KESPeriod
-    . floor
-    .  (/ (realToFrac (slotLength ec) * realToFrac (slotsPerKESPeriod ec)))
-    . subtract (realToFrac (genesisTimestamp ec))
-    . nominalDiffTimeToSeconds
-    <$> now
+getCurrentKESPeriod :: MonadTime m => EvolutionConfig -> m KESPeriod
+getCurrentKESPeriod = do
+  getCurrentKESPeriodWith getCurrentTime
+
+getCurrentKESPeriodWith :: Monad m => m UTCTime -> EvolutionConfig -> m KESPeriod
+getCurrentKESPeriodWith getNow ec = do
+  now <- getNow
+  let diffSecs = floor (nominalDiffTimeToSeconds $ diffUTCTime now (systemStart ec))
+      kesPeriodDuration = fromIntegral (slotLength ec) * fromIntegral (slotsPerKESPeriod ec)
+  return $ KESPeriod (diffSecs `div` kesPeriodDuration)
 
 updateKESToCurrent :: KESAlgorithm (KES v)
                    => MonadTime m

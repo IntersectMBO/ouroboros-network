@@ -46,6 +46,7 @@ tests :: TestTree
 tests =
   testGroup "end to end"
     [ testCase "kes-agent --help" kesAgentHelp
+    , testCase "kes-agent --genesis-file" kesAgentGenesisFile
     , testCase "kes-agent-control --help" kesAgentControlHelp
     , testGroup "kes-agent-control install-key"
       [ testCase "valid" kesAgentControlInstallValid
@@ -60,6 +61,33 @@ kesAgentHelp :: Assertion
 kesAgentHelp = do
   (exitCode, stdout, stderr) <- readProcessWithExitCode "kes-agent" [ "--help" ] ""
   assertEqual (stdout ++ "\n" ++ stderr) ExitSuccess exitCode
+
+kesAgentGenesisFile :: Assertion
+kesAgentGenesisFile = do
+  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "kes-agent-tests" $ \tmpdir -> do
+    let controlAddr = tmpdir </> "control.socket"
+        serviceAddr = tmpdir </> "service.socket"
+        kesKeyFile = tmpdir </> "kes.vkey"
+        opcertFile = tmpdir </> "opcert.cert"
+    coldSignKeyFile <- getDataFileName "fixtures/cold.skey"
+    coldVerKeyFile <- getDataFileName "fixtures/cold.vkey"
+    genesisFile <- getDataFileName "fixtures/mainnet-shelley-genesis.json"
+
+    let args = [ "run"
+               , "--genesis-file", genesisFile
+               , "--cold-verification-key", coldVerKeyFile
+               , "--service-address", serviceAddr
+               , "--control-address", controlAddr
+               ]
+    withSpawnProcess "kes-agent" args $ \_ (Just hOut) (Just hErr) ph -> do
+      threadDelay 100000
+      terminateProcess ph
+      (outT, errT) <- concurrently
+        (Text.lines <$> Text.hGetContents hOut)
+        (Text.lines <$> Text.hGetContents hErr)
+      exitCode <- waitForProcess ph
+      return (outT, errT, exitCode)
+  assertMatchingOutputLines 3 ["ListeningOnControlSocket"] agentOutLines
 
 kesAgentControlHelp :: Assertion
 kesAgentControlHelp = do
@@ -119,7 +147,7 @@ kesAgentControlInstallValid =
           ]
           ExitSuccess
           [ "KES key installed." ]
-    assertMatchingOutputLinesWith (Text.unpack . Text.unlines $ agentOutLines) 0 ["KES", "key", "0"] serviceOutLines
+    assertMatchingOutputLinesWith ("SERVICE OUTPUT CHECK\n" <> (Text.unpack . Text.unlines $ agentOutLines)) 0 ["KES", "key", "0"] serviceOutLines
 
 kesAgentControlInstallInvalidOpCert :: Assertion
 kesAgentControlInstallInvalidOpCert =
@@ -252,7 +280,7 @@ kesAgentControlInstallMultiNodes =
           ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
           ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
           KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
-          kesPeriod <- getCurrentKESPeriod defGenesisTimestamp
+          kesPeriod <- getCurrentKESPeriod defEvolutionConfig
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
           return ()
@@ -320,8 +348,8 @@ controlClientCheck :: [String] -> ExitCode -> [String] -> IO ()
 controlClientCheck args expectedExitCode expectedOutput = do
   (exitCode, outStr, errStr) <- controlClient args
   let outLines = lines outStr ++ lines errStr
-  assertEqual (outStr ++ errStr) expectedOutput outLines
-  assertEqual (outStr ++ errStr) expectedExitCode exitCode
+  assertEqual ("CONTROL CLIENT OUTPUT\n" ++ outStr ++ errStr) expectedOutput outLines
+  assertEqual ("CONTROL CLIENT EXIT CODE\n" ++ outStr ++ errStr) expectedExitCode exitCode
 
 withAgentAndService :: FilePath -> FilePath -> FilePath -> IO a -> IO ([Text.Text], [Text.Text], a)
 withAgentAndService controlAddr serviceAddr coldVerKeyFile action = do
@@ -343,6 +371,7 @@ withAgent controlAddr serviceAddr coldVerKeyFile action =
            , "--cold-verification-key", coldVerKeyFile
            , "--service-address", serviceAddr
            , "--control-address", controlAddr
+           , "--log-level", "debug"
            ]
 
 withService :: FilePath -> IO a -> IO ([Text.Text], a)
@@ -366,7 +395,7 @@ withSpawnProcess cmd args action = do
       cp = cp'
             { std_in = CreatePipe
             , std_out = CreatePipe
-            , std_err = Inherit
+            , std_err = CreatePipe
             , new_session = True
             }
   withCreateProcess cp action

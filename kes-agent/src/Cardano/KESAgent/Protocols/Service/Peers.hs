@@ -35,8 +35,6 @@ serviceReceiver receiveKey =
             Effect $ do
               result <- receiveKey sk oc
               return $ Yield (ClientAgency TokWaitForConfirmation) (RecvResultMessage result) go
-          NoKeyYetMessage ->
-            Yield (ClientAgency TokWaitForConfirmation) (RecvResultMessage RecvOK) go
           ProtocolErrorMessage ->
             Done TokEnd ()
           ServerDisconnectMessage ->
@@ -49,7 +47,7 @@ servicePusher :: forall (c :: *) (m :: (* -> *))
           => MonadAsync m
           => MonadTimer m
           => m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
-          -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
+          -> m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
           -> (RecvResult -> m ())
           -> Peer (ServiceProtocol m c) AsServer InitialState m ()
 servicePusher currentKey nextKey handleResult =
@@ -67,13 +65,7 @@ servicePusher currentKey nextKey handleResult =
 
     go :: m (Peer (ServiceProtocol m c) AsServer IdleState m ())
     go = do
-      key <- nextKey
-      case key of
-        Nothing ->
-          return $
-            Yield (ServerAgency TokIdle) ServerDisconnectMessage $
-              Done TokEnd ()
-        Just (sk, oc) ->
-          return $
-            Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
-              Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result
+      (sk, oc) <- nextKey
+      return $
+        Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
+          Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result

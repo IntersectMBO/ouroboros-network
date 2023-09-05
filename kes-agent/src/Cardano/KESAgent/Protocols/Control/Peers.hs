@@ -26,8 +26,9 @@ controlReceiver :: forall (c :: *) (m :: * -> *)
             -> m (Maybe (VerKeyKES (KES c)))
             -> m (Maybe (VerKeyKES (KES c)))
             -> (OCert c -> m RecvResult)
+            -> m (AgentInfo c)
             -> Peer (ControlProtocol m c) AsClient InitialState m ()
-controlReceiver genKey dropKey queryKey installKey =
+controlReceiver genKey dropKey queryKey installKey getAgentInfo =
     Await (ServerAgency TokInitial) $ \VersionMessage -> go
   where
     go :: Peer (ControlProtocol m c) AsClient IdleState m ()
@@ -48,6 +49,11 @@ controlReceiver genKey dropKey queryKey installKey =
             Effect $ do
               vkeyMay <- dropKey
               return $ Yield (ClientAgency TokWaitForPublicKey) (PublicKeyMessage vkeyMay) go
+
+          RequestInfoMessage ->
+            Effect $ do
+              info <- getAgentInfo
+              return $ Yield (ClientAgency TokWaitForInfo) (InfoMessage info) go
               
           EndMessage ->
             Done TokEnd ()
@@ -105,3 +111,16 @@ controlInstallKey oc = do
       Await (ClientAgency TokWaitForConfirmation) $ \(InstallResultMessage result) ->
         Yield (ServerAgency TokIdle) EndMessage $
           Done TokEnd result
+
+controlGetInfo :: forall (c :: *) (m :: (* -> *))
+               . KESAlgorithm (KES c)
+              => MonadSTM m
+              => MonadThrow m
+              => OCert c
+              -> ControlPeer c m (AgentInfo c)
+controlGetInfo oc = do
+  Yield (ServerAgency TokInitial) VersionMessage $
+    Yield (ServerAgency TokIdle) RequestInfoMessage $
+      Await (ClientAgency TokWaitForInfo) $ \(InfoMessage info) ->
+        Yield (ServerAgency TokIdle) EndMessage $
+          Done TokEnd info

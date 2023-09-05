@@ -5,6 +5,7 @@
 module Main
 where
 
+import Cardano.KESAgent.KES.Evolution
 import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
@@ -18,7 +19,7 @@ import Cardano.Crypto.Libsodium.MLockedSeed
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
-import Control.Monad ( when )
+import Control.Monad ( when, (<=<) )
 import Control.Monad.Class.MonadThrow ( bracket, finally, catch, SomeException )
 import Control.Monad.Class.MonadTime ( getCurrentTime )
 import Control.Concurrent.Class.MonadMVar
@@ -48,12 +49,19 @@ data NormalModeOptions
       , nmoControlPath :: Maybe String
       , nmoLogLevel :: Maybe Priority
       , nmoColdVerKeyFile :: Maybe FilePath
+      , nmoGenesisFile :: Maybe FilePath
       }
   deriving (Show)
 
 instance Semigroup NormalModeOptions where
-  NormalModeOptions sp1 cp1 ll1 vkp1 <> NormalModeOptions sp2 cp2 ll2 vkp2=
-    NormalModeOptions (sp1 <|> sp2) (cp1 <|> cp2) (ll1 <|> ll2) (vkp1 <|> vkp2)
+  NormalModeOptions sp1 cp1 ll1 vkp1 gf1 <>
+    NormalModeOptions sp2 cp2 ll2 vkp2 gf2 =
+      NormalModeOptions
+        (sp1 <|> sp2)
+        (cp1 <|> cp2)
+        (ll1 <|> ll2)
+        (vkp1 <|> vkp2)
+        (gf1 <|> gf2)
 
 defNormalModeOptions :: NormalModeOptions
 defNormalModeOptions =
@@ -62,6 +70,7 @@ defNormalModeOptions =
     , nmoControlPath = Just "/tmp/kes-agent-control.socket"
     , nmoLogLevel = Just Syslog.Notice
     , nmoColdVerKeyFile = Just "./cold.vkey"
+    , nmoGenesisFile = Nothing
     }
 
 data ServiceModeOptions
@@ -70,12 +79,19 @@ data ServiceModeOptions
       , smoControlPath :: Maybe String
       , smoUser :: Maybe String
       , smoGroup :: Maybe String
+      , smoGenesisFile :: Maybe FilePath
       }
   deriving (Show)
 
 instance Semigroup ServiceModeOptions where
-  ServiceModeOptions sp1 cp1 uid1 gid1 <> ServiceModeOptions sp2 cp2 uid2 gid2 =
-    ServiceModeOptions (sp1 <|> sp2) (cp1 <|> cp2) (uid1 <|> uid2) (gid1 <|> gid2)
+  ServiceModeOptions sp1 cp1 uid1 gid1 gf1 <>
+    ServiceModeOptions sp2 cp2 uid2 gid2 gf2 =
+      ServiceModeOptions
+        (sp1 <|> sp2)
+        (cp1 <|> cp2)
+        (uid1 <|> uid2)
+        (gid1 <|> gid2)
+        (gf1 <|> gf2)
 
 defServiceModeOptions :: ServiceModeOptions
 defServiceModeOptions =
@@ -84,6 +100,7 @@ defServiceModeOptions =
     , smoControlPath = Just "/tmp/kes-agent-control.socket"
     , smoUser = Just "kes-agent"
     , smoGroup = Just "kes-agent"
+    , smoGenesisFile = Nothing
     }
 
 nullServiceModeOptions :: ServiceModeOptions
@@ -93,6 +110,7 @@ nullServiceModeOptions =
     , smoControlPath = Nothing
     , smoUser = Nothing
     , smoGroup = Nothing
+    , smoGenesisFile = Nothing
     }
 
 data ProgramOptions
@@ -137,6 +155,12 @@ pNormalModeOptions =
           <> metavar "PATH"
           <> help "Cold verification key file, used to validate OpCerts upon receipt"
           )
+    <*> option (Just <$> str)
+          (  long "genesis-file"
+          <> value Nothing
+          <> metavar "PATH"
+          <> help "Genesis file (mainnet-ERA-genesis.json)"
+          )
 
 readLogLevel :: String -> Either String Priority
 readLogLevel "debug" = Right Syslog.Debug
@@ -153,12 +177,14 @@ nmoFromEnv = do
   servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
   controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
   coldVerKeyPath <- lookupEnv "KES_AGENT_COLD_VK"
+  genesisFile <- lookupEnv "KES_AGENT_GENESIS_FILE"
   logLevel <- fmap (either error id . readLogLevel) <$> lookupEnv "KES_AGENT_LOG_LEVEL"
   return NormalModeOptions
     { nmoServicePath = servicePath
     , nmoControlPath = controlPath
     , nmoLogLevel = logLevel
     , nmoColdVerKeyFile = coldVerKeyPath
+    , nmoGenesisFile = genesisFile
     }
 
 smoFromEnv :: IO ServiceModeOptions
@@ -167,11 +193,13 @@ smoFromEnv = do
   controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
   groupSpec <- lookupEnv "KES_AGENT_GROUP"
   userSpec <- lookupEnv "KES_AGENT_USER"
+  genesisFile <- lookupEnv "KES_AGENT_GENESIS_FILE"
   return ServiceModeOptions
     { smoServicePath = servicePath
     , smoControlPath = controlPath
     , smoUser = userSpec
     , smoGroup = groupSpec
+    , smoGenesisFile = genesisFile
     }
 
 nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
@@ -180,21 +208,31 @@ nmoToAgentOptions nmo = do
   controlPath <- maybe (error "No control address") return (nmoControlPath nmo)
   coldVerKeyPath <- maybe (error "No cold verification key") return (nmoColdVerKeyFile nmo)
   (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
+  evolutionConfig <- maybe
+                      (pure defEvolutionConfig) 
+                      (either error return <=< evolutionConfigFromGenesisFile)
+                      (nmoGenesisFile nmo)
   return defAgentOptions
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
             , agentColdVerKey = coldVerKey
             , agentGenSeed = mlockedSeedNewRandom
+            , agentEvolutionConfig = evolutionConfig
             }
 
 smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
 smoToAgentOptions smo = do
   servicePath <- maybe (error "No service address") return (smoServicePath smo)
   controlPath <- maybe (error "No control address") return (smoControlPath smo)
+  evolutionConfig <- maybe
+                      (pure defEvolutionConfig) 
+                      (either error return <=< evolutionConfigFromGenesisFile)
+                      (smoGenesisFile smo)
   return defAgentOptions
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
             , agentGenSeed = mlockedSeedNewRandom
+            , agentEvolutionConfig = evolutionConfig
             }
 
 agentTracePrio :: AgentTrace -> Priority

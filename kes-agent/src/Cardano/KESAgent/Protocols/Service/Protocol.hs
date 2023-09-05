@@ -83,8 +83,6 @@ instance Protocol (ServiceProtocol m c) where
                      -> OCert c
                      -> Message (ServiceProtocol m c) IdleState WaitForConfirmationState
 
-          NoKeyYetMessage :: Message (ServiceProtocol m c) IdleState WaitForConfirmationState
-
           RecvResultMessage :: RecvResult
                             -> Message (ServiceProtocol m c) WaitForConfirmationState IdleState
 
@@ -118,4 +116,4 @@ instance NamedCrypto c => VersionedProtocol (ServiceProtocol m c) where
 spVersionIdentifier :: forall m c. NamedCrypto c => Proxy (ServiceProtocol m c) -> VersionIdentifier
 spVersionIdentifier _ =
   mkVersionIdentifier $
-    "Service:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.3"
+    "Service:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.4"
