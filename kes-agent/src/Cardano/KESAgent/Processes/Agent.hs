@@ -14,10 +14,25 @@
 -- - A \"service\" socket, to which a Node can connect in order to receive the
 --   current KES key and future key updates.
 module Cardano.KESAgent.Processes.Agent
+  ( Agent
+  , AgentOptions (..)
+  , EvolutionConfig (..)
+  , defEvolutionConfig
+  , AgentTrace (..)
+  , defAgentOptions
+  , newAgent
+  , runAgent
+  , finalizeAgent
+  )
   where
 
 import Cardano.KESAgent.KES.Classes ( MonadKES )
-import Cardano.KESAgent.KES.Evolution ( getCurrentKESPeriodWith, updateKESTo )
+import Cardano.KESAgent.KES.Evolution
+  ( getCurrentKESPeriodWith
+  , updateKESTo
+  , EvolutionConfig (..)
+  , defEvolutionConfig
+  )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert
   ( KESPeriod (..)
@@ -182,8 +197,8 @@ data AgentOptions m addr c =
       -- | Socket on which the agent will send KES keys to any connected nodes.
     , agentServiceAddr :: addr
 
-      -- | The genesis Unix timestamp; used to determine current KES period.
-    , agentGenesisTimestamp :: Integer
+      -- | Evolution configuration: genesis, slot duration, slots per KES period
+    , agentEvolutionConfig :: EvolutionConfig
 
       -- | Return the current POSIX time. Should normally be set to
       -- 'getPOSIXTime', but overriding this may be desirable for testing
@@ -199,7 +214,7 @@ defAgentOptions :: MonadTime m => AgentOptions m addr c
 defAgentOptions = AgentOptions
   { agentControlAddr = error "missing control address"
   , agentServiceAddr = error "missing service address"
-  , agentGenesisTimestamp = 1506203091 -- real-world genesis on the production ledger
+  , agentEvolutionConfig = defEvolutionConfig
   , agentGetCurrentTime = utcTimeToPOSIXSeconds <$> getCurrentTime
   , agentTracer = nullTracer
   , agentColdVerKey = error "missing cold verification key file"
@@ -368,7 +383,9 @@ installKey agent oc = do
 
 checkEvolution :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ()) => Agent c m fd addr -> m ()
 checkEvolution agent = withKeyUpdateLock agent "checkEvolution" $ do
-  p' <- getCurrentKESPeriodWith (agentGetCurrentTime $ agentOptions agent) (agentGenesisTimestamp $ agentOptions agent)
+  p' <- getCurrentKESPeriodWith
+          (agentGetCurrentTime $ agentOptions agent)
+          (agentEvolutionConfig $ agentOptions agent)
   agentTrace agent $ AgentCheckEvolution p'
   keyOcMay <- atomically $ tryTakeTMVar (agentCurrentKeyVar agent)
   case keyOcMay of

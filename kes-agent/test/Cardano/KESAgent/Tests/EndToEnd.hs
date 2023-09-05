@@ -12,7 +12,7 @@ import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Serialization.CBOR
-import Cardano.KESAgent.KES.Evolution ( getCurrentKESPeriod )
+import Cardano.KESAgent.KES.Evolution ( getCurrentKESPeriod, defEvolutionConfig )
 import Paths_kes_agent
 
 import Cardano.Crypto.KES.Class
@@ -94,7 +94,7 @@ kesAgentControlInstallValid =
           ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
           ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
           KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
-          kesPeriod <- getCurrentKESPeriod defGenesisTimestamp
+          kesPeriod <- getCurrentKESPeriod defEvolutionConfig
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
           return ()
@@ -168,7 +168,7 @@ kesAgentControlInstallNoKey =
           ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
           ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
           KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
-          kesPeriod <- getCurrentKESPeriod defGenesisTimestamp
+          kesPeriod <- getCurrentKESPeriod defEvolutionConfig
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
           return ()
@@ -200,7 +200,7 @@ kesAgentControlInstallDroppedKey =
           ColdSignKey coldSK <- either error return =<< decodeTextEnvelopeFile @(ColdSignKey (DSIGN StandardCrypto)) coldSignKeyFile
           ColdVerKey coldVK <- either error return =<< decodeTextEnvelopeFile @(ColdVerKey (DSIGN StandardCrypto)) coldVerKeyFile
           KESVerKey kesVK <- either error return =<< decodeTextEnvelopeFile @(KESVerKey (KES StandardCrypto)) kesKeyFile
-          kesPeriod <- getCurrentKESPeriod defGenesisTimestamp
+          kesPeriod <- getCurrentKESPeriod defEvolutionConfig
           let ocert :: OCert StandardCrypto = makeOCert kesVK 0 kesPeriod coldSK
           encodeTextEnvelopeFile opcertFile (OpCert ocert coldVK)
           return ()

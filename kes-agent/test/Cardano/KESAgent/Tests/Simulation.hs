@@ -405,7 +405,12 @@ runTestNetwork p mrb snocket genesisTimestamp
                   
         let agentOptions  :: AgentOptions m addr c
             agentOptions = AgentOptions
-                              { agentGenesisTimestamp = genesisTimestamp
+                              { agentEvolutionConfig =
+                                    EvolutionConfig
+                                      { genesisTimestamp = genesisTimestamp
+                                      , slotsPerKESPeriod = 12900
+                                      , slotLength = 1
+                                      }
                               , agentGetCurrentTime = readMVar timeVar
                               , agentControlAddr = controlAddress
                               , agentServiceAddr = serviceAddress

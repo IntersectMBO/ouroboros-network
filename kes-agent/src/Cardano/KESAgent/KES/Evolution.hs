@@ -17,17 +17,33 @@ import Control.Monad.Class.MonadTime
 import Data.Time ( NominalDiffTime, nominalDiffTimeToSeconds )
 import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
 
-getCurrentKESPeriod :: MonadTime m => Integer -> m KESPeriod
-getCurrentKESPeriod genesisTimestamp = do
-  now <- utcTimeToPOSIXSeconds <$> getCurrentTime
-  getCurrentKESPeriodWith (pure now) genesisTimestamp
+data EvolutionConfig =
+  EvolutionConfig
+    { slotLength :: Int
+    , slotsPerKESPeriod :: Int
+    , genesisTimestamp :: Integer
+    }
+    deriving (Show, Eq, Ord)
 
-getCurrentKESPeriodWith :: Monad m => m NominalDiffTime -> Integer -> m KESPeriod
-getCurrentKESPeriodWith now genesisTimestamp =
+defEvolutionConfig :: EvolutionConfig
+defEvolutionConfig =
+  EvolutionConfig
+    { genesisTimestamp = 1506203091 -- real-world genesis on the production ledger
+    , slotsPerKESPeriod = 129600
+    , slotLength = 1
+    }
+
+getCurrentKESPeriod :: MonadTime m => EvolutionConfig -> m KESPeriod
+getCurrentKESPeriod ec = do
+  now <- utcTimeToPOSIXSeconds <$> getCurrentTime
+  getCurrentKESPeriodWith (pure now) ec
+
+getCurrentKESPeriodWith :: Monad m => m NominalDiffTime -> EvolutionConfig -> m KESPeriod
+getCurrentKESPeriodWith now ec =
   KESPeriod
     . floor
-    .  (/ (36 * 3600))
-    . subtract (realToFrac genesisTimestamp)
+    .  (/ (realToFrac (slotLength ec) * realToFrac (slotsPerKESPeriod ec)))
+    . subtract (realToFrac (genesisTimestamp ec))
     . nominalDiffTimeToSeconds
     <$> now
 
@@ -35,13 +51,13 @@ updateKESToCurrent :: KESAlgorithm (KES v)
                    => MonadTime m
                    => MonadST m
                    => MonadThrow m
-                   => Integer
+                   => EvolutionConfig
                    -> ContextKES (KES v)
                    -> OCert v
                    -> SignKeyWithPeriodKES (KES v)
                    -> m (Maybe (SignKeyWithPeriodKES (KES v)))
-updateKESToCurrent genesisTimestamp context cert skp = do
-  currentPeriod <- getCurrentKESPeriod genesisTimestamp
+updateKESToCurrent ec context cert skp = do
+  currentPeriod <- getCurrentKESPeriod ec
   updateKESTo context currentPeriod cert skp
 
 updateKESTo :: KESAlgorithm (KES v)
