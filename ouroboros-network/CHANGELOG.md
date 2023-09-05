@@ -9,6 +9,8 @@
 * Less aggresive churning of established and known peers.
 * Add peer sharing to wireshark dissector.
 
+- Fix diffusion tests
+
 ## 0.9.1.0 -- 2023-08-22
 
 ### Breaking changes

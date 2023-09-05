@@ -50,7 +50,7 @@ import           Control.Monad.IOSim (IOSim, traceM)
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as BL
 import           Data.IP (IP (..))
-import           Data.List (delete)
+import           Data.List (delete, nubBy)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, fromMaybe, maybeToList)
@@ -121,6 +121,8 @@ import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS as PeerSelect
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                      (DNSLookupDelay (..), DNSTimeout (..))
 
+import           Data.Function (on)
+import           Data.Typeable (Typeable)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
@@ -644,9 +646,13 @@ genDiffusionScript genLocalRootPeers
                    (RelayAccessInfosWithDNS relays dnsMapScript)
                    = do
     let simArgs = mainnetSimArgs (length relays')
-    nodesWithCommands <- mapM go relays'
+    nodesWithCommands <- mapM go (nubBy ((==) `on` getRelayIP) relays')
     return (simArgs, dnsMapScript, nodesWithCommands)
   where
+    getRelayIP :: RelayAccessInfo -> IP
+    getRelayIP (RelayAddrInfo ip _ _)     = ip
+    getRelayIP (RelayDomainInfo _ ip _ _) = ip
+
     relays' :: [RelayAccessInfo]
     relays' = getRelayAccessInfos relays
 
@@ -886,9 +892,12 @@ data DiffusionTestTrace =
 
 -- | A debug tracer which embeds events in DiffusionTestTrace.
 --
-iosimTracer :: forall s. Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
+iosimTracer :: forall s a.
+              ( Show a
+              , Typeable a
+              )
+            => Tracer (IOSim s) (WithTime (WithName NtNAddr a))
 iosimTracer = Tracer traceM <> sayTracer
-
 
 -- | Run an arbitrary topology
 diffusionSimulation
@@ -915,13 +924,11 @@ diffusionSimulation
   -> DiffusionScript
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
   -- ^ timed trace of nodes in the system
-  -> Tracer m (WithName NtNAddr DiffusionSimulationTrace)
   -> m Void
 diffusionSimulation
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
-  nodeTracer
-  tracer =
+  nodeTracer =
     withSnocket netSimTracer defaultBearerInfo Map.empty
       $ \ntnSnocket _ ->
         withSnocket nullTracer defaultBearerInfo Map.empty
@@ -959,19 +966,19 @@ diffusionSimulation
       -> m Void
     runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs [] = do
       threadDelay 3600
-      traceWith tracer (WithName (naAddr nArgs) TrRunning)
+      traceWith (diffSimTracer (naAddr nArgs)) TrRunning
       runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs []
     runCommand (Just (_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs [] = do
       -- We shouldn't block this thread waiting
       -- on the async since this will lead to a deadlock
       -- as thread returns 'Void'.
       threadDelay 3600
-      traceWith tracer (WithName (naAddr nArgs) TrRunning)
+      traceWith (diffSimTracer (naAddr nArgs)) TrRunning
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs []
     runCommand Nothing ntnSnocket ntcSnocket dnsMapVar sArgs nArgs
                (JoinNetwork delay :cs) = do
       threadDelay delay
-      traceWith tracer (WithName (naAddr nArgs) TrJoiningNetwork)
+      traceWith (diffSimTracer (naAddr nArgs)) TrJoiningNetwork
       lrpVar <- newTVarIO $ naLocalRootPeers nArgs
       withAsync (runNode sArgs nArgs ntnSnocket ntcSnocket lrpVar dnsMapVar) $ \nodeAsync ->
         runCommand (Just (nodeAsync, lrpVar)) ntnSnocket ntcSnocket dnsMapVar sArgs nArgs cs
@@ -980,7 +987,7 @@ diffusionSimulation
     runCommand (Just (async_, _)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Kill delay:cs) = do
       threadDelay delay
-      traceWith tracer (WithName (naAddr nArgs) TrKillingNode)
+      traceWith (diffSimTracer (naAddr nArgs)) TrKillingNode
       cancel async_
       runCommand Nothing ntnSnocket ntcSnocket dMapVarMap sArgs nArgs cs
     runCommand _ _ _ _ _ _ (Kill _:_) = do
@@ -990,7 +997,7 @@ diffusionSimulation
     runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                (Reconfigure delay newLrp:cs) = do
       threadDelay delay
-      traceWith tracer (WithName (naAddr nArgs) TrReconfiguringNode)
+      traceWith (diffSimTracer (naAddr nArgs)) TrReconfiguringNode
       _ <- atomically $ writeTVar lrpVar newLrp
       runCommand (Just (async_, lrpVar)) ntnSnocket ntcSnocket dMapVarMap sArgs nArgs
                  cs
@@ -1164,6 +1171,12 @@ diffusionSimulation
                        | dap@(DomainAccessPoint d p) <- daps
                        , addrs <- maybeToList (d `Map.lookup` dnsMap) ]
       return (Map.fromListWith (<>) mapDomains)
+
+    diffSimTracer :: NtNAddr -> Tracer m DiffusionSimulationTrace
+    diffSimTracer ntnAddr = contramap DiffusionDiffusionSimulationTrace
+                          . tracerWithName ntnAddr
+                          . tracerWithTime
+                          $ nodeTracer
 
     tracersExtra
       :: NtNAddr

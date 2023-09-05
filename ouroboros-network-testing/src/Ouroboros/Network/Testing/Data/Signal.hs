@@ -35,6 +35,7 @@ module Ouroboros.Network.Testing.Data.Signal
   , scanl
     -- * Set-based temporal operations
   , keyedTimeout
+  , keyedTimeoutTruncated
   , keyedLinger
   , keyedUntil
   ) where
@@ -397,6 +398,47 @@ keyedTimeout d arm =
             then E ts timedout' : go armedSet' armedPSQ' timedout' txs
             else                  go armedSet' armedPSQ' timedout' txs
 
+-- | This works exactly the same as 'keyedTimeout' but ignores any armed sets
+-- and does not add any events to the signal when reaching the end of events.
+--
+-- This is useful for properties over infinite Signals that might get truncated.
+--
+keyedTimeoutTruncated :: forall a b. Ord b
+             => DiffTime
+             -> (a -> Set b)  -- ^ The timeout arming set signal
+             -> Signal a
+             -> Signal (Set b)
+keyedTimeoutTruncated d arm =
+    Signal Set.empty
+  . go Set.empty PSQ.empty Set.empty
+  . toTimeSeries
+  where
+    go :: Set b
+       -> OrdPSQ b Time ()
+       -> Set b
+       -> [E a]
+       -> [E (Set b)]
+    go _ _ _ [] = []
+
+    go armedSet armedPSQ timedout (E ts@(TS t _) x : txs)
+      | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ
+      , t' < t
+      , let armedSet' = Set.delete y armedSet
+            timedout' = Set.insert y timedout
+      = E (TS t' 0) timedout' : go armedSet' armedPSQ' timedout' (E ts x : txs)
+
+    go armedSet armedPSQ timedout (E ts@(TS t _) x : txs) =
+      let armedSet' = arm x
+          armedAdd  = armedSet' Set.\\ armedSet
+          armedDel  = armedSet  Set.\\ armedSet'
+          armedPSQ' = flip (Set.foldl' (\s y -> PSQ.insert y t' () s)) armedAdd
+                    . flip (Set.foldl' (\s y -> PSQ.delete y       s)) armedDel
+                    $ armedPSQ
+          t'        = addTime d t
+          timedout' = timedout `Set.intersection` armedSet'
+       in if timedout' /= timedout
+            then E ts timedout' : go armedSet' armedPSQ' timedout' txs
+            else                  go armedSet' armedPSQ' timedout' txs
 
 keyedUntil :: forall a b. Ord b
            => (a -> Set b)   -- ^ Start set signal
