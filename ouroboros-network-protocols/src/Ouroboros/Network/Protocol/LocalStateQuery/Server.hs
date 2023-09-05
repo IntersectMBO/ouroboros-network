@@ -66,7 +66,8 @@ data ServerStAcquiring block point query m a where
 --
 data ServerStAcquired block point query m a = ServerStAcquired {
       recvMsgQuery     :: forall (fp :: QueryFootprint) result.
-                          query fp result
+                          SingI fp
+                       => query fp result
                        -> m (ServerStQuerying  block point query m a result),
 
       recvMsgReAcquire :: Maybe point
