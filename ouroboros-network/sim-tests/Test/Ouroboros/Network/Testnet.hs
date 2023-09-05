@@ -1427,7 +1427,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
-            Signal.keyedTimeout
+            Signal.keyedTimeoutTruncated
               15 -- seconds
               id
               promotionOpportunities
@@ -1620,7 +1620,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
-            Signal.keyedTimeout
+            Signal.keyedTimeoutTruncated
               10 -- seconds
               id
               promotionOpportunities
@@ -1782,7 +1782,7 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
-            Signal.keyedTimeout
+            Signal.keyedTimeoutTruncated
               10 -- seconds
               id
               promotionOpportunities
@@ -1967,7 +1967,7 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
 
           demotionOpportunitiesTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesTooLong =
-              Signal.keyedTimeout 1 id demotionOpportunities
+              Signal.keyedTimeoutTruncated 1 id demotionOpportunities
 
       in signalProperty
             20 show Set.null
@@ -2085,7 +2085,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
 
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
-            Signal.keyedTimeout
+            Signal.keyedTimeoutTruncated
               50 -- seconds
               id
               demotionOpportunities
