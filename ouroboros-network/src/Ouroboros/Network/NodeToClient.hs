@@ -440,7 +440,7 @@ chainSyncPeerNull =
       (ChainSync.ChainSyncClient untilTheCowsComeHome )
 
 localStateQueryPeerNull
-    :: forall (block :: Type) (point :: Type) (query :: Type -> Type) m a.
+    :: forall (block :: Type) (point :: Type) (query :: LocalStateQuery.QueryFootprint -> Type -> Type) m a.
        MonadDelay m
     => Peer (LocalStateQuery.LocalStateQuery block point query)
             AsClient LocalStateQuery.StIdle m a

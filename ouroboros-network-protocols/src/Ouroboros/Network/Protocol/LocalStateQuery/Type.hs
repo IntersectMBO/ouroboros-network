@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 -- | The type of the local ledger state query protocol.
 --
@@ -23,6 +24,12 @@ import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
+-- | Query with existential quantification on the result and the fingerprint
+--
+-- Used mainly for query decoders.
+type SomeQuery :: (QueryFootprint -> Type -> Type) -> Type
+data SomeQuery q =
+  forall fp result. SingI fp => SomeQuery (q fp result)
 
 -- | The kind of the local state query protocol, and the types of
 -- the states in the protocol state machine.
@@ -30,7 +37,7 @@ import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 -- It is parametrised over the type of block (for points), the type of queries
 -- and query results.
 --
-data LocalStateQuery block point (query :: Type -> Type) where
+data LocalStateQuery block point (query :: QueryFootprint -> Type -> Type) where
 
   -- | The client has agency. It can ask to acquire a state or terminate.
   --
@@ -103,13 +110,14 @@ instance Protocol (LocalStateQuery block point query) where
     -- | The client can perform queries on the current acquired state.
     --
     MsgQuery
-      :: query result
+      :: SingI fp
+      => query fp result
       -> Message (LocalStateQuery block point query) StAcquired (StQuerying result)
 
     -- | The server must reply with the queries.
     --
     MsgResult
-      :: query result
+      :: query fp result
          -- ^ The query will not be sent across the network, it is solely used
          -- as evidence that @result@ is a valid type index of @query@.
       -> result
@@ -149,7 +157,7 @@ instance Protocol (LocalStateQuery block point query) where
 
   data ServerHasAgency st where
     TokAcquiring  :: ServerHasAgency StAcquiring
-    TokQuerying   :: query result
+    TokQuerying   :: query fp result
                   -> ServerHasAgency (StQuerying result :: LocalStateQuery block point query)
 
   data NobodyHasAgency st where
@@ -171,7 +179,7 @@ instance Show (ClientHasAgency (st :: LocalStateQuery block point query)) where
   show TokIdle     = "TokIdle"
   show TokAcquired = "TokAcquired"
 
-instance (forall result. Show (query result))
+instance (forall fp result. Show (query fp result))
     => Show (ServerHasAgency (st :: LocalStateQuery block point query)) where
   show TokAcquiring        = "TokAcquiring"
   show (TokQuerying query) = "TokQuerying " ++ show query
@@ -185,8 +193,12 @@ instance (forall result. Show (query result))
 --
 -- We use a type class for this, as this 'Show' constraint propagates to a lot
 -- of places.
-class (forall result. Show (query result)) => ShowQuery query where
-    showResult :: forall result. query result -> result -> String
+class (forall fp result. Show (query fp result)) => ShowQuery query where
+    showResult :: forall fp result. query fp result -> result -> String
+
+-- | Some queries will not have a footprint parameter.
+class (forall result. Show (query result)) => ShowQueryNone query where
+    showResultNone :: forall result. query result -> result -> String
 
 instance (ShowQuery query, Show point)
       => Show (Message (LocalStateQuery block point query) st st') where
@@ -212,3 +224,39 @@ instance (ShowQuery query, Show point)
         showsPrec 11 pt
       MsgDone ->
         showString "MsgDone"
+
+{-------------------------------------------------------------------------------
+  Footprints
+-------------------------------------------------------------------------------}
+
+-- | A singleton-like data family
+data family Sing (a :: k)
+
+-- | A singleton-like class
+class SingI (a :: k) where
+  sing :: Sing a
+
+-- | Queries on the local state might use ledger tables. This datatype (which
+-- will sometimes be concretized via @sing@) allows Consensus to categorize the
+-- queries.
+data QueryFootprint =
+    -- | The query doesn't need ledger tables, thus can be answered only with
+    -- the ledger state.
+    QFNone
+    -- | The query needs some tables, but doesn't need to traverse the whole
+    -- UTxO set.
+  | QFOne
+    -- | The query needs to traverse the whole UTxO set.
+  | QFAll
+
+data instance Sing (qf :: QueryFootprint) where
+  SQFNone :: Sing QFNone
+  SQFOne :: Sing QFOne
+  SQFAll :: Sing QFAll
+
+instance SingI QFNone where
+  sing = SQFNone
+instance SingI QFOne where
+  sing = SQFOne
+instance SingI QFAll where
+  sing = SQFAll

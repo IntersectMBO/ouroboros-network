@@ -37,10 +37,10 @@ codecLocalStateQuery
      )
   => (point -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s point)
-  -> (forall result . query result -> CBOR.Encoding)
-  -> (forall s . CBOR.Decoder s (Some query))
-  -> (forall result . query result -> result -> CBOR.Encoding)
-  -> (forall result . query result -> forall s . CBOR.Decoder s result)
+  -> (forall fp result . SingI fp => query fp result -> CBOR.Encoding)
+  -> (forall s . CBOR.Decoder s (SomeQuery query))
+  -> (forall fp result . query fp result -> result -> CBOR.Encoding)
+  -> (forall fp result . query fp result -> forall s . CBOR.Decoder s result)
   -> Codec (LocalStateQuery block point query) CBOR.DeserialiseFailure m ByteString
 codecLocalStateQuery encodePoint  decodePoint
                      encodeQuery  decodeQuery
@@ -132,7 +132,7 @@ codecLocalStateQuery encodePoint  decodePoint
           return (SomeMessage (MsgFailure failure))
 
         (ClientAgency TokAcquired, 2, 3) -> do
-          Some query <- decodeQuery
+          SomeQuery query <- decodeQuery
           return (SomeMessage (MsgQuery query))
 
         (ServerAgency (TokQuerying query), 2, 4) -> do
@@ -170,12 +170,12 @@ codecLocalStateQuery encodePoint  decodePoint
 -- any serialisation. It keeps the typed messages, wrapped in 'AnyMessage'.
 --
 codecLocalStateQueryId
-  :: forall block point (query :: Type -> Type) m.
+  :: forall block point query m.
      Monad m
-  => (forall result1 result2.
-          query result1
-       -> query result2
-       -> Maybe (result1 :~: result2)
+  => (forall fp1 fp2 result1 result2.
+          query fp1 result1
+       -> query fp2 result2
+       -> Maybe ('(fp1, result1) :~: '(fp2, result2))
      )
   -> Codec (LocalStateQuery block point query)
            CodecFailure m

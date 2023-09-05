@@ -22,7 +22,7 @@ import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
-newtype LocalStateQueryServer block point (query :: Type -> Type) m a = LocalStateQueryServer {
+newtype LocalStateQueryServer block point (query :: QueryFootprint -> Type -> Type) m a = LocalStateQueryServer {
       runLocalStateQueryServer :: m (ServerStIdle block point query m a)
     }
 
@@ -65,8 +65,8 @@ data ServerStAcquiring block point query m a where
 -- It must be prepared to handle either.
 --
 data ServerStAcquired block point query m a = ServerStAcquired {
-      recvMsgQuery     :: forall result.
-                          query result
+      recvMsgQuery     :: forall (fp :: QueryFootprint) result.
+                          query fp result
                        -> m (ServerStQuerying  block point query m a result),
 
       recvMsgReAcquire :: Maybe point
@@ -88,7 +88,7 @@ data ServerStQuerying block point query m a result where
 -- side of the 'LocalStateQuery' protocol.
 --
 localStateQueryServerPeer
-  :: forall block point (query :: Type -> Type) m a.
+  :: forall block point (query :: QueryFootprint -> Type -> Type) m a.
      Monad m
   => LocalStateQueryServer block point query m a
   -> Peer (LocalStateQuery block point query) AsServer StIdle m a
@@ -128,7 +128,7 @@ localStateQueryServerPeer (LocalStateQueryServer handler) =
         MsgRelease      -> Effect $ handleStIdle           <$> recvMsgRelease
 
     handleStQuerying
-      :: query result
+      :: query fp result
       -> ServerStQuerying block point query m a result
       -> Peer (LocalStateQuery block point query) AsServer (StQuerying result) m a
     handleStQuerying query (SendMsgResult result stAcquired) =
