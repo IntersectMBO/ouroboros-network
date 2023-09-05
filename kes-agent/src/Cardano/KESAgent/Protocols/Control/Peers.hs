@@ -54,7 +54,7 @@ controlReceiver genKey dropKey queryKey installKey getAgentInfo =
             Effect $ do
               info <- getAgentInfo
               return $ Yield (ClientAgency TokWaitForInfo) (InfoMessage info) go
-              
+
           EndMessage ->
             Done TokEnd ()
 

@@ -31,7 +31,7 @@ common base-dependencies
 library
     import: project-config
     import: base-dependencies
-    exposed-modules: 
+    exposed-modules:
                    Cardano.KESAgent.KES.Classes
                    Cardano.KESAgent.KES.Evolution
                    Cardano.KESAgent.KES.Crypto

@@ -480,7 +480,7 @@ getInfo agent = do
     , agentInfoCurrentTime = now
     , agentInfoCurrentKESPeriod = kesPeriod
     }
-      
+
 checkEvolution :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ()) => Agent c m fd addr -> m ()
 checkEvolution agent = do
   p' <- getCurrentKESPeriodWith

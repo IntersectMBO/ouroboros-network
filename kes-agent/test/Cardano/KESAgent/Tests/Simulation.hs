@@ -406,7 +406,7 @@ runTestNetwork p mrb snocket genesisTimestamp
               case result of
                 Just seed -> return seed
                 Nothing -> error "Out of entropy"
-                  
+
         let agentOptions  :: AgentOptions m addr c
             agentOptions = AgentOptions
                               { agentEvolutionConfig =

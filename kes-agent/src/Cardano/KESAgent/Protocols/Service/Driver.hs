@@ -130,8 +130,8 @@ withDuplexBearer s action = do
     Right x -> return x
   where
     bufferSize = 1024
-        
-  
+
+
 
 serviceDriver :: forall c m f t p
                . Crypto c
@@ -186,7 +186,7 @@ serviceDriver s tracer = Driver
         traceWith tracer ServiceDriverReceivingVersionID
         result <- receiveVersion (Proxy @(ServiceProtocol m c)) s (ServiceDriverReceivedVersionID >$< tracer)
         case result of
-          ReadOK _ ->  
+          ReadOK _ ->
             return (SomeMessage VersionMessage, ())
           err -> do
             traceWith tracer $ readErrorToServiceDriverTrace err

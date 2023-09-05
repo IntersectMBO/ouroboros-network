@@ -249,7 +249,7 @@ whenFlag flag flags action =
     Just <$> action
   else
     pure Nothing
-  
+
 
 sendInfo :: ( MonadST m
             , MonadThrow m
@@ -260,7 +260,7 @@ sendInfo :: ( MonadST m
          -> AgentInfo c
          -> m ()
 sendInfo s info = do
-  let flags = 
+  let flags =
         flagWhen (info `has` agentInfoCurrentBundle) flagHasBundle .|.
         flagWhen (info `has` agentInfoStagedKey) flagHasStagedKey
   sendWord8 s flags
@@ -399,7 +399,7 @@ controlDriver s tracer = Driver
         traceWith tracer ControlDriverReceivingVersionID
         result <- receiveVersion (Proxy @(ControlProtocol m c)) s (ControlDriverReceivedVersionID >$< tracer)
         case result of
-          ReadOK _ ->  
+          ReadOK _ ->
             return (SomeMessage VersionMessage, ())
           err -> do
             traceWith tracer $ readErrorToControlDriverTrace err

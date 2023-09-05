@@ -209,7 +209,7 @@ nmoToAgentOptions nmo = do
   coldVerKeyPath <- maybe (error "No cold verification key") return (nmoColdVerKeyFile nmo)
   (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
   evolutionConfig <- maybe
-                      (pure defEvolutionConfig) 
+                      (pure defEvolutionConfig)
                       (either error return <=< evolutionConfigFromGenesisFile)
                       (nmoGenesisFile nmo)
   return defAgentOptions
@@ -225,7 +225,7 @@ smoToAgentOptions smo = do
   servicePath <- maybe (error "No service address") return (smoServicePath smo)
   controlPath <- maybe (error "No control address") return (smoControlPath smo)
   evolutionConfig <- maybe
-                      (pure defEvolutionConfig) 
+                      (pure defEvolutionConfig)
                       (either error return <=< evolutionConfigFromGenesisFile)
                       (smoGenesisFile smo)
   return defAgentOptions
@@ -281,7 +281,7 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
             (show prio)
             (pretty msg)
           hFlush stdout
-  
+
 
 runAsService :: ServiceModeOptions -> IO ()
 runAsService smo' =

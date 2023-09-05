@@ -110,7 +110,7 @@ stdoutStringTracer maxPrio lock = Tracer $ \(prio, msg) -> do
             (show prio)
             msg
           hFlush stdout
-  
+
 handleKey :: UnsoundKESAlgorithm (KES c)
           => CRef IO (SignKeyWithPeriodKES (KES c))
           -> OCert c
