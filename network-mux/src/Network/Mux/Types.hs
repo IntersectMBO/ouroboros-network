@@ -8,7 +8,6 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TemplateHaskellQuotes      #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 module Network.Mux.Types
@@ -38,7 +37,6 @@ module Network.Mux.Types
   , msLength
   , RemoteClockModel (..)
   , remoteClockPrecision
-  , sampleIntervalPicoseconds
   , MuxRuntimeError (..)
   ) where
 
@@ -48,12 +46,10 @@ import           Control.Exception (Exception)
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor (void)
 import           Data.Ix (Ix (..))
-import           Data.Time (diffTimeToPicoseconds)
 import           Data.Word
 import           Quiet
 
 import           GHC.Generics (Generic)
-import           Language.Haskell.TH (Exp, Q)
 
 import           Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import           Control.Monad.Class.MonadTime.SI
@@ -69,23 +65,6 @@ newtype RemoteClockModel
 -- | The `DiffTime` represented by a tick in the `RemoteClockModel`
 remoteClockPrecision :: DiffTime
 remoteClockPrecision = 1e-6
-
--- May want to make this a configuration variable
-
--- NOTE this interval must be less than the wrap around time of the
--- `RemoteClockModel`. The remote clock model has a precision of
--- `remoteClockPrecision`.
-sampleIntervalPicoseconds :: Q Exp
-sampleIntervalPicoseconds = check 10
-  where
-    check n
-     | n > 0 && n < wrapInterval
-       = let picos = diffTimeToPicoseconds n
-         in  [|picos|]
-     | otherwise
-       = fail $ "sampleIntervalPicoseconds: infeasible sampleInterval: "<>show n
-    wrapInterval
-      = remoteClockPrecision * (fromIntegral $ unRemoteClockModel maxBound)
 
 --
 -- Mini-protocol numbers
