@@ -1,0 +1,8 @@
+# ignore file for stylish-haskell command
+/*/Setup.hs
+/ouroboros-network-api/src/Ouroboros/Network/Protocol/Type.hs
+/network-mux/src/Network/Mux/TCPInfo.hs
+/network-mux/src/Network/Mux/Channel.hs
+/network-mux/src/Network/Mux/Bearer.hs
+/network-mux/src/Network/Mux/Bearer/Pipe.hs
+# vim: ft=gitignore
