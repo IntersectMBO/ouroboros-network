@@ -37,6 +37,7 @@ import           Data.Kind (Type)
 import           Data.Singletons
 import           Data.Type.Equality
 import           Data.Type.Queue
+import           Unsafe.Coerce (unsafeCoerce)
 
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Peer.Client
@@ -148,6 +149,9 @@ data ClientPipelinedStIntersect header point tip m a =
      }
 
 
+-- | Proof that `cons` and `snoc` commute.
+--
+-- /Complexity: O(1)/
 lemma_cons_snoc_proof
     :: forall ps (q :: Queue ps) (x :: Transition ps) (y :: Transition ps).
        SingTrans y
@@ -186,7 +190,6 @@ type family MapQueue q where
   MapQueue (tr <| q) = MapTr tr <| MapQueue q
 
 
-
 -- | It is needed to aid GHC in kind inference.
 --
 data MapSnocLemma header  point  tip
@@ -210,6 +213,10 @@ data MapSnocLemma header  point  tip
                      )
                   => MapSnocLemma header point tip header' point' tip' q0 q1 q2 st st'
 
+
+-- | Proof that `snoc` and `MapQueue` are interchangeable.
+--
+-- /Complexity: O(n)/
 lemma_map_snoc_proof :: forall header  point  tip
                                header' point' tip'
                                (q   :: Queue (ChainSync header point tip))
@@ -224,7 +231,7 @@ lemma_map_snoc_proof :: forall header  point  tip
                                      (MapQueue (q |>        Tr st st'))
                                      st st'
 lemma_map_snoc_proof _    SingEmpty    = MapSnocLemma
-lemma_map_snoc_proof !tr (SingCons q') = f q' $ lemma_map_snoc_proof tr q'
+lemma_map_snoc_proof !tr (SingCons q') = f q' (lemma_map_snoc_proof tr q')
   where
     f :: forall (q'    :: Queue (ChainSync header point tip))
                 (st''  :: ChainSync header point tip)
@@ -246,16 +253,21 @@ lemma_map_snoc_proof !tr (SingCons q') = f q' $ lemma_map_snoc_proof tr q'
           Refl -> MapSnocLemma
       -- sketch of the proof
       -- ```
-      -- QMap ((x <|  q) |> y)  -- ConsSnocLemma
-      -- QMap ( x <| (q  |> y))
-      -- x'  <|  QMap (q |> y)  -- inductive assumption
-      -- x'  <| (QMap q  |> y') -- ConsSnocLemma
-      -- (x' <| QMap q)  |> y'
+      -- MapQueue ((x <|  q) |> y)             -- lemma_cons_snoc_proof
+      -- MapQueue ( x <| (q  |> y))            -- definition of MapQueue
+      --  MapTr x <|  MapQueue (q  |> y)       -- lemma_map_snoc_proof (inductive step)
+      --  MapTr x <| (MapQueue  q  |> MapTr y) -- lemma_cons_snoc_proof
+      -- (MapTr x <|  MapQueue  q) |> MapTr y  -- definition of MapQueue
+      -- (MapQueue (x <| q) |> MapTr y)
       -- ```
 
 
-
-
+-- | Transform `ChainSyncClientStIdle`.
+--
+-- Invariant: the `ClientPipelinedStIdle` is returned as is.  This is a proof
+-- of correctness for `unsafeCoerceClientPipelinedStIdle`.
+--
+-- /Complexity: O(n), n - depth of the pipelining queue./
 coerceClientPipelinedStIdle :: forall header  point  tip
                                       header' point' tip'
                                       (q   :: Queue (ChainSync header point tip))
@@ -270,7 +282,7 @@ coerceClientPipelinedStIdle :: forall header  point  tip
                             -> ClientPipelinedStIdle header' point' tip'
                                                      (MapQueue  q |> MapTr (Tr st st'))
                                                      m a
-coerceClientPipelinedStIdle !q tr idle =
+coerceClientPipelinedStIdle q tr idle =
       case lemma_map_snoc_proof tr q :: MapSnocLemma header  point  tip
                                                      header' point' tip'
                                                      q
@@ -278,6 +290,26 @@ coerceClientPipelinedStIdle !q tr idle =
                                                      (MapQueue (q |>        Tr st st'))
                                                      st st' of
         MapSnocLemma -> idle
+
+
+-- | Transform `ChainSyncClientStIdle`.
+--
+-- /Complexity: O(1)/
+unsafeCoerceClientPipelinedStIdle :: forall header  point  tip
+                                      header' point' tip'
+                                      (q   :: Queue (ChainSync header point tip))
+                                      (st  :: ChainSync header point tip)
+                                      (st' :: ChainSync header point tip)
+                                      m a.
+                               SingQueue q
+                            -> SingTrans (Tr st st')
+                            -> ClientPipelinedStIdle header' point' tip'
+                                                     (MapQueue (q |>        Tr st st'))
+                                                     m a
+                            -> ClientPipelinedStIdle header' point' tip'
+                                                     (MapQueue  q |> MapTr (Tr st st'))
+                                                     m a
+unsafeCoerceClientPipelinedStIdle _ _ idle = unsafeCoerce idle
 
 
 data F st st' where
@@ -325,7 +357,7 @@ mapChainSyncClientPipelined toPoint' toPoint toHeader toTip (ChainSyncClientPipe
                            header' point' tip'
                            (MapQueue q |> PipelinedTr StCanAwait)
                            m a
-              idle'' = coerceClientPipelinedStIdle
+              idle'' = unsafeCoerceClientPipelinedStIdle
                          (toSingQueue q) singPipelinedTr idle'
 
           in SendMsgRequestNextPipelined idle''
@@ -406,7 +438,7 @@ mapChainSyncClientPipelinedSt toPoint' toPoint toTip forwardStFn backwardStFn st
                            header' point' tip'
                            (MapQueue q |> PipelinedTr StCanAwait)
                            m a
-              idle'' = coerceClientPipelinedStIdle
+              idle'' = unsafeCoerceClientPipelinedStIdle
                          (toSingQueue q) singPipelinedTr idle'
 
           in SendMsgRequestNextPipelined idle''
