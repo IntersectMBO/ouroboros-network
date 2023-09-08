@@ -31,6 +31,7 @@ module Ouroboros.Network.Mux
   , MiniProtocolCb (.., MuxPeerRaw)
   , runMiniProtocolCb
   , mkMiniProtocolCbFromPeer
+  , mkMiniProtocolCbFromPeerSt
     -- * Mux mini-protocol callback in MuxMode
   , RunMiniProtocol (..)
   , RunMiniProtocolWithExpandedCtx
@@ -70,11 +71,14 @@ import           Control.Tracer (Tracer)
 
 import qualified Data.ByteString.Lazy as LBS
 import           Data.Foldable (fold)
+import           Data.Kind (Type)
 import           Data.Void (Void)
 
 import           Network.TypedProtocol.Codec
 import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Peer
+import qualified Network.TypedProtocol.Stateful.Codec as Stateful
+import qualified Network.TypedProtocol.Stateful.Peer as Stateful
 
 import           Network.Mux (HasInitiator, HasResponder,
                      MiniProtocolBundle (..), MiniProtocolInfo,
@@ -88,6 +92,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Context (ExpandedInitiatorContext,
                      MinimalInitiatorContext, ResponderContext)
 import           Ouroboros.Network.Driver
+import qualified Ouroboros.Network.Driver.Stateful as Stateful
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
@@ -364,6 +369,30 @@ mkMiniProtocolCbFromPeer fn =
       case fn ctx of
         (tracer, codec, peer) ->
           runPeer tracer codec channel peer
+
+-- | Create a 'MuxPeer' from a tracer, codec and 'Stateful.Peer'.
+--
+mkMiniProtocolCbFromPeerSt
+  :: forall (pr :: PeerRole) (pl :: IsPipelined) ps (f :: ps -> Type) (st :: ps) failure bytes ctx m a.
+     ( Alternative (STM m)
+     , MonadAsync       m
+     , MonadLabelledSTM m
+     , MonadMask        m
+     , MonadThrow  (STM m)
+     , Exception failure
+     )
+  => (ctx -> ( Tracer m (TraceSendRecv ps)
+             , Stateful.Codec ps failure f m bytes
+             , f st
+             , Stateful.Peer ps pr pl Empty st f m (STM m) a
+             )
+     )
+  -> MiniProtocolCb ctx bytes m a
+mkMiniProtocolCbFromPeerSt fn =
+    MiniProtocolCb $ \ctx channel ->
+      case fn ctx of
+        (tracer, codec, f, peer) ->
+          Stateful.runPeer tracer codec channel f peer
 
 
 -- | Run a 'MuxPeer' using supplied 'ctx' and 'Mux.Channel'
