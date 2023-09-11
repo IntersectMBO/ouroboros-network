@@ -102,6 +102,11 @@ This way, sensitive items are handled correctly:
   and seeds uses `mlock`, a kernel feature that prevents it from being swapped
   out, and employs a few other techniques to harden it against various attacks.
 
+The following figure illustrates the data flow with two agents, one node, and a
+cold server for generating OpCerts.
+
+![Data Flow Overview](diagrams/overview.png)
+
 Installation
 ------------
 

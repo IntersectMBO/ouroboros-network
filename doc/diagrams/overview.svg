@@ -1,0 +1,962 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="1280"
+   height="512"
+   viewBox="0 0 1280 512"
+   version="1.1"
+   id="svg5"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   sodipodi:docname="elements.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#111111"
+     borderopacity="1"
+     inkscape:showpageshadow="true"
+     inkscape:pageopacity="1"
+     inkscape:pagecheckerboard="false"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     showgrid="false"
+     borderlayer="false"
+     inkscape:zoom="0.99908314"
+     inkscape:cx="801.23462"
+     inkscape:cy="151.13857"
+     inkscape:window-width="1920"
+     inkscape:window-height="1080"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g2358"
+     showguides="false" />
+  <defs
+     id="defs2">
+    <marker
+       style="overflow:visible"
+       id="TriangleStart"
+       refX="0"
+       refY="0"
+       orient="auto-start-reverse"
+       inkscape:stockid="TriangleStart"
+       markerWidth="5.3244081"
+       markerHeight="6.155385"
+       viewBox="0 0 5.3244081 6.1553851"
+       inkscape:isstock="true"
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid">
+      <path
+         transform="scale(0.5)"
+         style="fill:context-stroke;fill-rule:evenodd;stroke:context-stroke;stroke-width:1pt"
+         d="M 5.77,0 -2.88,5 V -5 Z"
+         id="path135" />
+    </marker>
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-68)">
+    <path
+       style="fill:none;stroke:#000000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:3, 3;stroke-dashoffset:0;stroke-opacity:1"
+       d="M 516,0 V 512"
+       id="path2834"
+       sodipodi:nodetypes="cc" />
+    <g
+       id="g2744"
+       transform="translate(11,-120)"
+       style="fill:#000000">
+      <g
+         id="path2729"
+         style="fill:#000000">
+        <path
+           style="color:#000000;fill:#000000;stroke-width:3;-inkscape-stroke:none"
+           d="M 128,480 H 256"
+           id="path2766" />
+        <path
+           style="color:#000000;fill:#000000;-inkscape-stroke:none"
+           d="m 128,478.5 v 3 h 128 v -3 z"
+           id="path2768" />
+        <g
+           id="g2756"
+           style="fill:#000000">
+          <g
+             id="path2758"
+             style="fill:#000000">
+            <path
+               style="color:#000000;fill:#000000;fill-rule:evenodd;stroke-width:1.5pt;-inkscape-stroke:none"
+               d="m 264.655,480 -12.975,7.5 v -15 z"
+               id="path2762" />
+            <path
+               style="color:#000000;fill:#000000;fill-rule:evenodd;-inkscape-stroke:none"
+               d="m 250.67969,470.76758 v 18.46484 L 266.65234,480 l -1.49609,-0.86523 z m 2,3.46484 9.97851,5.76758 -9.97851,5.76758 z"
+               id="path2764" />
+          </g>
+        </g>
+      </g>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;fill:#000000"
+         x="196.44661"
+         y="472.73599"
+         id="text2735"><tspan
+           sodipodi:role="line"
+           id="tspan2733"
+           x="196.44661"
+           y="472.73599"
+           style="text-align:center;text-anchor:middle;fill:#000000">copy</tspan></text>
+    </g>
+    <g
+       id="g2788"
+       transform="translate(11,-80)"
+       style="fill:#008000">
+      <g
+         id="g2782"
+         style="fill:#008000">
+        <path
+           style="color:#000000;fill:#008000;stroke-width:3;-inkscape-stroke:none"
+           d="M 128,480 H 256"
+           id="path2770" />
+        <path
+           style="color:#000000;fill:#008000;-inkscape-stroke:none"
+           d="m 128,478.5 v 3 h 128 v -3 z"
+           id="path2772" />
+        <g
+           id="g2780"
+           style="fill:#008000">
+          <g
+             id="g2778"
+             style="fill:#008000">
+            <path
+               style="color:#000000;fill:#008000;fill-rule:evenodd;stroke-width:1.5pt;-inkscape-stroke:none"
+               d="m 264.655,480 -12.975,7.5 v -15 z"
+               id="path2774" />
+            <path
+               style="color:#000000;fill:#008000;fill-rule:evenodd;-inkscape-stroke:none"
+               d="m 250.67969,470.76758 v 18.46484 L 266.65234,480 l -1.49609,-0.86523 z m 2,3.46484 9.97851,5.76758 -9.97851,5.76758 z"
+               id="path2776" />
+          </g>
+        </g>
+      </g>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;fill:#008000"
+         x="196.44661"
+         y="472.73599"
+         id="text2786"><tspan
+           sodipodi:role="line"
+           id="tspan2784"
+           x="196.44661"
+           y="472.73599"
+           style="text-align:center;text-anchor:middle;fill:#008000">derive</tspan></text>
+    </g>
+    <g
+       id="g2808"
+       transform="translate(11,-40)"
+       style="fill:#d45500">
+      <g
+         id="g2802"
+         style="fill:#d45500">
+        <path
+           style="color:#000000;fill:#d45500;stroke-width:3;-inkscape-stroke:none"
+           d="M 128,480 H 256"
+           id="path2790" />
+        <path
+           style="color:#000000;fill:#d45500;-inkscape-stroke:none"
+           d="m 128,478.5 v 3 h 128 v -3 z"
+           id="path2792" />
+        <g
+           id="g2800"
+           style="fill:#d45500">
+          <g
+             id="g2798"
+             style="fill:#d45500">
+            <path
+               style="color:#000000;fill:#d45500;fill-rule:evenodd;stroke-width:1.5pt;-inkscape-stroke:none"
+               d="m 264.655,480 -12.975,7.5 v -15 z"
+               id="path2794" />
+            <path
+               style="color:#000000;fill:#d45500;fill-rule:evenodd;-inkscape-stroke:none"
+               d="m 250.67969,470.76758 v 18.46484 L 266.65234,480 l -1.49609,-0.86523 z m 2,3.46484 9.97851,5.76758 -9.97851,5.76758 z"
+               id="path2796" />
+          </g>
+        </g>
+      </g>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;fill:#d45500"
+         x="196.44661"
+         y="472.73599"
+         id="text2806"><tspan
+           sodipodi:role="line"
+           id="tspan2804"
+           x="196.44661"
+           y="472.73599"
+           style="text-align:center;text-anchor:middle;fill:#d45500">upload/install</tspan></text>
+    </g>
+    <g
+       id="g2828"
+       transform="translate(11)"
+       style="fill:#0000ff">
+      <g
+         id="g2822"
+         style="fill:#0000ff">
+        <path
+           style="color:#000000;fill:#0000ff;stroke-width:3;-inkscape-stroke:none"
+           d="M 128,480 H 256"
+           id="path2810" />
+        <path
+           style="color:#000000;fill:#0000ff;-inkscape-stroke:none"
+           d="m 128,478.5 v 3 h 128 v -3 z"
+           id="path2812" />
+        <g
+           id="g2820"
+           style="fill:#0000ff">
+          <g
+             id="g2818"
+             style="fill:#0000ff">
+            <path
+               style="color:#000000;fill:#0000ff;fill-rule:evenodd;stroke-width:1.5pt;-inkscape-stroke:none"
+               d="m 264.655,480 -12.975,7.5 v -15 z"
+               id="path2814" />
+            <path
+               style="color:#000000;fill:#0000ff;fill-rule:evenodd;-inkscape-stroke:none"
+               d="m 250.67969,470.76758 v 18.46484 L 266.65234,480 l -1.49609,-0.86523 z m 2,3.46484 9.97851,5.76758 -9.97851,5.76758 z"
+               id="path2816" />
+          </g>
+        </g>
+      </g>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;fill:#0000ff"
+         x="196.44661"
+         y="472.73599"
+         id="text2826"><tspan
+           sodipodi:role="line"
+           id="tspan2824"
+           x="196.44661"
+           y="472.73599"
+           style="text-align:center;text-anchor:middle;fill:#0000ff">transmit</tspan></text>
+    </g>
+    <g
+       id="g1369"
+       transform="translate(68)">
+      <rect
+         style="fill:#80e5ff;stroke:none;stroke-width:2;stroke-dasharray:none"
+         id="rect245"
+         width="256"
+         height="256"
+         x="74"
+         y="20" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="202"
+         y="44"
+         id="text1030"><tspan
+           sodipodi:role="line"
+           id="tspan1028"
+           x="202"
+           y="44"
+           style="font-weight:bold">Cold Server</tspan></text>
+    </g>
+    <rect
+       style="fill:#ff7f2a;stroke:none;stroke-width:1.99999;stroke-dasharray:none"
+       id="rect1216"
+       width="256"
+       height="256"
+       x="1018"
+       y="20" />
+    <text
+       xml:space="preserve"
+       style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+       x="1146"
+       y="44"
+       id="text1220"><tspan
+         sodipodi:role="line"
+         id="tspan1218"
+         x="1146"
+         y="44"
+         style="font-weight:bold">Node Server</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+       x="312.80798"
+       y="114.09652"
+       id="text1302"><tspan
+         sodipodi:role="line"
+         id="tspan1300"
+         x="312.80798"
+         y="114.09652" /></text>
+    <g
+       id="g1399"
+       transform="translate(68)">
+      <rect
+         style="fill:#ffeeaa;stroke:none;stroke-width:2;stroke-dasharray:none"
+         id="rect1224"
+         width="256"
+         height="256"
+         x="512"
+         y="20" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="640"
+         y="44"
+         id="text1228"><tspan
+           sodipodi:role="line"
+           id="tspan1226"
+           x="640"
+           y="44"
+           style="font-weight:bold">Control Host</tspan></text>
+    </g>
+    <g
+       id="g2394"
+       transform="translate(508)">
+      <path
+         id="path2390"
+         style="fill:#cccccc;stroke:#000000;stroke-width:2"
+         d="m 314,249.11499 c -10e-6,6.1146 -21.34709,11.76472 -56,14.82202 -34.65292,3.0573 -77.34708,3.0573 -112,0 -34.65291,-3.0573 -55.999989,-8.70742 -56,-14.82202 l -1,-79.99998 h 226 z"
+         sodipodi:nodetypes="cssc" />
+      <ellipse
+         style="fill:#cccccc;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="ellipse2392"
+         cx="202"
+         cy="169.11501"
+         rx="112"
+         ry="17.115" />
+    </g>
+    <text
+       xml:space="preserve"
+       style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+       x="589.31934"
+       y="44.16"
+       id="text1234"><tspan
+         sodipodi:role="line"
+         id="tspan1232"
+         x="589.31934"
+         y="44.16"></tspan></text>
+    <g
+       id="g1684"
+       transform="translate(68,-80)">
+      <path
+         id="ellipse1520"
+         style="fill:#cccccc;stroke:#000000;stroke-width:2"
+         d="m 314,329.11499 c -10e-6,6.1146 -21.34709,11.76472 -56,14.82202 -34.65292,3.0573 -77.34708,3.0573 -112,0 -34.65291,-3.0573 -55.999989,-8.70742 -56,-14.82202 L 89,169.11501 h 226 z"
+         sodipodi:nodetypes="csscccc" />
+      <ellipse
+         style="fill:#cccccc;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="path1466"
+         cx="202"
+         cy="169.11501"
+         rx="112"
+         ry="17.115" />
+    </g>
+    <g
+       id="g1391"
+       transform="translate(70,42)">
+      <rect
+         style="fill:#ff7f2a;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="rect1356"
+         width="64"
+         height="32"
+         x="92"
+         y="80" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="124"
+         y="102"
+         id="text1298"><tspan
+           sodipodi:role="line"
+           id="tspan1296"
+           x="124"
+           y="102">Cold SK</tspan></text>
+    </g>
+    <g
+       id="g2314"
+       transform="translate(68)">
+      <rect
+         style="fill:#cccccc;stroke:#000000;stroke-width:2.1653;stroke-dasharray:none"
+         id="rect1770"
+         width="239.8347"
+         height="93.834702"
+         x="520.08264"
+         y="49.587486" />
+      <g
+         id="g1782"
+         transform="translate(432,28)">
+        <rect
+           style="fill:#ff7f2a;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+           id="rect1776"
+           width="64"
+           height="32"
+           x="92"
+           y="80" />
+        <text
+           xml:space="preserve"
+           style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+           x="124"
+           y="102"
+           id="text1780"><tspan
+             sodipodi:role="line"
+             id="tspan1778"
+             x="124"
+             y="102">KES SK</tspan></text>
+      </g>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="556.27197"
+         y="81.926094"
+         id="text1786"><tspan
+           sodipodi:role="line"
+           id="tspan1784"
+           x="556.27197"
+           y="81.926094">Staging</tspan><tspan
+           sodipodi:role="line"
+           x="556.27197"
+           y="101.92609"
+           id="tspan1788">Area</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="690.35999"
+         y="91.926086"
+         id="text1802"><tspan
+           sodipodi:role="line"
+           x="690.35999"
+           y="91.926086"
+           id="tspan1800">Installed</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="639.40002"
+         y="66.730339"
+         id="text1774"><tspan
+           sodipodi:role="line"
+           id="tspan1772"
+           x="639.40002"
+           y="66.730339">KES Agent</tspan></text>
+      <g
+         id="g1796"
+         transform="translate(530,18)">
+        <rect
+           style="fill:#ff7f2a;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+           id="rect1790"
+           width="64"
+           height="32"
+           x="92"
+           y="80" />
+        <text
+           xml:space="preserve"
+           style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+           x="124"
+           y="102"
+           id="text1794"><tspan
+             sodipodi:role="line"
+             id="tspan1792"
+             x="124"
+             y="102">KES SK</tspan></text>
+      </g>
+      <g
+         id="g1812"
+         transform="translate(594,18)">
+        <rect
+           style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+           id="rect1806"
+           width="64"
+           height="32"
+           x="92"
+           y="80" />
+        <text
+           xml:space="preserve"
+           style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+           x="124"
+           y="102"
+           id="text1810"><tspan
+             sodipodi:role="line"
+             id="tspan1808"
+             x="124"
+             y="102">OpCert</tspan></text>
+      </g>
+    </g>
+    <rect
+       style="fill:#cccccc;stroke:#000000;stroke-width:2.1653;stroke-dasharray:none"
+       id="rect1842"
+       width="239.8347"
+       height="93.834702"
+       x="1026.0826"
+       y="49.587486" />
+    <g
+       id="g1840"
+       transform="translate(508,-10)">
+      <g
+         id="g1830"
+         transform="translate(600,28)">
+        <rect
+           style="fill:#ff7f2a;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+           id="rect1824"
+           width="64"
+           height="32"
+           x="92"
+           y="80" />
+        <text
+           xml:space="preserve"
+           style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+           x="124"
+           y="102"
+           id="text1828"><tspan
+             sodipodi:role="line"
+             id="tspan1826"
+             x="124"
+             y="102">KES SK</tspan></text>
+      </g>
+      <g
+         id="g1838"
+         transform="translate(536,28)">
+        <rect
+           style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+           id="rect1832"
+           width="64"
+           height="32"
+           x="92"
+           y="80" />
+        <text
+           xml:space="preserve"
+           style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+           x="124"
+           y="102"
+           id="text1836"><tspan
+             sodipodi:role="line"
+             id="tspan1834"
+             x="124"
+             y="102">OpCert</tspan></text>
+      </g>
+    </g>
+    <text
+       xml:space="preserve"
+       style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+       x="1145.4"
+       y="66.730339"
+       id="text1846"><tspan
+         sodipodi:role="line"
+         id="tspan1844"
+         x="1145.4"
+         y="66.730339">Node</tspan></text>
+    <g
+       id="g2001"
+       transform="translate(68,-40)">
+      <rect
+         style="fill:#cccccc;stroke:none;stroke-width:2;stroke-dasharray:none"
+         id="rect1951"
+         width="256"
+         height="144.07043"
+         x="314"
+         y="359.67999" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="442"
+         y="494"
+         id="text1955"><tspan
+           sodipodi:role="line"
+           id="tspan1953"
+           x="442"
+           y="494">Removable Storage</tspan></text>
+    </g>
+    <g
+       id="g1965"
+       transform="translate(394,258)">
+      <rect
+         style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="rect1959"
+         width="64"
+         height="32"
+         x="92"
+         y="80" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="124"
+         y="102"
+         id="text1963"><tspan
+           sodipodi:role="line"
+           id="tspan1961"
+           x="124"
+           y="102">KES VK</tspan></text>
+    </g>
+    <path
+       style="fill:#0000ff;stroke:#0000ff;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="M 817,116.12 1131,114"
+       id="path2003"
+       sodipodi:nodetypes="cc" />
+    <g
+       id="g2358"
+       transform="translate(506,120)">
+      <rect
+         style="fill:#cccccc;stroke:#000000;stroke-width:2.1653;stroke-dasharray:none"
+         id="rect2316"
+         width="239.8347"
+         height="93.834702"
+         x="520.08264"
+         y="49.587486" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle;fill:#808080"
+         x="556.27197"
+         y="81.926094"
+         id="text2330"><tspan
+           sodipodi:role="line"
+           id="tspan2326"
+           x="556.27197"
+           y="81.926094">Staging</tspan><tspan
+           sodipodi:role="line"
+           x="556.27197"
+           y="101.92609"
+           id="tspan2328">Area</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="690.35999"
+         y="91.926086"
+         id="text2334"><tspan
+           sodipodi:role="line"
+           x="690.35999"
+           y="91.926086"
+           id="tspan2332">Installed</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="639.40002"
+         y="66.730339"
+         id="text2338"><tspan
+           sodipodi:role="line"
+           id="tspan2336"
+           x="639.40002"
+           y="66.730339">KES Agent</tspan></text>
+      <g
+         id="g2356"
+         transform="translate(0,-10)">
+        <g
+           id="g2346"
+           transform="translate(600,28)">
+          <rect
+             style="fill:#ff7f2a;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+             id="rect2340"
+             width="64"
+             height="32"
+             x="92"
+             y="80" />
+          <text
+             xml:space="preserve"
+             style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+             x="124"
+             y="102"
+             id="text2344"><tspan
+               sodipodi:role="line"
+               id="tspan2342"
+               x="124"
+               y="102">KES SK</tspan></text>
+        </g>
+        <g
+           id="g2354"
+           transform="translate(536,28)">
+          <rect
+             style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+             id="rect2348"
+             width="64"
+             height="32"
+             x="92"
+             y="80" />
+          <text
+             xml:space="preserve"
+             style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+             x="124"
+             y="102"
+             id="text2352"><tspan
+               sodipodi:role="line"
+               id="tspan2350"
+               x="124"
+               y="102">OpCert</tspan></text>
+        </g>
+      </g>
+    </g>
+    <path
+       style="fill:#0000ff;stroke:#0000ff;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="m 817,114 312,113"
+       id="path2364"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#0000ff;stroke:#0000ff;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="m 1237.5361,217 0.8427,-86"
+       id="path2370"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#0000ff;stroke:#0000ff;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="M 1135,243.84 823,131"
+       id="path2384"
+       sodipodi:nodetypes="cc" />
+    <g
+       id="g2410"
+       transform="translate(532,120)">
+      <rect
+         style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="rect2404"
+         width="64"
+         height="32"
+         x="92"
+         y="80" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="124"
+         y="102"
+         id="text2408"><tspan
+           sodipodi:role="line"
+           id="tspan2406"
+           x="124"
+           y="102">KES VK</tspan></text>
+    </g>
+    <path
+       style="fill:#008000;stroke:#008000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="m 624.776,141 14.48789,58"
+       id="path2416"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#000000;stroke:#000000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="M 668.86541,230.51877 557,333.23242"
+       id="path2438"
+       sodipodi:nodetypes="cc" />
+    <g
+       id="g1973"
+       transform="translate(394,318)">
+      <rect
+         style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="rect1967"
+         width="64"
+         height="32"
+         x="92"
+         y="80" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="124"
+         y="102"
+         id="text1971"><tspan
+           sodipodi:role="line"
+           id="tspan1969"
+           x="124"
+           y="102">OpCert</tspan></text>
+    </g>
+    <g
+       id="g2458"
+       transform="translate(220,40)">
+      <rect
+         style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="rect2452"
+         width="64"
+         height="32"
+         x="92"
+         y="80" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="124"
+         y="102"
+         id="text2456"><tspan
+           sodipodi:role="line"
+           id="tspan2454"
+           x="124"
+           y="102">KES VK</tspan></text>
+    </g>
+    <g
+       id="g2466"
+       transform="translate(150,130)">
+      <rect
+         style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="rect2460"
+         width="64"
+         height="32"
+         x="92"
+         y="80" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="124"
+         y="102"
+         id="text2464"><tspan
+           sodipodi:role="line"
+           id="tspan2462"
+           x="124"
+           y="102">OpCert</tspan></text>
+    </g>
+    <path
+       style="fill:#008000;stroke:#008000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="m 328.01552,153 -35.93226,46"
+       id="path2472"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#008000;stroke:#008000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="m 222.30399,155 25.74402,44"
+       id="path2476"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#000000;stroke:#000000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="M 307,243 479.89737,391.71521"
+       id="path2482"
+       sodipodi:nodetypes="cc" />
+    <g
+       id="g2496"
+       transform="translate(644,120)">
+      <rect
+         style="fill:#00ff00;stroke:#000000;stroke-width:2;stroke-dasharray:none"
+         id="rect2490"
+         width="64"
+         height="32"
+         x="92"
+         y="80" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif;text-align:center;text-anchor:middle"
+         x="124"
+         y="102"
+         id="text2494"><tspan
+           sodipodi:role="line"
+           id="tspan2492"
+           x="124"
+           y="102">OpCert</tspan></text>
+    </g>
+    <path
+       style="fill:#000000;stroke:#000000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="M 485,337 369.624,153"
+       id="path2448"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#d45500;stroke:#d45500;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="m 780.776,198.97214 0.48789,-64"
+       id="path2504"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:#d45500;stroke:#d45500;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="m 657,124.16 26,-6"
+       id="path2526"
+       sodipodi:nodetypes="cc" />
+    <g
+       id="g2945"
+       transform="translate(86,74)">
+      <rect
+         style="fill:#ffffff;stroke:none;stroke-width:3;stroke-dasharray:3, 3;stroke-dashoffset:0"
+         id="rect2888"
+         width="20"
+         height="68"
+         x="420"
+         y="88" />
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif"
+         x="90.031982"
+         y="-424.28799"
+         id="text2832"
+         transform="rotate(90)"><tspan
+           sodipodi:role="line"
+           id="tspan2830"
+           x="90.031982"
+           y="-424.28799"
+           style="font-weight:bold">AIR GAP</tspan></text>
+    </g>
+    <path
+       style="fill:#000000;stroke:#000000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#TriangleStart)"
+       d="M 551,397 731.29998,235"
+       id="path2486"
+       sodipodi:nodetypes="cc" />
+    <path
+       style="fill:none;stroke:#000000;stroke-width:3;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:3, 3;stroke-dashoffset:0;stroke-opacity:1"
+       d="M 916,0 V 512"
+       id="path2963"
+       sodipodi:nodetypes="cc" />
+    <g
+       id="g4453"
+       transform="translate(0,-9.290472)">
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif"
+         x="249.90646"
+         y="-899.03308"
+         id="text2975"
+         transform="rotate(90)"><tspan
+           sodipodi:role="line"
+           id="tspan2973"
+           x="249.90646"
+           y="-899.03308">LAN</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif"
+         x="247.65848"
+         y="-921.03308"
+         id="text2979"
+         transform="rotate(90)"><tspan
+           sodipodi:role="line"
+           id="tspan2977"
+           x="247.65848"
+           y="-921.03308">WAN</tspan></text>
+    </g>
+    <g
+       id="g4459"
+       transform="translate(0,10.709528)">
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif"
+         x="29.906464"
+         y="-899.03308"
+         id="text2983"
+         transform="rotate(90)"><tspan
+           sodipodi:role="line"
+           id="tspan2981"
+           x="29.906464"
+           y="-899.03308">LAN</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif"
+         x="27.658478"
+         y="-921.03308"
+         id="text2987"
+         transform="rotate(90)"><tspan
+           sodipodi:role="line"
+           id="tspan2985"
+           x="27.658478"
+           y="-921.03308">WAN</tspan></text>
+    </g>
+    <g
+       id="g4447"
+       transform="translate(0,10.709528)">
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif"
+         x="429.90646"
+         y="-899.03308"
+         id="text4437"
+         transform="rotate(90)"><tspan
+           sodipodi:role="line"
+           id="tspan4435"
+           x="429.90646"
+           y="-899.03308">LAN</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:16px;line-height:1.25;font-family:sans-serif"
+         x="427.65848"
+         y="-921.03308"
+         id="text4441"
+         transform="rotate(90)"><tspan
+           sodipodi:role="line"
+           id="tspan4439"
+           x="427.65848"
+           y="-921.03308">WAN</tspan></text>
+    </g>
+  </g>
+</svg>
