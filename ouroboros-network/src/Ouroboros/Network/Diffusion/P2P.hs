@@ -288,10 +288,9 @@ local_TIME_WAIT_TIMEOUT = 0
 
 
 socketAddressType :: Socket.SockAddr -> Maybe AddressType
-socketAddressType Socket.SockAddrInet {}      = Just IPv4Address
-socketAddressType Socket.SockAddrInet6 {}     = Just IPv6Address
-socketAddressType addr@Socket.SockAddrUnix {} =
-  error ("socketAddressType: unexpected address " ++ show addr)
+socketAddressType Socket.SockAddrInet {}  = Just IPv4Address
+socketAddressType Socket.SockAddrInet6 {} = Just IPv6Address
+socketAddressType Socket.SockAddrUnix {}  = Nothing
 
 
 -- | P2P Applications Extras
