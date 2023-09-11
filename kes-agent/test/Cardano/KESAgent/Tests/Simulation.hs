@@ -483,6 +483,9 @@ runTestNetwork p mrb snocket genesisTimestamp
                         { controlClientSnocket = snocket
                         , controlClientAddress = controlAddress
                         , controlClientLocalAddress = Nothing
+                        , controlClientRetryDelay = 1000
+                        , controlClientRetryExponential = True
+                        , controlClientRetryAttempts = 10
                         }
                       tracer
                       `catch` (\(e :: AsyncCancelled) -> throwIO e)

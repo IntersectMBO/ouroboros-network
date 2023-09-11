@@ -17,7 +17,7 @@ import Cardano.KESAgent.Protocols.Control.Driver
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Protocols.VersionedProtocol ( NamedCrypto )
 import Cardano.KESAgent.Util.RefCounting ( CRef, withCRef )
-import Cardano.KESAgent.Util.RetrySocket ( retrySocket )
+import Cardano.KESAgent.Util.RetrySocket ( retrySocketWith )
 
 import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..), VerKeyKES )
 
@@ -38,6 +38,9 @@ data ControlClientOptions m fd addr =
     { controlClientSnocket :: Snocket m fd addr
     , controlClientAddress :: addr
     , controlClientLocalAddress :: Maybe addr
+    , controlClientRetryDelay :: Int
+    , controlClientRetryExponential :: Bool
+    , controlClientRetryAttempts :: Int
     }
 
 data ControlClientTrace
@@ -78,8 +81,12 @@ runControlClient1 peer proxy mrb options tracer = do
       case controlClientLocalAddress options of
         Just addr -> bind s fd addr
         Nothing -> return ()
-      retrySocket (\(e :: SomeException) n i -> traceWith tracer $ ControlClientAttemptReconnect n) $
-        connect s fd (controlClientAddress options)
+      retrySocketWith
+        (if controlClientRetryExponential options then ((min 5000000) . (* 2)) else id)
+        (controlClientRetryDelay options * 1000)
+        (controlClientRetryAttempts options)
+        (\(e :: SomeException) n i -> traceWith tracer $ ControlClientAttemptReconnect n)
+        (connect s fd (controlClientAddress options))
       traceWith tracer $ ControlClientConnected
       bearer <- getRawBearer mrb fd
       fst <$> runPeerWithDriver

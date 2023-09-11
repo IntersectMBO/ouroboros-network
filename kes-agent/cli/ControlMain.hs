@@ -44,31 +44,48 @@ import System.IO (hPutStrLn, stdout, stderr, hFlush)
 import System.IOManager
 import System.Posix.Syslog.Priority as Syslog
 import Text.Printf
+import Text.Read (readMaybe)
 
 data CommonOptions =
   CommonOptions
     { optControlPath :: Maybe String
     , optVerbosity :: Maybe Int
+    , optRetryDelay :: Maybe Int
+    , optRetryExponential :: Maybe Bool
+    , optRetryAttempts :: Maybe Int
     }
     deriving (Show, Eq)
 
 instance Semigroup CommonOptions where
-  CommonOptions p1 v1 <> CommonOptions p2 v2 =
-    CommonOptions (p1 <|> p2) (v1 <|> v2)
+  CommonOptions p1 v1 ri1 re1 ra1 <> CommonOptions p2 v2 ri2 re2 ra2 =
+    CommonOptions
+      (p1 <|> p2)
+      (v1 <|> v2)
+      (ri1 <|> ri2)
+      (re1 <|> re2)
+      (ra1 <|> ra2)
 
 defCommonOptions :: CommonOptions =
   CommonOptions
     { optControlPath = Just "/tmp/kes-agent-control.socket"
     , optVerbosity = Just 0
+    , optRetryDelay = Nothing
+    , optRetryExponential = Nothing
+    , optRetryAttempts = Nothing
     }
 
 optFromEnv :: IO CommonOptions
 optFromEnv = do
   controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
+  retryDelay <- (>>= readMaybe) <$> lookupEnv "KES_AGENT_CONTROL_RETRY_INTERVAL"
+  retryAttempts <- (>>= readMaybe) <$> lookupEnv "KES_AGENT_CONTROL_RETRY_ATTEMPTS"
   return
     CommonOptions
       { optControlPath = controlPath
       , optVerbosity = Nothing
+      , optRetryDelay = retryDelay
+      , optRetryAttempts = retryAttempts
+      , optRetryExponential = Nothing
       }
 
 data GenKeyOptions =
@@ -181,6 +198,21 @@ pCommonOptions =
           <> value (Just 1)
           <> help "Set verbosity"
           )
+    <*> option (Just <$> auto)
+          (  long "retry-interval"
+          <> long "retry-delay"
+          <> value Nothing
+          <> help "Connection retry interval (milliseconds)"
+          )
+    <*> flag Nothing (Just True)
+          (  long "retry-exponential"
+          <> help "Exponentially increase retry interval"
+          )
+    <*> option (Just <$> auto)
+          (  long "retry-attempts"
+          <> value Nothing
+          <> help "Number of connection retry attempts"
+          )
 
 pGenKeyOptions =
   GenKeyOptions
@@ -257,10 +289,18 @@ formatReason RecvErrorUnknown = "unknown error"
 mkControlClientOptions :: CommonOptions -> IOManager -> IO (ControlClientOptions IO Socket SockAddr)
 mkControlClientOptions opts ioManager = do
   controlPath <- maybe (error "No control address") return (optControlPath opts)
+
+  let retryDelay = fromMaybe 1000 $ optRetryDelay opts
+  let retryExponential = fromMaybe False $ optRetryExponential opts
+  let retryAttempts = fromMaybe 0 $ optRetryAttempts opts
+
   return ControlClientOptions
             { controlClientSnocket = socketSnocket ioManager
             , controlClientAddress = SockAddrUnix controlPath
             , controlClientLocalAddress = Nothing
+            , controlClientRetryDelay = retryDelay
+            , controlClientRetryExponential = retryExponential
+            , controlClientRetryAttempts = retryAttempts
             }
 
 runControlClientCommand :: CommonOptions

@@ -22,7 +22,7 @@ import Control.Concurrent.Async
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad (replicateM, forever)
 import Control.Monad.Class.MonadTimer (threadDelay)
-import Control.Monad.Class.MonadThrow (catch, finally, bracket, SomeException)
+import Control.Monad.Class.MonadThrow (catch, finally, bracket, SomeException, throwIO)
 import Data.List (isPrefixOf)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -468,17 +468,18 @@ kesAgentSelfHeal1 =
             ]
             ExitSuccess
             [ "KES key installed." ]
-        -- controlClientCheckP
-        --   [ "info"
-        --   , "--control-address", controlAddr2
-        --   ]
-        --   ExitSuccess
-        --   (any (== "Connection to agent failed, will try again 10 more times"))
+        controlClientCheckP
+          [ "info"
+          , "--control-address", controlAddr2
+          ]
+          (ExitFailure 1)
+          (any ("kes-agent-control: Network.Socket.connect: " `isPrefixOf`))
         (agentOutLines2b, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
-          threadDelay 1000000
           controlClientCheckP
             [ "info"
             , "--control-address", controlAddr2
+            , "--retry-delay", "100"
+            , "--retry-attempts", "10"
             ]
             ExitSuccess
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
@@ -529,17 +530,18 @@ kesAgentSelfHeal2 =
             ]
             ExitSuccess
             [ "KES key installed." ]
-        -- controlClientCheckP
-        --   [ "info"
-        --   , "--control-address", controlAddr2
-        --   ]
-        --   ExitSuccess
-        --   (any (== "Connection to agent failed, will try again 10 more times"))
+        controlClientCheckP
+          [ "info"
+          , "--control-address", controlAddr2
+          ]
+          (ExitFailure 1)
+          (any ("kes-agent-control: Network.Socket.connect: " `isPrefixOf`))
         (agentOutLines2b, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
-          threadDelay 1000000
           controlClientCheckP
             [ "info"
             , "--control-address", controlAddr2
+            , "--retry-delay", "100"
+            , "--retry-attempts", "10"
             ]
             ExitSuccess
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
@@ -597,12 +599,28 @@ withAgentAndService controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action
 
 withAgent :: FilePath -> FilePath -> [FilePath] -> FilePath -> IO a -> IO ([Text.Text], a)
 withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action =
-  withSpawnProcess "kes-agent" args $ \_ (Just hOut) _ ph -> do
-    retval <- action
-    terminateProcess ph
-    outT <- Text.lines <$> Text.hGetContents hOut
-    return (outT, retval)
+  withSpawnProcess "kes-agent" args $ \_ (Just hOut) _ ph -> go hOut ph
   where
+    go hOut ph = do
+        result <- (Right <$> action) `catch` handler
+        terminateProcess ph
+        outT <- Text.lines <$> Text.hGetContents hOut
+        case result of
+          Right retval ->
+            return (outT, retval)
+          Left (HUnitFailure srcLocMay msg) -> do
+            let msg' = (Text.unpack . Text.unlines $
+                          ["--- AGENT TRACE ---"] ++
+                          outT ++
+                          ["--- END OF AGENT TRACE ---"]
+                       ) ++
+                       msg
+
+            throwIO $ HUnitFailure srcLocMay msg'
+
+    handler :: HUnitFailure -> IO (Either HUnitFailure a)
+    handler err = return (Left err)
+
     args = [ "run"
            , "--cold-verification-key", coldVerKeyFile
            , "--service-address", serviceAddr
