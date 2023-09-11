@@ -23,6 +23,7 @@ import Ouroboros.Network.Snocket ( Snocket (..) )
 
 import Control.Monad ( forever, void )
 import Control.Monad.Class.MonadThrow ( SomeException, bracket )
+import Control.Monad.Class.MonadTimer ( threadDelay )
 import Control.Concurrent.Class.MonadMVar
 import Control.Tracer ( Tracer, traceWith )
 import Data.Functor.Contravariant ( (>$<) )
@@ -51,6 +52,25 @@ instance Pretty ServiceClientTrace where
   pretty (ServiceClientConnected a) = "Service: Connected to " ++ a
   pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
 
+-- | Run a Service Client indefinitely, restarting the connection once a
+-- session ends.
+runServiceClientForever :: forall c m fd addr
+                         . MonadKES m c
+                        => MonadMVar m
+                        => Show addr
+                        => Proxy c
+                        -> MakeRawBearer m fd
+                        -> ServiceClientOptions m fd addr
+                        -> (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m RecvResult)
+                        -> Tracer m ServiceClientTrace
+                        -> m ()
+runServiceClientForever proxy mrb options handleKey tracer =
+  forever $ do
+    runServiceClient proxy mrb options handleKey tracer
+    threadDelay 1000000
+
+-- | Run a single Service Client session. Once the peer closes the connection,
+-- return.
 runServiceClient :: forall c m fd addr
                   . MonadKES m c
                  => MonadMVar m

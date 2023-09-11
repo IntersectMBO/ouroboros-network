@@ -44,7 +44,7 @@ import Cardano.KESAgent.KES.OCert
   , validateOCert
   )
 import Cardano.KESAgent.Processes.ServiceClient
-  ( runServiceClient
+  ( runServiceClientForever
   , ServiceClientOptions (..)
   , ServiceClientTrace (..)
   )
@@ -712,7 +712,7 @@ runAgent agent = do
                       , serviceClientAddress = addr
                       }
 
-        runServiceClient
+        runServiceClientForever
           (Proxy @c)
           (agentMRB agent)
           scOpts
