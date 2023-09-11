@@ -129,7 +129,7 @@ jobs:
 
     - name: ourobors-network-framework [sim-tests]
       # TODO: enable `+RTS -N`
-      run: cabal run ouroboros-network-framework:sim-test
+      run: cabal run ouroboros-network-framework:sim-tests
 
     - name: ourobors-network-framework [io-tests]
       # TODO: enable `+RTS -N`
