@@ -418,6 +418,7 @@ runTestNetwork p mrb snocket genesisTimestamp
                               , agentGetCurrentTime = readMVar timeVar
                               , agentControlAddr = controlAddress
                               , agentServiceAddr = serviceAddress
+                              , agentBootstrapAddr = []
                               , agentTracer = tracer
                               , agentColdVerKey = coldVK
                               , agentGenSeed = agentNextSeed

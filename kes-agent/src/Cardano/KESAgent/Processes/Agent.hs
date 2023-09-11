@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -20,6 +21,7 @@ module Cardano.KESAgent.Processes.Agent
   , EvolutionConfig (..)
   , defEvolutionConfig
   , AgentTrace (..)
+  , ServiceClientTrace (..)
   , defAgentOptions
   , newAgent
   , runAgent
@@ -28,28 +30,33 @@ module Cardano.KESAgent.Processes.Agent
   where
 
 import Cardano.KESAgent.KES.Classes ( MonadKES )
+import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.Evolution
   ( getCurrentKESPeriodWith
   , updateKESTo
   , EvolutionConfig (..)
   , defEvolutionConfig
   )
-import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert
   ( KESPeriod (..)
   , OCert (..)
   , OCertSignable
   , validateOCert
   )
-import Cardano.KESAgent.Serialization.TextEnvelope ( decodeTextEnvelopeFile )
-import Cardano.KESAgent.Protocols.VersionedProtocol ( VersionedProtocol (..), NamedCrypto (..) )
-import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
-import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher )
-import Cardano.KESAgent.Protocols.Service.Protocol ( ServiceProtocol )
+import Cardano.KESAgent.Processes.ServiceClient
+  ( runServiceClient
+  , ServiceClientOptions (..)
+  , ServiceClientTrace (..)
+  )
 import Cardano.KESAgent.Protocols.Control.Driver ( ControlDriverTrace (..), controlDriver )
 import Cardano.KESAgent.Protocols.Control.Peers ( controlReceiver )
 import Cardano.KESAgent.Protocols.Control.Protocol ( ControlProtocol, AgentInfo (..), BundleInfo (..), KeyInfo (..) )
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
+import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
+import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher )
+import Cardano.KESAgent.Protocols.Service.Protocol ( ServiceProtocol )
+import Cardano.KESAgent.Protocols.VersionedProtocol ( VersionedProtocol (..), NamedCrypto (..) )
+import Cardano.KESAgent.Serialization.TextEnvelope ( decodeTextEnvelopeFile )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..), strLength )
 import Cardano.KESAgent.Util.RefCounting
   ( CRef
@@ -63,13 +70,12 @@ import Cardano.KESAgent.Util.RefCounting
   , withCRefValue
   )
 
+import Cardano.Crypto.DSIGN.Class ( DSIGNAlgorithm (..), VerKeyDSIGN )
+import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.DirectSerialise
   ( DirectDeserialise (..)
   , DirectSerialise (..)
   )
-import Cardano.Crypto.DSIGN.Class ( DSIGNAlgorithm (..), VerKeyDSIGN )
-import qualified Cardano.Crypto.DSIGN.Class as DSIGN
-import Cardano.Crypto.Libsodium.MLockedSeed
 import Cardano.Crypto.KES.Class
   ( ContextKES
   , KESAlgorithm (..)
@@ -79,6 +85,7 @@ import Cardano.Crypto.KES.Class
   , genKeyKES
   , deriveVerKeyKES
   )
+import Cardano.Crypto.Libsodium.MLockedSeed
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Accept (..), Accepted (..), Snocket (..) )
@@ -117,6 +124,7 @@ import Control.Monad.Class.MonadAsync
   ( MonadAsync
   , concurrently
   , concurrently_
+  , mapConcurrently_
   )
 import Control.Monad.Class.MonadFork ( labelThread, myThreadId )
 import Control.Monad.Class.MonadST ( MonadST )
@@ -148,6 +156,7 @@ import Text.Printf
 data AgentTrace
   = AgentServiceDriverTrace ServiceDriverTrace
   | AgentControlDriverTrace ControlDriverTrace
+  | AgentBootstrapTrace ServiceClientTrace
   | AgentReplacingPreviousKey String String
   | AgentRejectingKey String
   | AgentInstallingNewKey String
@@ -198,6 +207,9 @@ data AgentOptions m addr c =
       -- | Socket on which the agent will send KES keys to any connected nodes.
     , agentServiceAddr :: addr
 
+      -- | Sockets that the agent will use for bootstrapping from other agents.
+    , agentBootstrapAddr :: [addr]
+
       -- | Evolution configuration: genesis, slot duration, slots per KES period
     , agentEvolutionConfig :: EvolutionConfig
 
@@ -215,6 +227,7 @@ defAgentOptions :: MonadTime m => AgentOptions m addr c
 defAgentOptions = AgentOptions
   { agentControlAddr = error "missing control address"
   , agentServiceAddr = error "missing service address"
+  , agentBootstrapAddr = []
   , agentEvolutionConfig = defEvolutionConfig
   , agentGetCurrentTime = getCurrentTime
   , agentTracer = nullTracer
@@ -691,6 +704,24 @@ runAgent agent = do
                   ()
           )
 
+  let runBootstrap :: addr -> m ()
+      runBootstrap addr = do
+        labelMyThread $ "boostrap-" ++ show addr
+        let scOpts = ServiceClientOptions
+                      { serviceClientSnocket = agentSnocket agent
+                      , serviceClientAddress = addr
+                      }
+
+        runServiceClient
+          (Proxy @c)
+          (agentMRB agent)
+          scOpts
+          (pushKey agent)
+          (AgentBootstrapTrace >$< agentTracer (agentOptions agent))
+
+  let runBootstraps =
+        mapConcurrently_ runBootstrap $ agentBootstrapAddr (agentOptions agent)
+
   let runControl = do
         labelMyThread "control"
         runListener
@@ -718,7 +749,10 @@ runAgent agent = do
                 ()
           )
 
-  void $ runService `concurrently` runControl `concurrently` runEvolution
+  void $ runService
+          `concurrently` runControl
+          `concurrently` runEvolution
+          `concurrently` runBootstraps
 
 labelMyThread label = do
   tid <- myThreadId

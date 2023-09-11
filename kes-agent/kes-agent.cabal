@@ -69,6 +69,7 @@ library
                    -- packages have the same name, we can only disambiguate
                    -- them by demanding a version that only one of them has.
                  , contra-tracer ==0.1.0.1
+                 , containers >=0.6.5.1 && <0.7
                  , extra >=1.7.12 && <1.8
                  , formatting
                  , ghc-prim
@@ -98,6 +99,7 @@ executable kes-agent
                  , bytestring
                  , cardano-crypto-class
                  , contra-tracer
+                 , containers
                  , hdaemonize
                  , hsyslog
                  , io-classes

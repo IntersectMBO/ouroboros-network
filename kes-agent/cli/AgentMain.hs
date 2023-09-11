@@ -42,11 +42,14 @@ import Options.Applicative
 import System.Posix.Files as Posix
 import System.Posix.Types as Posix
 import System.Posix.User as Posix
+import Data.Set (Set)
+import qualified Data.Set as Set
 
 data NormalModeOptions
   = NormalModeOptions
       { nmoServicePath :: Maybe String
       , nmoControlPath :: Maybe String
+      , nmoBootstrapPaths :: Set String
       , nmoLogLevel :: Maybe Priority
       , nmoColdVerKeyFile :: Maybe FilePath
       , nmoGenesisFile :: Maybe FilePath
@@ -54,11 +57,12 @@ data NormalModeOptions
   deriving (Show)
 
 instance Semigroup NormalModeOptions where
-  NormalModeOptions sp1 cp1 ll1 vkp1 gf1 <>
-    NormalModeOptions sp2 cp2 ll2 vkp2 gf2 =
+  NormalModeOptions sp1 cp1 bps1 ll1 vkp1 gf1 <>
+    NormalModeOptions sp2 cp2 bps2 ll2 vkp2 gf2 =
       NormalModeOptions
         (sp1 <|> sp2)
         (cp1 <|> cp2)
+        (bps1 <> bps2)
         (ll1 <|> ll2)
         (vkp1 <|> vkp2)
         (gf1 <|> gf2)
@@ -68,6 +72,7 @@ defNormalModeOptions =
   NormalModeOptions
     { nmoServicePath = Just "/tmp/kes-agent-service.socket"
     , nmoControlPath = Just "/tmp/kes-agent-control.socket"
+    , nmoBootstrapPaths = Set.empty
     , nmoLogLevel = Just Syslog.Notice
     , nmoColdVerKeyFile = Just "./cold.vkey"
     , nmoGenesisFile = Nothing
@@ -77,6 +82,7 @@ data ServiceModeOptions
   = ServiceModeOptions
       { smoServicePath :: Maybe String
       , smoControlPath :: Maybe String
+      , smoBootstrapPaths :: Set String
       , smoUser :: Maybe String
       , smoGroup :: Maybe String
       , smoGenesisFile :: Maybe FilePath
@@ -84,11 +90,12 @@ data ServiceModeOptions
   deriving (Show)
 
 instance Semigroup ServiceModeOptions where
-  ServiceModeOptions sp1 cp1 uid1 gid1 gf1 <>
-    ServiceModeOptions sp2 cp2 uid2 gid2 gf2 =
+  ServiceModeOptions sp1 cp1 bps1 uid1 gid1 gf1 <>
+    ServiceModeOptions sp2 cp2 bps2 uid2 gid2 gf2 =
       ServiceModeOptions
         (sp1 <|> sp2)
         (cp1 <|> cp2)
+        (bps1 <> bps2)
         (uid1 <|> uid2)
         (gid1 <|> gid2)
         (gf1 <|> gf2)
@@ -98,6 +105,7 @@ defServiceModeOptions =
   ServiceModeOptions
     { smoServicePath = Just "/tmp/kes-agent-service.socket"
     , smoControlPath = Just "/tmp/kes-agent-control.socket"
+    , smoBootstrapPaths = Set.empty
     , smoUser = Just "kes-agent"
     , smoGroup = Just "kes-agent"
     , smoGenesisFile = Nothing
@@ -108,6 +116,7 @@ nullServiceModeOptions =
   ServiceModeOptions
     { smoServicePath = Nothing
     , smoControlPath = Nothing
+    , smoBootstrapPaths = Set.empty
     , smoUser = Nothing
     , smoGroup = Nothing
     , smoGenesisFile = Nothing
@@ -142,6 +151,13 @@ pNormalModeOptions =
           <> metavar "PATH"
           <> help "Socket address for 'control' connections"
           )
+    <*> (Set.fromList <$> many (strOption
+          (  long "bootstrap-address"
+          <> short 'b'
+          <> metavar "PATH"
+          <> help "Socket address for 'bootstrapping' connections"
+          )
+        ))
     <*> option (Just <$> eitherReader readLogLevel)
           (  long "log-level"
           <> short 'l'
@@ -172,16 +188,26 @@ readLogLevel "critical" = Right Syslog.Critical
 readLogLevel "emergency" = Right Syslog.Emergency
 readLogLevel x = Left $ "Invalid log level " ++ show x
 
+splitBy :: Ord a => a -> [a] -> [[a]]
+splitBy sep [] = []
+splitBy sep xs =
+  let (lhs, rhs) = break (== sep) xs
+  in lhs : splitBy sep (drop 1 rhs)
+
 nmoFromEnv :: IO NormalModeOptions
 nmoFromEnv = do
   servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
   controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
+  bootstrapPathsRaw <- lookupEnv "KES_AGENT_BOOTSTRAP_PATHS"
+  let bootstrapPaths =
+        Set.fromList $ maybe [] (splitBy ':') bootstrapPathsRaw
   coldVerKeyPath <- lookupEnv "KES_AGENT_COLD_VK"
   genesisFile <- lookupEnv "KES_AGENT_GENESIS_FILE"
   logLevel <- fmap (either error id . readLogLevel) <$> lookupEnv "KES_AGENT_LOG_LEVEL"
   return NormalModeOptions
     { nmoServicePath = servicePath
     , nmoControlPath = controlPath
+    , nmoBootstrapPaths = bootstrapPaths
     , nmoLogLevel = logLevel
     , nmoColdVerKeyFile = coldVerKeyPath
     , nmoGenesisFile = genesisFile
@@ -191,12 +217,16 @@ smoFromEnv :: IO ServiceModeOptions
 smoFromEnv = do
   servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
   controlPath <- lookupEnv "KES_AGENT_CONTROL_PATH"
+  bootstrapPathsRaw <- lookupEnv "KES_AGENT_BOOTSTRAP_PATHS"
+  let bootstrapPaths =
+        Set.fromList $ maybe [] (splitBy ':') bootstrapPathsRaw
   groupSpec <- lookupEnv "KES_AGENT_GROUP"
   userSpec <- lookupEnv "KES_AGENT_USER"
   genesisFile <- lookupEnv "KES_AGENT_GENESIS_FILE"
   return ServiceModeOptions
     { smoServicePath = servicePath
     , smoControlPath = controlPath
+    , smoBootstrapPaths = bootstrapPaths
     , smoUser = userSpec
     , smoGroup = groupSpec
     , smoGenesisFile = genesisFile
@@ -206,6 +236,7 @@ nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr StandardC
 nmoToAgentOptions nmo = do
   servicePath <- maybe (error "No service address") return (nmoServicePath nmo)
   controlPath <- maybe (error "No control address") return (nmoControlPath nmo)
+  let bootstrapPaths = Set.toList $ nmoBootstrapPaths nmo
   coldVerKeyPath <- maybe (error "No cold verification key") return (nmoColdVerKeyFile nmo)
   (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
   evolutionConfig <- maybe
@@ -215,6 +246,7 @@ nmoToAgentOptions nmo = do
   return defAgentOptions
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
+            , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
             , agentColdVerKey = coldVerKey
             , agentGenSeed = mlockedSeedNewRandom
             , agentEvolutionConfig = evolutionConfig
@@ -224,6 +256,7 @@ smoToAgentOptions :: ServiceModeOptions -> IO (AgentOptions IO SockAddr Standard
 smoToAgentOptions smo = do
   servicePath <- maybe (error "No service address") return (smoServicePath smo)
   controlPath <- maybe (error "No control address") return (smoControlPath smo)
+  let bootstrapPaths = Set.toList $ smoBootstrapPaths smo
   evolutionConfig <- maybe
                       (pure defEvolutionConfig)
                       (either error return <=< evolutionConfigFromGenesisFile)
@@ -231,6 +264,7 @@ smoToAgentOptions smo = do
   return defAgentOptions
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
+            , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
             , agentGenSeed = mlockedSeedNewRandom
             , agentEvolutionConfig = evolutionConfig
             }
@@ -238,6 +272,13 @@ smoToAgentOptions smo = do
 agentTracePrio :: AgentTrace -> Priority
 agentTracePrio AgentServiceDriverTrace {} = Syslog.Debug
 agentTracePrio AgentControlDriverTrace {} = Syslog.Debug
+agentTracePrio (AgentBootstrapTrace ServiceClientDriverTrace {}) = Syslog.Debug
+agentTracePrio (AgentBootstrapTrace ServiceClientSocketClosed {}) = Syslog.Notice
+agentTracePrio (AgentBootstrapTrace ServiceClientConnected {}) = Syslog.Notice
+agentTracePrio (AgentBootstrapTrace ServiceClientAttemptReconnect {}) = Syslog.Info
+agentTracePrio (AgentBootstrapTrace ServiceClientReceivedKey {}) = Syslog.Notice
+agentTracePrio (AgentBootstrapTrace ServiceClientAbnormalTermination {}) = Syslog.Error
+agentTracePrio (AgentBootstrapTrace ServiceClientOpCertNumberCheck {}) = Syslog.Debug
 agentTracePrio AgentReplacingPreviousKey {} = Syslog.Notice
 agentTracePrio AgentRejectingKey {} = Syslog.Warning
 agentTracePrio AgentInstallingNewKey {} = Syslog.Notice
