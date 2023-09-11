@@ -32,7 +32,7 @@ import Cardano.Crypto.Libsodium.Memory
 
 import Ouroboros.Network.RawBearer
 
-import Control.Monad ( void, when )
+import Control.Monad ( void, when, replicateM )
 import Control.Monad.Extra ( whenJust )
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
@@ -57,6 +57,7 @@ import Foreign.Marshal.Utils ( copyBytes )
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 -- | Logging messages that the Driver may send
 data ControlDriverTrace
@@ -105,7 +106,7 @@ sendCommand :: ( MonadST m
             -> m ()
 sendCommand s tracer cmd = do
   traceWith tracer $ ControlDriverSendingCommand cmd
-  sendWord32 s $ fromIntegral $ fromEnum cmd
+  sendEnum s cmd
   traceWith tracer $ ControlDriverSentCommand cmd
 
 receiveCommand :: ( MonadST m
@@ -113,10 +114,33 @@ receiveCommand :: ( MonadST m
                   )
                => RawBearer m
                -> m (ReadResult Command)
-receiveCommand s = runReadResultT $ do
+receiveCommand = receiveEnum "Command"
+
+sendEnum :: forall m a.
+               ( MonadST m
+               , MonadThrow m
+               , Enum a
+               , Bounded a
+               )
+            => RawBearer m
+            -> a
+            -> m ()
+sendEnum s =
+  sendWord32 s . fromIntegral . fromEnum
+
+receiveEnum :: forall m a.
+               ( MonadST m
+               , MonadThrow m
+               , Enum a
+               , Bounded a
+               )
+            => String
+            -> RawBearer m
+            -> m (ReadResult a)
+receiveEnum label s = runReadResultT $ do
   w <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  if w > fromEnum (maxBound :: Command) then
-    readResultT (ReadMalformed "Command")
+  if w > fromEnum (maxBound :: a) then
+    readResultT (ReadMalformed label)
   else
     return $ toEnum w
 
@@ -268,6 +292,7 @@ sendInfo s info = do
   whenJust (agentInfoStagedKey info) $ sendKeyInfo s
   sendUTCTime s (agentInfoCurrentTime info)
   sendWord64 s (fromIntegral . unKESPeriod $ agentInfoCurrentKESPeriod info)
+  sendBootstrapInfos s (agentInfoBootstrapConnections info)
 
 receiveInfo :: ( MonadST m
                , MonadThrow m
@@ -282,6 +307,51 @@ receiveInfo s = runReadResultT $ do
     <*> whenFlag flagHasStagedKey flags (ReadResultT $ receiveKeyInfo s)
     <*> ReadResultT (receiveUTCTime s)
     <*> (KESPeriod . fromIntegral <$> ReadResultT (receiveWord64 s))
+    <*> ReadResultT (receiveBootstrapInfos s)
+
+sendBootstrapInfos :: ( MonadST m
+                      , MonadThrow m
+                      )
+                      => RawBearer m
+                      -> [BootstrapInfo]
+                      -> m ()
+sendBootstrapInfos s infos = do
+  sendWord32 s (fromIntegral $ length infos)
+  mapM_ (sendBootstrapInfo s) infos
+
+sendBootstrapInfo :: ( MonadST m
+                     , MonadThrow m
+                     )
+                     => RawBearer m
+                     -> BootstrapInfo
+                     -> m ()
+sendBootstrapInfo s info = do
+  let addrEnc = encodeUtf8 (bootstrapAddress info)
+  sendWord32 s (fromIntegral $ BS.length addrEnc)
+  sendBS s addrEnc
+  sendEnum s (bootstrapStatus info)
+
+receiveBootstrapInfos :: ( MonadST m
+                         , MonadThrow m
+                         )
+                      => RawBearer m
+                      -> m (ReadResult [BootstrapInfo])
+receiveBootstrapInfos s = runReadResultT $ do
+  n <- fromIntegral <$> ReadResultT (receiveWord32 s)
+  replicateM n (ReadResultT $ receiveBootstrapInfo s)
+
+receiveBootstrapInfo :: ( MonadST m
+                        , MonadThrow m
+                        )
+                     => RawBearer m
+                     -> m (ReadResult BootstrapInfo)
+receiveBootstrapInfo s = runReadResultT $ do
+  size <- fromIntegral <$> ReadResultT (receiveWord32 s)
+  addrEnc <- ReadResultT $ receiveBS s size
+  let addr = decodeUtf8 addrEnc
+  status <- ReadResultT $ receiveEnum "status" s
+  return $ BootstrapInfo addr status
+
 
 sendBundleInfo :: ( MonadST m
                   , MonadThrow m

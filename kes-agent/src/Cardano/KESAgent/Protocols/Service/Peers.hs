@@ -27,7 +27,10 @@ serviceReceiver :: forall (c :: *) (m :: * -> *)
             => (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m RecvResult)
             -> Peer (ServiceProtocol m c) AsClient InitialState m ()
 serviceReceiver receiveKey =
-    Await (ServerAgency TokInitial) $ \VersionMessage -> go
+    Await (ServerAgency TokInitial) $ \case
+      VersionMessage -> go
+      AbortMessage -> Done TokEnd ()
+      ProtocolErrorMessage -> Done TokEnd ()
   where
     go :: Peer (ServiceProtocol m c) AsClient IdleState m ()
     go = Await (ServerAgency TokIdle) $ \case

@@ -31,6 +31,7 @@ import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Util ( SignableRepresentation (..) )
 
 import Data.ByteString ( ByteString )
+import Data.Text ( Text )
 import Data.ByteString qualified as BS
 import Data.Proxy ( Proxy (..) )
 import Data.Typeable
@@ -47,7 +48,20 @@ data AgentInfo c =
     , agentInfoStagedKey :: !(Maybe (KeyInfo c))
     , agentInfoCurrentTime :: !UTCTime
     , agentInfoCurrentKESPeriod :: !KESPeriod
+    , agentInfoBootstrapConnections :: ![BootstrapInfo]
     }
+
+data BootstrapInfo =
+  BootstrapInfo
+    { bootstrapAddress :: !Text
+    , bootstrapStatus :: !ConnectionStatus
+    }
+
+data ConnectionStatus
+  = ConnectionUp
+  | ConnectionConnecting
+  | ConnectionDown
+  deriving (Show, Read, Eq, Ord, Enum, Bounded)
 
 data BundleInfo c =
   BundleInfo

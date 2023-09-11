@@ -50,7 +50,14 @@ import Cardano.KESAgent.Processes.ServiceClient
   )
 import Cardano.KESAgent.Protocols.Control.Driver ( ControlDriverTrace (..), controlDriver )
 import Cardano.KESAgent.Protocols.Control.Peers ( controlReceiver )
-import Cardano.KESAgent.Protocols.Control.Protocol ( ControlProtocol, AgentInfo (..), BundleInfo (..), KeyInfo (..) )
+import Cardano.KESAgent.Protocols.Control.Protocol
+  ( ControlProtocol
+  , AgentInfo (..)
+  , BundleInfo (..)
+  , KeyInfo (..)
+  , BootstrapInfo (..)
+  , ConnectionStatus (..)
+  )
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
 import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher )
@@ -140,11 +147,15 @@ import Control.Monad.Class.MonadThrow
   )
 import Control.Monad.Class.MonadTime ( MonadTime (..) )
 import Control.Monad.Class.MonadTimer ( threadDelay, MonadTimer )
-import Control.Tracer ( Tracer, nullTracer, traceWith )
+import Control.Tracer ( Tracer (..), nullTracer, traceWith )
 import Data.ByteString ( ByteString )
 import Data.Functor.Contravariant ( contramap, (>$<) )
+import Data.Map.Strict ( Map )
+import qualified Data.Map.Strict as Map
 import Data.Maybe ( fromJust )
 import Data.Proxy ( Proxy (..) )
+import Data.Text ( Text )
+import qualified Data.Text as Text
 import Data.Time ( UTCTime )
 import Data.Typeable ( Typeable )
 import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
@@ -283,6 +294,7 @@ data Agent c m fd addr =
     , agentNextKeyChan :: TChan m (KESBundle m c)
     , agentServiceFD :: fd
     , agentControlFD :: fd
+    , agentBootstrapConnections :: TMVar m (Map Text ConnectionStatus)
     }
 
 newAgent :: forall c m fd addr
@@ -300,6 +312,7 @@ newAgent _p s mrb options = do
   currentKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
                 <- newTMVarIO Nothing
   nextKeyChan <- atomically newBroadcastTChan
+  bootstrapConnectionsVar <- newTMVarIO mempty
 
   serviceFD <- open s (addrFamily s (agentServiceAddr options))
   bind s serviceFD (agentServiceAddr options)
@@ -316,6 +329,7 @@ newAgent _p s mrb options = do
     , agentNextKeyChan = nextKeyChan
     , agentServiceFD = serviceFD
     , agentControlFD = controlFD
+    , agentBootstrapConnections = bootstrapConnectionsVar
     }
 
 finalizeAgent :: Monad m => Agent c m fd addr -> m ()
@@ -487,11 +501,15 @@ getInfo agent = do
   kesPeriod <- getCurrentKESPeriodWith
                 (agentGetCurrentTime $ agentOptions agent)
                 (agentEvolutionConfig $ agentOptions agent)
+  bootstrapStatusesRaw <- Map.toAscList <$> atomically (readTMVar (agentBootstrapConnections agent))
+  let bootstrapStatuses = map (uncurry BootstrapInfo) bootstrapStatusesRaw
+
   return AgentInfo
     { agentInfoCurrentBundle = bundleInfoMay
     , agentInfoStagedKey = keyInfoMay
     , agentInfoCurrentTime = now
     , agentInfoCurrentKESPeriod = kesPeriod
+    , agentInfoBootstrapConnections = bootstrapStatuses
     }
 
 checkEvolution :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ()) => Agent c m fd addr -> m ()
@@ -706,18 +724,43 @@ runAgent agent = do
 
   let runBootstrap :: addr -> m ()
       runBootstrap addr = do
-        labelMyThread $ "boostrap-" ++ show addr
+        labelMyThread $ "bootstrap-" ++ show addr
         let scOpts = ServiceClientOptions
                       { serviceClientSnocket = agentSnocket agent
                       , serviceClientAddress = addr
                       }
+
+        let label = Text.pack (show addr)
+
+        let setConnectionStatus :: ConnectionStatus -> m ()
+            setConnectionStatus status = atomically $ do
+              m <- takeTMVar (agentBootstrapConnections agent)
+              let m' = Map.insert label status m
+              putTMVar (agentBootstrapConnections agent) m'
+
+        let connStatTracer :: Tracer m ServiceClientTrace
+            connStatTracer = Tracer $ \case
+              ServiceClientAttemptReconnect {} ->
+                setConnectionStatus ConnectionConnecting
+              ServiceClientConnected {} ->
+                setConnectionStatus ConnectionUp
+              ServiceClientSocketClosed {} ->
+                setConnectionStatus ConnectionDown
+              ServiceClientAbnormalTermination {} ->
+                setConnectionStatus ConnectionDown
+              _ -> return ()
+
+        let parentTracer :: Tracer m ServiceClientTrace
+            parentTracer = AgentBootstrapTrace >$< agentTracer (agentOptions agent)
+
+        setConnectionStatus ConnectionConnecting
 
         runServiceClientForever
           (Proxy @c)
           (agentMRB agent)
           scOpts
           (pushKey agent)
-          (AgentBootstrapTrace >$< agentTracer (agentOptions agent))
+          (parentTracer <> connStatTracer)
 
   let runBootstraps =
         mapConcurrently_ runBootstrap $ agentBootstrapAddr (agentOptions agent)

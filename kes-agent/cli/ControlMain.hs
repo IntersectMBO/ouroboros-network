@@ -27,7 +27,7 @@ import Cardano.Crypto.Libsodium.MLockedSeed (mlockedSeedNewRandom, mlockedSeedFi
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
-import Control.Monad ( (>=>), when )
+import Control.Monad ( (>=>), when, unless, forM_ )
 import Control.Monad.Class.MonadThrow (bracket, throwIO, catch, SomeException)
 import Control.Monad.Extra ( whenJust )
 import Control.Tracer
@@ -192,7 +192,7 @@ pCommonOptions =
           <> metavar "ADDR"
           <> help "Socket address for 'control' connections to a running kes-agent process"
           )
-    <*> option auto
+    <*> option (Just <$> auto)
           (  long "verbose"
           <> short 'v'
           <> value (Just 1)
@@ -418,6 +418,10 @@ runGetInfo opt' = withIOManager $ \ioManager -> do
   whenJust (agentInfoStagedKey info) $ \keyInfo -> do
     printf "--- Staged KES SignKey ---\n"
     printf "VerKey: %s\n" (hexShowBS . rawSerialiseVerKeyKES $ keyInfoVK keyInfo)
+  unless (null $ agentInfoBootstrapConnections info) $ do
+    printf "--- Bootstrap Agents ---\n"
+    forM_ (agentInfoBootstrapConnections info) $ \(BootstrapInfo addr status) -> do
+      printf "%+30s %s\n" addr (show status)
 
 programDesc = fullDesc
 

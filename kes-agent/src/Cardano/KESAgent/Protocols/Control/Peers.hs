@@ -29,7 +29,10 @@ controlReceiver :: forall (c :: *) (m :: * -> *)
             -> m (AgentInfo c)
             -> Peer (ControlProtocol m c) AsClient InitialState m ()
 controlReceiver genKey dropKey queryKey installKey getAgentInfo =
-    Await (ServerAgency TokInitial) $ \VersionMessage -> go
+    Await (ServerAgency TokInitial) $ \case
+      VersionMessage -> go
+      AbortMessage -> Done TokEnd ()
+      ProtocolErrorMessage -> Done TokEnd ()
   where
     go :: Peer (ControlProtocol m c) AsClient IdleState m ()
     go = Await (ServerAgency TokIdle) $ \case
