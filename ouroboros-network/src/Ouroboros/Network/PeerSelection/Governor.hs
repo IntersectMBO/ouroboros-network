@@ -539,11 +539,15 @@ peerSelectionGovernorLoop tracer
                          -> m (TimedDecision m peeraddr peerconn)
     evalGuardedDecisions blockedAt peerSharing st =
       case guardedDecisions blockedAt peerSharing st of
-        (Nothing, decisionAction) -> do
+        GuardedSkip _ ->
+          -- impossible since guardedDecisions always has something to wait for
+          error "peerSelectionGovernorLoop: impossible: nothing to do"
+
+        Guarded Nothing decisionAction -> do
           traceWith debugTracer (TraceGovernorState blockedAt Nothing st)
           atomically decisionAction
 
-        (Just (Min wakeupAt), decisionAction) -> do
+        Guarded (Just (Min wakeupAt)) decisionAction -> do
           let wakeupIn = diffTime wakeupAt blockedAt
           traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
           (readTimeout, cancelTimeout) <- registerDelayCancellable wakeupIn
@@ -554,27 +558,11 @@ peerSelectionGovernorLoop tracer
           cancelTimeout
           return timedDecision
 
-    -- | An API for `guardedDecisions'` that promises the component parts of a
-    -- `Guarded` value, eliminating the impossible `GuardedSkip` result.
     guardedDecisions :: Time
-                          -> PeerSharing
-                          -> PeerSelectionState peeraddr peerconn
-                          -> (Maybe (Min Time), STM m (TimedDecision m peeraddr peerconn))
-    guardedDecisions blockedAt peerSharing st =
-      case guardedDecisions' blockedAt peerSharing st of
-        Guarded minTime decision -> (minTime, decision)
-        GuardedSkip _ -> error "guardedDecisions: yielded nothing to wait for"
-
-    -- | Guaranteed to yield a `Guarded`-constructed value rather than a
-    -- `GuardedSkip`-constructed value. At least one value,
-    -- `Monitor.connections`, yields a `Guarded`-constructed value, and that
-    -- value will dominate the construction of the overall `<>` concatenation,
-    -- according to the `Semigroup Guarded` instance.
-    guardedDecisions' :: Time
                      -> PeerSharing
                      -> PeerSelectionState peeraddr peerconn
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions' blockedAt peerSharing st =
+    guardedDecisions blockedAt peerSharing st =
       -- All the alternative potentially-blocking decisions.
          Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
