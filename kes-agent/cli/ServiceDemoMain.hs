@@ -14,6 +14,7 @@ import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert ( OCert (..), KESPeriod (..) )
+import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Libsodium (sodiumInit)
@@ -112,10 +113,9 @@ stdoutStringTracer maxPrio lock = Tracer $ \(prio, msg) -> do
           hFlush stdout
 
 handleKey :: UnsoundKESAlgorithm (KES c)
-          => CRef IO (SignKeyWithPeriodKES (KES c))
-          -> OCert c
+          => Bundle IO c
           -> IO RecvResult
-handleKey skpVar ocert = withCRefValue skpVar $ \skp -> do
+handleKey (Bundle skpVar ocert) = withCRefValue skpVar $ \skp -> do
   skSer <- rawSerialiseSignKeyKES (skWithoutPeriodKES skp)
   let period = periodKES skp
   let certN = ocertN ocert

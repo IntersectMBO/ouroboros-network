@@ -36,6 +36,7 @@ library
                    Cardano.KESAgent.KES.Evolution
                    Cardano.KESAgent.KES.Crypto
                    Cardano.KESAgent.KES.OCert
+                   Cardano.KESAgent.KES.Bundle
                    Cardano.KESAgent.Processes.Agent
                    Cardano.KESAgent.Processes.ControlClient
                    Cardano.KESAgent.Processes.ServiceClient

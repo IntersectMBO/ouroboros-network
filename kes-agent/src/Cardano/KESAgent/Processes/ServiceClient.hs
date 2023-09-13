@@ -9,6 +9,7 @@ module Cardano.KESAgent.Processes.ServiceClient
 import Cardano.KESAgent.KES.Classes ( MonadKES )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert ( OCert (..) )
+import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
 import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace, serviceDriver )
 import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher, serviceReceiver )
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
@@ -61,7 +62,7 @@ runServiceClientForever :: forall c m fd addr
                         => Proxy c
                         -> MakeRawBearer m fd
                         -> ServiceClientOptions m fd addr
-                        -> (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m RecvResult)
+                        -> (Bundle m c -> m RecvResult)
                         -> Tracer m ServiceClientTrace
                         -> m ()
 runServiceClientForever proxy mrb options handleKey tracer =
@@ -78,26 +79,26 @@ runServiceClient :: forall c m fd addr
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr
-                 -> (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m RecvResult)
+                 -> (Bundle m c -> m RecvResult)
                  -> Tracer m ServiceClientTrace
                  -> m ()
 runServiceClient proxy mrb options handleKey tracer = do
   let s = serviceClientSnocket options
   latestOCNumVar <- newMVar Nothing
-  let handleKey' keyRef ocert = do
+  let handleKey' bundle = do
         latestOCNumMay <- takeMVar latestOCNumVar
         case latestOCNumMay of
           Nothing -> do
             -- No key previously handled, so we need to accept this one
-            putMVar latestOCNumVar (Just $ ocertN ocert)
-            handleKey keyRef ocert
+            putMVar latestOCNumVar (Just $ ocertN (bundleOC bundle))
+            handleKey bundle
           Just latestOCNum -> do
             -- Have already handled a key before, so check that the received key
             -- is newer; if not, discard it.
-            traceWith tracer $ ServiceClientOpCertNumberCheck (ocertN ocert) latestOCNum
-            if ocertN ocert > latestOCNum then do
-              putMVar latestOCNumVar (Just $ ocertN ocert)
-              handleKey keyRef ocert
+            traceWith tracer $ ServiceClientOpCertNumberCheck (ocertN (bundleOC bundle)) latestOCNum
+            if ocertN (bundleOC bundle) > latestOCNum then do
+              putMVar latestOCNumVar (Just $ ocertN (bundleOC bundle))
+              handleKey bundle
             else do
               putMVar latestOCNumVar (Just latestOCNum)
               return RecvErrorKeyOutdated
@@ -115,6 +116,6 @@ runServiceClient proxy mrb options handleKey tracer = do
       bearer <- getRawBearer mrb fd
       void $ runPeerWithDriver
         (serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-        (serviceReceiver $ \k o -> handleKey' k o <* traceWith tracer ServiceClientReceivedKey)
+        (serviceReceiver $ \bundle -> handleKey' bundle <* traceWith tracer ServiceClientReceivedKey)
         ()
     )

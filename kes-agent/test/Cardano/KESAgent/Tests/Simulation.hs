@@ -27,6 +27,7 @@ import Cardano.KESAgent.KES.Classes
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.Evolution
 import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Processes.ControlClient
 import Cardano.KESAgent.Processes.ServiceClient
@@ -262,7 +263,7 @@ data NodeHooks m c
 data NodeScript m c
   = NodeScript
       { runNodeScript :: NodeHooks m c -> m ()
-      , keyReceived :: NodeHooks m c -> (CRef m (SignKeyWithPeriodKES (KES c)), OCert c) -> m RecvResult
+      , keyReceived :: NodeHooks m c -> Bundle m c -> m RecvResult
       }
 
 newtype PrettyBS
@@ -458,8 +459,8 @@ runTestNetwork p mrb snocket genesisTimestamp
                       { serviceClientSnocket = snocket
                       , serviceClientAddress = serviceAddress
                       }
-                    (\sk oc -> do
-                      keyReceived script hooks (sk, oc)
+                    (\bundle -> do
+                      keyReceived script hooks bundle
                     )
                     tracer
                     `catch` (\(e :: AsyncCancelled) -> return ())
@@ -649,7 +650,7 @@ testOneKeyThroughChain
 
   let nodeScript =
         NodeScript
-          { keyReceived = \hooks (resultSKPVar, resultOC) -> do
+          { keyReceived = \hooks (Bundle resultSKPVar resultOC) -> do
               (resultSKBS, resultPeriod) <- withCRefValue resultSKPVar $ \resultSKP -> do
                 skp <- rawSerialiseSignKeyKES (skWithoutPeriodKES resultSKP)
                 return (skp, periodKES resultSKP)

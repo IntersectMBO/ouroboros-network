@@ -31,6 +31,7 @@ module Cardano.KESAgent.Processes.Agent
 
 import Cardano.KESAgent.KES.Classes ( MonadKES )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
+import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
 import Cardano.KESAgent.KES.Evolution
   ( getCurrentKESPeriodWith
   , updateKESTo
@@ -246,14 +247,6 @@ defAgentOptions = AgentOptions
   , agentGenSeed = error "missing seed generator"
   }
 
--- | A bundle of a KES key with a period, plus the matching op cert.
--- The key itself is stored as a 'CRef', rather than directly, which
--- allows us to pass keys around and forget them exactly when the last
--- reference is dropped. The downside to this is that we need to be
--- explicit about those references, which is what the 'CRef' type
--- achieves.
-type KESBundle m c = (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
-
 -- The key update lock is required because we need to distinguish between two
 -- different situations in which the currentKey TMVar may be empty:
 -- - No key has been pushed yet (or the previous key has expired).
@@ -289,9 +282,9 @@ data Agent c m fd addr =
     { agentSnocket :: Snocket m fd addr
     , agentMRB :: MakeRawBearer m fd
     , agentOptions :: AgentOptions m addr c
-    , agentCurrentKeyVar :: TMVar m (Maybe (KESBundle m c))
+    , agentCurrentKeyVar :: TMVar m (Maybe (Bundle m c))
     , agentStagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
-    , agentNextKeyChan :: TChan m (KESBundle m c)
+    , agentNextKeyChan :: TChan m (Bundle m c)
     , agentServiceFD :: fd
     , agentControlFD :: fd
     , agentBootstrapConnections :: TMVar m (Map Text ConnectionStatus)
@@ -309,7 +302,7 @@ newAgent :: forall c m fd addr
 newAgent _p s mrb options = do
   stagedKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))))
                <- newTMVarIO Nothing
-  currentKeyVar :: TMVar m (Maybe (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
+  currentKeyVar :: TMVar m (Maybe (Bundle m c))
                 <- newTMVarIO Nothing
   nextKeyChan <- atomically newBroadcastTChan
   bootstrapConnectionsVar <- newTMVarIO mempty
@@ -347,7 +340,7 @@ agentCRefTracer = contramap AgentCRefEvent . agentTracer . agentOptions
 alterBundle :: (MonadSTM m, MonadThrow m)
           => Agent c m fd addr
           -> String
-          -> (Maybe (KESBundle m c) -> m (Maybe (KESBundle m c), a))
+          -> (Maybe (Bundle m c) -> m (Maybe (Bundle m c), a))
           -> m a
 alterBundle agent context f = do
   agentTrace agent $ AgentLockRequest context
@@ -361,7 +354,7 @@ alterBundle agent context f = do
 withBundle :: (MonadSTM m, MonadThrow m)
           => Agent c m fd addr
           -> String
-          -> (Maybe (KESBundle m c) -> m a)
+          -> (Maybe (Bundle m c) -> m a)
           -> m a
 withBundle agent context f = do
   agentTrace agent $ AgentLockRequest context
@@ -375,7 +368,9 @@ withBundle agent context f = do
 alterStagedKey :: (MonadSTM m, MonadThrow m)
           => Agent c m fd addr
           -> String
-          -> (Maybe (CRef m (SignKeyWithPeriodKES (KES c))) -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))), a))
+          -> ( Maybe (CRef m (SignKeyWithPeriodKES (KES c)))
+               -> m (Maybe (CRef m (SignKeyWithPeriodKES (KES c))), a)
+             )
           -> m a
 alterStagedKey agent context f = do
   agentTrace agent $ AgentLockRequest context
@@ -449,10 +444,11 @@ installKey :: ( MonadThrow m
               , ContextDSIGN (DSIGN c) ~ ()
               , DSIGN.Signable (DSIGN c) (OCertSignable c)
               )
-         => Agent c m fd addr -> OCert c -> m RecvResult
+         => Agent c m fd addr
+         -> OCert c
+         -> m RecvResult
 installKey agent oc = do
   newKeyMay <- alterStagedKey agent "install staged key" $ \keyMay -> do
-    return (Nothing, keyMay)
     case keyMay of
       Nothing -> do
         return (Nothing, Nothing)
@@ -460,7 +456,7 @@ installKey agent oc = do
         return (Nothing, Just skpVar)
   maybe
     (return RecvErrorNoKey)
-    (\newKey -> pushKey agent newKey oc)
+    (\newKey -> pushKey agent (Bundle newKey oc))
     newKeyMay
 
 getInfo :: ( MonadThrow m
@@ -479,14 +475,14 @@ getInfo agent = do
       withBundle agent "get info" $ \case
         Nothing ->
           return Nothing
-        Just (skpRef, ocert) ->
-          withCRefValue skpRef $ \skp -> do
+        Just bundle ->
+          withCRefValue (bundleSKP bundle) $ \skp -> do
             return $ Just BundleInfo
                         { bundleInfoEvolution = fromIntegral $ periodKES skp
-                        , bundleInfoStartKESPeriod = ocertKESPeriod ocert
-                        , bundleInfoOCertN = ocertN ocert
-                        , bundleInfoVK = ocertVkHot ocert
-                        , bundleInfoSigma = ocertSigma ocert
+                        , bundleInfoStartKESPeriod = ocertKESPeriod (bundleOC bundle)
+                        , bundleInfoOCertN = ocertN (bundleOC bundle)
+                        , bundleInfoVK = ocertVkHot (bundleOC bundle)
+                        , bundleInfoSigma = ocertSigma (bundleOC bundle)
                         }
 
   keyInfoMay <- do
@@ -523,7 +519,7 @@ checkEvolution agent = do
       Nothing -> do
         agentTrace agent AgentNoKeyToEvolve
         return (Nothing, ())
-      Just (keyVar, oc) -> withCRefValue keyVar $ \key -> do
+      Just (Bundle keyVar oc) -> withCRefValue keyVar $ \key -> do
         let p = KESPeriod $ unKESPeriod (ocertKESPeriod oc) + periodKES key
         if p < p' then do
           keyMay' <- updateKESTo () p' oc key
@@ -536,7 +532,7 @@ checkEvolution agent = do
               agentTrace agent $ AgentKeyEvolved p p'
               keyVar' <- newCRefWith (agentCRefTracer agent) (forgetSignKeyKES . skWithoutPeriodKES) key'
               releaseCRef keyVar
-              return (Just (keyVar', oc), ())
+              return (Just (Bundle keyVar' oc), ())
         else do
           agentTrace agent $ AgentKeyNotEvolved p p'
           return (bundleMay, ())
@@ -554,17 +550,16 @@ pushKey :: forall c m fd addr.
            , MonadThrow m
            )
         => Agent c m fd addr
-        -> CRef m (SignKeyWithPeriodKES (KES c))
-        -> OCert c
+        -> Bundle m c
         -> m RecvResult
-pushKey agent keyVar oc = do
-  vkKES <- withCRefValue keyVar (deriveVerKeyKES . skWithoutPeriodKES)
+pushKey agent bundle = do
+  vkKES <- withCRefValue (bundleSKP bundle) (deriveVerKeyKES . skWithoutPeriodKES)
 
   let validationResult =
         validateOCert
           (agentColdVerKey (agentOptions agent))
           vkKES
-          oc
+          (bundleOC bundle)
   case validationResult of
     Left err ->  do
       agentTrace agent $ AgentRejectingKey err
@@ -575,20 +570,22 @@ pushKey agent keyVar oc = do
   where
     go = do
       result <- alterBundle agent "pushKey" $ \oldKeyOcMay -> do
+        let keyVar = bundleSKP bundle
+            oc = bundleOC bundle
         acquireCRef keyVar
         let keyStr = formatKey oc
 
-        let report keyVar oc = atomically $ do
+        let report bundle = atomically $ do
               -- The TMVar is now empty; we write to the next key signal channel
               -- /before/ putting the new key in the MVar, because we want to make it
               -- such that when the consumer picks up the signal, the next update
               -- will be the correct one. Since the MVar is empty at this point, the
               -- consumers will block until we put the key back in.
-              writeTChan (agentNextKeyChan agent) (keyVar, oc)
-              return (Just (keyVar, oc), RecvOK)
+              writeTChan (agentNextKeyChan agent) bundle
+              return (Just bundle, RecvOK)
 
         case oldKeyOcMay of
-          Just (oldKeyVar, oldOC) -> do
+          Just (Bundle oldKeyVar oldOC) -> do
             let oldKeyStr = formatKey oldOC
             if ocertN oldOC >= ocertN oc then do
               releaseCRef keyVar
@@ -597,10 +594,10 @@ pushKey agent keyVar oc = do
             else do
               releaseCRef oldKeyVar
               agentTrace agent $ AgentReplacingPreviousKey oldKeyStr keyStr
-              report keyVar oc
+              report (Bundle keyVar oc)
           Nothing -> do
             agentTrace agent $ AgentInstallingNewKey keyStr
-            report keyVar oc
+            report (Bundle keyVar oc)
       checkEvolution agent
       return result
 

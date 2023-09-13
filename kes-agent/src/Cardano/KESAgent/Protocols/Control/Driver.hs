@@ -116,34 +116,6 @@ receiveCommand :: ( MonadST m
                -> m (ReadResult Command)
 receiveCommand = receiveEnum "Command"
 
-sendEnum :: forall m a.
-               ( MonadST m
-               , MonadThrow m
-               , Enum a
-               , Bounded a
-               )
-            => RawBearer m
-            -> a
-            -> m ()
-sendEnum s =
-  sendWord32 s . fromIntegral . fromEnum
-
-receiveEnum :: forall m a.
-               ( MonadST m
-               , MonadThrow m
-               , Enum a
-               , Bounded a
-               )
-            => String
-            -> RawBearer m
-            -> m (ReadResult a)
-receiveEnum label s = runReadResultT $ do
-  w <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  if w > fromEnum (maxBound :: a) then
-    readResultT (ReadMalformed label)
-  else
-    return $ toEnum w
-
 sendVerKeyKESMay :: ( MonadST m
                , MonadThrow m
                , KESAlgorithm k

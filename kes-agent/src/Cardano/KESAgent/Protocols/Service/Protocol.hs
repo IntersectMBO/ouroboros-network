@@ -16,6 +16,7 @@ module Cardano.KESAgent.Protocols.Service.Protocol
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.RefCounting
@@ -79,8 +80,7 @@ data ServiceProtocol (m :: * -> *) (k :: *) where
 instance Protocol (ServiceProtocol m c) where
   data Message (ServiceProtocol m c) st st' where
           VersionMessage :: Message (ServiceProtocol m c) InitialState IdleState
-          KeyMessage :: CRef m (SignKeyWithPeriodKES (KES c))
-                     -> OCert c
+          KeyMessage :: Bundle m c
                      -> Message (ServiceProtocol m c) IdleState WaitForConfirmationState
 
           RecvResultMessage :: RecvResult

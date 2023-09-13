@@ -9,6 +9,7 @@ module Cardano.KESAgent.Protocols.Service.Peers
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.RefCounting
@@ -24,9 +25,9 @@ import Network.TypedProtocol.Core
 serviceReceiver :: forall (c :: *) (m :: * -> *)
              . KESAlgorithm (KES c)
             => Monad m
-            => (CRef m (SignKeyWithPeriodKES (KES c)) -> OCert c -> m RecvResult)
+            => (Bundle m c -> m RecvResult)
             -> Peer (ServiceProtocol m c) AsClient InitialState m ()
-serviceReceiver receiveKey =
+serviceReceiver receiveBundle =
     Await (ServerAgency TokInitial) $ \case
       VersionMessage -> go
       AbortMessage -> Done TokEnd ()
@@ -34,9 +35,9 @@ serviceReceiver receiveKey =
   where
     go :: Peer (ServiceProtocol m c) AsClient IdleState m ()
     go = Await (ServerAgency TokIdle) $ \case
-          KeyMessage sk oc ->
+          KeyMessage bundle ->
             Effect $ do
-              result <- receiveKey sk oc
+              result <- receiveBundle bundle
               return $ Yield (ClientAgency TokWaitForConfirmation) (RecvResultMessage result) go
           ProtocolErrorMessage ->
             Done TokEnd ()
@@ -49,16 +50,16 @@ servicePusher :: forall (c :: *) (m :: (* -> *))
           => MonadThrow m
           => MonadAsync m
           => MonadTimer m
-          => m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
-          -> m (CRef m (SignKeyWithPeriodKES (KES c)), OCert c)
+          => m (Bundle m c)
+          -> m (Bundle m c)
           -> (RecvResult -> m ())
           -> Peer (ServiceProtocol m c) AsServer InitialState m ()
 servicePusher currentKey nextKey handleResult =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
-      (sk, oc) <- currentKey
+      bundle <- currentKey
       return $
-        Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
+        Yield (ServerAgency TokIdle) (KeyMessage bundle) $
           Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result
   where
     goR :: RecvResult -> Peer (ServiceProtocol m c) AsServer IdleState m ()
@@ -68,7 +69,7 @@ servicePusher currentKey nextKey handleResult =
 
     go :: m (Peer (ServiceProtocol m c) AsServer IdleState m ())
     go = do
-      (sk, oc) <- nextKey
+      bundle <- nextKey
       return $
-        Yield (ServerAgency TokIdle) (KeyMessage sk oc) $
+        Yield (ServerAgency TokIdle) (KeyMessage bundle) $
           Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result

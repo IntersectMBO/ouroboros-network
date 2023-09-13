@@ -16,6 +16,7 @@ module Cardano.KESAgent.Protocols.Service.Driver
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol
@@ -156,10 +157,10 @@ serviceDriver s tracer = Driver
       (ServerAgency TokInitial, AbortMessage) -> do
         return ()
 
-      (ServerAgency TokIdle, KeyMessage skpRef oc) -> do
-        traceWith tracer $ ServiceDriverSendingKey (ocertN oc)
-        sendBundle s skpRef oc
-        traceWith tracer $ ServiceDriverSentKey (ocertN oc)
+      (ServerAgency TokIdle, KeyMessage bundle) -> do
+        traceWith tracer $ ServiceDriverSendingKey (ocertN (bundleOC bundle))
+        sendBundle s bundle
+        traceWith tracer $ ServiceDriverSentKey (ocertN (bundleOC bundle))
 
       (ServerAgency TokIdle, ServerDisconnectMessage) -> do
         return ()
@@ -194,9 +195,9 @@ serviceDriver s tracer = Driver
       (ServerAgency TokIdle) -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ServiceDriverReceivingKey
-          (skpVar, oc) <- ReadResultT $ receiveBundle s (ServiceDriverMisc >$< tracer)
-          lift $ traceWith tracer $ ServiceDriverReceivedKey (ocertN oc)
-          return (SomeMessage (KeyMessage skpVar oc), ())
+          bundle <- ReadResultT $ receiveBundle s (ServiceDriverMisc >$< tracer)
+          lift $ traceWith tracer $ ServiceDriverReceivedKey (ocertN (bundleOC bundle))
+          return (SomeMessage (KeyMessage bundle), ())
         case result of
           ReadOK msg ->
             return msg

@@ -15,6 +15,7 @@ where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.Pretty
@@ -38,7 +39,7 @@ import Control.Monad.Trans
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
+import Control.Monad.Class.MonadThrow ( MonadThrow, bracket, Exception )
 import Control.Tracer ( Tracer, traceWith )
 import Data.Binary ( decode, encode )
 import Data.ByteString qualified as BS
@@ -64,6 +65,8 @@ data ReadResult a
   | ReadVersionMismatch !VersionIdentifier !VersionIdentifier
   | ReadEOF
   deriving (Show, Eq, Functor)
+
+instance (Show a, Typeable a) => Exception (ReadResult a) where
 
 newtype ReadResultT m a = ReadResultT { runReadResultT :: m (ReadResult a) }
   deriving (Functor)
@@ -137,12 +140,11 @@ sendBundle :: ( MonadST m
               , DirectSerialise m (SignKeyKES (KES c))
               )
            => RawBearer m
-           -> CRef m (SignKeyWithPeriodKES (KES c))
-           -> OCert c
+           -> Bundle m c
            -> m ()
-sendBundle s skpRef oc = do
-  sendSKP s skpRef
-  sendOC s oc
+sendBundle s bundle = do
+  sendSKP s (bundleSKP bundle)
+  sendOC s (bundleOC bundle)
 
 sendSKP :: ( MonadST m
               , MonadSTM m
@@ -184,11 +186,11 @@ receiveBundle :: ( MonadST m
                  )
               => RawBearer m
               -> Tracer m String
-              -> m (ReadResult (CRef m (SignKeyWithPeriodKES (KES c)), OCert c))
+              -> m (ReadResult (Bundle m c))
 receiveBundle s tracer = runReadResultT $ do
   skp <- ReadResultT $ receiveSKP s tracer
   oc <- ReadResultT $ receiveOC s tracer
-  return (skp, oc)
+  return (Bundle skp oc)
 
 receiveSK :: ( MonadST m
              , MonadSTM m
@@ -359,6 +361,35 @@ sendUTCTime :: (MonadThrow m, MonadST m)
             -> m ()
 sendUTCTime s utc =
   sendWord64 s $ floor . utcTimeToPOSIXSeconds $ utc
+
+sendEnum :: forall m a.
+               ( MonadST m
+               , MonadThrow m
+               , Enum a
+               , Bounded a
+               )
+            => RawBearer m
+            -> a
+            -> m ()
+sendEnum s =
+  sendWord32 s . fromIntegral . fromEnum
+
+receiveEnum :: forall m a.
+               ( MonadST m
+               , MonadThrow m
+               , Enum a
+               , Bounded a
+               )
+            => String
+            -> RawBearer m
+            -> m (ReadResult a)
+receiveEnum label s = runReadResultT $ do
+  w <- fromIntegral <$> ReadResultT (receiveWord32 s)
+  if w > fromEnum (maxBound :: a) then
+    readResultT (ReadMalformed label)
+  else
+    return $ toEnum w
+
 
 unsafeReceiveN :: Monad m => RawBearer m -> Ptr CChar -> CSize -> m (ReadResult CSize)
 unsafeReceiveN s buf bufSize = do
