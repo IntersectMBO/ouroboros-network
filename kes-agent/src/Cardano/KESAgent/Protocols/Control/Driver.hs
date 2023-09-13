@@ -9,6 +9,9 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 module Cardano.KESAgent.Protocols.Control.Driver
   where
 
@@ -61,6 +64,7 @@ import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Time (UTCTime)
 
 -- | Logging messages that the Driver may send
 data ControlDriverTrace
@@ -103,6 +107,10 @@ data Command
 deriving via (ViaEnum Command)
   instance HasSerInfo Command
 
+instance (MonadThrow m, MonadST m) => IsSerItem m Command where
+  sendItem s cmd = sendItem s (ViaEnum cmd)
+  receiveItem s = viaEnum <$> receiveItem s
+
 sendCommand :: ( MonadST m
                , MonadThrow m
                )
@@ -112,15 +120,8 @@ sendCommand :: ( MonadST m
             -> m ()
 sendCommand s tracer cmd = do
   traceWith tracer $ ControlDriverSendingCommand cmd
-  sendEnum s cmd
+  sendItem s cmd
   traceWith tracer $ ControlDriverSentCommand cmd
-
-receiveCommand :: ( MonadST m
-                  , MonadThrow m
-                  )
-               => RawBearer m
-               -> m (ReadResult Command)
-receiveCommand = receiveEnum "Command"
 
 sendVerKeyKESMay :: ( MonadST m
                , MonadThrow m
@@ -252,6 +253,17 @@ whenFlag flag flags action =
   else
     pure Nothing
 
+instance (Crypto c) => HasSerInfo (AgentInfo c) where
+  info _ =
+    compoundField
+      ("AgentInfo " ++ algorithmNameKES (Proxy @(KES c)) ++ " " ++ algorithmNameDSIGN (Proxy @(DSIGN c)))
+      [ ("flags", info (Proxy @Word8))
+      , ("bundle", info (Proxy @(BundleInfo c)))
+      , ("stagedKey", info (Proxy @(KeyInfo c)))
+      , ("currentTime", info (Proxy @UTCTime))
+      , ("currentKESPeriod", info (Proxy @Word64))
+      , ("bootstrapConnections", info (Proxy @[BootstrapInfo]))
+      ]
 
 sendInfo :: ( MonadST m
             , MonadThrow m
@@ -456,7 +468,7 @@ controlDriver s tracer = Driver
       (ServerAgency TokIdle) -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ControlDriverReceivingCommand
-          cmd <- ReadResultT $ receiveCommand s
+          cmd <- receiveItem s
           lift $ traceWith tracer (ControlDriverReceivedCommand cmd)
           case cmd of
             GenStagedKeyCmd ->
@@ -466,7 +478,7 @@ controlDriver s tracer = Driver
             DropStagedKeyCmd ->
               return (SomeMessage DropStagedKeyMessage, ())
             InstallKeyCmd -> do
-              oc <- ReadResultT $ receiveOC s (ControlDriverMisc >$< tracer)
+              oc <- receiveItem s
               return (SomeMessage (InstallKeyMessage oc), ())
             RequestInfoCmd -> do
               return (SomeMessage RequestInfoMessage, ())

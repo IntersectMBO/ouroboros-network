@@ -11,6 +11,9 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RoleAnnotations #-}
 
 module Cardano.KESAgent.Serialization.Spec
 where
@@ -35,17 +38,31 @@ import Data.Kind
 import Data.Proxy
 import Data.Typeable
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Control.Monad ( void, unless, when )
+import Control.Monad ( void, unless, when, replicateM )
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow ( MonadThrow, throwIO, catch )
 import GHC.TypeLits
 import Foreign.Ptr ( castPtr )
 import Control.Monad.Trans ( lift )
+import Data.Time (UTCTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
+import Data.List
 
 data FieldInfo
   = BasicField BasicFieldInfo
   | CompoundField CompoundFieldInfo
+
+fieldType :: FieldInfo -> String
+fieldType (BasicField info) = basicFieldType info
+fieldType (CompoundField info) = compoundFieldType info
+
+fieldSize :: FieldInfo -> FieldSize
+fieldSize (BasicField info) = basicFieldSize info
+fieldSize (CompoundField info) =
+  case map (fieldSize . subfieldInfo) (compoundFieldSubfields info) of
+    [] -> FixedSize 0
+    (x:xs) -> foldl' SumSize x xs
 
 data FieldSize
   = FixedSize !Int
@@ -55,8 +72,8 @@ data FieldSize
 
 data BasicFieldInfo =
   BasicFieldInfo
-    { fieldType :: !String
-    , fieldSize :: !FieldSize
+    { basicFieldType :: !String
+    , basicFieldSize :: !FieldSize
     }
 
 data CompoundFieldInfo =
@@ -82,9 +99,9 @@ compoundField ty subfields =
       [ CompoundSubfieldInfo name i
       | (name, i) <- subfields
       ]
-  
+
 class HasSerInfo a where
-  info :: forall (proxy :: Type -> Type). proxy a -> FieldInfo
+  info :: Proxy a -> FieldInfo
 
 class HasSerInfo a => IsSerItem m a where
   sendItem :: RawBearer m -> a -> m ()
@@ -118,6 +135,15 @@ instance (MonadThrow m, MonadST m) => IsSerItem m Word64 where
   sendItem = sendWord64
   receiveItem s = ReadResultT $ receiveWord64 s
 
+instance HasSerInfo UTCTime where
+  info _ = basicField "POSIX Seconds" $ FixedSize 64
+
+instance (MonadThrow m, MonadST m) => IsSerItem m UTCTime where
+  sendItem s utc = sendWord64 s $ floor . utcTimeToPOSIXSeconds $ utc
+  receiveItem s = do
+    posix <- ReadResultT $ receiveWord64 s
+    return $ posixSecondsToUTCTime . fromIntegral $ posix
+
 newtype Sized (len :: Nat) a = Sized { unSized :: a }
 
 instance (KnownNat len) => HasSerInfo (Sized len ByteString) where
@@ -135,7 +161,6 @@ instance (MonadThrow m, MonadST m, KnownNat len) => IsSerItem m (Sized len ByteS
   receiveItem s = do
     let n = fromIntegral $ natVal (Proxy @len)
     Sized <$> ReadResultT (receiveBS s (fromIntegral n))
-
 
 newtype VariableSized a = VariableSized { unVariableSized :: a }
 
@@ -155,6 +180,23 @@ instance (MonadThrow m, MonadST m) => IsSerItem m (VariableSized ByteString) whe
   receiveItem s = do
     len <- ReadResultT (receiveWord32 s)
     VariableSized <$> ReadResultT (receiveBS s (fromIntegral len))
+
+instance HasSerInfo a => HasSerInfo (VariableSized [a]) where
+  info _ =
+    compoundField
+      ("[" ++ fieldType (info (Proxy @a)) ++ "]")
+      [ ("length", info (Proxy @Word32))
+      , ("data", basicField "[Word8]" $ VarSize "length")
+      ]
+instance (MonadThrow m, MonadST m, IsSerItem m a) => IsSerItem m (VariableSized [a]) where
+  sendItem s val = do
+    let len = length (unVariableSized val)
+    sendWord32 s (fromIntegral len)
+    mapM_ (sendItem s) (unVariableSized val)
+
+  receiveItem s = do
+    len <- ReadResultT (receiveWord32 s)
+    VariableSized <$> replicateM (fromIntegral len) (receiveItem s)
 
 
 instance ( KESAlgorithm kes
@@ -289,6 +331,65 @@ instance ( HasSerInfo (SignKeyKES (KES c))
       , ("ocert", info (Proxy @(OCert c)))
       ]
 
+
+instance ( DSIGNAlgorithm dsign ) => HasSerInfo (VerKeyDSIGN dsign) where
+    info _ =
+      basicField
+        ("VerKeyDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
+        (FixedSize . fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
+instance ( MonadSTM m
+         , MonadThrow m
+         , DirectSerialise m (VerKeyDSIGN dsign)
+         , DirectDeserialise m (VerKeyDSIGN dsign)
+         , DSIGNAlgorithm dsign
+         ) => IsSerItem m (VerKeyDSIGN dsign) where
+    sendItem s val = do
+      directSerialise
+        (\buf bufSize -> do
+          n <- send s (castPtr buf) (fromIntegral bufSize)
+          when (fromIntegral n /= bufSize) (error "AAAAA")
+        ) val
+
+    receiveItem s = ReadResultT $ do
+      vk <- directDeserialise
+        (\buf bufSize -> do
+            unsafeReceiveN s buf bufSize >>= \case
+              ReadOK n -> do
+                when (fromIntegral n /= bufSize) (throwIO (ReadMalformed "Incorrect number of key bytes" :: ReadResult ()))
+              x ->  do
+                throwIO x
+        )
+      return $ ReadOK vk
+
+instance ( DSIGNAlgorithm dsign ) => HasSerInfo (SigDSIGN dsign) where
+    info _ =
+      basicField
+        ("SigDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
+        (FixedSize . fromIntegral $ sizeSigDSIGN (Proxy @dsign))
+instance ( MonadSTM m
+         , MonadThrow m
+         , DirectSerialise m (SigDSIGN dsign)
+         , DirectDeserialise m (SigDSIGN dsign)
+         , DSIGNAlgorithm dsign
+         ) => IsSerItem m (SigDSIGN dsign) where
+    sendItem s val = do
+      directSerialise
+        (\buf bufSize -> do
+          n <- send s (castPtr buf) (fromIntegral bufSize)
+          when (fromIntegral n /= bufSize) (error "AAAAA")
+        ) val
+
+    receiveItem s = ReadResultT $ do
+      vk <- directDeserialise
+        (\buf bufSize -> do
+            unsafeReceiveN s buf bufSize >>= \case
+              ReadOK n -> do
+                when (fromIntegral n /= bufSize) (throwIO (ReadMalformed "Incorrect number of key bytes" :: ReadResult ()))
+              x ->  do
+                throwIO x
+        )
+      return $ ReadOK vk
+
 instance ( MonadThrow m
          , MonadST m
          , MonadSTM m
@@ -328,3 +429,46 @@ instance (MonadThrow m, MonadST m, Typeable a, Enum a, Bounded a) => IsSerItem m
       ReadResultT $ return (ReadMalformed (typeName (Proxy @a)))
     else
       return (ViaEnum $ toEnum n)
+
+instance HasSerInfo (SigDSIGN d) => HasSerInfo (SignedDSIGN d a) where
+  info _ =
+    info (Proxy @(SigDSIGN d))
+
+instance (Monad m, IsSerItem m (SigDSIGN d)) => IsSerItem m (SignedDSIGN d a) where
+  sendItem s (SignedDSIGN sig) = sendItem s sig
+  receiveItem s = SignedDSIGN <$> receiveItem s
+
+instance HasSerInfo Bool where
+  info _ = basicField "Bool" (FixedSize 8)
+
+instance (MonadThrow m, MonadST m) => IsSerItem m Bool where
+  sendItem s False = sendWord8 s 0
+  sendItem s True = sendWord8 s 1
+
+  receiveItem s = do
+    n <- ReadResultT (receiveWord8 s)
+    case n of
+      0 -> return False
+      1 -> return True
+      n -> ReadResultT . return $ ReadMalformed "Bool"
+
+instance HasSerInfo a => HasSerInfo (Maybe a) where
+  info _ =
+    compoundField
+      ("Maybe " ++ fieldType (info (Proxy @a)))
+      [ ("valuePresent", info (Proxy @Bool))
+      , ("value", info (Proxy @a))
+      ]
+
+instance (MonadThrow m, MonadST m, IsSerItem m a) => IsSerItem m (Maybe a) where
+  sendItem s Nothing = sendItem s (ViaEnum False)
+  sendItem s (Just x) = do
+    sendItem s True
+    sendItem s x
+
+  receiveItem s = do
+    just <- receiveItem s
+    if just then do
+      Just <$> receiveItem s
+    else
+      return Nothing
