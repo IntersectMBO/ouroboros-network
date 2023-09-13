@@ -7,6 +7,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingVia #-}
 module Cardano.KESAgent.Protocols.Control.Driver
   where
 
@@ -16,6 +18,7 @@ import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.RawUtil
+import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -96,6 +99,9 @@ data Command
   | InstallKeyCmd
   | RequestInfoCmd
   deriving (Show, Read, Eq, Ord, Enum, Bounded)
+
+deriving via (ViaEnum Command)
+  instance HasSerInfo Command
 
 sendCommand :: ( MonadST m
                , MonadThrow m
