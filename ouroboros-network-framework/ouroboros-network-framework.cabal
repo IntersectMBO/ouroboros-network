@@ -69,6 +69,7 @@ library
 
   -- other-extensions:
   build-depends:       base            >=4.12  && <4.19
+                     , aeson
                      , async           >=2.1   && <2.3
                      , bytestring      >=0.10  && <0.12
                      , cborg           >=0.2.1 && <0.3

@@ -1,4 +1,5 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Rage limiting of accepted connections
 --
@@ -18,6 +19,8 @@ import           Control.Tracer (Tracer, traceWith)
 import           Data.Typeable (Typeable)
 import           Data.Word
 import           Text.Printf
+
+import           Data.Aeson.Types
 
 
 -- | Policy which governs how to limit the number of accepted connections.
@@ -41,6 +44,28 @@ data AcceptedConnectionsLimit = AcceptedConnectionsLimit {
   }
   deriving (Eq, Ord, Show)
 
+instance ToJSON AcceptedConnectionsLimit where
+  toJSON AcceptedConnectionsLimit
+          { acceptedConnectionsHardLimit
+          , acceptedConnectionsSoftLimit
+          , acceptedConnectionsDelay
+          } =
+    object [ "AcceptedConnectionsLimit" .=
+      object [ "hardLimit" .=
+                  toJSON acceptedConnectionsHardLimit
+             , "softLimit" .=
+                  toJSON acceptedConnectionsSoftLimit
+             , "delay" .=
+                  toJSON acceptedConnectionsDelay
+             ]
+           ]
+
+instance FromJSON AcceptedConnectionsLimit where
+  parseJSON = withObject "AcceptedConnectionsLimit" $ \v ->
+    AcceptedConnectionsLimit
+      <$> v .: "hardLimit"
+      <*> v .: "softLimit"
+      <*> v .: "delay"
 
 -- | Rate limiting instruction.
 --
