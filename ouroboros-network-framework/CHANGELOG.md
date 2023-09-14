@@ -7,6 +7,7 @@
 ### Non-breaking changes
 
 * Split `test` component into `io-tests` and `sim-tests`.
+* Added `ToJSON` and `FromJSON` instances for `AcceptedConnectionsLimit`
 
 ## 0.9.0.0 -- 2023-08-21
 
