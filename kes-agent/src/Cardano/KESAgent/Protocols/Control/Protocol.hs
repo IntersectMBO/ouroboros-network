@@ -18,6 +18,7 @@ import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Binary
@@ -184,4 +185,4 @@ instance NamedCrypto c => VersionedProtocol (ControlProtocol m c) where
 cpVersionIdentifier :: forall m c. NamedCrypto c => Proxy (ControlProtocol m c) -> VersionIdentifier
 cpVersionIdentifier _ =
   mkVersionIdentifier $
-    "Control:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.4"
+    "Control:" <> unCryptoName (cryptoName (Proxy @c)) <> ":0.5"

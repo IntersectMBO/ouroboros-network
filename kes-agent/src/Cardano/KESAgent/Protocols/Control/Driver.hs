@@ -11,6 +11,10 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Cardano.KESAgent.Protocols.Control.Driver
   where
@@ -51,6 +55,7 @@ import Data.Bits ( (.|.), (.&.) )
 import Data.ByteString ( ByteString )
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Coerce
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Maybe ( isJust )
 import Data.Proxy
@@ -107,133 +112,11 @@ data Command
 deriving via (ViaEnum Command)
   instance HasSerInfo Command
 
-instance (MonadThrow m, MonadST m) => IsSerItem m Command where
-  sendItem s cmd = sendItem s (ViaEnum cmd)
-  receiveItem s = viaEnum <$> receiveItem s
-
-sendCommand :: ( MonadST m
-               , MonadThrow m
-               )
-            => RawBearer m
-            -> Tracer m ControlDriverTrace
-            -> Command
-            -> m ()
-sendCommand s tracer cmd = do
-  traceWith tracer $ ControlDriverSendingCommand cmd
-  sendItem s cmd
-  traceWith tracer $ ControlDriverSentCommand cmd
-
-sendVerKeyKESMay :: ( MonadST m
-               , MonadThrow m
-               , KESAlgorithm k
-               )
-            => RawBearer m
-            -> Maybe (VerKeyKES k)
-            -> m ()
-sendVerKeyKESMay s (Just vk) = do
-  let keyBytes = rawSerialiseVerKeyKES vk
-  sendWord32 s (fromIntegral $ BS.length keyBytes)
-  void $ sendBS s keyBytes
-sendVerKeyKESMay s Nothing = do
-  sendWord32 s 0
-
-receiveVerKeyKESMay :: ( MonadST m
-               , MonadThrow m
-               , KESAlgorithm k
-               )
-            => RawBearer m
-            -> m (ReadResult (Maybe (VerKeyKES k)))
-receiveVerKeyKESMay s = runReadResultT $ do
-  l <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  if l == 0 then
-    return Nothing
-  else do
-    keyBytes <- ReadResultT (receiveBS s l)
-    case rawDeserialiseVerKeyKES keyBytes of
-      Nothing -> readResultT (ReadMalformed "KES VerKey")
-      Just vk -> return (Just vk)
-
-receiveVerKeyKES :: ( MonadST m
-               , MonadThrow m
-               , KESAlgorithm k
-               )
-            => RawBearer m
-            -> m (ReadResult (VerKeyKES k))
-receiveVerKeyKES s = runReadResultT $ do
-  l <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  keyBytes <- ReadResultT (receiveBS s l)
-  case rawDeserialiseVerKeyKES keyBytes of
-    Nothing -> readResultT (ReadMalformed "KES VerKey")
-    Just vk -> return vk
-
-
-sendVerKeyDSIGN :: ( MonadST m
-               , MonadThrow m
-               , DSIGNAlgorithm d
-               )
-            => RawBearer m
-            -> VerKeyDSIGN d
-            -> m ()
-sendVerKeyDSIGN s vk = do
-  let keyBytes = rawSerialiseVerKeyDSIGN vk
-  sendWord32 s (fromIntegral $ BS.length keyBytes)
-  void $ sendBS s keyBytes
-
-receiveVerKeyDSIGN :: ( MonadST m
-               , MonadThrow m
-               , DSIGNAlgorithm d
-               )
-            => RawBearer m
-            -> m (ReadResult (VerKeyDSIGN d))
-receiveVerKeyDSIGN s = runReadResultT $ do
-  l <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  keyBytes <- ReadResultT (receiveBS s l)
-  case rawDeserialiseVerKeyDSIGN keyBytes of
-    Nothing -> readResultT (ReadMalformed "DSIGN VerKey")
-    Just vk -> return vk
-
-sendSigDSIGN :: ( MonadST m
-               , MonadThrow m
-               , DSIGNAlgorithm d
-               )
-            => RawBearer m
-            -> SigDSIGN d
-            -> m ()
-sendSigDSIGN s sig = do
-  let keyBytes = rawSerialiseSigDSIGN sig
-  sendWord32 s (fromIntegral $ BS.length keyBytes)
-  void $ sendBS s keyBytes
-
-receiveSigDSIGN :: ( MonadST m
-               , MonadThrow m
-               , DSIGNAlgorithm d
-               )
-            => RawBearer m
-            -> m (ReadResult (SigDSIGN d))
-receiveSigDSIGN s = runReadResultT $ do
-  l <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  keyBytes <- ReadResultT (receiveBS s l)
-  case rawDeserialiseSigDSIGN keyBytes of
-    Nothing -> readResultT (ReadMalformed "DSIGN Sig")
-    Just vk -> return vk
-
-sendSignedDSIGN :: ( MonadST m
-                   , MonadThrow m
-                   , DSIGNAlgorithm d
-                   )
-                => RawBearer m
-                -> SignedDSIGN d a
-                -> m ()
-sendSignedDSIGN s (SignedDSIGN sig) =
-  sendSigDSIGN s sig
-
-receiveSignedDSIGN :: ( MonadST m
-               , MonadThrow m
-               , DSIGNAlgorithm d
-               )
-            => RawBearer m
-            -> m (ReadResult (SignedDSIGN d a))
-receiveSignedDSIGN s = fmap SignedDSIGN <$> receiveSigDSIGN s
+deriving via (ViaEnum Command)
+  instance ( forall x y. Coercible x y => Coercible (m x) (m y)
+           , MonadThrow m
+           , MonadST m
+           ) => IsSerItem m Command
 
 flagHasBundle, flagHasStagedKey :: Word8
 flagHasBundle = 0x01
@@ -253,148 +136,36 @@ whenFlag flag flags action =
   else
     pure Nothing
 
-instance (Crypto c) => HasSerInfo (AgentInfo c) where
-  info _ =
-    compoundField
-      ("AgentInfo " ++ algorithmNameKES (Proxy @(KES c)) ++ " " ++ algorithmNameDSIGN (Proxy @(DSIGN c)))
-      [ ("flags", info (Proxy @Word8))
-      , ("bundle", info (Proxy @(BundleInfo c)))
-      , ("stagedKey", info (Proxy @(KeyInfo c)))
-      , ("currentTime", info (Proxy @UTCTime))
-      , ("currentKESPeriod", info (Proxy @Word64))
-      , ("bootstrapConnections", info (Proxy @[BootstrapInfo]))
-      ]
+deriving via (ViaEnum ConnectionStatus)
+  instance HasSerInfo ConnectionStatus
+deriving via (ViaEnum ConnectionStatus)
+  instance ( forall x y. Coercible x y => Coercible (m x) (m y)
+           , MonadThrow m
+           , MonadST m
+           , MonadSTM m
+           ) => IsSerItem m ConnectionStatus
 
-sendInfo :: ( MonadST m
-            , MonadThrow m
-            , Crypto c
-            , KESAlgorithm (KES c)
-            )
-         => RawBearer m
-         -> AgentInfo c
-         -> m ()
-sendInfo s info = do
-  let flags =
-        flagWhen (info `has` agentInfoCurrentBundle) flagHasBundle .|.
-        flagWhen (info `has` agentInfoStagedKey) flagHasStagedKey
-  sendWord8 s flags
-  whenJust (agentInfoCurrentBundle info) $ sendBundleInfo s
-  whenJust (agentInfoStagedKey info) $ sendKeyInfo s
-  sendUTCTime s (agentInfoCurrentTime info)
-  sendWord64 s (fromIntegral . unKESPeriod $ agentInfoCurrentKESPeriod info)
-  sendBootstrapInfos s (agentInfoBootstrapConnections info)
+deriving newtype instance
+  ( KESAlgorithm (KES c)
+  )
+  => HasSerInfo (KeyInfo c)
 
-receiveInfo :: ( MonadST m
-               , MonadThrow m
-               , Crypto c
-               )
-            => RawBearer m
-            -> m (ReadResult (AgentInfo c))
-receiveInfo s = runReadResultT $ do
-  flags <- ReadResultT (receiveWord8 s)
-  AgentInfo
-    <$> whenFlag flagHasBundle flags (ReadResultT $ receiveBundleInfo s)
-    <*> whenFlag flagHasStagedKey flags (ReadResultT $ receiveKeyInfo s)
-    <*> ReadResultT (receiveUTCTime s)
-    <*> (KESPeriod . fromIntegral <$> ReadResultT (receiveWord64 s))
-    <*> ReadResultT (receiveBootstrapInfos s)
+deriving newtype instance
+  ( (forall x y. Coercible x y => Coercible (m x) (m y))
+  , KESAlgorithm (KES c)
+  , MonadThrow m
+  , MonadST m
+  , MonadSTM m
+  )
+  => IsSerItem m (KeyInfo c)
 
-sendBootstrapInfos :: ( MonadST m
-                      , MonadThrow m
-                      )
-                      => RawBearer m
-                      -> [BootstrapInfo]
-                      -> m ()
-sendBootstrapInfos s infos = do
-  sendWord32 s (fromIntegral $ length infos)
-  mapM_ (sendBootstrapInfo s) infos
-
-sendBootstrapInfo :: ( MonadST m
-                     , MonadThrow m
-                     )
-                     => RawBearer m
-                     -> BootstrapInfo
-                     -> m ()
-sendBootstrapInfo s info = do
-  let addrEnc = encodeUtf8 (bootstrapAddress info)
-  sendWord32 s (fromIntegral $ BS.length addrEnc)
-  sendBS s addrEnc
-  sendEnum s (bootstrapStatus info)
-
-receiveBootstrapInfos :: ( MonadST m
-                         , MonadThrow m
-                         )
-                      => RawBearer m
-                      -> m (ReadResult [BootstrapInfo])
-receiveBootstrapInfos s = runReadResultT $ do
-  n <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  replicateM n (ReadResultT $ receiveBootstrapInfo s)
-
-receiveBootstrapInfo :: ( MonadST m
-                        , MonadThrow m
-                        )
-                     => RawBearer m
-                     -> m (ReadResult BootstrapInfo)
-receiveBootstrapInfo s = runReadResultT $ do
-  size <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  addrEnc <- ReadResultT $ receiveBS s size
-  let addr = decodeUtf8 addrEnc
-  status <- ReadResultT $ receiveEnum "status" s
-  return $ BootstrapInfo addr status
-
-
-sendBundleInfo :: ( MonadST m
-                  , MonadThrow m
-                  , Crypto c
-                  , KESAlgorithm (KES c)
-                  )
-               => RawBearer m
-               -> BundleInfo c
-               -> m ()
-sendBundleInfo s bundle = do
-  sendWord32 s (bundleInfoEvolution bundle)
-  sendWord64 s (fromIntegral . unKESPeriod $ bundleInfoStartKESPeriod bundle)
-  sendWord64 s (bundleInfoOCertN bundle)
-  sendVerKeyKESMay s (Just (bundleInfoVK bundle))
-  sendSignedDSIGN s (bundleInfoSigma bundle)
-
-receiveBundleInfo :: ( MonadST m
-               , MonadThrow m
-               , Crypto c
-               )
-            => RawBearer m
-            -> m (ReadResult (BundleInfo c))
-receiveBundleInfo s = runReadResultT $ do
-  BundleInfo
-    <$> ReadResultT (receiveWord32 s)
-    <*> (KESPeriod . fromIntegral <$> ReadResultT (receiveWord64 s))
-    <*> ReadResultT (receiveWord64 s)
-    <*> ReadResultT (receiveVerKeyKES s)
-    <*> ReadResultT (receiveSignedDSIGN s)
-
-sendKeyInfo :: ( MonadST m
-               , MonadThrow m
-               , Crypto c
-               , KESAlgorithm (KES c)
-               )
-            => RawBearer m
-            -> KeyInfo c
-            -> m ()
-sendKeyInfo s (KeyInfo vk) =
-  sendVerKeyKESMay s (Just vk)
-
-receiveKeyInfo :: ( MonadST m
-               , MonadThrow m
-               , Crypto c
-               )
-            => RawBearer m
-            -> m (ReadResult (KeyInfo c))
-receiveKeyInfo s = runReadResultT $ do
-  KeyInfo
-    <$> ReadResultT (receiveVerKeyKES s)
+$(deriveSer ''BootstrapInfo)
+$(deriveSerWithCrypto ''BundleInfo)
+$(deriveSerWithCrypto ''AgentInfo)
 
 controlDriver :: forall c m f t p
-               . Crypto c
+               . (forall x y. Coercible x y => Coercible (m x) (m y))
+              => Crypto c
               => Typeable c
               => VersionedProtocol (ControlProtocol m c)
               => KESAlgorithm (KES c)
@@ -417,16 +188,16 @@ controlDriver s tracer = Driver
         return ()
 
       (ServerAgency TokIdle, GenStagedKeyMessage) -> do
-        sendCommand s tracer GenStagedKeyCmd
+        sendItem s GenStagedKeyCmd
       (ServerAgency TokIdle, QueryStagedKeyMessage) -> do
-        sendCommand s tracer QueryStagedKeyCmd
+        sendItem s QueryStagedKeyCmd
       (ServerAgency TokIdle, DropStagedKeyMessage) -> do
-        sendCommand s tracer DropStagedKeyCmd
+        sendItem s DropStagedKeyCmd
       (ServerAgency TokIdle, RequestInfoMessage) -> do
-        sendCommand s tracer RequestInfoCmd
+        sendItem s RequestInfoCmd
 
       (ServerAgency TokIdle, InstallKeyMessage oc) -> do
-        sendCommand s tracer InstallKeyCmd
+        sendItem s InstallKeyCmd
         sendOC s oc
 
       (ServerAgency TokIdle, EndMessage) -> do
@@ -442,7 +213,7 @@ controlDriver s tracer = Driver
         case vkeyMay of
           Nothing -> traceWith tracer ControlDriverNoPublicKeyToReturn
           Just _ -> traceWith tracer ControlDriverReturningPublicKey
-        sendVerKeyKESMay s vkeyMay
+        sendItem s vkeyMay
 
       (ClientAgency TokWaitForConfirmation, InstallResultMessage reason) -> do
         if reason == RecvOK then
@@ -452,12 +223,12 @@ controlDriver s tracer = Driver
         sendRecvResult s reason
 
       (ClientAgency TokWaitForInfo, InfoMessage info) -> do
-        sendInfo s info
+        sendItem s info
 
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
         traceWith tracer ControlDriverReceivingVersionID
-        result <- receiveVersion (Proxy @(ControlProtocol m c)) s (ControlDriverReceivedVersionID >$< tracer)
+        result <- checkVersion (Proxy @(ControlProtocol m c)) s (ControlDriverReceivedVersionID >$< tracer)
         case result of
           ReadOK _ ->
             return (SomeMessage VersionMessage, ())
@@ -493,7 +264,7 @@ controlDriver s tracer = Driver
       (ClientAgency TokWaitForPublicKey) -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ControlDriverReceivingKey
-          vkMay <- ReadResultT $ receiveVerKeyKESMay s
+          vkMay <- receiveItem s
           lift $ traceWith tracer
             (maybe
               ControlDriverNoPublicKeyToReturn
@@ -518,7 +289,7 @@ controlDriver s tracer = Driver
             return (SomeMessage ProtocolErrorMessage, ())
 
       (ClientAgency TokWaitForInfo) -> do
-        result <- receiveInfo s
+        result <- runReadResultT $ receiveItem s
         case result of
           ReadOK info ->
             return (SomeMessage (InfoMessage info), ())

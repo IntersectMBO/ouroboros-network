@@ -7,6 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -98,6 +99,7 @@ import Cardano.Crypto.Libsodium.MLockedSeed
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Accept (..), Accepted (..), Snocket (..) )
 
+import Data.Coerce
 import Control.Concurrent.Class.MonadMVar
   ( MVar
   , MonadMVar
@@ -670,7 +672,8 @@ runListener
   (accept s fd >>= loop) `catch` logAndContinue
 
 runAgent :: forall c m fd addr
-          . MonadKES m c
+          . (forall x y. Coercible x y => Coercible (m x) (m y))
+         => MonadKES m c
          => MonadTimer m
          => ContextDSIGN (DSIGN c) ~ ()
          => DSIGN.Signable (DSIGN c) (OCertSignable c)

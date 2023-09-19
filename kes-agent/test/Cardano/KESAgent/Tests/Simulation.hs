@@ -23,36 +23,36 @@ module Cardano.KESAgent.Tests.Simulation
   , withLock
   ) where
 
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Classes
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.Evolution
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Processes.ControlClient
 import Cardano.KESAgent.Processes.ServiceClient
-import Cardano.KESAgent.Protocols.Service.Protocol
-import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.Control.Peers
+import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Binary ( FromCBOR )
-import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.DSIGN.Ed25519
+import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.Hash.Blake2b
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.Libsodium
-import Cardano.Crypto.Libsodium.Memory.Internal ( MLockedForeignPtr (..) )
 import Cardano.Crypto.Libsodium.MLockedBytes.Internal ( MLockedSizedBytes (..) )
 import Cardano.Crypto.Libsodium.MLockedSeed
+import Cardano.Crypto.Libsodium.Memory.Internal ( MLockedForeignPtr (..) )
 import Cardano.Crypto.PinnedSizedBytes
   ( PinnedSizedBytes
   , psbFromByteString
@@ -65,8 +65,6 @@ import Ouroboros.Network.Snocket
 import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding ( delay )
 import Ouroboros.Network.Testing.Data.AbsBearerInfo qualified as ABI ( delay )
 
-import Control.Monad ( forM, forM_, forever, void, when )
-import Control.Monad.Class.MonadAsync
 import Control.Concurrent.Class.MonadMVar
   ( MVar
   , MonadMVar
@@ -81,6 +79,8 @@ import Control.Concurrent.Class.MonadMVar
   , tryReadMVar
   , withMVar
   )
+import Control.Monad ( forM, forM_, forever, void, when )
+import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST ( MonadST, withLiftST )
 import Control.Monad.Class.MonadThrow
   ( MonadCatch
@@ -102,6 +102,7 @@ import Control.Tracer ( Tracer (..), nullTracer, traceWith )
 import Data.ByteString ( ByteString )
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Coerce
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
@@ -355,7 +356,8 @@ instance Show (FD (IOSim s) (TestAddress Int)) where
 -- of "entropy" when generating KES keys. This makes it possible to compare KES
 -- keys received by the node against the expected keys.
 runTestNetwork :: forall c m fd addr
-                . MonadKES m c
+                . (forall x y. Coercible x y => Coercible (m x) (m y))
+               => MonadKES m c
                => Show addr
                => Show fd
                => MonadTimer m
@@ -589,7 +591,8 @@ instance (KESAlgorithm (KES c)) => Arbitrary (OutOfOrderPushesSeeds c) where
     map OutOfOrderPushesSeeds $ filter ((>= 2) . length) (shrink xs)
 
 testOneKeyThroughChain :: forall c m fd addr
-                        . MonadKES m c
+                        . (forall x y. Coercible x y => Coercible (m x) (m y))
+                       => MonadKES m c
                        => Show addr
                        => Show fd
                        => MonadTimer m

@@ -113,22 +113,22 @@ sendVersion p s tracer = do
   where
     versionID = versionIdentifier p
 
-receiveVersion :: forall protocol m.
-                  ( VersionedProtocol protocol
-                  , MonadST m
-                  , MonadThrow m
-                  , MonadFail m
-                  )
-               => Proxy protocol
-               -> RawBearer m
-               -> Tracer m VersionIdentifier
-               -> m (ReadResult VersionIdentifier)
-receiveVersion p s tracer = runReadResultT $ do
+checkVersion :: forall protocol m.
+                ( VersionedProtocol protocol
+                , MonadST m
+                , MonadThrow m
+                , MonadFail m
+                )
+             => Proxy protocol
+             -> RawBearer m
+             -> Tracer m VersionIdentifier
+             -> m (ReadResult ())
+checkVersion p s tracer = runReadResultT $ do
   v <- VersionIdentifier <$> ReadResultT (receiveBS s versionIdentifierLength)
   lift $ traceWith tracer v
   let expectedV = versionIdentifier p
   if v == expectedV then
-    return v
+    return ()
   else
     readResultT $ ReadVersionMismatch expectedV v
 

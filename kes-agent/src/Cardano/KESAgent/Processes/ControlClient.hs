@@ -2,6 +2,7 @@
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.Processes.ControlClient
@@ -19,7 +20,9 @@ import Cardano.KESAgent.Protocols.VersionedProtocol ( NamedCrypto )
 import Cardano.KESAgent.Util.RefCounting ( CRef, withCRef )
 import Cardano.KESAgent.Util.RetrySocket ( retrySocketWith )
 
-import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..), VerKeyKES )
+import Cardano.Crypto.KES.Class
+import Cardano.Crypto.DSIGN.Class
+import Cardano.Crypto.DirectSerialise
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Snocket (..) )
@@ -32,6 +35,7 @@ import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy ( Proxy (..) )
 import Network.TypedProtocol.Driver ( runPeerWithDriver )
 import Network.TypedProtocol.Core ( Peer (..), PeerRole (..) )
+import Data.Coerce
 
 data ControlClientOptions m fd addr =
   ControlClientOptions
@@ -60,7 +64,8 @@ instance Pretty ControlClientTrace where
   pretty x = "Control: " ++ drop (length "ControlClient") (show x)
 
 runControlClient1 :: forall c m fd addr a
-                   . MonadKES m c
+                   . (forall x y. Coercible x y => Coercible (m x) (m y))
+                  => MonadKES m c
                   => Crypto c
                   => NamedCrypto c
                   => Peer (ControlProtocol m c) AsServer InitialState m a

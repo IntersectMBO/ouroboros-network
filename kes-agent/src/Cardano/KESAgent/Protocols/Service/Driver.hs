@@ -185,7 +185,7 @@ serviceDriver s tracer = Driver
   , recvMessage = \agency () -> case agency of
       (ServerAgency TokInitial) -> do
         traceWith tracer ServiceDriverReceivingVersionID
-        result <- receiveVersion (Proxy @(ServiceProtocol m c)) s (ServiceDriverReceivedVersionID >$< tracer)
+        result <- checkVersion (Proxy @(ServiceProtocol m c)) s (ServiceDriverReceivedVersionID >$< tracer)
         case result of
           ReadOK _ ->
             return (SomeMessage VersionMessage, ())

@@ -32,6 +32,7 @@ library
     import: project-config
     import: base-dependencies
     exposed-modules:
+                   Cardano.KESAgent.Playground
                    Cardano.KESAgent.KES.Classes
                    Cardano.KESAgent.KES.Evolution
                    Cardano.KESAgent.KES.Crypto
@@ -86,6 +87,7 @@ library
                  , socket-unix >=0.2.0.0
                  , stm>=2.5 && <2.6
                  , text
+                 , template-haskell >=2.18.0.0
                  , time >=1.10
                  , typed-protocols
     hs-source-dirs:   src
