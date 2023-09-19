@@ -315,7 +315,7 @@ assured my network resource is not eaten up by the data diffusion function.
       connection -- it can be changed by configuration including ``don't act
       as a super node''.
 \item The system will allow users syncing with the latest version of the
-      blockchain to download blocks from more then one and up to five network
+      blockchain to download blocks from more than one and up to five network
       peers concurrently.
 \item A cap on number of incoming subscribers.
 \item A cap on number of outbound requests for block syncing from other users.
@@ -525,7 +525,7 @@ There are two basic variants of inter-process-communication in the network:
       wallet, explorer or other custom application.
 \end{itemize}
 Both variants of IPC in the network follow distinct requirements and constraints, and
-,while the first version of Cardano used a single protocol, the new version will
+, while the first version of Cardano used a single protocol, the new version will
 use different sets of protocols for both uses cases.
 (See Section~\ref{why_distinguish_protocols} for the motivation for this design decision.)
 Throughout the document it will be clear which variant of we are referring to.
@@ -555,7 +555,7 @@ How PoS is different from PoW in its network requirements:
 \hide{
 \section{Overview}
 This section describes the key underlying aspects and considerations of the design
-of the network protocol and tries to give a big picture the overall network protocol.
+of the network protocol and tries to give a big picture of the overall network protocol.
 
 \section{Key Functionality}
 
@@ -597,7 +597,7 @@ In particular, a node may have to share its processing power with other processe
 same machine/operation system instance, which means that a node may get slowed down for some reason,
 and the system may get in a situation
 where there is more data available from the network than the node can process.
-The design must operate appropriately in this situation and recover form transient conditions.
+The design must operate appropriately in this situation and recover from transient conditions.
 In any condition, a node must not exceed its memory limits,
 that is there must be defined limits, breaches of which being treated like protocol violations.
 
@@ -683,7 +683,7 @@ For example, when a node time-stamps incoming blocks with its local clock time, 
 blocks that are created in the future
 with respect to the local clock of the node.
 The node must then decide whether this is because of a clock skew or whether the node considers this
-as adversarial behaviour of an other node.
+as adversarial behaviour of another node.
 
 \wip{TODO :: get feedback from the researchers on this. Tentative policy: allow 200ms to 1s
 explain the problem in detail.
