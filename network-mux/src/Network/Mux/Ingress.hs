@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE ViewPatterns          #-}
 
 module Network.Mux.Ingress
   ( -- $ingress
@@ -174,16 +173,17 @@ setupDispatchTable ptcls =
             | MiniProtocolState {
                 miniProtocolInfo =
                   MiniProtocolInfo {
-                    -- This pattern happens to be irrefutable - note that
-                    -- `pnumArray` is constructed to ensure that every
-                    -- `miniProtocolNum` in `ptcls` indexes to a `Just` value.
-                    miniProtocolNum = ((pnumArray !) -> Just pix),
+                    miniProtocolNum,
                     miniProtocolDir,
                     miniProtocolLimits
                   },
                 miniProtocolIngressQueue = q
               } <- ptcls
-            , let dir      = protocolDirEnum miniProtocolDir
+            , let pix  =
+                   case pnumArray ! miniProtocolNum of
+                     Just a  -> a
+                     Nothing -> error ("setupDispatchTable: missing " ++ show miniProtocolNum)
+                  dir      = protocolDirEnum miniProtocolDir
                   qMax     = maximumIngressQueue miniProtocolLimits
             ]
 
