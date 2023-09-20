@@ -10,6 +10,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Cardano.KESAgent.Protocols.Control.Protocol
   where
@@ -52,11 +54,21 @@ data AgentInfo c =
     , agentInfoBootstrapConnections :: ![BootstrapInfo]
     }
 
+deriving instance
+  ( DSIGNAlgorithm (DSIGN c)
+  , KESAlgorithm (KES c)
+  ) => Show (AgentInfo c)
+deriving instance
+  ( DSIGNAlgorithm (DSIGN c)
+  , KESAlgorithm (KES c)
+  ) => Eq (AgentInfo c)
+
 data BootstrapInfo =
   BootstrapInfo
     { bootstrapAddress :: !Text
     , bootstrapStatus :: !ConnectionStatus
     }
+    deriving (Show, Eq)
 
 data ConnectionStatus
   = ConnectionUp
@@ -73,10 +85,27 @@ data BundleInfo c =
     , bundleInfoSigma :: !(SignedDSIGN (DSIGN c) (OCertSignable c))
     }
 
+deriving instance
+  ( DSIGNAlgorithm (DSIGN c)
+  , KESAlgorithm (KES c)
+  ) => Show (BundleInfo c)
+deriving instance
+  ( DSIGNAlgorithm (DSIGN c)
+  , KESAlgorithm (KES c)
+  ) => Eq (BundleInfo c)
+
 newtype KeyInfo c =
   KeyInfo
     { keyInfoVK :: VerKeyKES (KES c)
     }
+
+deriving instance
+  ( KESAlgorithm (KES c)
+  ) => Show (KeyInfo c)
+deriving instance
+  ( DSIGNAlgorithm (DSIGN c)
+  , KESAlgorithm (KES c)
+  ) => Eq (KeyInfo c)
 
 data ControlProtocol (m :: * -> *) (k :: *) where
   -- | Default state after connecting, but before the protocol version has been

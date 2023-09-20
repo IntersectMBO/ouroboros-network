@@ -1,18 +1,22 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingVia #-}
 
 module Cardano.KESAgent.Serialization.Spec
 ( module Cardano.KESAgent.Serialization.Spec
@@ -21,42 +25,44 @@ module Cardano.KESAgent.Serialization.Spec
 )
 where
 
-import Cardano.KESAgent.Serialization.RawUtil
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Util.RefCounting
 
+import Cardano.Binary
+import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
-import Cardano.Crypto.DSIGN.Class
 import Ouroboros.Network.RawBearer ( RawBearer (..) )
-import Cardano.Binary
 
-import Data.Word
-import qualified Data.ByteString as BS
-import Data.ByteString (ByteString)
-import Data.Text (Text)
-import Data.Proxy
-import Data.Typeable
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Control.Monad ( void, unless, when, replicateM, zipWithM_ )
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow ( MonadThrow, throwIO, catch )
-import GHC.TypeLits
-import Foreign.Ptr ( castPtr )
 import Control.Monad.Trans ( lift )
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+import Data.Coerce
+import Data.List
+import Data.Map (Map)
+import qualified Data.Map.Strict as Map
+import Data.Proxy
+import Data.Text (Text)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
-import Data.List
+import Data.Typeable
+import Data.Word
+import Data.Int
+import Foreign.Ptr ( castPtr )
 import GHC.Generics
-import Text.Printf
-import qualified Data.Map.Strict as Map
-import Data.Map (Map)
+import GHC.TypeLits
 import Language.Haskell.TH
-import Data.Coerce
+import Text.Printf
 
 data FieldInfo
   = BasicField BasicFieldInfo
@@ -284,6 +290,34 @@ instance Monad m => IsSerItem m () where
   sendItem s () = return ()
   receiveItem s = return ()
 
+instance HasSerInfo Int8 where
+  info _ = basicField "Int8" $ FixedSize 1
+  
+instance (MonadThrow m, MonadST m) => IsSerItem m Int8 where
+  sendItem = sendInt8
+  receiveItem s = ReadResultT $ receiveInt8 s
+
+instance HasSerInfo Int16 where
+  info _ = basicField "Int16BE" $ FixedSize 2
+  
+instance (MonadThrow m, MonadST m) => IsSerItem m Int16 where
+  sendItem = sendInt16
+  receiveItem s = ReadResultT $ receiveInt16 s
+
+instance HasSerInfo Int32 where
+  info _ = basicField "Int32BE" $ FixedSize 4
+  
+instance (MonadThrow m, MonadST m) => IsSerItem m Int32 where
+  sendItem = sendInt32
+  receiveItem s = ReadResultT $ receiveInt32 s
+
+instance HasSerInfo Int64 where
+  info _ = basicField "Int64BE" $ FixedSize 8
+  
+instance (MonadThrow m, MonadST m) => IsSerItem m Int64 where
+  sendItem = sendInt64
+  receiveItem s = ReadResultT $ receiveInt64 s
+
 instance HasSerInfo Word8 where
   info _ = basicField "Word8" $ FixedSize 1
   
@@ -316,12 +350,11 @@ instance HasSerInfo UTCTime where
   info _ = basicField "POSIX Seconds (Word64BE)" $ FixedSize 8
 
 instance (MonadThrow m, MonadST m) => IsSerItem m UTCTime where
-  sendItem s utc = sendWord64 s $ floor . utcTimeToPOSIXSeconds $ utc
-  receiveItem s = do
-    posix <- ReadResultT $ receiveWord64 s
-    return $ posixSecondsToUTCTime . fromIntegral $ posix
+  sendItem = sendUTCTime
+  receiveItem = ReadResultT . receiveUTCTime
 
 newtype Sized (len :: Nat) a = Sized { unSized :: a }
+  deriving newtype (Show, Eq)
 
 instance (KnownNat len) => HasSerInfo (Sized len ByteString) where
   info _ =
@@ -340,6 +373,7 @@ instance (MonadThrow m, MonadST m, KnownNat len) => IsSerItem m (Sized len ByteS
     Sized <$> ReadResultT (receiveBS s (fromIntegral n))
 
 newtype VariableSized a = VariableSized { unVariableSized :: a }
+  deriving newtype (Show, Read, Eq, Ord)
 
 instance HasSerInfo (VariableSized ByteString) where
   info _ =
@@ -655,36 +689,6 @@ instance ( HasSerInfo (SignKeyKES (KES c))
       , ("ocert", info (Proxy @(OCert c)))
       ]
 
-
-instance ( DSIGNAlgorithm dsign ) => HasSerInfo (VerKeyDSIGN dsign) where
-    info _ =
-      basicField
-        ("VerKeyDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
-        (FixedSize . fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
-instance ( MonadSTM m
-         , MonadThrow m
-         , DirectSerialise m (VerKeyDSIGN dsign)
-         , DirectDeserialise m (VerKeyDSIGN dsign)
-         , DSIGNAlgorithm dsign
-         ) => IsSerItem m (VerKeyDSIGN dsign) where
-    sendItem s val = do
-      directSerialise
-        (\buf bufSize -> do
-          n <- send s (castPtr buf) (fromIntegral bufSize)
-          when (fromIntegral n /= bufSize) (error "AAAAA")
-        ) val
-
-    receiveItem s = ReadResultT $ do
-      vk <- directDeserialise
-        (\buf bufSize -> do
-            unsafeReceiveN s buf bufSize >>= \case
-              ReadOK n -> do
-                when (fromIntegral n /= bufSize) (throwIO (ReadMalformed "Incorrect number of key bytes" :: ReadResult ()))
-              x ->  do
-                throwIO x
-        )
-      return $ ReadOK vk
-
 instance ( DSIGNAlgorithm dsign ) => HasSerInfo (SigDSIGN dsign) where
     info _ =
       basicField
@@ -703,6 +707,27 @@ instance ( MonadST m
       let deser = rawDeserialiseSigDSIGN $ unSized (sized :: Sized (SizeSigDSIGN dsign) ByteString)
       case deser of
         Nothing -> ReadResultT . return $ ReadMalformed "Invalid serialised SigDSIGN"
+        Just vk -> return vk
+
+
+instance ( DSIGNAlgorithm dsign ) => HasSerInfo (VerKeyDSIGN dsign) where
+    info _ =
+      basicField
+        ("VerKeyDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
+        (FixedSize . fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
+instance ( MonadST m
+         , MonadSTM m
+         , MonadThrow m
+         , DSIGNAlgorithm dsign
+         ) => IsSerItem m (VerKeyDSIGN dsign) where
+    sendItem s val =
+      sendItem s (Sized (rawSerialiseVerKeyDSIGN val) :: Sized (SizeVerKeyDSIGN dsign) ByteString)
+
+    receiveItem s = do
+      sized <- receiveItem s
+      let deser = rawDeserialiseVerKeyDSIGN $ unSized (sized :: Sized (SizeVerKeyDSIGN dsign) ByteString)
+      case deser of
+        Nothing -> ReadResultT . return $ ReadMalformed "Invalid serialised VerKeyDSIGN"
         Just vk -> return vk
 
 instance ( MonadThrow m
@@ -727,17 +752,17 @@ instance (Typeable a) => HasSerInfo (ViaEnum a) where
   info _ =
     basicField
       "Enum"
-      (FixedSize 32)
+      (FixedSize 2)
 
 typeName :: Typeable a => Proxy a -> String
 typeName = tyConName . typeRepTyCon . typeRep
 
 instance (MonadThrow m, MonadST m, Typeable a, Enum a, Bounded a) => IsSerItem m (ViaEnum a) where
   sendItem s (ViaEnum x) =
-    sendItem s (fromIntegral (fromEnum x) :: Word32)
+    sendItem s (fromIntegral (fromEnum x) :: Word16)
 
   receiveItem s = do
-    nw :: Word32 <- receiveItem s
+    nw :: Word16 <- receiveItem s
     let n = fromIntegral nw
     if n < fromEnum (minBound :: a) ||
        n > fromEnum (maxBound :: a) then
@@ -767,6 +792,16 @@ instance (MonadThrow m, MonadST m) => IsSerItem m Bool where
       1 -> return True
       n -> ReadResultT . return $ ReadMalformed "Bool"
 
+deriving via (ViaEnum RecvResult)
+  instance HasSerInfo RecvResult
+
+deriving via (ViaEnum RecvResult)
+  instance
+    ( forall x y. Coercible x y => Coercible (m x) (m y)
+    , MonadThrow m
+    , MonadST m
+    ) => IsSerItem m RecvResult
+
 instance HasSerInfo a => HasSerInfo (Maybe a) where
   info _ =
     compoundField
@@ -782,7 +817,8 @@ instance HasSerInfo a => HasSerInfo (Maybe a) where
       ]
 
 instance (MonadThrow m, MonadST m, IsSerItem m a) => IsSerItem m (Maybe a) where
-  sendItem s Nothing = sendItem s (ViaEnum False)
+  sendItem s Nothing =
+    sendItem s False
   sendItem s (Just x) = do
     sendItem s True
     sendItem s x

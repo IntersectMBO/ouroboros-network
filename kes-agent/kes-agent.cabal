@@ -170,6 +170,7 @@ test-suite kes-agent-tests
                  , Cardano.KESAgent.Tests.RefCounting
                  , Cardano.KESAgent.Tests.OCert
                  , Cardano.KESAgent.Tests.Serialization
+                 , Cardano.KESAgent.Tests.Spec
                  , Cardano.KESAgent.Tests.EndToEnd
                  , Paths_kes_agent
     build-tool-depends: kes-agent:kes-agent

@@ -49,6 +49,7 @@ import Data.Maybe ( fromMaybe )
 import Data.Proxy
 import Data.Typeable
 import Data.Word
+import Data.Int
 import Foreign ( Ptr, castPtr, plusPtr )
 import Foreign.C.Types ( CChar, CSize )
 import Foreign.Marshal.Alloc ( free, mallocBytes )
@@ -319,12 +320,37 @@ receiveWord64 s = runReadResultT $ do
   let decoded = decode @Word64 $ LBS.fromStrict buf
   return decoded
 
-receiveUTCTime :: (MonadThrow m, MonadST m)
-            => RawBearer m
-            -> m (ReadResult UTCTime)
-receiveUTCTime s = runReadResultT $ do
-  posix <- ReadResultT $ receiveWord64 s
-  return $ posixSecondsToUTCTime . fromIntegral $ posix
+receiveInt8 :: (MonadThrow m, MonadST m)
+              => RawBearer m
+              -> m (ReadResult Int8)
+receiveInt8 s = runReadResultT $ do
+  buf <- ReadResultT $ receiveBS s 1
+  let decoded = decode @Int8 $ LBS.fromStrict buf
+  return decoded
+
+receiveInt16 :: (MonadThrow m, MonadST m)
+              => RawBearer m
+              -> m (ReadResult Int16)
+receiveInt16 s = runReadResultT $ do
+  buf <- ReadResultT $ receiveBS s 2
+  let decoded = decode @Int16 $ LBS.fromStrict buf
+  return decoded
+
+receiveInt32 :: (MonadThrow m, MonadST m)
+              => RawBearer m
+              -> m (ReadResult Int32)
+receiveInt32 s = runReadResultT $ do
+  buf <- ReadResultT $ receiveBS s 4
+  let decoded = decode @Int32 $ LBS.fromStrict buf
+  return decoded
+
+receiveInt64 :: (MonadThrow m, MonadST m)
+              => RawBearer m
+              -> m (ReadResult Int64)
+receiveInt64 s = runReadResultT $ do
+  buf <- ReadResultT $ receiveBS s 8
+  let decoded = decode @Int64 $ LBS.fromStrict buf
+  return decoded
 
 
 sendWord8 :: (MonadThrow m, MonadST m)
@@ -355,12 +381,47 @@ sendWord64 :: (MonadThrow m, MonadST m)
 sendWord64 s val =
   void $ sendBS s (LBS.toStrict $ encode val)
 
+sendInt8 :: (MonadThrow m, MonadST m)
+           => RawBearer m
+           -> Int8
+           -> m ()
+sendInt8 s val =
+  void $ sendBS s (LBS.toStrict $ encode val)
+
+sendInt16 :: (MonadThrow m, MonadST m)
+           => RawBearer m
+           -> Int16
+           -> m ()
+sendInt16 s val =
+  void $ sendBS s (LBS.toStrict $ encode val)
+
+sendInt32 :: (MonadThrow m, MonadST m)
+           => RawBearer m
+           -> Int32
+           -> m ()
+sendInt32 s val =
+  void $ sendBS s (LBS.toStrict $ encode val)
+
+sendInt64 :: (MonadThrow m, MonadST m)
+           => RawBearer m
+           -> Int64
+           -> m ()
+sendInt64 s val =
+  void $ sendBS s (LBS.toStrict $ encode val)
+
 sendUTCTime :: (MonadThrow m, MonadST m)
             => RawBearer m
             -> UTCTime
             -> m ()
 sendUTCTime s utc =
-  sendWord64 s $ floor . utcTimeToPOSIXSeconds $ utc
+  sendInt64 s $ floor . utcTimeToPOSIXSeconds $ utc
+
+receiveUTCTime :: (MonadThrow m, MonadST m)
+            => RawBearer m
+            -> m (ReadResult UTCTime)
+receiveUTCTime s = runReadResultT $ do
+  posix <- ReadResultT $ receiveInt64 s
+  return $ posixSecondsToUTCTime . fromIntegral $ posix
 
 sendEnum :: forall m a.
                ( MonadST m

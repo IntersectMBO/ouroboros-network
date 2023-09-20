@@ -198,7 +198,7 @@ controlDriver s tracer = Driver
 
       (ServerAgency TokIdle, InstallKeyMessage oc) -> do
         sendItem s InstallKeyCmd
-        sendOC s oc
+        sendItem s oc
 
       (ServerAgency TokIdle, EndMessage) -> do
         return ()
@@ -220,7 +220,7 @@ controlDriver s tracer = Driver
           traceWith tracer ControlDriverConfirmingKey
         else
           traceWith tracer ControlDriverDecliningKey
-        sendRecvResult s reason
+        sendItem s reason
 
       (ClientAgency TokWaitForInfo, InfoMessage info) -> do
         sendItem s info
@@ -280,7 +280,7 @@ controlDriver s tracer = Driver
             return (SomeMessage ProtocolErrorMessage, ())
 
       (ClientAgency TokWaitForConfirmation) -> do
-        result <- receiveRecvResult s
+        result <- runReadResultT $ receiveItem s
         case result of
           ReadOK reason ->
             return (SomeMessage (InstallResultMessage reason), ())
