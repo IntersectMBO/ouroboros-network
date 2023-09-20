@@ -37,7 +37,6 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS
   ) where
 
 import           Data.Foldable (foldlM)
-import           Data.List (elemIndex)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -140,7 +139,6 @@ localRootPeersProvider
      , MonadAsync m
      , MonadDelay m
      , MonadThrow m
-     , Eq (Async m Void)
      , Ord peerAddr
      )
   => Tracer m (TraceLocalRootPeers peerAddr exception)
@@ -208,17 +206,11 @@ localRootPeersProvider tracer
       -- going to lookup into the new DNS Domain Map and replace that entry
       -- with the lookup result.
       domainsGroups' <-
-        withAsyncAll (monitorDomain rr dnsSemaphore dnsDomainMapVar `map` domains) $ \as -> do
+        withAsyncAllWithCtx (monitorDomain rr dnsSemaphore dnsDomainMapVar `map` domains) $ \as -> do
+          let tagErrWithDomain (domain, _, res) = either (Left . (domain,)) absurd res
           res <- atomically $
                   -- wait until any of the monitoring threads errors
-                  ((\(a, res) ->
-                      let domain :: DomainAccessPoint
-                          domain = case a `elemIndex` as of
-                            Nothing  -> error "localRootPeersProvider: `waitAnyCatchSTM` yielded an action not present in its original list"
-                            Just idx -> case domains !! idx of x -> x
-                      in either (Left . (domain,)) absurd res)
-                    -- the monitoring thread cannot return, it can only error
-                    <$> waitAnyCatchSTM as)
+                  (tagErrWithDomain <$> waitAnyCatchSTMWithCtx as)
               <|>
                   -- wait for configuration changes
                   (do a <- readLocalRootPeers
@@ -267,9 +259,9 @@ localRootPeersProvider tracer
       -> DNSSemaphore m
       -> StrictTVar m (Map DomainAccessPoint [peerAddr])
       -> DomainAccessPoint
-      -> m Void
+      -> (DomainAccessPoint, m Void)
     monitorDomain rr0 dnsSemaphore dnsDomainMapVar domain =
-        go rr0 0
+        (domain, go rr0 0)
       where
         go :: Resource m (DNSorIOError exception) resolver
            -> DiffTime
@@ -567,6 +559,22 @@ withAsyncAll xs0 action = go [] xs0
   where
     go as []     = action (reverse as)
     go as (x:xs) = withAsync x (\a -> go (a:as) xs)
+
+-- | `withAsyncAll`, but the actions are tagged with a context
+withAsyncAllWithCtx :: MonadAsync m => [(ctx, m a)] -> ([(ctx, Async m a)] -> m b) -> m b
+withAsyncAllWithCtx contextualized action = go [] contextualized
+  where
+    go as [] = action (reverse as)
+    go as ((ctx, x):xs) = withAsync x (\a -> go ((ctx, a):as) xs)
+
+-- | `waitAnyCatchSTM`, but the asyncs are tagged with a context
+waitAnyCatchSTMWithCtx :: MonadAsync m => [(ctx, Async m a)] -> STM m (ctx, Async m a, Either SomeException a)
+waitAnyCatchSTMWithCtx = foldr (orElse . waitWithCtx) retry
+  where
+    waitWithCtx (ctx, a) =
+      do
+        r <- waitCatchSTM a
+        pure (ctx, a, r)
 
 ---------------------------------------------
 -- Examples
