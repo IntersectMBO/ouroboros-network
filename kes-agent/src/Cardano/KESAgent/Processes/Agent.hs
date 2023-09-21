@@ -66,6 +66,7 @@ import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher )
 import Cardano.KESAgent.Protocols.Service.Protocol ( ServiceProtocol )
 import Cardano.KESAgent.Protocols.VersionedProtocol ( VersionedProtocol (..), NamedCrypto (..) )
 import Cardano.KESAgent.Serialization.TextEnvelope ( decodeTextEnvelopeFile )
+import Cardano.KESAgent.Serialization.Spec (HasSerInfo)
 import Cardano.KESAgent.Util.Pretty ( Pretty (..), strLength )
 import Cardano.KESAgent.Util.RefCounting
   ( CRef
@@ -677,6 +678,7 @@ runAgent :: forall c m fd addr
          => MonadTimer m
          => ContextDSIGN (DSIGN c) ~ ()
          => DSIGN.Signable (DSIGN c) (OCertSignable c)
+         => HasSerInfo (VerKeyKES (KES c))
          => Crypto c
          => NamedCrypto c
          => Show addr

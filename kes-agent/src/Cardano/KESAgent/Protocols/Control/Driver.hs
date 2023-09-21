@@ -146,12 +146,14 @@ deriving via (ViaEnum ConnectionStatus)
            ) => IsSerItem m ConnectionStatus
 
 deriving newtype instance
-  ( KESAlgorithm (KES c)
+  ( HasSerInfo (VerKeyKES (KES c))
+  , KESAlgorithm (KES c)
   )
   => HasSerInfo (KeyInfo c)
 
 deriving newtype instance
   ( (forall x y. Coercible x y => Coercible (m x) (m y))
+  , HasSerInfo (VerKeyKES (KES c))
   , KESAlgorithm (KES c)
   , MonadThrow m
   , MonadST m
@@ -169,6 +171,7 @@ controlDriver :: forall c m f t p
               => Typeable c
               => VersionedProtocol (ControlProtocol m c)
               => KESAlgorithm (KES c)
+              => HasSerInfo (VerKeyKES (KES c))
               => DirectDeserialise m (SignKeyKES (KES c))
               => DirectSerialise m (SignKeyKES (KES c))
               => MonadThrow m

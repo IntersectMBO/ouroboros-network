@@ -17,6 +17,7 @@ import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.Control.Driver
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Protocols.VersionedProtocol ( NamedCrypto )
+import Cardano.KESAgent.Serialization.Spec (HasSerInfo)
 import Cardano.KESAgent.Util.RefCounting ( CRef, withCRef )
 import Cardano.KESAgent.Util.RetrySocket ( retrySocketWith )
 
@@ -68,6 +69,7 @@ runControlClient1 :: forall c m fd addr a
                   => MonadKES m c
                   => Crypto c
                   => NamedCrypto c
+                  => HasSerInfo (VerKeyKES (KES c))
                   => Peer (ControlProtocol m c) AsServer InitialState m a
                   -> Proxy c
                   -> MakeRawBearer m fd

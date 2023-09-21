@@ -17,6 +17,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE NoStarIsType #-}
 
 module Cardano.KESAgent.Serialization.Spec
 ( module Cardano.KESAgent.Serialization.Spec
@@ -34,9 +36,15 @@ import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Binary
-import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
+import Cardano.Crypto.DSIGN.Class
+import Cardano.Crypto.DSIGN.Ed25519
 import Cardano.Crypto.KES.Class
+import Cardano.Crypto.KES.Single
+import Cardano.Crypto.KES.Sum
+import Cardano.Crypto.KES.Simple
+import Cardano.Crypto.Libsodium.Hash.Class
+import Cardano.Crypto.Hash.Class
 import Ouroboros.Network.RawBearer ( RawBearer (..) )
 
 import Control.Monad ( void, unless, when, replicateM, zipWithM_ )
@@ -60,22 +68,121 @@ import Data.Word
 import Data.Int
 import Foreign.Ptr ( castPtr )
 import GHC.Generics
-import GHC.TypeLits
+import GHC.TypeLits ( KnownNat, Nat, natVal, type (+), type (*) )
 import Language.Haskell.TH
 import Text.Printf
+import Data.Char
 
 data FieldInfo
   = BasicField BasicFieldInfo
+  | EnumField EnumFieldInfo
   | CompoundField CompoundFieldInfo
   | ChoiceField ChoiceFieldInfo
   | ListField ListFieldInfo
+  | AliasField AliasFieldInfo
   deriving (Show)
 
+data BasicFieldInfo =
+  BasicFieldInfo
+    { basicFieldType :: !String
+    , basicFieldSize :: !FieldSize
+    }
+  deriving (Show)
+
+data EnumFieldInfo =
+  EnumFieldInfo
+    { enumFieldType :: !String
+    , enumFieldValues :: ![String]
+    }
+  deriving (Show)
+
+data AliasFieldInfo =
+  AliasFieldInfo
+    { aliasFieldName :: !String
+    , aliasFieldTarget :: FieldInfo
+    }
+  deriving (Show)
+
+data CompoundFieldInfo =
+  CompoundFieldInfo
+    { compoundFieldType :: !String
+    , compoundFieldSubfields :: ![SubfieldInfo]
+    }
+  deriving (Show)
+
+data ListFieldInfo =
+  ListFieldInfo
+    { listSize :: !FieldSize
+    , listElemInfo :: !FieldInfo
+    }
+  deriving (Show)
+
+data SubfieldInfo =
+  SubfieldInfo
+    { subfieldName :: !String
+    , subfieldInfo :: !FieldInfo
+    }
+  deriving (Show)
+
+data ChoiceCondition
+  = IndexField !String
+  | IndexFlag !String Word32
+  deriving (Show)
+
+data ChoiceFieldInfo =
+  ChoiceFieldInfo
+    { choiceCondition :: !ChoiceCondition
+    , choiceFieldAlternatives :: ![FieldInfo]
+    }
+  deriving (Show)
+
+basicField :: String -> FieldSize -> FieldInfo
+basicField ty size = BasicField $ BasicFieldInfo ty size
+
+enumField :: String -> [String] -> FieldInfo
+enumField ty values = EnumField $ EnumFieldInfo ty values
+
+aliasField :: String -> FieldInfo -> FieldInfo
+aliasField name ty = AliasField $ AliasFieldInfo name ty
+
+compoundField :: String -> [(String, FieldInfo)] -> FieldInfo
+compoundField ty subfields =
+  CompoundField $
+    CompoundFieldInfo
+      ty
+      [ SubfieldInfo name i
+      | (name, i) <- subfields
+      ]
+
+choiceField :: ChoiceCondition -> [FieldInfo] -> FieldInfo
+choiceField cond subfields =
+  ChoiceField $
+    ChoiceFieldInfo
+      cond
+      subfields
+
+listField :: FieldSize -> FieldInfo -> FieldInfo
+listField lengthExpr elemInfo =
+  ListField $
+    ListFieldInfo
+      lengthExpr
+      elemInfo
+
 fieldType :: FieldInfo -> String
-fieldType (BasicField info) = basicFieldType info
-fieldType (CompoundField info) = compoundFieldType info
-fieldType (ChoiceField info) = "choice"
-fieldType (ListField info) = "[" ++ fieldType (listElemInfo info) ++ "]"
+fieldType (BasicField fi) = basicFieldType fi
+fieldType (EnumField fi) = enumFieldType fi ++ " = " ++ fieldType (info @Word32 Proxy)
+fieldType (CompoundField fi) = compoundFieldType fi
+fieldType (ChoiceField fi) = intercalate " | " $ map fieldType (choiceFieldAlternatives fi)
+fieldType (ListField fi) = "[" ++ fieldType (listElemInfo fi) ++ "]"
+fieldType (AliasField fi) = aliasFieldName fi ++ " = " ++ fieldType (aliasFieldTarget fi)
+
+shortFieldType :: FieldInfo -> String
+shortFieldType (BasicField fi) = basicFieldType fi
+shortFieldType (EnumField fi) = enumFieldType fi
+shortFieldType (CompoundField fi) = compoundFieldType fi
+shortFieldType (ChoiceField fi) = intercalate " | " $ map shortFieldType (choiceFieldAlternatives fi)
+shortFieldType (ListField fi) = "[" ++ shortFieldType (listElemInfo fi) ++ "]"
+shortFieldType (AliasField fi) = aliasFieldName fi
 
 formatPath :: [String] -> String
 formatPath = intercalate "." . reverse
@@ -94,8 +201,12 @@ fieldSize :: FieldInfo -> FieldSize
 fieldSize = fieldSizeScoped [] mempty
 
 fieldSizeScoped :: [String] -> Map String [String] -> FieldInfo -> FieldSize
+fieldSizeScoped path env (AliasField info) =
+  fieldSizeScoped path env (aliasFieldTarget info)
 fieldSizeScoped path env (BasicField info) =
   resolveSizeScopes env (basicFieldSize info)
+fieldSizeScoped path env (EnumField info) =
+  FixedSize 2
 fieldSizeScoped path env (CompoundField info) =
   let env' = foldl' (\e sfi -> Map.insert (subfieldName sfi) (subfieldName sfi : path) e) env (compoundFieldSubfields info)
       qualifiedSubfieldSizes sfi =
@@ -210,72 +321,6 @@ simplifyFieldSize (BinopSize op a b) =
       _ -> BinopSize op a' b'
 simplifyFieldSize x = x
 
-data BasicFieldInfo =
-  BasicFieldInfo
-    { basicFieldType :: !String
-    , basicFieldSize :: !FieldSize
-    }
-  deriving (Show)
-
-data CompoundFieldInfo =
-  CompoundFieldInfo
-    { compoundFieldType :: !String
-    , compoundFieldSubfields :: ![SubfieldInfo]
-    }
-  deriving (Show)
-
-data ListFieldInfo =
-  ListFieldInfo
-    { listSize :: !FieldSize
-    , listElemInfo :: !FieldInfo
-    }
-  deriving (Show)
-
-data SubfieldInfo =
-  SubfieldInfo
-    { subfieldName :: !String
-    , subfieldInfo :: !FieldInfo
-    }
-  deriving (Show)
-
-data ChoiceCondition
-  = IndexField !String
-  | IndexFlag !String Word32
-  deriving (Show)
-
-data ChoiceFieldInfo =
-  ChoiceFieldInfo
-    { choiceCondition :: !ChoiceCondition
-    , choiceFieldAlternatives :: ![FieldInfo]
-    }
-  deriving (Show)
-
-basicField :: String -> FieldSize -> FieldInfo
-basicField ty size = BasicField $ BasicFieldInfo ty size
-
-compoundField :: String -> [(String, FieldInfo)] -> FieldInfo
-compoundField ty subfields =
-  CompoundField $
-    CompoundFieldInfo
-      ty
-      [ SubfieldInfo name i
-      | (name, i) <- subfields
-      ]
-
-choiceField :: ChoiceCondition -> [FieldInfo] -> FieldInfo
-choiceField cond subfields =
-  ChoiceField $
-    ChoiceFieldInfo
-      cond
-      subfields
-
-listField :: FieldSize -> FieldInfo -> FieldInfo
-listField lengthExpr elemInfo =
-  ListField $
-    ListFieldInfo
-      lengthExpr
-      elemInfo
-
 class HasSerInfo a where
   info :: Proxy a -> FieldInfo
 
@@ -291,63 +336,64 @@ instance Monad m => IsSerItem m () where
   receiveItem s = return ()
 
 instance HasSerInfo Int8 where
-  info _ = basicField "Int8" $ FixedSize 1
+  info _ = basicField "int8" $ FixedSize 1
   
 instance (MonadThrow m, MonadST m) => IsSerItem m Int8 where
   sendItem = sendInt8
   receiveItem s = ReadResultT $ receiveInt8 s
 
 instance HasSerInfo Int16 where
-  info _ = basicField "Int16BE" $ FixedSize 2
+  info _ = basicField "int16BE" $ FixedSize 2
   
 instance (MonadThrow m, MonadST m) => IsSerItem m Int16 where
   sendItem = sendInt16
   receiveItem s = ReadResultT $ receiveInt16 s
 
 instance HasSerInfo Int32 where
-  info _ = basicField "Int32BE" $ FixedSize 4
+  info _ = basicField "int32BE" $ FixedSize 4
   
 instance (MonadThrow m, MonadST m) => IsSerItem m Int32 where
   sendItem = sendInt32
   receiveItem s = ReadResultT $ receiveInt32 s
 
 instance HasSerInfo Int64 where
-  info _ = basicField "Int64BE" $ FixedSize 8
+  info _ = basicField "int64BE" $ FixedSize 8
   
 instance (MonadThrow m, MonadST m) => IsSerItem m Int64 where
   sendItem = sendInt64
   receiveItem s = ReadResultT $ receiveInt64 s
 
 instance HasSerInfo Word8 where
-  info _ = basicField "Word8" $ FixedSize 1
+  info _ = basicField "word8" $ FixedSize 1
   
 instance (MonadThrow m, MonadST m) => IsSerItem m Word8 where
   sendItem = sendWord8
   receiveItem s = ReadResultT $ receiveWord8 s
 
 instance HasSerInfo Word16 where
-  info _ = basicField "Word16BE" $ FixedSize 2
+  info _ = basicField "word16BE" $ FixedSize 2
   
 instance (MonadThrow m, MonadST m) => IsSerItem m Word16 where
   sendItem = sendWord16
   receiveItem s = ReadResultT $ receiveWord16 s
 
 instance HasSerInfo Word32 where
-  info _ = basicField "Word32BE" $ FixedSize 4
+  info _ = basicField "word32BE" $ FixedSize 4
   
 instance (MonadThrow m, MonadST m) => IsSerItem m Word32 where
   sendItem = sendWord32
   receiveItem s = ReadResultT $ receiveWord32 s
 
 instance HasSerInfo Word64 where
-  info _ = basicField "Word64BE" $ FixedSize 8
+  info _ = basicField "word64BE" $ FixedSize 8
   
 instance (MonadThrow m, MonadST m) => IsSerItem m Word64 where
   sendItem = sendWord64
   receiveItem s = ReadResultT $ receiveWord64 s
 
 instance HasSerInfo UTCTime where
-  info _ = basicField "POSIX Seconds (Word64BE)" $ FixedSize 8
+  info _ = aliasField "POSIXSeconds"
+            $ info (Proxy @Int64)
 
 instance (MonadThrow m, MonadST m) => IsSerItem m UTCTime where
   sendItem = sendUTCTime
@@ -359,8 +405,7 @@ newtype Sized (len :: Nat) a = Sized { unSized :: a }
 instance (KnownNat len) => HasSerInfo (Sized len ByteString) where
   info _ =
     let n = fromIntegral $ natVal (Proxy @len)
-    in basicField
-        ("ByteString[" ++ show n ++ "]")
+    in basicField "bytes"
         $ FixedSize n
 instance (MonadThrow m, MonadST m, KnownNat len) => IsSerItem m (Sized len ByteString) where
   sendItem s val = do
@@ -379,7 +424,7 @@ instance HasSerInfo (VariableSized ByteString) where
   info _ =
     compoundField "ByteString"
       [ ("length", info (Proxy @Word32))
-      , ("data", basicField "[Word8]" $ VarSize "length")
+      , ("data", basicField "bytes" $ VarSize "length")
       ]
 instance (MonadThrow m, MonadST m) => IsSerItem m (VariableSized ByteString) where
   sendItem s val = do
@@ -430,17 +475,60 @@ instance (MonadThrow m, MonadST m, IsSerItem m a) => IsSerItem m [a] where
     len <- ReadResultT (receiveWord32 s)
     replicateM (fromIntegral len) (receiveItem s)
 
-instance ( KESAlgorithm kes
-         ) => HasSerInfo (SignKeyKES kes) where
+instance ( DSIGNAlgorithm dsign
+         ) => HasSerInfo (SignKeyDSIGN dsign) where
    info _ =
-     basicField
-       ("SignKeyKES " ++ algorithmNameKES (Proxy @kes))
-       (FixedSize . fromIntegral $ sizeSignKeyKES (Proxy @kes))
+     aliasField
+       ("SignKeyDSIGN<" ++ algorithmNameDSIGN (Proxy @dsign) ++ ">")
+       $ basicField
+          "bytes"
+          (FixedSize . fromIntegral $ sizeSignKeyDSIGN (Proxy @dsign))
+
+instance ( SodiumHashAlgorithm h
+         , HashAlgorithm h
+         ) => HasSerInfo (Hash h a) where
+    info _ =
+      aliasField ("Hash<" ++ hashAlgorithmName (Proxy @h) ++ ">")
+        $ basicField
+            "bytes"
+            (FixedSize . fromIntegral $ sizeHash (Proxy @h))
+
+instance ( DSIGNAlgorithm dsign
+         , KESAlgorithm (SingleKES dsign)
+         , HasSerInfo (SignKeyDSIGN dsign)
+         ) => HasSerInfo (SignKeyKES (SingleKES dsign)) where
+   info _ =
+     aliasField
+        ("SignKeyKES<" ++ algorithmNameKES (Proxy @(SingleKES dsign)) ++ ">")
+        (info (Proxy @(SignKeyDSIGN dsign)))
+
+instance ( SodiumHashAlgorithm h
+         , KESAlgorithm kes
+         , HasSerInfo (SignKeyKES kes)
+         , HasSerInfo (VerKeyKES kes)
+         , SizeHash h ~ SeedSizeKES kes
+         , KnownNat (SizeSignKeyKES kes)
+         , KnownNat (SizeVerKeyKES kes)
+         , KnownNat (SeedSizeKES kes)
+         , KnownNat ((SizeSignKeyKES kes + SeedSizeKES kes) + (2 * SizeVerKeyKES kes))
+         , KnownNat (SizeSigKES kes + (SizeVerKeyKES kes * 2))
+         , forall a. HasSerInfo (Hash h a)
+         ) => HasSerInfo (SignKeyKES (SumKES h kes)) where
+   info _ =
+     compoundField
+        ("SignKeyKES<" ++ algorithmNameKES (Proxy @(SumKES h kes)) ++ ">")
+        [ ("sk", info (Proxy @(SignKeyKES kes)))
+        , ("seed", basicField "bytes" (FixedSize (fromIntegral $ seedSizeKES (Proxy @kes))))
+        , ("vk0", info (Proxy @(VerKeyKES kes)))
+        , ("vk1", info (Proxy @(VerKeyKES kes)))
+        ]
+
 instance ( MonadSTM m
          , MonadThrow m
          , DirectSerialise m (SignKeyKES kes)
          , DirectDeserialise m (SignKeyKES kes)
          , KESAlgorithm kes
+         , HasSerInfo (SignKeyKES kes)
          ) => IsSerItem m (SignKeyKES kes) where
     sendItem s val = do
       directSerialise
@@ -461,15 +549,30 @@ instance ( MonadSTM m
       return $ ReadOK sk
 
 
-instance ( KESAlgorithm kes ) => HasSerInfo (VerKeyKES kes) where
+instance ( DSIGNAlgorithm dsign
+         , KESAlgorithm (SingleKES dsign)
+         ) => HasSerInfo (VerKeyKES (SingleKES dsign)) where
     info _ =
-      basicField
-        ("VerKeyKES " ++ algorithmNameKES (Proxy @kes))
-        (FixedSize . fromIntegral $ sizeVerKeyKES (Proxy @kes))
+      aliasField
+        ("VerKeyKES<" ++ algorithmNameKES (Proxy @(SingleKES dsign)) ++ ">")
+        (info (Proxy @(VerKeyDSIGN dsign)))
+
+instance ( HashAlgorithm h
+         , SodiumHashAlgorithm h
+         , KESAlgorithm kes
+         , KESAlgorithm (SumKES h kes)
+         ) => HasSerInfo (VerKeyKES (SumKES h kes)) where
+    info _ =
+      aliasField
+        ("VerKeyKES<" ++ algorithmNameKES (Proxy @(SumKES h kes)) ++ ">")
+        (info (Proxy @(Hash h (VerKeyKES kes, VerKeyKES kes))))
+
+
 instance ( MonadST m
          , MonadSTM m
          , MonadThrow m
          , KESAlgorithm kes
+         , HasSerInfo (VerKeyKES kes)
          ) => IsSerItem m (VerKeyKES kes) where
     sendItem s val =
       sendItem s (Sized (rawSerialiseVerKeyKES val) :: Sized (SizeVerKeyKES kes) ByteString)
@@ -530,6 +633,19 @@ tyVarName :: TyVarBndr a -> Name
 tyVarName (PlainTV n _) = n
 tyVarName (KindedTV n _ _) = n
 
+strippedFieldName :: Name -> Name -> String
+strippedFieldName tyName fieldName =
+  let tyStr = nameBase tyName
+      fieldStr = nameBase fieldName
+      lcfirst [] = []
+      lcfirst (x:xs) = toLower x : xs
+      tyStrLC = lcfirst tyStr
+  in
+    if tyStrLC `isPrefixOf` fieldStr then
+      drop (length tyStrLC) fieldStr
+    else
+      fieldStr
+
 -- | Derive 'HasSerInfo' for a record type that must be qualified with a type
 -- argument that has a 'Crypto' instance, and whose associated 'KES' and
 -- 'DSIGN' types have 'KESAlgorithm' and 'DSIGNAlgorithm' instances,
@@ -538,15 +654,17 @@ deriveHasSerInfoWithCrypto :: Name -> DecsQ
 deriveHasSerInfoWithCrypto typeName = do
   reify typeName >>= \case
     TyConI (DataD [] tyName tyVars Nothing [RecC conName fields] []) -> do
+      let tyParamE = varT . tyVarName . head $ tyVars
       [d| instance
-              ( KESAlgorithm (KES $(varT $ tyVarName $ head tyVars))
-              , DSIGNAlgorithm (DSIGN $(varT $ tyVarName $ head tyVars))
+              ( KESAlgorithm (KES $tyParamE)
+              , DSIGNAlgorithm (DSIGN $tyParamE)
+              , HasSerInfo (VerKeyKES (KES $tyParamE))
               ) => HasSerInfo $(foldl appT (conT tyName) [ varT (tyVarName bndr) | bndr <- tyVars ]) where
             info _ =
               compoundField
                 $(litE (stringL (nameBase tyName)))
                 $(listE
-                    [ [| ( $(litE (stringL (nameBase fieldName)))
+                    [ [| ( $(litE (stringL (strippedFieldName tyName fieldName)))
                          , info (Proxy :: Proxy $(return fieldTy))
                          )
                       |]
@@ -567,7 +685,7 @@ deriveHasSerInfo typeName = do
               compoundField
                 $(litE (stringL (nameBase tyName)))
                 $(listE
-                    [ [| ( $(litE (stringL (nameBase fieldName)))
+                    [ [| ( $(litE (stringL (strippedFieldName tyName fieldName)))
                          , info (Proxy :: Proxy $(return fieldTy))
                          )
                       |]
@@ -594,9 +712,12 @@ deriveIsSerItemWithCrypto :: Name -> DecsQ
 deriveIsSerItemWithCrypto typeName = do
   reify typeName >>= \case
     TyConI (DataD [] tyName tyVars Nothing [RecC conName fields] []) -> do
+      let tyParamE = varT . tyVarName . head $ tyVars
       [d| instance 
-              ( KESAlgorithm (KES $(varT $ tyVarName $ head tyVars))
-              , DSIGNAlgorithm (DSIGN $(varT $ tyVarName $ head tyVars))
+              ( KESAlgorithm (KES $tyParamE)
+              , DSIGNAlgorithm (DSIGN $tyParamE)
+              , HasSerInfo (VerKeyKES (KES $tyParamE))
+              , IsSerItem m (VerKeyKES (KES $tyParamE))
               , MonadThrow m
               , MonadST m
               , MonadSTM m
@@ -691,9 +812,11 @@ instance ( HasSerInfo (SignKeyKES (KES c))
 
 instance ( DSIGNAlgorithm dsign ) => HasSerInfo (SigDSIGN dsign) where
     info _ =
-      basicField
+      aliasField
         ("SigDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
-        (FixedSize . fromIntegral $ sizeSigDSIGN (Proxy @dsign))
+        $ basicField
+            "bytes"
+            (FixedSize . fromIntegral $ sizeSigDSIGN (Proxy @dsign))
 instance ( MonadST m
          , MonadSTM m
          , MonadThrow m
@@ -712,9 +835,11 @@ instance ( MonadST m
 
 instance ( DSIGNAlgorithm dsign ) => HasSerInfo (VerKeyDSIGN dsign) where
     info _ =
-      basicField
-        ("VerKeyDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
-        (FixedSize . fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
+      aliasField ("VerKeyDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
+        $ basicField
+            "bytes"
+            (FixedSize . fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
+
 instance ( MonadST m
          , MonadSTM m
          , MonadThrow m
@@ -748,16 +873,16 @@ instance ( MonadThrow m
 
 newtype ViaEnum a = ViaEnum { viaEnum :: a }
 
-instance (Typeable a) => HasSerInfo (ViaEnum a) where
+instance (Typeable a, Show a, Enum a, Bounded a) => HasSerInfo (ViaEnum a) where
   info _ =
-    basicField
-      "Enum"
-      (FixedSize 2)
+    enumField
+      (tyConName . typeRepTyCon . typeRep $ Proxy @a)
+      (map show [minBound .. maxBound :: a])
 
 typeName :: Typeable a => Proxy a -> String
 typeName = tyConName . typeRepTyCon . typeRep
 
-instance (MonadThrow m, MonadST m, Typeable a, Enum a, Bounded a) => IsSerItem m (ViaEnum a) where
+instance (MonadThrow m, MonadST m, Typeable a, Show a, Enum a, Bounded a) => IsSerItem m (ViaEnum a) where
   sendItem s (ViaEnum x) =
     sendItem s (fromIntegral (fromEnum x) :: Word16)
 
@@ -805,7 +930,7 @@ deriving via (ViaEnum RecvResult)
 instance HasSerInfo a => HasSerInfo (Maybe a) where
   info _ =
     compoundField
-      ("Maybe " ++ fieldType (info (Proxy @a)))
+      ("Maybe " ++ shortFieldType (info (Proxy @a)))
       [ ("isJust", info (Proxy @Bool))
       , ("value",
           choiceField
@@ -863,7 +988,14 @@ printSpec =
       printIndent indent
       putStrLn ("SIZE: " ++ formatFieldSize (fieldSize field))
 
+      goFieldContents indent field
+
+    goFieldContents :: Int -> FieldInfo -> IO ()
+    goFieldContents indent field =
       case field of
+        AliasField afi -> do
+          goFieldContents indent (aliasFieldTarget afi)
+
         CompoundField cfi -> do
           mapM_ (printSubfield $ succ indent) (compoundFieldSubfields cfi)
 

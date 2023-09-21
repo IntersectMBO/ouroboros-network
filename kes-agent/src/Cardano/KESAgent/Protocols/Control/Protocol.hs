@@ -65,8 +65,8 @@ deriving instance
 
 data BootstrapInfo =
   BootstrapInfo
-    { bootstrapAddress :: !Text
-    , bootstrapStatus :: !ConnectionStatus
+    { bootstrapInfoAddress :: !Text
+    , bootstrapInfoStatus :: !ConnectionStatus
     }
     deriving (Show, Eq)
 
