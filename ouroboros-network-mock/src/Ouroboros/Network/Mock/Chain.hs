@@ -225,9 +225,6 @@ rollback p (c :> b) | blockPoint b == p = Just (c :> b)
 rollback p Genesis  | p == genesisPoint = Just Genesis
                     | otherwise         = Nothing
 
--- | Find the provided point's successor on the provided chain. If the point is
--- not on the chain, this function's behavior is undefined. Use 'pointOnChain'
--- to check whether a point is on a chain.
 successorBlock :: HasHeader block => Point block -> Chain block -> Maybe block
 successorBlock p c0 | headPoint c0 == p = Nothing
 successorBlock p c0 = go c0
@@ -235,7 +232,7 @@ successorBlock p c0 = go c0
     go (c :> b' :> b) | blockPoint b' == p = Just b
                       | otherwise          = go (c :> b')
     go (Genesis :> b) | p == genesisPoint  = Just b
-    go _ = Nothing -- UB: the point wasn't on the chain
+    go _ = error "successorBlock: point not on chain"
 
 selectChain
   :: HasHeader block
