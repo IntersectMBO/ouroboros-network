@@ -20,7 +20,7 @@ There are two protocols which support different sets of mini-protocols:
 
 Chain-sync mini-protocol (the node-to-node version) is used to replicate
 a remote chain of headers; block-fetch mini-protocol to download blocks and
-tx-submission to desiminate transactions across the network.
+tx-submission to disseminate transactions across the network.
 
 \begin{figure}
   \pgfdeclareimage[height=15cm]{node-diagram-chains-state}{figure/node-diagram-concurrency.pdf}
@@ -67,7 +67,7 @@ with other processes that run on the same machine/operation system instance,
 which means that a node may get slowed down for some reason, and the system may
 get in a situation where there is more data available from the network than the
 node can process.  The design must operate appropriately in this situation and
-recover form transient conditions.  In any condition, a node must not exceed
+recover from transient conditions.  In any condition, a node must not exceed
 its memory limits, that is there must be defined limits, breaches of which
 being treated like protocol violations.
 
@@ -102,4 +102,4 @@ considered.  For example, when a node time-stamps incoming blocks with its
 local clock time, it may encounter blocks that are created in the future with
 respect to the local clock of the node.  The node must then decide whether this
 is because of a clock skew or whether the node considers this as adversarial
-behavior of an other node.
+behavior of another node.
