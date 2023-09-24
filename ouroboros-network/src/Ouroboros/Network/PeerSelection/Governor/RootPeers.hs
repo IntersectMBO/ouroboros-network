@@ -118,7 +118,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             knownPeers'      = KnownPeers.insert
                                  -- When we don't know about the PeerSharing information
                                  -- we default to NoPeerSharing
-                                 (Map.map (\(a, b) -> (NoPeerSharing, a, b)) newPeers)
+                                 (Map.map (\(a, b) -> (Just NoPeerSharing, Just a, Just b)) newPeers)
                                  (knownPeers st)
 
             -- We got a successful response to our request, but if we're still

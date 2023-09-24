@@ -3,6 +3,10 @@
 
   inputs = {
     haskellNix.url = "github:input-output-hk/haskell.nix";
+    hackageNix = {
+      url = "github:input-output-hk/hackage.nix";
+      flake = false;
+    };
     nixpkgs.follows = "haskellNix/nixpkgs-unstable";
     iohkNix.url = "github:input-output-hk/iohk-nix";
     flake-utils.url = "github:hamishmack/flake-utils/hkm/nested-hydraJobs";
@@ -38,12 +42,12 @@
         # setup our nixpkgs with the haskell.nix overlays, and the iohk-nix
         # overlays...
         nixpkgs = import inputs.nixpkgs {
+          inherit system;
+          inherit (inputs.haskellNix) config;
           overlays = [
             # haskellNix.overlay can be configured by later overlays, so need to come before them.
             inputs.haskellNix.overlay
           ];
-          inherit system;
-          inherit (inputs.haskellNix) config;
         };
         inherit (nixpkgs) lib;
         haskellNix = import inputs.haskellNix { };
@@ -64,7 +68,7 @@
           name = "ouroboros-network";
           compiler-nix-name = lib.mkDefault defaultCompiler;
           cabalProjectLocal = if pkgs.stdenv.hostPlatform.isWindows
-                              then lib.readFile ./scripts/ci/cabal.project.local.Windows.CrossCompile
+                              then lib.readFile ./scripts/ci/cabal.project.local.Windows
                               else lib.readFile ./scripts/ci/cabal.project.local.Linux;
 
           #
@@ -128,6 +132,17 @@
               # pkgs are instatiated for the host platform
               packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
               packages.ouroboros-network-protocols.components.tests.cddl.preCheck    = "export HOME=`pwd`";
+
+              # don't run checks using Wine when cross compiling
+              packages.ntp-client.components.tests.test.doCheck                       = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.network-mux.components.tests.test.doCheck                      = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-api.components.tests.test.doCheck            = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-protocols.components.tests.test.doCheck      = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-framework.components.tests.io-tests.doCheck  = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network.components.tests.sim-tests.doCheck           = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network.components.tests.io-tests.doCheck            = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.cardano-client.components.tests.test.doCheck                   = !pkgs.stdenv.hostPlatform.isWindows;
             })
           ];
         });
@@ -142,25 +157,26 @@
         check-stylish = nixpkgs.callPackage ./nix/check-stylish.nix { };
       in
         lib.recursiveUpdate flake rec {
-          project = cabalProject;
           # add a required job, that's basically all hydraJobs.
           hydraJobs =
             nixpkgs.callPackages inputs.iohkNix.utils.ciJobsAggregates
-            {
-              ciJobs =
-                flake.hydraJobs
-                // {
-                  # This ensure hydra send a status for the required job (even if no change other than commit hash)
-                  revision = nixpkgs.writeText "revision" (inputs.self.rev or "dirty");
-                  inherit network-docs check-stylish;
-                };
-            };
-          legacyPackages = rec {
-            inherit cabalProject nixpkgs;
-            # also provide hydraJobs through legacyPackages to allow building without system prefix:
-            inherit hydraJobs;
-            inherit network-docs check-stylish;
-          };
+              {
+                ciJobs =
+                  flake.hydraJobs
+                  // {
+                    # This ensure hydra send a status for the required job (even if no change other than commit hash)
+                    revision = nixpkgs.writeText "revision" (inputs.self.rev or "dirty");
+                    inherit network-docs check-stylish;
+                  };
+              }
+            # add network-docs & check-stylish to support
+            # `nix build .\#hydraJobs.x86_64-linux.network-docs` and
+            # `nix build .\#hydraJobs.x86_64-linux.check-stylis`.
+            // { inherit network-docs check-stylish; };
+          # also provide hydraJobs through legacyPackages to allow building without system prefix, e.g.
+          # `nix build .\#network-mux:lib:network-mux`
+          # `nix build .\#network-docs`
+          legacyPackages = { inherit hydraJobs network-docs check-stylish; };
           devShells = let
             profillingShell = p: {
               # `nix develop .#profiling`

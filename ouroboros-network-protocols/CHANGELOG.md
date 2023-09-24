@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+* Improved cdd specs by using `any` (PR #4638)
+* Add a 3673s timeout to chainsync's StIdle state.
+* Add a 97s timeout to keepalive's StClient state.
+
 ## 0.5.2.0 -- 2023-09-08
 
 ### Breaking changes

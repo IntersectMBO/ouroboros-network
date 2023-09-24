@@ -1,10 +1,10 @@
 # network-mux
 
-Multiplexing library.  It allows to run multiple network applications over
-a single bearer.  The muliplexer cuts messages in chunks of some maximal size
-and sends them over a bearer channel.  The current version of this library
-relies on reliable and ordered delivery of messages.  The muliplexer should run
-alongside with an incremental decoder.
+Multiplexing library. It allows to run multiple network applications over
+a single bearer. The multiplexer cuts messages in chunks of some maximal size
+and sends them over a bearer channel. The current version of this library
+relies on reliable and ordered delivery of messages. The multiplexer should run
+alongside an incremental decoder.
 
 Example protocol with an incremental
 decoder is implemented in

@@ -15,12 +15,12 @@ part on the remote end.
 \begin{center}
 \pgfuseimage{mux-diagram}
 \end{center}
-\caption{Data flow though the multiplexer and de-multiplexer}
+\caption{Data flow through the multiplexer and de-multiplexer}
 \label{mux-diagram}
 \end{figure}
 
 
-The multiplexer is agnostic to the bearer it runs over, however it assume that
+The multiplexer is agnostic to the bearer it runs over, however it assumes that
 the bearer guarantees an ordered and reliable transport layer\footnote{Slightly
 more relaxed property is required: in order delivery of multiplexer segments
 which belong to the same mini-protocol.} and it requires the bearer to be
@@ -36,7 +36,7 @@ each mini-protocol in either direction.
 
 The multiplexer exposes interface which hides all the multiplexer details,
 a single mini-protocol communication can be written as if it would only
-communicate with its instance on the remote end.  When the muliplexer is
+communicate with its instance on the remote end.  When the multiplexer is
 instructed to send bytes of some mini-protocol, it splits the data into
 segments, adds a segment header, encodes it and transmits the segments over the
 bearer.  When reading data from the network, segment's headers are used
@@ -124,9 +124,9 @@ protocol and the MUX/DEMUX layer shuts down the connection to the peer.
 
 Ouroboros network defines two protocols: \emph{node-to-node} and
 \emph{node-to-client} protocols.  \emph{Node-to-node} is used for inter node
-communication across the Internet, while \emph{node-to-client} is a inter
-process communication, usedy by clients, e.g. a wallet, db-sync, etc.  Each of them consists of a bundle of mini-protocols (see chapter~\ref{chapter:mini-protocols})
-consists of a bundle of mini-protocols.  The protocol numbers of both protocols
+communication across the Internet, while \emph{node-to-client} is an inter
+process communication, used by clients, e.g. a wallet, db-sync, etc.  Each of them consists of a bundle of mini-protocols (see chapter~\ref{chapter:mini-protocols}).
+The protocol numbers of both protocols
 are specified in tables~\ref{table:node-to-node-protocol-numbers}
 and~\ref{table:node-to-client-protocol-numbers}.
 \begin{table}[ht]

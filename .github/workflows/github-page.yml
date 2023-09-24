@@ -34,11 +34,17 @@ jobs:
 
     steps:
     - name: Checkout ouroboros-network repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
       # we need nix to later build the spec documents
     - name: Install Nix
-      uses: cachix/install-nix-action@v22
+      uses: cachix/install-nix-action@v23
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+        extra_nix_config: |
+          substituters = https://cache.nixos.org https://cache.iog.io
+          trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+          experimental-features = nix-command flakes
 
     - name: Install Haskell
       uses: haskell/actions/setup@v2
@@ -67,20 +73,19 @@ jobs:
 
     - name: Build documents
       run: |
-        for res in $(nix-build -A network-docs); do
-          for pdf in $res/*.pdf; do
-            PDF_DIR=haddocks/pdfs/$(basename $pdf .pdf)
-            mkdir -p $PDF_DIR
-            echo '<!DOCTYPE html>' > $PDF_DIR/index.html
-            echo -n '<!DOCTYPE html><meta http-equiv="refresh" content="0; URL=' >> $PDF_DIR/index.html
-            echo -n $(basename $pdf) >> $PDF_DIR/index.html
-            echo '">' >> $PDF_DIR/index.html
-            cp $pdf $PDF_DIR/
-          done
+        nix build .\#network-docs
+        for pdf in $(ls result/*.pdf); do
+          PDF_DIR=haddocks/pdfs/$(basename $pdf .pdf)
+          mkdir -p $PDF_DIR
+          echo '<!DOCTYPE html>' > $PDF_DIR/index.html
+          echo -n '<!DOCTYPE html><meta http-equiv="refresh" content="0; URL=' >> $PDF_DIR/index.html
+          echo -n $(basename $pdf) >> $PDF_DIR/index.html
+          echo '">' >> $PDF_DIR/index.html
+          cp $pdf $PDF_DIR/
         done
 
     - name: Upload artifacts
-      uses: actions/upload-pages-artifact@v1
+      uses: actions/upload-pages-artifact@v2
       with:
         path: ./haddocks
 

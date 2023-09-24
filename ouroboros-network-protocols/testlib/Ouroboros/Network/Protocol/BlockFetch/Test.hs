@@ -4,6 +4,7 @@
 {-# LANGUAGE KindSignatures    #-}
 {-# LANGUAGE ParallelListComp  #-}
 {-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TypeApplications  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -26,8 +27,8 @@ import           Network.TypedProtocol.Proofs
 import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
-import           Ouroboros.Network.Block (Serialised (..), castPoint,
-                     genesisPoint, unwrapCBORinCBOR, wrapCBORinCBOR)
+import           Ouroboros.Network.Block (Serialised (..), genesisPoint,
+                     unwrapCBORinCBOR, wrapCBORinCBOR)
 
 import           Ouroboros.Network.Mock.Chain (Chain, Point)
 import qualified Ouroboros.Network.Mock.Chain as Chain
@@ -338,22 +339,42 @@ codecSerialised :: MonadST m
                          m ByteString
 codecSerialised = codecBlockFetch S.encode S.decode S.encode S.decode
 
-genBlockFetch :: Gen block
-              -> Gen (ChainRange point)
-              -> Gen (AnyMessageAndAgency (BlockFetch block point))
-genBlockFetch genBlock genChainRange = oneof
-    [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        MsgRequestRange <$> genChainRange
+
+instance Arbitrary point => Arbitrary (ChainRange point) where
+  arbitrary = ChainRange <$> arbitrary <*> arbitrary
+  shrink (ChainRange a b) =
+    [ ChainRange a' b
+    | a' <- shrink a
+    ]
+    ++
+    [ ChainRange a b'
+    | b' <- shrink b
+    ]
+
+instance (Arbitrary block, Arbitrary point)
+      => Arbitrary (AnyMessageAndAgency (BlockFetch block point)) where
+  arbitrary = oneof
+    [ AnyMessageAndAgency (ClientAgency TokIdle) <$> MsgRequestRange <$> arbitrary
     , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgStartBatch
     , return $ AnyMessageAndAgency (ServerAgency TokBusy) MsgNoBlocks
-    , AnyMessageAndAgency (ServerAgency TokStreaming) <$>
-        MsgBlock <$> genBlock
+    , AnyMessageAndAgency (ServerAgency TokStreaming) <$> MsgBlock <$> arbitrary
     , return $ AnyMessageAndAgency (ServerAgency TokStreaming) MsgBatchDone
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone
     ]
 
-instance Arbitrary (AnyMessageAndAgency (BlockFetch Block (Point Block))) where
-  arbitrary = genBlockFetch arbitrary arbitrary
+  shrink (AnyMessageAndAgency a@(ClientAgency TokIdle) (MsgRequestRange range)) =
+    [ AnyMessageAndAgency a (MsgRequestRange range')
+    | range' <- shrink range
+    ]
+  shrink (AnyMessageAndAgency (ServerAgency TokBusy) MsgStartBatch) = []
+  shrink (AnyMessageAndAgency (ServerAgency TokBusy) MsgNoBlocks) = []
+  shrink (AnyMessageAndAgency a@(ServerAgency TokStreaming) (MsgBlock block)) =
+    [ AnyMessageAndAgency a (MsgBlock block')
+    | block' <- shrink block
+    ]
+  shrink (AnyMessageAndAgency (ServerAgency TokStreaming) MsgBatchDone) = []
+  shrink (AnyMessageAndAgency (ClientAgency TokIdle) MsgClientDone) = []
+
 
 instance (Eq block, Eq point) =>
          Eq (AnyMessage (BlockFetch block point)) where
@@ -365,17 +386,11 @@ instance (Eq block, Eq point) =>
   AnyMessage MsgClientDone        == AnyMessage MsgClientDone        = True
   _                               ==                  _              = False
 
-instance Arbitrary (AnyMessageAndAgency (BlockFetch (Serialised Block) (Point Block))) where
-  arbitrary = genBlockFetch (serialiseBlock <$> arbitrary)
-                            (toSerialisedChainRange <$> arbitrary)
-    where
-      serialiseBlock :: Block -> Serialised Block
-      serialiseBlock = Serialised . S.serialise
+instance Arbitrary (Serialised Block) where
+  arbitrary = Serialised . S.serialise @Block <$> arbitrary
 
-      toSerialisedChainRange :: ChainRange (Point Block)
-                             -> ChainRange (Point Block)
-      toSerialisedChainRange (ChainRange l u) =
-        ChainRange (castPoint l) (castPoint u)
+  shrink (Serialised block) =
+    Serialised . S.serialise @Block <$> shrink (S.deserialise block)
 
 prop_codec_BlockFetch
   :: AnyMessageAndAgency (BlockFetch Block (Point Block))
@@ -464,7 +479,7 @@ prop_codec_binary_compat_BlockFetchSerialised_BlockFetch msg =
       TokStreaming -> SamePeerHasAgency $ ServerAgency TokStreaming
 
 --
--- Auxilary functions
+-- Auxiliary functions
 --
 
 -- | Generate a list of @ChainRange@s from a list of points on a chain.  The

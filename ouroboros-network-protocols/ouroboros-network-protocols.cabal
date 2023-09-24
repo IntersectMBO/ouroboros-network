@@ -205,7 +205,8 @@ test-suite test
                        ouroboros-network-protocols:testlib,
                        ouroboros-network-testing ^>= 0.3
 
-  ghc-options:         -Wall
+  ghc-options:         -threaded
+                       -Wall
                        -Wunused-packages
 
 test-suite cddl
@@ -243,7 +244,8 @@ test-suite cddl
                        ouroboros-network-protocols,
                        ouroboros-network-protocols:testlib
 
-  ghc-options:         -Wall
+  ghc-options:         -threaded
+                       -Wall
                        -Wno-unticked-promoted-constructors
                        -Wcompat
                        -Wunused-packages

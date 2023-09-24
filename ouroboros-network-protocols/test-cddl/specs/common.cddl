@@ -1,32 +1,23 @@
 
-; The Codecs are polymorphic in the data types for blocks, points, slot
-; numbers etc. In CDDL we need concrete values so we instantiate them
-; a bit arbitrarly.  See `CBOR and CDDL` in the network technical report
+; Mini-protocol codecs are polymorphic in various data types, e.g. blocks, points,
+; transactions, transaction ids, etc. In CDDL we need concrete values so we
+; instantiate them using `any`.  See `CBOR and CDDL` in the network
+; technical report
 ; https://input-output-hk.github.io/ouroboros-network/pdfs/network-spec
+; if you need further advise how to find concrete encoding of `Cardano` data
+; types.
 
-block           = [blockHeader, blockBody]
+block  = any
+header = any
+tip    = any
+point  = any
+points = [ *point ]
+txId   = any
+tx     = any
 
-blockHeader     = [headerHash, chainHash, headerSlot, headerBlockNo, headerBodyHash]
-headerHash      = int
-chainHash       = genesisHash / blockHash
-genesisHash     = []
-blockHash       = [int]
-blockBody       = bstr
-headerSlot      = word64
-headerBlockNo   = word64
-headerBodyHash  = int
-
-point           = origin / blockHeaderHash
-origin          = []
-blockHeaderHash = [slotNo, int]
-slotNo          = word64
-
-; In this spec we don't specify what transaction idenfiers (txId) or
-; transactions (tx) are themselves, `ouroboros-network` is polymorphic over
-; them.
-txId         = any
-tx           = any
-rejectReason = int
+; although some of our protocols are polymorphic over slots, e.g.
+; `local-tx-monitor`, slots are always encoded as `word64`.
+slotNo = word64
 
 word16 = 0..65535
 word32 = 0..4294967295

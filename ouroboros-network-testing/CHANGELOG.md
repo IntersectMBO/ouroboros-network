@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+- Added 'keyedTimeoutTruncated' to Signal API
+
 ## 0.3.1.0 -- 2023-08-09
 
 ### Breaking changes

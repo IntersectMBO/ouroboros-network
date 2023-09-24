@@ -27,8 +27,9 @@ package ouroboros-network-mock
 package ouroboros-network-testing
   ghc-options: -fno-ignore-asserts -Werror
 
+-- IPv6 tests are DISABLED
 package ouroboros-network-framework
-  flags: +ipv6
+  flags: -ipv6
   ghc-options: -fno-ignore-asserts -Werror
 
 package ouroboros-network-protocols

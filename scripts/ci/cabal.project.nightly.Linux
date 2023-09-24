@@ -1,0 +1,44 @@
+max-backjumps: 5000
+reorder-goals: True
+tests: True
+benchmarks: True
+
+package strict-checked-vars
+  flags: +checktvarinvariants +checkmvarinvariants
+
+package ntp-client
+  flags: +demo
+
+package network-mux
+  flags: +ipv6
+  ghc-options: -fno-ignore-asserts -Werror
+
+package ouroboros-network-api
+  flags: +asserts
+  ghc-options: -fno-ignore-asserts -Werror
+
+package ouroboros-network-mock
+  ghc-options: -fno-ignore-asserts -Werror
+
+package ouroboros-network-testing
+  flags: +nightly
+  ghc-options: -fno-ignore-asserts -Werror
+
+-- IPv6 tests are DISABLED
+package ouroboros-network-framework
+  flags: -ipv6
+  ghc-options: -fno-ignore-asserts -Werror
+
+package ouroboros-network-protocols
+  flags: +cddl
+  ghc-options: -fno-ignore-asserts -Werror
+
+package ouroboros-network
+  ghc-options: -fno-ignore-asserts -Werror
+
+package cardano-ping
+  ghc-options: -fno-ignore-asserts -Werror
+
+package cardano-client
+  ghc-options: -fno-ignore-asserts -Werror
+

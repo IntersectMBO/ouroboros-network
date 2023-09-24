@@ -33,7 +33,7 @@ import           Ouroboros.Network.Channel
 import           Ouroboros.Network.Driver
 
 import           Ouroboros.Network.Block (BlockNo, Serialised (..),
-                     StandardHash, Tip (..), castPoint, decodeTip, encodeTip,
+                     StandardHash, Tip (..), decodeTip, encodeTip,
                      pattern BlockPoint, pattern GenesisPoint, unwrapCBORinCBOR,
                      wrapCBORinCBOR)
 import           Ouroboros.Network.Mock.Chain (Chain, Point)
@@ -332,42 +332,82 @@ propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
         (ChainSyncExamples.chainSyncClientPipelinedMin omax)
         cps
 
-genChainSync :: Gen point
-             -> Gen header
-             -> Gen tip
-             -> Gen (AnyMessageAndAgency (ChainSync header point tip))
-genChainSync genPoint genHeader genTip = oneof
+
+instance (Arbitrary header, Arbitrary point, Arbitrary tip)
+      => Arbitrary (AnyMessageAndAgency (ChainSync header point tip)) where
+  arbitrary = oneof
     [ return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext
     , return $ AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
-        <$> (MsgRollForward <$> genHeader
-                            <*> genTip)
+        <$> (MsgRollForward <$> arbitrary
+                            <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
-        <$> (MsgRollForward <$> genHeader
-                            <*> genTip)
+        <$> (MsgRollForward <$> arbitrary
+                            <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait))
-        <$> (MsgRollBackward <$> genPoint
-                             <*> genTip)
+        <$> (MsgRollBackward <$> arbitrary
+                             <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency (TokNext TokMustReply))
-        <$> (MsgRollBackward <$> genPoint
-                             <*> genTip)
+        <$> (MsgRollBackward <$> arbitrary
+                             <*> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokIdle) . MsgFindIntersect
-        <$> listOf genPoint
+        <$> listOf arbitrary
 
     , AnyMessageAndAgency (ServerAgency TokIntersect)
-        <$> (MsgIntersectFound <$> genPoint
-                               <*> genTip)
+        <$> (MsgIntersectFound <$> arbitrary
+                               <*> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency TokIntersect)
-        <$> (MsgIntersectNotFound <$> genTip)
+        <$> (MsgIntersectNotFound <$> arbitrary)
 
     , return $ AnyMessageAndAgency (ClientAgency TokIdle) MsgDone
     ]
+
+  shrink (AnyMessageAndAgency (ClientAgency TokIdle) MsgRequestNext) = []
+  shrink (AnyMessageAndAgency (ServerAgency (TokNext TokCanAwait)) MsgAwaitReply) = []
+  shrink (AnyMessageAndAgency a@(ServerAgency (TokNext TokCanAwait)) (MsgRollForward header tip)) =
+       [ AnyMessageAndAgency a (MsgRollForward header' tip)
+       | header' <- shrink header
+       ]
+    ++ [ AnyMessageAndAgency a (MsgRollForward header tip')
+       | tip' <- shrink tip
+       ]
+  -- TODO: with ghc-9.2 or later this and previous case can be merged into one
+  shrink (AnyMessageAndAgency a@(ServerAgency (TokNext TokMustReply)) (MsgRollForward header tip)) =
+       [ AnyMessageAndAgency a (MsgRollForward header' tip)
+       | header' <- shrink header
+       ]
+    ++ [ AnyMessageAndAgency a (MsgRollForward header tip')
+       | tip' <- shrink tip
+       ]
+  shrink (AnyMessageAndAgency a@(ServerAgency TokNext {}) (MsgRollBackward header tip)) =
+       [ AnyMessageAndAgency a (MsgRollBackward header' tip)
+       | header' <- shrink header
+       ]
+    ++ [ AnyMessageAndAgency a (MsgRollBackward header tip')
+       | tip' <- shrink tip
+       ]
+  shrink (AnyMessageAndAgency a@(ClientAgency TokIdle) (MsgFindIntersect points)) =
+       [ AnyMessageAndAgency a (MsgFindIntersect points')
+       | points' <- shrink points
+       ]
+  shrink (AnyMessageAndAgency a@(ServerAgency TokIntersect) (MsgIntersectFound point tip)) =
+       [ AnyMessageAndAgency a (MsgIntersectFound point' tip)
+       | point' <- shrink point
+       ]
+    ++ [ AnyMessageAndAgency a (MsgIntersectFound point tip')
+       | tip' <- shrink tip
+       ]
+  shrink (AnyMessageAndAgency a@(ServerAgency TokIntersect) (MsgIntersectNotFound tip)) =
+       [ AnyMessageAndAgency a (MsgIntersectNotFound tip')
+       | tip' <- shrink tip
+       ]
+  shrink (AnyMessageAndAgency (ClientAgency TokIdle) MsgDone) = []
 
 
 -- type aliases to keep sizes down
@@ -377,27 +417,25 @@ type ChainSync_BlockHeader =
 type ChainSync_Serialised_BlockHeader =
      ChainSync (Serialised BlockHeader) (Point BlockHeader) (Tip BlockHeader)
 
-instance Arbitrary (AnyMessageAndAgency ChainSync_BlockHeader) where
-  arbitrary = genChainSync arbitrary arbitrary genTip
+instance Arbitrary (Tip BlockHeader) where
+  arbitrary = f <$> arbitrary <*> arbitrary
     where
-      genTip = f <$> arbitrary <*> arbitrary
       f :: Point BlockHeader ->  BlockNo -> Tip BlockHeader
       f GenesisPoint _     = TipGenesis
       f (BlockPoint s h) b = Tip s h b
 
-instance Arbitrary (AnyMessageAndAgency ChainSync_Serialised_BlockHeader) where
-  arbitrary = genChainSync (castPoint <$> genPoint)
-                           (serialiseBlock <$> arbitrary)
-                           genTip
+  shrink TipGenesis = []
+  shrink (Tip slotNo hash blockNo) =
+       [ Tip slotNo' hash blockNo
+       | slotNo' <- shrink slotNo
+       ]
+    ++ [ Tip slotNo hash blockNo'
+       | blockNo' <- shrink blockNo
+       ]
+
+instance Arbitrary (Serialised BlockHeader) where
+  arbitrary = serialiseBlock <$> arbitrary
     where
-      genTip = f <$> arbitrary <*> arbitrary
-      f :: Point BlockHeader ->  BlockNo -> Tip BlockHeader
-      f GenesisPoint _     = TipGenesis
-      f (BlockPoint s h) b = Tip s h b
-
-      genPoint :: Gen (Point BlockHeader)
-      genPoint = arbitrary
-
       serialiseBlock :: BlockHeader -> Serialised BlockHeader
       serialiseBlock = Serialised . S.serialise
 

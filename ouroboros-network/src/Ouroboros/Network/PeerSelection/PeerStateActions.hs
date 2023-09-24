@@ -32,7 +32,7 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
 
 import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (SomeAsyncException (..))
+import           Control.Exception (SomeAsyncException (..), assert)
 import           Control.Monad (when, (<=<))
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadThrow
@@ -649,8 +649,14 @@ withPeerStateActions PeerStateActionsArguments {
 
           WithSomeProtocolTemperature (WithHot MiniProtocolError{}) -> do
             -- current `pchPeerStatus` must be 'HotPeer'
-            traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
-            void $ atomically (updateUnlessCold pchPeerStatus PeerCold)
+            state <- atomically $ do
+              peerState <- readTVar pchPeerStatus
+              _  <- updateUnlessCold pchPeerStatus PeerCold
+              return peerState
+            case state of
+              PeerCold  -> return ()
+              hotOrWarm -> assert (hotOrWarm == PeerHot) $
+                           traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
           WithSomeProtocolTemperature (WithWarm MiniProtocolError{}) -> do
             -- current `pchPeerStatus` must be 'WarmPeer'
             traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))

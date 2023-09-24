@@ -35,10 +35,6 @@ import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
                      (jobDemoteActivePeer)
 import           Ouroboros.Network.PeerSelection.Governor.Types hiding
                      (PeerSelectionCounters (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
@@ -122,7 +118,7 @@ inboundPeers PeerSelectionActions{
     return $ \_ ->
       let -- If peer happens to already be present in the Known Peer set
           -- 'insert' is going to do its due diligence before adding.
-          newEntry    = Map.singleton addr (ps, DoAdvertisePeer, IsNotLedgerPeer)
+          newEntry    = Map.singleton addr (Just ps, Nothing, Nothing)
           knownPeers' = KnownPeers.insert newEntry knownPeers
        in Decision {
             decisionTrace = [TraceKnownInboundConnection addr ps],
@@ -318,7 +314,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           removed      = LocalRootPeers.toMap localRootPeers  Map.\\
                          LocalRootPeers.toMap localRootPeers'
           -- LocalRoots are not ledger!
-          addedInfoMap = Map.map (\a -> (NoPeerSharing, a, IsNotLedgerPeer)) added
+          addedInfoMap = Map.map (\a -> (Nothing, Just a, Nothing)) added
           removedSet   = Map.keysSet removed
           knownPeers'  = KnownPeers.insert addedInfoMap knownPeers
                         -- We do not immediately remove old ones from the

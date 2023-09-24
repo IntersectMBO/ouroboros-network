@@ -213,7 +213,7 @@ following pieces of information:
 \miniEntry
     {Keep Alive Protocol}
     {keep-alive-protocol}
-    {A protocol for sending keep alive messages and round trip measurments}
+    {A protocol for sending keep alive messages and round trip measurements}
     {ouroboros-network/src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
     {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-KeepAlive-Type.html\#t:KeepAlive}
 
@@ -232,19 +232,22 @@ see \href{https://cbor-wg.github.io/cddl/draft-ietf-cbor-cddl.html}{'Coincise
 data definition language (CDDL)'}.
 
 Note that the networking layer knows very little about blocks, transactions or
-their indetifiers.  We use parametric polymorphism in the implementation which
-is not present in CDDL.  For this reason we have to make concrete choices which
-might not agree with what is used by `Cardano`.  Each ledger era has its own
-CDDL spec which you can find
+their identifiers.  We use parametric polymorphism in the implementation which
+is not present in CDDL.  For this reason we use \texttt{any} in our CDDL specifications.
+If you want to find concrete instatiations of these types in by `Cardano` you
+will need to consult
+\href{https://github.com/input-output-hk/cardano-ledger}{cardano-ledger} and
+\href{https://github.com/input-output-hk/ouroboros-consensus}{ouroboros-consensus}.
+Each ledger era has its own CDDL spec which you can find
 \href{https://github.com/input-output-hk/cardano-ledger#cardano-ledger}{here}.
 Note that there's also the hard fork combinator (HFC) which allows us to
-combine multiple eras into a single blockchain.  It affects how things are
-encoded across different eras.  Currently this is not properly documented (see
+combine multiple eras into a single blockchain.  It affects how many of the
+data types are encoded across different eras.  Currently this is not properly
+documented (see
 \href{https://github.com/input-output-hk/ouroboros-consensus/issues/7}{issue
-\#7}). In the mean time we can only offer informal advise: things are encoded as
-tuples (length 2 lists), where the first element is a zero based index of an
-era while the second item represents the data from that era (e.g. block,
-transaction, etc).
+\#7}). In the meantime we can only offer informal advise: data is encoded
+as tuples (length 2 lists), where the first element is a zero based index of an
+era while the second item is the era dependent encoding.
 
 \section{Dummy Protocols}
 Dummy protocols are only used for testing and are not needed either for
@@ -449,7 +452,7 @@ and the protocol parameters as value.
 The handshake protocol requires that the version numbers ( i.e. the keys) in the version table are unique
 and appear in ascending order.
 (Note, that CDDL is not expressive enough to precisely specify that requirement on the keys of the CBOR
-table. Therefor the CDDL-specification uses a table with keys from 1 to 4 as an example.)
+table. Therefore the CDDL-specification uses a table with keys from 1 to 4 as an example.)
 
 In a run of the handshake mini protocol the peers exchange only two messages:
 The client requests to connect with a \MsgProposeVersions{} message that contains information about
@@ -529,7 +532,7 @@ following sense:
 \end{description}
 Note that the above condition guarantees that if either side returns
 \texttt{Accept} then the connection will not be closed by the remote end.
-A weaker condition, in which the returns values are equal if they both return
+A weaker condition, in which the return values are equal if they both return
 \texttt{Accept}, does not guarantee this property.  We also verify that the
 whole Handshake protocol, not just the \texttt{acceptable} satisfies the above
 property, see
@@ -562,7 +565,7 @@ In most recent versions of Handshake negotiated node-to-node version data has
 one more parameter: Peer Sharing willingness information. This is a flag that
 can be globally configured by the node, to let others know if a particular node
 wants to participate or not in Peer Sharing. This addition breaks the symmetry
-of \texttt{acceptable} since, upon negotiatin handshake, each node keeps the
+of \texttt{acceptable} since, upon negotiating handshake, each node keeps the
 remote side value of the Peer Sharing flag. This can be solved by making
 \texttt{acceptable} symmetric modulo peer sharing flag.
 
@@ -604,7 +607,7 @@ client protocol.
 The chain synchronisation protocol is used by a block chain consumer
 to replicate the producer's block chain locally.
 A node communicates with several upstream and downstream nodes
-and runs an independent client instance and a independent server instance for every
+and runs an independent client instance and an independent server instance for every
 other node it communicates with.
 (See Figure~\ref{node-diagram-concurrency}.)
 
@@ -667,10 +670,10 @@ The protocol uses the following messages:
       Ask the producer to try to find an improved intersection point between
       the consumer and producer's chains.
       The consumer sends a sequence {\boldmath $\langle point \rangle $} which
-      shall be ordered by perference (e.g. points with highest slot number
+      shall be ordered by preference (e.g. points with highest slot number
       first) and it is up to the producer to find the first intersection point
       on its chain and send it back to the consumer.  If an empty list of
-      points is send with \MsgFindIntersect{} the server will reply with
+      points is sent with \MsgFindIntersect{} the server will reply with
       \MsgIntersectNotFound{}.
 \item [\MsgIntersectFound{} {\boldmath $(point_{intersect} ,tip)$}]
       The producer replies with the first point of the request that is on his current chain.
@@ -712,7 +715,7 @@ The protocol uses the following messages:
 \hide{The trade-offs between the robustness and efficiency of possible chain-sync protocols are
 discussed in Section~\ref{chain-sync-discussion}.
 }
-This section describes a state-full implementation of a chain producer that is suitable for a setting where
+This section describes a stateful implementation of a chain producer that is suitable for a setting where
 the producer cannot trust the chain consumer.
 An important requirement in this setting
 is that a chain consumer must never be able to cause excessive resource use on the producer side.
@@ -985,7 +988,7 @@ against resource consumption attacks from the other side.  The local
 transaction submission protocol, which is used when the server trusts a local
 client, is described in Section \ref{local-tx-submission-protocol}.
 
-The version 2 is used by version 6 an higher of node-to-node protocol.
+The version 2 is used by version 6 and higher of node-to-node protocol.
 \subsubsection{State machine}
 
 \begin{figure}[h]
@@ -1096,13 +1099,13 @@ never exceeds the protocol limit and aborts the connection if a request violates
 The consumer can request any batch of transactions from the current FIFO in any order.
 Note however, that the reply will omit any transactions that have become invalid in the meantime.
 (More precisely the server will omit invalid transactions from the reply but they will still be counted in the FIFO
-size and they still require a acknowledgement from the consumer).
+size and they still require an acknowledgement from the consumer).
 
 The protocol supports blocking and non-blocking requests for new transactions ids.
 If the FIFO is empty the consumer must use a blocking request
 otherwise a non-blocking request.
 The producer must reply immediately (i.e. within a small timeout) to a non-blocking request.
-It replies with not more then the requested number of ids (possible with an empty list).
+It replies with not more than the requested number of ids (possible with an empty list).
 A blocking request on the other side, waits until at least one transaction is available.
 
 \section{Keep Alive Mini Protocol}
@@ -1164,7 +1167,7 @@ measurements.
 \subsection{Description}
 The local transaction submission mini protocol is used by local clients,
 for example wallets or CLI tools, to submit transactions to a local node.
-The protocol is {\bf not} used to forward transactions from one core node to an other.
+The protocol is {\bf not} used to forward transactions from one core node to another.
 The protocol for the transfer of transactions between full nodes
 is described in Section \ref{tx-submission-protocol2}.
 
@@ -1373,7 +1376,7 @@ from the Known Peer set according to the following constraints:
   \item Pick peers that have a public willingness information (e.g. \texttt{PeerSharingPublic}).
 \end{itemize}
 
-If a peer has \texttt{NoPeerSharing} flag value do not do not ask it for peers. This peer
+If a peer has \texttt{NoPeerSharing} flag value do not ask it for peers. This peer
 won't even have the Peer Sharing miniprotocol server running.
 
 If a given peer has \texttt{PeerSharingPublic} and \texttt{DoNotAdvertise} flags enabled
@@ -1418,7 +1421,7 @@ The MUX/DEMUX layer also provides a fixed size buffer between the egress of DEMU
 of mini protocol thread.
 The size of this buffer is a protocol parameter that determines how many messages
 a client can send before waiting for a reply from the server (see Section~\ref{mux-flow-control}).
-The protocol requires that a client must never cause a overrun of these buffers on a server node.
+The protocol requires that a client must never cause an overrun of these buffers on a server node.
 If a message arrives at the server that would cause the buffer to overrun,
 the server treats this case as a protocol violation of the peer
 (and closes the connection to the peer).

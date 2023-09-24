@@ -269,7 +269,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                         <> debugIOErrorRethrowPolicy))
           (\_ -> HandshakeFailure)
           (InResponderMode inbgovInfoChannel)
-          (InResponderMode outgovInfoChannel)
+          (InResponderMode $ Just outgovInfoChannel)
       $ \connectionManager -> do
             serverAddr <- Snocket.getLocalAddr snocket socket
             withAsync

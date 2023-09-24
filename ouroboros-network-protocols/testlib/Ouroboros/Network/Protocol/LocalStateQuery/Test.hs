@@ -11,7 +11,7 @@
 module Ouroboros.Network.Protocol.LocalStateQuery.Test
   ( tests
   , codec
-  , Query (..)
+  , AnyMessageAndAgencyWithResult (..)
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -83,6 +83,18 @@ tests =
 --
 -- Common types & clients and servers used in the tests in this module.
 --
+
+data QueryWithResult query result where
+    QueryWithResult :: query result
+                    -> result
+                    -> QueryWithResult query result
+  deriving Show
+
+instance ( Arbitrary (query result)
+         , Arbitrary result
+         )
+      => Arbitrary (QueryWithResult query result) where
+    arbitrary = QueryWithResult <$> arbitrary <*> arbitrary
 
 data Query result where
   QueryPoint :: Query (Maybe (Point Block))
@@ -238,26 +250,45 @@ instance Arbitrary AcquireFailure where
 instance Arbitrary (Query (Maybe (Point Block))) where
   arbitrary = pure QueryPoint
 
-instance Arbitrary (AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)) where
-  arbitrary = oneof
-    [ getAnyMessageAndAgencyV7 <$> arbitrary
-
-    , pure $ AnyMessageAndAgency (ClientAgency TokIdle)
-        (MsgAcquire Nothing)
-
-    , pure $ AnyMessageAndAgency (ClientAgency TokAcquired)
-        (MsgReAcquire Nothing)
-    ]
-
--- Newtype wrapper which generates only valid data for 'NodeToClientV7' protocol.
+-- | A newtype wrapper which captures type of response generated for all
+-- queries.
 --
-newtype AnyMessageAndAgencyV7 = AnyMessageAndAgencyV7 {
-    getAnyMessageAndAgencyV7
-      :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+-- Note that this is not as general as the protocol allows, since the protocol
+-- admits different result for different queries.
+--
+newtype AnyMessageAndAgencyWithResult block point query result = AnyMessageAndAgencyWithResult {
+    getAnyMessageAndAgencyWithResult :: AnyMessageAndAgency (LocalStateQuery block point query)
   }
   deriving Show
 
-instance Arbitrary AnyMessageAndAgencyV7 where
+instance ( Arbitrary point
+         , Arbitrary (query result)
+         , Arbitrary result
+         )
+      => Arbitrary (AnyMessageAndAgencyWithResult block point query result) where
+      arbitrary = oneof
+        [ AnyMessageAndAgencyWithResult . getAnyMessageAndAgencyV7 <$> (arbitrary :: Gen (AnyMessageAndAgencyV7 block point query result))
+
+        , pure $ AnyMessageAndAgencyWithResult $ AnyMessageAndAgency (ClientAgency TokIdle)
+            (MsgAcquire Nothing)
+
+        , pure $ AnyMessageAndAgencyWithResult $ AnyMessageAndAgency (ClientAgency TokAcquired)
+            (MsgReAcquire Nothing)
+        ]
+
+-- Newtype wrapper which generates only valid data for 'NodeToClientV7' protocol.
+--
+newtype AnyMessageAndAgencyV7 block point query result = AnyMessageAndAgencyV7 {
+    getAnyMessageAndAgencyV7
+      :: AnyMessageAndAgency (LocalStateQuery block point query)
+  }
+  deriving Show
+
+instance ( Arbitrary point
+         , Arbitrary (query result)
+         , Arbitrary result
+         )
+      => Arbitrary (AnyMessageAndAgencyV7 block point query result) where
   arbitrary = AnyMessageAndAgencyV7 <$> oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
         (MsgAcquire . Just <$> arbitrary)
@@ -269,10 +300,12 @@ instance Arbitrary AnyMessageAndAgencyV7 where
         (MsgFailure <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgQuery <$> (arbitrary :: Gen (Query (Maybe (Point Block)))))
+        (MsgQuery <$> (arbitrary :: Gen (query result)))
 
-    , AnyMessageAndAgency (ServerAgency (TokQuerying QueryPoint)) <$>
-        (MsgResult QueryPoint <$> arbitrary)
+    , (\(QueryWithResult query result) ->
+        AnyMessageAndAgency (ServerAgency (TokQuerying query))
+                            (MsgResult query result))
+      <$> (arbitrary :: Gen (QueryWithResult query result))
 
     , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
         pure MsgRelease
@@ -348,36 +381,36 @@ codec =
 -- | Check the codec round trip property.
 --
 prop_codec
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Bool
-prop_codec msg =
+prop_codec (AnyMessageAndAgencyWithResult msg) =
   runST (prop_codecM codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
 prop_codec_splits2
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Bool
-prop_codec_splits2 msg =
+prop_codec_splits2 (AnyMessageAndAgencyWithResult msg) =
   runST (prop_codec_splitsM splits2 codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
 prop_codec_splits3
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Bool
-prop_codec_splits3 msg =
+prop_codec_splits3 (AnyMessageAndAgencyWithResult msg) =
   runST (prop_codec_splitsM splits3 codec msg)
 
 prop_codec_cbor
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Bool
-prop_codec_cbor msg =
+prop_codec_cbor (AnyMessageAndAgencyWithResult msg) =
   runST (prop_codec_cborM codec msg)
 
 -- | Check that the encoder produces a valid CBOR.
 --
 prop_codec_valid_cbor
-  :: AnyMessageAndAgency (LocalStateQuery Block (Point Block) Query)
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Property
-prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
+prop_codec_valid_cbor (AnyMessageAndAgencyWithResult msg) = prop_codec_valid_cbor_encoding codec msg

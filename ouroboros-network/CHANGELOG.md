@@ -6,6 +6,23 @@
 
 ### Non-breaking changes
 
+* Less aggresive churning of established and known peers.
+* Add peer sharing to wireshark dissector.
+
+- Fix diffusion tests
+
+## 0.9.1.0 -- 2023-08-22
+
+### Breaking changes
+
+* Removes `updatePeerSharing` from `KnownPeers` module API
+
+### Non-breaking changes
+
+* Disable light peer sharing if peer sharing is not enabled.
+* Do not use light peer sharing in `node-to-client` case (which leads to a memory leak).
+* Split `test` component into `io-tests` and `sim-tests`.
+
 ## 0.9.0.0 -- 2023-08-09
 
 ### Breaking changes

@@ -674,7 +674,6 @@ runM Interfaces
       withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
-        localOutInfoChannel <- newInformationChannel
         localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
 
         let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
@@ -726,7 +725,7 @@ runM Interfaces
           localConnectionHandler
           classifyHandleError
           (InResponderMode localInbInfoChannel)
-          (InResponderMode localOutInfoChannel)
+          (InResponderMode Nothing)
           $ \localConnectionManager-> do
             --
             -- run local server
@@ -894,7 +893,9 @@ runM Interfaces
                        peerSharingRng)))
                 classifyHandleError
                 (InResponderMode inbndInfoChannel)
-                (InResponderMode outbndInfoChannel)
+                (if daOwnPeerSharing /= NoPeerSharing
+                   then InResponderMode (Just outbndInfoChannel)
+                   else InResponderMode Nothing)
 
       --
       -- peer state actions

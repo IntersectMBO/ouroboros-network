@@ -45,7 +45,7 @@ jobs:
           libtool
           make
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: "Configure cabal.project.local"
       run: |
@@ -97,26 +97,41 @@ jobs:
     # Test network packages
 
     - name: ntp-client [test]
-      run: cabal run ntp-client:test
+      run: cabal run ntp-client:test -- +RTS -maxN2 -RTS
+
+    - name: monoidal-synchronisation [test]
+      run: cabal run monoidal-synchronisation:test -- +RTS -maxN2 -RTS
 
     - name: network-mux [test]
+      # TODO: issue #4635 to enable `+RTS -N`
       run: cabal run network-mux:test
 
     - name: ourobors-network-testing [test]
-      run: cabal run ouroboros-network-testing:test
+      run: cabal run ouroboros-network-testing:test -- +RTS -maxN2 -RTS
 
-    - name: ourobors-network-framework [test]
-      run: cabal run ouroboros-network-framework:test
+    - name: ourobors-network-framework [io-tests]
+      # TODO: enable `+RTS -N`
+      run: cabal run ouroboros-network-framework:io-tests
+
+    - name: ourobors-network-framework [sim-tests]
+      if: runner.os != 'Windows'
+      run: cabal run ouroboros-network-framework:sim-tests -- +RTS -maxN2 -RTS
+
+    # TODO: run CDDL
 
     - name: ouroboros-network-protocols [test]
-      run: cabal run ouroboros-network-protocols:test
+      run: cabal run ouroboros-network-protocols:test -- +RTS -maxN2 -RTS
 
     # We don't run cddl in GitHub actions (only on Hydra).
     # - name: ouroboros-network-protocols [cddl]
     #   run: cabal run ouroboros-network-protocols-test:cddl
 
-    - name: ouroboros-network [test]
-      run: cabal run ouroboros-network:test
+    - name: ouroboros-network [io-tests]
+      run: cabal run ouroboros-network:io-tests -- +RTS -maxN2 -RTS
+
+    - name: ouroboros-network [sim-tests]
+      if: runner.os != 'Windows'
+      run: cabal run ouroboros-network:sim-tests -- +RTS -maxN2 -RTS
 
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and
