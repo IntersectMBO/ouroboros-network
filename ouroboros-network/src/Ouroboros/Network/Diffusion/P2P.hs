@@ -64,14 +64,14 @@ import qualified Network.Socket as Socket
 import           Network.Mux as Mx (MakeBearer)
 
 import           Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
-                     LocalSocket (..), Snocket,
-                     localSocketFileDescriptor, makeLocalBearer,
-                     makeSocketBearer)
+                     LocalSocket (..), Snocket, localSocketFileDescriptor,
+                     makeLocalBearer, makeSocketBearer)
 import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.Context (ExpandedInitiatorContext,ResponderContext)
+import           Ouroboros.Network.Context (ExpandedInitiatorContext,
+                     ResponderContext)
 import           Ouroboros.Network.Protocol.Handshake
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -105,9 +105,8 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
                      PeerSelectionCounters (..), PublicPeerSelectionState (..),
                      TracePeerSelection (..), emptyPublicPeerSelectionState)
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (UseLedgerAfter (..), NumberOfPeers, LedgerPeersKind,
-                      withLedgerPeers)
+import           Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind,
+                     NumberOfPeers, UseLedgerAfter (..), withLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSelectionActions
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -750,7 +749,7 @@ runM Interfaces
 
 
     -- | mkRemoteThread - create remote connection manager
-        
+
     mkRemoteThread :: ThreadId m -> m Void
     mkRemoteThread mainThreadId = do
       let
@@ -806,9 +805,9 @@ runM Interfaces
       --       - are used in Part (b),
       --       - handle the plumbing of tracers, and
       --       - capture commonalities between the two cases.
-      -- 
+      --
       --    - Part (b): capturing the major control-flow of runM:
-      --      in particular, two different case alternatives in which is captured 
+      --      in particular, two different case alternatives in which is captured
       --      the monadic flow of the program stripped down to its essence:
       ---     ```
       --       <setup...>
@@ -817,9 +816,9 @@ runM Interfaces
       --         InitiatorAndResponderDiffusionMode -> ...
       --      ```
 
-      -- 
+      --
       -- Part (a): plumb data flow and define common functions
-      -- 
+      --
 
       let connectionManagerArguments'
             :: forall handle handleError.
@@ -848,7 +847,7 @@ runM Interfaces
                 cmGetPeerSharing      = diNtnPeerSharing
               }
 
-      let makeConnectionHandler' 
+      let makeConnectionHandler'
             :: forall muxMode socket initiatorCtx responderCtx b c.
                SingMuxMode muxMode
             -> Versions ntnVersion ntnVersionData
@@ -880,7 +879,7 @@ runM Interfaces
               classifyHandleError
               NotInResponderMode
               NotInResponderMode
-              
+
           withConnectionManagerInitiatorAndResponderMode
             inbndInfoChannel outbndInfoChannel observableStateVar =
               withConnectionManager
@@ -903,7 +902,7 @@ runM Interfaces
       -- Peer state actions run a job pool in the background which
       -- tracks threads forked by 'PeerStateActions'
       --
-          
+
       let -- | parameterized version of 'withPeerStateActions'
           withPeerStateActions'
             :: forall (muxMode :: MuxMode) responderCtx socket b c.
@@ -920,7 +919,7 @@ runM Interfaces
                 -> m c)
             -> m c
           withPeerStateActions' connectionManager =
-            withPeerStateActions           
+            withPeerStateActions
               PeerStateActionsArguments {
                     spsTracer = dtPeerSelectionActionsTracer,
                     spsDeactivateTimeout = Diffusion.Policies.deactivateTimeout,
@@ -985,7 +984,7 @@ runM Interfaces
 
       --
       -- The peer churn governor:
-      -- 
+      --
       let peerChurnGovernor' = Governor.peerChurnGovernor
                                  dtTracePeerSelectionTracer
                                  daDeadlineChurnInterval
@@ -996,10 +995,10 @@ runM Interfaces
                                  daBlockFetchMode
                                  daPeerSelectionTargets
                                  peerSelectionTargetsVar
-                                 
+
       --
       -- Two functions only used in InitiatorAndResponder mode
-      --  
+      --
       let
           -- create sockets
           withSockets' f =
@@ -1012,7 +1011,7 @@ runM Interfaces
                 ]
               )
               f
-              
+
           -- run server
           serverRun' sockets connectionManager inboundInfoChannel observableStateVar =
             Server.run
@@ -1031,7 +1030,7 @@ runM Interfaces
 
       --
       -- Part (b): capturing the major control-flow of runM:
-      -- 
+      --
       withLedgerPeers
         ledgerPeersRng
         diNtnToPeerAddr
