@@ -22,8 +22,6 @@
   from are a subset of the `PeerSelectionState` used to analyze them.
   - This is non-breaking because it reflects the current reality of how peers
     are chosen from `PeerSelectionState`.
-* Pushed an error down from `peerSelectionGovernorLoop` into `guardedDecisions`
-  - This is the more logical source/home of the error.
 * Restructured `txSubmissionOutbound` to prevent an impossible case and
   eliminate the associated error.
 

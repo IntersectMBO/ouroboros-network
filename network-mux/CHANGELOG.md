@@ -15,8 +15,6 @@
 * `asserts` cabal flag was removed, one can use `ghc-options` directly
 * Restructured `step` to prevent an impossible case and eliminate the associated
   `error`.
-* Use `template-haskell-2.18.0.0`
-  - Promoted `sampleInterval`'s failure mode from runtime to compile time.
 * Restructured `setupDispatchTable` to prevent an impossible case and eliminate
   the associated error.
 
