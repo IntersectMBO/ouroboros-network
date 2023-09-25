@@ -1,10 +1,13 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Cardano.Network.Ping
   ( PingOpts(..)
@@ -25,14 +28,17 @@ import           Control.Concurrent.Class.MonadSTM.Strict ( MonadSTM(atomically)
 import           Control.Monad.Class.MonadTime.SI (UTCTime, diffTime, MonadMonotonicTime(getMonotonicTime), MonadTime(getCurrentTime), Time)
 import           Control.Monad.Trans.Except
 import           Control.Tracer (Tracer (..), nullTracer, traceWith)
-import           Data.Aeson (Value, ToJSON(toJSON), object, encode, KeyValue((.=)))
+import           Data.Aeson (Value, ToJSON(toJSON, toJSONList), object, encode, KeyValue((.=)))
+import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Bits (clearBit, setBit, testBit)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Maybe (fromMaybe,)
 import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean, quantile, stddev, TDigest)
 import           Data.Text (unpack)
+import           Data.Time (DiffTime)
 import           Data.Time.Format.ISO8601 (iso8601Show)
 import           Data.Word (Word16, Word32)
+import           GHC.Generics
 import           Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
 import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerial)
 import           Network.Mux.Types (MuxSDUHeader(MuxSDUHeader, mhTimestamp, mhDir, mhLength, mhNum), MiniProtocolNum(..), MiniProtocolDir(InitiatorDir), MuxBearer(read, write), MuxSDU(..), RemoteClockModel(RemoteClockModel))
@@ -47,6 +53,8 @@ import qualified Control.Monad.Class.MonadTimer.SI as MT
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Char8 as LBS.Char
 import qualified Data.List as L
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.IO as TL
 import qualified Network.Socket as Socket
 import qualified System.IO as IO
 
@@ -83,6 +91,7 @@ nodeToClientVersionBit = 15
 
 data LogMsg = LogMsg ByteString
             | LogEnd
+            deriving Show
 
 logger :: StrictTMVar IO LogMsg -> Bool -> Bool -> IO ()
 logger msgQueue json query = go True
@@ -124,7 +133,9 @@ supportedNodeToClientVersions magic =
   ]
 
 data InitiatorOnly = InitiatorOnly | InitiatorAndResponder
-  deriving (Eq, Ord, Show, Bounded)
+  deriving (Eq, Ord, Show, Bounded, Generic)
+
+instance ToJSON InitiatorOnly
 
 modeToBool :: InitiatorOnly -> Bool
 modeToBool InitiatorOnly = True
@@ -156,6 +167,33 @@ data NodeVersion
   | NodeToNodeVersionV11   Word32 InitiatorOnly
   | NodeToNodeVersionV12   Word32 InitiatorOnly
   deriving (Eq, Ord, Show)
+
+instance ToJSON NodeVersion where
+  toJSON nv =
+    object $ case nv of
+      NodeToClientVersionV9  m -> go2 "NodeToClientVersionV9" m
+      NodeToClientVersionV10 m -> go2 "NodeToClientVersionV10" m
+      NodeToClientVersionV11 m -> go2 "NodeToClientVersionV11" m
+      NodeToClientVersionV12 m -> go2 "NodeToClientVersionV12" m
+      NodeToClientVersionV13 m -> go2 "NodeToClientVersionV13" m
+      NodeToClientVersionV14 m -> go2 "NodeToClientVersionV14" m
+      NodeToClientVersionV15 m -> go2 "NodeToClientVersionV15" m
+      NodeToClientVersionV16 m -> go2 "NodeToClientVersionV16" m
+      NodeToNodeVersionV1    m -> go2 "NodeToNodeVersionV1" m
+      NodeToNodeVersionV2    m -> go2 "NodeToNodeVersionV2" m
+      NodeToNodeVersionV3    m -> go2 "NodeToNodeVersionV3" m
+      NodeToNodeVersionV4    m i -> go3 "NodeToNodeVersionV4" m i
+      NodeToNodeVersionV5    m i -> go3 "NodeToNodeVersionV5" m i
+      NodeToNodeVersionV6    m i -> go3 "NodeToNodeVersionV6" m i
+      NodeToNodeVersionV7    m i -> go3 "NodeToNodeVersionV7" m i
+      NodeToNodeVersionV8    m i -> go3 "NodeToNodeVersionV8" m i
+      NodeToNodeVersionV9    m i -> go3 "NodeToNodeVersionV9" m i
+      NodeToNodeVersionV10   m i -> go3 "NodeToNodeVersionV10" m i
+      NodeToNodeVersionV11   m i -> go3 "NodeToNodeVersionV11" m i
+      NodeToNodeVersionV12   m i -> go3 "NodeToNodeVersionV12" m i
+      where
+        go2 (version :: String) magic = ["version" .= version, "magic" .= magic]
+        go3 version magic initiator = go2 version magic <> ["initiator" .= toJSON initiator]
 
 keepAliveReqEnc :: NodeVersion -> Word16 -> CBOR.Encoding
 keepAliveReqEnc v cookie | v >= NodeToNodeVersionV7 minBound minBound =
@@ -491,13 +529,14 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
     Socket.connect sd (Socket.addrAddress peer)
     !t0_e <- getMonotonicTime
     peerStr <- peerString
-    unless pingOptsQuiet $ printf "%s network rtt: %.3f\n" peerStr $ toSample t0_e t0_s
+    let peerStr' = TL.pack peerStr
+    unless pingOptsQuiet $ TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showNetworkRtt $ toSample t0_e t0_s)
 
     bearer <- getBearer makeSocketBearer sduTimeout nullTracer sd
 
     !t1_s <- write bearer timeoutfn $ wrap handshakeNum InitiatorDir (handshakeReq versions pingOptsHandshakeQuery)
     (msg, !t1_e) <- nextMsg bearer timeoutfn handshakeNum
-    unless pingOptsQuiet $ printf "%s handshake rtt: %s\n" peerStr (show $ diffTime t1_e t1_s)
+    unless pingOptsQuiet $ TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showHandshakeRtt $ diffTime t1_e t1_s)
 
     case CBOR.deserialiseFromBytes handshakeDec msg of
       Left err -> eprint $ printf "%s Decoding error: %s" peerStr (show err)
@@ -517,10 +556,10 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
                   || (    pingOptsHandshakeQuery && not querySupported)) $
               -- print the negotiated version iff not quiet or querying but, query
               -- is not supported by the remote host.
-              printf "%s Negotiated version %s\n" peerStr (show version)
+              TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showNegotiatedVersion version)
             when (pingOptsHandshakeQuery && querySupported) $
               -- print query results if it was supported by the remote side
-              printf "%s Queried versions %s\n" peerStr (show recVersions)
+              TL.hPutStrLn IO.stdout $ peerStr' <> " " <> (showQueriedVersions recVersions)
             when (not pingOptsHandshakeQuery && not isUnixSocket) $ do
               keepAlive bearer timeoutfn peerStr version (tdigest []) 0
               -- send terminating message
@@ -538,6 +577,30 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
       case intersects of
           [] -> Left $ "No overlapping versions with " <> show versions
           vs -> Right $ foldr1 max vs
+
+    showNetworkRtt :: Double -> TL.Text
+    showNetworkRtt rtt =
+      if pingOptsJson
+        then encodeToLazyText $ object ["network_rtt" .= toJSON rtt]
+        else TL.pack $ printf "network rtt: %.3f" rtt
+
+    showHandshakeRtt :: DiffTime -> TL.Text
+    showHandshakeRtt diff =
+      if pingOptsJson
+        then encodeToLazyText $ object ["handshake_rtt" .= toJSON ((fromRational $ toRational diff) :: Double)]
+        else TL.pack $ printf "handshake rtt: %s" $ show diff
+
+    showNegotiatedVersion :: NodeVersion -> TL.Text
+    showNegotiatedVersion version =
+      if pingOptsJson
+        then encodeToLazyText $ object ["negotiated_version" .= toJSON version]
+        else TL.pack $ printf "Negotiated version %s" (show version)
+
+    showQueriedVersions :: [NodeVersion] -> TL.Text
+    showQueriedVersions recVersions =
+      if pingOptsJson
+        then encodeToLazyText $ object ["queried_versions" .= toJSONList recVersions]
+        else TL.pack $ printf "Queried versions %s" (show recVersions)
 
     isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
     isSameVersionAndMagic v1 v2 = extract v1 == extract v2
