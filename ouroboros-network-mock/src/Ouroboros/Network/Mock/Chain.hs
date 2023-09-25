@@ -225,6 +225,12 @@ rollback p (c :> b) | blockPoint b == p = Just (c :> b)
 rollback p Genesis  | p == genesisPoint = Just Genesis
                     | otherwise         = Nothing
 
+-- | A 'Just' result holds the provided point's successor block. A 'Nothing'
+-- result means the provided point was the tip.
+--
+-- The function will error if the point is not on the chain - callers can use
+-- 'pointOnChain' to check point membership on a chain in advance of calling
+-- this function.
 successorBlock :: HasHeader block => Point block -> Chain block -> Maybe block
 successorBlock p c0 | headPoint c0 == p = Nothing
 successorBlock p c0 = go c0
