@@ -67,14 +67,12 @@ encodeRemoteAddress (SockAddrInet pn w) = CBOR.encodeListLen 3
                            <> CBOR.encodeWord 0
                            <> CBOR.encodeWord32 w
                            <> encodePortNumber pn
-encodeRemoteAddress (SockAddrInet6 pn fi (w1, w2, w3, w4) si) = CBOR.encodeListLen 8
+encodeRemoteAddress (SockAddrInet6 pn _ (w1, w2, w3, w4) _) = CBOR.encodeListLen 6
                                                 <> CBOR.encodeWord 1
                                                 <> CBOR.encodeWord32 w1
                                                 <> CBOR.encodeWord32 w2
                                                 <> CBOR.encodeWord32 w3
                                                 <> CBOR.encodeWord32 w4
-                                                <> CBOR.encodeWord32 fi
-                                                <> CBOR.encodeWord32 si
                                                 <> encodePortNumber pn
 encodeRemoteAddress (SockAddrUnix _) = error "Should never be encoding a SockAddrUnix!"
 
@@ -97,8 +95,6 @@ decodeRemoteAddress = do
       w2 <- CBOR.decodeWord32
       w3 <- CBOR.decodeWord32
       w4 <- CBOR.decodeWord32
-      fi <- CBOR.decodeWord32
-      si <- CBOR.decodeWord32
       pn <- decodePortNumber
-      return (SockAddrInet6 pn fi (w1, w2, w3, w4) si)
+      return (SockAddrInet6 pn 0 (w1, w2, w3, w4) 0)
     _ -> fail ("Serialise.decode.SockAddr unexpected tok " ++ show tok)

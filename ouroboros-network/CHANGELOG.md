@@ -7,6 +7,7 @@
 ### Non-breaking changes
 
 * Update types to accommodate `PeerSharing` data type changes.
+* Fix PeerSharing IPv6 enc/decoding
 
 ## 0.9.2.0 -- 2023-10-26
 
