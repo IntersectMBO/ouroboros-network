@@ -16,8 +16,9 @@ import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
 import Cardano.KESAgent.Util.RefCounting ( CRef )
 import Cardano.KESAgent.Util.RetrySocket ( retrySocket )
+import Cardano.KESAgent.Serialization.Spec ( HasSerInfo )
 
-import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..) )
+import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..), SignKeyKES )
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Snocket (..) )
@@ -59,6 +60,7 @@ runServiceClientForever :: forall c m fd addr
                          . MonadKES m c
                         => MonadMVar m
                         => Show addr
+                        => HasSerInfo (SignKeyKES (KES c))
                         => Proxy c
                         -> MakeRawBearer m fd
                         -> ServiceClientOptions m fd addr
@@ -76,6 +78,7 @@ runServiceClient :: forall c m fd addr
                   . MonadKES m c
                  => MonadMVar m
                  => Show addr
+                 => HasSerInfo (SignKeyKES (KES c))
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr

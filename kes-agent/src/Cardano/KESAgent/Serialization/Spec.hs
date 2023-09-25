@@ -43,6 +43,7 @@ import Cardano.Crypto.KES.Class
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.KES.Simple
+import Cardano.Crypto.KES.Mock
 import Cardano.Crypto.Libsodium.Hash.Class
 import Cardano.Crypto.Hash.Class
 import Ouroboros.Network.RawBearer ( RawBearer (..) )
@@ -50,6 +51,7 @@ import Ouroboros.Network.RawBearer ( RawBearer (..) )
 import Control.Monad ( void, unless, when, replicateM, zipWithM_ )
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
+import Control.Concurrent.Class.MonadMVar
 import Control.Monad.Class.MonadThrow ( MonadThrow, throwIO, catch )
 import Control.Monad.Trans ( lift )
 import Data.ByteString (ByteString)
@@ -72,6 +74,9 @@ import GHC.TypeLits ( KnownNat, Nat, natVal, type (+), type (*) )
 import Language.Haskell.TH
 import Text.Printf
 import Data.Char
+import Control.Tracer ( nullTracer )
+
+-- * 'FieldInfo' and related types
 
 data FieldInfo
   = BasicField BasicFieldInfo
@@ -187,51 +192,7 @@ shortFieldType (AliasField fi) = aliasFieldName fi
 formatPath :: [String] -> String
 formatPath = intercalate "." . reverse
 
-resolveSizeScopes :: Map String [String] -> FieldSize -> FieldSize
-resolveSizeScopes env (VarSize name) =
-  let name' = maybe name formatPath $ Map.lookup name env
-  in VarSize name'
-resolveSizeScopes env (BinopSize op a b) =
-  BinopSize op (resolveSizeScopes env a) (resolveSizeScopes env b)
-resolveSizeScopes env (RangeSize a b) =
-  RangeSize (resolveSizeScopes env a) (resolveSizeScopes env b)
-resolveSizeScopes _ x = x
-
-fieldSize :: FieldInfo -> FieldSize
-fieldSize = fieldSizeScoped [] mempty
-
-fieldSizeScoped :: [String] -> Map String [String] -> FieldInfo -> FieldSize
-fieldSizeScoped path env (AliasField info) =
-  fieldSizeScoped path env (aliasFieldTarget info)
-fieldSizeScoped path env (BasicField info) =
-  resolveSizeScopes env (basicFieldSize info)
-fieldSizeScoped path env (EnumField info) =
-  FixedSize 2
-fieldSizeScoped path env (CompoundField info) =
-  let env' = foldl' (\e sfi -> Map.insert (subfieldName sfi) (subfieldName sfi : path) e) env (compoundFieldSubfields info)
-      qualifiedSubfieldSizes sfi =
-        let path' = subfieldName sfi : path
-            env'' = Map.insert (subfieldName sfi) path' env'
-        in
-          fieldSizeScoped path' env'' (subfieldInfo sfi)
-  in
-    case map qualifiedSubfieldSizes (compoundFieldSubfields info) of
-      [] -> FixedSize 0
-      (x:xs) -> simplifyFieldSize $ foldl' (BinopSize FSPlus) x xs
-fieldSizeScoped path env (ListField info) =
-  let elemSize = maybe UnknownSize FixedSize $
-                  knownSize
-                    (fieldSizeScoped path env (listElemInfo info))
-  in
-    simplifyFieldSize $
-      BinopSize FSMul (listSize info) elemSize
-fieldSizeScoped path env (ChoiceField info) =
-  case map (fieldSizeScoped path env) (choiceFieldAlternatives info) of
-    [] -> FixedSize 0
-    (x:xs) -> let max = foldl' (BinopSize FSMax) x xs
-                  min = foldl' (BinopSize FSMin) x xs
-              in simplifyFieldSize (RangeSize min max)
-  
+-- * Field sizes
 
 data FieldSize
   = FixedSize !Int
@@ -321,12 +282,63 @@ simplifyFieldSize (BinopSize op a b) =
       _ -> BinopSize op a' b'
 simplifyFieldSize x = x
 
+resolveSizeScopes :: Map String [String] -> FieldSize -> FieldSize
+resolveSizeScopes env (VarSize name) =
+  let name' = maybe name formatPath $ Map.lookup name env
+  in VarSize name'
+resolveSizeScopes env (BinopSize op a b) =
+  BinopSize op (resolveSizeScopes env a) (resolveSizeScopes env b)
+resolveSizeScopes env (RangeSize a b) =
+  RangeSize (resolveSizeScopes env a) (resolveSizeScopes env b)
+resolveSizeScopes _ x = x
+
+fieldSize :: FieldInfo -> FieldSize
+fieldSize = fieldSizeScoped [] mempty
+
+fieldSizeScoped :: [String] -> Map String [String] -> FieldInfo -> FieldSize
+fieldSizeScoped path env (AliasField info) =
+  fieldSizeScoped path env (aliasFieldTarget info)
+fieldSizeScoped path env (BasicField info) =
+  resolveSizeScopes env (basicFieldSize info)
+fieldSizeScoped path env (EnumField info) =
+  FixedSize 2
+fieldSizeScoped path env (CompoundField info) =
+  let env' = foldl' (\e sfi -> Map.insert (subfieldName sfi) (subfieldName sfi : path) e) env (compoundFieldSubfields info)
+      qualifiedSubfieldSizes sfi =
+        let path' = subfieldName sfi : path
+            env'' = Map.insert (subfieldName sfi) path' env'
+        in
+          fieldSizeScoped path' env'' (subfieldInfo sfi)
+  in
+    case map qualifiedSubfieldSizes (compoundFieldSubfields info) of
+      [] -> FixedSize 0
+      (x:xs) -> simplifyFieldSize $ foldl' (BinopSize FSPlus) x xs
+fieldSizeScoped path env (ListField info) =
+  let elemSize = maybe UnknownSize FixedSize $
+                  knownSize
+                    (fieldSizeScoped path env (listElemInfo info))
+  in
+    simplifyFieldSize $
+      BinopSize FSMul (listSize info) elemSize
+fieldSizeScoped path env (ChoiceField info) =
+  case map (fieldSizeScoped path env) (choiceFieldAlternatives info) of
+    [] -> FixedSize 0
+    (x:xs) -> let max = foldl' (BinopSize FSMax) x xs
+                  min = foldl' (BinopSize FSMin) x xs
+              in simplifyFieldSize (RangeSize min max)
+
+-- * Typeclasses
+
 class HasSerInfo a where
   info :: Proxy a -> FieldInfo
 
 class HasSerInfo a => IsSerItem m a where
   sendItem :: RawBearer m -> a -> m ()
   receiveItem :: RawBearer m -> ReadResultT m a
+
+-- * Instances for basic types
+
+-- ** Unit
 
 instance HasSerInfo () where
   info _ = basicField "void" $ FixedSize 0
@@ -335,61 +347,65 @@ instance Monad m => IsSerItem m () where
   sendItem s () = return ()
   receiveItem s = return ()
 
+-- ** Int types
+
 instance HasSerInfo Int8 where
   info _ = basicField "int8" $ FixedSize 1
-  
+
 instance (MonadThrow m, MonadST m) => IsSerItem m Int8 where
   sendItem = sendInt8
   receiveItem s = ReadResultT $ receiveInt8 s
 
 instance HasSerInfo Int16 where
   info _ = basicField "int16BE" $ FixedSize 2
-  
+
 instance (MonadThrow m, MonadST m) => IsSerItem m Int16 where
   sendItem = sendInt16
   receiveItem s = ReadResultT $ receiveInt16 s
 
 instance HasSerInfo Int32 where
   info _ = basicField "int32BE" $ FixedSize 4
-  
+
 instance (MonadThrow m, MonadST m) => IsSerItem m Int32 where
   sendItem = sendInt32
   receiveItem s = ReadResultT $ receiveInt32 s
 
 instance HasSerInfo Int64 where
   info _ = basicField "int64BE" $ FixedSize 8
-  
+
 instance (MonadThrow m, MonadST m) => IsSerItem m Int64 where
   sendItem = sendInt64
   receiveItem s = ReadResultT $ receiveInt64 s
 
 instance HasSerInfo Word8 where
   info _ = basicField "word8" $ FixedSize 1
-  
+
 instance (MonadThrow m, MonadST m) => IsSerItem m Word8 where
   sendItem = sendWord8
   receiveItem s = ReadResultT $ receiveWord8 s
 
 instance HasSerInfo Word16 where
   info _ = basicField "word16BE" $ FixedSize 2
-  
+
 instance (MonadThrow m, MonadST m) => IsSerItem m Word16 where
   sendItem = sendWord16
   receiveItem s = ReadResultT $ receiveWord16 s
 
 instance HasSerInfo Word32 where
   info _ = basicField "word32BE" $ FixedSize 4
-  
+
 instance (MonadThrow m, MonadST m) => IsSerItem m Word32 where
   sendItem = sendWord32
   receiveItem s = ReadResultT $ receiveWord32 s
 
 instance HasSerInfo Word64 where
   info _ = basicField "word64BE" $ FixedSize 8
-  
+
 instance (MonadThrow m, MonadST m) => IsSerItem m Word64 where
   sendItem = sendWord64
   receiveItem s = ReadResultT $ receiveWord64 s
+
+-- ** 'UTCTime'
 
 instance HasSerInfo UTCTime where
   info _ = aliasField "POSIXSeconds"
@@ -399,8 +415,85 @@ instance (MonadThrow m, MonadST m) => IsSerItem m UTCTime where
   sendItem = sendUTCTime
   receiveItem = ReadResultT . receiveUTCTime
 
+-- ** 'Bool'
+
+instance HasSerInfo Bool where
+  info _ = basicField "Bool" (FixedSize 1)
+
+instance (MonadThrow m, MonadST m) => IsSerItem m Bool where
+  sendItem s False = sendWord8 s 0
+  sendItem s True = sendWord8 s 1
+
+  receiveItem s = do
+    n <- ReadResultT (receiveWord8 s)
+    case n of
+      0 -> return False
+      1 -> return True
+      n -> ReadResultT . return $ ReadMalformed "Bool"
+
+instance HasSerInfo a => HasSerInfo (Maybe a) where
+  info _ =
+    compoundField
+      ("Maybe " ++ shortFieldType (info (Proxy @a)))
+      [ ("isJust", info (Proxy @Bool))
+      , ("value",
+          choiceField
+            (IndexField "isJust")
+            [ info (Proxy @())
+            , info (Proxy @a)
+            ]
+        )
+      ]
+
+instance (MonadThrow m, MonadST m, IsSerItem m a) => IsSerItem m (Maybe a) where
+  sendItem s Nothing =
+    sendItem s False
+  sendItem s (Just x) = do
+    sendItem s True
+    sendItem s x
+
+  receiveItem s = do
+    just <- receiveItem s
+    if just then do
+      Just <$> receiveItem s
+    else
+      return Nothing
+
+-- ** Newtype wrappers for known- and unknown-sized collections
+
 newtype Sized (len :: Nat) a = Sized { unSized :: a }
   deriving newtype (Show, Eq)
+
+newtype VariableSized a = VariableSized { unVariableSized :: a }
+  deriving newtype (Show, Read, Eq, Ord)
+
+-- ** Newtype wrapper for enums
+
+newtype ViaEnum a = ViaEnum { viaEnum :: a }
+
+instance (Typeable a, Show a, Enum a, Bounded a) => HasSerInfo (ViaEnum a) where
+  info _ =
+    enumField
+      (typeName $ Proxy @a)
+      (map show [minBound .. maxBound :: a])
+
+typeName :: Typeable a => Proxy a -> String
+typeName = tyConName . typeRepTyCon . typeRep
+
+instance (MonadThrow m, MonadST m, Typeable a, Show a, Enum a, Bounded a) => IsSerItem m (ViaEnum a) where
+  sendItem s (ViaEnum x) =
+    sendItem s (fromIntegral (fromEnum x) :: Word16)
+
+  receiveItem s = do
+    nw :: Word16 <- receiveItem s
+    let n = fromIntegral nw
+    if n < fromEnum (minBound :: a) ||
+       n > fromEnum (maxBound :: a) then
+      ReadResultT $ return (ReadMalformed (typeName (Proxy @a)))
+    else
+      return (ViaEnum $ toEnum n)
+
+-- ** 'ByteString'
 
 instance (KnownNat len) => HasSerInfo (Sized len ByteString) where
   info _ =
@@ -416,9 +509,6 @@ instance (MonadThrow m, MonadST m, KnownNat len) => IsSerItem m (Sized len ByteS
   receiveItem s = do
     let n = fromIntegral $ natVal (Proxy @len)
     Sized <$> ReadResultT (receiveBS s (fromIntegral n))
-
-newtype VariableSized a = VariableSized { unVariableSized :: a }
-  deriving newtype (Show, Read, Eq, Ord)
 
 instance HasSerInfo (VariableSized ByteString) where
   info _ =
@@ -437,6 +527,8 @@ instance (MonadThrow m, MonadST m) => IsSerItem m (VariableSized ByteString) whe
     len <- ReadResultT (receiveWord32 s)
     VariableSized <$> ReadResultT (receiveBS s (fromIntegral len))
 
+-- ** 'Text'
+
 instance HasSerInfo Text where
   info _ =
     compoundField "UTF8"
@@ -453,6 +545,8 @@ instance (MonadThrow m, MonadST m) => IsSerItem m Text where
   receiveItem s = do
     len <- ReadResultT (receiveWord32 s)
     decodeUtf8 <$> ReadResultT (receiveBS s (fromIntegral len))
+
+-- ** Lists
 
 instance HasSerInfo a => HasSerInfo [a] where
   info _ =
@@ -475,14 +569,7 @@ instance (MonadThrow m, MonadST m, IsSerItem m a) => IsSerItem m [a] where
     len <- ReadResultT (receiveWord32 s)
     replicateM (fromIntegral len) (receiveItem s)
 
-instance ( DSIGNAlgorithm dsign
-         ) => HasSerInfo (SignKeyDSIGN dsign) where
-   info _ =
-     aliasField
-       ("SignKeyDSIGN<" ++ algorithmNameDSIGN (Proxy @dsign) ++ ">")
-       $ basicField
-          "bytes"
-          (FixedSize . fromIntegral $ sizeSignKeyDSIGN (Proxy @dsign))
+-- ** 'SodiumHashAlgorithm'
 
 instance ( SodiumHashAlgorithm h
          , HashAlgorithm h
@@ -493,35 +580,67 @@ instance ( SodiumHashAlgorithm h
             "bytes"
             (FixedSize . fromIntegral $ sizeHash (Proxy @h))
 
+-- ** DSIGN
+
+instance ( DSIGNAlgorithm dsign ) => HasSerInfo (VerKeyDSIGN dsign) where
+    info _ =
+      aliasField ("VerKeyDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
+        $ basicField
+            "bytes"
+            (FixedSize . fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
+
+instance ( MonadST m
+         , MonadSTM m
+         , MonadThrow m
+         , DSIGNAlgorithm dsign
+         ) => IsSerItem m (VerKeyDSIGN dsign) where
+    sendItem s val =
+      sendItem s (Sized (rawSerialiseVerKeyDSIGN val) :: Sized (SizeVerKeyDSIGN dsign) ByteString)
+
+    receiveItem s = do
+      sized <- receiveItem s
+      let deser = rawDeserialiseVerKeyDSIGN $ unSized (sized :: Sized (SizeVerKeyDSIGN dsign) ByteString)
+      case deser of
+        Nothing -> ReadResultT . return $ ReadMalformed "Invalid serialised VerKeyDSIGN"
+        Just vk -> return vk
+
 instance ( DSIGNAlgorithm dsign
-         , KESAlgorithm (SingleKES dsign)
-         , HasSerInfo (SignKeyDSIGN dsign)
-         ) => HasSerInfo (SignKeyKES (SingleKES dsign)) where
+         ) => HasSerInfo (SignKeyDSIGN dsign) where
    info _ =
      aliasField
-        ("SignKeyKES<" ++ algorithmNameKES (Proxy @(SingleKES dsign)) ++ ">")
-        (info (Proxy @(SignKeyDSIGN dsign)))
+       ("SignKeyDSIGN<" ++ algorithmNameDSIGN (Proxy @dsign) ++ ">")
+       $ basicField
+          "bytes"
+          (FixedSize . fromIntegral $ sizeSignKeyDSIGN (Proxy @dsign))
 
-instance ( SodiumHashAlgorithm h
-         , KESAlgorithm kes
-         , HasSerInfo (SignKeyKES kes)
-         , HasSerInfo (VerKeyKES kes)
-         , SizeHash h ~ SeedSizeKES kes
-         , KnownNat (SizeSignKeyKES kes)
-         , KnownNat (SizeVerKeyKES kes)
-         , KnownNat (SeedSizeKES kes)
-         , KnownNat ((SizeSignKeyKES kes + SeedSizeKES kes) + (2 * SizeVerKeyKES kes))
-         , KnownNat (SizeSigKES kes + (SizeVerKeyKES kes * 2))
-         , forall a. HasSerInfo (Hash h a)
-         ) => HasSerInfo (SignKeyKES (SumKES h kes)) where
-   info _ =
-     compoundField
-        ("SignKeyKES<" ++ algorithmNameKES (Proxy @(SumKES h kes)) ++ ">")
-        [ ("sk", info (Proxy @(SignKeyKES kes)))
-        , ("seed", basicField "bytes" (FixedSize (fromIntegral $ seedSizeKES (Proxy @kes))))
-        , ("vk0", info (Proxy @(VerKeyKES kes)))
-        , ("vk1", info (Proxy @(VerKeyKES kes)))
-        ]
+instance ( MonadST m
+         , MonadSTM m
+         , MonadThrow m
+         , DSIGNAlgorithm dsign
+         ) => IsSerItem m (SignKeyDSIGN dsign) where
+    sendItem s val =
+      sendItem s (Sized (rawSerialiseSignKeyDSIGN val) :: Sized (SizeSignKeyDSIGN dsign) ByteString)
+
+    receiveItem s = do
+      sized <- receiveItem s
+      let deser = rawDeserialiseSignKeyDSIGN $ unSized (sized :: Sized (SizeSignKeyDSIGN dsign) ByteString)
+      case deser of
+        Nothing -> ReadResultT . return $ ReadMalformed "Invalid serialised SignKeyDSIGN"
+        Just vk -> return vk
+
+instance HasSerInfo (SigDSIGN d) => HasSerInfo (SignedDSIGN d a) where
+  info _ =
+    info (Proxy @(SigDSIGN d))
+
+instance (Monad m, IsSerItem m (SigDSIGN d)) => IsSerItem m (SignedDSIGN d a) where
+  sendItem s (SignedDSIGN sig) = sendItem s sig
+  receiveItem s = SignedDSIGN <$> receiveItem s
+
+
+-- ** KES
+-- We use the same actual ser/deser code for all KES algorithms, but the
+-- 'HasSerInfo' implementations are different, in order to reflect the actual
+-- data structures.
 
 instance ( MonadSTM m
          , MonadThrow m
@@ -548,26 +667,6 @@ instance ( MonadSTM m
         )
       return $ ReadOK sk
 
-
-instance ( DSIGNAlgorithm dsign
-         , KESAlgorithm (SingleKES dsign)
-         ) => HasSerInfo (VerKeyKES (SingleKES dsign)) where
-    info _ =
-      aliasField
-        ("VerKeyKES<" ++ algorithmNameKES (Proxy @(SingleKES dsign)) ++ ">")
-        (info (Proxy @(VerKeyDSIGN dsign)))
-
-instance ( HashAlgorithm h
-         , SodiumHashAlgorithm h
-         , KESAlgorithm kes
-         , KESAlgorithm (SumKES h kes)
-         ) => HasSerInfo (VerKeyKES (SumKES h kes)) where
-    info _ =
-      aliasField
-        ("VerKeyKES<" ++ algorithmNameKES (Proxy @(SumKES h kes)) ++ ">")
-        (info (Proxy @(Hash h (VerKeyKES kes, VerKeyKES kes))))
-
-
 instance ( MonadST m
          , MonadSTM m
          , MonadThrow m
@@ -584,6 +683,84 @@ instance ( MonadST m
         Nothing -> ReadResultT . return $ ReadMalformed "Invalid serialised VerKeyKES"
         Just vk -> return vk
 
+-- *** 'MockKES'
+
+instance ( KnownNat t
+         , KESAlgorithm (MockKES t)
+         , HasSerInfo (SignKeyKES (MockKES t))
+         ) => HasSerInfo (VerKeyKES (MockKES t)) where
+    info _ =
+      aliasField
+        ("VerKeyKES<" ++ algorithmNameKES (Proxy @(MockKES t)) ++ ">")
+        (info (Proxy @Word64))
+
+
+instance ( KnownNat t
+         , KESAlgorithm (MockKES t)
+         ) => HasSerInfo (SignKeyKES (MockKES t)) where
+   info _ =
+     compoundField
+        ("SignKeyKES<" ++ algorithmNameKES (Proxy @(MockKES t)) ++ ">")
+        [ ("verKey", info (Proxy @(VerKeyKES (MockKES t))))
+        , ("period", info (Proxy @Word64))
+        ]
+
+-- *** 'SingleKES'
+
+instance ( DSIGNAlgorithm dsign
+         , KESAlgorithm (SingleKES dsign)
+         ) => HasSerInfo (VerKeyKES (SingleKES dsign)) where
+    info _ =
+      aliasField
+        ("VerKeyKES<" ++ algorithmNameKES (Proxy @(SingleKES dsign)) ++ ">")
+        (info (Proxy @(VerKeyDSIGN dsign)))
+
+
+instance ( DSIGNAlgorithm dsign
+         , KESAlgorithm (SingleKES dsign)
+         , HasSerInfo (SignKeyDSIGN dsign)
+         ) => HasSerInfo (SignKeyKES (SingleKES dsign)) where
+   info _ =
+     aliasField
+        ("SignKeyKES<" ++ algorithmNameKES (Proxy @(SingleKES dsign)) ++ ">")
+        (info (Proxy @(SignKeyDSIGN dsign)))
+
+-- *** 'SumKES'
+
+instance ( HashAlgorithm h
+         , SodiumHashAlgorithm h
+         , KESAlgorithm kes
+         , KESAlgorithm (SumKES h kes)
+         ) => HasSerInfo (VerKeyKES (SumKES h kes)) where
+    info _ =
+      aliasField
+        ("VerKeyKES<" ++ algorithmNameKES (Proxy @(SumKES h kes)) ++ ">")
+        (info (Proxy @(Hash h (VerKeyKES kes, VerKeyKES kes))))
+
+
+instance ( SodiumHashAlgorithm h
+         , KESAlgorithm kes
+         , HasSerInfo (SignKeyKES kes)
+         , HasSerInfo (VerKeyKES kes)
+         , SizeHash h ~ SeedSizeKES kes
+         , KnownNat (SizeSignKeyKES kes)
+         , KnownNat (SizeVerKeyKES kes)
+         , KnownNat (SeedSizeKES kes)
+         , KnownNat ((SizeSignKeyKES kes + SeedSizeKES kes) + (2 * SizeVerKeyKES kes))
+         , KnownNat (SizeSigKES kes + (SizeVerKeyKES kes * 2))
+         , forall a. HasSerInfo (Hash h a)
+         ) => HasSerInfo (SignKeyKES (SumKES h kes)) where
+   info _ =
+     compoundField
+        ("SignKeyKES<" ++ algorithmNameKES (Proxy @(SumKES h kes)) ++ ">")
+        [ ("sk", info (Proxy @(SignKeyKES kes)))
+        , ("seed", basicField "bytes" (FixedSize (fromIntegral $ seedSizeKES (Proxy @kes))))
+        , ("vk0", info (Proxy @(VerKeyKES kes)))
+        , ("vk1", info (Proxy @(VerKeyKES kes)))
+        ]
+
+-- ** 'KESPeriod'
+
 instance HasSerInfo KESPeriod where
   info _ = info (Proxy @Word64)
 
@@ -592,6 +769,32 @@ instance (MonadThrow m, MonadST m) => IsSerItem m KESPeriod where
     sendItem s (fromIntegral p :: Word64)
   receiveItem s =
     KESPeriod . (fromIntegral @Word64) <$> receiveItem s
+
+-- ** 'SignKeyWithPeriodKES'
+
+instance (KESAlgorithm kes, HasSerInfo (SignKeyKES kes))
+          => HasSerInfo (SignKeyWithPeriodKES kes) where
+  info _ =
+    compoundField
+      ("SignKeyWithPeriodKES " ++ algorithmNameKES (Proxy @kes))
+      [ ("signKey", info (Proxy @(SignKeyKES kes)))
+      , ("period", info (Proxy @Period))
+      ]
+
+instance ( MonadThrow m
+         , MonadST m
+         , KESAlgorithm kes
+         , IsSerItem m (SignKeyKES kes)
+         )
+         => IsSerItem m (SignKeyWithPeriodKES kes) where
+  sendItem s skp = do
+    sendItem s (skWithoutPeriodKES skp)
+    sendItem s (periodKES skp)
+
+  receiveItem s =
+    SignKeyWithPeriodKES <$> receiveItem s <*> receiveItem s
+
+-- ** 'OCert'
 
 instance ( Crypto c , Typeable c) => HasSerInfo (OCert c) where
     info _ =
@@ -608,19 +811,7 @@ instance ( MonadThrow m, MonadST m, Crypto c , Typeable c) => IsSerItem m (OCert
     receiveItem s =
       unsafeDeserialize' . unVariableSized <$> receiveItem s
 
-instance HasSerInfo a => HasSerInfo (CRef m a) where
-  info (p :: proxy (CRef m a)) = info (Proxy @a)
-
-class ToCRef m a where
-  toCRef :: a -> m (CRef m a)
-
-instance (MonadThrow m, MonadSTM m, ToCRef m a, IsSerItem m a) => IsSerItem m (CRef m a) where
-  sendItem s var = withCRefValue var $ sendItem s
-  receiveItem s = receiveItem s >>= lift . toCRef
-
-instance (MonadThrow m, MonadSTM m, MonadST m, KESAlgorithm kes)
-          => ToCRef m (SignKeyWithPeriodKES kes) where
-  toCRef = newCRef (forgetSignKeyKES . skWithoutPeriodKES)
+-- ** 'Period'
 
 instance HasSerInfo Period where
   info _ = basicField "Period" (FixedSize 32)
@@ -629,9 +820,82 @@ instance (MonadThrow m, MonadST m) => IsSerItem m Period where
   sendItem s = sendWord32 s . fromIntegral
   receiveItem s = fromIntegral <$> (receiveItem s :: ReadResultT m Word32)
 
-tyVarName :: TyVarBndr a -> Name
-tyVarName (PlainTV n _) = n
-tyVarName (KindedTV n _ _) = n
+-- ** 'Bundle'
+
+instance ( HasSerInfo (SignKeyKES (KES c))
+         , Typeable c
+         , Crypto c
+         , KESAlgorithm (KES c)
+         )
+         => HasSerInfo (Bundle m c) where
+  info _ =
+    compoundField
+      ("Bundle " ++ algorithmNameKES (Proxy @(KES c)) ++ " " ++ algorithmNameDSIGN (Proxy @(DSIGN c)))
+      [ ("signKeyWithPeriod", info (Proxy @(SignKeyWithPeriodKES (KES c))))
+      , ("ocert", info (Proxy @(OCert c)))
+      ]
+
+instance ( MonadThrow m
+         , MonadST m
+         , MonadSTM m
+         , MonadMVar m
+         , IsSerItem m (SignKeyKES (KES c))
+         , DirectSerialise m (SignKeyKES (KES c))
+         , DirectDeserialise m (SignKeyKES (KES c))
+         , Typeable c
+         , Crypto c
+         , KESAlgorithm (KES c)
+         )
+         => IsSerItem m (Bundle m c) where
+    sendItem s bundle = do
+      sendSKP s (bundleSKP bundle)
+      sendItem s (bundleOC bundle)
+
+    receiveItem s = do
+      skp <- ReadResultT $ receiveSKP s nullTracer
+      oc <- receiveItem s
+      return Bundle
+        { bundleSKP = skp
+        , bundleOC = oc
+        }
+
+
+instance ( DSIGNAlgorithm dsign ) => HasSerInfo (SigDSIGN dsign) where
+    info _ =
+      aliasField
+        ("SigDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
+        $ basicField
+            "bytes"
+            (FixedSize . fromIntegral $ sizeSigDSIGN (Proxy @dsign))
+instance ( MonadST m
+         , MonadSTM m
+         , MonadThrow m
+         , DSIGNAlgorithm dsign
+         ) => IsSerItem m (SigDSIGN dsign) where
+    sendItem s val =
+      sendItem s (Sized (rawSerialiseSigDSIGN val) :: Sized (SizeSigDSIGN dsign) ByteString)
+
+    receiveItem s = do
+      sized <- receiveItem s
+      let deser = rawDeserialiseSigDSIGN $ unSized (sized :: Sized (SizeSigDSIGN dsign) ByteString)
+      case deser of
+        Nothing -> ReadResultT . return $ ReadMalformed "Invalid serialised SigDSIGN"
+        Just vk -> return vk
+
+
+-- ** 'RecvResult'
+
+deriving via (ViaEnum RecvResult)
+  instance HasSerInfo RecvResult
+
+deriving via (ViaEnum RecvResult)
+  instance
+    ( forall x y. Coercible x y => Coercible (m x) (m y)
+    , MonadThrow m
+    , MonadST m
+    ) => IsSerItem m RecvResult
+
+-- * Deriving 'HasSerInfo' and 'IsSerItem' with Template Haskell
 
 strippedFieldName :: Name -> Name -> String
 strippedFieldName tyName fieldName =
@@ -696,14 +960,6 @@ deriveHasSerInfo typeName = do
     x ->
       error . show $ x
 
--- <$> :: (a -> b) -> f a -> f b
--- <*> :: f (a -> b) -> f a -> f b
-foldApplicative :: ExpQ -> [ExpQ] -> ExpQ
-foldApplicative initial [] = [| pure $initial |]
-foldApplicative initial [x] = [| $initial <$> $x |]
-foldApplicative initial (x:xs) =
-  foldl (\y x -> [| $y <*> $x |]) [| $initial <$> $x |] xs
-
 -- | Derive 'IsSerItem' for a record type that must be qualified with a type
 -- argument that has a 'Crypto' instance, and whose associated 'KES' and
 -- 'DSIGN' types have 'KESAlgorithm' and 'DSIGNAlgorithm' instances,
@@ -713,7 +969,7 @@ deriveIsSerItemWithCrypto typeName = do
   reify typeName >>= \case
     TyConI (DataD [] tyName tyVars Nothing [RecC conName fields] []) -> do
       let tyParamE = varT . tyVarName . head $ tyVars
-      [d| instance 
+      [d| instance
               ( KESAlgorithm (KES $tyParamE)
               , DSIGNAlgorithm (DSIGN $tyParamE)
               , HasSerInfo (VerKeyKES (KES $tyParamE))
@@ -775,185 +1031,17 @@ deriveSerWithCrypto typeName =
   (++) <$> deriveHasSerInfoWithCrypto typeName
        <*> deriveIsSerItemWithCrypto typeName
 
-instance (KESAlgorithm kes, HasSerInfo (SignKeyKES kes))
-          => HasSerInfo (SignKeyWithPeriodKES kes) where
-  info _ =
-    compoundField
-      ("SignKeyWithPeriodKES " ++ algorithmNameKES (Proxy @kes))
-      [ ("signKey", info (Proxy @(SignKeyKES kes)))
-      , ("period", info (Proxy @Period))
-      ]
+-- <$> :: (a -> b) -> f a -> f b
+-- <*> :: f (a -> b) -> f a -> f b
+foldApplicative :: ExpQ -> [ExpQ] -> ExpQ
+foldApplicative initial [] = [| pure $initial |]
+foldApplicative initial [x] = [| $initial <$> $x |]
+foldApplicative initial (x:xs) =
+  foldl (\y x -> [| $y <*> $x |]) [| $initial <$> $x |] xs
 
-instance ( MonadThrow m
-         , MonadST m
-         , KESAlgorithm kes
-         , IsSerItem m (SignKeyKES kes)
-         )
-         => IsSerItem m (SignKeyWithPeriodKES kes) where
-  sendItem s skp = do
-    sendItem s (skWithoutPeriodKES skp)
-    sendItem s (periodKES skp)
-
-  receiveItem s =
-    SignKeyWithPeriodKES <$> receiveItem s <*> receiveItem s
-
-instance ( HasSerInfo (SignKeyKES (KES c))
-         , Typeable c
-         , Crypto c
-         , KESAlgorithm (KES c)
-         )
-         => HasSerInfo (Bundle m c) where
-  info _ =
-    compoundField
-      ("Bundle " ++ algorithmNameKES (Proxy @(KES c)) ++ " " ++ algorithmNameDSIGN (Proxy @(DSIGN c)))
-      [ ("signKeyWithPeriod", info (Proxy @(CRef m (SignKeyWithPeriodKES (KES c)))))
-      , ("ocert", info (Proxy @(OCert c)))
-      ]
-
-instance ( DSIGNAlgorithm dsign ) => HasSerInfo (SigDSIGN dsign) where
-    info _ =
-      aliasField
-        ("SigDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
-        $ basicField
-            "bytes"
-            (FixedSize . fromIntegral $ sizeSigDSIGN (Proxy @dsign))
-instance ( MonadST m
-         , MonadSTM m
-         , MonadThrow m
-         , DSIGNAlgorithm dsign
-         ) => IsSerItem m (SigDSIGN dsign) where
-    sendItem s val =
-      sendItem s (Sized (rawSerialiseSigDSIGN val) :: Sized (SizeSigDSIGN dsign) ByteString)
-
-    receiveItem s = do
-      sized <- receiveItem s
-      let deser = rawDeserialiseSigDSIGN $ unSized (sized :: Sized (SizeSigDSIGN dsign) ByteString)
-      case deser of
-        Nothing -> ReadResultT . return $ ReadMalformed "Invalid serialised SigDSIGN"
-        Just vk -> return vk
-
-
-instance ( DSIGNAlgorithm dsign ) => HasSerInfo (VerKeyDSIGN dsign) where
-    info _ =
-      aliasField ("VerKeyDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
-        $ basicField
-            "bytes"
-            (FixedSize . fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
-
-instance ( MonadST m
-         , MonadSTM m
-         , MonadThrow m
-         , DSIGNAlgorithm dsign
-         ) => IsSerItem m (VerKeyDSIGN dsign) where
-    sendItem s val =
-      sendItem s (Sized (rawSerialiseVerKeyDSIGN val) :: Sized (SizeVerKeyDSIGN dsign) ByteString)
-
-    receiveItem s = do
-      sized <- receiveItem s
-      let deser = rawDeserialiseVerKeyDSIGN $ unSized (sized :: Sized (SizeVerKeyDSIGN dsign) ByteString)
-      case deser of
-        Nothing -> ReadResultT . return $ ReadMalformed "Invalid serialised VerKeyDSIGN"
-        Just vk -> return vk
-
-instance ( MonadThrow m
-         , MonadST m
-         , MonadSTM m
-         , IsSerItem m (SignKeyKES (KES c))
-         , Typeable c
-         , Crypto c
-         , KESAlgorithm (KES c)
-         )
-         => IsSerItem m (Bundle m c) where
-    sendItem s bundle = do
-      sendItem s (bundleSKP bundle)
-      sendItem s (bundleOC bundle)
-
-    receiveItem s =
-      Bundle <$> receiveItem s <*> receiveItem s
-
-newtype ViaEnum a = ViaEnum { viaEnum :: a }
-
-instance (Typeable a, Show a, Enum a, Bounded a) => HasSerInfo (ViaEnum a) where
-  info _ =
-    enumField
-      (tyConName . typeRepTyCon . typeRep $ Proxy @a)
-      (map show [minBound .. maxBound :: a])
-
-typeName :: Typeable a => Proxy a -> String
-typeName = tyConName . typeRepTyCon . typeRep
-
-instance (MonadThrow m, MonadST m, Typeable a, Show a, Enum a, Bounded a) => IsSerItem m (ViaEnum a) where
-  sendItem s (ViaEnum x) =
-    sendItem s (fromIntegral (fromEnum x) :: Word16)
-
-  receiveItem s = do
-    nw :: Word16 <- receiveItem s
-    let n = fromIntegral nw
-    if n < fromEnum (minBound :: a) ||
-       n > fromEnum (maxBound :: a) then
-      ReadResultT $ return (ReadMalformed (typeName (Proxy @a)))
-    else
-      return (ViaEnum $ toEnum n)
-
-instance HasSerInfo (SigDSIGN d) => HasSerInfo (SignedDSIGN d a) where
-  info _ =
-    info (Proxy @(SigDSIGN d))
-
-instance (Monad m, IsSerItem m (SigDSIGN d)) => IsSerItem m (SignedDSIGN d a) where
-  sendItem s (SignedDSIGN sig) = sendItem s sig
-  receiveItem s = SignedDSIGN <$> receiveItem s
-
-instance HasSerInfo Bool where
-  info _ = basicField "Bool" (FixedSize 1)
-
-instance (MonadThrow m, MonadST m) => IsSerItem m Bool where
-  sendItem s False = sendWord8 s 0
-  sendItem s True = sendWord8 s 1
-
-  receiveItem s = do
-    n <- ReadResultT (receiveWord8 s)
-    case n of
-      0 -> return False
-      1 -> return True
-      n -> ReadResultT . return $ ReadMalformed "Bool"
-
-deriving via (ViaEnum RecvResult)
-  instance HasSerInfo RecvResult
-
-deriving via (ViaEnum RecvResult)
-  instance
-    ( forall x y. Coercible x y => Coercible (m x) (m y)
-    , MonadThrow m
-    , MonadST m
-    ) => IsSerItem m RecvResult
-
-instance HasSerInfo a => HasSerInfo (Maybe a) where
-  info _ =
-    compoundField
-      ("Maybe " ++ shortFieldType (info (Proxy @a)))
-      [ ("isJust", info (Proxy @Bool))
-      , ("value",
-          choiceField
-            (IndexField "isJust")
-            [ info (Proxy @())
-            , info (Proxy @a)
-            ]
-        )
-      ]
-
-instance (MonadThrow m, MonadST m, IsSerItem m a) => IsSerItem m (Maybe a) where
-  sendItem s Nothing =
-    sendItem s False
-  sendItem s (Just x) = do
-    sendItem s True
-    sendItem s x
-
-  receiveItem s = do
-    just <- receiveItem s
-    if just then do
-      Just <$> receiveItem s
-    else
-      return Nothing
+tyVarName :: TyVarBndr a -> Name
+tyVarName (PlainTV n _) = n
+tyVarName (KindedTV n _ _) = n
 
 printSpec :: FieldInfo -> IO ()
 printSpec =
@@ -1010,7 +1098,7 @@ printSpec =
           printIndent indent
           putStrLn $ "CHOOSE BY: " ++ formatChoiceCondition (choiceCondition cfi)
           zipWithM_ (printChoice $ succ indent) [0,1..] (choiceFieldAlternatives cfi)
-          
+
         _ ->
           return ()
 

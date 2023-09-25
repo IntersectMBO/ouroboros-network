@@ -599,12 +599,13 @@ withAgentAndService controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action
 
 withAgent :: FilePath -> FilePath -> [FilePath] -> FilePath -> IO a -> IO ([Text.Text], a)
 withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action =
-  withSpawnProcess "kes-agent" args $ \_ (Just hOut) _ ph -> go hOut ph
+  withSpawnProcess "kes-agent" args $ \_ (Just hOut) (Just hErr) ph -> go hOut hErr ph
   where
-    go hOut ph = do
+    go hOut hErr ph = do
         result <- (Right <$> action) `catch` handler
         terminateProcess ph
         outT <- Text.lines <$> Text.hGetContents hOut
+        errT <- Text.lines <$> Text.hGetContents hErr
         case result of
           Right retval ->
             return (outT, retval)
@@ -612,6 +613,8 @@ withAgent controlAddr serviceAddr bootstrapAddrs coldVerKeyFile action =
             let msg' = (Text.unpack . Text.unlines $
                           ["--- AGENT TRACE ---"] ++
                           outT ++
+                          ["--- AGENT STDERR ---"] ++
+                          errT ++
                           ["--- END OF AGENT TRACE ---"]
                        ) ++
                        msg

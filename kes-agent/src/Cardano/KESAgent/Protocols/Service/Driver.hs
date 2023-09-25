@@ -21,6 +21,7 @@ import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.RawUtil
+import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -139,6 +140,7 @@ serviceDriver :: forall c m f t p
               => Typeable c
               => VersionedProtocol (ServiceProtocol m c)
               => KESAlgorithm (KES c)
+              => HasSerInfo (SignKeyKES (KES c))
               => DirectDeserialise m (SignKeyKES (KES c))
               => DirectSerialise m (SignKeyKES (KES c))
               => MonadThrow m
@@ -159,7 +161,7 @@ serviceDriver s tracer = Driver
 
       (ServerAgency TokIdle, KeyMessage bundle) -> do
         traceWith tracer $ ServiceDriverSendingKey (ocertN (bundleOC bundle))
-        sendBundle s bundle
+        sendItem s bundle
         traceWith tracer $ ServiceDriverSentKey (ocertN (bundleOC bundle))
 
       (ServerAgency TokIdle, ServerDisconnectMessage) -> do
@@ -195,7 +197,7 @@ serviceDriver s tracer = Driver
       (ServerAgency TokIdle) -> do
         result <- runReadResultT $ do
           lift $ traceWith tracer ServiceDriverReceivingKey
-          bundle <- ReadResultT $ receiveBundle s (ServiceDriverMisc >$< tracer)
+          bundle <- receiveItem s
           lift $ traceWith tracer $ ServiceDriverReceivedKey (ocertN (bundleOC bundle))
           return (SomeMessage (KeyMessage bundle), ())
         case result of

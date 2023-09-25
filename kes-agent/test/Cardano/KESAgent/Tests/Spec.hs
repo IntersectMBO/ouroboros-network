@@ -12,21 +12,27 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Cardano.KESAgent.Tests.Spec
 where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.Control.Driver
 import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Serialization.Spec
+import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Crypto.DSIGN.Class
+import Cardano.Crypto.DSIGN.Class hiding (Signable)
+import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.KES.Class
+import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
 import Cardano.Crypto.Seed (mkSeedFromBytes)
 import Ouroboros.Network.RawBearer
@@ -39,6 +45,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
 import qualified Data.Aeson as JSON
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS8
 import Data.Coerce
 import Data.Int
 import Data.Proxy
@@ -56,6 +63,7 @@ import Test.Tasty.QuickCheck
 import Foreign.Marshal (copyBytes, allocaBytes)
 import Foreign.Ptr (castPtr)
 import GHC.TypeNats (KnownNat, natVal)
+import System.IO.Unsafe (unsafePerformIO)
 
 data SomeRecord =
   SomeRecord
@@ -115,26 +123,62 @@ tests = testGroup "Spec ser"
   , testSpec (Proxy @SomeRecord) "SomeRecord"
   , testSpec (Proxy @SomeEnum) "SomeEnum"
   , testSpecMk "UTCTime" (return . posixSecondsToUTCTime . fromIntegral :: Int -> IO UTCTime)
-  , testSpecMk "VerKeyKES" mkVerKeyKES
-  , testSpecMk "ColdVerKey" mkColdVerKey
   , testSpecMk "Text" (return . Text.pack)
   , testSpecMk "Sized 10 ByteString" (mkSizedBS @10)
   , testSpecMk "VariableSized ByteString" (return . VariableSized . BS.pack)
   , testSpec (Proxy @SomeRecord) "SomeRecord"
-  , testSpecMk "KeyInfo" mkKeyInfo
-  , testSpecMk "BootstrapInfo" (return . mkBootstrapInfo)
-  , testSpecMk "BundleInfo" mkBundleInfo
-  , testSpecMk "Maybe BundleInfo" (fmap Just . mkBundleInfo)
-  , testSpecMk "Maybe KeyInfo" (fmap Just . mkKeyInfo)
-  , testSpecMk "[BootstrapInfo]" (return . map mkBootstrapInfo)
-  , testSpecMk "Nothing :: Maybe BundleInfo" (\(i :: Int) -> return (Nothing :: Maybe (BundleInfo StandardCrypto)))
-  , testSpecMk "AgentInfo" mkAgentInfo
   , testSpecMk "Command" (return . mkEnum :: Int -> IO Command)
   , testSpecMk "RecvResult" (return . mkEnum :: Int -> IO RecvResult)
+  , testSpecMk "BootstrapInfo" (return . mkBootstrapInfo)
+  , testSpecMk "[BootstrapInfo]" (return . map mkBootstrapInfo)
+  , testSpecCrypto (Proxy @MockCrypto)
+  , testSpecCrypto (Proxy @StandardCrypto)
   ]
 
-withSignKeyKES :: (SignKeyKES (KES StandardCrypto) -> IO a)
-               -> PinnedSizedBytes (SeedSizeKES (KES StandardCrypto))
+testSpecCrypto :: forall c.
+                  ( Crypto c
+                  , NamedCrypto c
+                  , Typeable c
+                  , HasSerInfo (VerKeyKES (KES c))
+                  , HasSerInfo (SignKeyKES (KES c))
+                  , ContextDSIGN (DSIGN c) ~ ()
+                  , DSIGN.Signable (DSIGN c) (OCertSignable c)
+                  , DirectSerialise IO (SignKeyKES (KES c))
+                  , DirectDeserialise IO (SignKeyKES (KES c))
+                  )
+               => Proxy c
+               -> TestTree
+testSpecCrypto p =
+  testGroup (BS8.unpack . unCryptoName $ cryptoName p)
+    [ testSpecMk "VerKeyKES" (mkVerKeyKES @(KES c))
+    , testSpecMk "ColdVerKey" (mkColdVerKey @(DSIGN c))
+    , testSpecMk "KeyInfo" (mkKeyInfo @c)
+    , testSpecMk "BundleInfo" (mkBundleInfo @c)
+    , testSpecMk "Maybe BundleInfo" (fmap Just . (mkBundleInfo @c))
+    , testSpecMk "Maybe KeyInfo" (fmap Just . (mkKeyInfo @c))
+    , testSpecMk "Nothing :: Maybe BundleInfo" (\(i :: Int) -> return (Nothing :: Maybe (BundleInfo c)))
+    , testSpecMk "AgentInfo" (mkAgentInfo @c)
+    , testSpecWith "Bundle" (withBundle @c)
+    ]
+
+instance Show (Bundle IO c) where
+  show _ = "Bundle"
+
+instance (Crypto c, Eq (VerKeyKES (KES c)), Eq (SigDSIGN (DSIGN c))) => Eq (Bundle IO c) where
+  a == b = unsafePerformIO $ do
+    withCRefValue (bundleSKP a) $ \skpA -> do
+      withCRefValue (bundleSKP b) $ \skpB -> do
+        vkA <- deriveVerKeyKES (skWithoutPeriodKES skpA)
+        vkB <- deriveVerKeyKES (skWithoutPeriodKES skpB)
+        let pA = periodKES skpA
+        let pB = periodKES skpB
+        return $ vkA == vkB && pA == pB && bundleOC a == bundleOC b
+
+withSignKeyKES :: ( KnownNat (SeedSizeKES kes)
+                  , KESAlgorithm kes
+                  )
+               => (SignKeyKES kes -> IO a)
+               -> PinnedSizedBytes (SeedSizeKES kes)
                -> IO a
 withSignKeyKES action seed = 
   withMLockedSeedFromPSB seed $ \mseed ->
@@ -155,25 +199,30 @@ mkEnum :: forall a. (Enum a, Bounded a) => Int -> a
 mkEnum i =
   toEnum (abs i `mod` (fromEnum (maxBound :: a) + 1))
 
-mkAgentInfo :: ( -- | source data for bundle
+mkAgentInfo :: ( Crypto c
+               , KESAlgorithm (KES c)
+               , DSIGNAlgorithm (DSIGN c)
+               , HasSerInfo (VerKeyKES (KES c))
+               )
+            => ( -- | source data for bundle
                  Maybe
                    ( Word32
                    , Word -- ^ KES period
                    , Word64 -- ^ ocertN
-                   , PinnedSizedBytes (SeedSizeKES (KES StandardCrypto))
+                   , PinnedSizedBytes (SeedSizeKES (KES c))
                      -- ^ seed for KES key
-                   , PinnedSizedBytes (SeedSizeDSIGN (DSIGN StandardCrypto))
+                   , PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                      -- ^ seed for cold key
                    )
                , -- | source data for staged key
                  Maybe
-                   ( PinnedSizedBytes (SeedSizeKES (KES StandardCrypto))
+                   ( PinnedSizedBytes (SeedSizeKES (KES c))
                    )
                , Int -- ^ current time
                , Word -- ^ current KES period
                , [(String, Int)]
                ) 
-            -> IO (AgentInfo StandardCrypto)
+            -> IO (AgentInfo c)
 mkAgentInfo (bundleSeedMay, stagedSeedMay, t, p, connSeeds) = do
   -- bundle <- maybe (return Nothing) (fmap Just . mkBundleInfo) bundleSeedMay
   let bundle = Nothing
@@ -190,15 +239,21 @@ mkAgentInfo (bundleSeedMay, stagedSeedMay, t, p, connSeeds) = do
         , agentInfoBootstrapConnections = bootstrapInfos
         }
 
-mkBundleInfo :: ( Word32 -- ^ evolution
+mkBundleInfo :: ( Crypto c
+                , KESAlgorithm (KES c)
+                , DSIGNAlgorithm (DSIGN c)
+                , ContextDSIGN (DSIGN c) ~ ()
+                , DSIGN.Signable (DSIGN c) (OCertSignable c)
+                )
+             => ( Word32 -- ^ evolution
                 , Word -- ^ KES period
                 , Word64 -- ^ ocertN
-                , PinnedSizedBytes (SeedSizeKES (KES StandardCrypto))
+                , PinnedSizedBytes (SeedSizeKES (KES c))
                   -- ^ seed for KES key
-                , PinnedSizedBytes (SeedSizeDSIGN (DSIGN StandardCrypto))
+                , PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
                   -- ^ seed for cold key
                 )
-              -> IO (BundleInfo StandardCrypto)
+              -> IO (BundleInfo c)
 mkBundleInfo (e, p, n, seedKES, seedDSIGN) = do
   let kesPeriod = KESPeriod p
   vkHot <- mkVerKeyKES seedKES
@@ -212,20 +267,62 @@ mkBundleInfo (e, p, n, seedKES, seedDSIGN) = do
     , bundleInfoSigma = ocertSigma ocert
     }
 
-mkKeyInfo :: PinnedSizedBytes (SeedSizeKES (KES StandardCrypto))
-          -> IO (KeyInfo StandardCrypto)
+withBundle :: ( Crypto c
+              , KESAlgorithm (KES c)
+              , DSIGNAlgorithm (DSIGN c)
+              , ContextDSIGN (DSIGN c) ~ ()
+              , DSIGN.Signable (DSIGN c) (OCertSignable c)
+              )
+           => (Bundle IO c -> IO a)
+           -> ( Word32 -- ^ evolution
+              , Word -- ^ KES period
+              , Word64 -- ^ ocertN
+              , PinnedSizedBytes (SeedSizeKES (KES c))
+                -- ^ seed for KES key
+              , PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+                -- ^ seed for cold key
+              )
+           -> IO a
+withBundle action (e, p, n, seedKES, seedDSIGN) =
+  bracket acquire release action
+  where
+    acquire = do
+      let kesPeriod = KESPeriod p
+      (skp, vkHot) <- withSignKeyKES (\sk -> do
+              skp <- newCRef
+                (forgetSignKeyKES . skWithoutPeriodKES)
+                (SignKeyWithPeriodKES sk 0)
+              vkHot <- deriveVerKeyKES sk
+              return (skp, vkHot)
+            ) seedKES
+      acquireCRef skp
+      vkHot <- mkVerKeyKES seedKES
+      skCold <- mkColdSignKey seedDSIGN
+      let ocert = makeOCert vkHot n kesPeriod skCold
+      return $ Bundle skp ocert
+    release bundle =
+      releaseCRef (bundleSKP bundle)
+
+mkKeyInfo :: ( Crypto c
+             , KESAlgorithm (KES c)
+             )
+          => PinnedSizedBytes (SeedSizeKES (KES c))
+          -> IO (KeyInfo c)
 mkKeyInfo seed = KeyInfo <$> mkVerKeyKES seed
 
-mkVerKeyKES :: PinnedSizedBytes (SeedSizeKES (KES StandardCrypto))
-            -> IO (VerKeyKES (KES StandardCrypto))
+mkVerKeyKES :: ( KESAlgorithm kes )
+            => PinnedSizedBytes (SeedSizeKES kes)
+            -> IO (VerKeyKES kes)
 mkVerKeyKES = withSignKeyKES deriveVerKeyKES
 
-mkColdSignKey :: PinnedSizedBytes (SeedSizeDSIGN (DSIGN StandardCrypto))
-              -> IO (SignKeyDSIGN (DSIGN StandardCrypto))
+mkColdSignKey :: ( DSIGNAlgorithm dsign )
+              => PinnedSizedBytes (SeedSizeDSIGN dsign)
+              -> IO (SignKeyDSIGN dsign)
 mkColdSignKey seed = return $ genKeyDSIGN (mkSeedFromBytes . psbToByteString $ seed)
 
-mkColdVerKey :: PinnedSizedBytes (SeedSizeDSIGN (DSIGN StandardCrypto))
-             -> IO (VerKeyDSIGN (DSIGN StandardCrypto))
+mkColdVerKey :: ( DSIGNAlgorithm dsign )
+             => PinnedSizedBytes (SeedSizeDSIGN dsign)
+             -> IO (VerKeyDSIGN dsign)
 mkColdVerKey seed = deriveVerKeyDSIGN <$> mkColdSignKey seed
 
 testSpecMk :: forall a seed.

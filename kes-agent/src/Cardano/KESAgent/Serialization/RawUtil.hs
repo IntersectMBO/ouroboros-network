@@ -133,20 +133,6 @@ checkVersion p s tracer = runReadResultT $ do
   else
     readResultT $ ReadVersionMismatch expectedV v
 
-sendBundle :: ( MonadST m
-              , MonadSTM m
-              , MonadThrow m
-              , Crypto c
-              , Typeable c
-              , DirectSerialise m (SignKeyKES (KES c))
-              )
-           => RawBearer m
-           -> Bundle m c
-           -> m ()
-sendBundle s bundle = do
-  sendSKP s (bundleSKP bundle)
-  sendOC s (bundleOC bundle)
-
 sendSKP :: ( MonadST m
               , MonadSTM m
               , MonadThrow m
@@ -163,35 +149,6 @@ sendSKP s skpRef = do
           when (fromIntegral n /= bufSize) (error "AAAAA")
         ) sk
     sendWord32 s (fromIntegral t)
-
-sendOC :: ( MonadST m
-          , MonadThrow m
-          , Crypto c
-          , Typeable c
-          )
-       => RawBearer m
-       -> OCert c
-       -> m ()
-sendOC s oc = do
-  let serializedOC = serialize' oc
-  sendWord32 s (fromIntegral (BS.length serializedOC))
-  void $ sendBS s serializedOC
-
-receiveBundle :: ( MonadST m
-                 , MonadSTM m
-                 , MonadMVar m
-                 , MonadThrow m
-                 , Crypto c
-                 , Typeable c
-                 , DirectDeserialise m (SignKeyKES (KES c))
-                 )
-              => RawBearer m
-              -> Tracer m String
-              -> m (ReadResult (Bundle m c))
-receiveBundle s tracer = runReadResultT $ do
-  skp <- ReadResultT $ receiveSKP s tracer
-  oc <- ReadResultT $ receiveOC s tracer
-  return (Bundle skp oc)
 
 receiveSK :: ( MonadST m
              , MonadSTM m
@@ -246,25 +203,6 @@ receiveSKP s tracer = runReadResultT $ do
   lift $ newCRef
     (forgetSignKeyKES . skWithoutPeriodKES)
     (SignKeyWithPeriodKES sk t)
-
-receiveOC :: ( MonadST m
-                 , MonadSTM m
-                 , MonadMVar m
-                 , MonadThrow m
-                 , Crypto c
-                 , Typeable c
-                 , DirectDeserialise m (SignKeyKES (KES c))
-                 )
-              => RawBearer m
-              -> Tracer m String
-              -> m (ReadResult (OCert c))
-receiveOC s tracer = runReadResultT $ do
-  lift $ traceWith tracer "receiving l..."
-  l <- fromIntegral <$> ReadResultT (receiveWord32 s)
-  lift $ traceWith tracer "receiving oc..."
-  oc <- unsafeDeserialize' <$> ReadResultT (receiveBS s l)
-  lift $ traceWith tracer "done receiving"
-  return oc
 
 receiveBS :: (MonadST m, MonadThrow m)
           => RawBearer m

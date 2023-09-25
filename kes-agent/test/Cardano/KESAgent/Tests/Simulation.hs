@@ -39,6 +39,7 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
+import Cardano.KESAgent.Serialization.Spec
 
 import Cardano.Binary ( FromCBOR )
 import Cardano.Crypto.DSIGN.Class
@@ -193,6 +194,8 @@ testCrypto :: forall c kes
            => Crypto c
            => NamedCrypto c
            => Show (SignKeyWithPeriodKES (KES c))
+           => HasSerInfo (VerKeyKES (KES c))
+           => HasSerInfo (SignKeyKES (KES c))
            => Proxy c
            -> Lock IO
            -> (forall a. (Show a, Pretty a) => Tracer IO a)
@@ -366,6 +369,8 @@ runTestNetwork :: forall c m fd addr
                => Crypto c
                => NamedCrypto c
                => Show (SignKeyWithPeriodKES (KES c))
+               => HasSerInfo (VerKeyKES (KES c))
+               => HasSerInfo (SignKeyKES (KES c))
                => Proxy c
                -> MakeRawBearer m fd
                -> Snocket m fd addr
@@ -602,6 +607,8 @@ testOneKeyThroughChain :: forall c m fd addr
                        => NamedCrypto c
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
+                       => HasSerInfo (VerKeyKES (KES c))
+                       => HasSerInfo (SignKeyKES (KES c))
                        => Proxy c
                        -> MakeRawBearer m fd
                        -> Snocket m fd addr

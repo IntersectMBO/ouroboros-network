@@ -679,6 +679,7 @@ runAgent :: forall c m fd addr
          => ContextDSIGN (DSIGN c) ~ ()
          => DSIGN.Signable (DSIGN c) (OCertSignable c)
          => HasSerInfo (VerKeyKES (KES c))
+         => HasSerInfo (SignKeyKES (KES c))
          => Crypto c
          => NamedCrypto c
          => Show addr
