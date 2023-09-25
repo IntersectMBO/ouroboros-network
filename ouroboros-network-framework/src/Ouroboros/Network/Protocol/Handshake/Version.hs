@@ -70,7 +70,7 @@ foldMapVersions :: (Ord vNum, Foldable f, HasCallStack)
                 -> f x
                 -> Versions vNum extra r
 foldMapVersions f fx = case toList fx of
-    [] -> error "foldMapVersions: precondition violated" -- TODO
+    [] -> error "foldMapVersions: precondition violated"
     xs -> foldl1 (<>) (map f xs)
 
 combineVersions :: (Ord vNum, Foldable f, HasCallStack)
