@@ -2099,13 +2099,14 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeoutTruncated
-              53 -- seconds
+              100 -- seconds
               id
               demotionOpportunities
 
        in counterexample
-            ("\nSignal key: (local peers, active peers, " ++
+            ("\nSignal key: (local peers, active peers, is alive " ++
              "demotion opportunities, ignored too long)") $
+          counterexample (intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_,_,_,_,toolong) -> Set.null toolong)

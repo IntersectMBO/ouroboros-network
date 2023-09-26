@@ -74,8 +74,7 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
                      IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing,
-                     combinePeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
                      PeerSharingResult (..))
@@ -392,7 +391,7 @@ mockPeerSelectionActions' tracer
         let !conns' = Map.insert peeraddr conn conns
         writeTVar connsVar conns'
         remotePeerSharing <- stepScriptSTM' peerSharingScript
-        return (PeerConn peeraddr (combinePeerSharing peerSharing remotePeerSharing) conn)
+        return (PeerConn peeraddr (peerSharing <> remotePeerSharing) conn)
       _ <- async $
         -- monitoring loop which does asynchronous demotions. It will terminate
         -- as soon as either of the events:

@@ -1015,11 +1015,8 @@ prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions 
      ) | v == v'
        , v >= NodeToNodeV_13 ->
          counterexample
-              (  "VersionNumber: " ++ show v ++ "\n"
-              ++ "Client Result:\n" ++ show clientResult ++ "\n"
-              ++ "Server Result:\n" ++ show serverResult
-              )
-          $ clientResult == serverResult
+              ("VersionNumber: " ++ show v)
+          $ clientResult === serverResult
        | v == v'
        , v < NodeToNodeV_13  -> property True
        | otherwise  -> counterexample "Version mismatch" False

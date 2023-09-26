@@ -456,8 +456,8 @@ instance (Show peerAddr, Show versionData)
       "PeerConnectionHandle " ++ show pchConnectionId ++ " " ++ show pchVersionData
 
 pchPeerSharing :: (versionData -> PeerSharing)
-                     -> PeerConnectionHandle muxMode responderCtx peerAddr versionData bytes m a b
-                     -> PeerSharing
+               -> PeerConnectionHandle muxMode responderCtx peerAddr versionData bytes m a b
+               -> PeerSharing
 pchPeerSharing f = f . pchVersionData
 
 --

@@ -8,6 +8,16 @@
 
 * Update types to accommodate `PeerSharing` data type changes.
 * Fix PeerSharing IPv6 enc/decoding
+* Introduce NodeToNodeVersion 13
+* Update types to accommodate `PeerSharing` data type changes:
+  * `PeerSharingPrivate` got removed and hence, handshake is now symmetric,
+  fixing issue [#4642](https://github.com/input-output-hk/ouroboros-network/issues/4642)
+  * This implies that newer peer sharing node versions will see older
+  version's `PeerSharingPrivate` as `PeerSharingEnabled`. So older version
+  node's should not rely on `PeerSharingPrivate` semantics from newer version
+  honest nodes.
+
+* Changed encoding of IPv6 addresses sent over `PeerSharing` mini-protocol.
 
 ## 0.9.2.0 -- 2023-10-26
 

@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -53,6 +54,7 @@ import           Data.IP (IP (..))
 import           Data.Map (Map)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Void (Void)
 import           System.Random (StdGen, split)
@@ -377,13 +379,13 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     PeerSharingEnabled  -> 1
                in CBOR.TList [CBOR.TBool True, CBOR.TInt peerSharing]
 
-        toPeerSharing :: Int -> PeerSharing
-        toPeerSharing 0 = PeerSharingDisabled
-        toPeerSharing 1 = PeerSharingEnabled
-        toPeerSharing _ = error "toPeerSharing: out of bounds"
+        toPeerSharing :: Int -> Either Text PeerSharing
+        toPeerSharing 0 = Right PeerSharingDisabled
+        toPeerSharing 1 = Right PeerSharingEnabled
+        toPeerSharing _ = Left "toPeerSharing: out of bounds"
 
-        decodeData _ (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = Right (NtNVersionData InitiatorOnlyDiffusionMode (toPeerSharing a))
-        decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = Right (NtNVersionData InitiatorAndResponderDiffusionMode (toPeerSharing a))
+        decodeData _ (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = NtNVersionData InitiatorOnlyDiffusionMode <$> (toPeerSharing a)
+        decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> (toPeerSharing a)
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
     args :: Diff.Arguments (NtNFD m) NtNAddr (NtCFD m) NtCAddr

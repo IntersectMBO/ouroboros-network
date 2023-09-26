@@ -112,8 +112,7 @@ import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import qualified Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
 
 import           Network.Socket (SockAddr (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..),
-                     decodeRemoteAddress, encodeRemoteAddress)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import           Ouroboros.Network.Protocol.PeerSharing.Test ()
 import           Ouroboros.Network.Protocol.PeerSharing.Type
@@ -123,6 +122,8 @@ import qualified Ouroboros.Network.Protocol.PeerSharing.Type as PeerSharing
 import           Test.ChainGenerators ()
 import           Test.Data.CDDL (Any (..))
 
+import           Ouroboros.Network.PeerSelection.PeerSharing.Codec
+                     (decodeRemoteAddress, encodeRemoteAddress)
 import           Test.QuickCheck hiding (Result (..))
 import           Test.QuickCheck.Instances.ByteString ()
 import           Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)
@@ -153,7 +154,8 @@ tests CDDLSpecs { cddlChainSync
                 , cddlHandshakeNodeToNodeV11ToV12
                 , cddlHandshakeNodeToNodeV13ToLast
                 , cddlHandshakeNodeToClient
-                , cddlPeerSharing
+                , cddlPeerSharingNodeToNodeV11ToV12
+                , cddlPeerSharingNodeToNodeV13ToLast
                 , cddlNodeToNodeVersionDataV7To10
                 , cddlNodeToNodeVersionDataV11ToV12
                 , cddlNodeToNodeVersionDataV13ToLast
@@ -194,8 +196,11 @@ tests CDDLSpecs { cddlChainSync
                                                cddlLocalTxMonitor)
       , testProperty "LocalStateQuery"   (prop_encodeLocalStateQuery
                                                cddlLocalStateQuery)
-      , testProperty "PeerSharing "      (prop_encodePeerSharing
-                                               cddlPeerSharing)
+
+      , testProperty "PeerSharing V11 to V12" (prop_encodePeerSharingV11ToV12
+                                               cddlPeerSharingNodeToNodeV11ToV12)
+      , testProperty "PeerSharing V13 to Last" (prop_encodePeerSharingV13ToLast
+                                               cddlPeerSharingNodeToNodeV13ToLast)
 
       , testProperty "NodeToNodeVersionData V7 to V10"   (prop_encodeNodeToNodeVersionDataV7To10
                                                             cddlNodeToNodeVersionDataV7To10)
@@ -232,8 +237,11 @@ tests CDDLSpecs { cddlChainSync
                                            cddlLocalTxMonitor)
       , testCase "LocalStateQuery"   (unit_decodeLocalStateQuery
                                            cddlLocalStateQuery)
-      , testCase "PeerSharing"       (unit_decodePeerSharing
-                                           cddlPeerSharing)
+
+      , testCase "PeerSharing V11 to V12" (unit_decodePeerSharingV11ToV12
+                                                cddlPeerSharingNodeToNodeV11ToV12)
+      , testCase "PeerSharing V13 to Last" (unit_decodePeerSharingV13ToLast
+                                                cddlPeerSharingNodeToNodeV13ToLast)
 
       , testCase "NodeToNodeVersionData V7 to V10"   (unit_decodeNodeToNodeVersionData
                                                         cddlNodeToNodeVersionDataV7To10)
@@ -262,7 +270,9 @@ data CDDLSpecs = CDDLSpecs {
                                                     LocalTxSubmission.Reject),
     cddlLocalTxMonitor               :: CDDLSpec (LocalTxMonitor TxId Tx SlotNo),
     cddlLocalStateQuery              :: CDDLSpec (LocalStateQuery Block BlockPoint Query),
-    cddlPeerSharing                  :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
+
+    cddlPeerSharingNodeToNodeV11ToV12  :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
+    cddlPeerSharingNodeToNodeV13ToLast :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
 
     cddlNodeToNodeVersionDataV7To10    :: CDDLSpec NodeToNodeVersionData,
     cddlNodeToNodeVersionDataV11ToV12  :: CDDLSpec NodeToNodeVersionData,
@@ -287,7 +297,9 @@ readCDDLSpecs = do
     localTxSubmission     <- BL.readFile (dir </> "local-tx-submission.cddl")
     localTxMonitor        <- BL.readFile (dir </> "local-tx-monitor.cddl")
     localStateQuery       <- BL.readFile (dir </> "local-state-query.cddl")
-    peerSharing           <- BL.readFile (dir </> "peer-sharing.cddl")
+
+    peerSharingNodeToNodeV11ToV12  <- BL.readFile (dir </> "peer-sharing-v11-12.cddl")
+    peerSharingNodeToNodeV13ToLast <- BL.readFile (dir </> "peer-sharing-v13.cddl")
 
     nodeToNodeVersionDataV7To10 <- BL.readFile (dir </> "node-to-node-version-data.cddl")
     nodeToNodeVersionDataV11ToV12  <- BL.readFile (dir </> "node-to-node-version-data-v11-12.cddl")
@@ -312,8 +324,11 @@ readCDDLSpecs = do
                                                    <> common,
         cddlLocalStateQuery              = CDDLSpec $ localStateQuery
                                                    <> common,
-        cddlPeerSharing                  = CDDLSpec $ peerSharing
-                                                   <> common,
+
+        cddlPeerSharingNodeToNodeV11ToV12  = CDDLSpec $ peerSharingNodeToNodeV11ToV12
+                                                     <> common,
+        cddlPeerSharingNodeToNodeV13ToLast = CDDLSpec $ peerSharingNodeToNodeV13ToLast
+                                                     <> common,
 
         cddlNodeToNodeVersionDataV7To10    = CDDLSpec nodeToNodeVersionDataV7To10,
         cddlNodeToNodeVersionDataV11ToV12  = CDDLSpec nodeToNodeVersionDataV11ToV12,
@@ -707,12 +722,21 @@ instance Arbitrary SockAddr where
                                     <*> arbitrary
                     ]
 
-prop_encodePeerSharing
+prop_encodePeerSharingV11ToV12
     :: CDDLSpec            (PeerSharing.PeerSharing SockAddr)
+    -> NtNVersionV11ToV12
     -> AnyMessageAndAgency (PeerSharing.PeerSharing SockAddr)
     -> Property
-prop_encodePeerSharing spec =
-  validateEncoder spec (codecPeerSharing encodeRemoteAddress decodeRemoteAddress)
+prop_encodePeerSharingV11ToV12 spec (NtNVersionV11ToV12 ntnVersion) =
+  validateEncoder spec (codecPeerSharing (encodeRemoteAddress ntnVersion) (decodeRemoteAddress ntnVersion))
+
+prop_encodePeerSharingV13ToLast
+    :: CDDLSpec            (PeerSharing.PeerSharing SockAddr)
+    -> NtNVersionV13ToLast
+    -> AnyMessageAndAgency (PeerSharing.PeerSharing SockAddr)
+    -> Property
+prop_encodePeerSharingV13ToLast spec (NtNVersionV13ToLast ntnVersion) =
+  validateEncoder spec (codecPeerSharing (encodeRemoteAddress ntnVersion) (decodeRemoteAddress ntnVersion))
 
 newtype NtNVersionV7To10    = NtNVersionV7To10 NodeToNodeVersion
   deriving Show
@@ -1043,12 +1067,25 @@ unit_decodeLocalStateQuery spec =
       ]
       100
 
-unit_decodePeerSharing
+unit_decodePeerSharingV11ToV12
     :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
     -> Assertion
-unit_decodePeerSharing spec =
+unit_decodePeerSharingV11ToV12 spec =
+    forM_ [NodeToNodeV_11 .. NodeToNodeV_12] $ \v ->
     validateDecoder Nothing
-      spec (codecPeerSharing encodeRemoteAddress decodeRemoteAddress)
+      spec (codecPeerSharing (encodeRemoteAddress v) (decodeRemoteAddress v))
+      [ SomeAgency $ ClientAgency TokIdle
+      , SomeAgency $ ServerAgency TokBusy
+      ]
+      100
+
+unit_decodePeerSharingV13ToLast
+    :: CDDLSpec (PeerSharing.PeerSharing SockAddr)
+    -> Assertion
+unit_decodePeerSharingV13ToLast spec =
+    forM_ [NodeToNodeV_13 ..] $ \v ->
+    validateDecoder Nothing
+      spec (codecPeerSharing (encodeRemoteAddress v) (decodeRemoteAddress v))
       [ SomeAgency $ ClientAgency TokIdle
       , SomeAgency $ ServerAgency TokBusy
       ]

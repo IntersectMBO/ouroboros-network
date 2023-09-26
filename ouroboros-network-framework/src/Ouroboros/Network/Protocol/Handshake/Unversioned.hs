@@ -1,4 +1,5 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Unversioned protocol, used in tests and demo applications.
 --
@@ -26,8 +27,7 @@ import           Network.TypedProtocol.Codec
 
 import           Ouroboros.Network.CodecCBORTerm
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..),
-                     combinePeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.Protocol.Handshake.Codec
 import           Ouroboros.Network.Protocol.Handshake.Type
 import           Ouroboros.Network.Protocol.Handshake.Version
@@ -84,7 +84,7 @@ data DataFlowProtocolData =
 
 instance Acceptable DataFlowProtocolData where
   acceptableVersion (DataFlowProtocolData local lps) (DataFlowProtocolData remote rps) =
-    Accept (DataFlowProtocolData (local `min` remote) (combinePeerSharing lps rps))
+    Accept (DataFlowProtocolData (local `min` remote) (lps <> rps))
 
 instance Queryable DataFlowProtocolData where
   queryVersion (DataFlowProtocolData _ _) = False
@@ -104,14 +104,14 @@ dataFlowProtocolDataCodec _ = CodecCBORTerm {encodeTerm, decodeTerm}
               PeerSharingEnabled  -> 1
          in CBOR.TList [CBOR.TBool True, CBOR.TInt peerSharing]
 
-      toPeerSharing :: Int -> PeerSharing
-      toPeerSharing 0 = PeerSharingDisabled
-      toPeerSharing 1 = PeerSharingEnabled
-      toPeerSharing _ = error "toPeerSharing: out of bounds"
+      toPeerSharing :: Int -> Either Text PeerSharing
+      toPeerSharing 0 = Right PeerSharingDisabled
+      toPeerSharing 1 = Right PeerSharingEnabled
+      toPeerSharing _ = Left "toPeerSharing: out of bounds"
 
       decodeTerm :: CBOR.Term -> Either Text DataFlowProtocolData
-      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = Right (DataFlowProtocolData Unidirectional (toPeerSharing a))
-      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = Right (DataFlowProtocolData Duplex (toPeerSharing a))
+      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = DataFlowProtocolData Unidirectional <$> (toPeerSharing a)
+      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = DataFlowProtocolData Duplex <$> (toPeerSharing a)
       decodeTerm t                  = Left $ T.pack $ "unexpected term: " ++ show t
 
 dataFlowProtocol :: DataFlow

@@ -23,9 +23,7 @@ import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
                      Acceptable (..))
 import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import           Ouroboros.Network.Magic
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..),
-                     combinePeerSharing)
-
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 -- | Enumeration of node to node protocol versions.
 --
@@ -62,7 +60,7 @@ data NodeToNodeVersion
     | NodeToNodeV_13
     -- ^ Changes:
     --
-    -- * Adds a fix for PeerSharing handshake negotiation
+    -- * Added `localPeerSharing` negotiation flag.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -134,8 +132,7 @@ instance Acceptable NodeToNodeVersionData where
       = Accept NodeToNodeVersionData
           { networkMagic  = networkMagic local
           , diffusionMode = diffusionMode local `min` diffusionMode remote
-          , peerSharing   = combinePeerSharing (peerSharing local)
-                                               (peerSharing remote)
+          , peerSharing   = peerSharing local <> peerSharing remote
           , query         = query local || query remote
           }
       | otherwise
@@ -266,7 +263,6 @@ nodeToNodeCodecCBORTerm version
 
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
-
 
 -- | Check whether a version enabling diffusion pipelining has been
 -- negotiated.
