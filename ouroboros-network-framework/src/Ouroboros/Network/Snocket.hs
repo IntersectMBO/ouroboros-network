@@ -34,9 +34,11 @@ module Ouroboros.Network.Snocket
   , LocalAddress (..)
   , localAddressFromPath
   , TestAddress (..)
-  , FileDescriptor (..)
+  , FileDescriptor
   , socketFileDescriptor
   , localSocketFileDescriptor
+    -- ** for testing
+  , invalidFileDescriptor
     -- * Re-exports
   , MakeBearer (..)
   ) where
@@ -585,3 +587,7 @@ localSocketFileDescriptor =
 #else
 localSocketFileDescriptor = socketFileDescriptor . getLocalHandle
 #endif
+
+-- | invalidFileDescriptor - when we need something for testing/simulation
+invalidFileDescriptor :: FileDescriptor
+invalidFileDescriptor = FileDescriptor (-1)

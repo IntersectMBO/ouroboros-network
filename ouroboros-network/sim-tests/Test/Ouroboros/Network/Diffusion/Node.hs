@@ -98,8 +98,8 @@ import           Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
                      muxErrorRethrowPolicy)
 import           Ouroboros.Network.Server.RateLimiting
                      (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Snocket (FileDescriptor (..), MakeBearer,
-                     Snocket, TestAddress (..))
+import           Ouroboros.Network.Snocket (MakeBearer, Snocket,
+                     TestAddress (..), invalidFileDescriptor)
 
 import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
@@ -247,7 +247,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     , haQueryVersion         = const False
                     , haTimeLimits           = noTimeLimitsHandshake
                     }
-              , Diff.P2P.diNtcGetFileDescriptor  = \_ -> pure (FileDescriptor (-1))
+              , Diff.P2P.diNtcGetFileDescriptor  = \_ -> pure invalidFileDescriptor
               , Diff.P2P.diRng                   = diffStgGen
               , Diff.P2P.diInstallSigUSR1Handler = \_ -> pure ()
               , Diff.P2P.diDnsActions            = const (mockDNSActions
