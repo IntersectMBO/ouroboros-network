@@ -24,9 +24,12 @@ import           Data.List (nub)
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Word (Word16)
 
+import           Control.Applicative (Alternative)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
+import           Control.Monad.Class.MonadSTM (STM)
+import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
+                     MonadThrow)
 import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
 import           Control.Tracer (Tracer (..), nullTracer)
@@ -38,12 +41,11 @@ import           Network.TypedProtocol.Codec hiding (prop_codec)
 import           Network.TypedProtocol.Proofs
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
+import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Codec
-import           Ouroboros.Network.Protocol.TxSubmission2.Direct
 import           Ouroboros.Network.Protocol.TxSubmission2.Examples
 import           Ouroboros.Network.Protocol.TxSubmission2.Server
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
@@ -67,8 +69,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol"
     [ testGroup "TxSubmission2"
-        [ testProperty "direct"              prop_direct
-        , testProperty "connect 1"           prop_connect1
+        [ testProperty "connect 1"           prop_connect1
         , testProperty "connect 2"           prop_connect2
         , testProperty "codec"               prop_codec
         , testProperty "codec id"            prop_codec_id
@@ -141,18 +142,6 @@ testClient tracer            TxSubmissionTestParams {
 -- Properties going directly, not via Peer.
 --
 
--- | Run a simple tx-submission client and server, directly on the wrappers,
--- without going via the 'Peer'.
---
-prop_direct :: TxSubmissionTestParams -> Bool
-prop_direct params@TxSubmissionTestParams{testTransactions} =
-    runSimOrThrow
-      (directPipelined
-        (testServer nullTracer params)
-        (testClient nullTracer params))
-  ==
-    (fromDistinctList testTransactions, ())
-
 
 -- | Run a simple tx-submission client and server, going via the 'Peer'
 -- representation, but without going via a channel.
@@ -164,13 +153,13 @@ prop_connect1 :: TxSubmissionTestParams -> Bool
 prop_connect1 params@TxSubmissionTestParams{testTransactions} =
     case runSimOrThrow
            (connect
-             (forgetPipelined $
-              txSubmissionServerPeerPipelined $
+             [] []
+             (txSubmissionServerPeerPipelined $
               testServer nullTracer params)
              (txSubmissionClientPeer $
               testClient nullTracer params)) of
 
-      (txs', (), TerminalStates TokDone TokDone) ->
+      (txs', (), TerminalStates SingDone SingDone) ->
         txs' == fromDistinctList testTransactions
 
 
@@ -180,17 +169,17 @@ prop_connect1 params@TxSubmissionTestParams{testTransactions} =
 --
 -- This test uses the pipelined server, connected to the non-pipelined client.
 --
-prop_connect2 :: TxSubmissionTestParams -> [Bool] -> Bool
+prop_connect2 :: TxSubmissionTestParams -> NonEmptyList Bool -> Bool
 prop_connect2 params@TxSubmissionTestParams{testTransactions}
-                      choices =
+                     (NonEmpty choices) =
     case runSimOrThrow
-           (connectPipelined choices
+           (connect choices []
              (txSubmissionServerPeerPipelined $
               testServer nullTracer params)
              (txSubmissionClientPeer $
               testClient nullTracer params)) of
 
-      (txs', (), TerminalStates TokDone TokDone) ->
+      (txs', (), TerminalStates SingDone SingDone) ->
         txs' == fromDistinctList testTransactions
 
 --
@@ -199,7 +188,8 @@ prop_connect2 params@TxSubmissionTestParams{testTransactions}
 
 -- | Run a simple tx-submission client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+prop_channel :: ( Alternative (STM m), MonadAsync m, MonadCatch m, MonadMask m,
+                  MonadST m, MonadThrow m, MonadThrow (STM m))
              => m (Channel m ByteString, Channel m ByteString)
              -> TxSubmissionTestParams
              -> m Bool
@@ -207,7 +197,7 @@ prop_channel createChannels params@TxSubmissionTestParams{testTransactions} =
 
     (\(txs', ()) -> txs' == fromDistinctList testTransactions) <$>
 
-    runConnectedPeersPipelined
+    runConnectedPeers
       createChannels
       nullTracer
       codec_v2
@@ -240,35 +230,31 @@ prop_pipe_IO params =
     ioProperty (prop_channel createPipeConnectedChannels params)
 
 
-instance Arbitrary (AnyMessageAndAgency (TxSubmission2 TxId Tx)) where
+instance Arbitrary (AnyMessage (TxSubmission2 TxId Tx)) where
   arbitrary = oneof
-    [ pure $ AnyMessageAndAgency (ClientAgency TokInit) MsgInit
-    , AnyMessageAndAgency (ServerAgency TokIdle) <$>
-        (MsgRequestTxIds TokBlocking
+    [ pure $ AnyMessage MsgInit
+    , AnyMessage  <$>
+        (MsgRequestTxIds SingBlocking
                      <$> arbitrary
                      <*> arbitrary)
 
-    , AnyMessageAndAgency (ServerAgency TokIdle) <$>
-        (MsgRequestTxIds TokNonBlocking
+    , AnyMessage <$>
+        (MsgRequestTxIds SingNonBlocking
                      <$> arbitrary
                      <*> arbitrary)
 
-    , AnyMessageAndAgency (ClientAgency (TokTxIds TokBlocking)) <$>
+    , AnyMessage <$>
         MsgReplyTxIds <$> (BlockingReply . NonEmpty.fromList
                                          . QC.getNonEmpty
                                        <$> arbitrary)
 
-    , AnyMessageAndAgency (ClientAgency (TokTxIds TokNonBlocking)) <$>
-        MsgReplyTxIds <$> (NonBlockingReply <$> arbitrary)
+    , AnyMessage <$> MsgReplyTxIds <$> (NonBlockingReply <$> arbitrary)
 
-    , AnyMessageAndAgency (ServerAgency TokIdle) <$>
-        MsgRequestTxs <$> arbitrary
+    , AnyMessage <$> MsgRequestTxs <$> arbitrary
 
-    , AnyMessageAndAgency (ClientAgency TokTxs) <$>
-        MsgReplyTxs <$> arbitrary
+    , AnyMessage <$> MsgReplyTxs <$> arbitrary
 
-    , AnyMessageAndAgency (ClientAgency (TokTxIds TokBlocking)) <$>
-        pure MsgDone
+    , AnyMessage <$> pure MsgDone
     ]
 
 instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
@@ -276,12 +262,12 @@ instance (Eq txid, Eq tx) => Eq (AnyMessage (TxSubmission2 txid tx)) where
   (==) (AnyMessage MsgInit)
        (AnyMessage MsgInit) = True
 
-  (==) (AnyMessage (MsgRequestTxIds TokBlocking ackNo  reqNo))
-       (AnyMessage (MsgRequestTxIds TokBlocking ackNo' reqNo')) =
+  (==) (AnyMessage (MsgRequestTxIds SingBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestTxIds SingBlocking ackNo' reqNo')) =
     (ackNo, reqNo) == (ackNo', reqNo')
 
-  (==) (AnyMessage (MsgRequestTxIds TokNonBlocking ackNo  reqNo))
-       (AnyMessage (MsgRequestTxIds TokNonBlocking ackNo' reqNo')) =
+  (==) (AnyMessage (MsgRequestTxIds SingNonBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestTxIds SingNonBlocking ackNo' reqNo')) =
     (ackNo, reqNo) == (ackNo', reqNo')
 
   (==) (AnyMessage (MsgReplyTxIds (BlockingReply txids)))
@@ -315,30 +301,30 @@ codec_v2 = codecTxSubmission2
 
 -- | Check the codec round trip property.
 --
-prop_codec :: AnyMessageAndAgency (TxSubmission2 TxId Tx) -> Bool
+prop_codec :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
 prop_codec msg =
   runST (prop_codecM codec_v2 msg)
 
 -- | Check the codec round trip property for the id condec.
 --
-prop_codec_id :: AnyMessageAndAgency (TxSubmission2 TxId Tx) -> Bool
+prop_codec_id :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
 prop_codec_id msg =
   runST (prop_codecM codecTxSubmission2Id msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
-prop_codec_splits2 :: AnyMessageAndAgency (TxSubmission2 TxId Tx) -> Bool
+prop_codec_splits2 :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
 prop_codec_splits2 msg =
   runST (prop_codec_splitsM splits2 codec_v2 msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
-prop_codec_splits3 :: AnyMessageAndAgency (TxSubmission2 TxId Tx) -> Bool
+prop_codec_splits3 :: AnyMessage (TxSubmission2 TxId Tx) -> Bool
 prop_codec_splits3 msg =
   runST (prop_codec_splitsM splits3 codec_v2 msg)
 
 prop_codec_cbor
-  :: AnyMessageAndAgency (TxSubmission2 TxId Tx)
+  :: AnyMessage (TxSubmission2 TxId Tx)
   -> Bool
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec_v2 msg)
@@ -346,7 +332,7 @@ prop_codec_cbor msg =
 -- | Check that the encoder produces a valid CBOR.
 --
 prop_codec_valid_cbor
-  :: AnyMessageAndAgency (TxSubmission2 TxId Tx)
+  :: AnyMessage (TxSubmission2 TxId Tx)
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec_v2
 

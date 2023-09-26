@@ -7,6 +7,7 @@
 
 module Test.Ouroboros.Network.KeepAlive (tests) where
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad (void)
 import           Control.Monad.Class.MonadAsync
@@ -21,7 +22,6 @@ import           Control.Tracer
 import qualified Data.ByteString.Lazy as BL
 import           Data.Typeable (Typeable)
 import           System.Random
-
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.Channel
@@ -45,7 +45,8 @@ tests = testGroup "KeepAlive"
 
 runKeepAliveClient
     :: forall m peer header block.
-        ( MonadAsync m
+        ( Alternative (STM m)
+        , MonadAsync m
         , MonadFork m
         , MonadMask m
         , MonadMonotonicTime m
@@ -75,7 +76,8 @@ runKeepAliveClient tracer rng controlMessageSTM registry peer channel keepAliveI
 
 runKeepAliveServer
     :: forall m.
-        ( MonadAsync m
+        ( Alternative (STM m)
+        , MonadAsync m
         , MonadFork m
         , MonadMask m
         , MonadMonotonicTime m
@@ -98,7 +100,8 @@ runKeepAliveServer channel =
 
 runKeepAliveClientAndServer
     :: forall m peer header block.
-        ( MonadAsync m
+        ( Alternative (STM m)
+        , MonadAsync m
         , MonadDelay m
         , MonadFork m
         , MonadMask m
@@ -138,6 +141,7 @@ instance Arbitrary NetworkDelay where
 prop_keepAlive_convergenceM
     :: forall m.
         ( Eq (Async m ())
+        , Alternative (STM m)
         , MonadAsync m
         , MonadDelay m
         , MonadFork m

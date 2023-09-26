@@ -446,7 +446,7 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
           serverVersions
           clientVersions
   in case runSimOrThrow
-           (connect
+           (connect [] []
               (handshakeClientPeer
                 (cborTermVersionDataCodec dataCodecCBORTerm)
                 acceptableVersion
@@ -456,7 +456,7 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
                 acceptableVersion
                 queryVersion
                 serverVersions)) of
-      (clientRes', serverRes', TerminalStates TokDone TokDone) ->
+      (clientRes', serverRes', TerminalStates SingDone SingDone) ->
            fromMaybe False clientRes === either (const False) extractRes clientRes'
         .&&.
            fromMaybe False serverRes === either (const False) extractRes serverRes'
@@ -470,9 +470,13 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
 
 -- | Run a simple block-fetch client and server using connected channels.
 --
-prop_channel :: ( MonadAsync m
+prop_channel :: ( Alternative (STM m)
+                , MonadAsync m
                 , MonadCatch m
-                , MonadST m
+                , MonadMask  m
+                , MonadST    m
+                , MonadThrow m
+                , MonadThrow (STM m)
                 )
              => m (Channel m ByteString, Channel m ByteString)
              -> Versions VersionNumber VersionData Bool
@@ -548,9 +552,13 @@ prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
 -- a single version 'Version_1' (it cannot decode any other version).
 --
 prop_channel_asymmetric
-    :: ( MonadAsync m
+    :: ( Alternative (STM m)
+       , MonadAsync m
        , MonadCatch m
-       , MonadST m
+       , MonadMask  m
+       , MonadST    m
+       , MonadThrow m
+       , MonadThrow (STM m)
        )
     => m (Channel m ByteString, Channel m ByteString)
     -> Versions VersionNumber VersionData Bool
@@ -925,9 +933,12 @@ prop_query_version_NodeToClient_SimNet
 
 -- | Run a query for the server's supported version.
 --
-prop_query_version :: ( MonadAsync m
+prop_query_version :: ( Alternative (STM m)
+                      , MonadAsync m
                       , MonadCatch m
+                      , MonadMask  m
                       , MonadST m
+                      , MonadThrow (STM m)
                       , Eq vData
                       , Acceptable vData
                       , Queryable vData
@@ -1061,9 +1072,13 @@ prop_acceptOrRefuse_symmetric_NodeToClient (ArbitraryNodeToClientVersions a)
 -- simultaneous open.
 --
 prop_channel_simultaneous_open
-    :: ( MonadAsync m
+    :: ( Alternative (STM m)
+       , MonadAsync m
        , MonadCatch m
-       , MonadST m
+       , MonadMask  m
+       , MonadST    m
+       , MonadThrow m
+       , MonadThrow (STM m)
        , Acceptable vData
        , Ord vNumber
        )
@@ -1340,25 +1355,25 @@ instance Eq (AnyMessage (Handshake VersionNumber CBOR.Term)) where
 
   _ == _ = False
 
-instance Arbitrary (AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)) where
+instance Arbitrary (AnyMessage (Handshake VersionNumber CBOR.Term)) where
   arbitrary = oneof
-    [     AnyMessageAndAgency (ClientAgency TokPropose)
+    [     AnyMessage
         . MsgProposeVersions
         . Map.mapWithKey (\v -> encodeTerm (dataCodecCBORTerm v) . versionData)
         . getVersions
       <$> genVersions
 
-    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+    ,     AnyMessage
         . MsgReplyVersions
         . Map.mapWithKey (\v -> encodeTerm (dataCodecCBORTerm v) . versionData)
         . getVersions
       <$> genVersions
 
-    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+    ,     AnyMessage
         . uncurry MsgAcceptVersion
       <$> genValidVersion'
 
-    ,     AnyMessageAndAgency (ServerAgency TokConfirm)
+    ,     AnyMessage
         . MsgRefuse
         . runArbitraryRefuseReason
       <$> arbitrary
@@ -1407,25 +1422,25 @@ prop_codec_RefuseReason (ArbitraryRefuseReason vReason) =
     Right (bytes, vReason') -> BL.null bytes && vReason' == vReason
 
 prop_codec_Handshake
-  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
+  :: AnyMessage (Handshake VersionNumber CBOR.Term)
   -> Bool
 prop_codec_Handshake msg =
   runSimOrThrow (prop_codecM (codecHandshake versionNumberCodec) msg)
 
 prop_codec_splits2_Handshake
-  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
+  :: AnyMessage (Handshake VersionNumber CBOR.Term)
   -> Bool
 prop_codec_splits2_Handshake msg =
   runSimOrThrow (prop_codec_splitsM splits2 (codecHandshake versionNumberCodec) msg)
 
 prop_codec_splits3_Handshake
-  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
+  :: AnyMessage (Handshake VersionNumber CBOR.Term)
   -> Bool
 prop_codec_splits3_Handshake msg =
   runSimOrThrow (prop_codec_splitsM splits3 (codecHandshake versionNumberCodec) msg)
 
 prop_codec_cbor
-  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
+  :: AnyMessage (Handshake VersionNumber CBOR.Term)
   -> Bool
 prop_codec_cbor msg =
   runSimOrThrow (prop_codec_cborM (codecHandshake versionNumberCodec) msg)
@@ -1433,6 +1448,6 @@ prop_codec_cbor msg =
 -- | Check that the encoder produces a valid CBOR.
 --
 prop_codec_valid_cbor
-  :: AnyMessageAndAgency (Handshake VersionNumber CBOR.Term)
+  :: AnyMessage (Handshake VersionNumber CBOR.Term)
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding (codecHandshake versionNumberCodec)

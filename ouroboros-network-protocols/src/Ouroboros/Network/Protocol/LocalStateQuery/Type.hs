@@ -6,6 +6,7 @@
 {-# LANGUAGE QuantifiedConstraints    #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE UndecidableInstances     #-}
@@ -233,3 +234,10 @@ data State st where
     StateQuerying  :: query result
                     -> State (StQuerying result :: LocalStateQuery block point query)
     StateDone      :: State StDone
+
+instance Show (State st) where
+    show StateIdle         = "StateIdle"
+    show StateAcquiring    = "StateAcquiring"
+    show StateAcquired     = "StateAcquired"
+    show (StateQuerying _) = "StateQuerying *"
+    show StateDone         = "StateDone"

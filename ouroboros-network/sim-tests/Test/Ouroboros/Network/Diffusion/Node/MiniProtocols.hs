@@ -46,6 +46,7 @@ import           Network.TypedProtocol.PingPong.Server
 import           Network.TypedProtocol.PingPong.Type
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.Protocol.BlockFetch.Client
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Examples
 import           Ouroboros.Network.Protocol.BlockFetch.Server
@@ -441,7 +442,8 @@ applications debugTracer nodeKernel
                 (blockFetchSizeLimits limits)
                 (blockFetchTimeLimits limits)
                 channel
-                (forgetPipelined
+                (forgetPipelined []
+                  $ blockFetchClientPeerPipelined
                   $ blockFetchClient UnversionedProtocol controlMessageSTM
                                      nullTracer clientCtx)
 

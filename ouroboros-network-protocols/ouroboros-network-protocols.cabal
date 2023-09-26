@@ -128,11 +128,8 @@ library testlib
   hs-source-dirs:      testlib
   default-language:    Haskell2010
   exposed-modules:
-                       Ouroboros.Network.Protocol.BlockFetch.Direct
                        Ouroboros.Network.Protocol.BlockFetch.Examples
                        Ouroboros.Network.Protocol.BlockFetch.Test
-                       Ouroboros.Network.Protocol.ChainSync.Direct
-                       Ouroboros.Network.Protocol.ChainSync.DirectPipelined
                        Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Test
@@ -185,7 +182,8 @@ library testlib
                        ouroboros-network-protocols,
                        si-timers,
                        strict-stm,
-                       typed-protocols
+                       typed-protocols,
+                       typed-protocols-stateful
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors

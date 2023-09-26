@@ -13,6 +13,7 @@ import           Prelude hiding (seq)
 
 import           NoThunks.Class (NoThunks)
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM
 import           Control.Exception (SomeException (..))
 import           Control.Monad.Class.MonadAsync
@@ -190,7 +191,8 @@ txSubmissionCodec2 =
 
 txSubmissionSimulation
   :: forall m txid.
-     ( MonadAsync m
+     ( Alternative (STM m)
+     , MonadAsync m
      , MonadDelay m
      , MonadFork  m
      , MonadMask  m
@@ -231,7 +233,7 @@ txSubmissionSimulation maxUnacked outboundTxs
                 (txSubmissionClientPeer (outboundPeer outboundMempool))
 
     inboundAsync <-
-      async $ runPipelinedPeerWithLimits
+      async $ runPeerWithLimits
                 (("INBOUND",) `contramap` verboseTracer)
                 txSubmissionCodec2
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))

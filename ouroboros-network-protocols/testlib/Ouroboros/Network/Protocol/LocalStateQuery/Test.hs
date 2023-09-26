@@ -1,17 +1,20 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Network.Protocol.LocalStateQuery.Test
   ( tests
   , codec
-  , AnyMessageAndAgencyWithResult (..)
+  , AnyMessageWithResult (..)
   ) where
 
 import qualified Codec.CBOR.Decoding as CBOR
@@ -20,9 +23,12 @@ import           Data.ByteString.Lazy (ByteString)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 
+import           Control.Applicative (Alternative)
 import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
+import           Control.Monad.Class.MonadSTM (MonadLabelledSTM, STM)
+import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
+                     MonadThrow)
 import           Control.Monad.IOSim
 import           Control.Monad.ST (runST)
 import           Control.Tracer (nullTracer)
@@ -30,11 +36,13 @@ import           Control.Tracer (nullTracer)
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Codec hiding (prop_codec)
-import           Network.TypedProtocol.Proofs
+import           Network.TypedProtocol.Codec (AnyMessage (..))
+import           Network.TypedProtocol.Stateful.Codec (Codec (..))
+import qualified Network.TypedProtocol.Stateful.Codec as Stateful
+import           Network.TypedProtocol.Stateful.Proofs as Stateful
 
 import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import           Ouroboros.Network.Driver.Stateful (runConnectedPeers)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Mock.Chain (Point)
@@ -48,8 +56,8 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import           Test.ChainGenerators ()
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
+import           Test.Ouroboros.Network.Testing.Utils (prop_codec_st_cborM,
+                     prop_codec_st_valid_cbor_encoding, splits2, splits3)
 
 import           Test.QuickCheck as QC hiding (Result)
 import           Test.Tasty (TestTree, testGroup)
@@ -67,7 +75,7 @@ tests =
     [ testGroup "LocalStateQuery"
         [ testProperty "direct"              prop_direct
         , testProperty "connect"             prop_connect
-        , testProperty "codec"               prop_codec
+        , testProperty "codec"               prop_codec_LocalStateQuery
         , testProperty "codec 2-splits"      prop_codec_splits2
         , testProperty "codec 3-splits"    $ withMaxSuccess 30
                                              prop_codec_splits3
@@ -175,13 +183,14 @@ prop_connect :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (P
              -> Property
 prop_connect input =
     case runSimOrThrow
-           (connect
+           (connect [] [] StateIdle
              (localStateQueryClientPeer $
               localStateQueryClient clientInput)
              (localStateQueryServerPeer $
               localStateQueryServer serverAcquire serverAnswer)) of
 
-      (result, (), TerminalStates TokDone TokDone) -> result === expected
+      (result, (), TerminalStates SingDone SingDone) ->
+        result === expected
   where
     Setup { clientInput, serverAcquire, serverAnswer, expected } = mkSetup input
 
@@ -192,25 +201,31 @@ prop_connect input =
 
 -- | Run a local state query client and server using connected channels.
 --
-prop_channel :: ( MonadAsync m
+prop_channel :: ( Alternative (STM m)
+                , MonadAsync m
                 , MonadCatch m
+                , MonadLabelledSTM m
                 , MonadST m
+                , MonadMask  m
+                , MonadThrow m
+                , MonadThrow (STM m)
                 )
              => m (Channel m ByteString, Channel m ByteString)
              -> Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
              -> m Property
-prop_channel createChannels input =
-
-    ((expected, ()) ===) <$>
-
-    runConnectedPeers
-      createChannels
-      nullTracer
-      codec
-      (localStateQueryClientPeer $
-       localStateQueryClient clientInput)
-      (localStateQueryServerPeer $
-       localStateQueryServer serverAcquire serverAnswer)
+prop_channel createChannels input = do
+    r <-
+      runConnectedPeers
+        createChannels
+        nullTracer
+        codec
+        StateIdle
+        (localStateQueryClientPeer $
+         localStateQueryClient clientInput)
+        (localStateQueryServerPeer $
+         localStateQueryServer serverAcquire serverAnswer)
+    return $ case r of
+      (result, ()) -> result === expected
   where
     Setup { clientInput, serverAcquire, serverAnswer, expected } = mkSetup input
 
@@ -256,8 +271,8 @@ instance Arbitrary (Query (Maybe (Point Block))) where
 -- Note that this is not as general as the protocol allows, since the protocol
 -- admits different result for different queries.
 --
-newtype AnyMessageAndAgencyWithResult block point query result = AnyMessageAndAgencyWithResult {
-    getAnyMessageAndAgencyWithResult :: AnyMessageAndAgency (LocalStateQuery block point query)
+newtype AnyMessageWithResult block point query result = AnyMessageWithResult {
+    getAnyMessageWithResult :: Stateful.AnyMessage (LocalStateQuery block point query) State
   }
   deriving Show
 
@@ -265,22 +280,20 @@ instance ( Arbitrary point
          , Arbitrary (query result)
          , Arbitrary result
          )
-      => Arbitrary (AnyMessageAndAgencyWithResult block point query result) where
+      => Arbitrary (AnyMessageWithResult block point query result) where
       arbitrary = oneof
-        [ AnyMessageAndAgencyWithResult . getAnyMessageAndAgencyV7 <$> (arbitrary :: Gen (AnyMessageAndAgencyV7 block point query result))
+        [ AnyMessageWithResult . getAnyMessageV7 <$> (arbitrary :: Gen (AnyMessageV7 block point query result))
 
-        , pure $ AnyMessageAndAgencyWithResult $ AnyMessageAndAgency (ClientAgency TokIdle)
-            (MsgAcquire Nothing)
+        , pure $ AnyMessageWithResult $ Stateful.AnyMessage StateIdle StateAcquiring (MsgAcquire Nothing)
 
-        , pure $ AnyMessageAndAgencyWithResult $ AnyMessageAndAgency (ClientAgency TokAcquired)
-            (MsgReAcquire Nothing)
+        , pure $ AnyMessageWithResult $ Stateful.AnyMessage StateAcquired StateAcquiring (MsgReAcquire Nothing)
         ]
 
 -- Newtype wrapper which generates only valid data for 'NodeToClientV7' protocol.
 --
-newtype AnyMessageAndAgencyV7 block point query result = AnyMessageAndAgencyV7 {
-    getAnyMessageAndAgencyV7
-      :: AnyMessageAndAgency (LocalStateQuery block point query)
+newtype AnyMessageV7 block point query result = AnyMessageV7 {
+    getAnyMessageV7
+      :: Stateful.AnyMessage (LocalStateQuery block point query) State
   }
   deriving Show
 
@@ -288,33 +301,34 @@ instance ( Arbitrary point
          , Arbitrary (query result)
          , Arbitrary result
          )
-      => Arbitrary (AnyMessageAndAgencyV7 block point query result) where
-  arbitrary = AnyMessageAndAgencyV7 <$> oneof
-    [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        (MsgAcquire . Just <$> arbitrary)
+      => Arbitrary (AnyMessageV7 block point query result) where
+  arbitrary = AnyMessageV7 <$> oneof
+    [ Stateful.AnyMessage StateIdle StateAcquiring
+        <$> (MsgAcquire . Just <$> arbitrary)
 
-    , AnyMessageAndAgency (ServerAgency TokAcquiring) <$>
-        pure MsgAcquired
+    , pure (Stateful.AnyMessage StateAcquiring StateAcquired MsgAcquired)
 
-    , AnyMessageAndAgency (ServerAgency TokAcquiring) <$>
-        (MsgFailure <$> arbitrary)
+    , Stateful.AnyMessage StateAcquiring StateIdle
+        <$> (MsgFailure <$> arbitrary)
 
-    , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgQuery <$> (arbitrary :: Gen (query result)))
+    , (\query ->
+        Stateful.AnyMessage StateAcquired
+                            (StateQuerying query)
+                            (MsgQuery query))
+        <$> (arbitrary :: Gen (query result))
 
     , (\(QueryWithResult query result) ->
-        AnyMessageAndAgency (ServerAgency (TokQuerying query))
+        Stateful.AnyMessage (StateQuerying query)
+                            StateAcquired
                             (MsgResult query result))
-      <$> (arbitrary :: Gen (QueryWithResult query result))
+        <$> (arbitrary :: Gen (QueryWithResult query result))
 
-    , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        pure MsgRelease
+    , pure (Stateful.AnyMessage StateAcquired StateIdle MsgRelease)
 
-    , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgReAcquire . Just <$> arbitrary)
+    , Stateful.AnyMessage StateAcquired StateAcquiring
+      <$> (MsgReAcquire . Just <$> arbitrary)
 
-    , AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        pure MsgDone
+    , pure (Stateful.AnyMessage StateIdle StateDone MsgDone)
     ]
 
 
@@ -357,6 +371,7 @@ instance  Eq (AnyMessage (LocalStateQuery Block (Point Block) Query)) where
 codec :: MonadST m
       => Codec (LocalStateQuery Block (Point Block) Query)
                 DeserialiseFailure
+                State
                 m ByteString
 codec =
     codecLocalStateQuery
@@ -380,37 +395,40 @@ codec =
 
 -- | Check the codec round trip property.
 --
-prop_codec
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+prop_codec_LocalStateQuery
+  :: AnyMessageWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Bool
-prop_codec (AnyMessageAndAgencyWithResult msg) =
-  runST (prop_codecM codec msg)
+prop_codec_LocalStateQuery (AnyMessageWithResult msg) =
+  runST (Stateful.prop_codecM codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
 prop_codec_splits2
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Bool
-prop_codec_splits2 (AnyMessageAndAgencyWithResult msg) =
-  runST (prop_codec_splitsM splits2 codec msg)
+prop_codec_splits2 (AnyMessageWithResult msg) =
+  runST (Stateful.prop_codec_splitsM splits2 codec msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
 prop_codec_splits3
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Bool
-prop_codec_splits3 (AnyMessageAndAgencyWithResult msg) =
-  runST (prop_codec_splitsM splits3 codec msg)
+prop_codec_splits3 (AnyMessageWithResult msg) =
+  runST (Stateful.prop_codec_splitsM splits3 codec msg)
 
+-- TODO: this test is not needed; `prop_codec_valid_cbor` and
+-- `prop_codec_LocalStateQuery` subsume it.
 prop_codec_cbor
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Bool
-prop_codec_cbor (AnyMessageAndAgencyWithResult msg) =
-  runST (prop_codec_cborM codec msg)
+prop_codec_cbor (AnyMessageWithResult msg) =
+  runST (prop_codec_st_cborM codec msg)
 
 -- | Check that the encoder produces a valid CBOR.
 --
 prop_codec_valid_cbor
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageWithResult Block (Point Block) Query (Maybe (Point Block))
   -> Property
-prop_codec_valid_cbor (AnyMessageAndAgencyWithResult msg) = prop_codec_valid_cbor_encoding codec msg
+prop_codec_valid_cbor (AnyMessageWithResult msg) =
+    prop_codec_st_valid_cbor_encoding codec msg

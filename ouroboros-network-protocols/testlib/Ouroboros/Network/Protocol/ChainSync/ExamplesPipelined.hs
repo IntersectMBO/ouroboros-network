@@ -1,7 +1,9 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -15,9 +17,9 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
   ) where
 
 import           Control.Concurrent.Class.MonadSTM.Strict
+import           Data.Type.Nat
+import           Data.Type.Queue
 import           Data.Word
-
-import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..),
                      blockNo, getTipBlockNo)
@@ -28,6 +30,8 @@ import           Ouroboros.Network.Point (WithOrigin (..))
 import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
 import           Ouroboros.Network.Protocol.ChainSync.Examples (Client (..))
 import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
+import           Ouroboros.Network.Protocol.ChainSync.Type
+
 
 -- | Pipelined chain sync client which pipelines at most @omax@ requests according to 'MkPipelineDecision' policy.
 --
@@ -43,8 +47,8 @@ chainSyncClientPipelined
 chainSyncClientPipelined mkPipelineDecision0 chainvar =
     ChainSyncClientPipelined . fmap (either SendMsgDone initialise) . getChainPoints
   where
-    initialise :: ([Point header], Client header (Point header) (Tip header) m a)
-               -> ClientPipelinedStIdle Z header (Point header) (Tip header) m a
+    initialise :: ([Point header], Client header (Point header) (Tip header)       m a)
+               -> ClientPipelinedStIdle   header (Point header) (Tip header) Empty m a
     initialise (points, client) =
       SendMsgFindIntersect points $
       -- In this consumer example, we do not care about whether the server
@@ -52,26 +56,27 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
       ClientPipelinedStIntersect {
         recvMsgIntersectFound    = \_ srvTip -> do
           cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
-          pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client,
+          pure $ go mkPipelineDecision0 SingEmptyF cliTipBlockNo srvTip client,
         recvMsgIntersectNotFound = \  srvTip -> do
           cliTipBlockNo <- Chain.headBlockNo <$> atomically (readTVar chainvar)
-          pure $ go mkPipelineDecision0 Zero cliTipBlockNo srvTip client
+          pure $ go mkPipelineDecision0 SingEmptyF cliTipBlockNo srvTip client
       }
 
     -- Drive pipelining by using @mkPipelineDecision@ callback.
-    go :: MkPipelineDecision
-       -> Nat n
+    go :: forall (q :: Queue (ChainSync header (Point header) (Tip header))).
+          MkPipelineDecision
+       -> SingQueueF F q
        -> WithOrigin BlockNo
        -- ^ our head
        -> Tip header
        -- ^ head of the server
        -> Client header (Point header) (Tip header) m a
-       -> ClientPipelinedStIdle n header (Point header) (Tip header) m a
+       -> ClientPipelinedStIdle header (Point header) (Tip header) q m a
 
-    go mkPipelineDecision n cliTipBlockNo srvTip client@Client {rollforward, rollbackward} =
+    go mkPipelineDecision q cliTipBlockNo srvTip client@Client {rollforward, rollbackward} =
       let srvTipBlockNo = getTipBlockNo srvTip in
-      case (n, runPipelineDecision mkPipelineDecision n cliTipBlockNo srvTipBlockNo) of
-        (_Zero, (Request, mkPipelineDecision')) ->
+      case (q, runPipelineDecision mkPipelineDecision (queueFDepthNat q) cliTipBlockNo srvTipBlockNo) of
+        (SingEmptyF, (Request, mkPipelineDecision')) ->
           SendMsgRequestNext
               clientStNext
               -- We received 'MsgAwaitReplay' and we get a chance to run
@@ -85,42 +90,42 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                     choice <- rollforward srvHeader
                     pure $ case choice of
                       Left a        -> SendMsgDone a
-                      Right client' -> go mkPipelineDecision' n (At (blockNo srvHeader)) srvTip' client',
+                      Right client' -> go mkPipelineDecision' q (At (blockNo srvHeader)) srvTip' client',
                   recvMsgRollBackward = \pRollback srvTip' -> do
                     cliTipBlockNo' <- rollback pRollback
                     choice <- rollbackward pRollback srvTip'
                     pure $ case choice of
                       Left a        -> SendMsgDone a
-                      Right client' -> go mkPipelineDecision' n cliTipBlockNo' srvTip' client'
+                      Right client' -> go mkPipelineDecision' q cliTipBlockNo' srvTip' client'
                 }
 
         (_, (Pipeline, mkPipelineDecision')) ->
           SendMsgRequestNextPipelined
-            (go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
+            (go mkPipelineDecision' (q |> FCanAwait) cliTipBlockNo srvTip client)
 
-        (Succ n', (CollectOrPipeline, mkPipelineDecision')) ->
+        (SingConsF FCanAwait q', (CollectOrPipeline, mkPipelineDecision')) ->
           CollectResponse
             -- if there is no message we pipeline next one; it is important we
             -- do not directly loop here, but send something; otherwise we
             -- would just build a busy loop polling the driver's receiving
             -- queue.
-            (Just $ pure $ SendMsgRequestNextPipelined $ go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
+            (Just $ pure $ SendMsgRequestNextPipelined $ go mkPipelineDecision' (q |> FCanAwait) cliTipBlockNo srvTip client)
             ClientStNext {
                 recvMsgRollForward = \srvHeader srvTip' -> do
                   addBlock srvHeader
                   choice <- rollforward srvHeader
                   pure $ case choice of
-                    Left a        -> collectAndDone n' a
-                    Right client' -> go mkPipelineDecision' n' (At (blockNo srvHeader)) srvTip' client',
+                    Left a        -> collectAndDone q' a
+                    Right client' -> go mkPipelineDecision' q' (At (blockNo srvHeader)) srvTip' client',
                 recvMsgRollBackward = \pRollback srvTip' -> do
                   cliTipBlockNo' <- rollback pRollback
                   choice <- rollbackward pRollback srvTip'
                   pure $ case choice of
-                    Left a        -> collectAndDone n' a
-                    Right client' -> go mkPipelineDecision' n' cliTipBlockNo' srvTip' client'
+                    Left a        -> collectAndDone q' a
+                    Right client' -> go mkPipelineDecision' q' cliTipBlockNo' srvTip' client'
               }
 
-        (Succ n', (Collect, mkPipelineDecision')) ->
+        (SingConsF FCanAwait q', (Collect, mkPipelineDecision')) ->
           CollectResponse
             Nothing
             ClientStNext {
@@ -128,35 +133,87 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
                   addBlock srvHeader
                   choice <- rollforward srvHeader
                   pure $ case choice of
-                    Left a        -> collectAndDone n' a
-                    Right client' -> go mkPipelineDecision' n' (At (blockNo srvHeader)) srvTip' client',
+                    Left a        -> collectAndDone q' a
+                    Right client' -> go mkPipelineDecision' q' (At (blockNo srvHeader)) srvTip' client',
                 recvMsgRollBackward = \pRollback srvTip' -> do
                   cliTipBlockNo' <- rollback pRollback
                   choice <- rollbackward pRollback srvTip'
                   pure $ case choice of
-                    Left a        -> collectAndDone n' a
-                    Right client' -> go mkPipelineDecision' n' cliTipBlockNo' srvTip' client'
+                    Left a        -> collectAndDone q' a
+                    Right client' -> go mkPipelineDecision' q' cliTipBlockNo' srvTip' client'
+              }
+
+        (SingConsF FMustReply q', (CollectOrPipeline, mkPipelineDecision')) ->
+          CollectResponse
+            -- if there is no message we pipeline next one; it is important we
+            -- do not directly loop here, but send something; otherwise we
+            -- would just build a busy loop polling the driver's receiving
+            -- queue.
+            (Just $ pure $ SendMsgRequestNextPipelined $ go mkPipelineDecision' (q |> FCanAwait) cliTipBlockNo srvTip client)
+            ClientStNext {
+                recvMsgRollForward = \srvHeader srvTip' -> do
+                  addBlock srvHeader
+                  choice <- rollforward srvHeader
+                  pure $ case choice of
+                    Left a        -> collectAndDone q' a
+                    Right client' -> go mkPipelineDecision' q' (At (blockNo srvHeader)) srvTip' client',
+                recvMsgRollBackward = \pRollback srvTip' -> do
+                  cliTipBlockNo' <- rollback pRollback
+                  choice <- rollbackward pRollback srvTip'
+                  pure $ case choice of
+                    Left a        -> collectAndDone q' a
+                    Right client' -> go mkPipelineDecision' q' cliTipBlockNo' srvTip' client'
+              }
+
+        (SingConsF FMustReply q', (Collect, mkPipelineDecision')) ->
+          CollectResponse
+            Nothing
+            ClientStNext {
+                recvMsgRollForward = \srvHeader srvTip' -> do
+                  addBlock srvHeader
+                  choice <- rollforward srvHeader
+                  pure $ case choice of
+                    Left a        -> collectAndDone q' a
+                    Right client' -> go mkPipelineDecision' q' (At (blockNo srvHeader)) srvTip' client',
+                recvMsgRollBackward = \pRollback srvTip' -> do
+                  cliTipBlockNo' <- rollback pRollback
+                  choice <- rollbackward pRollback srvTip'
+                  pure $ case choice of
+                    Left a        -> collectAndDone q' a
+                    Right client' -> go mkPipelineDecision' q' cliTipBlockNo' srvTip' client'
               }
 
 
-    -- Recursievly collect all outstanding responses, but do nothing with them.
+    -- Recursively collect all outstanding responses, but do nothing with them.
     -- If 'CollectResponse' returns an error when applying
     -- roll forward or roll backward instruction, we collect all the
     -- outstanding responses and send 'MsgDone'.
-    collectAndDone :: Nat n
+    collectAndDone :: SingQueueF F q
                    -> a
-                   -> ClientPipelinedStIdle n header (Point header) (Tip header) m a
+                   -> ClientPipelinedStIdle header (Point header) (Tip header) q m a
 
-    collectAndDone Zero     a = SendMsgDone a
+    collectAndDone SingEmptyF a =
+      SendMsgDone a
 
-    collectAndDone (Succ n) a = CollectResponse
-                                  Nothing
-                                  ClientStNext {
-                                      recvMsgRollForward  = \_header _point ->
-                                        pure $ collectAndDone n a,
-                                      recvMsgRollBackward = \_pRollback _pHead ->
-                                        pure $ collectAndDone n a
-                                    }
+    collectAndDone (SingConsF FCanAwait q) a =
+      CollectResponse
+        Nothing
+        ClientStNext {
+            recvMsgRollForward  = \_header _point ->
+              pure $ collectAndDone q a,
+            recvMsgRollBackward = \_pRollback _pHead ->
+              pure $ collectAndDone q a
+          }
+
+    collectAndDone (SingConsF FMustReply q) a =
+      CollectResponse
+        Nothing
+        ClientStNext {
+            recvMsgRollForward  = \_header _point ->
+              pure $ collectAndDone q a,
+            recvMsgRollBackward = \_pRollback _pHead ->
+              pure $ collectAndDone q a
+          }
 
 
     getChainPoints :: Client header (Point header) (Tip header) m a

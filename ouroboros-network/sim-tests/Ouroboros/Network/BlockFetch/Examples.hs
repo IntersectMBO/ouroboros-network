@@ -22,6 +22,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Typeable (Typeable)
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (forever)
@@ -39,17 +40,17 @@ import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
 import           Ouroboros.Network.Block
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
-
-import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
+import           Network.TypedProtocol.Peer.Client (Client)
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
 import           Ouroboros.Network.Channel
+import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
 import           Ouroboros.Network.DeltaQ
 import           Ouroboros.Network.Driver
 import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
 import qualified Ouroboros.Network.NodeToNode.Version as NodeToNode
+import           Ouroboros.Network.Protocol.BlockFetch.Client
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
 import           Ouroboros.Network.Protocol.BlockFetch.Server
 import           Ouroboros.Network.Protocol.BlockFetch.Type
@@ -61,9 +62,9 @@ import           Ouroboros.Network.Mock.ConcreteBlock
 -- | Run a single block fetch protocol until the chain is downloaded.
 --
 blockFetchExample0 :: forall m.
-                      (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
-                       MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
-                       MonadThrow (STM m))
+                      (Alternative (STM m), MonadSTM m, MonadST m, MonadAsync m,
+                       MonadDelay m, MonadFork m, MonadTime m, MonadTimer m,
+                       MonadMask m, MonadThrow (STM m))
                    => Tracer m [TraceLabelPeer Int
                                  (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
@@ -92,7 +93,8 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
                     NodeToNode.isPipeliningEnabled
                     clientDelay serverDelay
                     registry peerno
-                    (blockFetchClient NodeToNodeV_7 controlMessageSTM nullTracer)
+                    ( blockFetchClientPeerPipelined .
+                      blockFetchClient NodeToNodeV_7 controlMessageSTM nullTracer)
                     (mockBlockFetchServer1 candidateChain)
 
     fetchAsync  <- async $ do
@@ -170,9 +172,9 @@ blockFetchExample0 decisionTracer clientStateTracer clientMsgTracer
 -- will be interested in downloading them all.
 --
 blockFetchExample1 :: forall m.
-                      (MonadSTM m, MonadST m, MonadAsync m, MonadDelay m,
-                       MonadFork m, MonadTime m, MonadTimer m, MonadMask m,
-                       MonadThrow (STM m))
+                      (Alternative (STM m), MonadSTM m, MonadST m, MonadAsync m,
+                       MonadDelay m, MonadFork m, MonadTime m, MonadTimer m,
+                       MonadMask m, MonadThrow (STM m))
                    => Tracer m [TraceLabelPeer Int
                                  (FetchDecision [Point BlockHeader])]
                    -> Tracer m (TraceLabelPeer Int
@@ -201,7 +203,8 @@ blockFetchExample1 decisionTracer clientStateTracer clientMsgTracer
                         NodeToNode.isPipeliningEnabled
                         clientDelay serverDelay
                         registry peerno
-                        (blockFetchClient NodeToNodeV_7 controlMessageSTM nullTracer)
+                        ( blockFetchClientPeerPipelined .
+                          blockFetchClient NodeToNodeV_7 controlMessageSTM nullTracer)
                         (mockBlockFetchServer1 candidateChain)
                     | (peerno, candidateChain) <- zip [1..] candidateChains
                     ]
@@ -319,9 +322,11 @@ exampleFixedPeerGSVs =
 -- Utils to run fetch clients and servers
 --
 
-runFetchClient :: (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
-                   MonadThrow (STM m), MonadST m, MonadTime m, MonadTimer m,
-                   Ord peerid, Serialise block, Serialise point,
+runFetchClient :: (Alternative (STM m), MonadAsync m, MonadDelay m, MonadFork m,
+                   MonadMask m, MonadThrow (STM m), MonadST m, MonadTime m,
+                   MonadTimer m,
+                   Ord peerid,
+                   Serialise block, Serialise point,
                    Typeable block, ShowProxy block)
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> version
@@ -330,18 +335,18 @@ runFetchClient :: (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
                 -> peerid
                 -> Channel m LBS.ByteString
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch block point) AsClient BFIdle m a)
+                   -> Client (BlockFetch block point) 'Pipelined Empty BFIdle m (STM m) a)
                 -> m a
 runFetchClient tracer version isPipeliningEnabled registry peerid channel client =
     bracketFetchClient registry version isPipeliningEnabled peerid $ \clientCtx ->
       fst <$>
-        runPipelinedPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
+        runPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
           timeLimitsBlockFetch channel (client clientCtx)
   where
     codec = codecBlockFetch encode decode encode decode
 
-runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-                   MonadST m, MonadTime m, MonadTimer m,
+runFetchServer :: (Alternative (STM m), MonadAsync m, MonadFork m, MonadMask m,
+                   MonadThrow (STM m), MonadST m, MonadTime m, MonadTimer m,
                    Serialise block, Serialise point,
                    Typeable block,
                    ShowProxy block)
@@ -358,8 +363,9 @@ runFetchServer tracer channel server =
 
 runFetchClientAndServerAsync
                :: forall peerid block header version m a b.
-                  (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
-                   MonadThrow (STM m), MonadST m, MonadTime m, MonadTimer m,
+                  (Alternative (STM m), MonadAsync m, MonadDelay m, MonadFork m,
+                   MonadMask m, MonadThrow (STM m), MonadST m, MonadTime m,
+                   MonadTimer m,
                    Ord peerid, Show peerid,
                    Serialise header, Serialise block,
                    Serialise (HeaderHash block),
@@ -375,7 +381,7 @@ runFetchClientAndServerAsync
                 -> FetchClientRegistry peerid header block m
                 -> peerid
                 -> (  FetchClientContext header block m
-                   -> PeerPipelined (BlockFetch block (Point block)) AsClient BFIdle m a)
+                   -> Client (BlockFetch block (Point block)) 'Pipelined Empty BFIdle m (STM m) a)
                 -> BlockFetchServer block (Point block) m b
                 -> m (Async m a, Async m b, Async m (), Async m ())
 runFetchClientAndServerAsync clientTracer serverTracer

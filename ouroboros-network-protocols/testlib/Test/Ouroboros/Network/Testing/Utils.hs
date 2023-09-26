@@ -11,7 +11,7 @@ import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LBS
 
 import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Stateful.Codec
+import qualified Network.TypedProtocol.Stateful.Codec as Stateful
 
 import           Test.QuickCheck
 
@@ -34,10 +34,10 @@ prop_codec_cborM
      , Eq (AnyMessage ps)
      )
   => Codec ps CBOR.DeserialiseFailure m LBS.ByteString
-  -> AnyMessageAndAgency ps
+  -> AnyMessage ps
   -> m Bool
-prop_codec_cborM codec (AnyMessageAndAgency stok msg)
-    = case CBOR.deserialiseFromBytes CBOR.decodeTerm $ encode codec stok msg of
+prop_codec_cborM codec (AnyMessage msg)
+    = case CBOR.deserialiseFromBytes CBOR.decodeTerm $ encode codec msg of
         Left _err               -> return False
         Right (leftover, _term) -> return $ LBS.null leftover
 
@@ -49,10 +49,10 @@ prop_codec_cborM codec (AnyMessageAndAgency stok msg)
 prop_codec_valid_cbor_encoding
   :: forall ps.
      Codec ps CBOR.DeserialiseFailure IO ByteString
-  -> AnyMessageAndAgency ps
+  -> AnyMessage ps
   -> Property
-prop_codec_valid_cbor_encoding Codec {encode} (AnyMessageAndAgency stok msg) =
-    case deserialise [] (encode stok msg) of
+prop_codec_valid_cbor_encoding Codec {encode} (AnyMessage msg) =
+    case deserialise [] (encode msg) of
       Left  e     -> counterexample (show e) False
       Right terms -> property (CBOR.validFlatTerm terms)
   where
@@ -72,11 +72,11 @@ prop_codec_st_cborM
      ( Monad m
      , Eq (AnyMessage ps)
      )
-  => CodecSt ps CBOR.DeserialiseFailure f m LBS.ByteString
-  -> AnyMessageSt ps f
+  => Stateful.Codec ps CBOR.DeserialiseFailure f m LBS.ByteString
+  -> Stateful.AnyMessage ps f
   -> m Bool
-prop_codec_st_cborM codec (AnyMessageSt _ f' msg)
-    = case CBOR.deserialiseFromBytes CBOR.decodeTerm $ encodeSt codec f' msg of
+prop_codec_st_cborM codec (Stateful.AnyMessage _ f' msg)
+    = case CBOR.deserialiseFromBytes CBOR.decodeTerm $ Stateful.encode codec f' msg of
         Left _err               -> return False
         Right (leftover, _term) -> return $ LBS.null leftover
 
@@ -86,11 +86,11 @@ prop_codec_st_cborM codec (AnyMessageSt _ f' msg)
 --
 prop_codec_st_valid_cbor_encoding
   :: forall ps f.
-     CodecSt ps CBOR.DeserialiseFailure f IO ByteString
-  -> AnyMessageSt ps f
+     Stateful.Codec ps CBOR.DeserialiseFailure f IO ByteString
+  -> Stateful.AnyMessage ps f
   -> Property
-prop_codec_st_valid_cbor_encoding CodecSt {encodeSt} (AnyMessageSt _ f msg) =
-    case deserialise [] (encodeSt f msg) of
+prop_codec_st_valid_cbor_encoding Stateful.Codec {Stateful.encode} (Stateful.AnyMessage _ f msg) =
+    case deserialise [] (encode f msg) of
       Left  e     -> counterexample (show e) False
       Right terms -> property (CBOR.validFlatTerm terms)
   where

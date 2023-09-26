@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 
@@ -20,16 +21,16 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as Seq
+import           Data.Type.Queue
 import           Data.Word (Word16)
 
 import           Control.Exception (assert)
 import           Control.Monad (when)
 import           Control.Tracer (Tracer, traceWith)
 
-import           Network.TypedProtocol.Core
-
 import           Ouroboros.Network.Protocol.TxSubmission2.Client
 import           Ouroboros.Network.Protocol.TxSubmission2.Server
+import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
 
 --
@@ -80,7 +81,7 @@ txSubmissionClient tracer txId txSize maxUnacked =
             (Map.fromList [ (x, ()) | x <- Foldable.toList unackedSeq ])
 
         recvMsgRequestTxIds :: forall blocking.
-                               TokBlockingStyle blocking
+                               SingBlockingStyle blocking
                             -> Word16
                             -> Word16
                             -> m (ClientStTxIds blocking txid tx m ())
@@ -103,7 +104,7 @@ txSubmissionClient tracer txId txSize maxUnacked =
                                    (Seq.take (fromIntegral ackNo) unackedSeq)
 
           case blocking of
-            TokBlocking | not (Seq.null unackedSeq')
+            SingBlocking | not (Seq.null unackedSeq')
               -> error $ "txSubmissionClientConst.recvMsgRequestTxIds: "
                       ++ "peer made a blocking request for more txids when "
                       ++ "there are still unacknowledged txids."
@@ -121,15 +122,15 @@ txSubmissionClient tracer txId txSize maxUnacked =
               txIdAndSize tx = (txId tx, txSize tx)
 
           return $! case (blocking, unackedExtra) of
-            (TokBlocking, []) ->
+            (SingBlocking, []) ->
               SendMsgDone ()
 
-            (TokBlocking, tx:txs) ->
+            (SingBlocking, tx:txs) ->
               SendMsgReplyTxIds
                 (BlockingReply (fmap txIdAndSize (tx :| txs)))
                 (client unackedSeq'' unackedMap'' remainingTxs')
 
-            (TokNonBlocking, txs) ->
+            (SingNonBlocking, txs) ->
               SendMsgReplyTxIds
                 (NonBlockingReply (map txIdAndSize txs))
                 (client unackedSeq'' unackedMap'' remainingTxs')
@@ -202,6 +203,9 @@ data ServerState txid tx = ServerState {
 initialServerState :: ServerState txid tx
 initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 
+data F st st' where
+    FTxIds :: F (StTxIds NonBlocking) StIdle
+    FTxs   :: F  StTxs                StIdle
 
 -- | An example transaction submission server.
 --
@@ -221,18 +225,20 @@ txSubmissionServer
   -> Word16  -- ^ Maximum number of txs to request in any one go
   -> TxSubmissionServerPipelined txid tx m [tx]
 txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
-    TxSubmissionServerPipelined (pure $ serverIdle [] Zero initialServerState)
+    TxSubmissionServerPipelined (pure $ serverIdle [] SingEmptyF initialServerState)
   where
-    serverIdle :: forall (n :: N).
+    -- In 'StIdle' the server makes decisions whether to download more txids or
+    -- txs, dispatches requests or collects responses.
+    serverIdle :: forall (q :: Queue (TxSubmission2 txid tx)).
                   [tx]
-               -> Nat n
+               -> SingQueueF F q
                -> ServerState txid tx
-               -> ServerStIdle n txid tx m [tx]
-    serverIdle accum Zero st
+               -> ServerStIdle txid tx q m [tx]
+    serverIdle accum SingEmptyF st
         -- There are no replies in flight, but we do know some more txs we can
         -- ask for, so lets ask for them and more txids.
       | canRequestMoreTxs st
-      = serverReqTxs accum Zero st
+      = serverReqTxs accum SingEmptyF st
 
         -- There's no replies in flight, and we have no more txs we can ask for
         -- so the only remaining thing to do is to ask for more txids. Since
@@ -249,14 +255,14 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
           (pure accum)               -- result if the client reports we're done
           (\txids -> do
               traceWith tracer (EventRequestTxIdsBlocking st (numTxsToAcknowledge st) numTxIdsToRequest)
-              handleReply accum Zero st {
+              handleTxIds accum SingEmptyF st {
                  numTxsToAcknowledge    = 0,
                  requestedTxIdsInFlight = numTxIdsToRequest
                }
-               . CollectTxIds numTxIdsToRequest
-               . NonEmpty.toList $ txids)
+               numTxIdsToRequest
+               (NonEmpty.toList $ txids))
 
-    serverIdle accum (Succ n) st
+    serverIdle accum q@(SingConsF f q') st
         -- We have replies in flight and we should eagerly collect them if
         -- available, but there are transactions to request too so we should
         -- not block waiting for replies.
@@ -270,31 +276,50 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
         -- a busy-polling loop.
         --
       | canRequestMoreTxs st
-      = CollectPipelined
-          (Just (serverReqTxs accum (Succ n) st))
-          (handleReply accum n st)
+      = case f of
+          FTxIds ->
+            CollectPipelined
+              (Just (serverReqTxs accum q st))
+              (handleTxIds accum q' st)
+              (handleTxs   accum q' st)
+          FTxs ->
+            CollectPipelined
+              (Just (serverReqTxs accum q st))
+              (handleTxIds accum q' st)
+              (handleTxs   accum q' st)
 
         -- In this case there is nothing else to do so we block until we
         -- collect a reply.
       | otherwise
-      = CollectPipelined
-          Nothing
-          (handleReply accum n st)
+      = case f of
+          FTxIds ->
+            CollectPipelined
+              Nothing
+              (handleTxIds accum q' st)
+              (handleTxs   accum q' st)
+          FTxs ->
+            CollectPipelined
+              Nothing
+              (handleTxIds accum q' st)
+              (handleTxs   accum q' st)
+
 
     canRequestMoreTxs :: ServerState k tx -> Bool
     canRequestMoreTxs st =
         not (Map.null (availableTxids st))
 
-    handleReply :: forall (n :: N).
+    -- handle 'MsgReplyTxIds'
+    handleTxIds :: forall (q :: Queue (TxSubmission2 txid tx)).
                    [tx]
-                -> Nat n
+                -> SingQueueF F q
                 -> ServerState txid tx
-                -> Collect txid tx
-                -> m (ServerStIdle n txid tx m [tx])
-    handleReply accum n st (CollectTxIds reqNo txids) =
+                -> Word16
+                -> [(txid, TxSizeInBytes)]
+                -> m (ServerStIdle txid tx q m [tx])
+    handleTxIds accum q st reqNo txids =
       -- Upon receiving a batch of new txids we extend our available set,
       -- and extended the unacknowledged sequence.
-      return $ serverIdle accum n st {
+      return $ serverIdle accum q st {
         requestedTxIdsInFlight = requestedTxIdsInFlight st - reqNo,
         unacknowledgedTxIds    = unacknowledgedTxIds st
                               <> Seq.fromList (map fst txids),
@@ -302,7 +327,15 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
                               <> Map.fromList txids
       }
 
-    handleReply accum n st (CollectTxs txids txs) =
+    -- handle 'MsgReplyTxs
+    handleTxs :: forall (q :: Queue (TxSubmission2 txid tx)).
+                 [tx]
+              -> SingQueueF F q
+              -> ServerState txid tx
+              -> [txid]
+              -> [tx]
+              -> m (ServerStIdle txid tx q m [tx])
+    handleTxs accum q st txids txs =
       -- When we receive a batch of transactions, in general we get a subset of
       -- those that we asked for, with the remainder now deemed unnecessary.
       -- But we still have to acknowledge the txids we were given. This combined
@@ -313,7 +346,7 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
       -- We have to update the unacknowledgedTxIds here eagerly and not delay it
       -- to serverReqTxs, otherwise we could end up blocking in serverIdle on
       -- more pipelined results rather than being able to move on.
-      return $ serverIdle accum' n st {
+      return $ serverIdle accum' q st {
         bufferedTxs         = bufferedTxs'',
         unacknowledgedTxIds = unacknowledgedTxIds',
         numTxsToAcknowledge = numTxsToAcknowledge st
@@ -346,18 +379,18 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
         bufferedTxs'' = foldl' (flip Map.delete) bufferedTxs' acknowledgedTxIds
 
 
-    serverReqTxs :: forall (n :: N).
+    serverReqTxs :: forall (q :: Queue (TxSubmission2 txid tx)).
                     [tx]
-                 -> Nat n
+                 -> SingQueueF F q
                  -> ServerState txid tx
-                 -> ServerStIdle n txid tx m [tx]
-    serverReqTxs accum n st =
+                 -> ServerStIdle txid tx q m [tx]
+    serverReqTxs accum q st =
         SendMsgRequestTxsPipelined
           (Map.keys txsToRequest)
           (do traceWith tracer (EventRequestTxsPipelined st (Map.keys txsToRequest))
-              pure $ serverReqTxIds accum (Succ n) st {
+              pure $ serverReqTxIds accum (q |> FTxs) st {
                 availableTxids = availableTxids'
-              })
+                })
       where
         -- This implementation is deliberately naive, we pick in an arbitrary
         -- order and up to a fixed limit. The real thing should take account of
@@ -366,25 +399,25 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
         (txsToRequest, availableTxids') =
           Map.splitAt (fromIntegral maxTxToRequest) (availableTxids st)
 
-    serverReqTxIds :: forall (n :: N).
+    serverReqTxIds :: forall (q :: Queue (TxSubmission2 txid tx)).
                       [tx]
-                   -> Nat n
+                   -> SingQueueF F q
                    -> ServerState txid tx
-                   -> ServerStIdle n txid tx m [tx]
-    serverReqTxIds accum n st
+                   -> ServerStIdle txid tx q m [tx]
+    serverReqTxIds accum q st
       | numTxIdsToRequest > 0
       = SendMsgRequestTxIdsPipelined
           (numTxsToAcknowledge st)
           numTxIdsToRequest
           (do traceWith tracer (EventRequestTxIdsPipelined st (numTxsToAcknowledge st) numTxIdsToRequest)
-              pure $ serverIdle accum (Succ n) st {
+              pure $ serverIdle accum (q |> FTxIds) st {
                 requestedTxIdsInFlight = requestedTxIdsInFlight st
                                        + numTxIdsToRequest,
                 numTxsToAcknowledge    = 0
               })
 
       | otherwise
-      = serverIdle accum n st
+      = serverIdle accum q st
       where
         -- This definition is justified by the fact that the
         -- 'numTxsToAcknowledge' are not included in the 'unacknowledgedTxIds'.
