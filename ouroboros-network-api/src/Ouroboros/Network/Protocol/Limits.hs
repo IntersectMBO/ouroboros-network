@@ -24,7 +24,7 @@ data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
        dataSize          :: bytes -> Word
      }
 
-data ProtocolTimeLimits ps = ProtocolTimeLimits {
+newtype ProtocolTimeLimits ps = ProtocolTimeLimits {
        timeLimitForState :: forall  (st :: ps). ActiveState st
                          => StateToken st -> Maybe DiffTime
      }
