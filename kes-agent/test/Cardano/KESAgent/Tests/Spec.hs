@@ -17,26 +17,31 @@
 module Cardano.KESAgent.Tests.Spec
 where
 
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.Control.Driver
 import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Crypto.DSIGN.Class hiding (Signable)
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
-import Cardano.Crypto.KES.Class
+import Cardano.Crypto.DSIGN.Class hiding (Signable)
+import Cardano.Crypto.DSIGN.Ed25519
 import Cardano.Crypto.DirectSerialise
+import Cardano.Crypto.Hash.Blake2b
+import Cardano.Crypto.KES.Class
+import Cardano.Crypto.KES.CompactSingle
+import Cardano.Crypto.KES.CompactSum
+import Cardano.Crypto.KES.Single
+import Cardano.Crypto.KES.Sum
 import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
 import Cardano.Crypto.Seed (mkSeedFromBytes)
 import Ouroboros.Network.RawBearer
-import Test.Crypto.Instances
 
 import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.TChan
@@ -54,16 +59,16 @@ import Data.Time (UTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
 import Data.Typeable
 import Data.Word
+import Foreign.Marshal (copyBytes, allocaBytes)
+import Foreign.Ptr (castPtr)
+import GHC.TypeNats (KnownNat, natVal)
 import System.FilePath ( (</>) )
 import System.IO.Temp ( withSystemTempDirectory )
+import System.IO.Unsafe (unsafePerformIO)
 import Test.Crypto.Instances
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
-import Foreign.Marshal (copyBytes, allocaBytes)
-import Foreign.Ptr (castPtr)
-import GHC.TypeNats (KnownNat, natVal)
-import System.IO.Unsafe (unsafePerformIO)
 
 data SomeRecord =
   SomeRecord
@@ -133,6 +138,7 @@ tests = testGroup "Spec ser"
   , testSpecMk "[BootstrapInfo]" (return . map mkBootstrapInfo)
   , testSpecCrypto (Proxy @MockCrypto)
   , testSpecCrypto (Proxy @StandardCrypto)
+  , testSpecCrypto (Proxy @CompactStandardCrypto)
   ]
 
 testSpecCrypto :: forall c.

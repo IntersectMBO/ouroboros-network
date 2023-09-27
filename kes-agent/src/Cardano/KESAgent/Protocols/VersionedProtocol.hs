@@ -8,8 +8,9 @@ where
 import Data.Proxy
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.Kind
 
-class VersionedProtocol (p :: *) where
+class VersionedProtocol (p :: Type) where
   versionIdentifier :: Proxy p -> VersionIdentifier
 
 newtype VersionIdentifier =
@@ -31,5 +32,5 @@ mkCryptoName :: ByteString -> CryptoName
 mkCryptoName raw =
   CryptoName $ BS.take versionIdentifierLength $ raw <> BS.replicate versionIdentifierLength 0
 
-class NamedCrypto (p :: *) where
+class NamedCrypto (p :: Type) where
   cryptoName :: Proxy p -> CryptoName

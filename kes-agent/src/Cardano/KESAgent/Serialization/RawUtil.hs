@@ -13,15 +13,10 @@
 module Cardano.KESAgent.Serialization.RawUtil
 where
 
-import Cardano.KESAgent.KES.Crypto
-import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.RecvResult
-import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
-import Cardano.Binary
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Libsodium.Memory
@@ -39,24 +34,17 @@ import Control.Monad.Trans
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadThrow ( MonadThrow, bracket, Exception )
+import Control.Monad.Class.MonadThrow ( MonadThrow, Exception )
 import Control.Tracer ( Tracer, traceWith )
 import Data.Binary ( decode, encode )
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.Functor.Contravariant ( (>$<) )
-import Data.Maybe ( fromMaybe )
 import Data.Proxy
 import Data.Typeable
 import Data.Word
 import Data.Int
 import Foreign ( Ptr, castPtr, plusPtr )
 import Foreign.C.Types ( CChar, CSize )
-import Foreign.Marshal.Alloc ( free, mallocBytes )
-import Foreign.Marshal.Utils ( copyBytes )
-import Network.TypedProtocol.Core
-import Network.TypedProtocol.Driver
-import Text.Printf
 import Data.Time ( UTCTime )
 import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds, posixSecondsToUTCTime )
 

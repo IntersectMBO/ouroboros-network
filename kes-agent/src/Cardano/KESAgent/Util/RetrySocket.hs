@@ -3,12 +3,9 @@
 module Cardano.KESAgent.Util.RetrySocket
   where
 
-import Control.Exception ( Exception )
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer
-import Data.Time ( DiffTime (..), picosecondsToDiffTime )
 import System.IO
-import System.Socket ( SocketException, close, connect, socket )
 
 -- | Retry given action up to 10 times, using the provided reporting function
 -- to signal retries. Initial retry interval is 100 milliseconds, after that

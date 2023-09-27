@@ -11,13 +11,13 @@ import Cardano.KESAgent.KES.Crypto
 import Cardano.Crypto.KES.Mock
 import Cardano.Crypto.KES.Single
 import Cardano.Crypto.KES.Sum
+import Cardano.Crypto.KES.CompactSum
 import Cardano.Crypto.DSIGN.Ed25519
 import Cardano.Crypto.Hash.Blake2b
 
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-
 data StandardCrypto
+
+data CompactStandardCrypto
 
 data SingleCrypto
 
@@ -26,6 +26,10 @@ data MockCrypto
 instance Crypto StandardCrypto where
   type KES StandardCrypto = Sum6KES Ed25519DSIGN Blake2b_256
   type DSIGN StandardCrypto = Ed25519DSIGN
+
+instance Crypto CompactStandardCrypto where
+  type KES CompactStandardCrypto = CompactSum6KES Ed25519DSIGN Blake2b_256
+  type DSIGN CompactStandardCrypto = Ed25519DSIGN
 
 instance Crypto SingleCrypto where
   type KES SingleCrypto = SingleKES Ed25519DSIGN
@@ -37,6 +41,9 @@ instance Crypto MockCrypto where
 
 instance NamedCrypto StandardCrypto where
   cryptoName _ = CryptoName "StandardCrypto"
+
+instance NamedCrypto CompactStandardCrypto where
+  cryptoName _ = CryptoName "CompactStandardCrypto"
 
 instance NamedCrypto SingleCrypto where
   cryptoName _ = CryptoName "SingleCrypto"

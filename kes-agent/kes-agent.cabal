@@ -45,6 +45,11 @@ library
                    Cardano.KESAgent.Serialization.TextEnvelope
                    Cardano.KESAgent.Serialization.RawUtil
                    Cardano.KESAgent.Serialization.Spec
+                   Cardano.KESAgent.Serialization.Spec.Types
+                   Cardano.KESAgent.Serialization.Spec.Class
+                   Cardano.KESAgent.Serialization.Spec.OrphansBase
+                   Cardano.KESAgent.Serialization.Spec.OrphansCardano
+                   Cardano.KESAgent.Serialization.Spec.TH
                    Cardano.KESAgent.Protocols.Service.Driver
                    Cardano.KESAgent.Protocols.Service.Peers
                    Cardano.KESAgent.Protocols.Service.Protocol

@@ -31,7 +31,6 @@ import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Util ( SignableRepresentation (..) )
 
 import Control.Monad ( when )
-import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BSB
 import Data.ByteString.Builder.Extra qualified as BSB
 import Data.ByteString.Lazy qualified as LBS

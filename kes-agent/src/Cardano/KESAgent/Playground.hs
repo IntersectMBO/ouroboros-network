@@ -7,8 +7,11 @@ import Data.Proxy
 import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.KES.Crypto
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.Control.Driver
+import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.StandardCrypto
 import GHC.Generics
 import Cardano.Crypto.KES.Class
 import Text.Printf
@@ -64,7 +67,7 @@ fieldSpecToHTML :: FieldInfo -> String
 fieldSpecToHTML fi =
   mconcat
     [ "<h3 id='", htmlencode (shortFieldType fi), "'>"
-    , htmlencode (fieldType fi)
+    , htmlencode (shortFieldType fi)
     , "</h3>"
     , subfieldsToHTML (compoundField "" [("", fi)])
     ]
@@ -175,6 +178,11 @@ subfieldToHtmlTR sfi =
 allInfos =
   [ info @(AgentInfo StandardCrypto) Proxy
   , info @(BundleInfo StandardCrypto) Proxy
+  , info @(OCert StandardCrypto) Proxy
+  , info @(VerKeyKES (KES StandardCrypto)) Proxy
+  , info @RecvResult Proxy
+  , info @(Bundle IO StandardCrypto) Proxy
+  , info @(Bundle IO CompactStandardCrypto) Proxy
   ]
   
 
