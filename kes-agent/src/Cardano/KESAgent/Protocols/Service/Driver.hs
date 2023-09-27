@@ -10,13 +10,14 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 module Cardano.KESAgent.Protocols.Service.Driver
   where
 
+import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol
@@ -44,12 +45,13 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow ( MonadThrow, bracket, throwIO, Exception )
-import Control.Monad.Trans ( lift )
 import Control.Monad.ST.Unsafe ( unsafeIOToST )
+import Control.Monad.Trans ( lift )
 import Control.Tracer ( Tracer, traceWith )
 import Data.Binary ( decode, encode )
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Coerce
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy
 import Data.Typeable
@@ -137,10 +139,12 @@ withDuplexBearer s action = do
 
 serviceDriver :: forall c m f t p
                . Crypto c
+              => (forall x y. Coercible x y => Coercible (m x) (m y))
               => Typeable c
               => VersionedProtocol (ServiceProtocol m c)
               => KESAlgorithm (KES c)
               => HasSerInfo (SignKeyKES (KES c))
+              => HasSerInfo (VerKeyKES (KES c))
               => DirectDeserialise m (SignKeyKES (KES c))
               => DirectSerialise m (SignKeyKES (KES c))
               => MonadThrow m

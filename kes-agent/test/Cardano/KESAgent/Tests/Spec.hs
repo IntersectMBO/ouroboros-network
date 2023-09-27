@@ -13,6 +13,8 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoStarIsType #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Cardano.KESAgent.Tests.Spec
 where
@@ -61,7 +63,7 @@ import Data.Typeable
 import Data.Word
 import Foreign.Marshal (copyBytes, allocaBytes)
 import Foreign.Ptr (castPtr)
-import GHC.TypeNats (KnownNat, natVal)
+import GHC.TypeNats (KnownNat, natVal, type (+), type (*) )
 import System.FilePath ( (</>) )
 import System.IO.Temp ( withSystemTempDirectory )
 import System.IO.Unsafe (unsafePerformIO)
@@ -164,6 +166,7 @@ testSpecCrypto p =
     , testSpecMk "Maybe KeyInfo" (fmap Just . (mkKeyInfo @c))
     , testSpecMk "Nothing :: Maybe BundleInfo" (\(i :: Int) -> return (Nothing :: Maybe (BundleInfo c)))
     , testSpecMk "AgentInfo" (mkAgentInfo @c)
+    , testSpecMk "OCert" (mkOCert @c)
     , testSpecWith "Bundle" (withBundle @c)
     ]
 
@@ -298,16 +301,33 @@ withBundle action (e, p, n, seedKES, seedDSIGN) =
               skp <- newCRef
                 (forgetSignKeyKES . skWithoutPeriodKES)
                 (SignKeyWithPeriodKES sk 0)
+              acquireCRef skp
               vkHot <- deriveVerKeyKES sk
               return (skp, vkHot)
             ) seedKES
-      acquireCRef skp
-      vkHot <- mkVerKeyKES seedKES
       skCold <- mkColdSignKey seedDSIGN
       let ocert = makeOCert vkHot n kesPeriod skCold
       return $ Bundle skp ocert
     release bundle =
       releaseCRef (bundleSKP bundle)
+
+mkOCert :: ( Crypto c
+           , KESAlgorithm (KES c)
+           , DSIGNAlgorithm (DSIGN c)
+           , ContextDSIGN (DSIGN c) ~ ()
+           , DSIGN.Signable (DSIGN c) (OCertSignable c)
+           )
+        => ( PinnedSizedBytes (SeedSizeKES (KES c))
+           , PinnedSizedBytes (SeedSizeDSIGN (DSIGN c))
+           , Word
+           , Word64
+           )
+        -> IO (OCert c)
+mkOCert (seedKES, seedDSIGN, p, n) = do
+  let kesPeriod = KESPeriod p
+  vkHot <- mkVerKeyKES seedKES
+  skCold <- mkColdSignKey seedDSIGN
+  return $ makeOCert vkHot n kesPeriod skCold
 
 mkKeyInfo :: ( Crypto c
              , KESAlgorithm (KES c)

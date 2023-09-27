@@ -17,6 +17,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE NoStarIsType #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Cardano.KESAgent.Serialization.Spec.OrphansCardano
 where
@@ -29,6 +30,8 @@ import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Serialization.Spec.Types
 import Cardano.KESAgent.Serialization.Spec.Class
 import Cardano.KESAgent.Serialization.Spec.OrphansBase
+import Cardano.KESAgent.Serialization.Spec.TH
+import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Binary
 import Cardano.Crypto.DirectSerialise
@@ -55,6 +58,7 @@ import Data.Word
 import Foreign.Ptr ( castPtr )
 import GHC.TypeLits ( KnownNat, type (+), type (*) )
 import Control.Tracer ( nullTracer )
+import Control.Monad.Trans
 
 -- ** 'SodiumHashAlgorithm'
 
@@ -337,37 +341,24 @@ instance ( MonadThrow m
   receiveItem s =
     SignKeyWithPeriodKES <$> receiveItem s <*> receiveItem s
 
--- ** 'OCert'
-
--- TODO: use deriveSer for this
-
-instance ( Crypto c , Typeable c) => HasSerInfo (OCert c) where
-    info _ =
-      compoundField
-        ("OCert " ++ algorithmNameKES (Proxy @(KES c)) ++ " " ++ algorithmNameDSIGN (Proxy @(DSIGN c)))
-        [ ("size", info (Proxy @Word32))
-        , ("data", basicField "raw-serialized OCert" (VarSize "size"))
-        ]
-
-instance ( MonadThrow m, MonadST m, Crypto c , Typeable c) => IsSerItem m (OCert c) where
-    sendItem s oc =
-      sendItem s (VariableSized . serialize' $ oc)
-
-    receiveItem s =
-      unsafeDeserialize' . unVariableSized <$> receiveItem s
-
 -- ** 'Period'
 
 instance HasSerInfo Period where
-  info _ = basicField "Period" (FixedSize 32)
+  info _ = aliasField "Period" $ info (Proxy @Word32)
 
 instance (MonadThrow m, MonadST m) => IsSerItem m Period where
   sendItem s = sendWord32 s . fromIntegral
   receiveItem s = fromIntegral <$> (receiveItem s :: ReadResultT m Word32)
 
+
+-- ** 'OCert'
+
+$(deriveSerWithCrypto ''OCert)
+
 -- ** 'Bundle'
 
 instance ( HasSerInfo (SignKeyKES (KES c))
+         , HasSerInfo (VerKeyKES (KES c))
          , Typeable c
          , Crypto c
          , KESAlgorithm (KES c)
@@ -380,11 +371,13 @@ instance ( HasSerInfo (SignKeyKES (KES c))
       , ("ocert", info (Proxy @(OCert c)))
       ]
 
-instance ( MonadThrow m
+instance ( forall a b. Coercible a b => Coercible (m a) (m b)
+         , MonadThrow m
          , MonadST m
          , MonadSTM m
          , MonadMVar m
          , IsSerItem m (SignKeyKES (KES c))
+         , IsSerItem m (VerKeyKES (KES c))
          , DirectSerialise m (SignKeyKES (KES c))
          , DirectDeserialise m (SignKeyKES (KES c))
          , Typeable c
@@ -393,14 +386,18 @@ instance ( MonadThrow m
          )
          => IsSerItem m (Bundle m c) where
     sendItem s bundle = do
-      sendSKP s (bundleSKP bundle)
+      withCRefValue (bundleSKP bundle) $ \skp -> do
+        sendItem s skp
       sendItem s (bundleOC bundle)
 
     receiveItem s = do
-      skp <- ReadResultT $ receiveSKP s nullTracer
+      skp <- receiveItem s
+      skpVar <- lift $ newCRef
+        (forgetSignKeyKES . skWithoutPeriodKES)
+        skp
       oc <- receiveItem s
       return Bundle
-        { bundleSKP = skp
+        { bundleSKP = skpVar
         , bundleOC = oc
         }
 

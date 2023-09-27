@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.Processes.ServiceClient
@@ -18,7 +19,7 @@ import Cardano.KESAgent.Util.RefCounting ( CRef )
 import Cardano.KESAgent.Util.RetrySocket ( retrySocket )
 import Cardano.KESAgent.Serialization.Spec ( HasSerInfo )
 
-import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..), SignKeyKES )
+import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..), SignKeyKES, VerKeyKES )
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Snocket (..) )
@@ -32,6 +33,7 @@ import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy ( Proxy (..) )
 import Data.Word ( Word64 )
 import Network.TypedProtocol.Driver ( runPeerWithDriver )
+import Data.Coerce
 
 data ServiceClientOptions m fd addr =
   ServiceClientOptions
@@ -57,10 +59,12 @@ instance Pretty ServiceClientTrace where
 -- | Run a Service Client indefinitely, restarting the connection once a
 -- session ends.
 runServiceClientForever :: forall c m fd addr
-                         . MonadKES m c
+                         . (forall x y . Coercible x y => Coercible (m x) (m y))
+                        => MonadKES m c
                         => MonadMVar m
                         => Show addr
                         => HasSerInfo (SignKeyKES (KES c))
+                        => HasSerInfo (VerKeyKES (KES c))
                         => Proxy c
                         -> MakeRawBearer m fd
                         -> ServiceClientOptions m fd addr
@@ -75,10 +79,12 @@ runServiceClientForever proxy mrb options handleKey tracer =
 -- | Run a single Service Client session. Once the peer closes the connection,
 -- return.
 runServiceClient :: forall c m fd addr
-                  . MonadKES m c
+                  . (forall x y . Coercible x y => Coercible (m x) (m y))
+                 => MonadKES m c
                  => MonadMVar m
                  => Show addr
                  => HasSerInfo (SignKeyKES (KES c))
+                 => HasSerInfo (VerKeyKES (KES c))
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr
