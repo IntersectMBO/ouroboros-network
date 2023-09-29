@@ -564,7 +564,7 @@ withAsyncAll xs0 action = go [] xs0
 withAsyncAllWithCtx :: MonadAsync m => [(ctx, m a)] -> ([(ctx, Async m a)] -> m b) -> m b
 withAsyncAllWithCtx contextualized action = go [] contextualized
   where
-    go as [] = action (reverse as)
+    go as []            = action (reverse as)
     go as ((ctx, x):xs) = withAsync x (\a -> go ((ctx, a):as) xs)
 
 -- | `waitAnyCatchSTM`, but the asyncs are tagged with a context
