@@ -8,6 +8,7 @@
 
 ### Non-breaking changes
 
+* An inbound peer is considered hot if any hot protocol is running.
 * Split `test` component into `io-tests` and `sim-tests`.
 * `demo-ping-pong`: improved tracer.
 * Fixed a bug in `connection-manager` which could result in leaking
