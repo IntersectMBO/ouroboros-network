@@ -335,7 +335,7 @@ benchmark sim-benchmarks
   main-is:             Main.hs
   build-depends:
                        ouroboros-network:sim-tests-lib,
-                       tasty-bench,
+                       tasty-bench >=0.3.5,
                        deepseq
 
   ghc-options:
