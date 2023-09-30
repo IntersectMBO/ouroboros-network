@@ -242,7 +242,7 @@ library sim-tests-lib
 test-suite sim-tests
   import:              sim-tests-common
   type:                exitcode-stdio-1.0
-  hs-source-dirs:      sim-tests
+  hs-source-dirs:      sim-tests-main
   main-is:             Main.hs
   build-depends:       base >=4.14 && <4.19,
                        ouroboros-network:sim-tests-lib
