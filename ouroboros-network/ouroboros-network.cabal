@@ -207,32 +207,32 @@ library sim-tests-lib
   hs-source-dirs:      sim-tests
   exposed-modules:     Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
-                       Test.Ouroboros.Network.Diffusion.Node
-                       Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-                       Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
-                       Test.Ouroboros.Network.Diffusion.Node.ChainDB
-                       Test.Ouroboros.Network.Diffusion.Policies
                        Test.Ouroboros.Network.BlockFetch
+                       Test.Ouroboros.Network.Diffusion.Node
+                       Test.Ouroboros.Network.Diffusion.Node.ChainDB
+                       Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
+                       Test.Ouroboros.Network.Diffusion.Node.NodeKernel
+                       Test.Ouroboros.Network.Diffusion.Policies
                        Test.Ouroboros.Network.KeepAlive
                        Test.Ouroboros.Network.LedgerPeers
-                       Test.Ouroboros.Network.Mux
                        Test.Ouroboros.Network.MockNode
-                       Test.Ouroboros.Network.TxSubmission
+                       Test.Ouroboros.Network.Mux
+                       Test.Ouroboros.Network.NodeToClient.Version
+                       Test.Ouroboros.Network.NodeToNode.Version
+                       Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.PeerSelection
                        Test.Ouroboros.Network.PeerSelection.Instances
+                       Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.KnownPeers
                        Test.Ouroboros.Network.PeerSelection.LocalRootPeers
-                       Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-                       Test.Ouroboros.Network.PeerSelection.Json
                        Test.Ouroboros.Network.PeerSelection.MockEnvironment
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
                        Test.Ouroboros.Network.PeerSelection.PeerMetric
+                       Test.Ouroboros.Network.PeerSelection.RootPeersDNS
                        Test.Ouroboros.Network.PeerState
-                       Test.Ouroboros.Network.NodeToNode.Version
-                       Test.Ouroboros.Network.NodeToClient.Version
-                       Test.Ouroboros.Network.Orphans
                        Test.Ouroboros.Network.Testnet
                        Test.Ouroboros.Network.Testnet.Simulation.Node
+                       Test.Ouroboros.Network.TxSubmission
                        Test.Ouroboros.Network.Version
 
 -- Simulation tests, and IO tests which don't require native system calls.
