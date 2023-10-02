@@ -140,18 +140,16 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
                 => TheyHaveAgencyProof pr st
                 -> Maybe bytes
                 -> m (SomeMessage st, Maybe bytes)
-    recvMessage _ trailing = do
+    recvMessage !_ trailing = do
       let tok = stateToken
       decoder <- decode tok
       result  <- runDecoderWithChannel channel trailing decoder
       case result of
-        Right x@(SomeMessage msg, _trailing') -> do
+        Right x@(SomeMessage !msg, _trailing') -> do
           traceWith tracer (TraceRecvMsg (AnyMessage msg))
           return x
         Left failure ->
           throwIO (DecoderFailure tok failure)
-
-
 
 
 -- | Run a peer with the given channel via the given codec.
