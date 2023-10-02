@@ -76,7 +76,7 @@ driverWithLimits tracer timeoutFn
                 => WeHaveAgencyProof pr st
                 -> Message ps st st'
                 -> m ()
-    sendMessage _ msg = do
+    sendMessage !_ msg = do
       send (encode msg)
       traceWith tracer (TraceSendMsg (AnyMessage msg))
 
@@ -87,7 +87,7 @@ driverWithLimits tracer timeoutFn
                 => TheyHaveAgencyProof pr st
                 -> Maybe bytes
                 -> m (SomeMessage st, Maybe bytes)
-    recvMessage _ trailing = do
+    recvMessage !_ trailing = do
       let tok = stateToken
       decoder <- decode tok
       let sizeLimit = sizeLimitForState @st stateToken
@@ -136,12 +136,12 @@ runDecoderWithLimit limit size Channel{recv} =
        -> DecodeStep bytes failure m a
        -> m (Either (Maybe failure) (a, Maybe bytes))
 
-    go !sz _ (DecodeDone x trailing)
+    go !sz !_ (DecodeDone x trailing)
       | let sz' = sz - maybe 0 size trailing
       , sz' > limit = return (Left Nothing)
       | otherwise   = return (Right (x, trailing))
 
-    go !_ _  (DecodeFail failure) = return (Left (Just failure))
+    go !_ !_ (DecodeFail failure) = return (Left (Just failure))
 
     go !sz trailing (DecodePartial k)
       | sz > limit = return (Left Nothing)
