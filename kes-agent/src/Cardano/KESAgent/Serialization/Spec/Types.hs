@@ -25,6 +25,7 @@ data FieldInfo
   | ChoiceField ChoiceFieldInfo
   | ListField ListFieldInfo
   | AliasField AliasFieldInfo
+  | SumField SumFieldInfo
   deriving (Show)
 
 data BasicFieldInfo =
@@ -52,6 +53,13 @@ data CompoundFieldInfo =
   CompoundFieldInfo
     { compoundFieldType :: !String
     , compoundFieldSubfields :: ![SubfieldInfo]
+    }
+  deriving (Show)
+
+data SumFieldInfo =
+  SumFieldInfo
+    { sumFieldType :: !String
+    , sumFieldAlternatives :: ![(String, FieldInfo)]
     }
   deriving (Show)
 
@@ -105,6 +113,13 @@ choiceField cond subfields =
     ChoiceFieldInfo
       cond
       subfields
+
+sumField :: String -> [(String, FieldInfo)] -> FieldInfo
+sumField name alternatives =
+  SumField $
+    SumFieldInfo
+      name
+      alternatives
 
 listField :: FieldSize -> FieldInfo -> FieldInfo
 listField lengthExpr elemInfo =

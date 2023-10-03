@@ -7,6 +7,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE NoStarIsType #-}
@@ -25,6 +26,9 @@ import Data.Proxy
 
 class HasSerInfo a where
   info :: Proxy a -> FieldInfo
+
+infoOf :: forall a. HasSerInfo a => a -> FieldInfo
+infoOf _ = info (Proxy @a)
 
 class HasSerInfo a => IsSerItem m a where
   sendItem :: RawBearer m -> a -> m ()

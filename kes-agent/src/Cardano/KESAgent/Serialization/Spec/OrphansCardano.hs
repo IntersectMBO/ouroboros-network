@@ -26,6 +26,7 @@ import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Serialization.Spec.Types
 import Cardano.KESAgent.Serialization.Spec.Class
@@ -59,6 +60,7 @@ import Foreign.Ptr ( castPtr )
 import GHC.TypeLits ( KnownNat, type (+), type (*) )
 import Control.Tracer ( nullTracer )
 import Control.Monad.Trans
+import Network.TypedProtocol.Core
 
 -- ** 'SodiumHashAlgorithm'
 
@@ -437,3 +439,13 @@ deriving via (ViaEnum RecvResult)
     , MonadST m
     ) => IsSerItem m RecvResult
 
+-- ** 'VersionIdentifier'
+
+deriving via (Sized VersionIdentifierLength ByteString)
+  instance HasSerInfo VersionIdentifier
+deriving via (Sized VersionIdentifierLength ByteString)
+  instance
+    ( forall a b. Coercible a b => Coercible (m a) (m b)
+    , MonadThrow m
+    , MonadST m
+    ) => IsSerItem m VersionIdentifier

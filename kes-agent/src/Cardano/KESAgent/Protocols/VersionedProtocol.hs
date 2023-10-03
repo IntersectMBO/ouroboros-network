@@ -1,6 +1,8 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Cardano.KESAgent.Protocols.VersionedProtocol
 where
@@ -9,6 +11,7 @@ import Data.Proxy
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Kind
+import GHC.TypeLits
 
 class VersionedProtocol (p :: Type) where
   versionIdentifier :: Proxy p -> VersionIdentifier
@@ -17,8 +20,10 @@ newtype VersionIdentifier =
   VersionIdentifier { unVersionIdentifier :: ByteString }
   deriving newtype (Show, Eq)
 
+type VersionIdentifierLength = 32
+
 versionIdentifierLength :: Num a => a
-versionIdentifierLength = 32
+versionIdentifierLength = fromIntegral $ natVal (Proxy @VersionIdentifierLength)
 
 mkVersionIdentifier :: ByteString -> VersionIdentifier
 mkVersionIdentifier raw =

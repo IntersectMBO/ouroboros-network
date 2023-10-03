@@ -287,6 +287,7 @@ fieldType (CompoundField fi) = compoundFieldType fi
 fieldType (ChoiceField fi) = intercalate " | " $ map fieldType (choiceFieldAlternatives fi)
 fieldType (ListField fi) = "[" ++ fieldType (listElemInfo fi) ++ "]"
 fieldType (AliasField fi) = aliasFieldName fi ++ " = " ++ fieldType (aliasFieldTarget fi)
+fieldType (SumField fi) = sumFieldType fi
 
 shortFieldType :: FieldInfo -> String
 shortFieldType (BasicField fi) = basicFieldType fi
@@ -295,6 +296,7 @@ shortFieldType (CompoundField fi) = compoundFieldType fi
 shortFieldType (ChoiceField fi) = intercalate " | " $ map shortFieldType (choiceFieldAlternatives fi)
 shortFieldType (ListField fi) = "[" ++ shortFieldType (listElemInfo fi) ++ "]"
 shortFieldType (AliasField fi) = aliasFieldName fi
+shortFieldType (SumField fi) = sumFieldType fi
 
 formatPath :: [String] -> String
 formatPath = intercalate "." . reverse
@@ -403,6 +405,12 @@ fieldSizeScoped path env (ListField fi) =
       BinopSize FSMul (listSize fi) elemSize
 fieldSizeScoped path env (ChoiceField fi) =
   case map (fieldSizeScoped path env) (choiceFieldAlternatives fi) of
+    [] -> FixedSize 0
+    (x:xs) -> let maxVal = foldl' (BinopSize FSMax) x xs
+                  minVal = foldl' (BinopSize FSMin) x xs
+              in simplifyFieldSize (RangeSize minVal maxVal)
+fieldSizeScoped path env (SumField fi) =
+  case map (fieldSizeScoped path env . snd) (sumFieldAlternatives fi) of
     [] -> FixedSize 0
     (x:xs) -> let maxVal = foldl' (BinopSize FSMax) x xs
                   minVal = foldl' (BinopSize FSMin) x xs

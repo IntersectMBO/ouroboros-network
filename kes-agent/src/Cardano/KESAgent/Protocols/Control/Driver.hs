@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
+
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -30,9 +31,9 @@ import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Binary
+import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
-import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.Libsodium.Memory
   ( allocaBytes
   , copyMem
@@ -43,11 +44,11 @@ import Cardano.Crypto.Libsodium.Memory
 import Ouroboros.Network.RawBearer
 
 import Control.Monad ( void, when, replicateM )
-import Control.Monad.Extra ( whenJust )
 import Control.Monad.Class.MonadMVar
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow ( MonadThrow, bracket )
+import Control.Monad.Extra ( whenJust )
 import Control.Monad.Trans (lift)
 import Control.Tracer ( Tracer, traceWith )
 import Data.Binary ( decode, encode )
@@ -59,6 +60,9 @@ import Data.Coerce
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Maybe ( isJust )
 import Data.Proxy
+import qualified Data.Text as Text
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Data.Time (UTCTime)
 import Data.Typeable
 import Data.Word
 import Foreign ( Ptr, castPtr, plusPtr )
@@ -68,8 +72,6 @@ import Foreign.Marshal.Utils ( copyBytes )
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
-import Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import Data.Time (UTCTime)
 
 -- | Logging messages that the Driver may send
 data ControlDriverTrace
@@ -313,3 +315,60 @@ readErrorToControlDriverTrace (ReadMalformed what) =
 readErrorToControlDriverTrace (ReadVersionMismatch expected actual) =
   ControlDriverInvalidVersion expected actual
 
+
+instance NamedCrypto c => HasSerInfo (Message (ControlProtocol m c) InitialState IdleState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
+              ",InitialState,IdleState" ++
+              ">")
+            (info (Proxy @VersionIdentifier))
+instance NamedCrypto c => HasSerInfo (Message (ControlProtocol m c) IdleState WaitForPublicKeyState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
+              ",IdleState,WaitForPublicKeyState" ++
+              ">")
+            (info (Proxy @Command))
+instance (NamedCrypto c, HasSerInfo (VerKeyKES (KES c))) => HasSerInfo (Message (ControlProtocol m c) WaitForPublicKeyState IdleState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
+              ",WaitForPublicKeyState,IdleState" ++
+              ">")
+            (info (Proxy @(Maybe (VerKeyKES (KES c)))))
+instance (NamedCrypto c, HasSerInfo (VerKeyKES (KES c)), KESAlgorithm (KES c), DSIGNAlgorithm (DSIGN c)) => HasSerInfo (Message (ControlProtocol m c) IdleState WaitForConfirmationState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
+              ",IdleState,WaitForConfirmationState" ++
+              ">")
+            (info (Proxy @(OCert c)))
+instance (NamedCrypto c) => HasSerInfo (Message (ControlProtocol m c) WaitForConfirmationState IdleState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
+              ",WaitForConfirmationState,IdleState" ++
+              ">")
+            (info (Proxy @RecvResult))
+instance (NamedCrypto c) => HasSerInfo (Message (ControlProtocol m c) IdleState WaitForInfoState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
+              ",IdleState,WaitForInfoState" ++
+              ">")
+            (info (Proxy @()))
+instance (NamedCrypto c, KESAlgorithm (KES c), DSIGNAlgorithm (DSIGN c), HasSerInfo (VerKeyKES (KES c))) => HasSerInfo (Message (ControlProtocol m c) WaitForInfoState IdleState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
+              ",WaitForInfoState,IdleState" ++
+              ">")
+            (info (Proxy @(AgentInfo c)))
+instance (NamedCrypto c) => HasSerInfo (Message (ControlProtocol m c) _st EndState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
+              ",st,EndState" ++
+              ">")
+            (info (Proxy @()))
