@@ -1,9 +1,11 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module Ouroboros.Network.Protocol.LocalStateQuery.Server
   ( -- * Protocol type for the server
     -- | The protocol states from the point of view of the server.
@@ -18,6 +20,7 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Server
 
 import           Data.Kind (Type)
 import           Network.TypedProtocol.Core
+import           Network.TypedProtocol.Stateful.Peer.Server
 
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
@@ -88,50 +91,58 @@ data ServerStQuerying block point query m a result where
 -- side of the 'LocalStateQuery' protocol.
 --
 localStateQueryServerPeer
-  :: forall block point (query :: Type -> Type) m a.
+  :: forall block point (query :: Type -> Type) m stm a.
      Monad m
   => LocalStateQueryServer block point query m a
-  -> Peer (LocalStateQuery block point query) AsServer StIdle m a
+  -> Server (LocalStateQuery block point query) 'NonPipelined Empty StIdle State m stm a
 localStateQueryServerPeer (LocalStateQueryServer handler) =
     Effect $ handleStIdle <$> handler
   where
     handleStIdle
       :: ServerStIdle block point query m a
-      -> Peer (LocalStateQuery block point query) AsServer StIdle m a
+      -> Server (LocalStateQuery block point query) 'NonPipelined Empty StIdle State m stm a
     handleStIdle ServerStIdle{recvMsgAcquire, recvMsgDone} =
-      Await (ClientAgency TokIdle) $ \req -> case req of
-        MsgAcquire pt -> Effect $
-          handleStAcquiring <$> recvMsgAcquire pt
-        MsgDone       -> Effect $
-          Done TokDone <$> recvMsgDone
+      Await $ \_ req -> case req of
+        MsgAcquire pt -> ( Effect $ handleStAcquiring <$> recvMsgAcquire pt
+                         , StateAcquiring
+                         )
+        MsgDone -> ( Effect $ Done <$> recvMsgDone
+                   , StateDone
+                   )
 
     handleStAcquiring
       :: ServerStAcquiring block point query m a
-      -> Peer (LocalStateQuery block point query) AsServer StAcquiring m a
+      -> Server (LocalStateQuery block point query) 'NonPipelined Empty StAcquiring State m stm a
     handleStAcquiring req = case req of
       SendMsgAcquired stAcquired    ->
-        Yield (ServerAgency TokAcquiring)
+        Yield StateAcquired
               MsgAcquired
               (handleStAcquired stAcquired)
       SendMsgFailure failure stIdle ->
-        Yield (ServerAgency TokAcquiring)
+        Yield StateIdle
               (MsgFailure failure)
               (handleStIdle stIdle)
 
     handleStAcquired
       :: ServerStAcquired block point query m a
-      -> Peer (LocalStateQuery block point query) AsServer StAcquired m a
+      -> Server (LocalStateQuery block point query) 'NonPipelined Empty StAcquired State m stm a
     handleStAcquired ServerStAcquired{recvMsgQuery, recvMsgReAcquire, recvMsgRelease} =
-      Await (ClientAgency TokAcquired) $ \req -> case req of
-        MsgQuery query  -> Effect $ handleStQuerying query <$> recvMsgQuery query
-        MsgReAcquire pt -> Effect $ handleStAcquiring      <$> recvMsgReAcquire pt
-        MsgRelease      -> Effect $ handleStIdle           <$> recvMsgRelease
+      Await $ \_ req -> case req of
+        MsgQuery query  -> ( Effect $ handleStQuerying query <$> recvMsgQuery query
+                           , StateQuerying query
+                           )
+        MsgReAcquire pt -> ( Effect $ handleStAcquiring      <$> recvMsgReAcquire pt
+                           , StateAcquiring
+                           )
+        MsgRelease      -> ( Effect $ handleStIdle           <$> recvMsgRelease
+                           , StateIdle
+                           )
 
     handleStQuerying
       :: query result
       -> ServerStQuerying block point query m a result
-      -> Peer (LocalStateQuery block point query) AsServer (StQuerying result) m a
+      -> Server (LocalStateQuery block point query) 'NonPipelined Empty (StQuerying result) State m stm a
     handleStQuerying query (SendMsgResult result stAcquired) =
-      Yield (ServerAgency (TokQuerying query))
+      Yield StateAcquired
             (MsgResult query result)
             (handleStAcquired stAcquired)

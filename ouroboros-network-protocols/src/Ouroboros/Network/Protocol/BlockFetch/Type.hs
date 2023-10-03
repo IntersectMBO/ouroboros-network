@@ -1,20 +1,22 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE EmptyCase             #-}
-{-# LANGUAGE ExplicitForAll        #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE InstanceSigs          #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE ExplicitForAll           #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE InstanceSigs             #-}
+{-# LANGUAGE MultiParamTypeClasses    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 module Ouroboros.Network.Protocol.BlockFetch.Type where
 
-import           Data.Proxy (Proxy (..))
-import           Data.Void (Void)
+import           Data.Kind (Type)
+import           Data.Singletons
 
-import           Network.TypedProtocol.Core (Protocol (..))
+import           Network.TypedProtocol.Core
 
 import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
@@ -29,6 +31,21 @@ data BlockFetch block point where
   BFBusy      :: BlockFetch block point
   BFStreaming :: BlockFetch block point
   BFDone      :: BlockFetch block point
+
+type SingBlockFetch :: BlockFetch block point
+                    -> Type
+data SingBlockFetch k where
+    SingBFIdle      :: SingBlockFetch BFIdle
+    SingBFBusy      :: SingBlockFetch BFBusy
+    SingBFStreaming :: SingBlockFetch BFStreaming
+    SingBFDone      :: SingBlockFetch BFDone
+
+deriving instance Show (SingBlockFetch k)
+
+instance StateTokenI BFIdle      where stateToken = SingBFIdle
+instance StateTokenI BFBusy      where stateToken = SingBFBusy
+instance StateTokenI BFStreaming where stateToken = SingBFStreaming
+instance StateTokenI BFDone      where stateToken = SingBFDone
 
 instance ShowProxy block => ShowProxy (BlockFetch block point) where
     showProxy _ = "BlockFetch" ++ showProxy (Proxy :: Proxy block)
@@ -58,36 +75,13 @@ instance Protocol (BlockFetch block point) where
     MsgClientDone
       :: Message (BlockFetch block point) BFIdle BFDone
 
-  data ClientHasAgency st where
-    TokIdle :: ClientHasAgency BFIdle
+  type StateAgency BFIdle      = ClientAgency
+  type StateAgency BFBusy      = ServerAgency
+  type StateAgency BFStreaming = ServerAgency
+  type StateAgency BFDone      = NobodyAgency
 
-  data ServerHasAgency st where
-    TokBusy      :: ServerHasAgency BFBusy
-    TokStreaming :: ServerHasAgency BFStreaming
+  type StateToken = SingBlockFetch
 
-  data NobodyHasAgency st where
-    TokDone :: NobodyHasAgency BFDone
-
-  exclusionLemma_ClientAndServerHaveAgency
-    :: forall (st :: BlockFetch block point).
-       ClientHasAgency st
-    -> ServerHasAgency st
-    -> Void
-  exclusionLemma_ClientAndServerHaveAgency = \TokIdle x -> case x of {}
-
-  exclusionLemma_NobodyAndClientHaveAgency
-    :: forall (st :: BlockFetch block point).
-       NobodyHasAgency st
-    -> ClientHasAgency st
-    -> Void
-  exclusionLemma_NobodyAndClientHaveAgency = \TokDone x -> case x of {}
-
-  exclusionLemma_NobodyAndServerHaveAgency
-    :: forall (st :: BlockFetch block point).
-       NobodyHasAgency st
-    -> ServerHasAgency st
-    -> Void
-  exclusionLemma_NobodyAndServerHaveAgency = \TokDone x -> case x of {}
 
 instance (Show block, Show point)
       => Show (Message (BlockFetch block point) from to) where
@@ -97,10 +91,3 @@ instance (Show block, Show point)
   show MsgNoBlocks             = "MsgNoBlocks"
   show MsgBatchDone            = "MsgBatchDone"
   show MsgClientDone           = "MsgClientDone"
-
-instance Show (ClientHasAgency (st :: BlockFetch block point)) where
-  show TokIdle = "TokIdle"
-
-instance Show (ServerHasAgency (st :: BlockFetch block point)) where
-  show TokBusy      = "TokBusy"
-  show TokStreaming = "TokStreaming"

@@ -34,6 +34,7 @@ library
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
+                       Data.Type.Nat
                        Ouroboros.Network.Protocol.ChainSync.Client
                        Ouroboros.Network.Protocol.ChainSync.ClientPipelined
                        Ouroboros.Network.Protocol.ChainSync.Codec
@@ -96,6 +97,7 @@ library
   build-depends:       base              >=4.14 && <4.19,
                        bytestring        >=0.10 && <0.12,
                        cborg             >=0.2.1 && <0.3,
+                       singletons       ^>=3.0,
 
                        io-classes       ^>=1.2,
                        si-timers,
@@ -103,9 +105,11 @@ library
                        ouroboros-network-api
                                         ^>=0.5.1,
                        serialise,
-                       typed-protocols   >=0.1.0.4 && <1.0,
+                       typed-protocols  ^>=0.2,
                        typed-protocols-cborg
-                                         >=0.1 && <1.0
+                                        ^>=0.2,
+                       typed-protocols-stateful,
+                       typed-protocols-stateful-cborg
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -124,11 +128,8 @@ library testlib
   hs-source-dirs:      testlib
   default-language:    Haskell2010
   exposed-modules:
-                       Ouroboros.Network.Protocol.BlockFetch.Direct
                        Ouroboros.Network.Protocol.BlockFetch.Examples
                        Ouroboros.Network.Protocol.BlockFetch.Test
-                       Ouroboros.Network.Protocol.ChainSync.Direct
-                       Ouroboros.Network.Protocol.ChainSync.DirectPipelined
                        Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Test
@@ -181,7 +182,8 @@ library testlib
                        ouroboros-network-protocols,
                        si-timers,
                        strict-stm,
-                       typed-protocols
+                       typed-protocols,
+                       typed-protocols-stateful
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
@@ -238,6 +240,7 @@ test-suite cddl
                        tasty-quickcheck,
 
                        typed-protocols,
+                       typed-protocols-stateful,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-mock,

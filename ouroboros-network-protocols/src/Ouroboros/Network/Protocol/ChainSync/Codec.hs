@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -22,6 +23,7 @@ import           Ouroboros.Network.Protocol.ChainSync.Type
 import           Ouroboros.Network.Protocol.Limits
 
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Singletons (withSingI)
 
 import           Codec.CBOR.Decoding (decodeListLen, decodeWord)
 import qualified Codec.CBOR.Decoding as CBOR
@@ -37,12 +39,13 @@ byteLimitsChainSync :: forall bytes header point tip .
                     -> ProtocolSizeLimits (ChainSync header point tip) bytes
 byteLimitsChainSync = ProtocolSizeLimits stateToLimit
   where
-    stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header point tip).
-                    PeerHasAgency pr st -> Word
-    stateToLimit (ClientAgency TokIdle)                = smallByteLimit
-    stateToLimit (ServerAgency (TokNext TokCanAwait))  = smallByteLimit
-    stateToLimit (ServerAgency (TokNext TokMustReply)) = smallByteLimit
-    stateToLimit (ServerAgency TokIntersect)           = smallByteLimit
+    stateToLimit :: forall (st :: ChainSync header point tip).
+                    ActiveState st => StateToken st -> Word
+    stateToLimit SingIdle                 = smallByteLimit
+    stateToLimit (SingNext SingCanAwait)  = smallByteLimit
+    stateToLimit (SingNext SingMustReply) = smallByteLimit
+    stateToLimit SingIntersect            = smallByteLimit
+    stateToLimit a@SingDone               = notActiveState a
 
 -- | Configurable timeouts
 --
@@ -75,12 +78,13 @@ timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
       , mustReplyTimeout
       } = csTimeouts
 
-    stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header point tip).
-                    PeerHasAgency pr st -> Maybe DiffTime
-    stateToLimit (ClientAgency TokIdle)                = Just 3673
-    stateToLimit (ServerAgency (TokNext TokCanAwait))  = canAwaitTimeout
-    stateToLimit (ServerAgency (TokNext TokMustReply)) = mustReplyTimeout
-    stateToLimit (ServerAgency TokIntersect)           = intersectTimeout
+    stateToLimit :: forall (st :: ChainSync header point tip).
+                    ActiveState st => StateToken st -> Maybe DiffTime
+    stateToLimit SingIdle                 = Just 3673
+    stateToLimit (SingNext SingCanAwait)  = canAwaitTimeout
+    stateToLimit (SingNext SingMustReply) = mustReplyTimeout
+    stateToLimit SingIntersect            = intersectTimeout
+    stateToLimit a@SingDone               = notActiveState a
 
 -- | Codec for chain sync that encodes/decodes headers
 --
@@ -102,99 +106,105 @@ codecChainSync encodeHeader decodeHeader
                encodeTip    decodeTip =
     mkCodecCborLazyBS encode decode
   where
-    encode :: forall (pr  :: PeerRole)
-                     (st  :: ChainSync header point tip)
+    encode :: forall (st  :: ChainSync header point tip)
                      (st' :: ChainSync header point tip).
-              PeerHasAgency pr st
-           -> Message (ChainSync header point tip) st st'
+              Message (ChainSync header point tip) st st'
            -> CBOR.Encoding
 
-    encode (ClientAgency TokIdle) MsgRequestNext =
+    encode MsgRequestNext =
       encodeListLen 1 <> encodeWord 0
 
-    encode (ServerAgency TokNext{}) MsgAwaitReply =
+    encode MsgAwaitReply =
       encodeListLen 1 <> encodeWord 1
 
-    encode (ServerAgency TokNext{}) (MsgRollForward h tip) =
+    encode (MsgRollForward h tip) =
       encodeListLen 3
         <> encodeWord 2
         <> encodeHeader h
         <> encodeTip tip
 
-    encode (ServerAgency TokNext{}) (MsgRollBackward p tip) =
+    encode (MsgRollBackward p tip) =
       encodeListLen 3
         <> encodeWord 3
         <> encodePoint p
         <> encodeTip tip
 
-    encode (ClientAgency TokIdle) (MsgFindIntersect ps) =
+    encode (MsgFindIntersect ps) =
       encodeListLen 2 <> encodeWord 4 <> encodeList encodePoint ps
 
-    encode (ServerAgency TokIntersect) (MsgIntersectFound p tip) =
+    encode (MsgIntersectFound p tip) =
       encodeListLen 3
         <> encodeWord 5
         <> encodePoint p
         <> encodeTip tip
 
-    encode (ServerAgency TokIntersect) (MsgIntersectNotFound tip) =
+    encode (MsgIntersectNotFound tip) =
       encodeListLen 2
         <> encodeWord 6
         <> encodeTip tip
 
-    encode (ClientAgency TokIdle) MsgDone =
+    encode MsgDone =
       encodeListLen 1 <> encodeWord 7
 
-    decode :: forall (pr :: PeerRole) (st :: ChainSync header point tip) s.
-              PeerHasAgency pr st
+    decode :: forall (st :: ChainSync header point tip) s.
+              ActiveState st
+           => StateToken st
            -> CBOR.Decoder s (SomeMessage st)
     decode stok = do
       len <- decodeListLen
       key <- decodeWord
       case (key, len, stok) of
-        (0, 1, ClientAgency TokIdle) ->
+        (0, 1, SingIdle) ->
           return (SomeMessage MsgRequestNext)
 
-        (1, 1, ServerAgency (TokNext TokCanAwait)) ->
+        (1, 1, SingNext SingCanAwait) ->
           return (SomeMessage MsgAwaitReply)
 
-        (2, 3, ServerAgency (TokNext _)) -> do
+        (2, 3, SingNext tok) -> withSingI tok $ do
           h <- decodeHeader
           tip <- decodeTip
           return (SomeMessage (MsgRollForward h tip))
 
-        (3, 3, ServerAgency (TokNext _)) -> do
+        (3, 3, SingNext tok) -> withSingI tok $ do
           p <- decodePoint
           tip  <- decodeTip
           return (SomeMessage (MsgRollBackward p tip))
 
-        (4, 2, ClientAgency TokIdle) -> do
+        (4, 2, SingIdle) -> do
           ps <- decodeList decodePoint
           return (SomeMessage (MsgFindIntersect ps))
 
-        (5, 3, ServerAgency TokIntersect) -> do
+        (5, 3, SingIntersect) -> do
           p <- decodePoint
           tip  <- decodeTip
           return (SomeMessage (MsgIntersectFound p tip))
 
-        (6, 2, ServerAgency TokIntersect) -> do
+        (6, 2, SingIntersect) -> do
           tip <- decodeTip
           return (SomeMessage (MsgIntersectNotFound tip))
 
-        (7, 1, ClientAgency TokIdle) ->
+        (7, 1, SingIdle) ->
           return (SomeMessage MsgDone)
 
         --
         -- failures per protocol state
         --
 
-        (_, _, ClientAgency TokIdle) ->
-          fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
-        (_, _, ServerAgency (TokNext TokCanAwait)) ->
-          fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
-        (_, _, ServerAgency (TokNext TokMustReply)) ->
-          fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
-        (_, _, ServerAgency TokIntersect) ->
-          fail (printf "codecChainSync (%s) unexpected key (%d, %d)" (show stok) key len)
+        (_, _, SingIdle) ->
+          fail (printf "codecChainSync (%s, %s) unexpected key (%d, %d)"
+                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+        (_, _, SingNext next) ->
+          case next of
+            SingCanAwait ->
+              fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
+                           (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+            SingMustReply ->
+              fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
+                           (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+        (_, _, SingIntersect) ->
+          fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
+                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+        (_, _, SingDone) -> notActiveState stok
 
 encodeList :: (a -> CBOR.Encoding) -> [a] -> CBOR.Encoding
 encodeList _   [] = CBOR.encodeListLen 0
@@ -216,34 +226,43 @@ codecChainSyncId :: forall header point tip m. Monad m
                           CodecFailure m (AnyMessage (ChainSync header point tip))
 codecChainSyncId = Codec encode decode
  where
-  encode :: forall (pr :: PeerRole) st st'.
-            PeerHasAgency pr st
-         -> Message (ChainSync header point tip) st st'
+  encode :: forall st st'.
+            StateTokenI st
+         => ActiveState st
+         => Message (ChainSync header point tip) st st'
          -> AnyMessage (ChainSync header point tip)
-  encode _ = AnyMessage
+  encode = AnyMessage
 
-  decode :: forall (pr :: PeerRole) (st :: ChainSync header point tip).
-            PeerHasAgency pr st
+  decode :: forall (st :: ChainSync header point tip).
+            ActiveState st
+         => StateToken st
          -> m (DecodeStep (AnyMessage (ChainSync header point tip))
                           CodecFailure m (SomeMessage st))
-  decode stok = return $ DecodePartial $ \bytes -> case (stok, bytes) of
+  decode stok = do
+    return $ DecodePartial $ \bytes -> case (stok, bytes) of
 
-    (_, Nothing) -> return $ DecodeFail CodecFailureOutOfInput
+      (_, Nothing) -> return $ DecodeFail CodecFailureOutOfInput
 
-    (ClientAgency TokIdle, Just (AnyMessage msg@MsgRequestNext)) -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingIdle, Just (AnyMessage msg@MsgRequestNext)) -> return (DecodeDone (SomeMessage msg) Nothing)
 
-    (ServerAgency (TokNext TokCanAwait), Just (AnyMessage msg@MsgAwaitReply)) -> return (DecodeDone (SomeMessage msg) Nothing)
+      (SingNext SingCanAwait, Just (AnyMessage msg@MsgAwaitReply)) -> return (DecodeDone (SomeMessage msg) Nothing)
 
-    (ServerAgency (TokNext _), Just (AnyMessage (MsgRollForward h tip))) -> return (DecodeDone (SomeMessage (MsgRollForward h tip)) Nothing)
+      (SingNext SingCanAwait, Just (AnyMessage (MsgRollForward h tip))) -> return (DecodeDone (SomeMessage (MsgRollForward h tip)) Nothing)
 
-    (ServerAgency (TokNext _), Just (AnyMessage (MsgRollBackward p tip))) -> return (DecodeDone (SomeMessage (MsgRollBackward p tip)) Nothing)
+      (SingNext SingCanAwait, Just (AnyMessage (MsgRollBackward p tip))) -> return (DecodeDone (SomeMessage (MsgRollBackward p tip)) Nothing)
 
-    (ClientAgency TokIdle, Just (AnyMessage (MsgFindIntersect ps))) -> return (DecodeDone (SomeMessage (MsgFindIntersect ps)) Nothing)
+      (SingNext SingMustReply, Just (AnyMessage (MsgRollForward h tip))) -> return (DecodeDone (SomeMessage (MsgRollForward h tip)) Nothing)
 
-    (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectFound p tip))) -> return (DecodeDone (SomeMessage (MsgIntersectFound p tip)) Nothing)
+      (SingNext SingMustReply, Just (AnyMessage (MsgRollBackward p tip))) -> return (DecodeDone (SomeMessage (MsgRollBackward p tip)) Nothing)
 
-    (ServerAgency TokIntersect, Just (AnyMessage (MsgIntersectNotFound tip))) -> return (DecodeDone (SomeMessage (MsgIntersectNotFound tip)) Nothing)
+      (SingIdle, Just (AnyMessage (MsgFindIntersect ps))) -> return (DecodeDone (SomeMessage (MsgFindIntersect ps)) Nothing)
 
-    (ClientAgency TokIdle, Just (AnyMessage MsgDone)) -> return (DecodeDone (SomeMessage MsgDone) Nothing)
+      (SingIntersect, Just (AnyMessage (MsgIntersectFound p tip))) -> return (DecodeDone (SomeMessage (MsgIntersectFound p tip)) Nothing)
 
-    (_, _) -> return $ DecodeFail (CodecFailure "codecChainSync: no matching message")
+      (SingIntersect, Just (AnyMessage (MsgIntersectNotFound tip))) -> return (DecodeDone (SomeMessage (MsgIntersectNotFound tip)) Nothing)
+
+      (SingIdle, Just (AnyMessage MsgDone)) -> return (DecodeDone (SomeMessage MsgDone) Nothing)
+
+      (SingDone, _) -> notActiveState stok
+
+      (_, _) -> return $ DecodeFail (CodecFailure $ "codecChainSync: no matching message")

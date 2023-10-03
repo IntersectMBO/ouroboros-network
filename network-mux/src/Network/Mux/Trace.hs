@@ -140,6 +140,8 @@ data MuxTrace =
     | MuxTraceExceptionExit MiniProtocolNum MiniProtocolDir SomeException
     | MuxTraceChannelRecvStart MiniProtocolNum
     | MuxTraceChannelRecvEnd MiniProtocolNum Int
+    | MuxTraceChannelTryRecvStart MiniProtocolNum
+    | MuxTraceChannelTryRecvEnd MiniProtocolNum (Maybe Int)
     | MuxTraceChannelSendStart MiniProtocolNum Int
     | MuxTraceChannelSendEnd MiniProtocolNum
     | MuxTraceHandshakeStart
@@ -174,8 +176,9 @@ instance Show MuxTrace where
     show (MuxTraceCleanExit mid dir) = printf "Miniprotocol (%s) %s terminated cleanly" (show mid) (show dir)
     show (MuxTraceExceptionExit mid dir e) = printf "Miniprotocol %s %s terminated with exception %s" (show mid) (show dir) (show e)
     show (MuxTraceChannelRecvStart mid) = printf "Channel Receive Start on %s" (show mid)
-    show (MuxTraceChannelRecvEnd mid len) = printf "Channel Receive End on (%s) %d" (show mid)
-        len
+    show (MuxTraceChannelRecvEnd mid len) = printf "Channel Receive End on (%s) %d" (show mid) len
+    show (MuxTraceChannelTryRecvStart mid) = printf "Channel Try Receive Start on %s" (show mid)
+    show (MuxTraceChannelTryRecvEnd mid len) = printf "Channel Try Receive End on (%s) %s" (show mid) (show len)
     show (MuxTraceChannelSendStart mid len) = printf "Channel Send Start on (%s) %d" (show mid)
         len
     show (MuxTraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)

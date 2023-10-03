@@ -1,7 +1,10 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE KindSignatures           #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE TypeOperators            #-}
 
 -- | A view of the transaction submission protocol from the point of view of
 -- the server.
@@ -16,44 +19,36 @@ module Ouroboros.Network.Protocol.TxSubmission2.Server
     -- | The protocol states from the point of view of the server.
     TxSubmissionServerPipelined (..)
   , ServerStIdle (..)
-  , Collect (..)
   , TxSizeInBytes
     -- * Execution as a typed protocol
   , txSubmissionServerPeerPipelined
   ) where
 
+import           Control.Monad.Class.MonadSTM (STM)
+
 import           Data.List.NonEmpty (NonEmpty)
+import           Data.Type.Queue
 import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Peer.Server
 
 import           Ouroboros.Network.Protocol.TxSubmission2.Type
 
 
 data TxSubmissionServerPipelined txid tx m a where
   TxSubmissionServerPipelined
-    :: m (ServerStIdle              Z txid tx m a)
-    ->    TxSubmissionServerPipelined txid tx m a
+    :: forall txid tx m a.
+       m (ServerStIdle                txid tx Empty m a)
+    ->    TxSubmissionServerPipelined txid tx       m a
 
 
--- | This is the type of the pipelined results, collected by 'CollectPipelined'.
--- This protocol can pipeline requests for transaction ids and transactions,
--- so we use a sum of either for collecting the responses.
---
-data Collect txid tx =
-       -- | The result of 'SendMsgRequestTxIdsPipelined'. It also carries
-       -- the number of txids originally requested.
-       CollectTxIds Word16 [(txid, TxSizeInBytes)]
-
-       -- | The result of 'SendMsgRequestTxsPipelined'. The actual reply only
-       -- contains the transactions sent, but this pairs them up with the
-       -- transactions requested. This is because the peer can determine that
-       -- some transactions are no longer needed.
-     | CollectTxs [txid] [tx]
+data F txid st st' where
+    FTxIds :: Word16 -> F txid (StTxIds NonBlocking) StIdle
+    FTxs   :: [txid] -> F txid StTxs                 StIdle
 
 
-data ServerStIdle (n :: N) txid tx m a where
+data ServerStIdle txid tx (q :: Queue (TxSubmission2 txid tx)) m a where
 
   -- |
   --
@@ -62,30 +57,33 @@ data ServerStIdle (n :: N) txid tx m a where
     -> Word16                               -- ^ number of txids to request
     -> m a                                  -- ^ Result if done
     -> (NonEmpty (txid, TxSizeInBytes)
-        -> m (ServerStIdle Z txid tx m a))
-    -> ServerStIdle        Z txid tx m a
+        -> m (ServerStIdle txid tx Empty m a))
+    -> ServerStIdle        txid tx Empty m a
 
   -- |
   --
   SendMsgRequestTxIdsPipelined
     :: Word16
     -> Word16
-    -> m (ServerStIdle (S n) txid tx m a)
-    -> ServerStIdle       n  txid tx m a
+    -> m (ServerStIdle txid tx (q |> Tr (StTxIds NonBlocking) StIdle) m a)
+    -> ServerStIdle    txid tx  q                                     m a
 
   -- |
   --
   SendMsgRequestTxsPipelined
     :: [txid]
-    -> m (ServerStIdle (S n) txid tx m a)
-    -> ServerStIdle       n  txid tx m a
+    -> m (ServerStIdle txid tx (q |> Tr StTxs StIdle) m a)
+    -> ServerStIdle    txid tx  q                     m a
 
   -- | Collect a pipelined result.
   --
   CollectPipelined
-    :: Maybe                 (ServerStIdle (S n) txid tx m a)
-    -> (Collect txid tx -> m (ServerStIdle    n  txid tx m a))
-    ->                        ServerStIdle (S n) txid tx m a
+    :: Maybe         (ServerStIdle txid tx (Tr st StIdle <| q) m a)
+    -> (Word16 -> [(txid, TxSizeInBytes)]
+               -> m  (ServerStIdle txid tx                  q  m a))
+    -> ([txid] -> [tx]
+               -> m  (ServerStIdle txid tx                  q  m a))
+    ->                ServerStIdle txid tx (Tr st StIdle <| q) m a
 
 
 -- | Transform a 'TxSubmissionServerPipelined' into a 'PeerPipelined'.
@@ -94,57 +92,42 @@ txSubmissionServerPeerPipelined
     :: forall txid tx m a.
        Functor m
     => TxSubmissionServerPipelined txid tx m a
-    -> PeerPipelined (TxSubmission2 txid tx) AsServer StInit m a
+    -> Server (TxSubmission2 txid tx) 'Pipelined Empty StInit m (STM m) a
 txSubmissionServerPeerPipelined (TxSubmissionServerPipelined server) =
-    PeerPipelined ( goInit
-                  $ SenderEffect (go <$> server)
-                  )
+    Await $ \MsgInit -> Effect (go SingEmptyF <$> server)
   where
-    goInit :: PeerSender (TxSubmission2 txid tx) AsServer StIdle
-                         Z (Collect txid tx) m a
-           -> PeerSender (TxSubmission2 txid tx) AsServer StInit
-                         Z (Collect txid tx) m a
-    goInit k = SenderAwait (ClientAgency TokInit) $ \MsgInit -> k
+    go :: forall (q :: Queue (TxSubmission2 txid tx)).
+          SingQueueF (F txid) q
+       -> ServerStIdle txid tx q m a
+       -> Server (TxSubmission2 txid tx) 'Pipelined q StIdle m (STM m) a
 
-    go :: forall (n :: N).
-          ServerStIdle n txid tx m a
-       -> PeerSender (TxSubmission2 txid tx) AsServer StIdle
-                     n (Collect txid tx) m a
-
-    go (SendMsgRequestTxIdsBlocking ackNo reqNo kDone k) =
-      SenderYield
-        (ServerAgency TokIdle)
-        (MsgRequestTxIds TokBlocking ackNo reqNo) $
-      SenderAwait
-        (ClientAgency (TokTxIds TokBlocking)) $ \msg ->
+    go q (SendMsgRequestTxIdsBlocking ackNo reqNo kDone k) =
+      Yield (MsgRequestTxIds SingBlocking ackNo reqNo) $
+      Await $ \msg ->
         case msg of
           MsgDone ->
-            SenderEffect (SenderDone TokDone <$> kDone)
+            Effect (Done <$> kDone)
 
           MsgReplyTxIds (BlockingReply txids) ->
-            SenderEffect (go <$> k txids)
+            Effect (go q <$> k txids)
 
-    go (SendMsgRequestTxIdsPipelined ackNo reqNo k) =
-      SenderPipeline
-        (ServerAgency TokIdle)
-        (MsgRequestTxIds TokNonBlocking ackNo reqNo)
-        (ReceiverAwait (ClientAgency (TokTxIds TokNonBlocking)) $ \msg ->
-           case msg of
-             MsgReplyTxIds (NonBlockingReply txids) ->
-               ReceiverDone (CollectTxIds reqNo txids))
-        (SenderEffect (go <$> k))
+    go q (SendMsgRequestTxIdsPipelined ackNo reqNo k) =
+      YieldPipelined
+        (MsgRequestTxIds SingNonBlocking ackNo reqNo)
+          (Effect (go (q |> FTxIds reqNo) <$> k))
 
-    go (SendMsgRequestTxsPipelined txids k) =
-      SenderPipeline
-        (ServerAgency TokIdle)
+    go q (SendMsgRequestTxsPipelined txids k) =
+      YieldPipelined
         (MsgRequestTxs txids)
-        (ReceiverAwait (ClientAgency TokTxs) $ \msg ->
-           case msg of
-             MsgReplyTxs txs -> ReceiverDone (CollectTxs txids txs))
-        (SenderEffect (go <$> k))
+        (Effect (go (q |> FTxs txids)  <$> k))
 
-    go (CollectPipelined mNone collect) =
-      SenderCollect
-        (fmap go mNone)
-        (SenderEffect . fmap go . collect)
+    go q@(FTxIds reqNo `SingConsF` q') (CollectPipelined mNone collect _) =
+      Collect (fmap (go q) mNone)
+              (\(MsgReplyTxIds (NonBlockingReply txids)) ->
+                      CollectDone (Effect $ go q' <$> collect reqNo txids)
+              )
 
+    go q@(FTxs txids `SingConsF` q') (CollectPipelined mNone _ collect) =
+      Collect (fmap (go q) mNone)
+              (\(MsgReplyTxs txs) ->
+                  CollectDone (Effect $ go q' <$> collect txids txs))

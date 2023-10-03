@@ -18,6 +18,7 @@ module Ouroboros.Network.Protocol.Handshake
   , handshake_QUERY_SHUTDOWN_DELAY
   ) where
 
+import           Control.Applicative (Alternative)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadThrow
@@ -113,7 +114,8 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
 -- | Run client side of the 'Handshake' protocol
 --
 runHandshakeClient
-    :: ( MonadAsync m
+    :: ( Alternative (STM m)
+       , MonadAsync m
        , MonadFork m
        , MonadTimer m
        , MonadMask m
@@ -150,7 +152,8 @@ runHandshakeClient bearer
 -- | Run server side of the 'Handshake' protocol.
 --
 runHandshakeServer
-    :: ( MonadAsync m
+    :: ( Alternative (STM m)
+       , MonadAsync m
        , MonadFork m
        , MonadTimer m
        , MonadMask m

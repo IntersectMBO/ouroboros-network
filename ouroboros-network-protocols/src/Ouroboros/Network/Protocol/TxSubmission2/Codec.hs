@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
@@ -25,6 +26,7 @@ import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
 import           Text.Printf
 
+import           Network.TypedProtocol.Core
 import           Network.TypedProtocol.Codec.CBOR
 
 import           Ouroboros.Network.Protocol.Limits
@@ -36,13 +38,14 @@ byteLimitsTxSubmission2 :: forall bytes txid tx.
                         -> ProtocolSizeLimits (TxSubmission2 txid tx) bytes
 byteLimitsTxSubmission2 = ProtocolSizeLimits stateToLimit
   where
-    stateToLimit :: forall (pr :: PeerRole) (st :: TxSubmission2 txid tx).
-                    PeerHasAgency pr st -> Word
-    stateToLimit (ClientAgency TokInit)                   = smallByteLimit
-    stateToLimit (ClientAgency (TokTxIds TokBlocking))    = largeByteLimit
-    stateToLimit (ClientAgency (TokTxIds TokNonBlocking)) = largeByteLimit
-    stateToLimit (ClientAgency TokTxs)                    = largeByteLimit
-    stateToLimit (ServerAgency TokIdle)                   = smallByteLimit
+    stateToLimit :: forall (st :: TxSubmission2 txid tx).
+                    ActiveState st => StateToken st -> Word
+    stateToLimit SingInit                    = smallByteLimit
+    stateToLimit (SingTxIds SingBlocking)    = largeByteLimit
+    stateToLimit (SingTxIds SingNonBlocking) = largeByteLimit
+    stateToLimit SingTxs                     = largeByteLimit
+    stateToLimit SingIdle                    = smallByteLimit
+    stateToLimit a@SingDone                  = notActiveState a
 
 
 -- | Time Limits.
@@ -54,13 +57,14 @@ byteLimitsTxSubmission2 = ProtocolSizeLimits stateToLimit
 timeLimitsTxSubmission2 :: forall txid tx. ProtocolTimeLimits (TxSubmission2 txid tx)
 timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
   where
-    stateToLimit :: forall (pr :: PeerRole) (st :: TxSubmission2 txid tx).
-                    PeerHasAgency pr st -> Maybe DiffTime
-    stateToLimit (ClientAgency TokInit)                   = waitForever
-    stateToLimit (ClientAgency (TokTxIds TokBlocking))    = waitForever
-    stateToLimit (ClientAgency (TokTxIds TokNonBlocking)) = shortWait
-    stateToLimit (ClientAgency TokTxs)                    = shortWait
-    stateToLimit (ServerAgency TokIdle)                   = waitForever
+    stateToLimit :: forall (st :: TxSubmission2 txid tx).
+                    ActiveState st => StateToken st -> Maybe DiffTime
+    stateToLimit SingInit                    = waitForever
+    stateToLimit (SingTxIds SingBlocking)    = waitForever
+    stateToLimit (SingTxIds SingNonBlocking) = shortWait
+    stateToLimit SingTxs                     = shortWait
+    stateToLimit SingIdle                    = waitForever
+    stateToLimit a@SingDone                  = notActiveState a
 
 
 codecTxSubmission2
@@ -77,8 +81,9 @@ codecTxSubmission2 encodeTxId decodeTxId
       (encodeTxSubmission2 encodeTxId encodeTx)
       decode
   where
-    decode :: forall (pr :: PeerRole) (st :: TxSubmission2 txid tx).
-              PeerHasAgency pr st
+    decode :: forall (st :: TxSubmission2 txid tx).
+              ActiveState st
+           => StateToken st
            -> forall s. CBOR.Decoder s (SomeMessage st)
     decode stok = do
       len <- CBOR.decodeListLen
@@ -89,29 +94,28 @@ encodeTxSubmission2
     :: forall txid tx.
        (txid -> CBOR.Encoding)
     -> (tx -> CBOR.Encoding)
-    -> (forall (pr :: PeerRole) (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
-               PeerHasAgency pr st
-            -> Message (TxSubmission2 txid tx) st st'
+    -> (forall (st :: TxSubmission2 txid tx) (st' :: TxSubmission2 txid tx).
+               Message (TxSubmission2 txid tx) st st'
             -> CBOR.Encoding)
 encodeTxSubmission2 encodeTxId encodeTx = encode
   where
-    encode :: forall (pr :: PeerRole) st st'.
-              PeerHasAgency pr st
-           -> Message (TxSubmission2 txid tx) st st'
+    encode :: forall st st'.
+              Message (TxSubmission2 txid tx) st st'
            -> CBOR.Encoding
-    encode (ClientAgency TokInit)  MsgInit =
+    encode  MsgInit =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 6
-    encode (ServerAgency TokIdle) (MsgRequestTxIds blocking ackNo reqNo) =
+
+    encode (MsgRequestTxIds blocking ackNo reqNo) =
         CBOR.encodeListLen 4
      <> CBOR.encodeWord 0
      <> CBOR.encodeBool (case blocking of
-                           TokBlocking    -> True
-                           TokNonBlocking -> False)
+                           SingBlocking    -> True
+                           SingNonBlocking -> False)
      <> CBOR.encodeWord16 ackNo
      <> CBOR.encodeWord16 reqNo
 
-    encode (ClientAgency (TokTxIds _)) (MsgReplyTxIds txids) =
+    encode (MsgReplyTxIds txids) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 1
      <> CBOR.encodeListLenIndef
@@ -127,19 +131,19 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
                    BlockingReply    xs -> NonEmpty.toList xs
                    NonBlockingReply xs -> xs
 
-    encode (ServerAgency TokIdle) (MsgRequestTxs txids) =
+    encode (MsgRequestTxs txids) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 2
      <> CBOR.encodeListLenIndef
      <> foldr (\txid r -> encodeTxId txid <> r) CBOR.encodeBreak txids
 
-    encode (ClientAgency TokTxs)  (MsgReplyTxs txs) =
+    encode (MsgReplyTxs txs) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 3
      <> CBOR.encodeListLenIndef
      <> foldr (\txid r -> encodeTx txid <> r) CBOR.encodeBreak txs
 
-    encode (ClientAgency (TokTxIds TokBlocking)) MsgDone =
+    encode MsgDone =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 4
 
@@ -148,31 +152,35 @@ decodeTxSubmission2
     :: forall txid tx.
        (forall s . CBOR.Decoder s txid)
     -> (forall s . CBOR.Decoder s tx)
-    -> (forall (pr :: PeerRole) (st :: TxSubmission2 txid tx) s.
-               PeerHasAgency pr st
+    -> (forall (st :: TxSubmission2 txid tx) s.
+               ActiveState st
+            => StateToken st
             -> Int
             -> Word
             -> CBOR.Decoder s (SomeMessage st))
 decodeTxSubmission2 decodeTxId decodeTx = decode
   where
-    decode :: forall (pr :: PeerRole) s (st :: TxSubmission2 txid tx).
-              PeerHasAgency pr st
+    decode :: forall s (st :: TxSubmission2 txid tx).
+              ActiveState st
+           => StateToken st
            -> Int
            -> Word
            -> CBOR.Decoder s (SomeMessage st)
     decode stok len key = do
+      -- todo: don't use `phaState`
       case (stok, len, key) of
-        (ClientAgency TokInit,       1, 6) ->
+        (SingInit, 1, 6) ->
           return (SomeMessage MsgInit)
-        (ServerAgency TokIdle,       4, 0) -> do
+
+        (SingIdle, 4, 0) -> do
           blocking <- CBOR.decodeBool
           ackNo    <- CBOR.decodeWord16
           reqNo    <- CBOR.decodeWord16
           return $! case blocking of
-            True  -> SomeMessage (MsgRequestTxIds TokBlocking    ackNo reqNo)
-            False -> SomeMessage (MsgRequestTxIds TokNonBlocking ackNo reqNo)
+            True  -> SomeMessage (MsgRequestTxIds SingBlocking    ackNo reqNo)
+            False -> SomeMessage (MsgRequestTxIds SingNonBlocking ackNo reqNo)
 
-        (ClientAgency (TokTxIds b),  2, 1) -> do
+        (SingTxIds b,  2, 1) -> do
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef
                      (flip (:)) [] reverse
@@ -181,69 +189,77 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
                          sz   <- CBOR.decodeWord32
                          return (txid, sz))
           case (b, txids) of
-            (TokBlocking, t:ts) ->
+            (SingBlocking, t:ts) ->
               return $
                 SomeMessage (MsgReplyTxIds (BlockingReply (t NonEmpty.:| ts)))
 
-            (TokNonBlocking, ts) ->
+            (SingNonBlocking, ts) ->
               return $
                 SomeMessage (MsgReplyTxIds (NonBlockingReply ts))
 
-            (TokBlocking, []) ->
-              fail "codecTxSubmission: MsgReplyTxIds: empty list not permitted"
+            (SingBlocking, []) ->
+              fail "codecTxSubmission2: MsgReplyTxIds: empty list not permitted"
 
 
-        (ServerAgency TokIdle,       2, 2) -> do
+        (SingIdle, 2, 2) -> do
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTxId
           return (SomeMessage (MsgRequestTxs txids))
 
-        (ClientAgency TokTxs,     2, 3) -> do
+        (SingTxs, 2, 3) -> do
           CBOR.decodeListLenIndef
           txids <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTx
           return (SomeMessage (MsgReplyTxs txids))
 
-        (ClientAgency (TokTxIds TokBlocking), 1, 4) ->
+        (SingTxIds SingBlocking, 1, 4) ->
           return (SomeMessage MsgDone)
+
+        (SingDone, _, _) -> notActiveState stok
 
         --
         -- failures per protocol state
         --
 
-        (ClientAgency TokInit, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (ClientAgency (TokTxIds TokBlocking), _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (ClientAgency (TokTxIds TokNonBlocking), _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (ClientAgency TokTxs, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
-        (ServerAgency TokIdle, _, _) ->
-            fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        (_, _, _) ->
+            fail (printf "codecTxSubmission2 (%s, %s) unexpected key (%d, %d)"
+                         (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+
 
 codecTxSubmission2Id
   :: forall txid tx m. Monad m
   => Codec (TxSubmission2 txid tx) CodecFailure m (AnyMessage (TxSubmission2 txid tx))
 codecTxSubmission2Id = Codec encode decode
  where
-  encode :: forall (pr :: PeerRole) st st'.
-            PeerHasAgency pr st
-         -> Message (TxSubmission2 txid tx) st st'
+  encode :: forall  st st'.
+            ActiveState st
+         => StateTokenI st
+         => Message (TxSubmission2 txid tx) st st'
          -> AnyMessage (TxSubmission2 txid tx)
-  encode _ = AnyMessage
+  encode = AnyMessage
 
-  decode :: forall (pr :: PeerRole) (st :: TxSubmission2 txid tx).
-            PeerHasAgency pr st
+  decode :: forall (st :: TxSubmission2 txid tx).
+            ActiveState st
+         => StateToken st
          -> m (DecodeStep (AnyMessage (TxSubmission2 txid tx))
                           CodecFailure m (SomeMessage st))
-  decode stok = return $ DecodePartial $ \bytes -> return $ case (stok, bytes) of
-    (ClientAgency TokInit,      Just (AnyMessage msg@MsgInit))              -> DecodeDone (SomeMessage msg) Nothing
-    (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxIds {}))) -> DecodeDone (SomeMessage msg) Nothing
-    (ServerAgency TokIdle,      Just (AnyMessage msg@(MsgRequestTxs {})))   -> DecodeDone (SomeMessage msg) Nothing
-    (ClientAgency TokTxs,       Just (AnyMessage msg@(MsgReplyTxs {})))     -> DecodeDone (SomeMessage msg) Nothing
-    (ClientAgency (TokTxIds b), Just (AnyMessage msg)) -> case (b, msg) of
-      (TokBlocking,    MsgReplyTxIds (BlockingReply {}))    -> DecodeDone (SomeMessage msg) Nothing
-      (TokNonBlocking, MsgReplyTxIds (NonBlockingReply {})) -> DecodeDone (SomeMessage msg) Nothing
-      (TokBlocking,    MsgDone {})                          -> DecodeDone (SomeMessage msg) Nothing
+  decode stok = return $ DecodePartial $ \bytes -> return $
+    case (stok, bytes) of
+      (SingInit,      Just (AnyMessage msg@MsgInit))              -> DecodeDone (SomeMessage msg) Nothing
+      (SingIdle,      Just (AnyMessage msg@(MsgRequestTxIds SingBlocking _ _))) ->
+        DecodeDone (SomeMessage msg) Nothing
+      (SingIdle,      Just (AnyMessage msg@(MsgRequestTxIds SingNonBlocking _ _))) ->
+        DecodeDone (SomeMessage msg) Nothing
+      (SingIdle,      Just (AnyMessage msg@(MsgRequestTxs {}))) ->
+        DecodeDone (SomeMessage msg) Nothing
+      (SingTxs,       Just (AnyMessage msg@(MsgReplyTxs {}))) ->
+        DecodeDone (SomeMessage msg) Nothing
+      (SingTxIds b, Just (AnyMessage msg)) -> case (b, msg) of
+        (SingBlocking,    MsgReplyTxIds (BlockingReply {})) ->
+          DecodeDone (SomeMessage msg) Nothing
+        (SingNonBlocking, MsgReplyTxIds (NonBlockingReply {})) ->
+          DecodeDone (SomeMessage msg) Nothing
+        (SingBlocking,    MsgDone {}) ->
+          DecodeDone (SomeMessage msg) Nothing
+        (_, _) -> DecodeFail (CodecFailure "codecTxSubmissionId: no matching message")
+      (SingDone, _) -> notActiveState stok
       (_, _) -> DecodeFail (CodecFailure "codecTxSubmissionId: no matching message")
-    (_, _) -> DecodeFail (CodecFailure "codecTxSubmissionId: no matching message")

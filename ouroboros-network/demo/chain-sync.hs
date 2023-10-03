@@ -64,6 +64,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
 import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
 
+import qualified Ouroboros.Network.Protocol.BlockFetch.Client as BlockFetch
 import qualified Ouroboros.Network.Protocol.BlockFetch.Codec as BlockFetch
 import qualified Ouroboros.Network.Protocol.BlockFetch.Server as BlockFetch
 import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
@@ -298,12 +299,13 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
           InitiatorProtocolOnly $
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
               bracketFetchClient registry maxBound isPipeliningEnabled connId $ \clientCtx ->
-                runPipelinedPeer
+                runPeer
                   nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
                   codecBlockFetch
                   channel
-                  (blockFetchClient NodeToNodeV_7 (continueForever (Proxy :: Proxy IO))
-                    nullTracer clientCtx)
+                  (BlockFetch.blockFetchClientPeerPipelined $
+                    blockFetchClient NodeToNodeV_7 (continueForever (Proxy :: Proxy IO))
+                                     nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO

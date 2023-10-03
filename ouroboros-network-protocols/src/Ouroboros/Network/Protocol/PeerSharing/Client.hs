@@ -3,11 +3,8 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Client where
 
-import           Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..),
-                     PeerRole (..))
+import           Network.TypedProtocol.Peer.Client
 import           Ouroboros.Network.Protocol.PeerSharing.Type
-                     (ClientHasAgency (..), Message (..), NobodyHasAgency (..),
-                     PeerSharing (..), PeerSharingAmount, ServerHasAgency (..))
 
 data PeerSharingClient peerAddress m a where
   SendMsgShareRequest
@@ -23,16 +20,16 @@ data PeerSharingClient peerAddress m a where
 --
 peerSharingClientPeer :: Monad m
                       => PeerSharingClient peerAddress m a
-                      -> Peer (PeerSharing peerAddress) AsClient StIdle m a
+                      -> Client (PeerSharing peerAddress) NonPipelined Empty StIdle m stm a
 peerSharingClientPeer (SendMsgShareRequest amount k) =
   -- Send MsgShareRequest message
-  Yield (ClientAgency TokIdle) (MsgShareRequest amount) $
+  Yield (MsgShareRequest amount) $
     -- Wait for the reply (notice the agency proofs)
-    Await (ServerAgency TokBusy) $ \(MsgSharePeers resp) ->
+    Await $ \(MsgSharePeers resp) ->
       -- We have our reply. We might want to perform some action with it so we
       -- run the continuation to handle t he response.
       Effect $ peerSharingClientPeer <$> k resp
 peerSharingClientPeer (SendMsgDone result) =
     -- Perform some finishing action
     -- Perform a transition to the 'StDone' state
-    Effect $ (Yield (ClientAgency TokIdle) MsgDone . Done TokDone) <$> result
+    Effect $ (Yield MsgDone . Done) <$> result

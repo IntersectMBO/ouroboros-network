@@ -25,7 +25,9 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadSTM.Strict
+import           Control.Monad.Class.MonadAsync (MonadAsync)
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
 import           Control.Monad.Class.MonadThrow
@@ -128,11 +130,15 @@ prop_blockGenerator_IO (TestBlockChain chain) (Positive slotDuration) =
     slotDuration' :: DiffTime
     slotDuration' = fromIntegral slotDuration
 
-coreToRelaySim :: ( MonadDelay m
+coreToRelaySim :: ( Alternative (STM m)
+                  , MonadAsync m
+                  , MonadDelay m
+                  , MonadLabelledSTM m
                   , MonadFork m
-                  , MonadSTM m
+                  , MonadMask m
                   , MonadSay m
                   , MonadThrow m
+                  , MonadThrow (STM m)
                   , MonadTime m
                   , MonadTimer m
                   )
@@ -209,10 +215,14 @@ prop_coreToRelay (TestNodeSim chain slotDuration coreTrDelay relayTrDelay) =
       else mchain1 === Just chain
 
 -- Node graph: c → r → r
-coreToRelaySim2 :: ( MonadDelay m
-                   , MonadSTM m
+coreToRelaySim2 :: ( Alternative (STM m)
+                   , MonadAsync m
+                   , MonadDelay m
+                   , MonadLabelledSTM m
                    , MonadFork m
+                   , MonadMask m
                    , MonadThrow m
+                   , MonadThrow (STM m)
                    , MonadSay m
                    , MonadTime m
                    , MonadTimer m
@@ -307,10 +317,14 @@ instance Arbitrary TestNetworkGraph where
         [ TestNetworkGraph g cs' | cs' <- shrinkList (:[]) cs, not (null cs') ]
 
 networkGraphSim :: forall m.
-                  ( MonadDelay m
-                  , MonadSTM m
+                  ( Alternative (STM m)
+                  , MonadAsync m
+                  , MonadDelay m
+                  , MonadLabelledSTM m
                   , MonadFork m
+                  , MonadMask m
                   , MonadThrow m
+                  , MonadThrow (STM m)
                   , MonadSay m
                   , MonadTime m
                   , MonadTimer m

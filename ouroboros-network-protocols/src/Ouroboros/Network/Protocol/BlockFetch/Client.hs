@@ -4,10 +4,13 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 module Ouroboros.Network.Protocol.BlockFetch.Client where
 
+import           Control.Monad.Class.MonadSTM (STM)
+
 import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
+import           Network.TypedProtocol.Peer.Client
 
 import           Ouroboros.Network.Protocol.BlockFetch.Type
 
@@ -51,20 +54,19 @@ blockFetchClientPeer
   :: forall block point m a.
      Monad m
   => BlockFetchClient block point m a
-  -> Peer (BlockFetch block point) AsClient BFIdle m a
+  -> Client (BlockFetch block point) NonPipelined Empty BFIdle m (STM m) a
 blockFetchClientPeer (BlockFetchClient mclient) =
   Effect $ blockFetchRequestPeer <$> mclient
  where
   blockFetchRequestPeer
     :: BlockFetchRequest block point m a
-    -> Peer (BlockFetch block point) AsClient BFIdle m a
+    -> Client (BlockFetch block point) NonPipelined Empty BFIdle m (STM m) a
 
   blockFetchRequestPeer (SendMsgClientDone result) =
-    Yield (ClientAgency TokIdle) MsgClientDone (Done TokDone result)
+    Yield MsgClientDone (Done result)
 
   blockFetchRequestPeer (SendMsgRequestRange range resp next) =
     Yield
-      (ClientAgency TokIdle)
       (MsgRequestRange range)
       (blockFetchResponsePeer next resp)
 
@@ -72,39 +74,44 @@ blockFetchClientPeer (BlockFetchClient mclient) =
   blockFetchResponsePeer
     :: BlockFetchClient block point m a
     -> BlockFetchResponse block m a
-    -> Peer (BlockFetch block point) AsClient BFBusy m a
+    -> Client (BlockFetch block point) NonPipelined Empty BFBusy m (STM m) a
   blockFetchResponsePeer next BlockFetchResponse{handleNoBlocks, handleStartBatch} =
-    Await (ServerAgency TokBusy) $ \msg -> case msg of
+    Await $ \msg -> case msg of
       MsgStartBatch -> Effect $ blockReceiver next <$> handleStartBatch
-      MsgNoBlocks   -> Effect $ handleNoBlocks >> (blockFetchRequestPeer <$> runBlockFetchClient next)
+      MsgNoBlocks   -> Effect $ handleNoBlocks
+                             >> blockFetchRequestPeer <$> runBlockFetchClient next
 
   blockReceiver
     :: BlockFetchClient block point m a
     -> BlockFetchReceiver block m
-    -> Peer (BlockFetch block point) AsClient BFStreaming m a
+    -> Client (BlockFetch block point) NonPipelined Empty BFStreaming m (STM m) a
   blockReceiver next BlockFetchReceiver{handleBlock, handleBatchDone} =
-    Await (ServerAgency TokStreaming) $ \msg -> case msg of
+    Await $ \msg -> case msg of
       MsgBlock block -> Effect $ blockReceiver next <$> handleBlock block
-      MsgBatchDone   -> Effect $ do
-        handleBatchDone
-        blockFetchRequestPeer <$> runBlockFetchClient next
+      MsgBatchDone   -> Effect $ handleBatchDone
+                              >> blockFetchRequestPeer <$> runBlockFetchClient next
 
 --
 -- Pipelined client
 --
 
--- | A BlockFetch client designed for running the protcol in a pipelined way.
+type BFQueue block point = Queue (BlockFetch block point)
+
+-- | A BlockFetch client designed for running the protocol in a pipelined way.
 --
 data BlockFetchClientPipelined block point m a where
-   -- | A 'BlockFetchSender', but starting with zero outstanding pipelined
+   -- | A 'BlockFetchIdle', but starting with zero outstanding pipelined
    -- responses, and for any internal collect type @c@.
    BlockFetchClientPipelined
-     :: BlockFetchSender      Z c block point m a
-     -> BlockFetchClientPipelined block point m a
+     :: m (BlockFetchIdle         block point   Empty m a)
+     -> BlockFetchClientPipelined block point       m a
 
--- | A 'BlockFetchSender' with @n@ outstanding stream of block bodies.
+
+-- | A 'BlockFetchIdle' with @n@ outstanding stream of block bodies.
 --
-data BlockFetchSender n c block point m a where
+-- TODO: rename this type, it's not only sending but also collecting responses.
+--
+data BlockFetchIdle block point (q :: BFQueue block point) m a where
 
   -- | Send a `MsgRequestRange` but do not wait for response.  Supply a monadic
   -- action which runs on each received block and which updates the internal
@@ -113,65 +120,113 @@ data BlockFetchSender n c block point m a where
   --
   SendMsgRequestRangePipelined
     :: ChainRange point
-    -> c
-    -> (Maybe block -> c -> m c)
-    -> BlockFetchSender (S n) c block point m a
-    -> BlockFetchSender    n  c block point m a
+    -> m (BlockFetchIdle block point (q |> Tr BFBusy BFIdle) m a)
+    ->    BlockFetchIdle block point  q                      m a
 
   -- | Collect the result of a previous pipelined receive action
   --
-  CollectBlocksPipelined
-    :: Maybe (BlockFetchSender (S n) c block point m a)
-    -> (c ->  BlockFetchSender    n  c block point m a)
-    ->        BlockFetchSender (S n) c block point m a
+  CollectStartBatch
+    :: Maybe
+         (m (BlockFetchIdle block point (Tr BFBusy      BFIdle <| q) m a))
+    ->    m (BlockFetchIdle block point (Tr BFStreaming BFIdle <| q) m a)
+    -- ^ continuation run when 'MsgStartBatch' was received
+    ->    m (BlockFetchIdle block point                           q  m a)
+    -- ^ continuation run when 'MsgNoBlocks' was received
+    ->       BlockFetchIdle block point (Tr BFBusy      BFIdle <| q) m a
+
+  CollectBlock
+    :: Maybe
+         (m (BlockFetchIdle block point (Tr BFStreaming BFIdle <| q) m a))
+    -> ( block ->
+          m (BlockFetchIdle block point (Tr BFStreaming BFIdle <| q) m a))
+       -- ^ continuation run when a 'MsgBlock' was received
+    ->    m (BlockFetchIdle block point                           q  m a)
+       -- ^ continuation run when 'MsgBatchDone' was received (all blocks were
+       -- received)
+    ->       BlockFetchIdle block point (Tr BFStreaming BFIdle <| q) m a
+
+  CollectStartBatchSTM
+    :: STM m
+          (m (BlockFetchIdle block point (Tr BFBusy      BFIdle <| q) m a))
+    ->     m (BlockFetchIdle block point (Tr BFStreaming BFIdle <| q) m a)
+    -- ^ continuation run when 'MsgStartBatch' was received
+    ->     m (BlockFetchIdle block point                           q  m a)
+    -- ^ continuation run when 'MsgNoBlocks' was received
+    ->        BlockFetchIdle block point (Tr BFBusy      BFIdle <| q) m a
+
+  CollectBlockSTM
+    :: STM m
+          (m (BlockFetchIdle block point (Tr BFStreaming BFIdle <| q) m a))
+    -> ( block ->
+           m (BlockFetchIdle block point (Tr BFStreaming BFIdle <| q) m a))
+       -- ^ continuation run when a 'MsgBlock' was received
+    ->     m (BlockFetchIdle block point                           q  m a)
+       -- ^ continuation run when 'MsgBatchDone' was received (all blocks were
+       -- received)
+    ->        BlockFetchIdle block point (Tr BFStreaming BFIdle <| q) m a
+
 
   -- | Termination of the block-fetch protocol.
   SendMsgDonePipelined
-    :: a -> BlockFetchSender Z c block point m a
+    :: a -> BlockFetchIdle block point Empty m a
 
 blockFetchClientPeerPipelined
   :: forall block point m a.
-     Monad m
+     ( Monad m, Functor (STM m) )
   => BlockFetchClientPipelined block point m a
-  -> PeerPipelined (BlockFetch block point) AsClient BFIdle m a
+  -> Client (BlockFetch block point) 'Pipelined Empty BFIdle m (STM m) a
 blockFetchClientPeerPipelined (BlockFetchClientPipelined sender) =
-  PeerPipelined (blockFetchClientPeerSender sender)
+  Effect (blockFetchClientPeerSender <$> sender)
 
 blockFetchClientPeerSender
-  :: forall n block point c m a.
-     Monad m
-  => BlockFetchSender n c block point m a
-  -> PeerSender (BlockFetch block point) AsClient BFIdle n c m a
+  :: forall block point (q :: BFQueue block point) m a.
+     ( Monad m, Functor (STM m) )
+  => BlockFetchIdle block point q m a
+  -> Client (BlockFetch block point) 'Pipelined q BFIdle m (STM m) a
 
 blockFetchClientPeerSender (SendMsgDonePipelined result) =
   -- Send `MsgClientDone` and complete the protocol
-  SenderYield
-    (ClientAgency TokIdle)
+  Yield
     MsgClientDone
-      (SenderDone TokDone result)
+    (Done result)
 
-blockFetchClientPeerSender (SendMsgRequestRangePipelined range c0 receive next) =
-  -- Pipelined yield: send `MsgRequestRange`, return receicer which will
-  -- consume a stream of blocks.
-  SenderPipeline
-    (ClientAgency TokIdle)
+blockFetchClientPeerSender (SendMsgRequestRangePipelined range next) =
+  YieldPipelined
     (MsgRequestRange range)
-    (ReceiverAwait (ServerAgency TokBusy) $ \msg -> case msg of
-      MsgStartBatch -> receiveBlocks c0
-      MsgNoBlocks   -> ReceiverDone c0)
-    (blockFetchClientPeerSender next)
- where
-  receiveBlocks
-    :: c
-    -> PeerReceiver (BlockFetch block point) AsClient BFStreaming BFIdle m c
-  receiveBlocks c = ReceiverAwait (ServerAgency TokStreaming) $ \msg -> case msg of
-    -- received a block, run an acction and compute the result
-    MsgBlock block -> ReceiverEffect $ do
-      c' <- receive (Just block) c
-      return $ receiveBlocks c'
-    MsgBatchDone  -> ReceiverDone c
+    (Effect $ blockFetchClientPeerSender <$> next)
 
-blockFetchClientPeerSender (CollectBlocksPipelined mNone collect) =
-  SenderCollect
-    (fmap blockFetchClientPeerSender mNone)
-    (blockFetchClientPeerSender . collect)
+blockFetchClientPeerSender (CollectStartBatch mNone kStartBatch kNoBlocks) =
+  Collect
+    (Effect . fmap blockFetchClientPeerSender <$> mNone)
+    (\msg -> case msg of
+      MsgStartBatch -> Effect (blockFetchClientPeerSender <$> kStartBatch)
+      MsgNoBlocks   -> CollectDone
+                     $ Effect (blockFetchClientPeerSender <$> kNoBlocks)
+    )
+
+blockFetchClientPeerSender (CollectBlock mNone kBlock kBatchDone) =
+  Collect
+    (Effect . fmap blockFetchClientPeerSender <$> mNone)
+    (\msg -> case msg of
+      MsgBlock block -> Effect (blockFetchClientPeerSender <$> kBlock block)
+      MsgBatchDone   -> CollectDone
+                      $ Effect (blockFetchClientPeerSender <$> kBatchDone)
+    )
+
+blockFetchClientPeerSender (CollectStartBatchSTM stmNone kStartBatch kNoBlocks) =
+  CollectSTM
+    (Effect . fmap blockFetchClientPeerSender <$> stmNone)
+    (\msg -> case msg of
+      MsgStartBatch -> Effect (blockFetchClientPeerSender <$> kStartBatch)
+      MsgNoBlocks   -> CollectDone
+                     $ Effect (blockFetchClientPeerSender <$> kNoBlocks)
+    )
+
+blockFetchClientPeerSender (CollectBlockSTM stmNone kBlock kBatchDone) =
+  CollectSTM
+    (Effect . fmap blockFetchClientPeerSender <$> stmNone)
+    (\msg -> case msg of
+      MsgBlock block -> Effect (blockFetchClientPeerSender <$> kBlock block)
+      MsgBatchDone   -> CollectDone
+                      $ Effect (blockFetchClientPeerSender <$> kBatchDone)
+    )

@@ -4,11 +4,8 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Server where
 
-import           Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..),
-                     PeerRole (..))
+import           Network.TypedProtocol.Peer.Server
 import           Ouroboros.Network.Protocol.PeerSharing.Type
-                     (ClientHasAgency (..), Message (..), NobodyHasAgency (..),
-                     PeerSharing (..), PeerSharingAmount, ServerHasAgency (..))
 
 data PeerSharingServer peerAddress m = PeerSharingServer {
   -- | The client sent us a 'MsgShareRequest'. We have need to compute the
@@ -22,18 +19,17 @@ data PeerSharingServer peerAddress m = PeerSharingServer {
 
 peerSharingServerPeer :: Monad m
                       => PeerSharingServer peerAddress m
-                      -> Peer (PeerSharing peerAddress) AsServer StIdle m ()
+                      -> Server (PeerSharing peerAddress) NonPipelined Empty StIdle m stm ()
 peerSharingServerPeer PeerSharingServer{..} =
-  -- Await receival of a message from the client
-  Await (ClientAgency TokIdle) $ \msg ->
+  -- Await to receive a message
+  Await $ \msg ->
     -- Can be either 'MsgShareRequest' or 'MsgDone'
     case msg of
       -- Compute the response and send 'MsgSharePeers' message
       MsgShareRequest amount -> Effect $ do
         (resp, server) <- recvMsgShareRequest amount
         return $
-          Yield (ServerAgency TokBusy)
-                (MsgSharePeers resp)
+          Yield (MsgSharePeers resp)
                 (peerSharingServerPeer server)
       -- Nothing to do.
-      MsgDone -> Done TokDone ()
+      MsgDone -> Done ()
