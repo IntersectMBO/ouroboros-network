@@ -73,8 +73,7 @@ type family QueueDepth q where
 
 
 queueDepthNat :: SingQueue q -> Nat (QueueDepth q)
-queueDepthNat (UnsafeSingQueue n) = (UnsafeInt n)
+queueDepthNat (UnsafeSingQueue n) = UnsafeInt n
 
 queueFDepthNat :: SingQueueF f q -> Nat (QueueDepth q)
-queueFDepthNat  SingEmptyF     = Zero
-queueFDepthNat (SingConsF _ q) = Succ (queueFDepthNat q)
+queueFDepthNat = UnsafeInt . queueFDepth
