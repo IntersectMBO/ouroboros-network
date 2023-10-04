@@ -165,6 +165,7 @@
         check-stylish = nixpkgs.callPackage ./nix/check-stylish.nix { };
       in
         lib.recursiveUpdate flake rec {
+          project = cabalProject;
           # add a required job, that's basically all hydraJobs.
           hydraJobs =
             nixpkgs.callPackages inputs.iohkNix.utils.ciJobsAggregates
