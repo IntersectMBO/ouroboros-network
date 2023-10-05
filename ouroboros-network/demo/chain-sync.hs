@@ -24,8 +24,7 @@ import           Text.Read (readMaybe)
 
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
-import           Control.Concurrent.STM (STM, atomically, check)
-import           Control.Concurrent.STM.TVar
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception
 import           Control.Monad (when)
 import           Control.Tracer
@@ -70,6 +69,9 @@ import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.BlockFetch.ClientRegistry
+                     (FetchClientRegistry (..))
+import           Ouroboros.Network.DeltaQ (defaultGSV)
 
 
 main :: IO ()
@@ -259,6 +261,16 @@ demoProtocol3 chainSync blockFetch =
     ]
 
 
+-- We run `chain-sync` and `block-fetch`, without `keep-alive`, so we need to
+-- register peers in `dqRegistry`.
+bracketDqRegistry :: FetchClientRegistry (ConnectionId LocalAddress) header block IO
+                  -> ConnectionId LocalAddress
+                  -> IO a -> IO a
+bracketDqRegistry FetchClientRegistry { fcrDqRegistry = dqRegistry } peer k =
+    bracket (atomically (modifyTVar dqRegistry (Map.insert peer defaultGSV)))
+            (\_ -> atomically (modifyTVar dqRegistry (Map.delete peer)))
+            (\_ -> k)
+
 clientBlockFetch :: [FilePath] -> IO ()
 clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     registry   <- newFetchClientRegistry
@@ -278,13 +290,14 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
               let register = atomically $ do
                              chainvar <- newTVar genesisAnchoredFragment
-                             modifyTVar' candidateChainsVar
-                                         (Map.insert connId chainvar)
+                             modifyTVar candidateChainsVar
+                                        (Map.insert connId chainvar)
                              return chainvar
                   unregister _ = atomically $
-                                 modifyTVar' candidateChainsVar
-                                             (Map.delete connId)
-              in bracket register unregister $ \chainVar ->
+                                 modifyTVar candidateChainsVar
+                                            (Map.delete connId)
+              in bracketSyncWithFetchClient registry connId $
+                 bracket register unregister $ \chainVar ->
                  runPeer
                    nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
                    codecChainSync
@@ -297,6 +310,7 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
         blockFetch =
           InitiatorProtocolOnly $
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
+              bracketDqRegistry registry connId $
               bracketFetchClient registry maxBound isPipeliningEnabled connId $ \clientCtx ->
                 runPipelinedPeer
                   nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
@@ -349,13 +363,13 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                       >>= traverse readTVar
             let fingerprint' = Map.map AF.headPoint candidates
             check (fingerprint /= fingerprint')
---            currentChain <- readTVar currentChainVar
+            -- currentChain <- readTVar currentChainVar
             fetched      <- getTestFetchedBlocks blockHeap
             let currentChain' =
-                  -- So this does chain selection by taking the longest
-                  -- downloaded candidate chain
-                 --FIXME: there's something wrong here, we always get chains
-                 -- of length 1.
+                 -- So this does chain selection by taking the longest
+                 -- downloaded candidate chain
+                 -- FIXME: there's something wrong here, we always get chains of
+                 -- length 1.
                   maximumBy compareCandidateChains $
                   [ candidateChainFetched
                   | candidateChain <- Map.elems candidates
@@ -409,11 +423,11 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     _ <- waitAnyCancel (fetchAsync : chainAsync : peerAsyncs)
     return ()
   where
---    chainSyncMsgTracer  = contramap (show) stdoutTracer
---    blockFetchMsgTracer = contramap (show) stdoutTracer
+    -- chainSyncMsgTracer  = contramap (show) stdoutTracer
+    -- blockFetchMsgTracer = contramap (show) stdoutTracer
 
---    decisionTracer      = contramap show stdoutTracer
---    clientStateTracer   = contramap show stdoutTracer
+    -- decisionTracer      = contramap show stdoutTracer
+    -- clientStateTracer   = contramap show stdoutTracer
 
     syncTracer :: Tracer IO (Point BlockHeader, Point BlockHeader)
     syncTracer  = contramap (\x -> "sync client: " ++ show x) stdoutTracer
@@ -491,13 +505,12 @@ chainSyncClient =
     ChainSync.ChainSyncClient $ do
       curvar   <- newTVarIO genesisAnchoredFragment
       chainvar <- newTVarIO genesisAnchoredFragment
-      let ChainSync.ChainSyncClient k =
-            chainSyncClient' nullTracer curvar chainvar
-      k
+      case chainSyncClient' nullTracer curvar chainvar of
+        ChainSync.ChainSyncClient k -> k
 
 chainSyncClient' :: Tracer IO (Point BlockHeader, Point BlockHeader)
-                 -> TVar (AF.AnchoredFragment BlockHeader)
-                 -> TVar (AF.AnchoredFragment BlockHeader)
+                 -> StrictTVar IO (AF.AnchoredFragment BlockHeader)
+                 -> StrictTVar IO (AF.AnchoredFragment BlockHeader)
                  -> ChainSync.ChainSyncClient
                       BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
 chainSyncClient' syncTracer _currentChainVar candidateChainVar =
@@ -519,7 +532,7 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
             addBlock header
             --FIXME: the notTooFarAhead bit is not working
             -- it seems the current chain is always of length 1.
---            notTooFarAhead
+            -- notTooFarAhead
             return requestNext
 
       , ChainSync.recvMsgRollBackward = \pIntersect _pHead ->
@@ -543,15 +556,16 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
         -- we do not handle rollback failure in this demo
         let (Just !chain') = AF.rollback p chain
         writeTVar candidateChainVar chain'
-{-
+    {-
     notTooFarAhead = atomically $ do
-      currentChain   <- readTVar currentChainVar
-      candidateChain <- readTVar candidateChainVar
-      check $ case (AF.headBlockNo currentChain,
-                    AF.headBlockNo candidateChain) of
-                (Just bn, Just bn') -> bn' < bn + 5
-                _                   -> True
--}
+        currentChain   <- readTVar currentChainVar
+        candidateChain <- readTVar candidateChainVar
+        check $ case (AF.headBlockNo currentChain,
+                      AF.headBlockNo candidateChain) of
+                  (Just bn, Just bn') -> bn' < bn + 5
+                  _                   -> True
+    -}
+
 chainSyncServer :: RandomGen g
                 => g
                 -> ChainSync.ChainSyncServer
@@ -726,22 +740,22 @@ doloremIpsum = concat
 -- The interface is enough to use in examples and tests.
 --
 data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
-       getTestFetchedBlocks :: STM (Set (Point block)),
+       getTestFetchedBlocks :: STM m (Set (Point block)),
        addTestFetchedBlock  :: Point block -> block -> m ()
      }
 
 -- | Make a 'TestFetchedBlockHeap' using a simple in-memory 'Map', stored in an
--- 'STM' 'TVar'.
+-- 'StrictTVar'.
 --
 -- This is suitable for examples and tests.
 --
 mkTestFetchedBlockHeap :: [Point BlockHeader]
                        -> IO (TestFetchedBlockHeap IO BlockHeader)
 mkTestFetchedBlockHeap points = do
-    v <- atomically (newTVar (Set.fromList points))
+    v <- newTVarIO (Set.fromList points)
     return TestFetchedBlockHeap {
       getTestFetchedBlocks = readTVar v,
-      addTestFetchedBlock  = \p _b -> atomically (modifyTVar' v (Set.insert p))
+      addTestFetchedBlock  = \p _b -> atomically (modifyTVar v (Set.insert p))
     }
 
 --

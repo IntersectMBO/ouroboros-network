@@ -300,6 +300,7 @@ executable demo-chain-sync
                        contra-tracer,
 
                        typed-protocols,
+                       strict-stm,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-mock,
