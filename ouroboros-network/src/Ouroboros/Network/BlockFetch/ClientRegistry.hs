@@ -132,18 +132,20 @@ bracketFetchClient (FetchClientRegistry ctxVar
           fetchClientCtxPolicy    = policy,
           fetchClientCtxStateVars = stateVars
           }
+
       -- Now wait for the sync client to start up.
-      onException (do
-        syncclient <- atomically $ do
-          syncclients <- readTVar syncRegistry
-          case Map.lookup peer syncclients of
-               Nothing -> retry
-               Just (cTid, doneVar, startVar) -> do
-                 putTMVar startVar ()
-                 writeTVar (fetchClientStatusVar $ fetchClientCtxStateVars ctx)
-                           (PeerFetchStatusReady Set.empty IsIdle)
-                 return (cTid, doneVar)
-        return (ctx, syncclient))
+      onException
+        (atomically $ do
+            syncclients <- readTVar syncRegistry
+            case Map.lookup peer syncclients of
+                 Nothing -> retry
+                 Just (cTid, doneVar, startVar) -> do
+                   putTMVar startVar ()
+                   writeTVar (fetchClientStatusVar $ fetchClientCtxStateVars ctx)
+                             (PeerFetchStatusReady Set.empty IsIdle)
+                   return (ctx, (cTid, doneVar))
+            )
+
         (atomically $ do
          -- we've been killed before the sync client started, cleanup
          writeTVar (fetchClientStatusVar $ fetchClientCtxStateVars ctx) PeerFetchStatusShutdown
@@ -236,7 +238,7 @@ bracketKeepAliveClient :: forall m a peer header block.
                               (MonadSTM m, MonadFork m, MonadMask m, Ord peer)
                        => FetchClientRegistry peer header block m
                        -> peer
-                       -> ((StrictTVar  m (Map peer PeerGSV)) -> m a)
+                       -> (StrictTVar m (Map peer PeerGSV) -> m a)
                        -> m a
 bracketKeepAliveClient(FetchClientRegistry _ctxVar
                               _fetchRegistry _syncRegistry dqRegistry keepRegistry dyingRegistry) peer action = do
