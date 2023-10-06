@@ -1169,7 +1169,7 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                    _ <- Signals.installHandler
                      Signals.sigUSR1
                      (Signals.Catch
-                       (do state <- readState connectionManager
+                       (do state <- atomically $ readState connectionManager
                            traceWith (dtConnectionManagerTracer tracersExtra)
                                      (TrState state)
                        )

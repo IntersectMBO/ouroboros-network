@@ -49,6 +49,8 @@ import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..), traceWith)
 import           System.Random
 
+import           Data.Set (Set)
+import qualified Data.Set as Set
 import           Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
 import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers as ActivePeers
 import qualified Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers as BigLedgerPeers
@@ -503,11 +505,15 @@ peerSelectionGovernorLoop tracer
                           stateVar
                           actions
                           policy
-                          jobPool =
-    loop
+                          jobPool
+                          pst = do
+    cacheTVar <- newTVarIO Set.empty
+    loop cacheTVar pst
   where
-    loop :: PeerSelectionState peeraddr peerconn -> m Void
-    loop !st = assertPeerSelectionState st $ do
+    loop :: StrictTVar m (Set peeraddr)
+         -> PeerSelectionState peeraddr peerconn
+         -> m Void
+    loop cacheTVar !st = assertPeerSelectionState st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar stateVar (toPublicState st)
@@ -517,7 +523,7 @@ peerSelectionGovernorLoop tracer
           st'               = st { knownPeers       = knownPeers',
                                    establishedPeers = establishedPeers' }
 
-      timedDecision <- evalGuardedDecisions blockedAt (peerSharing actions) st'
+      timedDecision <- evalGuardedDecisions blockedAt (peerSharing actions) cacheTVar st'
 
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
@@ -531,14 +537,15 @@ peerSelectionGovernorLoop tracer
                      newCounters
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop (decisionState { countersCache = Cache newCounters })
+      loop cacheTVar (decisionState { countersCache = Cache newCounters })
 
     evalGuardedDecisions :: Time
                          -> PeerSharing
+                         -> StrictTVar m (Set peeraddr)
                          -> PeerSelectionState peeraddr peerconn
                          -> m (TimedDecision m peeraddr peerconn)
-    evalGuardedDecisions blockedAt peerSharing st =
-      case guardedDecisions blockedAt peerSharing st of
+    evalGuardedDecisions blockedAt peerSharing cacheTVar st =
+      case guardedDecisions blockedAt peerSharing cacheTVar st of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
@@ -560,11 +567,12 @@ peerSelectionGovernorLoop tracer
 
     guardedDecisions :: Time
                      -> PeerSharing
+                     -> StrictTVar m (Set peeraddr)
                      -> PeerSelectionState peeraddr peerconn
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions blockedAt peerSharing st =
+    guardedDecisions blockedAt peerSharing cacheTVar st =
       -- All the alternative potentially-blocking decisions.
-         Monitor.connections          actions st
+         Monitor.connections          cacheTVar actions st
       <> Monitor.jobs                 jobPool st
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions policy st

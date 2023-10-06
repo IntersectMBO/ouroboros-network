@@ -1957,6 +1957,14 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                            Just $ Right demotions
                          where
                            demotions = Set.singleton (remoteAddress connId)
+                       DiffusionPeerSelectionActionsTrace (PeerStatusChanged (WarmToCooling connId)) ->
+                           Just $ Right demotions
+                         where
+                           demotions = Set.singleton (remoteAddress connId)
+                       DiffusionConnectionManagerTrace (TrConnectionCleanup connId) ->
+                           Just $ Left failures
+                         where
+                           failures = Just $ Set.singleton (remoteAddress connId)
                        DiffusionPeerSelectionTrace (TraceDemoteAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
@@ -1973,7 +1981,39 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmDone _ _ addr) ->
+                           Just $ Left failures
+                         where
+                           failures = Just $ Set.singleton addr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerDone _ _ addr) ->
+                           Just $ Left failures
+                         where
+                           failures = Just $ Set.singleton addr
+                       DiffusionPeerSelectionTrace (TraceDemoteHotDone _ _ addr) ->
+                           Just $ Left failures
+                         where
+                           failures = Just $ Set.singleton addr
+                       DiffusionPeerSelectionTrace (TraceDemoteHotBigLedgerPeerDone _ _ addr) ->
+                           Just $ Left failures
+                         where
+                           failures = Just $ Set.singleton addr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TracePromoteWarmFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TracePromoteWarmBigLedgerPeerFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
                        DiffusionPeerSelectionTrace (TraceDemoteHotBigLedgerPeerFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerFailed _ _ peeraddr _) ->
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr

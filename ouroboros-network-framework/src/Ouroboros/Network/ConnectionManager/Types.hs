@@ -541,7 +541,7 @@ data ConnectionManager (muxMode :: MuxMode) socket peerAddr handle handleError m
               (InboundConnectionManager  muxMode socket peerAddr handle handleError m),
 
         readState
-          :: m (Map peerAddr AbstractState)
+          :: STM m (Map peerAddr AbstractState)
       }
 
 --

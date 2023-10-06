@@ -417,8 +417,17 @@ mockPeerSelectionActions' tracer
                       case s of
                         PeerHot  -> writeTVar v PeerWarm
                                  >> return False
-                        PeerWarm -> return False
                         PeerCold -> return True
+                        _        -> return False
+                  ToCooling -> do
+                    threadDelay (interpretScriptDelay delay)
+                    atomically $ do
+                      s <- readTVar v
+                      case s of
+                        PeerCooling -> return False
+                        PeerCold -> return True
+                        _        -> writeTVar v PeerCooling
+                                 >> return False
                   ToCold -> do
                     threadDelay (interpretScriptDelay delay)
                     atomically $ do
@@ -443,8 +452,8 @@ mockPeerSelectionActions' tracer
       atomically $ do
         status <- readTVar conn
         case status of
-          PeerHot  -> error "activatePeerConnection of hot peer"
-          PeerWarm -> writeTVar conn PeerHot
+          PeerHot        -> error "activatePeerConnection of hot peer"
+          PeerWarm       -> writeTVar conn PeerHot
           --TODO: check it's just a race condition and not just wrong:
           --
           -- We throw 'ActivationError' for the following reason:
@@ -454,7 +463,8 @@ mockPeerSelectionActions' tracer
           -- errored.  Otherwise 'jobPromoteWarmPeer' will try to update the
           -- state as if the transition went fine which will violate
           -- 'invariantPeerSelectionState'.
-          PeerCold -> throwIO ActivationError
+          PeerCold       -> throwIO ActivationError
+          PeerReallyCold -> throwIO ActivationError
 
     deactivatePeerConnection :: PeerConn m -> m ()
     deactivatePeerConnection (PeerConn peeraddr _ conn) = do
@@ -462,12 +472,13 @@ mockPeerSelectionActions' tracer
       atomically $ do
         status <- readTVar conn
         case status of
-          PeerHot  -> writeTVar conn PeerWarm
+          PeerHot        -> writeTVar conn PeerWarm
           --TODO: check it's just a race condition and not just wrong:
-          PeerWarm -> return ()
+          PeerWarm       -> return ()
           -- See the note in 'activatePeerConnection' why we throw an exception
           -- here.
-          PeerCold -> throwIO DeactivationError
+          PeerCold       -> throwIO DeactivationError
+          PeerReallyCold -> throwIO DeactivationError
 
     closePeerConnection :: PeerConn m -> m ()
     closePeerConnection (PeerConn peeraddr _ conn) = do
@@ -475,10 +486,11 @@ mockPeerSelectionActions' tracer
       atomically $ do
         status <- readTVar conn
         case status of
-          PeerHot  -> writeTVar conn PeerCold
+          PeerHot        -> writeTVar conn PeerReallyCold
           --TODO: check it's just a race condition and not just wrong:
-          PeerWarm -> writeTVar conn PeerCold
-          PeerCold -> return ()
+          PeerWarm       -> writeTVar conn PeerReallyCold
+          PeerCold       -> writeTVar conn PeerReallyCold
+          PeerReallyCold -> return ()
         conns <- readTVar connsVar
         let !conns' = Map.delete peeraddr conns
         writeTVar connsVar conns'

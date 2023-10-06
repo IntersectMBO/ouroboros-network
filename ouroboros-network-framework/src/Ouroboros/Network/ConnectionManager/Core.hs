@@ -615,15 +615,14 @@ withConnectionManager ConnectionManagerArguments {
           return (freshIdSupply, v)
 
     let readState
-          :: m (Map peerAddr AbstractState)
-        readState =
-          atomically $ do
-              state <- readTMVar stateVar
-              traverse ( fmap (abstractState . Known)
-                       . readTVar
-                       . connVar
-                       )
-                       state
+          :: STM m (Map peerAddr AbstractState)
+        readState = do
+          state <- readTMVar stateVar
+          traverse ( fmap (abstractState . Known)
+                   . readTVar
+                   . connVar
+                   )
+                   state
 
         connectionManager :: ConnectionManager muxMode socket peerAddr
                                                handle handleError m

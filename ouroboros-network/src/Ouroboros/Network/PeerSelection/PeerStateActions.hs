@@ -346,7 +346,6 @@ instance Semigroup FirstToFinishResult where
     _ <> err@MiniProtocolError{}                       = err
     res@MiniProtocolSuccess{} <> MiniProtocolSuccess{} = res
 
-
 -- | Await first result from any of any of the protocols which belongs to
 -- the indicated bundle.
 --
@@ -607,14 +606,13 @@ withPeerStateActions PeerStateActionsArguments {
     updateUnlessCold :: StrictTVar m PeerStatus -> PeerStatus -> STM m Bool
     updateUnlessCold stateVar newState = do
       status <- readTVar stateVar
-      if status == PeerCold
+      if status <= PeerCold
          then return False
          else writeTVar stateVar newState >> return True
 
     isNotCold :: StrictTVar m PeerStatus -> STM m Bool
     isNotCold stateVar =
-      (/= PeerCold) <$> readTVar stateVar
-
+      (> PeerCold) <$> readTVar stateVar
 
     peerMonitoringLoop
       :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
@@ -624,15 +622,30 @@ withPeerStateActions PeerStateActionsArguments {
         -- this is a first-to-finish synchronisation between all the
         -- mini-protocols runs toward the given peer.
         r <-
-          atomically $
-            (WithSomeProtocolTemperature . WithEstablished
-              <$> awaitFirstResult SingEstablished pchAppHandles)
-          `orElse`
-            (WithSomeProtocolTemperature . WithWarm
-              <$> awaitFirstResult SingWarm pchAppHandles)
-          `orElse`
-            (WithSomeProtocolTemperature . WithHot
-              <$> awaitFirstResult SingHot pchAppHandles)
+          atomically $ do
+            peerStatus <- readTVar pchPeerStatus
+            -- If we already monitored mux and are waiting for the peer connection
+            -- to be cleaned then the peer status will be 'PeerCold' and we can't
+            -- make progress until it is 'PeerReallyCold'
+            case peerStatus of
+              PeerReallyCold ->
+                return Nothing
+              PeerCold -> do
+                cmState <- readState spsConnectionManager
+                case Map.lookup (remoteAddress pchConnectionId) cmState of
+                  Just UnknownConnectionSt -> do
+                    writeTVar pchPeerStatus PeerReallyCold
+                    return Nothing
+                  _ -> retry
+              _ ->
+                  (Just . WithSomeProtocolTemperature . WithEstablished
+                    <$> awaitFirstResult SingEstablished pchAppHandles)
+                `orElse`
+                  (Just . WithSomeProtocolTemperature . WithWarm
+                    <$> awaitFirstResult SingWarm pchAppHandles)
+                `orElse`
+                  (Just . WithSomeProtocolTemperature . WithHot
+                    <$> awaitFirstResult SingHot pchAppHandles)
 
         traceWith spsTracer (PeerMonitoringResult pchConnectionId r)
         case r of
@@ -647,7 +660,7 @@ withPeerStateActions PeerStateActionsArguments {
           -- updated by the finally handler of a connection handler.
           --
 
-          WithSomeProtocolTemperature (WithHot MiniProtocolError{}) -> do
+          Just (WithSomeProtocolTemperature (WithHot MiniProtocolError{})) -> do
             -- current `pchPeerStatus` must be 'HotPeer'
             state <- atomically $ do
               peerState <- readTVar pchPeerStatus
@@ -657,11 +670,13 @@ withPeerStateActions PeerStateActionsArguments {
               PeerCold  -> return ()
               hotOrWarm -> assert (hotOrWarm == PeerHot) $
                            traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
-          WithSomeProtocolTemperature (WithWarm MiniProtocolError{}) -> do
+            peerMonitoringLoop pch
+          Just (WithSomeProtocolTemperature (WithWarm MiniProtocolError{})) -> do
             -- current `pchPeerStatus` must be 'WarmPeer'
             traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
             void $ atomically (updateUnlessCold pchPeerStatus PeerCold)
-          WithSomeProtocolTemperature (WithEstablished MiniProtocolError{}) -> do
+            peerMonitoringLoop pch
+          Just (WithSomeProtocolTemperature (WithEstablished MiniProtocolError{})) -> do
             -- update 'pchPeerStatus' and log (as the two other transition to
             -- cold state.
             state <- atomically $ do
@@ -669,9 +684,11 @@ withPeerStateActions PeerStateActionsArguments {
               _  <- updateUnlessCold pchPeerStatus PeerCold
               pure peerState
             case state of
-              PeerCold -> return ()
-              PeerWarm -> traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
-              PeerHot  -> traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
+              PeerReallyCold -> return ()
+              PeerCold       -> return ()
+              PeerWarm       -> traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
+              PeerHot        -> traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
+            peerMonitoringLoop pch
 
           --
           -- Successful termination
@@ -679,7 +696,7 @@ withPeerStateActions PeerStateActionsArguments {
 
           -- A /hot/ protocol terminated, we deactivate the connection and keep
           -- monitoring /warm/ and /established/ protocols.
-          WithSomeProtocolTemperature (WithHot MiniProtocolSuccess {}) -> do
+          Just (WithSomeProtocolTemperature (WithHot MiniProtocolSuccess {})) -> do
             deactivatePeerConnection pch
             peerMonitoringLoop pch
 
@@ -689,12 +706,15 @@ withPeerStateActions PeerStateActionsArguments {
           -- 'closePeerConnection'); also, established mini-protocols are not
           -- supposed to terminate (unless the remote peer did something
           -- wrong).
-          WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {}) ->
+          Just (WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {})) -> do
             closePeerConnection pch
-          WithSomeProtocolTemperature (WithEstablished MiniProtocolSuccess {}) ->
+            peerMonitoringLoop pch
+          Just (WithSomeProtocolTemperature (WithEstablished MiniProtocolSuccess {})) -> do
             closePeerConnection pch
+            peerMonitoringLoop pch
 
-
+          Nothing ->
+            traceWith spsTracer (PeerStatusChanged (CoolingToCold pchConnectionId))
 
     establishPeerConnection :: JobPool () m (Maybe SomeException)
                             -> IsBigLedgerPeer
@@ -1007,8 +1027,8 @@ withPeerStateActions PeerStateActionsArguments {
           -- connection manager would simultaneously promote it, but this is not
           -- possible.
           _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
-          atomically (writeTVar pchPeerStatus PeerCold)
-          traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
+          atomically (writeTVar pchPeerStatus PeerReallyCold)
+          traceWith spsTracer (PeerStatusChanged (WarmToReallyCold pchConnectionId))
 
 --
 -- Utilities
@@ -1126,10 +1146,11 @@ data PeerStatusChangeType peerAddr =
       ColdToWarm
         !(Maybe peerAddr) -- ^ local peer address
         !peerAddr         -- ^ remote peer address
-    | WarmToHot  !(ConnectionId peerAddr)
-    | HotToWarm  !(ConnectionId peerAddr)
-    | WarmToCold !(ConnectionId peerAddr)
-    | HotToCold  !(ConnectionId peerAddr)
+    | WarmToHot        !(ConnectionId peerAddr)
+    | HotToWarm        !(ConnectionId peerAddr)
+    | WarmToReallyCold !(ConnectionId peerAddr)
+    | WarmToCold       !(ConnectionId peerAddr)
+    | HotToCold        !(ConnectionId peerAddr)
   deriving Show
 
 -- | Traces produced by 'peerSelectionActions'.
@@ -1138,5 +1159,5 @@ data PeerSelectionActionsTrace peerAddr vNumber =
       PeerStatusChanged       (PeerStatusChangeType peerAddr)
     | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) (FailureType vNumber)
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
-    | PeerMonitoringResult    (ConnectionId peerAddr) (WithSomeProtocolTemperature FirstToFinishResult)
+    | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
   deriving Show

@@ -559,9 +559,10 @@ envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
                           + targetNumberOfEstablishedPeers
                           + targetNumberOfActivePeers)
 
-envEventCredits (TraceEnvPeersDemote Noop   _)  = 10
-envEventCredits (TraceEnvPeersDemote ToWarm _)  = 30
-envEventCredits (TraceEnvPeersDemote ToCold _)  = 30
+envEventCredits (TraceEnvPeersDemote Noop   _)       = 10
+envEventCredits (TraceEnvPeersDemote ToWarm _)       = 30
+envEventCredits (TraceEnvPeersDemote ToCold _)       = 30
+envEventCredits (TraceEnvPeersDemote ToReallyCold _) = 30
 
 envEventCredits  TraceEnvPeersStatus{}          = 0
 -- These events are visible in the environment but are the result of actions
@@ -1527,6 +1528,48 @@ recentPeerShareActivity d =
        in E t (Nothing, recentSet')
         : go recentSet' recentPSQ' txs
 
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TracePromoteWarmBigLedgerPeerFailed _ _ addr _)) : txs) =
+      let recentSet' = Set.delete addr recentSet
+          recentPSQ' = PSQ.delete addr recentPSQ
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TracePromoteWarmFailed _ _ addr _)) : txs) =
+      let recentSet' = Set.delete addr recentSet
+          recentPSQ' = PSQ.delete addr recentPSQ
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TraceDemoteHotFailed _ _ addr _)) : txs) =
+      let recentSet' = Set.delete addr recentSet
+          recentPSQ' = PSQ.delete addr recentPSQ
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TraceDemoteWarmFailed _ _ addr _)) : txs) =
+      let recentSet' = Set.delete addr recentSet
+          recentPSQ' = PSQ.delete addr recentPSQ
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TraceDemoteHotBigLedgerPeerFailed _ _ addr _)) : txs) =
+      let recentSet' = Set.delete addr recentSet
+          recentPSQ' = PSQ.delete addr recentPSQ
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
+    go !recentSet !recentPSQ
+        (E t (GovernorEvent (TraceDemoteWarmBigLedgerPeerFailed _ _ addr _)) : txs) =
+      let recentSet' = Set.delete addr recentSet
+          recentPSQ' = PSQ.delete addr recentPSQ
+       in E t (Nothing, recentSet')
+        : go recentSet' recentPSQ' txs
+
     go !recentSet !recentPSQ (_ : txs) =
       go recentSet recentPSQ txs
 
@@ -1999,6 +2042,10 @@ prop_governor_target_established_below env =
                          failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
+                     TraceDemoteWarmFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
+                     TraceDemoteHotFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
                      _ -> Nothing
               )
           . selectGovEvents
@@ -2082,6 +2129,8 @@ prop_governor_target_established_big_ledger_peers_below env =
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)
+                     TracePromoteWarmBigLedgerPeerFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
                      --TODO: what about TraceDemoteWarmDone ?
                      -- these are also not immediate candidates
                      -- why does the property not fail for not tracking these?
@@ -2096,6 +2145,10 @@ prop_governor_target_established_big_ledger_peers_below env =
                        where
                          failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
+                     TraceDemoteWarmBigLedgerPeerFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
+                     TraceDemoteHotBigLedgerPeerFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      _ -> Nothing
               )

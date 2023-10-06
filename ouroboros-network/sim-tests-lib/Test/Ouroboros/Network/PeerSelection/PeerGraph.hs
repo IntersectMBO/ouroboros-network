@@ -99,6 +99,7 @@ type ConnectionScript = TimedScript AsyncDemotion
 
 data AsyncDemotion = ToWarm
                    | ToCold
+                   | ToReallyCold
                    | Noop
   deriving (Eq, Show)
 
@@ -204,11 +205,13 @@ simpleGraphRep (graph, vertexInfo, lookupVertex) =
 instance Arbitrary AsyncDemotion where
     arbitrary = frequency [ (2, pure ToWarm)
                           , (2, pure ToCold)
+                          , (2, pure ToReallyCold)
                           , (6, pure Noop)
                           ]
-    shrink ToWarm = [ToCold, Noop]
-    shrink ToCold = [Noop]
-    shrink Noop   = []
+    shrink ToWarm       = [ToCold, Noop]
+    shrink ToCold       = [ToReallyCold, Noop]
+    shrink ToReallyCold = [Noop]
+    shrink Noop         = []
 
 
 instance Arbitrary GovernorScripts where
