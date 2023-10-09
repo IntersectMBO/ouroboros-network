@@ -20,7 +20,6 @@ import Data.List
 import Data.List.Infinite (Infinite ((:<)))
 import Data.List.Infinite qualified as Inf
 import Data.Map qualified as Map
-import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Void (Void)
@@ -46,7 +45,6 @@ import Network.TypedProtocol.Codec
 
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
-import Ouroboros.Network.ControlMessage (continueForever)
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
@@ -167,7 +165,7 @@ main = do
         -- chain-sync client
         | oChainSyncClient opts ->
           -- TODO: implement `oMaxSlotNo`
-          clientChainSync (oSocketPaths opts)
+          clientChainSync (oSocketPaths opts) (oMaxSlotNo opts)
 
         -- chain-sync server
         | oChainSyncServer opts -> do
@@ -234,8 +232,9 @@ demoProtocol2 chainSync =
 
 
 clientChainSync :: [FilePath]
+                -> Maybe SlotNo
                 -> IO ()
-clientChainSync sockPaths = withIOManager $ \iocp ->
+clientChainSync sockPaths maxSlotNo = withIOManager $ \iocp ->
     forConcurrently_ (zip [0..] sockPaths) $ \(index, sockPath) -> do
       threadDelay (50000 * index)
       connectToNode
@@ -261,7 +260,7 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
           mkMiniProtocolCbFromPeer $ \_ctx ->
             ( contramap show stdoutTracer
             , codecChainSync
-            , ChainSync.chainSyncClientPeer (chainSyncClient (continueForever Proxy))
+            , ChainSync.chainSyncClientPeer (chainSyncClient undefined maxSlotNo)
             )
 
 
@@ -342,20 +341,6 @@ demoProtocol3 chainSync blockFetch =
       }
     ]
 
-continueUntilMaxSlot :: TestFetchedBlockHeap IO BlockHeader
-                     -> Maybe SlotNo
-                     -> ControlMessageSTM IO
-continueUntilMaxSlot blockHeap maxSlotNo =
-  case maxSlotNo of
-    Nothing -> return Continue
-    Just maxSlot -> do
-      point <- getLastFetchedPoint blockHeap
-      return $ case point of
-        Just BlockPoint { atSlot = slot }
-          | slot <= maxSlot -> Continue
-          | otherwise       -> Terminate
-        _                   -> Continue
-
 -- We run `chain-sync` and `block-fetch`, without `keep-alive`, so we need to
 -- register peers in `dqRegistry`.
 bracketDqRegistry :: FetchClientRegistry (ConnectionId LocalAddress) header block IO
@@ -376,7 +361,20 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
     candidateChainsVar <- newTVarIO Map.empty
     currentChainVar    <- newTVarIO genesisAnchoredFragment
 
-    let app :: OuroborosApplicationWithMinimalCtx
+    let continueUntilMaxSlot :: ControlMessageSTM IO
+        continueUntilMaxSlot =
+          case maxSlotNo of
+            Nothing -> return Continue
+            Just maxSlot -> do
+              point <- getLastFetchedPoint blockHeap
+              return $ case point of
+                Just BlockPoint { atSlot = slot }
+                  | slot <= maxSlot -> Continue
+                  | otherwise       -> Terminate
+                _                   -> Continue
+
+
+        app :: OuroborosApplicationWithMinimalCtx
                  InitiatorMode LocalAddress LBS.ByteString IO () Void
         app = demoProtocol3 chainSync blockFetch
 
@@ -400,7 +398,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                    codecChainSync
                    channel
                    (ChainSync.chainSyncClientPeer
-                     (chainSyncClient' (continueUntilMaxSlot blockHeap maxSlotNo) syncTracer currentChainVar chainVar))
+                     (chainSyncClient' continueUntilMaxSlot  maxSlotNo syncTracer currentChainVar chainVar))
 
         blockFetch :: RunMiniProtocolWithMinimalCtx
                         InitiatorMode LocalAddress LBS.ByteString IO () Void
@@ -408,13 +406,13 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
           InitiatorProtocolOnly $
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
               bracketDqRegistry registry connId $
-              bracketFetchClient registry maxBound isPipeliningEnabled connId $ \clientCtx ->
+              bracketFetchClient registry maxBound isPipeliningEnabled connId $ \clientCtx -> do
+                threadDelay 1000000
                 runPipelinedPeer
                   nullTracer -- (contramap (show . TraceLabelPeer ("block-fetch", getFilePath $ remoteAddress connId)) stdoutTracer)
                   codecBlockFetch
                   channel
-                  (blockFetchClient (maxBound :: NodeToNodeVersion)
-                                    (continueUntilMaxSlot blockHeap maxSlotNo)
+                  (blockFetchClient (maxBound :: NodeToNodeVersion) continueUntilMaxSlot
                                     nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
@@ -603,22 +601,24 @@ codecBlockFetch =
 --
 
 chainSyncClient :: ControlMessageSTM IO
+                -> Maybe SlotNo
                 -> ChainSync.ChainSyncClient
                      BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
-chainSyncClient controlMessageSTM =
+chainSyncClient controlMessageSTM maxSlotNo =
     ChainSync.ChainSyncClient $ do
       curvar   <- newTVarIO genesisAnchoredFragment
       chainvar <- newTVarIO genesisAnchoredFragment
-      case chainSyncClient' controlMessageSTM nullTracer curvar chainvar of
+      case chainSyncClient' controlMessageSTM maxSlotNo  nullTracer curvar chainvar of
         ChainSync.ChainSyncClient k -> k
 
 chainSyncClient' :: ControlMessageSTM IO
+                 -> Maybe SlotNo
                  -> Tracer IO (Point BlockHeader, Point BlockHeader)
                  -> StrictTVar IO (AF.AnchoredFragment BlockHeader)
                  -> StrictTVar IO (AF.AnchoredFragment BlockHeader)
                  -> ChainSync.ChainSyncClient
                       BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
-chainSyncClient' controlMessageSTM syncTracer _currentChainVar candidateChainVar =
+chainSyncClient' controlMessageSTM _maxSlotNo syncTracer _currentChainVar candidateChainVar =
     ChainSync.ChainSyncClient (return requestNext)
   where
     requestNext :: ChainSync.ClientStIdle
