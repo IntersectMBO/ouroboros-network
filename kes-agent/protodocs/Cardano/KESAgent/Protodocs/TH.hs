@@ -1,6 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Cardano.KESAgent.Protodocs.TH
 where
@@ -16,29 +18,50 @@ import Data.Char
 data ProtocolDescription =
   ProtocolDescription
     { protocolName :: String
-    , protocolStates :: [String]
+    , protocolDescription :: Maybe Description
+    , protocolStates :: [(String, Maybe Description)]
     }
     deriving (Show)
 
 data MessageDescription =
   MessageDescription
     { messageName :: String
+    , messageDescription :: Maybe Description
     , messagePayload :: [String]
     , messageFromState :: String
     , messageToState :: String
     , messageInfo :: FieldInfo
     }
 
-describeProtocolStates :: Name -> ExpQ
-describeProtocolStates protocol = do
+getConName :: Con -> Name
+getConName = \case
+  NormalC n _ -> n
+  RecC n _ -> n
+  InfixC _ n _ -> n
+  ForallC _ _ c -> getConName c
+  GadtC (n:_) _ _ -> n
+  RecGadtC (n:_) _ _ -> n
+  x -> error $ "Cannot get constructor name for " ++ show x
+
+describeProtocol :: Name -> ExpQ
+describeProtocol protocol = do
   info <- reify protocol
+  protoDescription <- getDescription protocol
   case info of
     TyConI (DataD _ tyName binders _ valCons _) -> do
       let pname = nameBase tyName
-          pstates = map conName valCons
+      pstates <- forM valCons $ \valCon -> do
+        let conName = getConName valCon
+        stateDescription <- getDescription conName
+        return (conName, stateDescription)
       [| ProtocolDescription
             $(litE (stringL pname))
-            $(listE (map (litE . stringL) $ concat pstates))
+            protoDescription
+            $(listE
+                [ [| ( $(litE . stringL . nameBase $ conName), stateDescription) |]
+                | (conName, stateDescription) <- pstates
+                ]
+             )
        |]
     x -> error $ show x
 
@@ -81,9 +104,16 @@ prettyTy = snd . go
     go (AppKindT _ a) = go a
     go t = (True, show t)
 
+getDescription :: Name -> Q (Maybe Description)
+getDescription name = do
+  haddockMay <- getDoc (DeclDoc name)
+  return (Description . lines <$> haddockMay)
+
 describeProtocolMessage :: Name -> Name -> Name -> ExpQ
 describeProtocolMessage protocolName crypto msgName = do
   msgInfo <- reify msgName
+  msgDescription <- getDescription msgName
+  runIO . putStrLn $ show msgName ++ ": " ++ show msgDescription
   case msgInfo of
     DataConI conName (ForallT (tvM : tvC : tyVars) [] x) tyName -> do
       let (payloads, lastArg) = argSplit x
@@ -95,6 +125,7 @@ describeProtocolMessage protocolName crypto msgName = do
 
       [e| MessageDescription
             { messageName = $(litE . stringL . nameBase $ msgName)
+            , messageDescription = msgDescription
             , messagePayload = $(listE (map (litE . stringL . prettyTy) payloads))
             , messageFromState = $(litE (stringL . prettyTy $ unearthType fromState))
             , messageToState = $(litE (stringL . prettyTy $ unearthType toState))

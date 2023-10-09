@@ -1,20 +1,34 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoStarIsType #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE NoStarIsType #-}
 
 module Cardano.KESAgent.Serialization.Spec.Types
 where
 
+import Data.Data
 import Data.Word
+import Data.Coerce
+import Language.Haskell.TH.Syntax (Lift)
+import Data.String
+
+-- * Documentation annotation types
+
+newtype Description = Description { descriptionParagraphs :: [String] }
+  deriving newtype (Show, Read, Eq, Semigroup, Monoid)
+  deriving (Data, Typeable, Lift)
 
 -- * 'FieldInfo' and related types
 

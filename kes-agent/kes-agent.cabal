@@ -23,7 +23,9 @@ data-files: fixtures/*.vkey
 
 common project-config
      ghc-options:
-         -threaded -rtsopts=all
+         -threaded
+         -rtsopts=all
+         -haddock
 
 common base-dependencies
     build-depends: base ^>=4.14.0.0
@@ -175,6 +177,7 @@ executable kes-agent-protodocs
                  , blaze-html
                  , cardano-crypto-class
                  , containers
+                 , haddock-library
                  , io-classes
                  , network
                  , optparse-applicative

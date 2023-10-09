@@ -107,6 +107,19 @@ deriving instance
   , KESAlgorithm (KES c)
   ) => Eq (KeyInfo c)
 
+-- | The protocol for pushing KES keys.
+--
+-- Intended use:
+--
+-- - The Agent acts as the Client, and the Control Server as a Server
+-- - When the Control Server connects, it pushes a key to the Agent
+-- - The Agent stores the key locally in memory and pushes it to any connected
+--   Nodes.
+--
+-- All pushes are confirmed from the receiving end, to make sure they have gone
+-- through. This allows the control client to report success to the user, but it
+-- also helps make things more predictable in testing, because it means that
+-- sending keys is now synchronous.
 data ControlProtocol (m :: * -> *) (k :: *) where
   -- | Default state after connecting, but before the protocol version has been
   -- negotiated.
@@ -129,25 +142,13 @@ data ControlProtocol (m :: * -> *) (k :: *) where
   -- session.
   EndState :: ControlProtocol m k
 
--- | The protocol for pushing KES keys.
---
--- Intended use:
---
--- - The Agent acts as the Client, and the Control Server as a Server
--- - When the Control Server connects, it pushes a key to the Agent
--- - The Agent stores the key locally in memory and pushes it to any connected
---   Nodes.
---
--- All pushes are confirmed from the receiving end, to make sure they have gone
--- through. This allows the control client to report success to the user, but it
--- also helps make things more predictable in testing, because it means that
--- sending keys is now synchronous.
---
 instance Protocol (ControlProtocol m c) where
   data Message (ControlProtocol m c) st st' where
+
+          -- | Announce the protocol version.
           VersionMessage :: Message (ControlProtocol m c) InitialState IdleState
 
-          -- | Request the agent to generate a fresh KES sign key and store it
+          -- | Request the agent to generate a fresh KES sign key and store it.
           -- in the staging area.
           GenStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
 
@@ -173,6 +174,7 @@ instance Protocol (ControlProtocol m c) where
           InstallResultMessage :: RecvResult
                                -> Message (ControlProtocol m c) WaitForConfirmationState IdleState
 
+          -- | Request agent state information.
           RequestInfoMessage :: Message (ControlProtocol m c) IdleState WaitForInfoState
 
           InfoMessage :: AgentInfo c

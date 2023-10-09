@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main
 where
@@ -24,11 +25,85 @@ import qualified Text.Blaze.Html5.Attributes as HA
 import qualified Data.Text.Lazy.IO as LText
 import Text.Printf
 import Data.Maybe
+import qualified Documentation.Haddock.Types as Haddock
+import qualified Documentation.Haddock.Parser as Haddock
+import Debug.Trace
 
-renderState :: [MessageDescription] -> String -> Html
-renderState msgs stateName =
+renderDescription :: Maybe Description -> Html
+renderDescription Nothing = mempty
+renderDescription (Just (Description h)) = do
+  let (doc :: Haddock.DocH () String) = Haddock.toRegular . Haddock._doc . Haddock.parseParas Nothing $ unlines h
+  renderHaddock doc
+
+renderHaddock :: Haddock.DocH mod String -> Html
+renderHaddock Haddock.DocEmpty = mempty
+renderHaddock (Haddock.DocAppend a b) = renderHaddock a <> renderHaddock b
+renderHaddock (Haddock.DocString str) = H.string str
+renderHaddock (Haddock.DocParagraph a) = H.p (renderHaddock a)
+renderHaddock (Haddock.DocIdentifier i) = H.span ! HA.class_ "identifier" $ H.string i
+renderHaddock (Haddock.DocIdentifierUnchecked _) = H.span ! HA.class_ "unchecked" $ "**unchecked**"
+renderHaddock (Haddock.DocModule (Haddock.ModLink label a)) = H.span ! HA.class_ "module" $ H.string label
+renderHaddock (Haddock.DocWarning a) = H.div ! HA.class_ "warning" $ renderHaddock a
+renderHaddock (Haddock.DocEmphasis a) = H.em $ renderHaddock a
+renderHaddock (Haddock.DocMonospaced a) = H.code $ renderHaddock a
+renderHaddock (Haddock.DocBold a) = H.strong $ renderHaddock a
+renderHaddock (Haddock.DocUnorderedList items) = H.ul $ forM_ items $ \item -> H.li (renderHaddock item)
+renderHaddock (Haddock.DocOrderedList items) = H.ol $ forM_ items $ \(_, item) -> H.li (renderHaddock item)
+renderHaddock (Haddock.DocDefList items) =
+  H.dl $ forM_ items $ \(title, body) ->
+    H.div $ do
+      H.dt $ renderHaddock title
+      H.dd $ renderHaddock body
+renderHaddock (Haddock.DocCodeBlock a) = H.code $ renderHaddock a
+renderHaddock (Haddock.DocHyperlink (Haddock.Hyperlink url a)) =
+  H.a ! HA.href (H.stringValue url) $ maybe (H.string url) renderHaddock a
+renderHaddock (Haddock.DocPic (Haddock.Picture url title)) =
+  H.div ! HA.class_ "omitted" $ do
+    forM_ title (H.p . H.string)
+    H.p . H.string $ url
+renderHaddock (Haddock.DocMathInline str) = H.span ! HA.class_ "math" $ H.string str
+renderHaddock (Haddock.DocMathDisplay str) = H.div ! HA.class_ "math" $ H.string str
+renderHaddock (Haddock.DocAName str) = H.span ! HA.class_ "aname" $ H.string str
+renderHaddock (Haddock.DocProperty str) = H.span ! HA.class_ "property" $ H.string str
+renderHaddock (Haddock.DocExamples examples) =
+  forM_ examples $ \(Haddock.Example expr results) -> do
+    H.div ! HA.class_ "example" $ do
+      H.code ! HA.class_ "expr" $ H.string expr
+      H.code ! HA.class_ "result" $ do
+        forM_ results $ \resultLine -> do
+          H.string resultLine
+          H.br
+renderHaddock (Haddock.DocHeader (Haddock.Header level a)) = do
+  let h = case level of
+            1 -> H.h1
+            2 -> H.h2
+            3 -> H.h3
+            4 -> H.h4
+            5 -> H.h5
+            _ -> H.h6
+  h $ renderHaddock a
+renderHaddock (Haddock.DocTable (Haddock.Table headerRows bodyRows)) = do
+  H.table $ do
+    H.thead $ do
+      forM_ headerRows $ \row -> do
+        H.tr $ do
+          forM_ (Haddock.tableRowCells row) $ \(Haddock.TableCell colspan rowspan body) -> do
+            H.th ! HA.colspan (H.toValue colspan)
+                 ! HA.rowspan (H.toValue rowspan)
+                 $ renderHaddock body
+    H.tbody $ do
+      forM_ bodyRows $ \row -> do
+        H.tr $ do
+          forM_ (Haddock.tableRowCells row) $ \(Haddock.TableCell colspan rowspan body) -> do
+            H.td ! HA.colspan (H.toValue colspan)
+                 ! HA.rowspan (H.toValue rowspan)
+                 $ renderHaddock body
+
+renderState :: [MessageDescription] -> (String, Maybe Description) -> Html
+renderState msgs (stateName, descriptionMay) =
   H.div ! HA.class_ "state" $ do
     H.h3 ! HA.id (H.stringValue ("state_" ++ stateName)) $ H.string stateName
+    renderDescription descriptionMay
     unless (null messagesFromHere) $ do
       H.h4 "Messages from here:"
       H.ul $ do
@@ -57,6 +132,7 @@ renderMessage :: MessageDescription -> Html
 renderMessage msg =
   H.div ! HA.class_ "message" $ do
     H.h3 ! HA.id (H.stringValue ("message_" ++ messageName msg)) $ H.string (messageName msg)
+    renderDescription (messageDescription msg)
     H.p $ do
       H.a ! HA.href (H.stringValue ("#state_" ++ messageFromState msg)) $ H.string (messageFromState msg)
       "->"
@@ -73,6 +149,7 @@ renderProtocol :: ProtocolDescription -> [MessageDescription] -> Html
 renderProtocol proto msgs =
   H.section ! HA.class_ "protocol" $ do
     H.h1 $ H.string (protocolName proto)
+    renderDescription (protocolDescription proto)
     H.section $ do
       H.h2 "States"
       mconcat <$> mapM (renderState msgs) (protocolStates proto)
@@ -200,7 +277,7 @@ wrapDoc body = do
 
 main :: IO ()
 main = do
-  let stateInfos = $(describeProtocolStates ''ControlProtocol)
+  let protocolInfo = $(describeProtocol ''ControlProtocol)
       messageInfos =
         [ $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'VersionMessage)
         , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'GenStagedKeyMessage)
@@ -216,4 +293,4 @@ main = do
         , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'ProtocolErrorMessage)
         ]
 
-  LText.writeFile "protocol.html" $ renderHtml . wrapDoc $ renderProtocol stateInfos messageInfos
+  LText.writeFile "protocol.html" $ renderHtml . wrapDoc $ renderProtocol protocolInfo messageInfos
