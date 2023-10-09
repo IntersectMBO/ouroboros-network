@@ -257,7 +257,7 @@ data PeerGSV = PeerGSV {
 -- interval from when the last sample was taken, the &#x1D6FC needed to ensure
 -- that the old value has sufficiently decayed.
 --
--- The exact calcuation involves exponentiation, however where the number of
+-- The exact calculation involves exponentiation, however where the number of
 -- samples within the time constant is sufficiently large a simple ratio of the
 -- sample's interval over the time constant will suffice. The relative error of
 -- this numerical approximation is, for our use case, small. Eg 1/50 (20s
@@ -266,10 +266,10 @@ data PeerGSV = PeerGSV {
 -- to 0.5% (1/100).
 --
 -- Given the inherent measurement noise in this measurement, the use of the
--- approximation is well justified. We choose (reaonably aribtarily) 1000s as
+-- approximation is well justified. We choose (reasonably arbitrarily) 1000s as
 -- the time constant, it is unclear if this should be a configuration variable
 -- or not.
--- Note that this semigroup is  is non-commutative. The new value must come first.
+-- Note that this semigroup is non-commutative. The new value must come first.
 instance Semigroup PeerGSV where
   (<>) a b = let timeConstant = 1000 :: DiffTime
                  sampleInterval = sampleTime a `diffTime` sampleTime b

@@ -47,7 +47,7 @@ keepAliveClient
     -> StdGen
     -> ControlMessageSTM m
     -> peer
-    -> (StrictTVar m (M.Map peer PeerGSV))
+    -> StrictTVar m (M.Map peer PeerGSV)
     -> KeepAliveInterval
     -> KeepAliveClient m ()
 keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { keepAliveInterval } =
