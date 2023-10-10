@@ -52,7 +52,7 @@ data BasicFieldInfo =
 data EnumFieldInfo =
   EnumFieldInfo
     { enumFieldType :: !String
-    , enumFieldValues :: ![String]
+    , enumFieldValues :: ![(Int, String)]
     }
   deriving (Show)
 
@@ -106,8 +106,11 @@ data ChoiceFieldInfo =
 basicField :: String -> FieldSize -> FieldInfo
 basicField ty size = BasicField $ BasicFieldInfo ty size
 
-enumField :: String -> [String] -> FieldInfo
+enumField :: String -> [(Int, String)] -> FieldInfo
 enumField ty values = EnumField $ EnumFieldInfo ty values
+
+enumField_ :: String -> [String] -> FieldInfo
+enumField_ ty values = enumField ty (zip [0,1..] values)
 
 aliasField :: String -> FieldInfo -> FieldInfo
 aliasField name ty = AliasField $ AliasFieldInfo name ty

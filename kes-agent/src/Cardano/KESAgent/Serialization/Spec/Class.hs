@@ -26,9 +26,8 @@ import Data.Proxy
 
 class HasSerInfo a where
   info :: Proxy a -> FieldInfo
-
-infoOf :: forall a. HasSerInfo a => a -> FieldInfo
-infoOf _ = info (Proxy @a)
+  infoOf :: a -> FieldInfo
+  infoOf _ = info (Proxy @a)
 
 class HasSerInfo a => IsSerItem m a where
   sendItem :: RawBearer m -> a -> m ()

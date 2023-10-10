@@ -141,7 +141,7 @@ fieldTypeToHtml (EnumField info) =
       htmlencode name <>
       "</td>" <>
       "</tr>"
-    | (val, name) <- zip [0,1..] (enumFieldValues info)
+    | (val, name) <- enumFieldValues info
     ] ++
     [ "</table>"
     ]

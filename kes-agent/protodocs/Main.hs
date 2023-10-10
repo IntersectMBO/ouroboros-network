@@ -7,22 +7,25 @@
 module Main
 where
 
-import Cardano.KESAgent.Serialization.Spec
-import Cardano.KESAgent.Serialization.Spec.Class
-import Cardano.KESAgent.Protocols.Control.Protocol
-import qualified Cardano.KESAgent.Protocols.Control.Protocol as Control
 import qualified Cardano.KESAgent.Protocols.Control.Driver ()
+import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.VersionedProtocol
+import qualified Cardano.KESAgent.Protocols.Control.Protocol as Control
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protodocs.TH
+import Cardano.KESAgent.Serialization.Spec
+import Cardano.KESAgent.Serialization.Spec.Class
 import Data.List
 
 import Control.Monad
+import Data.Maybe
+import Data.Text.Encoding (decodeUtf8)
+import qualified Data.Text.Lazy.IO as LText
 import Language.Haskell.TH
-import Text.Blaze.Html5 (Html, (!))
 import Text.Blaze.Html.Renderer.Text (renderHtml)
+import Text.Blaze.Html5 (Html, (!))
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as HA
-import qualified Data.Text.Lazy.IO as LText
 import Text.Printf
 import Data.Maybe
 import qualified Documentation.Haddock.Types as Haddock
@@ -133,14 +136,15 @@ renderMessage msg =
   H.div ! HA.class_ "message" $ do
     H.h3 ! HA.id (H.stringValue ("message_" ++ messageName msg)) $ H.string (messageName msg)
     renderDescription (messageDescription msg)
+    H.h4 $ "State Transition"
     H.p $ do
       H.a ! HA.href (H.stringValue ("#state_" ++ messageFromState msg)) $ H.string (messageFromState msg)
-      "->"
+      " -> "
       H.a ! HA.href (H.stringValue ("#state_" ++ messageToState msg)) $ H.string (messageToState msg)
     unless (null $ messagePayload msg) $ do
-      H.p $ do
-        "Payload: "
-        forM_ (messagePayload msg) $ H.strong . H.string
+      H.h4 "Payload"
+      H.ul $ do
+        forM_ (messagePayload msg) $ H.li . H.string
     H.h4 "Serialization Format"
     fieldSpecToHTML (messageInfo msg)
   
@@ -149,6 +153,8 @@ renderProtocol :: ProtocolDescription -> [MessageDescription] -> Html
 renderProtocol proto msgs =
   H.section ! HA.class_ "protocol" $ do
     H.h1 $ H.string (protocolName proto)
+    "Version ID: "
+    H.code $ H.text (decodeUtf8 . unVersionIdentifier $ protocolIdentifier proto)
     renderDescription (protocolDescription proto)
     H.section $ do
       H.h2 "States"
@@ -159,8 +165,8 @@ renderProtocol proto msgs =
 
 fieldSpecToHTML :: FieldInfo -> Html
 fieldSpecToHTML fi = do
-  H.h5 ! HA.id (H.stringValue ("type_" ++ shortFieldType fi)) $ do
-    H.string (shortFieldType fi)
+  -- H.h5 ! HA.id (H.stringValue ("type_" ++ shortFieldType fi)) $ do
+  --   H.string (shortFieldType fi)
   fromMaybe "" $ subfieldsToHTML (compoundField "" [("", fi)])
 
 subfieldsToHTML :: FieldInfo -> Maybe Html
@@ -175,6 +181,7 @@ fieldTypeToHtml :: FieldInfo -> Html
 fieldTypeToHtml (AliasField info) = do
   H.string (aliasFieldName info)
   H.br
+  H.em "This type is an alias for: "
   fieldTypeToHtml (aliasFieldTarget info)
 fieldTypeToHtml (ListField info) = do
   H.strong $ do
@@ -182,15 +189,15 @@ fieldTypeToHtml (ListField info) = do
     H.string (shortFieldType (listElemInfo info))
     "]"
   H.br
-  H.em $ "#items:"
+  H.em $ "#items: "
   H.string $ formatFieldSize $ listSize info
   H.br
-  H.em $ "item type:"
+  H.em $ "item type: "
   fieldTypeToHtml (listElemInfo info)
   maybe "" (H.br <>) $
     subfieldsToHTML (listElemInfo info)
 fieldTypeToHtml (ChoiceField info) = do
-  H.em "Choose by:"
+  H.em "Choose by: "
   case choiceCondition info of
     IndexField ref -> H.string ref
     IndexFlag ref mask -> H.string ref <> " & " <> H.string (printf "0x%04x" mask)
@@ -220,7 +227,7 @@ fieldTypeToHtml (EnumField info) = do
         [ H.tr $ do
             H.td $ H.string (show val)
             H.td $ H.string name
-        | (val, name) <- zip [0,1..] (enumFieldValues info)
+        | (val, name) <- enumFieldValues info
         ]
 fieldTypeToHtml fi =
   H.string . fieldType $ fi
@@ -249,6 +256,7 @@ wrapDoc body = do
     H.head $ do
       H.style $ do
         "html { font-family: sans-serif; }"
+        "body { max-width: 60rem; margin-left: auto; margin-right: auto; }"
         "div.state, div.message {"
         " background-color: #EEE;"
         " padding: 0.125rem 1rem; "
@@ -277,7 +285,7 @@ wrapDoc body = do
 
 main :: IO ()
 main = do
-  let protocolInfo = $(describeProtocol ''ControlProtocol)
+  let protocolInfo = $(describeProtocol ''ControlProtocol ''StandardCrypto)
       messageInfos =
         [ $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'VersionMessage)
         , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'GenStagedKeyMessage)

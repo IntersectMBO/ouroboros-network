@@ -330,6 +330,10 @@ instance NamedCrypto c => HasSerInfo (Message (ControlProtocol m c) IdleState Wa
               ",IdleState,WaitForPublicKeyState" ++
               ">")
             (info (Proxy @Command))
+  infoOf c = case c of
+    GenStagedKeyMessage -> infoOf GenStagedKeyCmd
+    QueryStagedKeyMessage -> infoOf QueryStagedKeyCmd
+    DropStagedKeyMessage -> infoOf DropStagedKeyCmd
 instance (NamedCrypto c, HasSerInfo (VerKeyKES (KES c))) => HasSerInfo (Message (ControlProtocol m c) WaitForPublicKeyState IdleState) where
   info _ = aliasField
             ("Message<" ++

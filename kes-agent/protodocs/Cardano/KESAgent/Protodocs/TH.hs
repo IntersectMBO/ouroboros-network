@@ -13,12 +13,14 @@ import Language.Haskell.TH
 import Data.Maybe
 import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Serialization.Spec.Class
+import Cardano.KESAgent.Protocols.VersionedProtocol
 import Data.Char
 
 data ProtocolDescription =
   ProtocolDescription
     { protocolName :: String
     , protocolDescription :: Maybe Description
+    , protocolIdentifier :: VersionIdentifier
     , protocolStates :: [(String, Maybe Description)]
     }
     deriving (Show)
@@ -43,8 +45,8 @@ getConName = \case
   RecGadtC (n:_) _ _ -> n
   x -> error $ "Cannot get constructor name for " ++ show x
 
-describeProtocol :: Name -> ExpQ
-describeProtocol protocol = do
+describeProtocol :: Name -> Name -> ExpQ
+describeProtocol protocol crypto = do
   info <- reify protocol
   protoDescription <- getDescription protocol
   case info of
@@ -57,6 +59,7 @@ describeProtocol protocol = do
       [| ProtocolDescription
             $(litE (stringL pname))
             protoDescription
+            (versionIdentifier (Proxy :: Proxy ($(conT protocol) IO $(conT crypto))))
             $(listE
                 [ [| ( $(litE . stringL . nameBase $ conName), stateDescription) |]
                 | (conName, stateDescription) <- pstates
@@ -122,6 +125,7 @@ describeProtocolMessage protocolName crypto msgName = do
           toStateName = prettyTy . unearthType $ toState
           fromStateTy = (if isUpper (head fromStateName) then conT else varT) $ mkName fromStateName
           toStateTy = (if isUpper (head toStateName) then conT else varT) $ mkName toStateName
+          undefinedMessageExpr = foldl appE (conE msgName) [ [e|undefined|] | _ <- payloads ]
 
       [e| MessageDescription
             { messageName = $(litE . stringL . nameBase $ msgName)
@@ -130,15 +134,23 @@ describeProtocolMessage protocolName crypto msgName = do
             , messageFromState = $(litE (stringL . prettyTy $ unearthType fromState))
             , messageToState = $(litE (stringL . prettyTy $ unearthType toState))
             , messageInfo =
-                info
-                  (Proxy ::
-                    Proxy
-                      ( Message
-                          ($(conT protocolName) IO $(conT crypto))
-                          $fromStateTy
-                          $toStateTy
-                      )
-                  )
+                infoOf (
+                      $undefinedMessageExpr ::
+                        ( Message
+                            ($(conT protocolName) IO $(conT crypto))
+                            $fromStateTy
+                            $toStateTy
+                        )
+                    )
+                -- info
+                --   (Proxy ::
+                --     Proxy
+                --       ( Message
+                --           ($(conT protocolName) IO $(conT crypto))
+                --           $fromStateTy
+                --           $toStateTy
+                --       )
+                --   )
             }
         |]
     _ -> error $ show msgInfo

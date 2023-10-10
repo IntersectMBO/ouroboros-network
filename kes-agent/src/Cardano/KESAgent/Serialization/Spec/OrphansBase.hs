@@ -179,7 +179,11 @@ instance (Typeable a, Show a, Enum a, Bounded a) => HasSerInfo (ViaEnum a) where
   info _ =
     enumField
       (typeName $ Proxy @a)
-      (map show [minBound .. maxBound :: a])
+      [ (fromEnum val, show val) | val <- [minBound .. maxBound :: a] ]
+  infoOf (ViaEnum val) =
+    enumField
+      (typeName $ Proxy @a)
+      [(fromEnum val, show val)]
 
 typeName :: Typeable a => Proxy a -> String
 typeName = tyConName . typeRepTyCon . typeRep
