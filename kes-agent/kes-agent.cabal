@@ -183,6 +183,7 @@ executable kes-agent-protodocs
                  , optparse-applicative
                  , template-haskell
                  , text
+                 , th-abstraction
                  , time
                  , typed-protocols
 

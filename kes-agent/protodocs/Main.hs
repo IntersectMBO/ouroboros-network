@@ -37,11 +37,11 @@ import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as HA
 import Text.Printf
 
-renderDescription :: Maybe Description -> Html
-renderDescription Nothing = mempty
-renderDescription (Just (Description h)) = do
-  let (doc :: Haddock.DocH () String) = Haddock.toRegular . Haddock._doc . Haddock.parseParas Nothing $ unlines h
-  renderHaddock doc
+renderDescriptions :: [Description] -> Html
+renderDescriptions = mapM_ $ \(Description h) -> do
+    let (docs :: [Haddock.DocH () String]) =
+          map (Haddock.toRegular . Haddock._doc . Haddock.parseParas Nothing) h
+    mapM_ (\doc -> H.p ! HA.class_ "haddock" $ renderHaddock doc) docs
 
 renderHaddock :: Haddock.DocH mod String -> Html
 renderHaddock Haddock.DocEmpty = mempty
@@ -122,11 +122,17 @@ stateID protocolName stateName = protocolName ++ "_state_" ++ stateName
 stateTOC :: String -> String -> TOC (String, String)
 stateTOC protocolName stateName = TOC (stateName, stateID protocolName stateName) []
 
-renderState :: String -> [MessageDescription] -> (String, Maybe Description) -> Html
-renderState protocolName msgs (stateName, descriptionMay) =
+renderState :: String -> [MessageDescription] -> (String, [Description], AgencyID) -> Html
+renderState protocolName msgs (stateName, descriptions, agency) =
   H.div ! HA.class_ "state" $ do
     H.h3 ! HA.id (H.stringValue (stateID protocolName stateName)) $ H.string stateName
-    renderDescription descriptionMay
+    renderDescriptions descriptions
+    H.p $ do
+      "Agency: "
+      H.strong $ case agency of
+        ClientAgencyID -> "client"
+        ServerAgencyID -> "server"
+        NobodyAgencyID -> "nobody"
     unless (null messagesFromHere) $ do
       H.h4 "Messages from here:"
       H.ul $ do
@@ -162,7 +168,7 @@ renderMessage :: String -> MessageDescription -> Html
 renderMessage protocolName msg =
   H.div ! HA.class_ "message" $ do
     H.h3 ! HA.id (H.stringValue (messageID protocolName (messageName msg))) $ H.string (messageName msg)
-    renderDescription (messageDescription msg)
+    renderDescriptions (messageDescription msg)
     H.h4 $ "State Transition"
     H.p $ do
       H.a ! HA.href (H.stringValue ("#" ++ stateID protocolName (messageFromState msg))) $ H.string (messageFromState msg)
@@ -175,25 +181,26 @@ renderMessage protocolName msg =
     H.h4 "Serialization Format"
     fieldSpecToHTML (messageInfo msg)
   
-protocolTOC :: ProtocolDescription -> [MessageDescription] -> TOC (String, String)
-protocolTOC proto msgs =
+protocolTOC :: ProtocolDescription -> TOC (String, String)
+protocolTOC proto =
   let protoName = protocolName proto
   in
     TOC (protoName, protoName)
       [ TOC ("States", protoName ++ "_states")
-        [ stateTOC protoName stateName | (stateName, _) <- protocolStates proto ]
+        [ stateTOC protoName stateName | (stateName, _, _) <- protocolStates proto ]
       , TOC ("Messages", protoName ++ "_messages")
-        [ messageTOC protoName msg | msg <- msgs ]
+        [ messageTOC protoName msg | msg <- protocolMessages proto ]
       ]
 
-renderProtocol :: ProtocolDescription -> [MessageDescription] -> Html
-renderProtocol proto msgs = do
+renderProtocol :: ProtocolDescription -> Html
+renderProtocol proto = do
   let protoName = protocolName proto
+      msgs = protocolMessages proto
   H.section ! HA.class_ "protocol" $ do
     H.h1 ! HA.id (H.stringValue protoName) $ H.string protoName
     "Version ID: "
     H.code $ H.text (decodeUtf8 . unVersionIdentifier $ protocolIdentifier proto)
-    renderDescription (protocolDescription proto)
+    renderDescriptions (protocolDescription proto)
     H.section $ do
       H.h2 ! HA.id (H.stringValue $ protoName ++ "_states") $ "States"
       mconcat <$> mapM (renderState protoName msgs) (protocolStates proto)
@@ -342,43 +349,20 @@ wrapDoc body = do
         "}"
     H.body body
 
-
 main :: IO ()
 main = do
   LText.writeFile "protocol.html" $ renderHtml . wrapDoc $ tocHtml <> serviceProtoHtml <> controlProtoHtml
   where
     serviceInfo =
       $(describeProtocol ''ServiceProtocol ''StandardCrypto)
-    serviceMInfos =
-      [ $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.VersionMessage)
-      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.KeyMessage)
-      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.AbortMessage)
-      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.ServerDisconnectMessage)
-      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.ClientDisconnectMessage)
-      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.ProtocolErrorMessage)
-      ]
     controlInfo =
       $(describeProtocol ''ControlProtocol ''StandardCrypto)
-    controlMInfos =
-      [ $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.VersionMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.GenStagedKeyMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.QueryStagedKeyMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.DropStagedKeyMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.PublicKeyMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.InstallKeyMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.InstallResultMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.RequestInfoMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.InfoMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.AbortMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.EndMessage)
-      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.ProtocolErrorMessage)
-      ]
 
-    serviceProtoHtml = renderProtocol serviceInfo serviceMInfos
-    controlProtoHtml = renderProtocol controlInfo controlMInfos
+    serviceProtoHtml = renderProtocol serviceInfo
+    controlProtoHtml = renderProtocol controlInfo
     tocHtml = H.div ! HA.class_ "toc-master" $ do
                 H.h1 "Table Of Contents"
                 renderTOC $ TOC ("Protocols", "")
-                  [ protocolTOC serviceInfo serviceMInfos
-                  , protocolTOC controlInfo controlMInfos
+                  [ protocolTOC serviceInfo
+                  , protocolTOC controlInfo
                   ]

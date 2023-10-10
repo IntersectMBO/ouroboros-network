@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DeriveLift #-}
 
 module Cardano.KESAgent.Protodocs.TH
 where
@@ -12,30 +13,40 @@ where
 import Control.Monad
 import Network.TypedProtocol.Core
 import Language.Haskell.TH
+import Language.Haskell.TH.Datatype
+import Language.Haskell.TH.Syntax (Lift (..))
 import Data.Maybe
 import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Serialization.Spec.Class
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Data.Char
 
+data AgencyID
+  = ClientAgencyID
+  | ServerAgencyID
+  | NobodyAgencyID
+  deriving (Show, Read, Ord, Eq, Enum, Bounded, Lift)
+
 data ProtocolDescription =
   ProtocolDescription
     { protocolName :: String
-    , protocolDescription :: Maybe Description
+    , protocolDescription :: [Description]
     , protocolIdentifier :: VersionIdentifier
-    , protocolStates :: [(String, Maybe Description)]
+    , protocolStates :: [(String, [Description], AgencyID)]
+    , protocolMessages :: [MessageDescription]
     }
     deriving (Show)
 
 data MessageDescription =
   MessageDescription
     { messageName :: String
-    , messageDescription :: Maybe Description
+    , messageDescription :: [Description]
     , messagePayload :: [String]
     , messageFromState :: String
     , messageToState :: String
     , messageInfo :: FieldInfo
     }
+    deriving (Show)
 
 getConName :: Con -> Name
 getConName = \case
@@ -49,26 +60,31 @@ getConName = \case
 
 describeProtocol :: Name -> Name -> ExpQ
 describeProtocol protocol crypto = do
-  info <- reify protocol
+  info <- reifyDatatype protocol
   protoDescription <- getDescription protocol
-  case info of
-    TyConI (DataD _ tyName binders _ valCons _) -> do
-      let pname = nameBase tyName
-      pstates <- forM valCons $ \valCon -> do
-        let conName = getConName valCon
-        stateDescription <- getDescription conName
-        return (conName, stateDescription)
-      [| ProtocolDescription
-            $(litE (stringL pname))
-            protoDescription
-            (versionIdentifier (Proxy :: Proxy ($(conT protocol) IO $(conT crypto))))
-            $(listE
-                [ [| ( $(litE . stringL . nameBase $ conName), stateDescription) |]
-                | (conName, stateDescription) <- pstates
-                ]
-             )
-       |]
-    x -> error $ show x
+  let pname = nameBase (datatypeName info)
+  pstates <- forM (datatypeCons info) $ \conInfo -> do
+    let conName = constructorName conInfo
+    stateDescription <- getDescription conName
+    let agencyID = NobodyAgencyID
+
+    return (conName, stateDescription, agencyID)
+
+  [DataInstD _ _ ty _ cons _] <- reifyInstances ''Message [AppT (AppT (ConT protocol) (ConT ''IO)) (ConT crypto)]
+
+  let messageInfos = map (describeProtocolMessage protocol crypto . extractConName) cons
+
+  [| ProtocolDescription
+        $(litE (stringL pname))
+        protoDescription
+        (versionIdentifier (Proxy :: Proxy ($(conT protocol) IO $(conT crypto))))
+        $(listE
+            [ [| ( $(litE . stringL . nameBase $ conName), stateDescription, agencyID) |]
+            | (conName, stateDescription, agencyID) <- pstates
+            ]
+         )
+         $(listE messageInfos)
+   |]
 
 argSplit :: Type -> ([Type], Type)
 argSplit t@(AppT (AppT (AppT (ConT m) _) _) _)
@@ -109,10 +125,11 @@ prettyTy = snd . go
     go (AppKindT _ a) = go a
     go t = (True, show t)
 
-getDescription :: Name -> Q (Maybe Description)
+getDescription :: Name -> Q [Description]
 getDescription name = do
-  haddockMay <- getDoc (DeclDoc name)
-  return (Description . lines <$> haddockMay)
+  haddock <- maybeToList <$> getDoc (DeclDoc name)
+  annotations <- reifyAnnotations (AnnLookupName name)
+  return $ (Description . (:[]) <$> haddock) ++ annotations
 
 setTyVars2 :: Type -> Type -> Type -> Type
 setTyVars2 (AppT (AppT a _m) _c) m c = AppT (AppT a m) c
@@ -168,11 +185,12 @@ describeProtocolMessage protocolName crypto msgName = do
     -- formatT (PromotedT n) = (False, nameBase n)
     formatT x = (True, show x)
 
-conName :: Con -> [String]
-conName con = case con of
-  NormalC conName _ -> [nameBase conName]
-  RecC conName _ -> [nameBase conName]
-  InfixC _ conName _ -> [nameBase conName]
-  ForallC _ _ con -> conName con
-  GadtC names _ _ -> map nameBase $ names
-  RecGadtC names _ _ -> map nameBase $ names
+extractConName :: Con -> Name
+extractConName con = case con of
+  NormalC n _ -> n
+  RecC n _ -> n
+  InfixC _ n _ -> n
+  ForallC _ _ con -> extractConName con
+  GadtC (name:_) _ _ -> name
+  RecGadtC (name:_) _ _ -> name
+  x -> error $ "Cannot extract constructor name from " ++ show x

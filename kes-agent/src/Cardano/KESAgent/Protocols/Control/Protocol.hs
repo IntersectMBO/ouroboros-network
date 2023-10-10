@@ -142,39 +142,81 @@ data ControlProtocol (m :: * -> *) (k :: *) where
   -- session.
   EndState :: ControlProtocol m k
 
+{-# ANN VersionMessage (Description ["Announce the protocol version."]) #-}
+{-# ANN GenStagedKeyMessage
+    (Description
+      [ "Ask the agent to generate a fresh KES sign key and store it in the staging area."
+      , "Corresponds to the @gen-staged-key@ command."
+      ]) #-}
+{-# ANN QueryStagedKeyMessage
+    (Description
+      [ "Ask the agent to return the staged KES key, if any."
+      , "Only the KES verification key will be returned, in order to guarantee forward security."
+      , "Corresponds to the @export-staged-key@ command."
+      ]) #-}
+{-# ANN DropStagedKeyMessage
+    (Description
+      [ "Ask the agent to delete the staged KES key, if any."
+      , "Corresponds to the @drop-staged-key@ command."
+      ]) #-}
+{-# ANN PublicKeyMessage
+    (Description
+      [ "Returned by the KES agent in response to an @export-staged-key@ request."
+      ]) #-}
+{-# ANN InstallKeyMessage
+    (Description
+      [ "Upload an OpCert to the KES agent, and ask it to bundle it with a staged KES key and install it."
+      , "Corresponds to the @install-key@ command."
+      ]) #-}
+{-# ANN InstallResultMessage
+    (Description
+      [ "Returned by the KES agent in response to an @install-key@ command."
+      ]) #-}
+{-# ANN RequestInfoMessage
+    (Description
+      [ "Ask the KES agent to report its current state."
+      , "Corresponds to the @info@ command."
+      ]) #-}
+{-# ANN InfoMessage
+    (Description
+      [ "Returned by the KES agent in response to an @info@ command."
+      ]) #-}
+{-# ANN AbortMessage
+    (Description
+      [ "Signals a failed version handshake."
+      , "No data is actually sent for this message, instead it is generated when the network connection is interrupted."
+      ]) #-}
+{-# ANN EndMessage
+    (Description
+      [ "Signals an orderly end of a session."
+      , "No data is actually sent for this message, instead it is generated when the network connection is interrupted."
+      ]) #-}
+{-# ANN ProtocolErrorMessage
+    (Description
+      [ "Signals a fatal protocol error that causes the session to end prematurely."
+      , "No data is actually sent for this message, instead it is generated when the network connection is interrupted, or an unrecoverable error occurs."
+      ]) #-}
+
 instance Protocol (ControlProtocol m c) where
   data Message (ControlProtocol m c) st st' where
 
-          -- | Announce the protocol version.
           VersionMessage :: Message (ControlProtocol m c) InitialState IdleState
 
-          -- | Request the agent to generate a fresh KES sign key and store it.
-          -- in the staging area.
           GenStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
 
-          -- | Query the agent for the key currently stored in the staging area.
           QueryStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
 
-          -- | Request that the agent erase the key currently stored in the
-          -- staging area.
           DropStagedKeyMessage :: Message (ControlProtocol m c) IdleState WaitForPublicKeyState
 
-          -- | Respond to a request for a staged key. Only the public key (vkey)
-          -- will be returned however.
           PublicKeyMessage :: Maybe (VerKeyKES (KES c))
                            -> Message (ControlProtocol m c) WaitForPublicKeyState IdleState
 
-          -- | Upload an OpCert, and request that the agent bundle it with the
-          -- key in the staging are and install it.
           InstallKeyMessage :: OCert c
                             -> Message (ControlProtocol m c) IdleState WaitForConfirmationState
 
-          -- | Report the result of installing an OpCert + KES key back from the
-          -- agent.
           InstallResultMessage :: RecvResult
                                -> Message (ControlProtocol m c) WaitForConfirmationState IdleState
 
-          -- | Request agent state information.
           RequestInfoMessage :: Message (ControlProtocol m c) IdleState WaitForInfoState
 
           InfoMessage :: AgentInfo c
