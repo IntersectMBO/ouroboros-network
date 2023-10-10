@@ -3,15 +3,21 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 
 module Main
 where
 
 import qualified Cardano.KESAgent.Protocols.Control.Driver ()
-import Cardano.KESAgent.Protocols.Control.Protocol
-import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Protocols.Control.Protocol (ControlProtocol)
 import qualified Cardano.KESAgent.Protocols.Control.Protocol as Control
+import qualified Cardano.KESAgent.Protocols.Service.Driver ()
+import Cardano.KESAgent.Protocols.Service.Protocol (ServiceProtocol)
+import qualified Cardano.KESAgent.Protocols.Service.Protocol as Service
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protodocs.TH
 import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Serialization.Spec.Class
@@ -21,16 +27,15 @@ import Control.Monad
 import Data.Maybe
 import Data.Text.Encoding (decodeUtf8)
 import qualified Data.Text.Lazy.IO as LText
+import Debug.Trace
+import qualified Documentation.Haddock.Parser as Haddock
+import qualified Documentation.Haddock.Types as Haddock
 import Language.Haskell.TH
 import Text.Blaze.Html.Renderer.Text (renderHtml)
 import Text.Blaze.Html5 (Html, (!))
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as HA
 import Text.Printf
-import Data.Maybe
-import qualified Documentation.Haddock.Types as Haddock
-import qualified Documentation.Haddock.Parser as Haddock
-import Debug.Trace
 
 renderDescription :: Maybe Description -> Html
 renderDescription Nothing = mempty
@@ -102,10 +107,25 @@ renderHaddock (Haddock.DocTable (Haddock.Table headerRows bodyRows)) = do
                  ! HA.rowspan (H.toValue rowspan)
                  $ renderHaddock body
 
-renderState :: [MessageDescription] -> (String, Maybe Description) -> Html
-renderState msgs (stateName, descriptionMay) =
+data TOC a = TOC a [TOC a]
+  deriving (Show, Eq, Ord)
+
+renderTOC :: TOC (String, String) -> Html
+renderTOC (TOC (label, href) children) = do
+  H.section ! HA.class_ "toc" $ do
+    H.a ! HA.href (H.stringValue $ "#" ++ href) $ H.string label
+    forM_ children renderTOC
+
+stateID :: String -> String -> String
+stateID protocolName stateName = protocolName ++ "_state_" ++ stateName
+
+stateTOC :: String -> String -> TOC (String, String)
+stateTOC protocolName stateName = TOC (stateName, stateID protocolName stateName) []
+
+renderState :: String -> [MessageDescription] -> (String, Maybe Description) -> Html
+renderState protocolName msgs (stateName, descriptionMay) =
   H.div ! HA.class_ "state" $ do
-    H.h3 ! HA.id (H.stringValue ("state_" ++ stateName)) $ H.string stateName
+    H.h3 ! HA.id (H.stringValue (stateID protocolName stateName)) $ H.string stateName
     renderDescription descriptionMay
     unless (null messagesFromHere) $ do
       H.h4 "Messages from here:"
@@ -113,9 +133,9 @@ renderState msgs (stateName, descriptionMay) =
         forM_ messagesFromHere $ \msg -> do
           H.li $ do
             H.strong $
-              H.a ! HA.href (H.stringValue ("#message_" ++ messageName msg)) $ H.string (messageName msg)
+              H.a ! HA.href (H.stringValue ("#" ++ messageID protocolName (messageName msg))) $ H.string (messageName msg)
             " (to "
-            H.a ! HA.href (H.stringValue ("#state_" ++ messageToState msg)) $ H.string (messageToState msg)
+            H.a ! HA.href (H.stringValue ("#" ++ stateID protocolName (messageToState msg))) $ H.string (messageToState msg)
             ")"
     unless (null messagesToHere) $ do
       H.h4 "Messages to here:"
@@ -123,24 +143,31 @@ renderState msgs (stateName, descriptionMay) =
         forM_ messagesToHere $ \msg -> do
           H.li $ do
             H.strong $
-              H.a ! HA.href (H.stringValue ("#message_" ++ messageName msg)) $ H.string (messageName msg)
+              H.a ! HA.href (H.stringValue ("#" ++ messageID protocolName (messageName msg))) $ H.string (messageName msg)
             " (from "
-            H.a ! HA.href (H.stringValue ("#state_" ++ messageFromState msg)) $ H.string (messageFromState msg)
+            H.a ! HA.href (H.stringValue ("#" ++ stateID protocolName (messageFromState msg))) $ H.string (messageFromState msg)
             ")"
   where
     messagesFromHere = filter ((== stateName) . messageFromState) msgs
     messagesToHere = filter ((== stateName) . messageToState) msgs
 
-renderMessage :: MessageDescription -> Html
-renderMessage msg =
+messageID :: String -> String -> String
+messageID protocolName messageName = protocolName ++ "_message_" ++ messageName
+
+messageTOC :: String -> MessageDescription -> TOC (String, String)
+messageTOC protocolName msg =
+  TOC (messageName msg, messageID protocolName (messageName msg)) []
+
+renderMessage :: String -> MessageDescription -> Html
+renderMessage protocolName msg =
   H.div ! HA.class_ "message" $ do
-    H.h3 ! HA.id (H.stringValue ("message_" ++ messageName msg)) $ H.string (messageName msg)
+    H.h3 ! HA.id (H.stringValue (messageID protocolName (messageName msg))) $ H.string (messageName msg)
     renderDescription (messageDescription msg)
     H.h4 $ "State Transition"
     H.p $ do
-      H.a ! HA.href (H.stringValue ("#state_" ++ messageFromState msg)) $ H.string (messageFromState msg)
+      H.a ! HA.href (H.stringValue ("#" ++ stateID protocolName (messageFromState msg))) $ H.string (messageFromState msg)
       " -> "
-      H.a ! HA.href (H.stringValue ("#state_" ++ messageToState msg)) $ H.string (messageToState msg)
+      H.a ! HA.href (H.stringValue ("#" ++ stateID protocolName (messageToState msg))) $ H.string (messageToState msg)
     unless (null $ messagePayload msg) $ do
       H.h4 "Payload"
       H.ul $ do
@@ -148,28 +175,45 @@ renderMessage msg =
     H.h4 "Serialization Format"
     fieldSpecToHTML (messageInfo msg)
   
+protocolTOC :: ProtocolDescription -> [MessageDescription] -> TOC (String, String)
+protocolTOC proto msgs =
+  let protoName = protocolName proto
+  in
+    TOC (protoName, protoName)
+      [ TOC ("States", protoName ++ "_states")
+        [ stateTOC protoName stateName | (stateName, _) <- protocolStates proto ]
+      , TOC ("Messages", protoName ++ "_messages")
+        [ messageTOC protoName msg | msg <- msgs ]
+      ]
 
 renderProtocol :: ProtocolDescription -> [MessageDescription] -> Html
-renderProtocol proto msgs =
+renderProtocol proto msgs = do
+  let protoName = protocolName proto
   H.section ! HA.class_ "protocol" $ do
-    H.h1 $ H.string (protocolName proto)
+    H.h1 ! HA.id (H.stringValue protoName) $ H.string protoName
     "Version ID: "
     H.code $ H.text (decodeUtf8 . unVersionIdentifier $ protocolIdentifier proto)
     renderDescription (protocolDescription proto)
     H.section $ do
-      H.h2 "States"
-      mconcat <$> mapM (renderState msgs) (protocolStates proto)
+      H.h2 ! HA.id (H.stringValue $ protoName ++ "_states") $ "States"
+      mconcat <$> mapM (renderState protoName msgs) (protocolStates proto)
     H.section $ do
-      H.h2 "Messages"
-      mconcat <$> mapM renderMessage msgs
+      H.h2 ! HA.id (H.stringValue $ protoName ++ "_messages") $ "Messages"
+      mconcat <$> mapM (renderMessage protoName) msgs
 
 fieldSpecToHTML :: FieldInfo -> Html
 fieldSpecToHTML fi = do
-  -- H.h5 ! HA.id (H.stringValue ("type_" ++ shortFieldType fi)) $ do
-  --   H.string (shortFieldType fi)
+  forM_ (fieldSpecAnnotations fi) (H.p . H.string)
   fromMaybe "" $ subfieldsToHTML (compoundField "" [("", fi)])
 
+fieldSpecAnnotations :: FieldInfo -> [String]
+fieldSpecAnnotations (AnnField ann fi) =
+  ann : fieldSpecAnnotations fi
+fieldSpecAnnotations _ = []
+
 subfieldsToHTML :: FieldInfo -> Maybe Html
+subfieldsToHTML (AnnField _ fi) =
+  subfieldsToHTML fi
 subfieldsToHTML (AliasField afi) =
   subfieldsToHTML (aliasFieldTarget afi)
 subfieldsToHTML (CompoundField cfi) = Just $ do
@@ -178,8 +222,10 @@ subfieldsToHTML (CompoundField cfi) = Just $ do
 subfieldsToHTML _ = Nothing
 
 fieldTypeToHtml :: FieldInfo -> Html
+fieldTypeToHtml (AnnField _ fi) =
+  fieldTypeToHtml fi
 fieldTypeToHtml (AliasField info) = do
-  H.string (aliasFieldName info)
+  H.strong $ H.string (aliasFieldName info)
   H.br
   H.em "This type is an alias for: "
   fieldTypeToHtml (aliasFieldTarget info)
@@ -197,18 +243,18 @@ fieldTypeToHtml (ListField info) = do
   maybe "" (H.br <>) $
     subfieldsToHTML (listElemInfo info)
 fieldTypeToHtml (ChoiceField info) = do
-  H.em "Choose by: "
-  case choiceCondition info of
-    IndexField ref -> H.string ref
-    IndexFlag ref mask -> H.string ref <> " & " <> H.string (printf "0x%04x" mask)
+  H.em "Choice"
+  let choiceLabel = case choiceCondition info of
+        IndexField ref -> H.string ref
+        IndexFlag ref mask -> H.string ref <> " & " <> H.string (printf "0x%04x" mask)
   H.table $ do
     H.tr $ do
-      H.th "choice"
+      H.th choiceLabel
       H.th "size"
       H.th "type"
     sequence_ $
           [ H.tr $ do
-              H.td $ H.string (show n)
+              H.td ! HA.class_ "choice-value" $ H.string (show n)
               H.td ! HA.class_ "field-size" $ do
                 H.string $ formatFieldSize (fieldSize optInfo)
               H.td $ do
@@ -217,7 +263,7 @@ fieldTypeToHtml (ChoiceField info) = do
           | (n, optInfo) <- zip [0,1..] (choiceFieldAlternatives info)
           ]
 fieldTypeToHtml (EnumField info) = do
-  H.string (enumFieldType info)
+  H.strong $ H.string (enumFieldType info)
   H.em " (enum)"
   H.table $ do
     H.tr $ do
@@ -225,24 +271,26 @@ fieldTypeToHtml (EnumField info) = do
       H.th "name"
     sequence_ $
         [ H.tr $ do
-            H.td $ H.string (show val)
+            H.td ! HA.class_ "enum-value" $ H.string (show val)
             H.td $ H.string name
         | (val, name) <- enumFieldValues info
         ]
 fieldTypeToHtml fi =
-  H.string . fieldType $ fi
+  H.strong . H.string . fieldType $ fi
 
 subfieldToHtmlTR :: SubfieldInfo -> Html
 subfieldToHtmlTR sfi =
   case subfieldsToHTML (subfieldInfo sfi) of
     Nothing -> do
       H.tr $ do
-        H.th $ H.string (subfieldName sfi)
+        H.th ! HA.colspan "2" $ H.string (subfieldName sfi)
+      H.tr $ do
         H.td ! HA.class_ "field-size" $ H.string $ formatFieldSize (fieldSize (subfieldInfo sfi))
         H.td $ fieldTypeToHtml (subfieldInfo sfi)
     Just sfiHtml -> do
       H.tr $ do
-        H.th ! HA.rowspan "2" $ H.string (subfieldName sfi)
+        H.th ! HA.colspan "2" $ H.string (subfieldName sfi)
+      H.tr $ do
         H.td ! HA.rowspan "2" ! HA.class_ "field-size" $ do
           H.string $ formatFieldSize (fieldSize (subfieldInfo sfi))
         H.td ! HA.colspan "2" $ fieldTypeToHtml (subfieldInfo sfi)
@@ -256,11 +304,17 @@ wrapDoc body = do
     H.head $ do
       H.style $ do
         "html { font-family: sans-serif; }"
-        "body { max-width: 60rem; margin-left: auto; margin-right: auto; }"
+        "body { max-width: 60rem; margin-left: auto; margin-right: auto; padding: 1rem; }"
+        "h1 { font-size: 3rem; }"
+        "h2 { font-size: 2rem; }"
+        "h3 { font-size: 1.5rem; }"
+        "h4 { font-size: 1.25rem; }"
+        "h5 { font-size: 1.1rem; }"
+        "h6 { font-size: 1rem; }"
         "div.state, div.message {"
         " background-color: #EEE;"
         " padding: 0.125rem 1rem; "
-        " margin: 1rem; "
+        " margin: 1rem 0 1rem 0;"
         "}"
         "table { "
         "border-collapse: collapse;"
@@ -277,28 +331,54 @@ wrapDoc body = do
         "table th {"
         "  background-color: #DDD"
         "}"
+        ".choice-value,"
+        ".enum-value,"
         ".field-size {"
         "  text-align: right;"
+        "  width: 4rem;"
+        "}"
+        ".toc>.toc {"
+        "padding-left: 2rem;"
         "}"
     H.body body
 
 
 main :: IO ()
 main = do
-  let protocolInfo = $(describeProtocol ''ControlProtocol ''StandardCrypto)
-      messageInfos =
-        [ $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'VersionMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'GenStagedKeyMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'QueryStagedKeyMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'DropStagedKeyMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'PublicKeyMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'InstallKeyMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'InstallResultMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'RequestInfoMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'InfoMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'AbortMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'EndMessage)
-        , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'ProtocolErrorMessage)
-        ]
+  LText.writeFile "protocol.html" $ renderHtml . wrapDoc $ tocHtml <> serviceProtoHtml <> controlProtoHtml
+  where
+    serviceInfo =
+      $(describeProtocol ''ServiceProtocol ''StandardCrypto)
+    serviceMInfos =
+      [ $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.VersionMessage)
+      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.KeyMessage)
+      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.AbortMessage)
+      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.ServerDisconnectMessage)
+      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.ClientDisconnectMessage)
+      , $(describeProtocolMessage ''ServiceProtocol ''StandardCrypto 'Service.ProtocolErrorMessage)
+      ]
+    controlInfo =
+      $(describeProtocol ''ControlProtocol ''StandardCrypto)
+    controlMInfos =
+      [ $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.VersionMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.GenStagedKeyMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.QueryStagedKeyMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.DropStagedKeyMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.PublicKeyMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.InstallKeyMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.InstallResultMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.RequestInfoMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.InfoMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.AbortMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.EndMessage)
+      , $(describeProtocolMessage ''ControlProtocol ''StandardCrypto 'Control.ProtocolErrorMessage)
+      ]
 
-  LText.writeFile "protocol.html" $ renderHtml . wrapDoc $ renderProtocol protocolInfo messageInfos
+    serviceProtoHtml = renderProtocol serviceInfo serviceMInfos
+    controlProtoHtml = renderProtocol controlInfo controlMInfos
+    tocHtml = H.div ! HA.class_ "toc-master" $ do
+                H.h1 "Table Of Contents"
+                renderTOC $ TOC ("Protocols", "")
+                  [ protocolTOC serviceInfo serviceMInfos
+                  , protocolTOC controlInfo controlMInfos
+                  ]

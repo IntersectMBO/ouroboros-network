@@ -33,7 +33,8 @@ newtype Description = Description { descriptionParagraphs :: [String] }
 -- * 'FieldInfo' and related types
 
 data FieldInfo
-  = BasicField BasicFieldInfo
+  = AnnField String FieldInfo
+  | BasicField BasicFieldInfo
   | EnumField EnumFieldInfo
   | CompoundField CompoundFieldInfo
   | ChoiceField ChoiceFieldInfo
@@ -102,6 +103,9 @@ data ChoiceFieldInfo =
     , choiceFieldAlternatives :: ![FieldInfo]
     }
   deriving (Show)
+
+annField :: String -> FieldInfo -> FieldInfo
+annField = AnnField
 
 basicField :: String -> FieldSize -> FieldInfo
 basicField ty size = BasicField $ BasicFieldInfo ty size

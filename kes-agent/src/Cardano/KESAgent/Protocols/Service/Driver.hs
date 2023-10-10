@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-deprecations #-}
+
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -7,10 +8,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Cardano.KESAgent.Protocols.Service.Driver
   where
@@ -54,6 +59,8 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Coerce
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Proxy
+import qualified Data.Text as Text
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Typeable
 import Data.Word
 import Foreign ( Ptr, castPtr, plusPtr, poke )
@@ -242,3 +249,37 @@ readErrorToServiceDriverTrace (ReadMalformed what) =
 readErrorToServiceDriverTrace (ReadVersionMismatch expected actual) =
   ServiceDriverInvalidVersion expected actual
 
+instance NamedCrypto c => HasSerInfo (Message (ServiceProtocol m c) InitialState IdleState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c))) ++
+              ",InitialState,IdleState" ++
+              ">")
+            (info (Proxy @VersionIdentifier))
+instance ( NamedCrypto c
+         , Crypto c
+         , Typeable c
+         , HasSerInfo (SignKeyKES (KES c))
+         , HasSerInfo (VerKeyKES (KES c))
+         ) => HasSerInfo (Message (ServiceProtocol m c) IdleState WaitForConfirmationState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c))) ++
+              ",IdleState,WaitForConfirmationState" ++
+              ">")
+            (info (Proxy @(Bundle m c)))
+instance NamedCrypto c => HasSerInfo (Message (ServiceProtocol m c) WaitForConfirmationState IdleState) where
+  info _ = aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c))) ++
+              ",WaitForConfirmationState,IdleState" ++
+              ">")
+            (info (Proxy @RecvResult))
+instance NamedCrypto c => HasSerInfo (Message (ServiceProtocol m c) _st EndState) where
+  info _ = annField "This message is signalled by terminating the network connection, hence the encoding takes zero bytes." $
+            aliasField
+            ("Message<" ++
+              (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c))) ++
+              ",st,EndState" ++
+              ">")
+            (info (Proxy @()))

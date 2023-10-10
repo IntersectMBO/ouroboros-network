@@ -285,6 +285,7 @@ instance (MonadThrow m, MonadST m, IsSerItem m a) => IsSerItem m [a] where
 
 
 fieldType :: FieldInfo -> String
+fieldType (AnnField _ fi) = fieldType fi
 fieldType (BasicField fi) = basicFieldType fi
 fieldType (EnumField fi) = enumFieldType fi ++ " = " ++ fieldType (info @Word32 Proxy)
 fieldType (CompoundField fi) = compoundFieldType fi
@@ -294,6 +295,7 @@ fieldType (AliasField fi) = aliasFieldName fi ++ " = " ++ fieldType (aliasFieldT
 fieldType (SumField fi) = sumFieldType fi
 
 shortFieldType :: FieldInfo -> String
+shortFieldType (AnnField _ fi) = shortFieldType fi
 shortFieldType (BasicField fi) = basicFieldType fi
 shortFieldType (EnumField fi) = enumFieldType fi
 shortFieldType (CompoundField fi) = compoundFieldType fi
@@ -383,6 +385,8 @@ fieldSize :: FieldInfo -> FieldSize
 fieldSize = fieldSizeScoped [] mempty
 
 fieldSizeScoped :: [String] -> Map String [String] -> FieldInfo -> FieldSize
+fieldSizeScoped path env (AnnField _ fi) =
+  fieldSizeScoped path env fi
 fieldSizeScoped path env (AliasField fi) =
   fieldSizeScoped path env (aliasFieldTarget fi)
 fieldSizeScoped _ env (BasicField fi) =

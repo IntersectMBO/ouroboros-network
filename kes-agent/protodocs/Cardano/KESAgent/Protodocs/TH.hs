@@ -3,6 +3,8 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE KindSignatures #-}
 
 module Cardano.KESAgent.Protodocs.TH
 where
@@ -85,7 +87,7 @@ unearthType t = t
 
 
 extractStates :: Type -> (Type, Type)
-extractStates (AppT (AppT (AppT (ConT m) _) a) b)
+extractStates (AppT (AppT (AppT (ConT m) _c) a) b)
   | m == ''Message
   = (a, b)
 extractStates x = error $ show x
@@ -112,6 +114,15 @@ getDescription name = do
   haddockMay <- getDoc (DeclDoc name)
   return (Description . lines <$> haddockMay)
 
+setTyVars2 :: Type -> Type -> Type -> Type
+setTyVars2 (AppT (AppT a _m) _c) m c = AppT (AppT a m) c
+setTyVars2 t _ _ = error $ show t
+
+unSigTy :: Type -> Type
+unSigTy (SigT t _) = t
+unSigTy t@(VarT {}) = t
+unSigTy t = error $ show t
+
 describeProtocolMessage :: Name -> Name -> Name -> ExpQ
 describeProtocolMessage protocolName crypto msgName = do
   msgInfo <- reify msgName
@@ -123,8 +134,6 @@ describeProtocolMessage protocolName crypto msgName = do
       let (fromState, toState) = extractStates lastArg
           fromStateName = prettyTy . unearthType $ fromState
           toStateName = prettyTy . unearthType $ toState
-          fromStateTy = (if isUpper (head fromStateName) then conT else varT) $ mkName fromStateName
-          toStateTy = (if isUpper (head toStateName) then conT else varT) $ mkName toStateName
           undefinedMessageExpr = foldl appE (conE msgName) [ [e|undefined|] | _ <- payloads ]
 
       [e| MessageDescription
@@ -138,19 +147,10 @@ describeProtocolMessage protocolName crypto msgName = do
                       $undefinedMessageExpr ::
                         ( Message
                             ($(conT protocolName) IO $(conT crypto))
-                            $fromStateTy
-                            $toStateTy
+                            $(pure $ unSigTy fromState)
+                            $(pure $ unSigTy toState)
                         )
                     )
-                -- info
-                --   (Proxy ::
-                --     Proxy
-                --       ( Message
-                --           ($(conT protocolName) IO $(conT crypto))
-                --           $fromStateTy
-                --           $toStateTy
-                --       )
-                --   )
             }
         |]
     _ -> error $ show msgInfo
