@@ -10,12 +10,18 @@
 module Main
 where
 
+import qualified Cardano.KESAgent.Protocols.VersionHandshake.Driver ()
+import Cardano.KESAgent.Protocols.VersionHandshake.Protocol (VersionHandshakeProtocol)
+import qualified Cardano.KESAgent.Protocols.VersionHandshake.Protocol as VersionHandshake
+
 import qualified Cardano.KESAgent.Protocols.Control.Driver ()
 import Cardano.KESAgent.Protocols.Control.Protocol (ControlProtocol)
 import qualified Cardano.KESAgent.Protocols.Control.Protocol as Control
+
 import qualified Cardano.KESAgent.Protocols.Service.Driver ()
 import Cardano.KESAgent.Protocols.Service.Protocol (ServiceProtocol)
 import qualified Cardano.KESAgent.Protocols.Service.Protocol as Service
+
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protodocs.TH
@@ -351,18 +357,27 @@ wrapDoc body = do
 
 main :: IO ()
 main = do
-  LText.writeFile "protocol.html" $ renderHtml . wrapDoc $ tocHtml <> serviceProtoHtml <> controlProtoHtml
+  LText.writeFile "protocol.html" $ renderHtml . wrapDoc . mconcat $ 
+    [ tocHtml
+    , versionHandshakeProtoHtml
+    , serviceProtoHtml
+    , controlProtoHtml
+    ]
   where
+    versionHandshakeInfo =
+      $(describeProtocol ''VersionHandshakeProtocol [])
     serviceInfo =
-      $(describeProtocol ''ServiceProtocol ''StandardCrypto)
+      $(describeProtocol ''ServiceProtocol [''IO, ''StandardCrypto])
     controlInfo =
-      $(describeProtocol ''ControlProtocol ''StandardCrypto)
+      $(describeProtocol ''ControlProtocol [''IO, ''StandardCrypto])
 
+    versionHandshakeProtoHtml = renderProtocol versionHandshakeInfo
     serviceProtoHtml = renderProtocol serviceInfo
     controlProtoHtml = renderProtocol controlInfo
     tocHtml = H.div ! HA.class_ "toc-master" $ do
                 H.h1 "Table Of Contents"
                 renderTOC $ TOC ("Protocols", "")
-                  [ protocolTOC serviceInfo
+                  [ protocolTOC versionHandshakeInfo
+                  , protocolTOC serviceInfo
                   , protocolTOC controlInfo
                   ]

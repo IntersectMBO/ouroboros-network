@@ -20,6 +20,7 @@ import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Serialization.Spec.Class
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Data.Char
+import Debug.Trace
 
 data AgencyID
   = ClientAgencyID
@@ -58,8 +59,13 @@ getConName = \case
   RecGadtC (n:_) _ _ -> n
   x -> error $ "Cannot get constructor name for " ++ show x
 
-describeProtocol :: Name -> Name -> ExpQ
-describeProtocol protocol crypto = do
+applyTyArgs :: Type -> [Name] -> Type
+applyTyArgs t [] = t
+applyTyArgs t (x:xs) =
+  applyTyArgs (AppT t (ConT x)) xs
+
+describeProtocol :: Name -> [Name] -> ExpQ
+describeProtocol protocol tyArgs = do
   info <- reifyDatatype protocol
   protoDescription <- getDescription protocol
   let pname = nameBase (datatypeName info)
@@ -70,14 +76,16 @@ describeProtocol protocol crypto = do
 
     return (conName, stateDescription, agencyID)
 
-  [DataInstD _ _ ty _ cons _] <- reifyInstances ''Message [AppT (AppT (ConT protocol) (ConT ''IO)) (ConT crypto)]
+  let protocolTy = applyTyArgs (ConT protocol) tyArgs
 
-  let messageInfos = map (describeProtocolMessage protocol crypto . extractConName) cons
+  [DataInstD _ _ ty _ cons _] <- reifyInstances ''Message [protocolTy]
+
+  let messageInfos = map (describeProtocolMessage protocol tyArgs . extractConName) cons
 
   [| ProtocolDescription
         $(litE (stringL pname))
         protoDescription
-        (versionIdentifier (Proxy :: Proxy ($(conT protocol) IO $(conT crypto))))
+        (versionIdentifier (Proxy :: Proxy ($(pure protocolTy))))
         $(listE
             [ [| ( $(litE . stringL . nameBase $ conName), stateDescription, agencyID) |]
             | (conName, stateDescription, agencyID) <- pstates
@@ -102,12 +110,6 @@ unearthType (SigT a _) = unearthType a
 unearthType t = t
 
 
-extractStates :: Type -> (Type, Type)
-extractStates (AppT (AppT (AppT (ConT m) _c) a) b)
-  | m == ''Message
-  = (a, b)
-extractStates x = error $ show x
-
 prettyTy :: Type -> String
 prettyTy = snd . go
   where
@@ -131,59 +133,55 @@ getDescription name = do
   annotations <- reifyAnnotations (AnnLookupName name)
   return $ (Description . (:[]) <$> haddock) ++ annotations
 
-setTyVars2 :: Type -> Type -> Type -> Type
-setTyVars2 (AppT (AppT a _m) _c) m c = AppT (AppT a m) c
-setTyVars2 t _ _ = error $ show t
-
 unSigTy :: Type -> Type
 unSigTy (SigT t _) = t
 unSigTy t@(VarT {}) = t
+unSigTy t@(PromotedT {}) = t
 unSigTy t = error $ show t
 
-describeProtocolMessage :: Name -> Name -> Name -> ExpQ
-describeProtocolMessage protocolName crypto msgName = do
-  msgInfo <- reify msgName
+describeProtocolMessage :: Name -> [Name] -> Name -> ExpQ
+describeProtocolMessage protocolName tyArgs msgName = do
+  msgInfo <- reifyConstructor msgName
+  msgTyInfo <- reifyDatatype msgName
   msgDescription <- getDescription msgName
-  runIO . putStrLn $ show msgName ++ ": " ++ show msgDescription
-  case msgInfo of
-    DataConI conName (ForallT (tvM : tvC : tyVars) [] x) tyName -> do
-      let (payloads, lastArg) = argSplit x
-      let (fromState, toState) = extractStates lastArg
-          fromStateName = prettyTy . unearthType $ fromState
-          toStateName = prettyTy . unearthType $ toState
-          undefinedMessageExpr = foldl appE (conE msgName) [ [e|undefined|] | _ <- payloads ]
 
-      [e| MessageDescription
-            { messageName = $(litE . stringL . nameBase $ msgName)
-            , messageDescription = msgDescription
-            , messagePayload = $(listE (map (litE . stringL . prettyTy) payloads))
-            , messageFromState = $(litE (stringL . prettyTy $ unearthType fromState))
-            , messageToState = $(litE (stringL . prettyTy $ unearthType toState))
-            , messageInfo =
-                infoOf (
-                      $undefinedMessageExpr ::
-                        ( Message
-                            ($(conT protocolName) IO $(conT crypto))
-                            $(pure $ unSigTy fromState)
-                            $(pure $ unSigTy toState)
-                        )
+
+  let payloads = constructorFields msgInfo
+      undefinedMessageExpr = foldl appE (conE msgName) [ [e|undefined|] | _ <- payloads ]
+
+      tyVarName :: TyVarBndr a -> Name
+      tyVarName (PlainTV n _) = n
+      tyVarName (KindedTV n _ _) = n
+
+      findType :: Name -> Cxt -> Type
+      findType n (AppT (AppT EqualityT (VarT vn)) t : xs)
+        | vn == n
+        = t
+      findType n (x : xs) = findType n xs
+      findType n [] = VarT n
+
+      fromStateVar = tyVarName . last . init $ datatypeVars msgTyInfo
+      toStateVar = tyVarName . last $ datatypeVars msgTyInfo
+      fromState = findType fromStateVar (constructorContext msgInfo)
+      toState = findType toStateVar (constructorContext msgInfo)
+
+  [e| MessageDescription
+        { messageName = $(litE . stringL . nameBase $ msgName)
+        , messageDescription = msgDescription
+        , messagePayload = $(listE (map (litE . stringL . prettyTy) payloads))
+        , messageFromState = $(litE (stringL . prettyTy $ unearthType fromState))
+        , messageToState = $(litE (stringL . prettyTy $ unearthType toState))
+        , messageInfo =
+            infoOf (
+                  $undefinedMessageExpr ::
+                    ( $(conT $ datatypeName msgTyInfo)
+                        $(pure $ applyTyArgs (ConT protocolName) tyArgs)
+                        $(pure $ unSigTy fromState)
+                        $(pure $ unSigTy toState)
                     )
-            }
-        |]
-    _ -> error $ show msgInfo
-  where
-    formatT :: Type -> (Bool, String)
-    -- formatT (AppT a b) =
-    --   let
-    --     (_, l) = formatT a
-    --     (complexR, r) = formatT b
-    --     in
-    --       (True, l ++ " " ++ (if complexR then "(" ++ r ++ ")" else r))
-    -- formatT (ConT n) = (False, nameBase n)
-    -- formatT (VarT n) = (False, nameBase n)
-    -- formatT (SigT t _) = formatT t
-    -- formatT (PromotedT n) = (False, nameBase n)
-    formatT x = (True, show x)
+                )
+        }
+    |]
 
 extractConName :: Con -> Name
 extractConName con = case con of

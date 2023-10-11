@@ -52,6 +52,9 @@ library
                    Cardano.KESAgent.Serialization.Spec.OrphansBase
                    Cardano.KESAgent.Serialization.Spec.OrphansCardano
                    Cardano.KESAgent.Serialization.Spec.TH
+                   Cardano.KESAgent.Protocols.VersionHandshake.Driver
+                   Cardano.KESAgent.Protocols.VersionHandshake.Peers
+                   Cardano.KESAgent.Protocols.VersionHandshake.Protocol
                    Cardano.KESAgent.Protocols.Service.Driver
                    Cardano.KESAgent.Protocols.Service.Peers
                    Cardano.KESAgent.Protocols.Service.Protocol
