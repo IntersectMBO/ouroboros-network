@@ -12,10 +12,10 @@ data PeerSource = PeerSourceLocalRoot
   deriving (Eq, Ord, Show, Enum)
 
 data PeerStatus =
-       PeerReallyCold
+       PeerCold
      -- ^ Peer is in true cold which means no connection to exists
      -- and the outbound governor is safe to promote it.
-     | PeerCold
+     | PeerCooling
      -- ^ Peer is in cold state but its connection still lingers.
      -- I.e. it is still in progress to be fully demoted.
      | PeerWarm

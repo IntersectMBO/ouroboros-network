@@ -559,10 +559,10 @@ envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
                           + targetNumberOfEstablishedPeers
                           + targetNumberOfActivePeers)
 
-envEventCredits (TraceEnvPeersDemote Noop   _)       = 10
-envEventCredits (TraceEnvPeersDemote ToWarm _)       = 30
-envEventCredits (TraceEnvPeersDemote ToCold _)       = 30
-envEventCredits (TraceEnvPeersDemote ToReallyCold _) = 30
+envEventCredits (TraceEnvPeersDemote Noop   _)    = 10
+envEventCredits (TraceEnvPeersDemote ToWarm _)    = 30
+envEventCredits (TraceEnvPeersDemote ToCooling _) = 30
+envEventCredits (TraceEnvPeersDemote ToCold _)    = 30
 
 envEventCredits  TraceEnvPeersStatus{}          = 0
 -- These events are visible in the environment but are the result of actions
@@ -806,11 +806,11 @@ check_governor_connstatus _ trace0 =
       where
         lastEnvStatus =
           listToMaybe
-            [ Map.filter (not . isPeerCold) status
+            [ Map.filter (not . isPeerCooling) status
             | (_, MockEnvEvent (TraceEnvPeersStatus status)) <- reverse trace ]
 
-        isPeerCold PeerCold = True
-        isPeerCold _        = False
+        isPeerCooling PeerCooling = True
+        isPeerCooling _           = False
 
         lastGovStatus =
           listToMaybe
@@ -1484,8 +1484,9 @@ recentPeerShareActivity d =
         (E t (GovernorEvent (TraceDemoteLocalAsynchronous m)) : txs) =
       let peersDemotedToCold = Map.foldrWithKey'
                                 (\k v r -> case v of
-                                  (PeerCold, _) -> k : r
-                                  _             -> r
+                                  (PeerCold, _)    -> k : r
+                                  (PeerCooling, _) -> k : r
+                                  _                -> r
                                 ) [] m
           recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
           recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
@@ -1507,8 +1508,9 @@ recentPeerShareActivity d =
         (E t (GovernorEvent (TraceDemoteAsynchronous m)) : txs) =
       let peersDemotedToCold = Map.foldrWithKey'
                                 (\k v r -> case v of
-                                  (PeerCold, _) -> k : r
-                                  _             -> r
+                                  (PeerCold, _)    -> k : r
+                                  (PeerCooling, _) -> k : r
+                                  _                -> r
                                 ) [] m
           recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
           recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
@@ -1520,8 +1522,9 @@ recentPeerShareActivity d =
         (E t (GovernorEvent (TraceDemoteBigLedgerPeersAsynchronous m)) : txs) =
       let peersDemotedToCold = Map.foldrWithKey'
                                 (\k v r -> case v of
-                                  (PeerCold, _) -> k : r
-                                  _             -> r
+                                  (PeerCold, _)    -> k : r
+                                  (PeerCooling, _) -> k : r
+                                  _                -> r
                                 ) [] m
           recentSet' = foldl' (flip Set.delete) recentSet peersDemotedToCold
           recentPSQ' = foldl' (flip PSQ.delete) recentPSQ peersDemotedToCold
@@ -2034,12 +2037,12 @@ prop_governor_target_established_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      TraceDemoteWarmFailed _ _ peer _ ->
@@ -2138,12 +2141,12 @@ prop_governor_target_established_big_ledger_peers_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      TraceDemoteWarmBigLedgerPeerFailed _ _ peer _ ->
@@ -2661,12 +2664,12 @@ prop_governor_target_established_local env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      _ -> Nothing

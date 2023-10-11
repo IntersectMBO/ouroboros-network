@@ -1381,13 +1381,13 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                          | otherwise         -> Just failures
                          where
                            failures =
-                             Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                             Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                        TraceDemoteLocalAsynchronous status
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
                            failures =
-                             Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                             Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                        TracePromoteWarmFailed _ _ peer _ ->
                          Just (Set.singleton peer)
                        _ -> Nothing
@@ -1569,7 +1569,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                          | Set.null failures -> Nothing
                          | otherwise -> Just failures
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents
@@ -1953,7 +1953,7 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                        _            -> False)
             . Signal.fromEventsWith (Right Set.empty)
             . Signal.selectEvents
-                (\case DiffusionPeerSelectionActionsTrace (PeerStatusChanged (HotToCold connId)) ->
+                (\case DiffusionPeerSelectionActionsTrace (PeerStatusChanged (HotToCooling connId)) ->
                            Just $ Right demotions
                          where
                            demotions = Set.singleton (remoteAddress connId)
@@ -1968,15 +1968,15 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                        DiffusionPeerSelectionTrace (TraceDemoteAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                        DiffusionPeerSelectionTrace (TraceDemoteBigLedgerPeersAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                        DiffusionPeerSelectionTrace (TraceDemoteLocalAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                        DiffusionPeerSelectionTrace (TraceDemoteHotFailed _ _ peeraddr _) ->
                            Just $ Left (Just failures)
                          where
@@ -2646,9 +2646,9 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
                                         -> False
                                     (WithTime _ (PeerStatusChangeFailure tr _)
                                       , _) -> case tr of
-                                                HotToCold{}  -> False
-                                                WarmToCold{} -> False
-                                                _            -> True
+                                                HotToCooling{}  -> False
+                                                WarmToCooling{} -> False
+                                                _               -> True
                                     _   -> True
                             )
                 )
@@ -2665,8 +2665,8 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
     getConnId :: PeerStatusChangeType addr -> Maybe (ConnectionId addr)
     getConnId (HotToWarm connId) = Just connId
     getConnId (WarmToHot connId) = Just connId
-    getConnId (WarmToCold connId) = Just connId
-    getConnId (HotToCold connId) = Just connId
+    getConnId (WarmToCooling connId) = Just connId
+    getConnId (HotToCooling connId)  = Just connId
     getConnId (ColdToWarm (Just localAddress) remoteAddress) = Just ConnectionId { localAddress, remoteAddress }
     getConnId _ = Nothing
 
