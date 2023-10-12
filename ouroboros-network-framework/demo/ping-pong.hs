@@ -18,10 +18,12 @@ import           Control.Concurrent.Async
 import           Control.Monad (when)
 import           Control.Tracer
 
+import           GHC.Clock (getMonotonicTime)
 import           System.Directory
 import           System.Environment
 import           System.Exit
 import           System.IO
+import           Text.Printf (printf)
 
 import           Ouroboros.Network.ErrorPolicy
 import           Ouroboros.Network.IOManager
@@ -86,6 +88,12 @@ maximumMiniProtocolLimits =
       maximumIngressQueue = maxBound
     }
 
+tracer :: Show a => Tracer IO a
+tracer = f `contramapM` stdoutTracer
+  where
+    f a = do
+      t <- getMonotonicTime
+      return (printf "%-20f %s" t (show a))
 
 --
 -- Ping pong demo
@@ -94,7 +102,7 @@ maximumMiniProtocolLimits =
 demoProtocol0 :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b
               -> OuroborosApplicationWithMinimalCtx appType addr bytes m a b
 demoProtocol0 pingPong =
-    OuroborosApplication $ [
+    OuroborosApplication [
       MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolLimits = maximumMiniProtocolLimits,
@@ -126,7 +134,7 @@ clientPingPong pipelined =
     pingPongInitiator | pipelined =
       InitiatorProtocolOnly $
       mkMiniProtocolCbFromPeerPipelined $ \_ctx ->
-        (contramap show stdoutTracer
+        ( tracer
         , codecPingPong
         , pingPongClientPeerPipelined (pingPongClientPipelinedMax 5)
         )
@@ -173,7 +181,7 @@ serverPingPong =
     pingPongResponder =
       ResponderProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
-        ( contramap show stdoutTracer
+        ( tracer
         , codecPingPong
         , pingPongServerPeer pingPongServerStandard
         )
@@ -233,7 +241,7 @@ clientPingPong2 =
     pingpong =
       InitiatorProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
-        ( contramap (show . (,) (1 :: Int)) stdoutTracer
+        ( contramap (show . (,) (1 :: Int)) tracer
         , codecPingPong
         , pingPongClientPeer (pingPongClientCount 5)
         )
@@ -241,7 +249,7 @@ clientPingPong2 =
     pingpong'=
       InitiatorProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
-        ( contramap (show . (,) (2 :: Int)) stdoutTracer
+        ( contramap (show . (,) (2 :: Int)) tracer
         , codecPingPong
         , pingPongClientPeer (pingPongClientCount 5)
         )
@@ -293,7 +301,7 @@ serverPingPong2 =
     pingpong =
       ResponderProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
-        ( contramap (show . (,) (1 :: Int)) stdoutTracer
+        ( contramap (show . (,) (1 :: Int)) tracer
         , codecPingPong
         , pingPongServerPeer pingPongServerStandard
         )
@@ -301,7 +309,7 @@ serverPingPong2 =
     pingpong' =
       ResponderProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
-        ( contramap (show . (,) (2 :: Int)) stdoutTracer
+        ( contramap (show . (,) (2 :: Int)) tracer
         , codecPingPong
         , pingPongServerPeer pingPongServerStandard
         )
