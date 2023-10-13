@@ -29,7 +29,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 import           System.Random (randomR)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
 import           Ouroboros.Network.ExitPolicy (ReconnectDelay)
 import qualified Ouroboros.Network.ExitPolicy as ExitPolicy
 import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
@@ -131,14 +130,10 @@ inboundPeers PeerSelectionActions{
 --
 connections :: forall m peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
-            => StrictTVar m (Set peeraddr)
-            -- ^ Cooling Peers cache so that we don't consider connenctions being
-            -- cooled
-            -> PeerSelectionActions peeraddr peerconn m
+            => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-connections coolingPeersCacheTVar
-            PeerSelectionActions{
+connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
             st@PeerSelectionState {
@@ -149,16 +144,16 @@ connections coolingPeersCacheTVar
               inProgressDemoteHot,
               inProgressDemoteWarm,
               inProgressPromoteWarm,
+              inProgressDemoteToCold,
               fuzzRng
             } =
     Guarded Nothing $ do
       -- Get previously cooling peers
-      coolingPeers <- readTVar coolingPeersCacheTVar
       monitorStatus <- traverse monitorPeerConnection
                                 (EstablishedPeers.toMap establishedPeers)
           -- filter previously cooling peers from the demotion sets
-      let demotions = asynchronousDemotions coolingPeers monitorStatus
-                      `Map.withoutKeys` coolingPeers
+      let demotions = asynchronousDemotions monitorStatus
+                      `Map.withoutKeys` inProgressDemoteToCold
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCoolingOrCold) = Map.partition ((==PeerWarm) . fst) demotions
           demotedToCold = Map.filter ((==PeerCold) . fst) demotedToCoolingOrCold
@@ -175,12 +170,6 @@ connections coolingPeersCacheTVar
                                      )
                          PeerCold -> a
                        ) <$> demotions
-      -- update cache by removing the ones that were demoted to really cold
-      -- and adding the ones demoted to cold.
-      modifyTVar coolingPeersCacheTVar
-                 ( (Set.\\ Map.keysSet demotedToCold)
-                 . (<> Map.keysSet demotedToCoolingOrCold)
-                 )
       return $ \now ->
         let -- Remove all asynchronous demotions from 'activePeers'
             activePeers'       = activePeers Set.\\ Map.keysSet demotions'
@@ -223,6 +212,11 @@ connections coolingPeersCacheTVar
             bigLedgerPeersDemotions = nonLocalDemotions
                    `Map.restrictKeys` bigLedgerPeers
 
+            inProgressDemoteToCold' =
+                 inProgressDemoteToCold
+              <> Map.keysSet (Map.filterWithKey (\k _ -> k `Map.notMember` demotedToCold)
+                                               demotedToCoolingOrCold)
+
         in assert (activePeers' `Set.isSubsetOf`
                      Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
@@ -245,7 +239,10 @@ connections coolingPeersCacheTVar
                                 -- reason we need to adjust 'inProgressPromoteWarm'.
                                 inProgressPromoteWarm
                                                   = inProgressPromoteWarm
-                                                      Set.\\ Map.keysSet demotedToCold,
+                                                      Set.\\ Map.keysSet demotedToCoolingOrCold,
+
+                                inProgressDemoteToCold =
+                                  inProgressDemoteToCold',
 
                                 -- Note that we do not need to adjust
                                 -- inProgressDemoteWarm or inProgressDemoteHot
@@ -259,46 +256,44 @@ connections coolingPeersCacheTVar
   where
     -- Those demotions that occurred not as a result of action by the governor.
     -- They're further classified into demotions to warm, and demotions to cold.
-    asynchronousDemotions :: Set peeraddr
+    asynchronousDemotions :: Map peeraddr (PeerStatus, Maybe ReconnectDelay)
                           -> Map peeraddr (PeerStatus, Maybe ReconnectDelay)
-                          -> Map peeraddr (PeerStatus, Maybe ReconnectDelay)
-    asynchronousDemotions previouslyColdPeers = Map.mapMaybeWithKey (asyncDemotion previouslyColdPeers)
+    asynchronousDemotions = Map.mapMaybeWithKey asyncDemotion
 
     -- The asynchronous ones, those not directed by the governor, are:
     -- hot -> warm, warm -> cold and hot -> cold, other than the ones in the in
     -- relevant progress set.
-    asyncDemotion :: Set peeraddr
-                  -> peeraddr
+    asyncDemotion :: peeraddr
                   -> (PeerStatus, Maybe ReconnectDelay)
                   -> Maybe (PeerStatus, Maybe ReconnectDelay)
 
     -- a hot -> warm transition has occurred if it is now warm, and it was
     -- hot, but not in the set we were deliberately demoting synchronously
-    asyncDemotion _ peeraddr (PeerWarm, returnCommand)
+    asyncDemotion peeraddr (PeerWarm, returnCommand)
       | peeraddr `Set.member`    activePeers
       , peeraddr `Set.notMember` inProgressDemoteHot  = Just (PeerWarm, returnCommand)
 
-    -- a warm -> cold transition has occurred if it is now cold, and it was
+    -- a warm -> cooling transition has occurred if it is now cooling, and it was
     -- warm, but not in the set we were deliberately demoting synchronously
-    asyncDemotion previouslyColdPeers peeraddr (PeerCooling, returnCommand)
+    asyncDemotion peeraddr (PeerCooling, returnCommand)
       | peeraddr `EstablishedPeers.member` establishedPeers
       , peeraddr `Set.notMember` activePeers
       , peeraddr `Set.notMember` inProgressDemoteWarm
-      , peeraddr `Set.notMember` previouslyColdPeers = Just (PeerCooling, returnCommand)
+      , peeraddr `Set.notMember` inProgressDemoteToCold = Just (PeerCooling, returnCommand)
 
-    -- a hot -> cold transition has occurred if it is now cold, and it was hot
-    asyncDemotion previouslyColdPeers peeraddr (PeerCooling, returnCommand)
+    -- a hot -> cooling transition has occurred if it is now cooling, and it was hot
+    asyncDemotion peeraddr (PeerCooling, returnCommand)
       | peeraddr `Set.member`    activePeers
       , peeraddr `Set.notMember` inProgressDemoteHot
-      , peeraddr `Set.notMember` previouslyColdPeers = Just (PeerCooling, returnCommand)
+      , peeraddr `Set.notMember` inProgressDemoteToCold = Just (PeerCooling, returnCommand)
 
-    -- a cold -> really cold transition has occurred if it is now really cold, and it was cold
-    asyncDemotion _ peeraddr (PeerCold, returnCommand)
+    -- a cooling -> cold transition has occurred if it is now cold, and it was cooling
+    asyncDemotion peeraddr (PeerCold, returnCommand)
       | peeraddr `EstablishedPeers.member` establishedPeers || peeraddr `Set.member` activePeers
       , peeraddr `Set.notMember` inProgressDemoteWarm
       , peeraddr `Set.notMember` inProgressDemoteHot = Just (PeerCold, returnCommand)
 
-    asyncDemotion _ _        _                          = Nothing
+    asyncDemotion _        _                          = Nothing
 
 
 -----------------------------------------------
@@ -325,6 +320,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
              establishedPeers,
              activePeers,
              inProgressDemoteHot,
+             inProgressDemoteToCold,
              targets = PeerSelectionTargets{targetNumberOfKnownPeers}
            } =
     Guarded Nothing $ do
@@ -372,9 +368,12 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           selectedToDemote  :: Set peeraddr
           selectedToDemote' :: Map peeraddr peerconn
 
-          selectedToDemote  = activePeers `Set.intersection` removedSet
+          selectedToDemote  = (activePeers `Set.intersection` removedSet)
+                                Set.\\ inProgressDemoteToCold
           selectedToDemote' = EstablishedPeers.toMap establishedPeers
-                               `Map.restrictKeys` (selectedToDemote Set.\\ inProgressDemoteHot)
+                               `Map.restrictKeys` (selectedToDemote
+                                                     Set.\\ inProgressDemoteHot
+                                                  )
       return $ \_now ->
 
           assert (Set.isSubsetOf

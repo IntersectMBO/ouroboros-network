@@ -414,6 +414,10 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        inProgressDemoteWarm        :: !(Set peeraddr),
        inProgressDemoteHot         :: !(Set peeraddr),
 
+       -- | Peers that had an async demotion and their connections are still
+       -- being closed
+       inProgressDemoteToCold      :: !(Set peeraddr),
+
        -- | Rng for fuzzy delay
        fuzzRng                     :: !StdGen,
 
@@ -537,6 +541,7 @@ emptyPeerSelectionState rng localRoots =
       inProgressPromoteWarm         = Set.empty,
       inProgressDemoteWarm          = Set.empty,
       inProgressDemoteHot           = Set.empty,
+      inProgressDemoteToCold        = Set.empty,
       fuzzRng                       = rng,
       countersCache                 = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots)
     }
@@ -610,6 +615,12 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.isSubsetOf inProgressDemoteWarm  warmPeersSet)
   . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet)
   . assert (Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm))
+
+  . assert (Set.isSubsetOf inProgressDemoteToCold establishedPeersSet)
+  . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressPromoteWarm))
+  . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressPromoteCold))
+  . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressDemoteHot))
+  . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressDemoteWarm))
 
     -- `bigLedgerPeers` is a subset of known peers and disjoint from public and
     -- local root peers.

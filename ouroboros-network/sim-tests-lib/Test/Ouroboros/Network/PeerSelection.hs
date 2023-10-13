@@ -1292,7 +1292,8 @@ prop_governor_target_known_2_opportunity_taken env =
             (\x ->
               KnownPeers.getAvailablePeerSharingPeers
                 (EstablishedPeers.availableForPeerShare
-                                    (Governor.establishedPeers x))
+                                    (Governor.establishedPeers x)
+                Set.\\ (Governor.inProgressDemoteToCold x))
                 (Governor.knownPeers x))
                 events
 
@@ -2212,6 +2213,10 @@ prop_governor_target_active_below env =
         govLocalRootPeersSig =
           selectGovState Governor.localRootPeers events
 
+        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
+        govInProgressDemoteToColdSig =
+          selectGovState Governor.inProgressDemoteToCold events
+
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
@@ -2233,6 +2238,10 @@ prop_governor_target_active_below env =
               (\case TracePromoteWarmFailed _ _ peer _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
+                       Just (Set.singleton peer)
+                     TraceDemoteWarmFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
+                     TraceDemoteHotFailed _ _ peer _ ->
                        Just (Set.singleton peer)
                      --TODO
                      TraceDemoteAsynchronous status
@@ -2261,7 +2270,7 @@ prop_governor_target_active_below env =
         -- want to promote any, since we'd then be above target for the local
         -- root peer group.
         --
-        promotionOpportunity target local established active recentFailures
+        promotionOpportunity target local established active recentFailures inProgressDemoteToCold
           | Set.size active >= target
           = Set.empty
 
@@ -2269,6 +2278,7 @@ prop_governor_target_active_below env =
           = established Set.\\ active
                         Set.\\ LocalRootPeers.keysSet local
                         Set.\\ recentFailures
+                        Set.\\ inProgressDemoteToCold
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
@@ -2278,11 +2288,12 @@ prop_governor_target_active_below env =
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
             <*> govActiveFailuresSig
+            <*> govInProgressDemoteToColdSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            15 -- seconds
             id
             promotionOpportunities
 
@@ -2322,6 +2333,10 @@ prop_governor_target_active_big_ledger_peers_below env =
               EstablishedPeers.toSet . Governor.establishedPeers)
             events
 
+        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
+        govInProgressDemoteToColdSig =
+          selectGovState Governor.inProgressDemoteToCold events
+
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
           selectGovState (takeBigLedgerPeers Governor.activePeers) events
@@ -2349,13 +2364,14 @@ prop_governor_target_active_big_ledger_peers_below env =
 
         -- There are no opportunities if we're at or above target.
         --
-        promotionOpportunity target established active recentFailures
+        promotionOpportunity target established active recentFailures inProgressDemoteToCold
           | Set.size active >= target
           = Set.empty
 
           | otherwise
           = established Set.\\ active
                         Set.\\ recentFailures
+                        Set.\\ inProgressDemoteToCold
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
@@ -2364,6 +2380,7 @@ prop_governor_target_active_big_ledger_peers_below env =
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
             <*> govActiveFailuresSig
+            <*> govInProgressDemoteToColdSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
@@ -2396,6 +2413,10 @@ prop_governor_target_established_above env =
         envTargetsSig =
           selectEnvTargets targetNumberOfEstablishedPeers events
 
+        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
+        govInProgressDemoteToColdSig =
+          selectGovState Governor.inProgressDemoteToCold events
+
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
           selectGovState Governor.localRootPeers events
@@ -2415,13 +2436,14 @@ prop_governor_target_established_above env =
         -- Otherwise the demotion opportunities are the established peers that
         -- are not active and not local root peers.
         --
-        demotionOpportunity target local established active
+        demotionOpportunity target local established active inProgressDemoteToCold
           | Set.size established <= target
           = Set.empty
 
           | otherwise
           = established Set.\\ active
                         Set.\\ LocalRootPeers.keysSet local
+                        Set.\\ inProgressDemoteToCold
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
@@ -2429,6 +2451,7 @@ prop_governor_target_established_above env =
             <*> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
+            <*> govInProgressDemoteToColdSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
@@ -2442,12 +2465,13 @@ prop_governor_target_established_above env =
            "demotion opportunities, ignored too long)") $
 
         signalProperty 20 show
-          (\(_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,) <$> envTargetsSig
+          (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,,) <$> envTargetsSig
                    <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
                    <*> govEstablishedPeersSig
                    <*> govActivePeersSig
                    <*> demotionOpportunities
+                   <*> govInProgressDemoteToColdSig
                    <*> demotionOpportunitiesIgnoredTooLong)
 
 
@@ -2472,6 +2496,10 @@ prop_governor_target_established_big_ledger_peers_above env =
               EstablishedPeers.toSet . Governor.establishedPeers)
             events
 
+        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
+        govInProgressDemoteToColdSig =
+          selectGovState Governor.inProgressDemoteToCold events
+
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
           selectGovState (takeBigLedgerPeers Governor.activePeers) events
@@ -2480,18 +2508,20 @@ prop_governor_target_established_big_ledger_peers_above env =
         -- Otherwise the demotion opportunities are the established peers that
         -- are not active and not local root peers.
         --
-        demotionOpportunity target established active
+        demotionOpportunity target established active inProgressDemoteToCold
           | Set.size established <= target
           = Set.empty
 
           | otherwise
           = established Set.\\ active
+                        Set.\\ inProgressDemoteToCold
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
             <$> envTargetsSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
+            <*> govInProgressDemoteToColdSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
@@ -2749,6 +2779,10 @@ prop_governor_target_active_local_below env =
         govActivePeersSig =
           selectGovState Governor.activePeers events
 
+        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
+        govInProgressDemoteToColdSig =
+          selectGovState Governor.inProgressDemoteToCold events
+
         govActiveFailuresSig :: Signal (Set PeerAddr)
         govActiveFailuresSig =
             Signal.keyedLinger
@@ -2778,13 +2812,14 @@ prop_governor_target_active_local_below env =
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\local established active recentFailures ->
+          (\local established active recentFailures inProgressDemoteToCold ->
               Set.unions
                 [ -- There are no opportunities if we're at or above target
                   if Set.size groupActive >= hotTarget
                      then Set.empty
                      else groupEstablished Set.\\ active
                                            Set.\\ recentFailures
+                                           Set.\\ inProgressDemoteToCold
                 | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
                 , let groupActive      = group `Set.intersection` active
                       groupEstablished = group `Set.intersection` established
@@ -2793,6 +2828,7 @@ prop_governor_target_active_local_below env =
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
             <*> govActiveFailuresSig
+            <*> govInProgressDemoteToColdSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =

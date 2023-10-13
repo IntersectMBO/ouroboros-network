@@ -56,7 +56,7 @@
 
 * Increase keyed timeout on a testnet test that was failing.
 
-* Adds new constructor to `PeerStatus`: `PeerReallyCold`. This is in order to
+* Adds new constructor to `PeerStatus`: `PeerCooling`. This is in order to
   fix a possible race where a node would be asynchronously demoted to cold
   state, put into the cold set and wrongly forgotten, while its connection
   was not yet cleaned up. This could lead to the peer being added to the known

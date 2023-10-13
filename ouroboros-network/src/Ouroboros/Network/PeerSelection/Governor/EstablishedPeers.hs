@@ -79,7 +79,8 @@ belowTargetLocal actions
                    localRootPeers,
                    knownPeers,
                    establishedPeers,
-                   inProgressPromoteCold
+                   inProgressPromoteCold,
+                   inProgressDemoteToCold
                  }
 
     -- Are there any groups of local peers that are below target?
@@ -96,6 +97,7 @@ belowTargetLocal actions
                   localAvailableToConnect
                      Set.\\ localEstablishedPeers
                      Set.\\ localConnectInProgress
+                     Set.\\ inProgressDemoteToCold
           , not (Set.null availableToPromote)
           , (WarmValency warmTarget, members, membersEstablished) <- groupsBelowTarget
           , let membersAvailableToPromote = Set.intersection members availableToPromote
@@ -173,6 +175,7 @@ belowTargetOther actions
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
+                   inProgressDemoteToCold,
                    targets = PeerSelectionTargets {
                                targetNumberOfEstablishedPeers
                              }
@@ -199,6 +202,7 @@ belowTargetOther actions
           availableToPromote = availableToConnect
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
+                                 Set.\\ inProgressDemoteToCold
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
@@ -251,6 +255,7 @@ belowTargetBigLedgerPeers actions
                             knownPeers,
                             establishedPeers,
                             inProgressPromoteCold,
+                            inProgressDemoteToCold,
                             targets = PeerSelectionTargets {
                                         targetNumberOfEstablishedBigLedgerPeers
                                       }
@@ -278,6 +283,7 @@ belowTargetBigLedgerPeers actions
           availableToPromote = availableToConnect
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
+                                 Set.\\ inProgressDemoteToCold
           numPeersToPromote  = targetNumberOfEstablishedBigLedgerPeers
                              - numEstablishedPeers
                              - numConnectInProgress
@@ -472,6 +478,7 @@ aboveTargetOther actions
                    activePeers,
                    inProgressDemoteWarm,
                    inProgressPromoteWarm,
+                   inProgressDemoteToCold,
                    targets = PeerSelectionTargets {
                                targetNumberOfEstablishedPeers
                              }
@@ -503,15 +510,18 @@ aboveTargetOther actions
                                    - numActivePeers)
                             - Set.size (inProgressDemoteWarm  Set.\\ bigLedgerPeers)
                             - Set.size (inProgressPromoteWarm Set.\\ bigLedgerPeers)
-  , numPeersToDemote > 0
-  = Guarded Nothing $ do
 
-      let availableToDemote :: Set peeraddr
-          availableToDemote = EstablishedPeers.toSet establishedPeers
-                                Set.\\ activePeers
-                                Set.\\ LocalRootPeers.keysSet localRootPeers
-                                Set.\\ inProgressDemoteWarm
-                                Set.\\ inProgressPromoteWarm
+        availableToDemote :: Set peeraddr
+        availableToDemote = EstablishedPeers.toSet establishedPeers
+                              Set.\\ activePeers
+                              Set.\\ LocalRootPeers.keysSet localRootPeers
+                              Set.\\ inProgressDemoteWarm
+                              Set.\\ inProgressPromoteWarm
+                              Set.\\ inProgressDemoteToCold
+
+  , numPeersToDemote > 0
+  , not (Set.null availableToDemote)
+  = Guarded Nothing $ do
       selectedToDemote <- pickPeers st
                             policyPickWarmPeersToDemote
                             availableToDemote
@@ -551,6 +561,7 @@ aboveTargetBigLedgerPeers actions
                             activePeers,
                             inProgressDemoteWarm,
                             inProgressPromoteWarm,
+                            inProgressDemoteToCold,
                             targets = PeerSelectionTargets {
                                         targetNumberOfEstablishedBigLedgerPeers
                                       }
@@ -577,15 +588,18 @@ aboveTargetBigLedgerPeers actions
                                      - Set.size inProgressDemoteWarm
                                      - Set.size inProgressPromoteWarm
 
+        availableToDemote :: Set peeraddr
+        availableToDemote = EstablishedPeers.toSet establishedPeers
+                             `Set.intersection` bigLedgerPeers
+                              Set.\\ activePeers
+                              Set.\\ inProgressDemoteWarm
+                              Set.\\ inProgressPromoteWarm
+                              Set.\\ inProgressDemoteToCold
+
   , numBigLedgerPeersToDemote > 0
+  , not (Set.null availableToDemote)
   = Guarded Nothing $ do
 
-      let availableToDemote :: Set peeraddr
-          availableToDemote = EstablishedPeers.toSet establishedPeers
-                               `Set.intersection` bigLedgerPeers
-                                Set.\\ activePeers
-                                Set.\\ inProgressDemoteWarm
-                                Set.\\ inProgressPromoteWarm
       selectedToDemote <- pickPeers st
                             policyPickWarmPeersToDemote
                             availableToDemote
