@@ -30,9 +30,9 @@ module Cardano.KESAgent.Processes.Agent
   )
   where
 
+import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
 import Cardano.KESAgent.KES.Classes ( MonadKES )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
-import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
 import Cardano.KESAgent.KES.Evolution
   ( getCurrentKESPeriodWith
   , updateKESTo
@@ -64,9 +64,13 @@ import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
 import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher )
 import Cardano.KESAgent.Protocols.Service.Protocol ( ServiceProtocol )
+import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.VersionedProtocol ( VersionedProtocol (..), NamedCrypto (..) )
-import Cardano.KESAgent.Serialization.TextEnvelope ( decodeTextEnvelopeFile )
+import Cardano.KESAgent.Protocols.VersionHandshake.Driver ( VersionHandshakeDriverTrace (..), versionHandshakeDriver )
+import Cardano.KESAgent.Protocols.VersionHandshake.Peers ( versionHandshakeServer )
+import Cardano.KESAgent.Protocols.VersionHandshake.Protocol ( VersionHandshakeProtocol )
 import Cardano.KESAgent.Serialization.Spec (HasSerInfo)
+import Cardano.KESAgent.Serialization.TextEnvelope ( decodeTextEnvelopeFile )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..), strLength )
 import Cardano.KESAgent.Util.RefCounting
   ( CRef
@@ -100,7 +104,6 @@ import Cardano.Crypto.Libsodium.MLockedSeed
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Accept (..), Accepted (..), Snocket (..) )
 
-import Data.Coerce
 import Control.Concurrent.Class.MonadMVar
   ( MVar
   , MonadMVar
@@ -153,6 +156,7 @@ import Control.Monad.Class.MonadTime ( MonadTime (..) )
 import Control.Monad.Class.MonadTimer ( threadDelay, MonadTimer )
 import Control.Tracer ( Tracer (..), nullTracer, traceWith )
 import Data.ByteString ( ByteString )
+import Data.Coerce
 import Data.Functor.Contravariant ( contramap, (>$<) )
 import Data.Map.Strict ( Map )
 import qualified Data.Map.Strict as Map
@@ -169,7 +173,8 @@ import Text.Printf
 {-HLINT ignore "Use underscore" -}
 
 data AgentTrace
-  = AgentServiceDriverTrace ServiceDriverTrace
+  = AgentVersionHandshakeDriverTrace VersionHandshakeDriverTrace
+  | AgentServiceDriverTrace ServiceDriverTrace
   | AgentControlDriverTrace ControlDriverTrace
   | AgentBootstrapTrace ServiceClientTrace
   | AgentReplacingPreviousKey String String
@@ -672,6 +677,33 @@ runListener
 
   (accept s fd >>= loop) `catch` logAndContinue
 
+availableServiceDrivers :: forall c m fd addr
+                            . (forall x y. Coercible x y => Coercible (m x) (m y))
+                           => MonadKES m c
+                           => MonadTimer m
+                           => HasSerInfo (SignKeyKES (KES c))
+                           => HasSerInfo (VerKeyKES (KES c))
+                           => [ ( VersionIdentifier
+                                , RawBearer m
+                                  -> Tracer m ServiceDriverTrace
+                                  -> m (Bundle m c)
+                                  -> m (Bundle m c)
+                                  -> (RecvResult -> m ())
+                                  -> m ()
+                                )
+                              ]
+availableServiceDrivers =
+  [ ( versionIdentifier (Proxy @(ServiceProtocol m c))
+    , \bearer tracer currentKey nextKey reportPushResult ->
+        void $
+          runPeerWithDriver
+            (serviceDriver bearer tracer)
+            (servicePusher currentKey nextKey reportPushResult)
+            ()
+    )
+  ]
+
+
 runAgent :: forall c m fd addr
           . (forall x y. Coercible x y => Coercible (m x) (m y))
          => MonadKES m c
@@ -716,13 +748,18 @@ runAgent agent = do
           AgentServiceClientDisconnected
           AgentServiceSocketError
           AgentServiceDriverTrace
-          (\bearer tracer' ->
-            withDuplexBearer bearer $ \bearer' -> do
-              void $
+          (\bearer tracer' -> do
+            (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
                 runPeerWithDriver
-                  (serviceDriver bearer' tracer')
-                  (servicePusher currentKey nextKey reportPushResult)
+                  (versionHandshakeDriver bearer (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent)))
+                  (versionHandshakeServer (map fst (availableServiceDrivers @c @m)))
                   ()
+            case protocolVersionMay >>= (`lookup` (availableServiceDrivers @c @m)) of
+              Nothing ->
+                error "Protocol handshake failed"
+              Just run ->
+                withDuplexBearer bearer $ \bearer' ->
+                  run bearer' tracer' currentKey nextKey reportPushResult
           )
 
   let runBootstrap :: addr -> m ()

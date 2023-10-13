@@ -60,14 +60,17 @@ versionHandshakeDriver :: ( Monad m
 versionHandshakeDriver s tracer = Driver
   { sendMessage = \agency msg -> case (agency, msg) of
       (ServerAgency TokInitial, VersionOfferMessage versions) -> do
+        traceWith tracer $ VersionHandshakeDriverOfferingVersions versions
         sendItem s versions
         return ()
 
       (ClientAgency TokVersionsOffered, VersionAcceptMessage version) -> do
+        traceWith tracer $ VersionHandshakeDriverAcceptingVersion version
         sendItem s (Just version)
         return ()
 
       (ClientAgency TokVersionsOffered, VersionRejectedMessage) -> do
+        traceWith tracer $ VersionHandshakeDriverRejectingVersion
         sendItem s (Nothing :: Maybe VersionIdentifier)
         return ()
 

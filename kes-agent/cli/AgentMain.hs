@@ -270,8 +270,10 @@ smoToAgentOptions smo = do
             }
 
 agentTracePrio :: AgentTrace -> Priority
+agentTracePrio AgentVersionHandshakeDriverTrace {} = Syslog.Debug
 agentTracePrio AgentServiceDriverTrace {} = Syslog.Debug
 agentTracePrio AgentControlDriverTrace {} = Syslog.Debug
+agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeTrace {}) = Syslog.Debug
 agentTracePrio (AgentBootstrapTrace ServiceClientDriverTrace {}) = Syslog.Debug
 agentTracePrio (AgentBootstrapTrace ServiceClientSocketClosed {}) = Syslog.Notice
 agentTracePrio (AgentBootstrapTrace ServiceClientConnected {}) = Syslog.Notice

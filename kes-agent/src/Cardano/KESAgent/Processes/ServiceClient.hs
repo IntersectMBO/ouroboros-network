@@ -2,6 +2,7 @@
 {-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.Processes.ServiceClient
@@ -13,7 +14,12 @@ import Cardano.KESAgent.KES.OCert ( OCert (..) )
 import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
 import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace, serviceDriver )
 import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher, serviceReceiver )
+import Cardano.KESAgent.Protocols.Service.Protocol ( ServiceProtocol )
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
+import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Protocols.VersionHandshake.Driver ( VersionHandshakeDriverTrace, versionHandshakeDriver )
+import Cardano.KESAgent.Protocols.VersionHandshake.Peers ( versionHandshakeClient )
+import Cardano.KESAgent.Protocols.VersionHandshake.Protocol ( VersionHandshakeProtocol )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
 import Cardano.KESAgent.Util.RefCounting ( CRef )
 import Cardano.KESAgent.Util.RetrySocket ( retrySocket )
@@ -42,7 +48,8 @@ data ServiceClientOptions m fd addr =
     }
 
 data ServiceClientTrace
-  = ServiceClientDriverTrace !ServiceDriverTrace
+  = ServiceClientVersionHandshakeTrace !VersionHandshakeDriverTrace
+  | ServiceClientDriverTrace !ServiceDriverTrace
   | ServiceClientSocketClosed
   | ServiceClientConnected !String
   | ServiceClientAttemptReconnect !Int !Int !String !String
@@ -56,6 +63,28 @@ instance Pretty ServiceClientTrace where
   pretty (ServiceClientConnected a) = "Service: Connected to " ++ a
   pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
 
+
+availableServiceDrivers :: forall c m fd addr
+                            . (forall x y. Coercible x y => Coercible (m x) (m y))
+                           => MonadKES m c
+                           => HasSerInfo (SignKeyKES (KES c))
+                           => HasSerInfo (VerKeyKES (KES c))
+                           => [ ( VersionIdentifier
+                                , RawBearer m
+                                  -> Tracer m ServiceClientTrace
+                                  -> (Bundle m c -> m RecvResult)
+                                  -> m ()
+                                )
+                              ]
+availableServiceDrivers =
+  [ ( versionIdentifier (Proxy @(ServiceProtocol m c))
+    , \bearer tracer handleKey ->
+        void $ runPeerWithDriver
+          (serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+          (serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+          ()
+    )
+  ]
 -- | Run a Service Client indefinitely, restarting the connection once a
 -- session ends.
 -- In case of an abnormal session termination (via an exception), the exception
@@ -131,8 +160,14 @@ runServiceClient proxy mrb options handleKey tracer = do
         connect s fd (serviceClientAddress options)
       traceWith tracer $ ServiceClientConnected (show $ serviceClientAddress options)
       bearer <- getRawBearer mrb fd
-      void $ runPeerWithDriver
-        (serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-        (serviceReceiver $ \bundle -> handleKey' bundle <* traceWith tracer ServiceClientReceivedKey)
-        ()
+      (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
+          runPeerWithDriver
+            (versionHandshakeDriver bearer (ServiceClientVersionHandshakeTrace >$< tracer))
+            (versionHandshakeClient (map fst (availableServiceDrivers @c @m)))
+            ()
+      case protocolVersionMay >>= (`lookup` (availableServiceDrivers @c @m)) of
+        Nothing ->
+          error "Protocol handshake failed"
+        Just run ->
+          run bearer tracer handleKey'
     )

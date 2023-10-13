@@ -85,6 +85,7 @@ sdoToServiceClientOptions ioManager sdo = do
             }
 
 serviceTracePrio :: ServiceClientTrace -> Priority
+serviceTracePrio ServiceClientVersionHandshakeTrace {} = Syslog.Debug
 serviceTracePrio ServiceClientDriverTrace {} = Syslog.Debug
 serviceTracePrio ServiceClientSocketClosed {} = Syslog.Notice
 serviceTracePrio ServiceClientConnected {} = Syslog.Notice
