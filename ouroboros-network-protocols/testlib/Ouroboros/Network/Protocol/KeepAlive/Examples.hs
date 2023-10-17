@@ -16,9 +16,9 @@ keepAliveClientApply :: forall acc m. Monad m
                     -> Int
                     -- ^ count of number of requests
                     -> KeepAliveClient m acc
-keepAliveClientApply f = go
+keepAliveClientApply f aa an = KeepAliveClient $ return (go aa an)
   where
-    go :: acc -> Int -> KeepAliveClient m acc
+    go :: acc -> Int -> KeepAliveClientSt m acc
     go acc n
       | n <= 0
       = SendMsgDone (pure acc)

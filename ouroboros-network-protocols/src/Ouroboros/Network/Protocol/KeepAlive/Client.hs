@@ -1,8 +1,10 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs     #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Protocol.KeepAlive.Client
   ( KeepAliveClient (..)
+  , KeepAliveClientSt (..)
   , keepAliveClientPeer
   ) where
 
@@ -11,31 +13,40 @@ import           Network.TypedProtocol.Core
 import           Ouroboros.Network.Protocol.KeepAlive.Type
 
 
-data KeepAliveClient m a where
+newtype KeepAliveClient m a = KeepAliveClient (m (KeepAliveClientSt m a))
+
+data KeepAliveClientSt m a where
     SendMsgKeepAlive
       :: Cookie
-      -> (m (KeepAliveClient m a))
-      -> KeepAliveClient m a
+      -> m (KeepAliveClientSt m a)
+      -> KeepAliveClientSt m a
 
     SendMsgDone
       :: m a
-      -> KeepAliveClient m a
+      -> KeepAliveClientSt m a
 
 
 -- | Interpret a particular client action sequence into the client side of the
 -- 'KeepAlive' protocol.
 --
 keepAliveClientPeer
-  :: MonadThrow m
+  :: forall m a. MonadThrow m
   => KeepAliveClient m a
   -> Peer KeepAlive AsClient StClient m a
+keepAliveClientPeer (KeepAliveClient client) =
+   Effect $ keepAliveClientStPeer <$> client
+ where
 
-keepAliveClientPeer (SendMsgDone mresult) =
-    Yield (ClientAgency TokClient) MsgDone $
-      Effect (Done TokDone <$> mresult)
+   keepAliveClientStPeer
+     :: KeepAliveClientSt m a
+     -> Peer KeepAlive AsClient StClient m a
 
-keepAliveClientPeer (SendMsgKeepAlive cookieReq next) =
-    Yield (ClientAgency TokClient) (MsgKeepAlive cookieReq) $
-      Await (ServerAgency TokServer) $ \(MsgKeepAliveResponse cookieRsp) ->
-        if cookieReq == cookieRsp then Effect $ keepAliveClientPeer <$> next
-                                  else Effect $ throwIO $ KeepAliveCookieMissmatch cookieReq cookieRsp
+   keepAliveClientStPeer (SendMsgDone mresult) =
+     Yield (ClientAgency TokClient) MsgDone $
+       Effect (Done TokDone <$> mresult)
+
+   keepAliveClientStPeer (SendMsgKeepAlive cookieReq next) =
+     Yield (ClientAgency TokClient) (MsgKeepAlive cookieReq) $
+       Await (ServerAgency TokServer) $ \(MsgKeepAliveResponse cookieRsp) ->
+         if cookieReq == cookieRsp then Effect $ keepAliveClientStPeer <$> next
+                                   else Effect $ throwIO $ KeepAliveCookieMissmatch cookieReq cookieRsp
