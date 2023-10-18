@@ -115,7 +115,7 @@ blockFetchClient _version controlMessageSTM reportFetched
           peerFetchReqsInFlight,
           peerFetchBytesInFlight,
           peerFetchBlocksInFlight
-        } <- atomically $ readTVar (fetchClientInFlightVar stateVars)
+        } <- readTVarIO (fetchClientInFlightVar stateVars)
 
       assert
         ( peerFetchReqsInFlight  == 0 &&
@@ -162,7 +162,7 @@ blockFetchClient _version controlMessageSTM reportFetched
     -- actually send out. Lets send out the first one.
     senderActive outstanding gsvs inflightlimits (fragment:fragments) =
       SenderEffect $ do
-{-
+        {-
         now <- getMonotonicTime
         --TODO: should we pair this up with the senderAwait earlier?
         inFlight  <- readTVar fetchClientInFlightVar
@@ -178,7 +178,7 @@ blockFetchClient _version controlMessageSTM reportFetched
           fired <- awaitTimeout timeout
           when fired $
             atomically (writeTVar _ PeerFetchStatusAberrant)
--}
+        -}
         let range :: ChainRange (Point header)
             !range = assert (not (AF.null fragment)) $
                      ChainRange (blockPoint lower)
@@ -269,12 +269,12 @@ blockFetchClient _version controlMessageSTM reportFetched
             -- They've lied and are sending us a massive amount of data.
             -- Resource consumption attack.
 
-{-
+            {-
             -- Now it's totally possible that the timeout already fired
             -- if not, we can update it, making sure the delay is > 0
             now <- getMonotonicTime
             updateTimeout timeout (diffTime now )
--}
+            -}
 
             unless (blockPoint header == castPoint (blockPoint block)) $
               throwIO BlockFetchProtocolFailureWrongBlock
@@ -315,7 +315,7 @@ blockFetchClient _version controlMessageSTM reportFetched
 
             return (receiverStreaming inflightlimits range headers')
 
-          (MsgBatchDone, (_:_)) -> ReceiverEffect $
+          (MsgBatchDone, _:_) -> ReceiverEffect $
             throwIO BlockFetchProtocolFailureTooFewBlocks
 
           (MsgBlock _, []) -> ReceiverEffect $

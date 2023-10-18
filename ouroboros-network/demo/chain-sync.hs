@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns        #-}
@@ -13,6 +14,7 @@ module Main where
 
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.ByteString.Lazy as LBS
+import           Data.Foldable (traverse_)
 import           Data.Functor (void)
 import           Data.List
 import qualified Data.Map as Map
@@ -20,21 +22,21 @@ import           Data.Proxy (Proxy (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Void (Void)
-import           Text.Read (readMaybe)
 
+import           Control.Applicative (many)
 import           Control.Concurrent (threadDelay)
 import           Control.Concurrent.Async
-import           Control.Concurrent.STM (STM, atomically, check)
-import           Control.Concurrent.STM.TVar
+import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception
 import           Control.Monad (when)
 import           Control.Tracer
 
 import           System.Directory
-import           System.Environment
 import           System.Exit
 import           System.IO
 import           System.Random
+
+import qualified Options.Applicative as Opts
 
 import qualified Codec.Serialise as CBOR
 
@@ -70,40 +72,120 @@ import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
 
 import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.BlockFetch.Client
+import           Ouroboros.Network.BlockFetch.ClientRegistry
+                     (FetchClientRegistry (..))
+import           Ouroboros.Network.DeltaQ (defaultGSV)
+
+
+data Options = Options {
+      oBlockFetch   :: Bool,
+      -- ^ run `block-fetch`, if false only run `chain-sync`
+      oServer       :: Bool,
+      -- ^ if `True`, run a client
+      oSeed         :: Maybe Int,
+      -- ^ seed used by the server
+      oMaxSlotNo    :: Maybe SlotNo,
+      -- ^ max slot used by the `chain-sync` client.  After
+      -- that slot the client will terminate.
+      oSocketPaths' :: [String],
+      -- ^ socket path
+      oSlotLength   :: Int
+    }
+    deriving Show
+
+oSocketPath :: Options -> FilePath
+oSocketPath Options { oSocketPaths' } =
+    case oSocketPaths' of
+      []  -> defaultLocalSocketAddrPath
+      a:_ -> a
+
+oSocketPaths :: Options -> [FilePath]
+oSocketPaths Options { oSocketPaths' } =
+    case oSocketPaths' of
+      [] -> [defaultLocalSocketAddrPath]
+      _  -> oSocketPaths'
+
+optionsParser :: Opts.Parser Options
+optionsParser = Opts.subparser
+              (  Opts.command "block-fetch" (Opts.info (go True  Opts.<**> Opts.helper) Opts.fullDesc)
+              <> Opts.command "chain-sync"  (Opts.info (go False Opts.<**> Opts.helper) Opts.fullDesc))
+  where
+    go :: Bool -> Opts.Parser Options
+    go blockFetch =
+          Options blockFetch
+      <$> Opts.switch
+            ( Opts.long "server"
+            <> Opts.help "run server side, by default client side is run" )
+      <*> Opts.option (Just <$> Opts.auto)
+            ( Opts.long "seed"
+            <> Opts.help "seed for the server, if not given a random seed will be used"
+            <> Opts.showDefault
+            <> Opts.value Nothing
+            <> Opts.metavar "SEED")
+      <*> Opts.option (Just . fromIntegral @Int <$> Opts.auto)
+            ( Opts.long "max-slot-no"
+            <> Opts.help "slot number after which the block-fetch client should terminate"
+            <> Opts.value Nothing
+            <> Opts.metavar "SLOTNO" )
+
+      -- parse `--socket-path` option multiple times and concatenate the
+      -- results
+      <*> (concat <$> many (Opts.option ((:[]) <$> Opts.str)
+            ( Opts.long "socket-path"
+            <> Opts.help ("a socket path, can be passed multiple times (default: '" ++ defaultLocalSocketAddrPath ++ "')")
+            <> Opts.metavar "PATH"
+            )))
+
+      <*> Opts.option Opts.auto
+            ( Opts.long "slot-length"
+              <> Opts.help "slot length in ms"
+              <> Opts.showDefault
+              <> Opts.value 500
+              <> Opts.metavar "TIME" )
+
+
+oChainSyncClient :: Options -> Bool
+oChainSyncClient opts  = not (oBlockFetch opts) && not (oServer opts)
+
+oChainSyncServer :: Options -> Bool
+oChainSyncServer opts  = not (oBlockFetch opts) &&      oServer opts
+
+oBlockFetchClient :: Options -> Bool
+oBlockFetchClient opts =      oBlockFetch opts  && not (oServer opts)
+
+oBlockFetchServer :: Options -> Bool
+oBlockFetchServer opts =      oBlockFetch opts  &&      oServer opts
 
 
 main :: IO ()
 main = do
-    args <- getArgs
-    let restArgs = drop 2 args
-    case args of
-      "chainsync":"client":_  ->
-        case restArgs of
-          []             -> clientChainSync [defaultLocalSocketAddrPath]
-          [sockAddrOrNr] -> clientChainSync $
-                              case readMaybe sockAddrOrNr of
-                                Just nr -> replicate nr defaultLocalSocketAddrPath
-                                Nothing -> [sockAddrOrNr]
-          sockAddrs      -> clientChainSync sockAddrs
-      "chainsync":"server":_          -> do
-        let sockAddr = case restArgs of
-              addr:_ -> addr
-              []     -> defaultLocalSocketAddrPath
-        rmIfExists sockAddr
-        void $ serverChainSync sockAddr
+    opts <- Opts.execParser parserInfo
+    print opts
+    case opts of
+      Options {}
+        -- chain-sync client
+        | oChainSyncClient opts ->
+          -- TODO: implement `oMaxSlotNo`
+          clientChainSync (oSocketPaths opts)
 
-      "blockfetch":"client":_ ->
-        case restArgs of
-          []        -> clientBlockFetch [defaultLocalSocketAddrPath]
-          sockAddrs -> clientBlockFetch sockAddrs
-      "blockfetch":"server":_ -> do
-        let sockAddr = case restArgs of
-              addr:_ -> addr
-              []     -> defaultLocalSocketAddrPath
-        rmIfExists sockAddr
-        void $ serverBlockFetch sockAddr
+        -- chain-sync server
+        | oChainSyncServer opts -> do
+          traverse_ rmIfExists (oSocketPaths opts)
+          void $ serverChainSync (oSocketPath opts) (oSlotLength opts * 1000) (oSeed opts)
 
-      _          -> usage
+        -- block-fetch client
+        | oBlockFetchClient opts ->
+          clientBlockFetch (oSocketPaths opts) (oMaxSlotNo opts)
+
+        -- block-fetch server
+        | oBlockFetchServer opts -> do
+          rmIfExists (oSocketPath opts)
+          void $ serverBlockFetch (oSocketPath opts) (oSlotLength opts * 1000) (oSeed opts)
+
+        | otherwise -> error "impossible"
+  where
+    parserInfo = Opts.info (optionsParser Opts.<**> Opts.helper)
+                           (Opts.fullDesc <> Opts.progDesc "Run chain-sync / block-fetch demo")
 
 usage :: IO ()
 usage = do
@@ -111,11 +193,10 @@ usage = do
     exitFailure
 
 defaultLocalSocketAddrPath :: FilePath
-#if defined(mingw32_HOST_OS)
-defaultLocalSocketAddrPath =  "\\\\.\\pipe\\demo-chain-sync"
-#else
+
+
+
 defaultLocalSocketAddrPath =  "./demo-chain-sync.sock"
-#endif
 
 defaultLocalSocketAddr :: LocalAddress
 defaultLocalSocketAddr = localAddressFromPath defaultLocalSocketAddrPath
@@ -151,7 +232,8 @@ demoProtocol2 chainSync =
     ]
 
 
-clientChainSync :: [FilePath] -> IO ()
+clientChainSync :: [FilePath]
+                -> IO ()
 clientChainSync sockPaths = withIOManager $ \iocp ->
     forConcurrently_ (zip [0..] sockPaths) $ \(index, sockPath) -> do
       threadDelay (50000 * index)
@@ -173,19 +255,23 @@ clientChainSync sockPaths = withIOManager $ \iocp ->
 
   where
     app :: OuroborosApplicationWithMinimalCtx InitiatorMode addr LBS.ByteString IO () Void
-    app = demoProtocol2 chainSync
-
-    chainSync =
-      InitiatorProtocolOnly $
-      mkMiniProtocolCbFromPeer $ \_ctx ->
-        (contramap show stdoutTracer
-        , codecChainSync
-        , ChainSync.chainSyncClientPeer chainSyncClient
-        )
+    app = demoProtocol2 $
+          InitiatorProtocolOnly $
+          mkMiniProtocolCbFromPeer $ \_ctx ->
+            ( contramap show stdoutTracer
+            , codecChainSync
+            , ChainSync.chainSyncClientPeer (chainSyncClient (continueForever Proxy))
+            )
 
 
-serverChainSync :: FilePath -> IO Void
-serverChainSync sockAddr = withIOManager $ \iocp -> do
+serverChainSync :: FilePath
+                -> Int -- ^ slot length in μs
+                -> Maybe Int -- ^ seed
+                -> IO Void
+serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
+    prng <- case seed of
+      Nothing -> initStdGen
+      Just a  -> return (mkStdGen a)
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
@@ -203,23 +289,20 @@ serverChainSync sockAddr = withIOManager $ \iocp -> do
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
-        (SomeResponderApplication app))
+        (SomeResponderApplication (app prng)))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    prng = mkStdGen 0
-
-    app :: OuroborosApplicationWithMinimalCtx ResponderMode addr LBS.ByteString IO Void ()
-    app = demoProtocol2 chainSync
-
-    chainSync =
-      ResponderProtocolOnly $
-      mkMiniProtocolCbFromPeer $ \_ctx ->
-        ( contramap show stdoutTracer
-        , codecChainSync
-        , ChainSync.chainSyncServerPeer (chainSyncServer prng)
-        )
+    app :: StdGen
+        -> OuroborosApplicationWithMinimalCtx ResponderMode addr LBS.ByteString IO Void ()
+    app prng = demoProtocol2 $
+          ResponderProtocolOnly $
+          mkMiniProtocolCbFromPeer $ \_ctx ->
+            ( contramap show stdoutTracer
+            , codecChainSync
+            , ChainSync.chainSyncServerPeer (chainSyncServer prng slotLength)
+            )
 
 
 codecChainSync :: ( CBOR.Serialise block
@@ -258,9 +341,34 @@ demoProtocol3 chainSync blockFetch =
       }
     ]
 
+continueUntilMaxSlot :: TestFetchedBlockHeap IO BlockHeader
+                     -> Maybe SlotNo
+                     -> ControlMessageSTM IO
+continueUntilMaxSlot blockHeap maxSlotNo =
+  case maxSlotNo of
+    Nothing -> return Continue
+    Just maxSlot -> do
+      point <- getLastFetchedPoint blockHeap
+      return $ case point of
+        Just BlockPoint { atSlot = slot }
+          | slot <= maxSlot -> Continue
+          | otherwise       -> Terminate
+        _                   -> Continue
 
-clientBlockFetch :: [FilePath] -> IO ()
-clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
+-- We run `chain-sync` and `block-fetch`, without `keep-alive`, so we need to
+-- register peers in `dqRegistry`.
+bracketDqRegistry :: FetchClientRegistry (ConnectionId LocalAddress) header block IO
+                  -> ConnectionId LocalAddress
+                  -> IO a -> IO a
+bracketDqRegistry FetchClientRegistry { fcrDqRegistry = dqRegistry } peer k =
+    bracket (atomically (modifyTVar dqRegistry (Map.insert peer defaultGSV)))
+            (\_ -> atomically (modifyTVar dqRegistry (Map.delete peer)))
+            (\_ -> k)
+
+clientBlockFetch :: [FilePath]
+                 -> Maybe SlotNo
+                 -> IO ()
+clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
     registry   <- newFetchClientRegistry
     blockHeap  <- mkTestFetchedBlockHeap []
 
@@ -278,32 +386,35 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
               let register = atomically $ do
                              chainvar <- newTVar genesisAnchoredFragment
-                             modifyTVar' candidateChainsVar
-                                         (Map.insert connId chainvar)
+                             modifyTVar candidateChainsVar
+                                        (Map.insert connId chainvar)
                              return chainvar
                   unregister _ = atomically $
-                                 modifyTVar' candidateChainsVar
-                                             (Map.delete connId)
-              in bracket register unregister $ \chainVar ->
+                                 modifyTVar candidateChainsVar
+                                            (Map.delete connId)
+              in bracketSyncWithFetchClient registry connId $
+                 bracket register unregister $ \chainVar ->
                  runPeer
-                   nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
+                   nullTracer -- (contramap (show . TraceLabelPeer ("chain-sync", getFilePath $ remoteAddress connId)) stdoutTracer)
                    codecChainSync
                    channel
                    (ChainSync.chainSyncClientPeer
-                     (chainSyncClient' syncTracer currentChainVar chainVar))
+                     (chainSyncClient' (continueUntilMaxSlot blockHeap maxSlotNo) syncTracer currentChainVar chainVar))
 
         blockFetch :: RunMiniProtocolWithMinimalCtx
                         InitiatorMode LocalAddress LBS.ByteString IO () Void
         blockFetch =
           InitiatorProtocolOnly $
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
+              bracketDqRegistry registry connId $
               bracketFetchClient registry maxBound isPipeliningEnabled connId $ \clientCtx ->
                 runPipelinedPeer
-                  nullTracer -- (contramap (show . TraceLabelPeer connId) stdoutTracer)
+                  nullTracer -- (contramap (show . TraceLabelPeer ("block-fetch", getFilePath $ remoteAddress connId)) stdoutTracer)
                   codecBlockFetch
                   channel
-                  (blockFetchClient NodeToNodeV_7 (continueForever (Proxy :: Proxy IO))
-                    nullTracer clientCtx)
+                  (blockFetchClient (maxBound :: NodeToNodeVersion)
+                                    (continueUntilMaxSlot blockHeap maxSlotNo)
+                                    nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO
@@ -315,10 +426,8 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
               readFetchMode          = return FetchModeBulkSync,
               readFetchedBlocks      = (\h p -> castPoint p `Set.member` h) <$>
                                          getTestFetchedBlocks blockHeap,
-              readFetchedMaxSlotNo   = foldl' max NoMaxSlotNo .
-                                       map (maxSlotNoFromWithOrigin . pointSlot) .
-                                       Set.elems <$>
-                                       getTestFetchedBlocks blockHeap,
+              readFetchedMaxSlotNo   = maybe NoMaxSlotNo (maxSlotNoFromWithOrigin . pointSlot) <$>
+                                         getLastFetchedPoint blockHeap,
               mkAddFetchedBlock        = \_enablePipelining -> do
                   pure $ \p b ->
                     addTestFetchedBlock blockHeap (castPoint p) (blockHeader b),
@@ -349,13 +458,13 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
                       >>= traverse readTVar
             let fingerprint' = Map.map AF.headPoint candidates
             check (fingerprint /= fingerprint')
---            currentChain <- readTVar currentChainVar
+            -- currentChain <- readTVar currentChainVar
             fetched      <- getTestFetchedBlocks blockHeap
             let currentChain' =
-                  -- So this does chain selection by taking the longest
-                  -- downloaded candidate chain
-                 --FIXME: there's something wrong here, we always get chains
-                 -- of length 1.
+                 -- So this does chain selection by taking the longest
+                 -- downloaded candidate chain
+                 -- FIXME: there's something wrong here, we always get chains of
+                 -- length 1.
                   maximumBy compareCandidateChains $
                   [ candidateChainFetched
                   | candidateChain <- Map.elems candidates
@@ -409,11 +518,11 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     _ <- waitAnyCancel (fetchAsync : chainAsync : peerAsyncs)
     return ()
   where
---    chainSyncMsgTracer  = contramap (show) stdoutTracer
---    blockFetchMsgTracer = contramap (show) stdoutTracer
+    -- chainSyncMsgTracer  = contramap (show) stdoutTracer
+    -- blockFetchMsgTracer = contramap (show) stdoutTracer
 
---    decisionTracer      = contramap show stdoutTracer
---    clientStateTracer   = contramap show stdoutTracer
+    -- decisionTracer      = contramap show stdoutTracer
+    -- clientStateTracer   = contramap show stdoutTracer
 
     syncTracer :: Tracer IO (Point BlockHeader, Point BlockHeader)
     syncTracer  = contramap (\x -> "sync client: " ++ show x) stdoutTracer
@@ -422,8 +531,14 @@ clientBlockFetch sockAddrs = withIOManager $ \iocp -> do
     chainTracer = contramap (\x -> "cur chain  : " ++ show x) stdoutTracer
 
 
-serverBlockFetch :: FilePath -> IO Void
-serverBlockFetch sockAddr = withIOManager $ \iocp -> do
+serverBlockFetch :: FilePath
+                 -> Int -- ^ slot length in μs
+                 -> Maybe Int -- ^ seed
+                 -> IO Void
+serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
+    prng <- case seed of
+      Nothing -> initStdGen
+      Just a  -> return (mkStdGen a)
     networkState <- newNetworkMutableState
     _ <- async $ cleanNetworkMutableState networkState
     withServerNode
@@ -441,30 +556,31 @@ serverBlockFetch sockAddr = withIOManager $ \iocp -> do
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
-        (SomeResponderApplication app))
+        (SomeResponderApplication (app prng)))
       nullErrorPolicies
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
-    prng = mkStdGen 0
-
-    app :: OuroborosApplicationWithMinimalCtx
+    app :: StdGen
+        -> OuroborosApplicationWithMinimalCtx
              ResponderMode LocalAddress LBS.ByteString IO Void ()
-    app = demoProtocol3 chainSync blockFetch
+    app prng = demoProtocol3 (chainSync prng) (blockFetch prng)
 
-    chainSync :: RunMiniProtocolWithMinimalCtx
+    chainSync :: StdGen
+              -> RunMiniProtocolWithMinimalCtx
                    ResponderMode LocalAddress LBS.ByteString IO Void ()
-    chainSync =
+    chainSync prng =
       ResponderProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap show stdoutTracer
         , codecChainSync
-        , ChainSync.chainSyncServerPeer (chainSyncServer prng)
+        , ChainSync.chainSyncServerPeer (chainSyncServer prng slotLength)
         )
 
-    blockFetch :: RunMiniProtocolWithMinimalCtx
+    blockFetch :: StdGen
+               -> RunMiniProtocolWithMinimalCtx
                     ResponderMode LocalAddress LBS.ByteString IO Void ()
-    blockFetch =
+    blockFetch prng =
       ResponderProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap show stdoutTracer
@@ -485,22 +601,23 @@ codecBlockFetch =
 -- Chain sync and block fetch protocol handlers
 --
 
-chainSyncClient :: ChainSync.ChainSyncClient
+chainSyncClient :: ControlMessageSTM IO
+                -> ChainSync.ChainSyncClient
                      BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
-chainSyncClient =
+chainSyncClient controlMessageSTM =
     ChainSync.ChainSyncClient $ do
       curvar   <- newTVarIO genesisAnchoredFragment
       chainvar <- newTVarIO genesisAnchoredFragment
-      let ChainSync.ChainSyncClient k =
-            chainSyncClient' nullTracer curvar chainvar
-      k
+      case chainSyncClient' controlMessageSTM nullTracer curvar chainvar of
+        ChainSync.ChainSyncClient k -> k
 
-chainSyncClient' :: Tracer IO (Point BlockHeader, Point BlockHeader)
-                 -> TVar (AF.AnchoredFragment BlockHeader)
-                 -> TVar (AF.AnchoredFragment BlockHeader)
+chainSyncClient' :: ControlMessageSTM IO
+                 -> Tracer IO (Point BlockHeader, Point BlockHeader)
+                 -> StrictTVar IO (AF.AnchoredFragment BlockHeader)
+                 -> StrictTVar IO (AF.AnchoredFragment BlockHeader)
                  -> ChainSync.ChainSyncClient
                       BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
-chainSyncClient' syncTracer _currentChainVar candidateChainVar =
+chainSyncClient' controlMessageSTM syncTracer _currentChainVar candidateChainVar =
     ChainSync.ChainSyncClient (return requestNext)
   where
     requestNext :: ChainSync.ClientStIdle
@@ -510,6 +627,10 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
         handleNext
         (return handleNext) -- wait case, could trace
 
+    terminate :: ChainSync.ClientStIdle
+                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
+    terminate = ChainSync.SendMsgDone ()
+
     handleNext :: ChainSync.ClientStNext
                     BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     handleNext =
@@ -517,15 +638,18 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
         ChainSync.recvMsgRollForward  = \header _pHead ->
           ChainSync.ChainSyncClient $ do
             addBlock header
-            --FIXME: the notTooFarAhead bit is not working
-            -- it seems the current chain is always of length 1.
---            notTooFarAhead
-            return requestNext
+            cm <- atomically controlMessageSTM
+            return $ case cm of
+              Terminate -> terminate
+              _         -> requestNext
 
       , ChainSync.recvMsgRollBackward = \pIntersect _pHead ->
           ChainSync.ChainSyncClient $ do
             rollback pIntersect
-            return requestNext
+            cm <- atomically controlMessageSTM
+            return $ case cm of
+              Terminate -> terminate
+              _         -> requestNext
       }
 
     addBlock :: BlockHeader -> IO ()
@@ -543,21 +667,22 @@ chainSyncClient' syncTracer _currentChainVar candidateChainVar =
         -- we do not handle rollback failure in this demo
         let (Just !chain') = AF.rollback p chain
         writeTVar candidateChainVar chain'
-{-
+    {-
     notTooFarAhead = atomically $ do
-      currentChain   <- readTVar currentChainVar
-      candidateChain <- readTVar candidateChainVar
-      check $ case (AF.headBlockNo currentChain,
-                    AF.headBlockNo candidateChain) of
-                (Just bn, Just bn') -> bn' < bn + 5
-                _                   -> True
--}
-chainSyncServer :: RandomGen g
-                => g
+        currentChain   <- readTVar currentChainVar
+        candidateChain <- readTVar candidateChainVar
+        check $ case (AF.headBlockNo currentChain,
+                      AF.headBlockNo candidateChain) of
+                  (Just bn, Just bn') -> bn' < bn + 5
+                  _                   -> True
+    -}
+
+chainSyncServer :: StdGen
+                -> Int -- ^ slot length in μs
                 -> ChainSync.ChainSyncServer
                      BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
-chainSyncServer seed =
-    let blocks = chainGenerator seed in
+chainSyncServer prng slotLength =
+    let blocks = chainGenerator prng in
     ChainSync.ChainSyncServer (return (idleState blocks))
   where
     idleState :: [Block]
@@ -565,7 +690,7 @@ chainSyncServer seed =
                    BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     idleState blocks =
       ChainSync.ServerStIdle {
-        ChainSync.recvMsgRequestNext   = do threadDelay 500000
+        ChainSync.recvMsgRequestNext   = do when (slotLength > 0) (threadDelay slotLength)
                                             return (Left (nextState blocks)),
         ChainSync.recvMsgFindIntersect = \_ -> return (intersectState blocks),
         ChainSync.recvMsgDoneClient    = return ()
@@ -592,11 +717,10 @@ chainSyncServer seed =
         (ChainSync.ChainSyncServer (return (idleState blocks)))
 
 
-blockFetchServer :: RandomGen g
-                 => g
+blockFetchServer :: StdGen
                  -> BlockFetch.BlockFetchServer Block (Point Block) IO ()
-blockFetchServer seed =
-    let blocks = chainGenerator seed in
+blockFetchServer prng =
+    let blocks = chainGenerator prng in
     idleState blocks
   where
     idleState blocks =
@@ -726,22 +850,28 @@ doloremIpsum = concat
 -- The interface is enough to use in examples and tests.
 --
 data TestFetchedBlockHeap m block = TestFetchedBlockHeap {
-       getTestFetchedBlocks :: STM (Set (Point block)),
+       getTestFetchedBlocks :: STM m (Set (Point block)),
+       getLastFetchedPoint  :: GetLastFetchedPoint m block,
        addTestFetchedBlock  :: Point block -> block -> m ()
      }
 
+type GetLastFetchedPoint m block = STM m (Maybe (Point block))
+
 -- | Make a 'TestFetchedBlockHeap' using a simple in-memory 'Map', stored in an
--- 'STM' 'TVar'.
+-- 'StrictTVar'.
 --
 -- This is suitable for examples and tests.
 --
 mkTestFetchedBlockHeap :: [Point BlockHeader]
                        -> IO (TestFetchedBlockHeap IO BlockHeader)
 mkTestFetchedBlockHeap points = do
-    v <- atomically (newTVar (Set.fromList points))
+    v <- newTVarIO (Set.fromList points)
+    h <- newTVarIO Nothing
     return TestFetchedBlockHeap {
       getTestFetchedBlocks = readTVar v,
-      addTestFetchedBlock  = \p _b -> atomically (modifyTVar' v (Set.insert p))
+      getLastFetchedPoint  = readTVar h,
+      addTestFetchedBlock  = \p _b -> atomically $ modifyTVar v (Set.insert p)
+                                                >> modifyTVar h (max (Just p))
     }
 
 --

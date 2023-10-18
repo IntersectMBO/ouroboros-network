@@ -293,6 +293,7 @@ executable demo-chain-sync
                        bytestring,
                        containers,
                        directory,
+                       optparse-applicative,
                        random,
                        serialise,
                        stm,
@@ -300,6 +301,7 @@ executable demo-chain-sync
                        contra-tracer,
 
                        typed-protocols,
+                       strict-stm,
                        ouroboros-network-api,
                        ouroboros-network-framework,
                        ouroboros-network-mock,

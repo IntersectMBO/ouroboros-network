@@ -70,3 +70,9 @@ launch-*
 /chap
 /dist-chap
 cabal.project.consensus
+
+# GHC debuging
+/*.svg
+/*.html
+/*.eventlog
+/*.prof

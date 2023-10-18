@@ -755,7 +755,7 @@ takeTFetchRequestVar v = (\(r,g,l) -> (r, getLast g, getLast l))
 
 -- | The 'TMergeVar' is like a 'TMVar' in that we take it, leaving it empty.
 -- Unlike an ordinary 'TMVar' with a blocking \'put\' operation, it has a
--- non-blocking combiing write operation: if a value is already present then
+-- non-blocking combining write operation: if a value is already present then
 -- the values are combined using the 'Semigroup' operator.
 --
 -- This is used much like a 'TMVar' as a one-place queue between threads but
