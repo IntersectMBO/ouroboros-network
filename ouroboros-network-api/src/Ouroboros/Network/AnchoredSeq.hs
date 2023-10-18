@@ -807,5 +807,5 @@ filterWithStopSpec p stop = goNext []
           -> AnchoredSeq v a b
           -> AnchoredSeq v a b
     join' a b =
-        fromMaybe (error "could not join sequences") $ -- TODO
+        fromMaybe (error "could not join sequences") $
         join (\_ _ -> True) a b
