@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Make chainsync idle timeout configurable.
+
 ### Non-breaking changes
 
 * Make it possible for KeepAlive client to collect a rtt sample for the first packet.

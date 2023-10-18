@@ -1074,6 +1074,7 @@ diffusionSimulation
                 { canAwaitTimeout  = shortWait
                 , intersectTimeout = shortWait
                 , mustReplyTimeout
+                , idleTimeout      = Nothing
                 }
 
           limitsAndTimeouts :: NodeKernel.LimitsAndTimeouts BlockHeader Block
