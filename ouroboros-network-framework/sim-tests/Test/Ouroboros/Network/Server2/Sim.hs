@@ -43,7 +43,7 @@ import           Data.Bifunctor (Bifunctor (first), bimap)
 import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Dynamic (fromDynamic)
-import           Data.Foldable (foldMap')
+import           Data.Foldable (foldMap', traverse_)
 import           Data.Functor (void, ($>), (<&>))
 import           Data.List (delete, foldl', intercalate, nub, (\\))
 import qualified Data.List.Trace as Trace
@@ -910,7 +910,12 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                       $ modifyTVar connVar (Map.delete (connId remoteAddr))
                     go unregister (Map.delete remoteAddr connMap)
                   Right {} -> go unregister connMap
-          Shutdown -> return ()
+          Shutdown -> do
+            addrs <- map remoteAddress
+                   . filter ((localAddr ==) . localAddress)
+                   . Map.keys
+                 <$> readTVarIO connVar
+            traverse_ (unregisterOutboundConnection cm) addrs
           where
             connId remoteAddr = ConnectionId { localAddress  = localAddr
                                              , remoteAddress = remoteAddr }
@@ -1581,8 +1586,8 @@ prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
                      , ppScript mns
                      , "========== Inbound Governor Events =========="
                      , Trace.ppTrace show show inboundGovernorEvents
-                     -- , "========== Simulation Trace =========="
-                     -- , ppTrace trace
+                     , "========== Simulation Trace =========="
+                     , ppTrace trace
                      ])
     . getAllProperty
     . bifoldMap
