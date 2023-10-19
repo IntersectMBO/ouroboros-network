@@ -35,6 +35,9 @@ packages: ./cardano-ping
 tests: True
 benchmarks: True
 
+package bitvec
+  flags: -simd
+
 package cardano-ping
   flags: +asserts
 
