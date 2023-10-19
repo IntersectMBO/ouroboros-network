@@ -2,8 +2,8 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -372,9 +372,9 @@ class GlobalAddressScheme addr where
 -- ones are IPv6.
 --
 instance GlobalAddressScheme Int where
-    getAddressType (TestAddress n) = if n `mod` 2 == 0
-                         then IPv4Address
-                         else IPv6Address
+    getAddressType (TestAddress n) = if even n
+                                     then IPv4Address
+                                     else IPv6Address
     ephemeralAddress IPv4Address n = TestAddress $ (-2) * fromIntegral n
     ephemeralAddress IPv6Address n = TestAddress $ (-1) * fromIntegral n + 1
 
@@ -427,8 +427,7 @@ withSnocket tr defaultBearerInfo scriptMap k = do
          -> return $ Just (NotReleasedListeningSockets (Map.keys lstFDMap) err)
 
          |  not (Map.null connMap)
-         -> return $ Just (NotReleasedConnections      ( fmap connState
-                                                       $ connMap
+         -> return $ Just (NotReleasedConnections      ( connState <$> connMap
                                                        ) err)
 
          |  otherwise
@@ -531,7 +530,7 @@ instance Show addr => Show (FD_ m addr) where
 
 -- | File descriptor type.
 --
-newtype FD m peerAddr = FD { fdVar :: (StrictTVar m (FD_ m peerAddr)) }
+newtype FD m peerAddr = FD { fdVar :: StrictTVar m (FD_ m peerAddr) }
 
 
 makeFDBearer :: forall addr m.
@@ -542,7 +541,7 @@ makeFDBearer :: forall addr m.
                 )
              => MakeBearer m (FD m (TestAddress addr))
 makeFDBearer = MakeBearer $ \sduTimeout muxTracer FD { fdVar } -> do
-        fd_ <- atomically (readTVar fdVar)
+        fd_ <- readTVarIO fdVar
         case fd_ of
           FDUninitialised {} ->
             throwIO (invalidError fd_)
@@ -665,7 +664,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   -> m (Either (FD_ m (TestAddress addr))
                                (TestAddress addr))
     getLocalAddrM FD { fdVar } = do
-        fd_ <- atomically (readTVar fdVar)
+        fd_ <- readTVarIO fdVar
         return $ case fd_ of
           FDUninitialised Nothing         -> Left fd_
           FDUninitialised (Just peerAddr) -> Right peerAddr
@@ -680,7 +679,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                    -> m (Either (FD_ m (TestAddress addr))
                                 (TestAddress addr))
     getRemoteAddrM FD { fdVar } = do
-        fd_ <- atomically (readTVar fdVar)
+        fd_ <- readTVarIO fdVar
         return $ case fd_ of
           FDUninitialised {}         -> Left fd_
           FDListening {}             -> Left fd_
@@ -760,7 +759,7 @@ mkSnocket state tr = Snocket { getLocalAddr
 
     connect :: FD m (TestAddress addr) -> TestAddress addr -> m ()
     connect fd@FD { fdVar = fdVarLocal } remoteAddress = do
-        fd_ <- atomically (readTVar fdVarLocal)
+        fd_ <- readTVarIO fdVarLocal
         traceWith' fd (STConnecting fd_ remoteAddress)
         case fd_ of
           -- Mask asynchronous exceptions.  Only unmask when we really block
@@ -866,7 +865,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                     <$> readTVar (nsConnections state)
               case lstFd of
                 -- error cases
-                (Nothing) ->
+                Nothing ->
                   return (Left (connectIOError connId "no such listening socket"))
                 (Just FDUninitialised {}) ->
                   return (Left (connectIOError connId "unitialised listening socket"))
@@ -937,14 +936,13 @@ mkSnocket state tr = Snocket { getLocalAddr
                                                    (Map.delete (normaliseId connId))
                         >> throwIO e)
                     $ unmask (atomically $ runFirstToFinish $
-                        (FirstToFinish $ do
+                        FirstToFinish (do
                           LazySTM.readTVar timeoutVar >>= check
                           modifyTVar (nsConnections state)
                                      (Map.delete (normaliseId connId))
-                          return Nothing
-                        )
+                          return Nothing)
                         <>
-                        (FirstToFinish $ do
+                        FirstToFinish (do
                           mbConn <- Map.lookup (normaliseId connId)
                                 <$> readTVar (nsConnections state)
                           case mbConn of
@@ -1177,24 +1175,22 @@ mkSnocket state tr = Snocket { getLocalAddr
                                   , mkSockType fd
                                   )
               )
-              ( \ result ->
-                  case result of
-                    Left {} -> return ()
-                    Right (chann, connId) -> uninterruptibleMask_ $ do
-                      acClose (cwiChannelLocal chann)
-                      atomically $
-                        modifyTVar (nsConnections state)
-                                   (Map.update
-                                     (\conn@Connection { connState } ->
-                                       case connState of
-                                         FIN ->
-                                           Nothing
-                                         _ ->
-                                           Just conn { connState = FIN })
-                                     (normaliseId connId))
+              ( \ case
+                  Left {} -> return ()
+                  Right (chann, connId) -> uninterruptibleMask_ $ do
+                    acClose (cwiChannelLocal chann)
+                    atomically $
+                      modifyTVar (nsConnections state)
+                                 (Map.update
+                                   (\conn@Connection { connState } ->
+                                     case connState of
+                                       FIN ->
+                                         Nothing
+                                       _ ->
+                                         Just conn { connState = FIN })
+                                   (normaliseId connId))
               )
-              $ \ result ->
-                case result of
+              $ \ case
                   Left (err, mbLocalAddr, mbConnIdAndChann, fdType) -> do
                     uninterruptibleMask_ $
                       traverse_ (\(connId, chann) -> do
@@ -1343,7 +1339,7 @@ mkSnocket state tr = Snocket { getLocalAddr
         bitraverse_
           (\(connId, fdType, _) -> do
             openState <- fmap connState . Map.lookup (normaliseId connId)
-                     <$> atomically (readTVar (nsConnections state))
+                     <$> readTVarIO (nsConnections state)
             traceWith tr (WithAddr (Just (localAddress connId))
                                    (Just (remoteAddress connId))
                                    (STClosed fdType (Just openState)))
