@@ -114,10 +114,10 @@ tests =
   [ testGroup "ConnectionManager"
     [ testProperty "valid transitions"      prop_connection_manager_valid_transitions
     , nightlyTest $ testProperty "valid transitions (racy)"
-                  $ prop_connection_manager_valid_transitions_racy
+                    prop_connection_manager_valid_transitions_racy
     , testProperty "valid transition order" prop_connection_manager_valid_transition_order
     , nightlyTest $ testProperty "valid transition order (racy)"
-                  $ prop_connection_manager_valid_transition_order_racy
+                    prop_connection_manager_valid_transition_order_racy
     , testProperty "transitions coverage"   prop_connection_manager_transitions_coverage
     , testProperty "no invalid traces"      prop_connection_manager_no_invalid_traces
     , testProperty "counters"               prop_connection_manager_counters
@@ -1690,13 +1690,12 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
     . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . getAllProperty
     . bifoldMap
-       ( \ case
-           MainReturn {} -> mempty
-           v             -> AllProperty
-                         $ counterexample (show v) (property False)
+       (\ case
+          MainReturn {} -> mempty
+          v             -> AllProperty
+                        $ counterexample (show v) (property False)
        )
-       ( \ trs
-        -> case trs of
+       (\ case
           TrInboundGovernorCounters igc ->
             AllProperty
               $ counterexample
@@ -1705,8 +1704,7 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
                   (    warmPeersRemote igc <= warmPeersRemote upperBound
                   .&&. hotPeersRemote  igc <= hotPeersRemote  upperBound
                   )
-          _                               ->
-            mempty
+          _ -> mempty
        )
     $ inboundGovernorEvents
   where
@@ -1792,7 +1790,7 @@ prop_connection_manager_pruning serverAcc
                                       DataFlowProtocolData)]
       connectionManagerEvents = withNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+  in  tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript (MultiNodeScript events attenuationMap))
     . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     . mkPropertyPruning
@@ -2075,11 +2073,9 @@ unit_server_accept_error ioErrType =
                    -- server
                    v <- registerDelay 1
                    r <- atomically $ runFirstToFinish $
-                         (FirstToFinish $
-                           Just <$> waitCatchSTM serverAsync)
+                         FirstToFinish (Just <$> waitCatchSTM serverAsync)
                          <>
-                         (FirstToFinish $
-                           LazySTM.readTVar v >>= \a -> check a $> Nothing)
+                         FirstToFinish (LazySTM.readTVar v >>= \a -> check a $> Nothing)
                    return $ case r of
                      Nothing        -> counterexample "server did not throw"
                                          (ioErrType == IOErrConnectionAborted)

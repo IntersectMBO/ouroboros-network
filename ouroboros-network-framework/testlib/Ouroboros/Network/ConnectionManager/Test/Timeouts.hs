@@ -61,7 +61,7 @@ verifyAllTimeouts inDiffusion =
 verifyTimeouts :: Maybe (AbstractState, Time)
                -- ^ Map of first occurrence of a given \tau state
                -> Bool
-               -- ^ If runnning in Diffusion or not
+               -- ^ If running in Diffusion or not
                -> [(Time , AbstractTransitionTrace addr)]
                -- ^ Stream of abstract transitions for a given connection
                -- paired with the time it occurred
@@ -481,9 +481,9 @@ classifyPrunings :: [ConnectionManagerTrace
 classifyPrunings =
   Sum
   . length
-  . filter ( \x -> case x of
-                TrPruneConnections _ _ _ -> True
-                _                        -> False
+  . filter ( \ case
+               TrPruneConnections {} -> True
+               _                     -> False
            )
 
 
