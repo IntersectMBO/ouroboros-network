@@ -1650,11 +1650,11 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
       remoteTransitionTraceEvents :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
       remoteTransitionTraceEvents = traceWithNameTraceEvents trace
 
-      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      inboundGovernorEvents = traceWithNameTraceEvents trace
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
-    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
+    -- . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
     . getAllProperty
