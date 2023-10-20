@@ -1206,6 +1206,8 @@ prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataF
 -- a better way of injecting god's view traces in a way that the timing issues
 -- aren't an issue.
 --
+-- TODO #4698: this function should be rewritten to analyse the trace as
+-- a stream, to reduce its memory footprint.
 prop_connection_manager_counters :: Int
                                  -> ArbDataFlow
                                  -> MultiNodeScript Int TestAddr
@@ -1243,8 +1245,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
            v             -> AllProperty
                             $ counterexample (show v) (property False)
        )
-       ( \ trs
-        -> case trs of
+       ( \ case
           TrConnectionManagerCounters cmc ->
             AllProperty
               $ counterexample
@@ -1252,8 +1253,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
                   ++ "\n But got: " ++ show cmc)
                   (property $ collapseCounters False cmc
                            <= collapseCounters True upperBound)
-          _                               ->
-            mempty
+          _ -> mempty
        )
     $ connectionManagerEvents
   where
@@ -1415,6 +1415,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
 -- This test tests simultaneously the ConnectionManager and InboundGovernor's
 -- timeouts.
 --
+-- TODO #4698: reduce memory footprint.
 prop_timeouts_enforced :: Int
                        -> ArbDataFlow
                        -> MultiNodeScript Int TestAddr
