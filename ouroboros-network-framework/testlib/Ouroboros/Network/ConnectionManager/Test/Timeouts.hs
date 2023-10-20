@@ -314,6 +314,41 @@ groupConns getTransition isFinalTransition =
       )
       Map.empty
 
+-- | Like 'groupConns' but can be used to also interleave other types of events.
+--
+groupConnsEither :: Ord addr
+                 => (a -> TransitionTrace' addr st)
+                 -> (Transition' st -> Bool)
+                 -> Trace r (Either a b)
+                 -> Trace r (Either [a] b)
+groupConnsEither getTransition isFinalTransition =
+    fmap fromJust
+  . Trace.filter isJust
+  -- there might be some connections in the state, push them onto the 'Trace'
+  . (\(s, o) -> foldr (\a as -> Trace.Cons (Just (Left $ reverse a)) as) o (Map.elems s))
+  . bimapAccumL
+      ( \ s a -> (s, a))
+      ( \ s x -> case x of
+          Left a ->
+            let TransitionTrace { ttPeerAddr, ttTransition } = getTransition a
+             in if isFinalTransition ttTransition
+                   then case ttPeerAddr `Map.lookup` s of
+                          Nothing  -> ( Map.insert ttPeerAddr [a] s
+                                      , Nothing
+                                      )
+                          Just trs -> ( Map.delete ttPeerAddr s
+                                      , Just (Left $ reverse $ a : trs)
+                                      )
+                   else ( Map.alter (\case
+                                       Nothing -> Just [a]
+                                       Just as -> Just (a : as)
+                                    )
+                                    ttPeerAddr s
+                        , Nothing)
+          Right b -> ( s, Just (Right b) )
+      )
+      Map.empty
+
 -- | The concrete address type used by simulations.
 --
 type SimAddr  = Snocket.TestAddress SimAddr_
@@ -486,6 +521,12 @@ classifyPrunings =
                _                     -> False
            )
 
+
+classifyPruning
+  :: ConnectionManagerTrace addr (ConnectionHandlerTrace prctl dataflow)
+  -> Sum Int
+classifyPruning TrPruneConnections {} = Sum 1
+classifyPruning _                     = Sum 0
 
 newtype AllProperty = AllProperty { getAllProperty :: Property }
 
