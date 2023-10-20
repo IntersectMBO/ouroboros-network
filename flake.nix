@@ -24,7 +24,7 @@
     ];
 
     # default compiler used on all systems, also provided within the shell
-    defaultCompiler = "ghc962";
+    defaultCompiler = "ghc963";
 
     # the compiler used for cross compilation
     # alternative compilers only used on Linux
