@@ -97,7 +97,8 @@ tests =
       , testProperty "arbitrary for GovernorMockEnvironment" prop_arbitrary_GovernorMockEnvironment
       , localOption (QuickCheckMaxSize 30) $
         testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
-      , testProperty "shrink nonequal GovernorMockEnvironment"
+      , nightlyTest $
+        testProperty "shrink nonequal GovernorMockEnvironment"
                                                              prop_shrink_nonequal_GovernorMockEnvironment
       ]
     ]
