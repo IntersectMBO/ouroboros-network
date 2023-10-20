@@ -24,7 +24,7 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , module Ouroboros.Network.Testing.Data.Script
   , module Ouroboros.Network.PeerSelection.Types
   , tests
-  , prop_shrinkCarefully_GovernorMockEnvironment
+  , prop_shrink_nonequal_GovernorMockEnvironment
   ) where
 
 import           Data.Dynamic (fromDynamic)
@@ -62,14 +62,14 @@ import           Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
                      arbitraryScriptOf, initScript', interpretPickScript,
                      playTimedScript, prop_shrink_Script, singletonScript,
                      stepScript)
-import           Ouroboros.Network.Testing.Utils (arbitrarySubset,
-                     prop_shrink_nonequal, prop_shrink_valid)
+import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
+                     arbitrarySubset, nightlyTest, prop_shrink_nonequal,
+                     prop_shrink_valid)
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
                      (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
-import           Test.Ouroboros.Network.ShrinkCarefully
 
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
                      IsLedgerPeer)
@@ -97,8 +97,8 @@ tests =
       , testProperty "arbitrary for GovernorMockEnvironment" prop_arbitrary_GovernorMockEnvironment
       , localOption (QuickCheckMaxSize 30) $
         testProperty "shrink for GovernorMockEnvironment"    prop_shrink_GovernorMockEnvironment
-      , testProperty "shrink GovernorMockEnvironment carefully"
-                                                             prop_shrinkCarefully_GovernorMockEnvironment
+      , testProperty "shrink nonequal GovernorMockEnvironment"
+                                                             prop_shrink_nonequal_GovernorMockEnvironment
       ]
     ]
 
@@ -756,11 +756,11 @@ prop_arbitrary_GovernorMockEnvironment env =
           (publicRootPeers env)
           (LocalRootPeers.keysSet (localRootPeers env))
 
-prop_shrink_GovernorMockEnvironment :: Fixed GovernorMockEnvironment -> Property
+prop_shrink_GovernorMockEnvironment :: ShrinkCarefully GovernorMockEnvironment -> Property
 prop_shrink_GovernorMockEnvironment x =
       prop_shrink_valid validGovernorMockEnvironment x
  .&&. prop_shrink_nonequal x
 
-prop_shrinkCarefully_GovernorMockEnvironment ::
+prop_shrink_nonequal_GovernorMockEnvironment ::
   ShrinkCarefully GovernorMockEnvironment -> Property
-prop_shrinkCarefully_GovernorMockEnvironment = prop_shrinkCarefully
+prop_shrink_nonequal_GovernorMockEnvironment = prop_shrink_nonequal

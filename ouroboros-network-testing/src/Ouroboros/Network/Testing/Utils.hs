@@ -13,8 +13,9 @@ module Ouroboros.Network.Testing.Utils
     -- * QuickCheck Utils
   , arbitrarySubset
   , shrinkVector
-  , prop_shrink_valid
+  , ShrinkCarefully (..)
   , prop_shrink_nonequal
+  , prop_shrink_valid
   -- * Tracing Utils
   , WithName (..)
   , WithTime (..)
@@ -40,6 +41,7 @@ import           Control.Tracer (Contravariant (contramap), Tracer (..),
                      contramapM)
 
 import           Data.Bitraversable (bimapAccumR)
+import           Data.List (delete)
 import           Data.List.Trace (Trace)
 import qualified Data.List.Trace as Trace
 import qualified Data.Map as Map
@@ -47,6 +49,7 @@ import           Data.Maybe (fromJust, isJust)
 import           Data.Ratio
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Text.Pretty.Simple (pPrint)
 
 import           Test.QuickCheck
 import           Test.Tasty (TestTree)
@@ -107,31 +110,28 @@ shrinkVector _   []     = []
 shrinkVector shr (x:xs) = [ x':xs | x'  <- shr x ]
                           ++ [ x:xs' | xs' <- shrinkVector shr xs ]
 
+newtype ShrinkCarefully a = ShrinkCarefully a
+  deriving (Eq,Show)
+
+instance (Eq a, Arbitrary a) => Arbitrary (ShrinkCarefully a) where
+  arbitrary = ShrinkCarefully <$> arbitrary
+  shrink (ShrinkCarefully a) = ShrinkCarefully <$> delete a (shrink a)
+
+prop_shrink_nonequal :: (Arbitrary a, Eq a, Show a) => ShrinkCarefully a -> Property
+prop_shrink_nonequal (ShrinkCarefully e) =
+    whenFail (pPrint e) $
+    counterexample (show $ map (==e) es) $
+    e `notElem` es
+  where
+    es = shrink e
 
 -- | Check that each shrink satisfies some invariant or validity condition.
 --
 prop_shrink_valid :: (Arbitrary a, Show a, Testable prop)
-                  => (a -> prop) -> Fixed a -> Property
-prop_shrink_valid valid (Fixed x) =
+                  => (a -> prop) -> ShrinkCarefully a -> Property
+prop_shrink_valid valid (ShrinkCarefully x) =
     conjoin [ counterexample ("shrink result invalid:\n" ++ show x') (valid x')
             | x' <- shrink x ]
-
-
--- | The 'shrink' function needs to give a valid value that is /smaller/ than
--- the original, otherwise the shrinking procedure is not well-founded and can
--- cycle.
---
--- This property does not check size, as that would need significant extra
--- infrastructure to define an appropriate measure. Instead this property
--- simply checks each shrink is not the same as the original. This catches
--- simple 1-cycles, but not bigger cycles. These are fortunately the most
--- common case, so it is still a useful property in practice.
---
-prop_shrink_nonequal :: (Arbitrary a, Eq a) => Fixed a -> Property
-prop_shrink_nonequal (Fixed x) =
-    counterexample "A shrink result equals as the original.\n" $
-    counterexample "This will cause non-termination for shrinking." $
-    notElem x (shrink x)
 
 
 -- | Use in 'tabulate' to help summarise data into buckets.

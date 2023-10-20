@@ -26,8 +26,8 @@ import qualified Data.IP as IP
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
-                     prop_shrink_valid)
+import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
+                     prop_shrink_nonequal, prop_shrink_valid)
 import           Test.QuickCheck
 
 
@@ -135,7 +135,7 @@ prop_arbitrary_PeerSelectionTargets :: PeerSelectionTargets -> Bool
 prop_arbitrary_PeerSelectionTargets =
     sanePeerSelectionTargets
 
-prop_shrink_PeerSelectionTargets :: Fixed PeerSelectionTargets -> Property
+prop_shrink_PeerSelectionTargets :: ShrinkCarefully PeerSelectionTargets -> Property
 prop_shrink_PeerSelectionTargets x =
       prop_shrink_valid sanePeerSelectionTargets x
  .&&. prop_shrink_nonequal x

@@ -19,8 +19,8 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph
   , prop_shrink_GovernorScripts
   , prop_arbitrary_PeerGraph
   , prop_shrink_PeerGraph
-  , prop_shrinkCarefully_PeerGraph
-  , prop_shrinkCarefully_GovernorScripts
+  , prop_shrink_nonequal_PeerGraph
+  , prop_shrink_nonequal_GovernorScripts
   ) where
 
 import           Data.Graph (Graph)
@@ -36,10 +36,9 @@ import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Network.Testing.Data.Script (Script (..),
                      ScriptDelay (NoDelay), TimedScript, arbitraryScriptOf)
-import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
-                     prop_shrink_valid, renderRanges)
+import           Ouroboros.Network.Testing.Utils (ShrinkCarefully (..),
+                     prop_shrink_nonequal, prop_shrink_valid, renderRanges)
 import           Test.Ouroboros.Network.PeerSelection.Instances
-import           Test.Ouroboros.Network.ShrinkCarefully
 
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import           Test.QuickCheck
@@ -327,7 +326,7 @@ instance Arbitrary PeerShareTime where
 -- Tests for the QC Arbitrary instances
 --
 
-prop_shrink_GovernorScripts :: Fixed GovernorScripts -> Property
+prop_shrink_GovernorScripts :: ShrinkCarefully GovernorScripts -> Property
 prop_shrink_GovernorScripts =
     prop_shrink_nonequal
 
@@ -359,13 +358,13 @@ peerGraphNumStronglyConnectedComponents pg =
   where
     (g,_,_) = peerGraphAsGraph pg
 
-prop_shrink_PeerGraph :: Fixed PeerGraph -> Property
+prop_shrink_PeerGraph :: ShrinkCarefully PeerGraph -> Property
 prop_shrink_PeerGraph x =
       prop_shrink_valid validPeerGraph x
  .&&. prop_shrink_nonequal x
 
-prop_shrinkCarefully_PeerGraph :: ShrinkCarefully PeerGraph -> Property
-prop_shrinkCarefully_PeerGraph = prop_shrinkCarefully
+prop_shrink_nonequal_PeerGraph :: ShrinkCarefully PeerGraph -> Property
+prop_shrink_nonequal_PeerGraph = prop_shrink_nonequal
 
-prop_shrinkCarefully_GovernorScripts :: ShrinkCarefully GovernorScripts -> Property
-prop_shrinkCarefully_GovernorScripts = prop_shrinkCarefully
+prop_shrink_nonequal_GovernorScripts :: ShrinkCarefully GovernorScripts -> Property
+prop_shrink_nonequal_GovernorScripts = prop_shrink_nonequal

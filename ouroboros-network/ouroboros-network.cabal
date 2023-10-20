@@ -179,7 +179,6 @@ test-suite sim-tests
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
                        Test.Ouroboros.Network.Orphans
-                       Test.Ouroboros.Network.ShrinkCarefully
                        Test.Ouroboros.Network.Testnet
                        Test.Ouroboros.Network.Testnet.Simulation.Node
                        Test.Ouroboros.Network.Version
