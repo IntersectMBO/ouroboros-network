@@ -476,13 +476,13 @@ prop_channel :: ( MonadAsync m
              -> Versions VersionNumber VersionData Bool
              -> m Property
 prop_channel createChannels clientVersions serverVersions =
-  let (serverRes, clientRes) =
+  let (!serverRes, !clientRes) =
         pureHandshake
           ((maybeAccept .) . acceptableVersion)
           serverVersions
           clientVersions
   in do
-    (clientRes', serverRes') <-
+    (!clientRes', !serverRes') <-
       runConnectedPeers
         createChannels nullTracer versionNumberHandshakeCodec
         (handshakeClientPeer
@@ -494,11 +494,11 @@ prop_channel createChannels clientVersions serverVersions =
           acceptableVersion
           queryVersion
           serverVersions)
-    pure $
+    pure $!
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is
         -- a boolean value) is the one that was put inside 'Version'
-        (Right (HandshakeNegotiationResult c _ _), Right (HandshakeNegotiationResult s _ _)) ->
+        (Right (HandshakeNegotiationResult !c _ _), Right (HandshakeNegotiationResult !s _ _)) ->
                Just c === clientRes
           .&&. Just s === serverRes
 
