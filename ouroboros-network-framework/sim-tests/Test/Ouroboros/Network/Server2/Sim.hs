@@ -6,12 +6,10 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
@@ -1875,77 +1873,66 @@ prop_inbound_governor_pruning serverAcc
                                 attenuationMap) =
   let trace = runSimTrace sim
 
-      remoteTransitionTraceEvents :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
-      remoteTransitionTraceEvents = traceWithNameTraceEvents trace
+      evs :: Trace (SimResult ()) (Either (InboundGovernorTrace SimAddr)
+                                          (RemoteTransitionTrace SimAddr))
+      evs = fmap (bimap wnEvent wnEvent)
+          . Trace.filter ((MainServer ==) . either wnName wnName)
+          . traceSelectTraceEvents fn
+          $ trace
+        where
+          fn :: Time -> SimEventType -> Maybe (Either (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
+                                                      (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr)))
+          fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
+                            <|> Right <$> fromDynamic dyn
+          fn _ _              = Nothing
 
-      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
-    . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
-    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
-    . counterexample (ppTrace trace)
-    . (\ ( tr1
-         , tr2
-         )
-       ->
-        -- Verify we do not return unsupported states in any of the
-        -- RemoteTransitionTrace
-        ( getAllProperty
-        . bifoldMap
-            ( \ _ -> AllProperty (property True))
-            ( \ tr -> case tr of
-                -- verify that 'unregisterInboundConnection' does not return
-                -- 'UnsupportedState'.
-                TrDemotedToColdRemote _ res ->
-                  case res of
-                    UnsupportedState {}
-                      -> AllProperty
-                          $ counterexample
-                              ("Unexpected UnsupportedState "
-                              ++ "in unregisterInboundConnection "
-                              ++ show tr)
-                              False
-                    _ -> AllProperty (property True)
+    -- . counterexample (ppTrace trace)
+    . getAllProperty
+    . bifoldMap
+        (\ _ -> AllProperty (property True) )
+        (\ case
+           Left tr ->
+             case tr of
+               -- verify that 'unregisterInboundConnection' does not return
+               -- 'UnsupportedState'.
+               TrDemotedToColdRemote _ res ->
+                 case res of
+                   UnsupportedState {} ->
+                     AllProperty
+                       $ counterexample
+                           ("Unexpected UnsupportedState "
+                           ++ "in unregisterInboundConnection "
+                           ++ show tr)
+                           False
+                   _ -> AllProperty (property True)
 
-                -- verify that 'demotedToColdRemote' does not return
-                -- 'UnsupportedState'
-                TrWaitIdleRemote _ res ->
-                  case res of
-                    UnsupportedState {}
-                      -> AllProperty
-                          $ counterexample
-                              ("Unexpected UnsupportedState "
-                              ++ "in demotedToColdRemote "
-                              ++ show tr)
-                              False
-                    _ -> AllProperty (property True)
-
-                _     -> AllProperty (property True)
-            )
-
-        $ tr2
-        )
-        .&&.
-        -- Verify that all Inbound Governor remote transitions are valid
-        ( getAllProperty
-        . bifoldMap
-           ( \ _ -> AllProperty (property True) )
-           ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
+               -- verify that 'demotedToColdRemote' does not return
+               -- 'UnsupportedState'
+               TrWaitIdleRemote _ UnsupportedState {} ->
                  AllProperty
-               . counterexample (concat [ "Unexpected transition: "
-                                        , show peerAddr
-                                        , " "
-                                        , show tr
-                                        ])
-               . verifyRemoteTransition
-               $ tr
-           )
-        $ tr1
-        )
+                   $ counterexample
+                       ("Unexpected UnsupportedState "
+                       ++ "in demotedToColdRemote "
+                       ++ show tr)
+                       False
 
-     )
-   $ (remoteTransitionTraceEvents, inboundGovernorEvents)
+               _ -> AllProperty (property True)
+
+           -- Verify we do not return unsupported states in any of the
+           -- RemoteTransitionTrace
+           Right TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr } ->
+                   AllProperty
+                 . counterexample (concat [ "Unexpected transition: "
+                                          , show peerAddr
+                                          , " "
+                                          , show tr
+                                          ])
+                 . verifyRemoteTransition
+                 $ tr
+        )
+    $ evs
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc Duplex
@@ -1983,48 +1970,46 @@ prop_never_above_hardlimit serverAcc
                                            DataFlowProtocolData))
       connectionManagerEvents = traceWithNameTraceEvents trace
 
-      abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-      abstractTransitionEvents = traceWithNameTraceEvents trace
+      -- abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+      -- abstractTransitionEvents = traceWithNameTraceEvents trace
 
-      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      inboundGovernorEvents = traceWithNameTraceEvents trace
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (Trace.ppTrace show show connectionManagerEvents)
-    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
-    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
+    -- . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+    -- . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . getAllProperty
     . bifoldMap
         ( \ case
             MainReturn {} -> mempty
             _             -> AllProperty (property False)
         )
-        ( \ trs ->
-            case trs of
-              x -> case x of
-                (TrConnectionManagerCounters cmc) ->
-                    AllProperty
-                    . counterexample ("HardLimit: " ++ show hardlimit ++
-                                      ", but got: " ++ show (inboundConns cmc) ++
-                                      " inbound connections!\n" ++
-                                      show cmc
-                                     )
-                    . property
-                    $ inboundConns cmc <= fromIntegral hardlimit
-                (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
-                  ( AllProperty
-                  . counterexample (concat
-                                   [ "prunned set too small: "
-                                   , show numberToPrune
-                                   , " ≰ "
-                                   , show $ length prunnedSet
-                                   ])
-                  $ numberToPrune <= length prunnedSet )
-                  <>
-                  ( AllProperty
-                  . counterexample ""
-                  $ prunnedSet `Set.isSubsetOf` choiceSet )
-                _ -> mempty
+        ( \ case
+            (TrConnectionManagerCounters cmc) ->
+                AllProperty
+                . counterexample ("HardLimit: " ++ show hardlimit ++
+                                  ", but got: " ++ show (inboundConns cmc) ++
+                                  " inbound connections!\n" ++
+                                  show cmc
+                                 )
+                . property
+                $ inboundConns cmc <= fromIntegral hardlimit
+            (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
+              ( AllProperty
+              . counterexample (concat
+                               [ "prunned set too small: "
+                               , show numberToPrune
+                               , " ≰ "
+                               , show $ length prunnedSet
+                               ])
+              $ numberToPrune <= length prunnedSet )
+              <>
+              ( AllProperty
+              . counterexample ""
+              $ prunnedSet `Set.isSubsetOf` choiceSet )
+            _ -> mempty
         )
    $ connectionManagerEvents
   where
