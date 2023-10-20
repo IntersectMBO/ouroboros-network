@@ -4,10 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.2.0.7 -- 2023-10-20
+
 * In presence of flag `-j`, output json when printing
   `network_rtt`, `handshake_rtt`, `negotiated_version` and `queried_versions`.
-
-### Non-breaking changes
 
 ## 0.2.0.6 -- 2023-08-09
 
