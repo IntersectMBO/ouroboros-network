@@ -919,55 +919,65 @@ validate_transitions :: MultiNodeScript Int TestAddr
 validate_transitions mns@(MultiNodeScript events _) trace =
       tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript mns)
-    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+    -- . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     . mkProperty
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
            v             -> mempty { tpProperty = counterexample (show v) False }
        )
-       ( \ trs
-        -> TestProperty {
-             tpProperty =
-                 (counterexample $!
-                   (  "\nconnection:\n"
-                   ++ intercalate "\n" (map ppTransition trs))
-                   )
-               . getAllProperty
-               . foldMap ( \ tr
-                          -> AllProperty
-                           . (counterexample $!
-                               (  "\nUnexpected transition: "
-                               ++ show tr)
-                               )
-                           . verifyAbstractTransition
-                           $ tr
-                         )
-               $ trs,
-             tpNumberOfTransitions = Sum (length trs),
-             tpNumberOfConnections = Sum 1,
-             tpNumberOfPrunings    = classifyPrunings connectionManagerEvents,
-             tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
-             tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
-             tpTerminationTypes    = [classifyTermination        trs],
-             tpActivityTypes       = [classifyActivityType       trs],
-             tpTransitions         = trs
-          }
+       ( \ case
+           Left trs ->
+             TestProperty {
+               tpProperty =
+                   (counterexample $!
+                     (  "\nconnection:\n"
+                     ++ intercalate "\n" (map ppTransition trs))
+                     )
+                 . getAllProperty
+                 . foldMap ( \ tr
+                            -> AllProperty
+                             . (counterexample $!
+                                 (  "\nUnexpected transition: "
+                                 ++ show tr)
+                                 )
+                             . verifyAbstractTransition
+                             $ tr
+                           )
+                 $ trs,
+               tpNumberOfTransitions = Sum (length trs),
+               tpNumberOfConnections = Sum 1,
+               tpNumberOfPrunings    = Sum 0,
+               tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
+               tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
+               tpTerminationTypes    = [classifyTermination        trs],
+               tpActivityTypes       = [classifyActivityType       trs],
+               tpTransitions         = trs
+            }
+           Right b -> mempty { tpNumberOfPrunings = classifyPruning b }
        )
-    . fmap (map ttTransition)
-    . groupConns id abstractStateIsFinalTransition
-    $ abstractTransitionEvents
+    . fmap (first (map ttTransition))
+    . groupConnsEither id abstractStateIsFinalTransition
+    $ evs
   where
-    abstractTransitionEvents :: Trace (SimResult ())
-                                      (AbstractTransitionTrace SimAddr)
-    abstractTransitionEvents = traceWithNameTraceEvents trace
+    -- abstractTransitionEvents :: Trace (SimResult ())
+    --                                   (AbstractTransitionTrace SimAddr)
+    -- abstractTransitionEvents = traceWithNameTraceEvents trace
 
-    connectionManagerEvents :: [ConnectionManagerTrace
-                                  SimAddr
-                                  (ConnectionHandlerTrace
-                                    UnversionedProtocol
-                                    DataFlowProtocolData)]
-    connectionManagerEvents = withNameTraceEvents trace
+    evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
+                                        (ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+    evs = fmap (bimap wnEvent wnEvent)
+        . Trace.filter ((MainServer ==) . either wnName wnName)
+        . traceSelectTraceEvents fn
+        $ trace
+      where
+        fn :: Time -> SimEventType
+           -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+                            (WithName (Name SimAddr) (ConnectionManagerTrace SimAddr
+                                                        (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
+        fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
+                          <|> Right <$> fromDynamic dyn
+        fn _ _              = Nothing
 
 
 
