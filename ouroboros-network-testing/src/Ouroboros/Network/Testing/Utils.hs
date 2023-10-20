@@ -120,10 +120,7 @@ instance (Eq a, Arbitrary a) => Arbitrary (ShrinkCarefully a) where
 prop_shrink_nonequal :: (Arbitrary a, Eq a, Show a) => ShrinkCarefully a -> Property
 prop_shrink_nonequal (ShrinkCarefully e) =
     whenFail (pPrint e) $
-    counterexample (show $ map (==e) es) $
-    e `notElem` es
-  where
-    es = shrink e
+    e `notElem` shrink e
 
 -- | Check that each shrink satisfies some invariant or validity condition.
 --
