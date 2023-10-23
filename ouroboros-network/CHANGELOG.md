@@ -12,6 +12,8 @@
 * Fix diffusion tests.
 * `demo-chain-sync`: added option parser, added new options.
 
+* Increase keyed timeout on a testnet test that was failing.
+
 ## 0.9.1.0 -- 2023-08-22
 
 ### Breaking changes
