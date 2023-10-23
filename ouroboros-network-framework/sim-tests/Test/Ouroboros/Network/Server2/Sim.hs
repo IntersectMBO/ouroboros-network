@@ -246,7 +246,7 @@ data MultiNodePruningScript req = MultiNodePruningScript
   , mnpsAttenuationMap    :: Map TestAddr
                                  (Script AbsBearerInfo)
   }
-  deriving (Show)
+  deriving Show
 
 -- | To generate well-formed scripts we need to keep track of what nodes are
 -- started and what connections they've made.
@@ -305,16 +305,16 @@ genAttenuationMap :: Ord peerAddr
                   -> Gen (Map peerAddr (Script AbsBearerInfo))
 genAttenuationMap events = do
   let nodes = map
-                (\ev -> case ev of
+                (\ case
                   StartClient _ addr   -> pure addr
                   StartServer _ addr _ -> pure addr
                   _                    -> error "Impossible happened"
                 )
             . filter
-                (\ev -> case ev of
-                  StartClient _ _   -> True
-                  StartServer _ _ _ -> True
-                  _                 -> False
+                (\ case
+                  StartClient {} -> True
+                  StartServer {} -> True
+                  _              -> False
                 )
             $ events
 
@@ -337,22 +337,23 @@ instance (Arbitrary peerAddr, Arbitrary req, Ord peerAddr) =>
       events <- go (ScriptState [] [] [] [] []) (len :: Integer)
       attenuationMap <- genAttenuationMap events
       return (MultiNodeScript events attenuationMap)
-    where     -- Divide delays by 100 to avoid running in to protocol and SDU timeouts if waiting
-              -- too long between connections and mini protocols.
+    where
+      -- Divide delays by 100 to avoid running in to protocol and SDU timeouts if waiting
+      -- too long between connections and mini protocols.
       delay = frequency [(1, pure 0), (3, (/ 100) <$> genDelayWithPrecision 2)]
 
       go _ 0 = pure []
       go s@ScriptState{..} n = do
         event <- frequency $
-                    [ (6, StartClient             <$> delay <*> newClient)
-                    , (6, StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
-                    [ (4, InboundConnection       <$> delay <*> elements possibleInboundConnections)        | not $ null possibleInboundConnections] ++
-                    [ (4, OutboundConnection      <$> delay <*> elements possibleOutboundConnections)       | not $ null possibleOutboundConnections] ++
-                    [ (6, CloseInboundConnection  <$> delay <*> elements inboundConnections)                | not $ null inboundConnections ] ++
-                    [ (4, CloseOutboundConnection <$> delay <*> elements outboundConnections)               | not $ null outboundConnections ] ++
-                    [ (10, InboundMiniprotocols   <$> delay <*> elements inboundConnections  <*> genBundle) | not $ null inboundConnections ] ++
-                    [ (8, OutboundMiniprotocols  <$> delay <*> elements outboundConnections <*> genBundle) | not $ null outboundConnections ] ++
-                    [ (4, ShutdownClientServer    <$> delay <*> elements possibleStoppable)                 | not $ null possibleStoppable ]
+                    [ (6,  StartClient             <$> delay <*> newClient)
+                    , (6,  StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
+                    [ (4,  InboundConnection       <$> delay <*> elements possibleInboundConnections)        | not $ null possibleInboundConnections] ++
+                    [ (4,  OutboundConnection      <$> delay <*> elements possibleOutboundConnections)       | not $ null possibleOutboundConnections] ++
+                    [ (6,  CloseInboundConnection  <$> delay <*> elements inboundConnections)                | not $ null inboundConnections ] ++
+                    [ (4,  CloseOutboundConnection <$> delay <*> elements outboundConnections)               | not $ null outboundConnections ] ++
+                    [ (10, InboundMiniprotocols    <$> delay <*> elements inboundConnections  <*> genBundle) | not $ null inboundConnections ] ++
+                    [ (8,  OutboundMiniprotocols   <$> delay <*> elements outboundConnections <*> genBundle) | not $ null outboundConnections ] ++
+                    [ (4,  ShutdownClientServer    <$> delay <*> elements possibleStoppable)                 | not $ null possibleStoppable ]
         (event :) <$> go (nextState event s) (n - 1)
         where
           possibleStoppable  = startedClients ++ startedServers
@@ -398,7 +399,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ( "Number of servers: "
           ++ ( within_ 2
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          StartServer {} -> True
                          _              -> False
                       )
@@ -407,7 +408,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ("Number of clients: "
           ++ ( within_ 2
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          StartClient {} -> True
                          _              -> False
                       )
@@ -416,7 +417,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ("Active connections: "
           ++ ( within_ 5
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          InboundMiniprotocols {}  -> True
                          OutboundMiniprotocols {} -> True
                          _                        -> False)
@@ -425,7 +426,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ("Closed connections: "
           ++ ( within_ 5
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          CloseInboundConnection {}  -> True
                          CloseOutboundConnection {} -> True
                          _                          -> False)
@@ -434,7 +435,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ("Number of shutdown connections: "
           ++ ( within_ 2
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          ShutdownClientServer {} -> True
                          _                       -> False
                       )
