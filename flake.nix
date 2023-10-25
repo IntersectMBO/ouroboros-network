@@ -129,13 +129,21 @@
           # specific enough, or doesn't allow setting these.
           modules = [
             ({pkgs, ...}: {
-              # pkgs are instatiated for the host platform
+              # We impose limit heap size limit when running some of the tests
+              # to discover space leaks Once #4698 and #4699 are done we can
+              # further constrain the heap size.
+              preCheck = lib.mkForce ''
+              export GHCRTS=-M200M
+              '';
+
+              # pkgs are instantiated for the host platform
               packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
               packages.ouroboros-network-protocols.components.tests.cddl.preCheck    = "export HOME=`pwd`";
 
               # don't run checks using Wine when cross compiling
               packages.ntp-client.components.tests.test.doCheck                       = !pkgs.stdenv.hostPlatform.isWindows;
               packages.network-mux.components.tests.test.doCheck                      = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.network-mux.components.tests.test.preCheck                     = "export GHCRTS=-M350M";
               packages.ouroboros-network-api.components.tests.test.doCheck            = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ouroboros-network-protocols.components.tests.test.doCheck      = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;

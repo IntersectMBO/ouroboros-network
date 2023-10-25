@@ -250,3 +250,4 @@ test-suite cddl
                        -Wno-unticked-promoted-constructors
                        -Wcompat
                        -Wunused-packages
+                       -rtsopts
