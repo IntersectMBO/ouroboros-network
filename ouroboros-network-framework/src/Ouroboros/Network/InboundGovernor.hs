@@ -372,8 +372,7 @@ inboundGovernor trTracer tracer inboundInfoChannel
                                   (Just connId)
                                   UnknownConnectionSt)
                              )
-            _ <- evaluate (assert False)
-            pure ()
+            evaluate (assert False ())
 
           let state' = updateRemoteState
                          connId
