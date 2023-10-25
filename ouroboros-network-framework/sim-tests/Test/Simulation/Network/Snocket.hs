@@ -460,8 +460,7 @@ prop_connect_and_not_close defaultBearerInfo =
       )
       `catch` \(err :: SomeException) ->
         -- Should error with NotReleasedListeningSockets
-        case fromException err
-               :: Maybe (ResourceException (TestAddress Int)) of
+        case fromException err :: Maybe ResourceException of
           Just _ ->
             return (Right ())
           Nothing ->
