@@ -202,11 +202,7 @@ instance Hashable LocalAddress where
 newtype TestAddress addr = TestAddress { getTestAddress :: addr }
   deriving (Eq, Ord, Typeable, Generic, NFData)
   deriving NoThunks via InspectHeap (TestAddress addr)
-
-instance Show addr => Show (TestAddress addr) where
-    showsPrec d (TestAddress addr) =
-        showString "TestAddress "
-      . showParen True (showsPrec d addr)
+  deriving Show via Quiet (TestAddress addr)
 
 instance Hashable addr => Hashable (TestAddress addr)
 
