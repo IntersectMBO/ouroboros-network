@@ -129,7 +129,7 @@ library
                        ouroboros-network-framework ^>=0.9,
                        ouroboros-network-protocols ^>=0.5.2.0,
                        strict-stm,
-                       typed-protocols   >=0.1.0.4 && <1.0,
+                       typed-protocols ^>= 0.1.1
   if !os(windows)
     build-depends:     directory,
                        unix
@@ -227,7 +227,7 @@ test-suite sim-tests
                        ouroboros-network-testing ^>= 0.3,
                        si-timers,
                        strict-stm,
-                       typed-protocols,
+                       typed-protocols ^>= 0.1.1,
                        typed-protocols-examples,
                        with-utf8,
   ghc-options:         -Wall
@@ -300,7 +300,7 @@ executable demo-chain-sync
 
                        contra-tracer,
 
-                       typed-protocols,
+                       typed-protocols ^>= 0.1.1,
                        strict-stm,
                        ouroboros-network-api,
                        ouroboros-network-framework,

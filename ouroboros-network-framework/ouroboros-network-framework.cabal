@@ -102,7 +102,7 @@ library
                      , ouroboros-network-api
                                       ^>=0.5.1
                      , ouroboros-network-testing
-                     , typed-protocols >=0.1   && < 0.2
+                     , typed-protocols ^>= 0.1.1   && < 0.2
                      , typed-protocols-cborg
                                       ^>=0.1
                      , Win32-network  ^>=0.1

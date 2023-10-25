@@ -69,8 +69,7 @@ library
                        network-mux      ^>=0.4,
                        strict-stm,
                        si-timers,
-                       typed-protocols  ^>=0.1.0.6,
-
+                       typed-protocols  ^>= 0.1.1
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
                        -Wcompat
