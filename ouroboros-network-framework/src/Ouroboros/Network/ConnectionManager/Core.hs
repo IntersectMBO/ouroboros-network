@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
@@ -37,7 +38,7 @@ import           Control.Monad.Fix
 import           Control.Tracer (Tracer, contramap, traceWith)
 import           Data.Foldable (foldMap', traverse_)
 import           Data.Function (on)
-import           Data.Functor (void)
+import           Data.Functor (void, ($>))
 import           Data.Maybe (maybeToList)
 import           Data.Proxy (Proxy (..))
 import           Data.Typeable (Typeable)
@@ -1065,17 +1066,43 @@ withConnectionManager ConnectionManagerArguments {
                 (mutableConnVar', connState0') <-
                   atomically $ do
                     let v0 = Map.lookup peerAddr state
-                    connState0' <- traverse (readTVar . connVar) v0
                     case v0 of
                       Nothing -> do
                         -- 'Accepted'
                         v <- newMutableConnState freshIdSupply connState'
                         labelTVar (connVar v) ("conn-state-" ++ show connId)
-                        return (v, connState0')
+                        return (v, Nothing)
                       Just v -> do
-                        -- 'Overwritten' or 'SelfConn'.
-                        writeTVar (connVar v) connState'
-                        return (v, connState0')
+                        -- 'Overwritten', 'SelfConn' or accepting a new
+                        -- connection while the old one is terminating.
+                        connState0' <- readTVar (connVar v)
+                        !v' <- case connState0' of
+                           -- Overwritten
+                           ReservedOutboundState {} -> writeTVar (connVar v) connState'
+                                                    $> v
+                           -- SelfConn
+                           UnnegotiatedState     {} -> writeTVar (connVar v) connState'
+                                                    $> v
+
+                           OutboundUniState      {} -> writeTVar (connVar v) connState'
+                                                    $> assert False v
+                           OutboundDupState      {} -> writeTVar (connVar v) connState'
+                                                    $> assert False v
+                           OutboundIdleState     {} -> writeTVar (connVar v) connState'
+                                                    $> assert False v
+                           DuplexState           {} -> writeTVar (connVar v) connState'
+                                                    $> assert False v
+                           InboundIdleState      {} -> writeTVar (connVar v) connState'
+                                                    $> assert False v
+                           InboundState          {} -> writeTVar (connVar v) connState'
+                                                    $> assert False v
+
+                           TerminatingState      {} -> newMutableConnState freshIdSupply connState'
+                           TerminatedState       {} -> newMutableConnState freshIdSupply connState'
+
+                        labelTVar (connVar v') ("conn-state-" ++ show connId)
+                        return (v', Just connState0')
+
                 connThread' <-
                   forkConnectionHandler
                      stateVar mutableConnVar' socket connId writer handler
@@ -1332,7 +1359,7 @@ withConnectionManager ConnectionManagerArguments {
                        , UnsupportedState st
                        , Nothing
                        )
-              UnnegotiatedState _ _ _ ->
+              UnnegotiatedState {} ->
                 return ( Nothing
                        , Nothing
                        , UnsupportedState st

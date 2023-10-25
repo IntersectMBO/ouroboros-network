@@ -4,6 +4,10 @@
 
 ### Breaking changes
 
+- Changed `prop_shrink_valid` to use `ShrinkCarefully`
+- Changed `prop_shrink_nonempty` to use `ShrinkCarefully` (formerlly
+  `prop_shrinkCarefully` was defined in `ouroboros-network:sim-test`)
+
 ### Non-breaking changes
 
 - Added 'keyedTimeoutTruncated' to Signal API

@@ -60,6 +60,7 @@ test-suite test
   ghc-options:        -Wall
                       -Wunused-packages
                       -threaded
+                      -rtsopts
 
 executable demo-ntp-client
   hs-source-dirs:     demo

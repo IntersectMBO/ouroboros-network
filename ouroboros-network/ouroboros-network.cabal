@@ -129,7 +129,7 @@ library
                        ouroboros-network-framework ^>=0.9,
                        ouroboros-network-protocols ^>=0.5.2.0,
                        strict-stm,
-                       typed-protocols   >=0.1.0.4 && <1.0,
+                       typed-protocols  ^>=0.1.1,
   if !os(windows)
     build-depends:     directory,
                        unix
@@ -179,7 +179,6 @@ test-suite sim-tests
                        Test.Ouroboros.Network.NodeToNode.Version
                        Test.Ouroboros.Network.NodeToClient.Version
                        Test.Ouroboros.Network.Orphans
-                       Test.Ouroboros.Network.ShrinkCarefully
                        Test.Ouroboros.Network.Testnet
                        Test.Ouroboros.Network.Testnet.Simulation.Node
                        Test.Ouroboros.Network.Version

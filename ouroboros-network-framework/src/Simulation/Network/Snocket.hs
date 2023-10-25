@@ -9,6 +9,7 @@
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 
 -- | This module provides simulation environment and a snocket implementation
 -- suitable for 'IOSim'.
@@ -345,14 +346,16 @@ newNetworkState defaultBearerInfo scriptMap = atomically $ do
   return s
 
 
-data ResourceException addr
-  = NotReleasedListeningSockets [addr] (Maybe SomeException)
-  | NotReleasedConnections      (Map (NormalisedId addr) ConnectionState)
-                                (Maybe SomeException)
-  deriving (Show, Typeable)
+data ResourceException
+  = forall addr. (Typeable addr, Show addr)
+              => NotReleasedListeningSockets [addr] (Maybe SomeException)
+  | forall addr. (Typeable addr, Ord addr, Show addr)
+              => NotReleasedConnections (Map (NormalisedId addr) ConnectionState)
+                                        (Maybe SomeException)
 
-instance (Typeable addr, Show addr)
-      => Exception (ResourceException addr)
+deriving instance Show ResourceException
+deriving instance Typeable ResourceException
+instance Exception ResourceException where
 
 
 -- | A type class for global IP address scheme.  Every node in the simulation
@@ -416,7 +419,7 @@ withSnocket tr defaultBearerInfo scriptMap k = do
     -- verify that all sockets are closed
     checkResources :: NetworkState m (TestAddress peerAddr)
                    -> Maybe SomeException
-                   -> m (Maybe (ResourceException (TestAddress peerAddr)))
+                   -> m (Maybe ResourceException)
     checkResources NetworkState { nsListeningFDs, nsConnections } err = do
       (lstFDMap, connMap) <- atomically $ (,) <$> readTVar nsListeningFDs
                                               <*> readTVar nsConnections

@@ -142,6 +142,7 @@ test-suite test
   else
     build-depends:     process
   ghc-options:         -threaded
+                       -rtsopts
                        -Wall
                        -fno-ignore-asserts
                        -Wcompat

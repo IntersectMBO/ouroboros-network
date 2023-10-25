@@ -17,7 +17,7 @@ index-state:
   -- Bump this if you need newer packages from Hackage
   , hackage.haskell.org 2023-09-10T00:10:54Z
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2023-08-04T14:05:48Z
+  , cardano-haskell-packages 2023-10-23T08:59:58Z
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
@@ -33,6 +33,9 @@ packages: ./cardano-ping
 
 tests: True
 benchmarks: True
+
+package bitvec
+  flags: -simd
 
 package cardano-ping
   flags: +asserts

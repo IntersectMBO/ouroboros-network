@@ -6,12 +6,12 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
@@ -20,10 +20,10 @@
 
 module Test.Ouroboros.Network.Server2.Sim (tests) where
 
-import           Control.Applicative (Alternative)
+import           Control.Applicative (Alternative ((<|>)))
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (SomeAsyncException (..))
+import           Control.Exception (SomeAsyncException (..), SomeException (..))
 import           Control.Monad (replicateM, when)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
@@ -39,8 +39,10 @@ import           Control.Tracer (Tracer (..), nullTracer)
 
 import           Codec.Serialise.Class (Serialise)
 import           Data.Bifoldable
+import           Data.Bifunctor (Bifunctor (first), bimap)
 import           Data.Bool (bool)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Dynamic (fromDynamic)
 import           Data.Foldable (foldMap')
 import           Data.Functor (void, ($>), (<&>))
 import           Data.List (delete, foldl', intercalate, nub, (\\))
@@ -62,7 +64,6 @@ import           Test.Tasty.QuickCheck
 import           Control.Concurrent.JobPool
 
 import qualified Network.Mux as Mux
-import           Network.Mux.Types (MuxRuntimeError)
 
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionId
@@ -85,11 +86,7 @@ import qualified Ouroboros.Network.Snocket as Snocket
 
 import           Simulation.Network.Snocket
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
-                     (AbsAttenuation (..), AbsBearerInfo (..),
-                     AbsBearerInfoScript (..), AbsDelay (..), AbsSDUSize (..),
-                     AbsSpeed (..), NonFailingAbsBearerInfoScript (..),
-                     absNoAttenuation, toNonFailingAbsBearerInfoScript)
+import           Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
 import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
                      genDelayWithPrecision, nightlyTest, sayTracer,
                      tracerWithTime)
@@ -114,10 +111,10 @@ tests =
   [ testGroup "ConnectionManager"
     [ testProperty "valid transitions"      prop_connection_manager_valid_transitions
     , nightlyTest $ testProperty "valid transitions (racy)"
-                  $ prop_connection_manager_valid_transitions_racy
+                    prop_connection_manager_valid_transitions_racy
     , testProperty "valid transition order" prop_connection_manager_valid_transition_order
     , nightlyTest $ testProperty "valid transition order (racy)"
-                  $ prop_connection_manager_valid_transition_order_racy
+                    prop_connection_manager_valid_transition_order_racy
     , testProperty "transitions coverage"   prop_connection_manager_transitions_coverage
     , testProperty "no invalid traces"      prop_connection_manager_no_invalid_traces
     , testProperty "counters"               prop_connection_manager_counters
@@ -246,7 +243,7 @@ data MultiNodePruningScript req = MultiNodePruningScript
   , mnpsAttenuationMap    :: Map TestAddr
                                  (Script AbsBearerInfo)
   }
-  deriving (Show)
+  deriving Show
 
 -- | To generate well-formed scripts we need to keep track of what nodes are
 -- started and what connections they've made.
@@ -305,16 +302,16 @@ genAttenuationMap :: Ord peerAddr
                   -> Gen (Map peerAddr (Script AbsBearerInfo))
 genAttenuationMap events = do
   let nodes = map
-                (\ev -> case ev of
+                (\ case
                   StartClient _ addr   -> pure addr
                   StartServer _ addr _ -> pure addr
                   _                    -> error "Impossible happened"
                 )
             . filter
-                (\ev -> case ev of
-                  StartClient _ _   -> True
-                  StartServer _ _ _ -> True
-                  _                 -> False
+                (\ case
+                  StartClient {} -> True
+                  StartServer {} -> True
+                  _              -> False
                 )
             $ events
 
@@ -337,22 +334,23 @@ instance (Arbitrary peerAddr, Arbitrary req, Ord peerAddr) =>
       events <- go (ScriptState [] [] [] [] []) (len :: Integer)
       attenuationMap <- genAttenuationMap events
       return (MultiNodeScript events attenuationMap)
-    where     -- Divide delays by 100 to avoid running in to protocol and SDU timeouts if waiting
-              -- too long between connections and mini protocols.
+    where
+      -- Divide delays by 100 to avoid running in to protocol and SDU timeouts if waiting
+      -- too long between connections and mini protocols.
       delay = frequency [(1, pure 0), (3, (/ 100) <$> genDelayWithPrecision 2)]
 
       go _ 0 = pure []
       go s@ScriptState{..} n = do
         event <- frequency $
-                    [ (6, StartClient             <$> delay <*> newClient)
-                    , (6, StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
-                    [ (4, InboundConnection       <$> delay <*> elements possibleInboundConnections)        | not $ null possibleInboundConnections] ++
-                    [ (4, OutboundConnection      <$> delay <*> elements possibleOutboundConnections)       | not $ null possibleOutboundConnections] ++
-                    [ (6, CloseInboundConnection  <$> delay <*> elements inboundConnections)                | not $ null inboundConnections ] ++
-                    [ (4, CloseOutboundConnection <$> delay <*> elements outboundConnections)               | not $ null outboundConnections ] ++
-                    [ (10, InboundMiniprotocols   <$> delay <*> elements inboundConnections  <*> genBundle) | not $ null inboundConnections ] ++
-                    [ (8, OutboundMiniprotocols  <$> delay <*> elements outboundConnections <*> genBundle) | not $ null outboundConnections ] ++
-                    [ (4, ShutdownClientServer    <$> delay <*> elements possibleStoppable)                 | not $ null possibleStoppable ]
+                    [ (6,  StartClient             <$> delay <*> newClient)
+                    , (6,  StartServer             <$> delay <*> newServer <*> arbitrary) ] ++
+                    [ (4,  InboundConnection       <$> delay <*> elements possibleInboundConnections)        | not $ null possibleInboundConnections] ++
+                    [ (4,  OutboundConnection      <$> delay <*> elements possibleOutboundConnections)       | not $ null possibleOutboundConnections] ++
+                    [ (6,  CloseInboundConnection  <$> delay <*> elements inboundConnections)                | not $ null inboundConnections ] ++
+                    [ (4,  CloseOutboundConnection <$> delay <*> elements outboundConnections)               | not $ null outboundConnections ] ++
+                    [ (10, InboundMiniprotocols    <$> delay <*> elements inboundConnections  <*> genBundle) | not $ null inboundConnections ] ++
+                    [ (8,  OutboundMiniprotocols   <$> delay <*> elements outboundConnections <*> genBundle) | not $ null outboundConnections ] ++
+                    [ (4,  ShutdownClientServer    <$> delay <*> elements possibleStoppable)                 | not $ null possibleStoppable ]
         (event :) <$> go (nextState event s) (n - 1)
         where
           possibleStoppable  = startedClients ++ startedServers
@@ -398,7 +396,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ( "Number of servers: "
           ++ ( within_ 2
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          StartServer {} -> True
                          _              -> False
                       )
@@ -407,7 +405,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ("Number of clients: "
           ++ ( within_ 2
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          StartClient {} -> True
                          _              -> False
                       )
@@ -416,7 +414,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ("Active connections: "
           ++ ( within_ 5
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          InboundMiniprotocols {}  -> True
                          OutboundMiniprotocols {} -> True
                          _                        -> False)
@@ -425,7 +423,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ("Closed connections: "
           ++ ( within_ 5
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          CloseInboundConnection {}  -> True
                          CloseOutboundConnection {} -> True
                          _                          -> False)
@@ -434,7 +432,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
   $ label ("Number of shutdown connections: "
           ++ ( within_ 2
              . length
-             . filter (\ ev -> case ev of
+             . filter (\ case
                          ShutdownClientServer {} -> True
                          _                       -> False
                       )
@@ -598,13 +596,14 @@ instance Show addr => Show (Name addr) where
     show  MainServer   = "main-server"
 
 
-data ExperimentError addr =
-      NodeNotRunningException addr
-    | NoActiveConnection addr addr
+data ExperimentError =
+      forall addr. (Typeable addr, Show addr) => NodeNotRunningException addr
+    -- | forall addr. (Typeable addr, Show addr) => NoActiveConnection addr addr
     | SimulationTimeout
-  deriving (Typeable, Show)
 
-instance ( Show addr, Typeable addr ) => Exception (ExperimentError addr)
+deriving instance Show ExperimentError
+deriving instance Typeable ExperimentError
+instance Exception ExperimentError where
 
 -- | Run a central server that talks to any number of clients and other nodes.
 multinodeExperiment
@@ -654,7 +653,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
     loop :: Map.Map peerAddr acc
          -> Map.Map peerAddr (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
          -> [ConnectionEvent req peerAddr]
-         -> JobPool () m (Maybe SomeException)
+         -> JobPool () m ()
          -> m ()
     loop _ _ [] _ = threadDelay 3600
     loop nodeAccs servers (event : events) jobpool =
@@ -724,10 +723,10 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
 
     startClientConnectionHandler :: Name peerAddr
                                  -> peerAddr
-                                 -> JobPool () m (Maybe SomeException)
+                                 -> JobPool () m ()
                                  -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
     startClientConnectionHandler name localAddr jobpool  = do
-        cc      <- atomically $ newTQueue
+        cc <- atomically newTQueue
         labelTQueueIO cc $ "cc/" ++ show name
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
@@ -737,17 +736,11 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
               ( withInitiatorOnlyConnectionManager
                     name simTimeouts nullTracer nullTracer snocket makeBearer (Just localAddr) (mkNextRequests connVar)
                     timeLimitsHandshake acceptedConnLimit
-                  ( \ connectionManager -> do
-                    connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
-                    return Nothing
+                  ( \ connectionManager ->
+                      connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
                   )
-                `catch` (\(e :: SomeException) ->
-                        case fromException e :: Maybe MuxRuntimeError of
-                          Nothing -> throwIO e
-                          Just {} -> throwTo threadId e
-                                  >> throwIO e)
               )
-              (return . Just)
+              (handleError threadId)
               ()
               (show name)
         return cc
@@ -756,13 +749,13 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                                  -> DataFlow
                                  -> acc
                                  -> peerAddr
-                                 -> JobPool () m (Maybe SomeException)
+                                 -> JobPool () m ()
                                  -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
     startServerConnectionHandler name dataFlow serverAcc localAddr jobpool = do
         fd <- Snocket.open snocket addrFamily
         Snocket.bind   snocket fd localAddr
         Snocket.listen snocket fd
-        cc      <- atomically $ newTQueue
+        cc <- atomically newTQueue
         labelTQueueIO cc $ "cc/" ++ show name
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
@@ -780,16 +773,13 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                           ( \ connectionManager _ serverAsync -> do
                             linkOnly (const True) serverAsync
                             connectionLoop SingInitiatorResponderMode localAddr cc connectionManager Map.empty connVar
-                            return Nothing
                           )
-                        `catch` (\(e :: SomeException) ->
-                                case fromException e :: Maybe MuxRuntimeError of
-                                  Nothing -> throwIO e
-                                  Just {} -> throwTo threadId e
-                                          >> throwIO e)
+                        -- `JobPool` does not catch any async exceptions, so we
+                        -- need to unwrap `ExceptionInLinkedThread`.
+                        `catch` (\(ExceptionInLinkedThread _ e) -> throwIO e)
                         `finally` Snocket.close snocket fd
                       )
-                      (return . Just)
+                      (handleError threadId)
                       ()
                       (show name)
                 Unidirectional ->
@@ -800,21 +790,39 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                           acceptedConnLimit
                           ( \ connectionManager -> do
                             connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
-                            return Nothing
                           )
-                        `catch` (\(e :: SomeException) ->
-                                case fromException e :: Maybe MuxRuntimeError of
-                                  Nothing -> throwIO e
-                                  Just {} -> throwTo threadId e
-                                          >> throwIO e)
+                        -- `JobPool` does not catch any async exceptions, so we
+                        -- need to unwrap `ExceptionInLinkedThread`.
+                        `catch` (\(ExceptionInLinkedThread _ e) -> throwIO e)
                         `finally` Snocket.close snocket fd
                       )
-                      (return . Just)
+                      (handleError threadId)
                       ()
                       (show name)
         forkJob jobpool job
         return cc
       where
+
+    handleError :: ThreadId m -> SomeException -> m ()
+    handleError threadId = \e -> case classifyError e of
+        Just err -> say ("Ignored: " ++ show err)
+        Nothing  -> throwTo threadId e
+                 >> throwIO e
+      where
+        -- A white list of exceptions which are ignored by the tests. All
+        -- other exceptions are rethrown and will halt the simulation.
+        classifyError :: SomeException -> Maybe SomeException
+        classifyError e =
+                SomeException <$> (fromException e :: Maybe IOError)
+            <|> SomeException <$> (fromException e :: Maybe MuxError)
+            <|> SomeException <$> (fromException e >>= \(ExceptionInHandler _ e') ->
+                                                        classifyError e')
+            <|> SomeException <$> (fromException e >>= \(ExceptionInLinkedThread _ e') ->
+                                                        classifyError e')
+
+                -- TODO: we shouldn't need these:
+            <|> SomeException <$> (fromException e :: Maybe ExperimentError)
+            <|> SomeException <$> (fromException e :: Maybe ResourceException)
 
     connectionLoop
          :: forall muxMode a.
@@ -854,7 +862,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
               Left _ ->
                 go False connMap
               Right (Connected _ _ h) -> do
-                qs <- atomically $ traverse id $ makeBundle mkQueue
+                qs <- atomically $ sequenceA $ makeBundle mkQueue
                 atomically $ modifyTVar connVar
                            $ Map.insert (connId remoteAddr) qs
                 go True (Map.insert remoteAddr h connMap)
@@ -869,15 +877,18 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
               mqs <- Map.lookup (connId remoteAddr) <$> readTVar connVar
               case mqs of
                 Nothing ->
-                  -- We want to throw because the generator invariant should never put us in
-                  -- this case
-                  throwIO (NoActiveConnection localAddr remoteAddr)
+                  -- TODO: we don't throw, because the server could be down due
+                  -- to network attenuation, other than that it's a generator
+                  -- invariant violation.
+                  --
+                  -- throwIO (NoActiveConnection localAddr remoteAddr)
+                  return ()
                 Just qs -> do
                   sequence_ $ writeTQueue <$> qs <*> reqs
             case Map.lookup remoteAddr connMap of
-              -- We want to throw because the generator invariant should never put us in
-              -- this case
-              Nothing -> throwIO (NoActiveConnection localAddr remoteAddr)
+              Nothing -> -- TODO: as above
+                         -- throwIO (NoActiveConnection localAddr remoteAddr)
+                         return ()
               Just (Handle mux muxBundle controlBundle _) -> do
                 -- TODO:
                 -- At times this throws 'ProtocolAlreadyRunning'.
@@ -917,55 +928,65 @@ validate_transitions :: MultiNodeScript Int TestAddr
 validate_transitions mns@(MultiNodeScript events _) trace =
       tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript mns)
-    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+    -- . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     . mkProperty
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
            v             -> mempty { tpProperty = counterexample (show v) False }
        )
-       ( \ trs
-        -> TestProperty {
-             tpProperty =
-                 (counterexample $!
-                   (  "\nconnection:\n"
-                   ++ intercalate "\n" (map ppTransition trs))
-                   )
-               . getAllProperty
-               . foldMap ( \ tr
-                          -> AllProperty
-                           . (counterexample $!
-                               (  "\nUnexpected transition: "
-                               ++ show tr)
-                               )
-                           . verifyAbstractTransition
-                           $ tr
-                         )
-               $ trs,
-             tpNumberOfTransitions = Sum (length trs),
-             tpNumberOfConnections = Sum 1,
-             tpNumberOfPrunings    = classifyPrunings connectionManagerEvents,
-             tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
-             tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
-             tpTerminationTypes    = [classifyTermination        trs],
-             tpActivityTypes       = [classifyActivityType       trs],
-             tpTransitions         = trs
-          }
+       ( \ case
+           Left trs ->
+             TestProperty {
+               tpProperty =
+                   (counterexample $!
+                     (  "\nconnection:\n"
+                     ++ intercalate "\n" (map ppTransition trs))
+                     )
+                 . getAllProperty
+                 . foldMap ( \ tr
+                            -> AllProperty
+                             . (counterexample $!
+                                 (  "\nUnexpected transition: "
+                                 ++ show tr)
+                                 )
+                             . verifyAbstractTransition
+                             $ tr
+                           )
+                 $ trs,
+               tpNumberOfTransitions = Sum (length trs),
+               tpNumberOfConnections = Sum 1,
+               tpNumberOfPrunings    = Sum 0,
+               tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
+               tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
+               tpTerminationTypes    = [classifyTermination        trs],
+               tpActivityTypes       = [classifyActivityType       trs],
+               tpTransitions         = trs
+            }
+           Right b -> mempty { tpNumberOfPrunings = classifyPruning b }
        )
-    . fmap (map ttTransition)
-    . groupConns id abstractStateIsFinalTransition
-    $ abstractTransitionEvents
+    . fmap (first (map ttTransition))
+    . groupConnsEither id abstractStateIsFinalTransition
+    $ evs
   where
-    abstractTransitionEvents :: Trace (SimResult ())
-                                      (AbstractTransitionTrace SimAddr)
-    abstractTransitionEvents = traceWithNameTraceEvents trace
+    -- abstractTransitionEvents :: Trace (SimResult ())
+    --                                   (AbstractTransitionTrace SimAddr)
+    -- abstractTransitionEvents = traceWithNameTraceEvents trace
 
-    connectionManagerEvents :: [ConnectionManagerTrace
-                                  SimAddr
-                                  (ConnectionHandlerTrace
-                                    UnversionedProtocol
-                                    DataFlowProtocolData)]
-    connectionManagerEvents = withNameTraceEvents trace
+    evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
+                                        (ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+    evs = fmap (bimap wnEvent wnEvent)
+        . Trace.filter ((MainServer ==) . either wnName wnName)
+        . traceSelectTraceEvents fn
+        $ trace
+      where
+        fn :: Time -> SimEventType
+           -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+                            (WithName (Name SimAddr) (ConnectionManagerTrace SimAddr
+                                                        (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
+        fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
+                          <|> Right <$> fromDynamic dyn
+        fn _ _              = Nothing
 
 
 
@@ -1194,6 +1215,8 @@ prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataF
 -- a better way of injecting god's view traces in a way that the timing issues
 -- aren't an issue.
 --
+-- TODO #4698: this function should be rewritten to analyse the trace as
+-- a stream, to reduce its memory footprint.
 prop_connection_manager_counters :: Int
                                  -> ArbDataFlow
                                  -> MultiNodeScript Int TestAddr
@@ -1231,8 +1254,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
            v             -> AllProperty
                             $ counterexample (show v) (property False)
        )
-       ( \ trs
-        -> case trs of
+       ( \ case
           TrConnectionManagerCounters cmc ->
             AllProperty
               $ counterexample
@@ -1240,8 +1262,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
                   ++ "\n But got: " ++ show cmc)
                   (property $ collapseCounters False cmc
                            <= collapseCounters True upperBound)
-          _                               ->
-            mempty
+          _ -> mempty
        )
     $ connectionManagerEvents
   where
@@ -1391,7 +1412,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
                                     )
               )
       case mb of
-        Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+        Nothing -> throwIO SimulationTimeout
         Just a  -> return a
 
 
@@ -1403,6 +1424,7 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
 -- This test tests simultaneously the ConnectionManager and InboundGovernor's
 -- timeouts.
 --
+-- TODO #4698: reduce memory footprint.
 prop_timeouts_enforced :: Int
                        -> ArbDataFlow
                        -> MultiNodeScript Int TestAddr
@@ -1639,11 +1661,11 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
       remoteTransitionTraceEvents :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
       remoteTransitionTraceEvents = traceWithNameTraceEvents trace
 
-      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      inboundGovernorEvents = traceWithNameTraceEvents trace
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
-    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
+    -- . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
     . getAllProperty
@@ -1690,13 +1712,12 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
     . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . getAllProperty
     . bifoldMap
-       ( \ case
-           MainReturn {} -> mempty
-           v             -> AllProperty
-                         $ counterexample (show v) (property False)
+       (\ case
+          MainReturn {} -> mempty
+          v             -> AllProperty
+                        $ counterexample (show v) (property False)
        )
-       ( \ trs
-        -> case trs of
+       (\ case
           TrInboundGovernorCounters igc ->
             AllProperty
               $ counterexample
@@ -1705,8 +1726,7 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
                   (    warmPeersRemote igc <= warmPeersRemote upperBound
                   .&&. hotPeersRemote  igc <= hotPeersRemote  upperBound
                   )
-          _                               ->
-            mempty
+          _ -> mempty
        )
     $ inboundGovernorEvents
   where
@@ -1782,56 +1802,63 @@ prop_connection_manager_pruning serverAcc
                                   attenuationMap) =
   let trace = runSimTrace sim
 
-      abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-      abstractTransitionEvents = traceWithNameTraceEvents trace
+      evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
+                                          (ConnectionManagerTrace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+      evs = fmap (bimap wnEvent wnEvent)
+          . Trace.filter ((MainServer ==) . either wnName wnName)
+          . traceSelectTraceEvents fn
+          $ trace
+        where
+          fn :: Time -> SimEventType
+             -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
+                              (WithName (Name SimAddr) (ConnectionManagerTrace SimAddr
+                                                          (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
+          fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
+                            <|> Right <$> fromDynamic dyn
+          fn _ _              = Nothing
 
-      connectionManagerEvents :: [ConnectionManagerTrace
-                                    SimAddr
-                                    (ConnectionHandlerTrace
-                                      UnversionedProtocol
-                                      DataFlowProtocolData)]
-      connectionManagerEvents = withNameTraceEvents trace
-
-  in tabulate "ConnectionEvents" (map showConnectionEvents events)
-    . counterexample (ppScript (MultiNodeScript events attenuationMap))
-    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+  in  tabulate "ConnectionEvents" (map showConnectionEvents events)
+    -- . counterexample (ppScript (MultiNodeScript events attenuationMap))
     . mkPropertyPruning
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
            v             -> mempty { tpProperty = counterexample (show v) False }
        )
-       ( \ trs
-        -> TestProperty {
-             tpProperty =
-                 (counterexample $!
-                   (  "\nconnection:\n"
-                   ++ intercalate "\n" (map ppTransition trs))
-                   )
-               . getAllProperty
-               . foldMap ( \ tr
-                          -> AllProperty
-                           . (counterexample $!
-                               (  "\nUnexpected transition: "
-                               ++ show tr)
-                               )
-                           . verifyAbstractTransition
-                           $ tr
-                         )
-               $ trs,
-             tpNumberOfTransitions = Sum (length trs),
-             tpNumberOfConnections = Sum 1,
-             tpNumberOfPrunings    = classifyPrunings connectionManagerEvents,
-             tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
-             tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
-             tpTerminationTypes    = [classifyTermination        trs],
-             tpActivityTypes       = [classifyActivityType       trs],
-             tpTransitions         = trs
-          }
+       ( \ case
+           Left trs ->
+             TestProperty {
+               tpProperty =
+                   (counterexample $!
+                     (  "\nconnection:\n"
+                     ++ intercalate "\n" (map ppTransition trs))
+                     )
+                 . getAllProperty
+                 . foldMap ( \ tr
+                            -> AllProperty
+                             . (counterexample $!
+                                 (  "\nUnexpected transition: "
+                                 ++ show tr)
+                                 )
+                             . verifyAbstractTransition
+                             $ tr
+                           )
+                 $ trs,
+               tpNumberOfTransitions = Sum (length trs),
+               tpNumberOfConnections = Sum 1,
+               tpNumberOfPrunings    = Sum 0,
+               tpNegotiatedDataFlows = [classifyNegotiatedDataFlow trs],
+               tpEffectiveDataFlows  = [classifyEffectiveDataFlow  trs],
+               tpTerminationTypes    = [classifyTermination        trs],
+               tpActivityTypes       = [classifyActivityType       trs],
+               tpTransitions         = trs
+            }
+           Right b ->
+              mempty { tpNumberOfPrunings = classifyPruning b }
        )
-    . fmap (map ttTransition)
-    . groupConns id abstractStateIsFinalTransition
-    $ abstractTransitionEvents
+    . fmap (first (map ttTransition))
+    . groupConnsEither id abstractStateIsFinalTransition
+    $ evs
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc Duplex
@@ -1857,77 +1884,66 @@ prop_inbound_governor_pruning serverAcc
                                 attenuationMap) =
   let trace = runSimTrace sim
 
-      remoteTransitionTraceEvents :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
-      remoteTransitionTraceEvents = traceWithNameTraceEvents trace
+      evs :: Trace (SimResult ()) (Either (InboundGovernorTrace SimAddr)
+                                          (RemoteTransitionTrace SimAddr))
+      evs = fmap (bimap wnEvent wnEvent)
+          . Trace.filter ((MainServer ==) . either wnName wnName)
+          . traceSelectTraceEvents fn
+          $ trace
+        where
+          fn :: Time -> SimEventType -> Maybe (Either (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
+                                                      (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr)))
+          fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
+                            <|> Right <$> fromDynamic dyn
+          fn _ _              = Nothing
 
-      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
-    . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
-    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
-    . counterexample (ppTrace trace)
-    . (\ ( tr1
-         , tr2
-         )
-       ->
-        -- Verify we do not return unsupported states in any of the
-        -- RemoteTransitionTrace
-        ( getAllProperty
-        . bifoldMap
-            ( \ _ -> AllProperty (property True))
-            ( \ tr -> case tr of
-                -- verify that 'unregisterInboundConnection' does not return
-                -- 'UnsupportedState'.
-                TrDemotedToColdRemote _ res ->
-                  case res of
-                    UnsupportedState {}
-                      -> AllProperty
-                          $ counterexample
-                              ("Unexpected UnsupportedState "
-                              ++ "in unregisterInboundConnection "
-                              ++ show tr)
-                              False
-                    _ -> AllProperty (property True)
+    -- . counterexample (ppTrace trace)
+    . getAllProperty
+    . bifoldMap
+        (\ _ -> AllProperty (property True) )
+        (\ case
+           Left tr ->
+             case tr of
+               -- verify that 'unregisterInboundConnection' does not return
+               -- 'UnsupportedState'.
+               TrDemotedToColdRemote _ res ->
+                 case res of
+                   UnsupportedState {} ->
+                     AllProperty
+                       $ counterexample
+                           ("Unexpected UnsupportedState "
+                           ++ "in unregisterInboundConnection "
+                           ++ show tr)
+                           False
+                   _ -> AllProperty (property True)
 
-                -- verify that 'demotedToColdRemote' does not return
-                -- 'UnsupportedState'
-                TrWaitIdleRemote _ res ->
-                  case res of
-                    UnsupportedState {}
-                      -> AllProperty
-                          $ counterexample
-                              ("Unexpected UnsupportedState "
-                              ++ "in demotedToColdRemote "
-                              ++ show tr)
-                              False
-                    _ -> AllProperty (property True)
-
-                _     -> AllProperty (property True)
-            )
-
-        $ tr2
-        )
-        .&&.
-        -- Verify that all Inbound Governor remote transitions are valid
-        ( getAllProperty
-        . bifoldMap
-           ( \ _ -> AllProperty (property True) )
-           ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
+               -- verify that 'demotedToColdRemote' does not return
+               -- 'UnsupportedState'
+               TrWaitIdleRemote _ UnsupportedState {} ->
                  AllProperty
-               . counterexample (concat [ "Unexpected transition: "
-                                        , show peerAddr
-                                        , " "
-                                        , show tr
-                                        ])
-               . verifyRemoteTransition
-               $ tr
-           )
-        $ tr1
-        )
+                   $ counterexample
+                       ("Unexpected UnsupportedState "
+                       ++ "in demotedToColdRemote "
+                       ++ show tr)
+                       False
 
-     )
-   $ (remoteTransitionTraceEvents, inboundGovernorEvents)
+               _ -> AllProperty (property True)
+
+           -- Verify we do not return unsupported states in any of the
+           -- RemoteTransitionTrace
+           Right TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr } ->
+                   AllProperty
+                 . counterexample (concat [ "Unexpected transition: "
+                                          , show peerAddr
+                                          , " "
+                                          , show tr
+                                          ])
+                 . verifyRemoteTransition
+                 $ tr
+        )
+    $ evs
   where
     sim :: IOSim s ()
     sim = multiNodeSim serverAcc Duplex
@@ -1965,48 +1981,52 @@ prop_never_above_hardlimit serverAcc
                                            DataFlowProtocolData))
       connectionManagerEvents = traceWithNameTraceEvents trace
 
-      abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
-      abstractTransitionEvents = traceWithNameTraceEvents trace
+      -- abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+      -- abstractTransitionEvents = traceWithNameTraceEvents trace
 
-      inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
-      inboundGovernorEvents = traceWithNameTraceEvents trace
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents = traceWithNameTraceEvents trace
 
-  in tabulate "ConnectionEvents" (map showConnectionEvents events)
+  in  tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (Trace.ppTrace show show connectionManagerEvents)
-    . counterexample (Trace.ppTrace show show abstractTransitionEvents)
-    . counterexample (Trace.ppTrace show show inboundGovernorEvents)
+    -- . counterexample (Trace.ppTrace show show abstractTransitionEvents)
+    -- . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . getAllProperty
     . bifoldMap
         ( \ case
             MainReturn {} -> mempty
+            MainException _ e _
+                          -> AllProperty (counterexample (show e) False)
             _             -> AllProperty (property False)
         )
-        ( \ trs ->
-            case trs of
-              x -> case x of
-                (TrConnectionManagerCounters cmc) ->
-                    AllProperty
-                    . counterexample ("HardLimit: " ++ show hardlimit ++
-                                      ", but got: " ++ show (inboundConns cmc) ++
-                                      " inbound connections!\n" ++
-                                      show cmc
-                                     )
-                    . property
-                    $ inboundConns cmc <= fromIntegral hardlimit
-                (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
-                  ( AllProperty
-                  . counterexample (concat
-                                   [ "prunned set too small: "
-                                   , show numberToPrune
-                                   , " ≰ "
-                                   , show $ length prunnedSet
-                                   ])
-                  $ numberToPrune <= length prunnedSet )
-                  <>
-                  ( AllProperty
-                  . counterexample ""
-                  $ prunnedSet `Set.isSubsetOf` choiceSet )
-                _ -> mempty
+        ( \ case
+            (TrConnectionManagerCounters cmc) ->
+                AllProperty
+                . counterexample ("HardLimit: " ++ show hardlimit ++
+                                  ", but got: " ++ show (inboundConns cmc) ++
+                                  " inbound connections!\n" ++
+                                  show cmc
+                                 )
+                . property
+                $! inboundConns cmc <= fromIntegral hardlimit
+            (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
+              ( AllProperty
+              . counterexample (concat
+                               [ "prunned set too small: "
+                               , show numberToPrune
+                               , " ≰ "
+                               , show $ length prunnedSet
+                               ])
+              $ numberToPrune <= length prunnedSet )
+              <>
+              ( AllProperty
+              . counterexample (concat [ "prunnedSet not a subset of choice set: "
+                                       , show prunnedSet
+                                       , " ⊈ "
+                                       , show choiceSet
+                                       ])
+              $! prunnedSet `Set.isSubsetOf` choiceSet )
+            _ -> mempty
         )
    $ connectionManagerEvents
   where
@@ -2075,11 +2095,9 @@ unit_server_accept_error ioErrType =
                    -- server
                    v <- registerDelay 1
                    r <- atomically $ runFirstToFinish $
-                         (FirstToFinish $
-                           Just <$> waitCatchSTM serverAsync)
+                         FirstToFinish (Just <$> waitCatchSTM serverAsync)
                          <>
-                         (FirstToFinish $
-                           LazySTM.readTVar v >>= \a -> check a $> Nothing)
+                         FirstToFinish (LazySTM.readTVar v >>= \a -> check a $> Nothing)
                    return $ case r of
                      Nothing        -> counterexample "server did not throw"
                                          (ioErrType == IOErrConnectionAborted)
@@ -2096,7 +2114,6 @@ unit_server_accept_error ioErrType =
                                     -> counterexample ("unexpected error " ++ show e)
                                                       False
                  )
-
 
 
 
@@ -2160,7 +2177,7 @@ multiNodeSimTracer serverAcc dataFlow defaultBearerInfo
                                      )
               )
       case mb of
-        Nothing -> throwIO (SimulationTimeout :: ExperimentError SimAddr)
+        Nothing -> throwIO SimulationTimeout
         Just a  -> return a
   where
     mainServerAddr :: SimAddr
@@ -2312,10 +2329,11 @@ showConnectionEvents ShutdownClientServer{}    = "ShutdownClientServer"
 -- * inbound governor
 -- * server
 --
--- debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
--- debugTracer = Tracer (\msg -> (,msg) <$> getCurrentTime >>= say . show)
-           -- <> Tracer Debug.traceShowM
-
+{-
+debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
+debugTracer = Tracer (\msg -> (\a -> (a,msg)) <$> getCurrentTime >>= say . show)
+           <> Tracer (\msg -> (\a -> (a,msg)) <$> getCurrentTime >>= Debug.traceShowM)
+-}
 
 -- | Convenience function to create a TemperatureBundle. Could move to Ouroboros.Network.Mux.
 makeBundle :: (forall pt. SingProtocolTemperature pt -> a) -> TemperatureBundle a

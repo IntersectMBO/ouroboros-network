@@ -23,8 +23,8 @@ import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRo
 
 import           Ouroboros.Network.PeerSelection.Governor
 
-import           Ouroboros.Network.Testing.Utils (prop_shrink_nonequal,
-                     prop_shrink_valid, renderRanges)
+import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
+                     prop_shrink_nonequal, prop_shrink_valid, renderRanges)
 import           Test.Ouroboros.Network.PeerSelection.Instances
 
 
@@ -137,7 +137,7 @@ prop_arbitrary_LocalRootPeers lrps =
                  | (h, w, g) <- LocalRootPeers.toGroupSets lrps ]
 
 
-prop_shrink_LocalRootPeers :: Fixed (LocalRootPeers PeerAddr) -> Property
+prop_shrink_LocalRootPeers :: ShrinkCarefully (LocalRootPeers PeerAddr) -> Property
 prop_shrink_LocalRootPeers x =
       prop_shrink_valid LocalRootPeers.invariant x
  .&&. prop_shrink_nonequal x
