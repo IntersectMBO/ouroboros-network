@@ -4,10 +4,14 @@
 
 ### Breaking changes
 
+* `ResourceException` is now an existential type.
+
 ### Non-breaking changes
 
 * Split `test` component into `io-tests` and `sim-tests`.
 * `demo-ping-pong`: improved tracer.
+* Fixed a bug in `connection-manager` which could result in leaking
+  a connection.
 
 ## 0.9.0.0 -- 2023-08-21
 
