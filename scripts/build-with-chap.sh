@@ -19,13 +19,13 @@ fi
 cabal_files=$(fd -ae 'cabal')
 for cf in $cabal_files; do
   name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
-  version=$(ls -1 $CHAP_DIR/_sources/$name | sort | tail -1)
+  version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
   tag="$name-$version"
   echo "$tag ($(git rev-parse $tag))"
   git restore --source="$name-$version" -- $name
   revdir="$CHAP_DIR/_sources/$name/$version/revisions"
   if [[ -d $revdir ]]; then
-    rev=$(ls $revdir | sort | tail -1)
+    rev=$(ls $revdir | sort -V | tail -1)
     echo "copy revision $revdir/$rev to $name/$name.cabal"
     cp $revdir/$rev "$name/$name.cabal"
   fi
