@@ -438,7 +438,7 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
         c <- readTVar serverCountVar
         when (c > 0) retry
 
-    serverPortMap <- atomically $ readTVar serverPortMapVar
+    serverPortMap <- readTVarIO serverPortMapVar
     networkState <- newNetworkMutableState
     dnsSubscriptionWorker'
       (socketSnocket iocp)
@@ -467,7 +467,7 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
 
     mapM_ wait serverAids
 
-    observerdConnectionOrder <- fmap reverse $ atomically $ readTVar observerdConnectionOrderVar
+    observerdConnectionOrder <- reverse <$> readTVarIO observerdConnectionOrderVar
 
     return $ property $ verifyOrder observerdConnectionOrder
 
