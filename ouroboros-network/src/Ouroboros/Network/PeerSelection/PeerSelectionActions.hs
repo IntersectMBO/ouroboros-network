@@ -52,7 +52,6 @@ withPeerSelectionActions
      , MonadMVar  m
      , Ord peeraddr
      , Exception exception
-     , Eq (Async m Void)
      )
   => Tracer m (TraceLocalRootPeers peeraddr exception)
   -> Tracer m TracePublicRootPeers

@@ -522,7 +522,6 @@ runM
        , MonadTime        m
        , MonadTimer       m
        , MonadMVar        m
-       , Eq (Async m Void)
        , Typeable  ntnAddr
        , Ord       ntnAddr
        , Show      ntnAddr
