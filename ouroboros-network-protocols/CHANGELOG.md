@@ -1,8 +1,12 @@
 # Revision history for ouroboros-network-protocols
 
-## next version
+## next release
 
 ### Breaking changes
+
+### Non-breaking changes
+
+## 0.5.3.0 -- 2023-10-26
 
 ### Non-breaking changes
 
@@ -11,8 +15,6 @@
 * Add a 97s timeout to keepalive's StClient state.
 
 ## 0.5.2.0 -- 2023-09-08
-
-### Breaking changes
 
 ### Non-breaking changes
 
