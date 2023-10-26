@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.4.0.0 -- 2023-10-26
+
+### Breaking changes
+
 - Changed `prop_shrink_valid` to use `ShrinkCarefully`
 - Changed `prop_shrink_nonempty` to use `ShrinkCarefully` (formerlly
   `prop_shrinkCarefully` was defined in `ouroboros-network:sim-test`)

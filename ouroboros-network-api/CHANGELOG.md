@@ -1,10 +1,17 @@
 # Revision history for ouroboros-network-api
 
-## next version
+## next release
 
 ### Breaking changes
 
 ### Non-breaking changes
+
+
+## 0.5.1.1 -- 2023-10-26
+
+### Non-breaking changes
+
+* Depend on `type-protocols-0.1.1.0`.
 
 ## 0.5.1.0 -- 2023-08-09
 

@@ -1,7 +1,7 @@
 cabal-version: 3.0
 
 name:                   cardano-client
-version:                0.3.0.0
+version:                0.3.0.1
 synopsis:               An API for ouroboros-network
 description:            An API for ouroboros-network.
 license:                Apache-2.0
@@ -23,7 +23,7 @@ library
                        containers,
                        ouroboros-network-api       ^>= 0.5.1,
                        ouroboros-network           ^>= 0.9,
-                       ouroboros-network-framework  >= 0.8 && < 0.10,
+                       ouroboros-network-framework  >= 0.8 && < 0.11,
                        network-mux                 ^>= 0.4,
 
   ghc-options:         -Wall

@@ -1,6 +1,12 @@
 # Revision history for mux
 
-## next
+## next release
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.4.1.0
 
 ### Breaking
 
