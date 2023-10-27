@@ -219,7 +219,7 @@ mkPartialBlockHeader sl body =
       headerBodyHash = hashBody body
     }
   where
-    partialField n = error ("mkPartialBlock: you didn't fill in field " ++ n)
+    partialField n = error ("mkPartialBlockHeader: you didn't fill in field " ++ n)
 
 {-------------------------------------------------------------------------------
   "Fixup" is used for chain construction in the network tests. These functions

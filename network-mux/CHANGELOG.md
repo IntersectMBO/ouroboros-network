@@ -13,6 +13,10 @@
 ### Non-breaking
 
 * `asserts` cabal flag was removed, one can use `ghc-options` directly
+* Restructured `step` to prevent an impossible case and eliminate the associated
+  `error`.
+* Restructured `setupDispatchTable` to prevent an impossible case and eliminate
+  the associated error.
 
 ## 0.4.0.0 -- 2023-04-28
 

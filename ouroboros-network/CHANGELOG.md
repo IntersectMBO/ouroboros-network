@@ -17,6 +17,13 @@
 * Adds ledger peers to diffusion simulation
 * Fix diffusion tests.
 * `demo-chain-sync`: added option parser, added new options.
+* Lifted `chainGenerator` to be `Infinite`.
+* Strengthened precondition in `pickPeers` to check that the peers to be picked
+  from are a subset of the `PeerSelectionState` used to analyze them.
+  - This is non-breaking because it reflects the current reality of how peers
+    are chosen from `PeerSelectionState`.
+* Restructured `txSubmissionOutbound` to prevent an impossible case and
+  eliminate the associated error.
 
 * Increase keyed timeout on a testnet test that was failing.
 
@@ -31,6 +38,7 @@
 * Disable light peer sharing if peer sharing is not enabled.
 * Do not use light peer sharing in `node-to-client` case (which leads to a memory leak).
 * Split `test` component into `io-tests` and `sim-tests`.
+
 
 ## 0.9.0.0 -- 2023-08-09
 

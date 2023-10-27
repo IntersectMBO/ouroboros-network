@@ -95,14 +95,13 @@ ntpClientThread ioManager tracer ntpSettings ntpStatus = queryLoop initialErrorD
   where
     queryLoop :: Int -> IO Void
     queryLoop errorDelay = tryIOError (ntpQuery ioManager tracer ntpSettings) >>= \case
-        Right status@NtpDrift{} -> do
-            atomically $ writeTVar ntpStatus status
+        Right (CNtpDrift offset) -> do
+            atomically $ writeTVar ntpStatus (NtpDrift offset)
             -- After a successful query the client sleeps
             -- for the time interval set in `ntpPollDelay`.
             awaitPendingWithTimeout ntpStatus $ fromIntegral $ ntpPollDelay ntpSettings
             queryLoop initialErrorDelay -- Use the initialErrorDelay.
-        Right NtpSyncUnavailable -> fastRetry errorDelay
-        Right NtpSyncPending -> error "ntpClientThread: impossible happened"
+        Right CNtpSyncUnavailable -> fastRetry errorDelay
         Left err -> do
             traceWith tracer $ NtpTraceIOError err
             fastRetry errorDelay

@@ -157,7 +157,7 @@ setupDispatchTable ptcls =
             [ (pnum, Nothing)    | pnum <- [minpnum..maxpnum] ]
 
             -- And override with the ones actually used.
-         ++ [ (pnum, Just pix)   | (pix, pnum) <- zip [0..] pnums ]
+         ++ [ (pnum, Just pix)   | (pnum, pix) <- zip pnums [0..] ]
 
     ptclArray :: Array (MiniProtocolIx, MiniProtocolDir)
                        (MiniProtocolDispatchInfo m)
@@ -182,7 +182,10 @@ setupDispatchTable ptcls =
             , let pix  =
                    case pnumArray ! miniProtocolNum of
                      Just a  -> a
-                     Nothing -> error ("setupDispatchTable: missing " ++ show miniProtocolNum)
+                     -- This error is impossible to trigger - note that
+                     -- `pnumArray` is constructed to ensure that every
+                     -- `miniProtocolNum` in `ptcls` indexes to a `Just` value.
+                     Nothing -> error ("setupDispatchTable: impossible: missing " ++ show miniProtocolNum)
                   dir      = protocolDirEnum miniProtocolDir
                   qMax     = maximumIngressQueue miniProtocolLimits
             ]

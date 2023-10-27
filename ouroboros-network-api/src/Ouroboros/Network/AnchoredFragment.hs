@@ -162,7 +162,7 @@ anchorToPoint (Anchor s h _b) = BlockPoint s h
 -- In this case, we must also be given the 'BlockNo'. This only makes sense
 -- for points that aren't genesis.
 anchorFromPoint :: Point block -> BlockNo -> Anchor block
-anchorFromPoint GenesisPoint _     = error "anchorFromPoint: genesis point"
+anchorFromPoint GenesisPoint _     = error "anchorFromPoint: genesis point" -- TODO #4690
 anchorFromPoint (BlockPoint s h) b = Anchor s h b
 
 -- | Extract the 'BlockNo' from the anchor

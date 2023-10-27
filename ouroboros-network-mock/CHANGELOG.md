@@ -1,5 +1,15 @@
 # Revision history for ouroboros-network-mock
 
+## next
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Clarified `successorBlock`'s contract (specifying that behavior is undefined
+  when the provided point isn't on the provided chain) and leveraged it to
+  prevent a call to `error`.
+
 ## 0.1.0.2 -- 2023-10-26
 
 ### Non-breaking changes

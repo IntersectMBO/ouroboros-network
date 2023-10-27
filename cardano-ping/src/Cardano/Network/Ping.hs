@@ -32,6 +32,8 @@ import           Data.Aeson (Value, ToJSON(toJSON, toJSONList), object, encode, 
 import           Data.Aeson.Text (encodeToLazyText)
 import           Data.Bits (clearBit, setBit, testBit)
 import           Data.ByteString.Lazy (ByteString)
+import           Data.Foldable (toList)
+import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Maybe (fromMaybe,)
 import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean, quantile, stddev, TDigest)
 import           Data.Text (unpack)
@@ -217,14 +219,13 @@ keepAliveDone _ =
       CBOR.encodeWord 2
 
 
-handshakeReqEnc :: [NodeVersion] -> Bool -> CBOR.Encoding
-handshakeReqEnc [] _ = error "null version list"
+handshakeReqEnc :: NonEmpty NodeVersion -> Bool -> CBOR.Encoding
 handshakeReqEnc versions query =
       CBOR.encodeListLen 2
   <>  CBOR.encodeWord 0
   <>  CBOR.encodeMapLen (fromIntegral $ L.length versions)
   <>  mconcat [ encodeVersion (fixupVersion v)
-              | v <- versions
+              | v <- toList versions
               ]
   where
     -- Query is only available for NodeToNodeVersionV11 and higher, for smaller
@@ -323,8 +324,8 @@ handshakeReqEnc versions query =
       <>  CBOR.encodeBool (modeToBool mode)
 
 handshakeReq :: [NodeVersion] -> Bool -> ByteString
-handshakeReq []       _     = LBS.empty
-handshakeReq versions query = CBOR.toLazyByteString $ handshakeReqEnc versions query
+handshakeReq []     _     = LBS.empty
+handshakeReq (v:vs) query = CBOR.toLazyByteString $ handshakeReqEnc (v:|vs) query
 
 data HandshakeFailure
   = UnknownVersionInRsp Word

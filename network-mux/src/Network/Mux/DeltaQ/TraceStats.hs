@@ -8,7 +8,6 @@ module Network.Mux.DeltaQ.TraceStats
 
 import           Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
-import           Data.Maybe
 import           Data.Word (Word32)
 
 import           Control.Monad.Class.MonadTime.SI
@@ -23,24 +22,21 @@ step :: RemoteClockModel        -- ^ Remote clock timestamp
                                 --   observed outcome
      -> StatsA                  -- ^ accumulation state
      -> (Maybe OneWayDeltaQSample, StatsA)
-step remoteTS localTS obsSize s
- | isNothing (referenceTimePoint s) -- first observation this sample period
-   = step remoteTS localTS obsSize
+step remoteTS localTS obsSize s =
+  case referenceTimePoint s of
+    Nothing -> -- first observation this sample period
+      step remoteTS localTS obsSize
           (s { referenceTimePoint = Just $! (unRemoteClockModel remoteTS, localTS)
              , nextSampleAt       = sampleInterval `addTime` localTS
              , timeLastObs        = localTS -- for single observation in sample case
              })
-
- | localTS <= nextSampleAt s    -- still in a sample period
-  = let refTimePoint = case referenceTimePoint s of
-          Just a  -> a
-          Nothing -> error "step: missing referenceTimePoint"
-        transitTime       = calcTransitTime refTimePoint remoteTS localTS
-    in (Nothing, recordObservation s localTS obsSize transitTime)
- | otherwise                    -- need to start next sample period
-  = let sample  = constructSample s
-        (_, s') = step remoteTS localTS obsSize initialStatsA
-    in (Just sample, s')
+    Just refTimePoint | localTS <= nextSampleAt s ->   -- still in a sample period
+      let transitTime = calcTransitTime refTimePoint remoteTS localTS
+      in (Nothing, recordObservation s localTS obsSize transitTime)
+    _ -> -- need to start next sample period
+      let sample  = constructSample s
+          (_, s') = step remoteTS localTS obsSize initialStatsA
+      in (Just sample, s')
 
 -- Calculate the transit time by transforming the remotely reported
 -- emit time into local clock domain then calculating differences.
