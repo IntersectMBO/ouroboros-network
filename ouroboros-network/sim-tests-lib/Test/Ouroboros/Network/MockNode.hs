@@ -5,7 +5,6 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeOperators       #-}
 
 module Test.Ouroboros.Network.MockNode where
 
@@ -169,22 +168,24 @@ data TestNodeSim = TestNodeSim
   { testChain               :: Chain Block
   , testSlotDuration        :: DiffTime
   , testCoreTransportDelay  :: DiffTime
-  , testRealyTransportDelay :: DiffTime
+  , testRelayTransportDelay :: DiffTime
   }
   deriving (Show, Eq)
 
 instance Arbitrary TestNodeSim where
   arbitrary = do
-    TestBlockChain testChain <- arbitrary
-    -- at least twice as much as testCoreDelay
-    Positive slotDuration <- arbitrary
-    Positive testCoreTransportDelay <- arbitrary
-    Positive testRelayTransportDelay <- arbitrary
-    let secondsToDiffTime :: Micro -> DiffTime
-        secondsToDiffTime = realToFrac
-    return $ TestNodeSim testChain (secondsToDiffTime slotDuration)
-                                   (secondsToDiffTime testCoreTransportDelay)
-                                   (secondsToDiffTime testRelayTransportDelay)
+      TestBlockChain testChain <- arbitrary
+      -- at least twice as much as testCoreDelay
+      Positive testSlotDuration <- fmap secondsToDiffTime <$> arbitrary
+      Positive testCoreTransportDelay <- fmap secondsToDiffTime <$> arbitrary
+      Positive testRelayTransportDelay <- fmap secondsToDiffTime <$> arbitrary
+      return $ TestNodeSim { testChain,
+                             testSlotDuration,
+                             testCoreTransportDelay,
+                             testRelayTransportDelay }
+    where
+       secondsToDiffTime :: Micro -> DiffTime
+       secondsToDiffTime = realToFrac
 
   -- TODO: shrink
 
