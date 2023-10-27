@@ -438,7 +438,7 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
         c <- readTVar serverCountVar
         when (c > 0) retry
 
-    serverPortMap <- atomically $ readTVar serverPortMapVar
+    serverPortMap <- readTVarIO serverPortMapVar
     networkState <- newNetworkMutableState
     dnsSubscriptionWorker'
       (socketSnocket iocp)
@@ -467,7 +467,7 @@ prop_sub_io lr = ioProperty $ withIOManager $ \iocp -> do
 
     mapM_ wait serverAids
 
-    observerdConnectionOrder <- fmap reverse $ atomically $ readTVar observerdConnectionOrderVar
+    observerdConnectionOrder <- reverse <$> readTVarIO observerdConnectionOrderVar
 
     return $ property $ verifyOrder observerdConnectionOrder
 
@@ -536,104 +536,110 @@ prop_send_recv
     -> Property
 prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
 
-    let first = Socket.AF_INET6
-    let lr = LookupResultIO (Right [0]) (Right [0]) first 1
-        serverPortMap = M.fromList [((Socket.AF_INET, 0), 6062), ((Socket.AF_INET6, 0), 6062)]
+    let lr = LookupResultIO (Right [0]) (Right [0]) Socket.AF_INET6 1
+        hints = Just $ Socket.defaultHints {Socket.addrSocketType = Socket.Stream}
 
-    responderAddr4:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6062")
-    responderAddr6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6062")
-    let (responderAddr, faultyAddress) = case first of
-                                              Socket.AF_INET  -> (responderAddr6, responderAddr4)
-                                              Socket.AF_INET6 -> (responderAddr4, responderAddr6)
-                                              _  -> error "prop_send_recv: invalid address family"
-    initiatorAddr4:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
-    initiatorAddr6:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
+    responderAddress0:_ <- Socket.getAddrInfo hints (Just "127.0.0.1") Nothing
 
-    firstDoneVar <- newEmptyTMVarIO
+    initiatorAddr4:_ <- Socket.getAddrInfo hints (Just "127.0.0.1") (Just "0")
+    initiatorAddr6:_ <- Socket.getAddrInfo hints (Just "::1") (Just "0")
 
-    cv <- newEmptyTMVarIO
-    sv <- newEmptyTMVarIO
-    siblingVar <- newTVarIO 2
-    tbl <- newConnectionTable
-    clientTbl <- newConnectionTable
+    -- listening socket
+    bracket (Socket.openSocket responderAddress0) Socket.close $ \socket -> do
+        Socket.bind socket (Socket.addrAddress responderAddress0)
+        Socket.listen socket 10
 
-    let -- Server Node; only req-resp server
-        responderApp :: OuroborosApplicationWithMinimalCtx
-                          ResponderMode Socket.SockAddr BL.ByteString IO Void ()
-        responderApp = testProtocols2 reqRespResponder
+        responderAddr <- Socket.getSocketName socket
+        let responderPort = case responderAddr of
+                Socket.SockAddrInet port _ -> port
+                _                          -> error "impossible happened"
+            serverPortMap = M.fromList [((Socket.AF_INET, 0), responderPort), ((Socket.AF_INET6, 0), responderPort)]
+        faultyAddress:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just $ show responderPort)
 
-        reqRespResponder =
-          ResponderProtocolOnly $
-          MiniProtocolCb $ \_ctx channel -> do
-            (r, trailing) <- runPeer (tagTrace "Responder" activeTracer)
-                         ReqResp.codecReqResp
-                         channel
-                         (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
-            atomically $ putTMVar sv r
-            ((), trailing)
-              <$ waitSiblingSub siblingVar
+        firstDoneVar <- newEmptyTMVarIO
 
-        -- Client Node; only req-resp client
-        initiatorApp :: OuroborosApplicationWithMinimalCtx
-                          InitiatorMode Socket.SockAddr BL.ByteString IO () Void
-        initiatorApp = testProtocols2 reqRespInitiator
+        cv <- newEmptyTMVarIO
+        sv <- newEmptyTMVarIO
+        siblingVar <- newTVarIO 2
+        tbl <- newConnectionTable
+        clientTbl <- newConnectionTable
 
-        reqRespInitiator =
-          InitiatorProtocolOnly $
-          MiniProtocolCb $ \_ctx channel -> do
-            (r, trailing) <- runPeer (tagTrace "Initiator" activeTracer)
-                         ReqResp.codecReqResp
-                         channel
-                         (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
-            atomically $ putTMVar cv r
-            ((), trailing) <$
-              waitSiblingSub siblingVar
+        let -- Server Node; only req-resp server
+            responderApp :: OuroborosApplicationWithMinimalCtx
+                              ResponderMode Socket.SockAddr BL.ByteString IO Void ()
+            responderApp = testProtocols2 reqRespResponder
 
-    peerStatesVar <- newPeerStatesVar
-    let sn = socketSnocket iocp
-    withDummyServer faultyAddress $
-      withServerNode
-        sn
-        Mx.makeSocketBearer
-        ((. Just) <$> configureSocket)
-        nullNetworkServerTracers
-        (NetworkMutableState tbl peerStatesVar)
-        (AcceptedConnectionsLimit maxBound maxBound 0)
-        (Socket.addrAddress responderAddr)
-        unversionedHandshakeCodec
-        noTimeLimitsHandshake
-        unversionedProtocolDataCodec
-        (HandshakeCallbacks acceptableVersion queryVersion)
-        (unversionedProtocol (SomeResponderApplication responderApp))
-        nullErrorPolicies
-        $ \_ _ -> do
-          dnsSubscriptionWorker'
-            sn activeTracer activeTracer activeTracer
-            (NetworkMutableState clientTbl peerStatesVar)
-            (return lr)
-            (withMockResolverIO firstDoneVar serverPortMap)
-            SubscriptionParams {
-                spLocalAddresses =
-                  LocalAddresses
-                    (Just $ Socket.addrAddress initiatorAddr4)
-                    (Just $ Socket.addrAddress initiatorAddr6)
-                    Nothing,
-                spConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
-                spErrorPolicies = nullErrorPolicies,
-                spSubscriptionTarget = DnsSubscriptionTarget "shelley-0.iohk.example" 6062 1
-              }
-            (\_ -> waitSiblingSTM siblingVar)
-            (connectToNodeSocket
-                iocp
-                unversionedHandshakeCodec
-                noTimeLimitsHandshake
-                unversionedProtocolDataCodec
-                nullNetworkConnectTracers
-                (HandshakeCallbacks acceptableVersion queryVersion)
-                (unversionedProtocol initiatorApp))
+            reqRespResponder =
+              ResponderProtocolOnly $
+              MiniProtocolCb $ \_ctx channel -> do
+                (r, trailing) <- runPeer (tagTrace "Responder" activeTracer)
+                             ReqResp.codecReqResp
+                             channel
+                             (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
+                atomically $ putTMVar sv r
+                ((), trailing)
+                  <$ waitSiblingSub siblingVar
 
-    res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
-    return (res == L.mapAccumL f 0 xs)
+            -- Client Node; only req-resp client
+            initiatorApp :: OuroborosApplicationWithMinimalCtx
+                              InitiatorMode Socket.SockAddr BL.ByteString IO () Void
+            initiatorApp = testProtocols2 reqRespInitiator
+
+            reqRespInitiator =
+              InitiatorProtocolOnly $
+              MiniProtocolCb $ \_ctx channel -> do
+                (r, trailing) <- runPeer (tagTrace "Initiator" activeTracer)
+                             ReqResp.codecReqResp
+                             channel
+                             (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
+                atomically $ putTMVar cv r
+                ((), trailing) <$
+                  waitSiblingSub siblingVar
+
+        peerStatesVar <- newPeerStatesVar
+        let sn = socketSnocket iocp
+        withDummyServer faultyAddress $
+          withServerNode'
+            sn
+            Mx.makeSocketBearer
+            nullNetworkServerTracers
+            (NetworkMutableState tbl peerStatesVar)
+            (AcceptedConnectionsLimit maxBound maxBound 0)
+            socket
+            unversionedHandshakeCodec
+            noTimeLimitsHandshake
+            unversionedProtocolDataCodec
+            (HandshakeCallbacks acceptableVersion queryVersion)
+            (unversionedProtocol (SomeResponderApplication responderApp))
+            nullErrorPolicies
+            $ \_ _ -> do
+              dnsSubscriptionWorker'
+                sn activeTracer activeTracer activeTracer
+                (NetworkMutableState clientTbl peerStatesVar)
+                (return lr)
+                (withMockResolverIO firstDoneVar serverPortMap)
+                SubscriptionParams {
+                    spLocalAddresses =
+                      LocalAddresses
+                        (Just $ Socket.addrAddress initiatorAddr4)
+                        (Just $ Socket.addrAddress initiatorAddr6)
+                        Nothing,
+                    spConnectionAttemptDelay = \_ -> Just minConnectionAttemptDelay,
+                    spErrorPolicies = nullErrorPolicies,
+                    spSubscriptionTarget = DnsSubscriptionTarget "shelley-0.iohk.example" responderPort 1
+                  }
+                (\_ -> waitSiblingSTM siblingVar)
+                (connectToNodeSocket
+                    iocp
+                    unversionedHandshakeCodec
+                    noTimeLimitsHandshake
+                    unversionedProtocolDataCodec
+                    nullNetworkConnectTracers
+                    (HandshakeCallbacks acceptableVersion queryVersion)
+                    (unversionedProtocol initiatorApp))
+
+        res <- atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
+        return (res == L.mapAccumL f 0 xs)
 
   where
     withDummyServer :: Socket.AddrInfo

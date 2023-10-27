@@ -143,7 +143,7 @@
               # don't run checks using Wine when cross compiling
               packages.ntp-client.components.tests.test.doCheck                       = !pkgs.stdenv.hostPlatform.isWindows;
               packages.network-mux.components.tests.test.doCheck                      = !pkgs.stdenv.hostPlatform.isWindows;
-              packages.network-mux.components.tests.test.preCheck                     = "export GHCRTS=-M350M";
+              packages.network-mux.components.tests.test.preCheck                     = "export GHCRTS=-M500M";
               packages.ouroboros-network-api.components.tests.test.doCheck            = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ouroboros-network-protocols.components.tests.test.doCheck      = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
