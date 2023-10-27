@@ -207,10 +207,8 @@ simulatePeerMetricScript tracer config script = do
             return peer
 
         trace <- atomically $
-           PeerMetricsTrace
-                 <$> pure peer
-                 <*> pure (eventSlot ev)
-                 <*> upstreamyness      peerMetrics
+           PeerMetricsTrace peer (eventSlot ev)
+                 <$> upstreamyness      peerMetrics
                  <*> fetchynessBytes    peerMetrics
                  <*> fetchynessBlocks   peerMetrics
                  <*> joinedPeerMetricAt peerMetrics
@@ -443,8 +441,7 @@ prop_bounded_size (Positive maxEntriesToTrack) script =
 -- more accurately measure the latter.
 
 microbenchmark1GenerateInput :: Bool -> Int -> IO FixedScript
-microbenchmark1GenerateInput verbose' n =
-  do
+microbenchmark1GenerateInput verbose' n = do
   es <- generate (vector n)
   let fixedScript = mkFixedScript (Script (NonEmpty.fromList es))
   when verbose' $
@@ -464,7 +461,6 @@ microbenchmark1 verbose' n =
 prop_simScript :: FixedScript -> Property
 prop_simScript script =
     getAllProperty $ go $ last trace
-
   where
     config :: PeerMetricsConfiguration
     config = PeerMetricsConfiguration { maxEntriesToTrack = 500 }
@@ -535,10 +531,8 @@ simulatePeerMetricScriptWithoutDelays tracer config script = do
             return peer
 
         trace <- atomically $
-           PeerMetricsTrace
-                 <$> pure peer
-                 <*> pure (eventSlot ev)
-                 <*> upstreamyness      peerMetrics
+           PeerMetricsTrace peer (eventSlot ev)
+                 <$> upstreamyness      peerMetrics
                  <*> fetchynessBytes    peerMetrics
                  <*> fetchynessBlocks   peerMetrics
                  <*> joinedPeerMetricAt peerMetrics
