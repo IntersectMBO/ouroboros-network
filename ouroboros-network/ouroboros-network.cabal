@@ -204,7 +204,7 @@ common sim-tests-common
 library sim-tests-lib
   import:              sim-tests-common
   visibility:          public
-  hs-source-dirs:      sim-tests
+  hs-source-dirs:      sim-tests-lib
   exposed-modules:     Ouroboros.Network.BlockFetch.Examples
                        Ouroboros.Network.MockNode
                        Test.Ouroboros.Network.BlockFetch
@@ -241,7 +241,7 @@ library sim-tests-lib
 test-suite sim-tests
   import:              sim-tests-common
   type:                exitcode-stdio-1.0
-  hs-source-dirs:      sim-tests-main
+  hs-source-dirs:      sim-tests
   main-is:             Main.hs
   build-depends:       base >=4.14 && <4.19,
                        ouroboros-network:sim-tests-lib
