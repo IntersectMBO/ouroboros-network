@@ -279,8 +279,11 @@ for `cardano-node` on 32 architecture are too high).
 New versions of packages are published on [CHaP].  To release packages to
 [CHaP] one should use `./scritp/release-to-chap.sh`.
 
-* First run `./script/release-to-chap.sh -r` to see which changes will be
-  published. And verify that all `CHANGELOG.md` files are up-to-date.
+* First run `./script/release-to-chap.sh -r` to see which changes can be
+  published.
+* Update versions in `*.cabal` files according to changes in `CHANGELOG.md`
+  files.
+* Update `CHANGELOG.md` files.
 * Run `./script/release-to-chap.sh` which will create a PR in
   `cardano-haskell-packages` repo (pointed by `CARDANO_HASKELL_PACKAGES_DIR`
   environment variable or `/tmp/chap` if it's not defined).
