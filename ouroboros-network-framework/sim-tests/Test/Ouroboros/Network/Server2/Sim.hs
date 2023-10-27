@@ -24,7 +24,7 @@ import           Control.Applicative (Alternative ((<|>)))
 import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (SomeAsyncException (..), SomeException (..))
-import           Control.Monad (replicateM, when)
+import           Control.Monad (replicateM)
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadSay
@@ -770,8 +770,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
-                          ( \ connectionManager _ serverAsync -> do
-                            linkOnly (const True) serverAsync
+                          ( \ connectionManager _ _serverAsync -> do
                             connectionLoop SingInitiatorResponderMode localAddr cc connectionManager Map.empty connVar
                           )
                         -- `JobPool` does not catch any async exceptions, so we
@@ -837,12 +836,11 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
          -> StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (StrictTQueue m [req])))
          -- ^ mini protocol queues
          -> m ()
-    connectionLoop muxMode localAddr cc cm connMap0 connVar = go True connMap0
+    connectionLoop muxMode localAddr cc cm connMap0 connVar = go connMap0
       where
-        go :: Bool -- if false do not run 'unregisterOutboundConnection'
-           -> Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr DataFlowProtocolData ByteString m [resp] a) -- active connections
+        go :: Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr DataFlowProtocolData ByteString m [resp] a) -- active connections
            -> m ()
-        go !unregister !connMap = atomically (readTQueue cc) >>= \ case
+        go !connMap = atomically (readTQueue cc) >>= \ case
           NewConnection remoteAddr -> do
             let mkQueue :: forall pt. SingProtocolTemperature pt
                         -> STM m (StrictTQueue m [req])
@@ -860,18 +858,20 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                           $ requestOutboundConnection cm remoteAddr
             case connHandle of
               Left _ ->
-                go False connMap
+                go connMap
               Right (Connected _ _ h) -> do
                 qs <- atomically $ sequenceA $ makeBundle mkQueue
                 atomically $ modifyTVar connVar
                            $ Map.insert (connId remoteAddr) qs
-                go True (Map.insert remoteAddr h connMap)
+                go (Map.insert remoteAddr h connMap)
               Right Disconnected {} -> return ()
           Disconnect remoteAddr -> do
-            atomically $ modifyTVar connVar $ Map.delete (connId remoteAddr)
-            when unregister $
-              void (unregisterOutboundConnection cm remoteAddr)
-            go False (Map.delete remoteAddr connMap)
+            atomically $ do
+              m <- readTVar connVar
+              check (Map.member (connId remoteAddr) m)
+              writeTVar connVar (Map.delete (connId remoteAddr) m)
+            void (unregisterOutboundConnection cm remoteAddr)
+            go (Map.delete remoteAddr connMap)
           RunMiniProtocols remoteAddr reqs -> do
             atomically $ do
               mqs <- Map.lookup (connId remoteAddr) <$> readTVar connVar
@@ -908,8 +908,8 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                   Left  {} -> do
                     atomically
                       $ modifyTVar connVar (Map.delete (connId remoteAddr))
-                    go unregister (Map.delete remoteAddr connMap)
-                  Right {} -> go unregister connMap
+                    go (Map.delete remoteAddr connMap)
+                  Right {} -> go connMap
           Shutdown -> return ()
           where
             connId remoteAddr = ConnectionId { localAddress  = localAddr

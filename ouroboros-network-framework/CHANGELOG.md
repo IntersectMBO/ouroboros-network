@@ -20,6 +20,8 @@
 * Fixed a bug in `connection-manager` which could result in leaking
   a connection.
 
+* Fix Server2 [sim test](https://github.com/input-output-hk/ouroboros-network/issues/4607) by synchronizing connection/disconnection events.
+
 ## 0.9.0.0 -- 2023-08-21
 
 ### Breaking changes
