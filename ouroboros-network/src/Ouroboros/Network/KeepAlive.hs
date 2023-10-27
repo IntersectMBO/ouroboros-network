@@ -52,7 +52,9 @@ keepAliveClient
     -> KeepAliveClient m ()
 keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { keepAliveInterval } =
     let (cookie, rng) = random inRng in
-    SendMsgKeepAlive (Cookie cookie) (go rng Nothing)
+    KeepAliveClient $ do
+      startTime <- getMonotonicTime
+      return $ SendMsgKeepAlive (Cookie cookie) (go rng startTime)
   where
     payloadSize = 2
 
@@ -70,32 +72,24 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
                  then return Continue
                  else retry
 
-    go :: StdGen -> Maybe Time -> m (KeepAliveClient m ())
-    go rng startTime_m = do
+    go :: StdGen -> Time -> m (KeepAliveClientSt m ())
+    go rng startTime = do
       endTime <- getMonotonicTime
-      case startTime_m of
-           Just startTime -> do
-               let rtt = diffTime endTime startTime
-                   sample = fromSample startTime endTime payloadSize
-               gsv' <- atomically $ do
-                   m <- readTVar dqCtx
-                   assert (peer `M.member` m) $ do
-                     let (gsv', m') = M.updateLookupWithKey
-                             (\_ a -> if sampleTime a == Time 0 -- Ignore the initial dummy value
-                                         then Just sample
-                                         else Just $ sample <> a
-                             ) peer m
-                     writeTVar dqCtx m'
-                     return $ fromJust gsv'
-               traceWith tracer $ AddSample peer rtt gsv'
+      let rtt = diffTime endTime startTime
+          sample = fromSample startTime endTime payloadSize
+      gsv' <- atomically $ do
+          m <- readTVar dqCtx
+          assert (peer `M.member` m) $ do
+            let (gsv', m') = M.updateLookupWithKey
+                    (\_ a -> if sampleTime a == Time 0 -- Ignore the initial dummy value
+                                then Just sample
+                                else Just $ sample <> a
+                    ) peer m
+            writeTVar dqCtx m'
+            return $ fromJust gsv'
+      traceWith tracer $ AddSample peer rtt gsv'
 
-           Nothing        -> return ()
-
-      let keepAliveInterval' = case startTime_m of
-                                    Just _  -> keepAliveInterval
-                                    Nothing -> 0 -- The first time we send a packet directly.
-
-      delayVar <- registerDelay keepAliveInterval'
+      delayVar <- registerDelay keepAliveInterval
       decision <- atomically (decisionSTM delayVar)
       now <- getMonotonicTime
       case decision of
@@ -103,7 +97,7 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
         Quiesce   -> error "keepAliveClient: impossible happened"
         Continue  ->
             let (cookie, rng') = random rng in
-            pure (SendMsgKeepAlive (Cookie cookie) $ go rng' $ Just now)
+            pure (SendMsgKeepAlive (Cookie cookie) $ go rng' now)
         Terminate -> pure (SendMsgDone (pure ()))
 
 

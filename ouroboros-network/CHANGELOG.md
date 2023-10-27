@@ -12,6 +12,7 @@
 
 ### Non-breaking changes
 
+* Update KeepAlive client to collect a rtt sample for the first packet.
 * Less aggresive churning of established and known peers.
 * Add peer sharing to wireshark dissector.
 * Adds ledger peers to diffusion simulation

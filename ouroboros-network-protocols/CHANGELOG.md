@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Make it possible for KeepAlive client to collect a rtt sample for the first packet.
+
 ## 0.5.3.0 -- 2023-10-26
 
 ### Non-breaking changes
