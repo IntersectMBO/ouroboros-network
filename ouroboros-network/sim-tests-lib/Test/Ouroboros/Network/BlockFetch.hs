@@ -14,7 +14,7 @@ import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.HUnit
 import           Test.Tasty.QuickCheck (testProperty)
 
-import           Data.List
+import qualified Data.List as List
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe (mapMaybe)
@@ -341,10 +341,10 @@ tracePropertyNoDuplicateBlocksBetweenPeers fork1 fork2 es =
     Map.findWithDefault Set.empty 2 requestedFetchPoints
 
   where
-    hasDupes = not . null . filter ((>1) . length)  . group . sort
+    hasDupes = not . any ((>1) . length)  . List.group . List.sort
 
     requiredFetchPoints =
-      nub (chainPoints fork1 ++ chainPoints fork2)
+      List.nub (chainPoints fork1 ++ chainPoints fork2)
 
     requestedFetchPoints :: Map Int (Set (Point BlockHeader))
     requestedFetchPoints =

@@ -19,7 +19,7 @@ module Ouroboros.Network.MockNode where
 import           Control.Exception (assert)
 import           Control.Monad
 import           Data.Hashable
-import           Data.List hiding (inits)
+import qualified Data.List as List
 import           Data.Maybe (catMaybes)
 import           Data.Tuple (swap)
 import           GHC.Generics (Generic)
@@ -77,7 +77,7 @@ longestChainSelection candidateChainVars cpsVar =
       candidateChains <- mapM readTVar candidateChainVars
       cps@ChainProducerState{chainState = chain} <- readTVar cpsVar
       let -- using foldl' since @Chain.selectChain@ is left biased
-          chain' = foldl' Chain.selectChain chain (catMaybes candidateChains)
+          chain' = List.foldl' Chain.selectChain chain (catMaybes candidateChains)
       if Chain.headPoint chain' == Chain.headPoint chain
         then retry
         else writeTVar cpsVar (switchFork chain' cps)
