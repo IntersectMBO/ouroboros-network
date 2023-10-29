@@ -1,5 +1,5 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,14 +13,16 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
     -- * Utils
     -- ** Resource
   , Resource (..)
-  , withResource'
+  , retryResource
   , constantResource
     -- ** Error type
   , DNSorIOError (..)
   ) where
 
+#if !defined(mingw32_HOST_OS)
+import           Data.Function (fix)
+#endif
 import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
 
 import           Control.Exception (IOException)
 import           Control.Monad.Class.MonadAsync
@@ -59,40 +61,52 @@ instance Exception exception => Exception (DNSorIOError exception) where
 -- Resource
 --
 
--- | Evolving resource; We use it to reinitialise the dns library if the
+-- | Evolving resource; We use it to reinitialise the DNS library if the
 -- `/etc/resolv.conf` file was modified.
 --
-newtype Resource m err a = Resource {
-    withResource :: m (Either err a, Resource m err a)
-  }
-
--- | Like 'withResource' but retries until success.
+-- Note: `constantResource` and `retryResource` are written using a simplified approach
+-- inspired by _"The Different Aspects of Monads and Mixins"_, by Bruno C. d S.
+-- Oliveira, see https://www.youtube.com/watch?v=pfwP4hXM5hA.
 --
-withResource' :: MonadDelay m
-              => Tracer m err
-              -> NonEmpty DiffTime
-              -- ^ delays between each re-try
-              -> Resource m err a
-              -> m (a, Resource m err a)
-withResource' tracer = go
+newtype Resource m a = Resource {
+    withResource :: m (a, Resource m a)
+  }
+  deriving Functor
+
+constantResource :: forall m a. Applicative m => a -> Resource m a
+constantResource = fix go
   where
-    dropHead :: NonEmpty a -> NonEmpty a
-    dropHead as@(_ :| [])  = as
-    dropHead (_ :| a : as) = a :| as
+    go :: (a -> Resource m a)
+       -> (a -> Resource m a)
+    go this a = Resource $ pure (a, this a)
 
-    go !delays resource = do
-      er <- withResource resource
-      case er of
-        (Left err, resource') -> do
-          traceWith tracer err
-          threadDelay (NonEmpty.head delays)
-          withResource' tracer (dropHead delays) resource'
-        (Right r, resource') ->
-          pure (r, resource')
+-- | A 'Resource` which will exhibit the given `Resource` but retry it with
+-- a given delay until a success. On first success it will reset the delays.
+--
+retryResource :: forall m e a. MonadDelay m
+              => Tracer m e
+              -> NonEmpty DiffTime
+              -> Resource m (Either e a)
+              -> Resource m a
+retryResource tracer ds0 = fix step ds0
+  where
+    step :: (NonEmpty DiffTime -> Resource m (Either e a) -> Resource m a)
+         -> (NonEmpty DiffTime -> Resource m (Either e a) -> Resource m a)
+    step rec_ ds@(d :| _) resource = Resource $ do
+        ea <- withResource resource
+        case ea of
+          (Left e, resource') -> do
+            traceWith tracer e
+            threadDelay d
+            -- continue with next delays and `resource'`
+            withResource (rec_ (dropHead ds) resource')
+          (Right a, resource') ->
+            -- reset delays, continue with `resource'`
+            return (a, rec_ ds0 resource')
 
-constantResource :: Applicative m => a -> Resource m err a
-constantResource a = Resource (pure (Right a, constantResource a))
-
+    dropHead :: forall x. NonEmpty x -> NonEmpty x
+    dropHead xs@(_ :| [])  = xs
+    dropHead (_ :| x : xs) = x :| xs
 
 #if !defined(mingw32_HOST_OS)
 type TimeStamp = UTCTime
@@ -132,7 +146,7 @@ data DNSActions resolver exception m = DNSActions {
     -- TODO: it could be useful for `publicRootPeersProvider`.
     --
     dnsResolverResource      :: DNS.ResolvConf
-                             -> m (Resource m (DNSorIOError exception) resolver),
+                             -> m (Resource m (Either (DNSorIOError exception) resolver)),
 
     -- | `Resource` which passes the 'DNS.Resolver' (or abstract resolver type)
     -- through a 'StrictTVar'. Better than 'resolverResource' when using in
@@ -144,7 +158,7 @@ data DNSActions resolver exception m = DNSActions {
     -- changed.  The 'dns' library is using 'GetNetworkParams@ win32 api call
     -- to get the list of default dns servers.
     dnsAsyncResolverResource :: DNS.ResolvConf
-                             -> m (Resource m (DNSorIOError exception) resolver),
+                             -> m (Resource m (Either (DNSorIOError exception) resolver)),
 
     -- | Like 'DNS.lookupA' but also return the TTL for the results.
     --
@@ -192,14 +206,14 @@ ioDNSActions =
     -- TODO: it could be useful for `publicRootPeersProvider`.
     --
     resolverResource :: DNS.ResolvConf
-                     -> IO (Resource IO (DNSorIOError IOException) DNS.Resolver)
+                     -> IO (Resource IO (Either (DNSorIOError IOException) DNS.Resolver))
     resolverResource resolvConf = do
         rs <- DNS.makeResolvSeed resolvConf
         case DNS.resolvInfo resolvConf of
           DNS.RCFilePath filePath ->
             pure $ go filePath NoResolver
 
-          _ -> DNS.withResolver rs (pure . constantResource)
+          _ -> DNS.withResolver rs (pure . fmap Right . constantResource)
 
       where
         handlers :: [ Handler IO (Either (DNSorIOError IOException) a) ]
@@ -209,7 +223,7 @@ ioDNSActions =
 
         go :: FilePath
            -> TimedResolver
-           -> Resource IO (DNSorIOError IOException) DNS.Resolver
+           -> Resource IO (Either (DNSorIOError IOException) DNS.Resolver)
         go filePath tr@NoResolver = Resource $
           do
             result
@@ -244,8 +258,7 @@ ioDNSActions =
     -- than 'resolverResource' when using in multiple threads.
     --
     asyncResolverResource :: DNS.ResolvConf
-                          -> IO (Resource IO (DNSorIOError IOException)
-                                             DNS.Resolver)
+                          -> IO (Resource IO (Either (DNSorIOError IOException) DNS.Resolver))
 
     asyncResolverResource resolvConf =
         case DNS.resolvInfo resolvConf of
@@ -253,7 +266,7 @@ ioDNSActions =
             resourceVar <- newTVarIO NoResolver
             pure $ go filePath resourceVar
           _ -> do
-            constantResource <$> getResolver resolvConf
+            fmap Right . constantResource <$> getResolver resolvConf
       where
         handlers :: [ Handler IO (Either (DNSorIOError IOException) a) ]
         handlers  = [ Handler $ pure . Left . IOError
@@ -261,7 +274,7 @@ ioDNSActions =
                     ]
 
         go :: FilePath -> StrictTVar IO TimedResolver
-           -> Resource IO (DNSorIOError IOException) DNS.Resolver
+           -> Resource IO (Either (DNSorIOError IOException) DNS.Resolver)
         go filePath resourceVar = Resource $ do
           r <- readTVarIO resourceVar
           case r of

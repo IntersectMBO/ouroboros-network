@@ -16,14 +16,18 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   ) where
 
 import           Ouroboros.Network.PeerSelection.RootPeersDNS
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 
 import           Control.Applicative (Alternative)
 import           Control.Monad (forever, replicateM_)
 import           Data.ByteString.Char8 (pack)
 import           Data.Dynamic (Typeable, fromDynamic)
+import           Data.Either (rights)
 import           Data.Foldable (foldl')
+import           Data.Function (fix)
 import           Data.Functor (void)
 import           Data.IP (fromHostAddress, toIPv4w, toSockAddr)
+import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -40,21 +44,24 @@ import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
+import           Control.Monad.Class.MonadSay (MonadSay (..))
 import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI (Time (..))
+import           Control.Monad.Class.MonadTime.SI
+                     (MonadMonotonicTime (getMonotonicTime), Time (..), addTime)
 import           Control.Monad.Class.MonadTimer.SI
 import qualified Control.Monad.Class.MonadTimer.SI as MonadTimer
 import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (Tracer), contramap)
+import           Control.Tracer (Tracer (Tracer), contramap, nullTracer,
+                     traceWith)
 
 import           Data.List (intercalate)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..), WarmValency (..))
-import           Ouroboros.Network.Testing.Data.Script (NonEmpty ((:|)),
-                     Script (Script), initScript', scriptHead, singletonScript,
-                     stepScript, stepScript')
+import           Ouroboros.Network.Testing.Data.Script (Script (Script),
+                     initScript', scriptHead, singletonScript, stepScript,
+                     stepScript')
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -77,6 +84,9 @@ tests =
     , testGroup "publicRootPeersProvider"
        [ testProperty "resolves domains correctly"
                       prop_public_resolvesDomainsCorrectly
+       ]
+    , testGroup "delayedResource"
+       [
        ]
     ]
   ]
@@ -288,15 +298,15 @@ mockDNSActions dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
       dnsLookupWithTTL
     }
  where
-   dnsResolverResource      _ = return (constantResource ())
-   dnsAsyncResolverResource _ = return (constantResource ())
+   dnsResolverResource      _ = return (Right <$> constantResource ())
+   dnsAsyncResolverResource _ = return (Right <$> constantResource ())
 
    dnsLookupWithTTL :: resolvConf
                     -> resolver
                     -> Domain
                     -> m ([DNSError], [(IP, TTL)])
    dnsLookupWithTTL _ _ domain = do
-     dnsMap <- atomically (readTVar dnsMapVar)
+     dnsMap <- readTVarIO dnsMapVar
      DNSTimeout dnsTimeout <- stepScript dnsTimeoutScript
      DNSLookupDelay dnsLookupDelay <- stepScript dnsLookupDelayScript
 
@@ -840,3 +850,82 @@ prop_public_resolvesDomainsCorrectly
 
      in counterexample (show successes)
       $ successesMap == (map fst <$> Map.unions pDNSMap)
+
+
+-- | Create a resource from a list.
+--
+-- Invariant: the resource fails if it is run more than the number of items.
+--
+listResource :: forall e m a. Monad m
+             => Tracer m a
+             -> [Either e a] -> Resource m (Either e a)
+listResource tracer = fix go
+  where
+    go :: ([Either e a] -> Resource m (Either e a))
+       -> ([Either e a] -> Resource m (Either e a))
+    go _this [] = error "listResource: invariant vaiolation"
+    go this (a@(Right x) : as) = Resource $ do
+      traceWith tracer x
+      pure (a, this as)
+    go this (a@Left {}: as) = Resource $
+      pure (a, this as)
+
+
+-- | Verify retryResource
+--
+prop_retryResource :: NonEmptyList DNSTimeout -> [Either Int Int] -> Property
+prop_retryResource (NonEmpty delays0) as =
+    counterexample (ppTrace trace) $
+    selectTraceEventsDynamic trace === model delays as
+  where
+    delays :: NonEmpty DiffTime
+    delays = getDNSTimeout <$> NonEmpty.fromList delays0
+
+    tracer :: Tracer (IOSim s) Int
+    tracer = Tracer (\a -> getMonotonicTime >>= \t -> traceM (t, a))
+          <> Tracer (\a -> getMonotonicTime >>= \t -> say (show (t, a)))
+
+    resource :: Resource (IOSim s) Int
+    resource = retryResource nullTracer delays
+             $ listResource tracer as
+
+    sim :: IOSim s [Int]
+    sim = run (length (rights as)) resource
+      where
+        run :: Int -> Resource (IOSim s) Int -> IOSim s [Int]
+        run = go []
+          where
+            go xs n _ | n <= 0 = return (reverse xs)
+            go xs n r = do
+              (x, r') <- withResource r
+              go (x : xs) (pred n) r'
+
+
+    trace = runSimTrace sim
+
+    -- pure model of `retryResource`
+    model :: NonEmpty DiffTime -> [Either Int Int] -> [(Time, Int)]
+    model ds0 = go (Time 0) [] ds0
+      where
+        dropHead :: forall x. NonEmpty x -> NonEmpty x
+        dropHead xs@(_ :| [])  = xs
+        dropHead (_ :| x : xs) = x :| xs
+
+        go :: Time
+           -- ^ current time
+           -> [(Time, Int)]
+           -- ^ results
+           -> NonEmpty DiffTime
+           -- ^ delays stack
+           -> [Either Int Int]
+           -> [(Time, Int)]
+        go _t r _ds [] = reverse r
+        go t r ds (Left _ : xs) =
+          -- lefts cause delay
+          go (NonEmpty.head ds `addTime` t)
+             r
+             (dropHead ds)
+             xs
+        go t r _ds (Right x : xs) =
+          -- rights do not take time
+          go t ((t, x) : r) ds0 xs
