@@ -16,8 +16,7 @@ runCommand "check-stylish" {
   EXIT_CODE=$?
   if [[ $EXIT_CODE != 0 ]]
   then
-    diff -ru $src .
-    echo "*** Stylish-haskell found changes that need addressed first"
+    echo "*** Stylish-haskell found changes that need to be addressed first"
     exit $EXIT_CODE
   else
     echo $EXIT_CODE > $out
