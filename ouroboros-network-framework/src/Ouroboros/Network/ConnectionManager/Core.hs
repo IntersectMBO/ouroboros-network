@@ -141,7 +141,8 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         cmPrunePolicy         :: PrunePolicy peerAddr (STM m),
         cmConnectionsLimits   :: AcceptedConnectionsLimit,
 
-        -- | How to extract PeerSharing information from versionData
+        -- | How to extract remote side's PeerSharing information from
+        -- versionData
         cmGetPeerSharing      :: versionData -> PeerSharing
       }
 

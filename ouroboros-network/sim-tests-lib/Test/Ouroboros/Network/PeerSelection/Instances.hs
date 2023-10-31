@@ -57,10 +57,9 @@ instance Arbitrary PeerAdvertise where
   shrink DoNotAdvertisePeer = [DoAdvertisePeer]
 
 instance Arbitrary PeerSharing where
-  arbitrary = elements [ NoPeerSharing, PeerSharingPrivate, PeerSharingPublic ]
-  shrink PeerSharingPublic  = [PeerSharingPrivate, NoPeerSharing]
-  shrink PeerSharingPrivate = [NoPeerSharing]
-  shrink NoPeerSharing      = []
+  arbitrary = elements [ PeerSharingDisabled, PeerSharingEnabled ]
+  shrink PeerSharingDisabled = []
+  shrink PeerSharingEnabled  = [PeerSharingDisabled]
 
 instance Arbitrary IsLedgerPeer where
   arbitrary = elements [ IsLedgerPeer, IsNotLedgerPeer ]

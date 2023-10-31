@@ -48,8 +48,7 @@ import           Data.Maybe (fromMaybe)
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..),
-                     combinePeerInformation)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 -------------------------------
@@ -197,9 +196,7 @@ insert peeraddrs
   where
     newPeerInfo (peerSharing, peerAdvertise, ledgerPeers) =
       let peerAdvertise' = fromMaybe DoNotAdvertisePeer peerAdvertise
-          peerSharing'   = fromMaybe NoPeerSharing peerSharing
-                           `combinePeerInformation`
-                           peerAdvertise'
+          peerSharing'   = fromMaybe PeerSharingDisabled peerSharing
        in KnownPeerInfo {
         knownPeerFailCount = 0
       , knownPeerTepid     = False
@@ -213,8 +210,7 @@ insert peeraddrs
       , knownPeerTepid     = knownPeerTepid old
       -- It might be the case we are updating a peer's particular willingness
       -- flags or we just learned this peer comes from ledger.
-      , knownPeerSharing   = combinePeerInformation (knownPeerSharing new)
-                                                    (knownPeerAdvertise new)
+      , knownPeerSharing   = knownPeerSharing new
       , knownPeerAdvertise = knownPeerAdvertise new
       -- Preserve Ledger Peer information if the peer is ledger.
       , knownLedgerPeer    = case knownLedgerPeer old of
@@ -387,8 +383,7 @@ setConnectTimes times
 canPeerShareRequest :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canPeerShareRequest pa KnownPeers { allPeers } =
   case Map.lookup pa allPeers of
-    Just (KnownPeerInfo _ _ PeerSharingPublic _ _)  -> True
-    Just (KnownPeerInfo _ _ PeerSharingPrivate _ _) -> True
+    Just (KnownPeerInfo _ _ PeerSharingEnabled _ _) -> True
     _                                               -> False
 
 -- Filter available for Peer Sharing peers according to their PeerSharing

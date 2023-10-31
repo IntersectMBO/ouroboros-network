@@ -247,7 +247,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
               acceptedConnectionsSoftLimit = maxBound,
               acceptedConnectionsDelay     = 0
             },
-          cmGetPeerSharing = \_ -> NoPeerSharing
+          cmGetPeerSharing = \_ -> PeerSharingDisabled
         }
         (makeConnectionHandler
           muxTracer

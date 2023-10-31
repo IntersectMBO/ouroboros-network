@@ -4,6 +4,14 @@
 
 ### Breaking changes
 
+* Remove `PeerSharingPrivate` option from the `PeerSharing` data type.
+* Rename `NoPeerSharing` and `PeerSharingPublic` to `PeerSharingDisabled` and
+  `PeerSharingEnabled`, respectively.
+* Add new `NodeToNodeV_13` that encodes and decodes the updated `PeerSharing` flag data
+  type.
+* Move remote address codec to 'src/Ouroboros/Network/NodeToNode/Version.hs'.
+* Make remote address codec receive 'NodeToNodeVersion'.
+
 ### Non-breaking changes
 
 * Restructured `decodeTerm` to prevent an impossible case and eliminate the

@@ -446,8 +446,8 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diNtnDataFlow
           :: ntnVersion -> ntnVersionData -> DataFlow,
 
-        -- | peer sharing information used by peer selection governor to
-        -- decide which peers are available for performing peer sharing
+        -- | remote side peer sharing information used by peer selection governor
+        -- to decide which peers are available for performing peer sharing
         diNtnPeerSharing
           :: ntnVersionData -> PeerSharing,
 
@@ -715,7 +715,7 @@ runM Interfaces
                   -- local thread does not start a Outbound Governor
                   -- so it doesn't matter what we put here.
                   -- 'NoPeerSharing' is set for all connections.
-                  cmGetPeerSharing = \_ -> NoPeerSharing
+                  cmGetPeerSharing = \_ -> PeerSharingDisabled
                 }
 
         withConnectionManager
@@ -891,7 +891,7 @@ runM Interfaces
                        peerSharingRng)))
                 classifyHandleError
                 (InResponderMode inbndInfoChannel)
-                (if daOwnPeerSharing /= NoPeerSharing
+                (if daOwnPeerSharing /= PeerSharingDisabled
                    then InResponderMode (Just outbndInfoChannel)
                    else InResponderMode Nothing)
 

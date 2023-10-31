@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Update code to accommodate changes on `PeerSharing` data type.
+
 ## 0.10.0.0 -- 2023-10-26
 
 ### Breaking changes

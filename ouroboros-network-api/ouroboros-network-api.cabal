@@ -45,6 +45,7 @@ library
                        Ouroboros.Network.PeerSelection.PeerMetric.Type
                        Ouroboros.Network.PeerSelection.PeerAdvertise
                        Ouroboros.Network.PeerSelection.PeerSharing
+                       Ouroboros.Network.PeerSelection.PeerSharing.Codec
                        Ouroboros.Network.PeerSelection.RelayAccessPoint
   default-language:    Haskell2010
   build-depends:       base              >=4.14 && <4.19,

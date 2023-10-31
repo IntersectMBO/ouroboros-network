@@ -171,7 +171,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         (NodeToNodeVersionData {
           networkMagic  = NetworkMagic 0,
           diffusionMode = InitiatorAndResponderDiffusionMode,
-          peerSharing   = NoPeerSharing,
+          peerSharing = PeerSharingDisabled,
           query = False })
         (SomeResponderApplication responderApp))
       nullErrorPolicies
@@ -191,7 +191,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
             (NodeToNodeVersionData {
               networkMagic  = NetworkMagic 0,
               diffusionMode = InitiatorOnlyDiffusionMode,
-              peerSharing   = NoPeerSharing,
+              peerSharing = PeerSharingDisabled,
               query = False })
             initiatorApp)
           (Just consumerAddress)

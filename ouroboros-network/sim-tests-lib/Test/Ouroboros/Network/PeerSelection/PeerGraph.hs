@@ -60,8 +60,9 @@ newtype PeerGraph = PeerGraph [(PeerAddr, [PeerAddr], PeerInfo)]
 type PeerInfo = GovernorScripts
 
 data GovernorScripts = GovernorScripts {
-    peerShareScript  :: PeerShareScript,
-    connectionScript :: ConnectionScript
+    peerShareScript   :: PeerShareScript,
+    peerSharingScript :: PeerSharingScript,
+    connectionScript  :: ConnectionScript
   }
   deriving (Eq, Show)
 
@@ -213,13 +214,18 @@ instance Arbitrary AsyncDemotion where
 instance Arbitrary GovernorScripts where
     arbitrary = GovernorScripts
             <$> arbitrary
+            <*> arbitrary
             <*> (fixConnectionScript <$> arbitrary)
-    shrink GovernorScripts { peerShareScript, connectionScript } =
-      [ GovernorScripts peerShareScript' connectionScript
+    shrink GovernorScripts { peerShareScript, peerSharingScript, connectionScript } =
+      [ GovernorScripts peerShareScript' peerSharingScript connectionScript
       | peerShareScript' <- shrink peerShareScript
       ]
       ++
-      [ GovernorScripts peerShareScript connectionScript'
+      [ GovernorScripts peerShareScript peerSharingScript' connectionScript
+      | peerSharingScript' <- shrink peerSharingScript
+      ]
+      ++
+      [ GovernorScripts peerShareScript peerSharingScript connectionScript'
       | connectionScript' <- map fixConnectionScript (shrink connectionScript)
         -- fixConnectionScript can result in re-creating the same script
         -- which would cause shrinking to loop. Filter out such cases.
@@ -247,8 +253,9 @@ instance Arbitrary PeerGraph where
                         [ (from, Set.singleton (PeerAddr to))
                         | (from, to) <- edges ]
       graph <- sequence [ do peerShareScript <- arbitraryPeerShareScript outedges
+                             peerSharingScript <- arbitraryScriptOf (length outedges) arbitrary
                              connectionScript <- fixConnectionScript <$> arbitrary
-                             let node = GovernorScripts { peerShareScript, connectionScript }
+                             let node = GovernorScripts { peerShareScript, peerSharingScript, connectionScript }
                              return (PeerAddr n, outedges, node)
                         | n <- [0..numNodes-1]
                         , let outedges = maybe [] Set.toList
@@ -292,11 +299,12 @@ prunePeerGraphEdges :: [(PeerAddr, [PeerAddr], PeerInfo)]
 prunePeerGraphEdges graph =
     [ (nodeaddr, edges', node)
     | let nodes   = Set.fromList [ nodeaddr | (nodeaddr, _, _) <- graph ]
-    , (nodeaddr, edges, GovernorScripts { peerShareScript = Script peershare, connectionScript }) <- graph
+    , (nodeaddr, edges, GovernorScripts { peerShareScript = Script peershare, peerSharingScript, connectionScript }) <- graph
     , let edges'  = pruneEdgeList nodes edges
           peershare' = prunePeerShareScript (Set.fromList edges') peershare
           node    = GovernorScripts {
                         peerShareScript = Script peershare',
+                        peerSharingScript,
                         connectionScript
                       }
     ]

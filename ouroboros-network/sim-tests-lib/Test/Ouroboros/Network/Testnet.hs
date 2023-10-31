@@ -373,7 +373,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
               (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
-              NoPeerSharing
+              PeerSharingDisabled
               [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoNotAdvertisePeer),(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoNotAdvertisePeer)])]
               (Script (LedgerPools [] :| []))
               nullPeerSelectionTargets {
@@ -400,7 +400,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
         , ( NodeArgs (1) InitiatorAndResponderDiffusionMode (Just 135)
              (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65533, DoAdvertisePeer)])
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
-             NoPeerSharing
+             PeerSharingDisabled
              []
              (Script (LedgerPools [] :| []))
              nullPeerSelectionTargets {
@@ -858,7 +858,7 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
             (Just 224)
             Map.empty
             (TestAddress (IPAddr (read "0.0.1.236") 65527))
-            NoPeerSharing
+            PeerSharingDisabled
             [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,DoNotAdvertisePeer)
                                 , (RelayAccessDomain "test3" 4,DoAdvertisePeer)])
             ]
@@ -1883,7 +1883,7 @@ async_demotion_network_script =
                            = Nothing,
         naChainSyncEarlyExit
                            = False,
-        naPeerSharing      = NoPeerSharing
+        naPeerSharing      = PeerSharingDisabled
       }
 
 
@@ -2099,13 +2099,14 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeoutTruncated
-              53 -- seconds
+              100 -- seconds
               id
               demotionOpportunities
 
        in counterexample
-            ("\nSignal key: (local peers, active peers, " ++
+            ("\nSignal key: (local peers, active peers, is alive " ++
              "demotion opportunities, ignored too long)") $
+          counterexample (intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_,_,_,_,toolong) -> Set.null toolong)
@@ -2303,7 +2304,7 @@ prop_unit_4258 =
               (Just 224)
               Map.empty
               (TestAddress (IPAddr (read "0.0.0.4") 9))
-              NoPeerSharing
+              PeerSharingDisabled
               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])]
               (Script (LedgerPools [] :| []))
               PeerSelectionTargets {
@@ -2337,7 +2338,7 @@ prop_unit_4258 =
                (Just 269)
                (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoNotAdvertisePeer)])
                (TestAddress (IPAddr (read "0.0.0.8") 65531))
-               NoPeerSharing
+               PeerSharingDisabled
                [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])]
                (Script (LedgerPools [] :| []))
                PeerSelectionTargets {

@@ -584,10 +584,15 @@ client protocol.
 \subsubsection{Node to client handshake mini-protocol}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-client.cddl}
 
-\subsection{CDDL encoding specification ($\geq 11$)}\label{handshake-cddl}
+\subsection{CDDL encoding specification ($11$ to $12$)}\label{handshake-cddl}
 
 \subsubsection{Node to node handshake mini-protocol}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-node-v11.cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-node-v11-12.cddl}
+
+\subsection{CDDL encoding specification ($\geq 13$)}\label{handshake-cddl}
+
+\subsubsection{Node to node handshake mini-protocol}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/handshake-node-to-node-v13.cddl}
 
 \section{Chain-Sync mini-protocol}
 \label{chain-sync-protocol}
@@ -1394,8 +1399,11 @@ function early in the consensus side. This means we will have to find a way to d
 function application all the way to diffusion and share the relevant parts of
 \texttt{PeerSelectionState} with this function via a \texttt{TVar}.
 
-\subsection{CDDL encoding specification}
-\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/peer-sharing.cddl}
+\subsection{CDDL encoding specification ($11$ to $12$)}\label{peersharing-cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/peer-sharing-v11-12.cddl}
+
+\subsection{CDDL encoding specification ($\geq 13$)}\label{peersharing-cddl}
+\lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/peer-sharing-v13.cddl}
 
 \section{Pipelining of Mini Protocols}
 \label{pipelining}

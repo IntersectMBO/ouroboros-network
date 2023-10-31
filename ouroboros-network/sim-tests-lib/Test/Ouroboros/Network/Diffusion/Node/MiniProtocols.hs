@@ -336,7 +336,7 @@ applications debugTracer nodeKernel
                     keepAliveInitiator
                     keepAliveResponder
               }
-          ] ++ if aaOwnPeerSharing /= PSTypes.NoPeerSharing
+          ] ++ if aaOwnPeerSharing /= PSTypes.PeerSharingDisabled
                   then [ MiniProtocol
                           { miniProtocolNum    = peerSharingMiniProtocolNum
                           , miniProtocolLimits = peerSharingLimits limits

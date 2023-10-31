@@ -25,7 +25,6 @@ import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import           Ouroboros.Network.Magic
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
-
 -- | Enumeration of node to node protocol versions.
 --
 data NodeToNodeVersion
@@ -58,6 +57,10 @@ data NodeToNodeVersion
     -- ^ Changes:
     --
     -- * Enable @CardanoNodeToNodeVersion7@, i.e., Conway
+    | NodeToNodeV_13
+    -- ^ Changes:
+    --
+    -- * Added `localPeerSharing` negotiation flag.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -69,6 +72,7 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     encodeTerm NodeToNodeV_10 = CBOR.TInt 10
     encodeTerm NodeToNodeV_11 = CBOR.TInt 11
     encodeTerm NodeToNodeV_12 = CBOR.TInt 12
+    encodeTerm NodeToNodeV_13 = CBOR.TInt 13
 
     decodeTerm (CBOR.TInt 7) = Right NodeToNodeV_7
     decodeTerm (CBOR.TInt 8) = Right NodeToNodeV_8
@@ -76,6 +80,7 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     decodeTerm (CBOR.TInt 10) = Right NodeToNodeV_10
     decodeTerm (CBOR.TInt 11) = Right NodeToNodeV_11
     decodeTerm (CBOR.TInt 12) = Right NodeToNodeV_12
+    decodeTerm (CBOR.TInt 13) = Right NodeToNodeV_13
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknonw tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -127,7 +132,7 @@ instance Acceptable NodeToNodeVersionData where
       = Accept NodeToNodeVersionData
           { networkMagic  = networkMagic local
           , diffusionMode = diffusionMode local `min` diffusionMode remote
-          , peerSharing   = peerSharing remote
+          , peerSharing   = peerSharing local <> peerSharing remote
           , query         = query local || query remote
           }
       | otherwise
@@ -140,7 +145,7 @@ instance Queryable NodeToNodeVersionData where
 
 nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
 nodeToNodeCodecCBORTerm version
-  | version >= NodeToNodeV_11 =
+  | version >= NodeToNodeV_13 =
     let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
         encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
           = CBOR.TList $
@@ -149,9 +154,8 @@ nodeToNodeCodecCBORTerm version
                              InitiatorOnlyDiffusionMode         -> True
                              InitiatorAndResponderDiffusionMode -> False)
               , CBOR.TInt (case peerSharing of
-                             NoPeerSharing      -> 0
-                             PeerSharingPrivate -> 1
-                             PeerSharingPublic  -> 2)
+                             PeerSharingDisabled -> 0
+                             PeerSharingEnabled  -> 1)
               , CBOR.TBool query
               ]
 
@@ -159,25 +163,70 @@ nodeToNodeCodecCBORTerm version
         decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
           | x >= 0
           , x <= 0xffffffff
-          = case peerSharing of
-            0 -> good NoPeerSharing
-            1 -> good PeerSharingPrivate
-            2 -> good PeerSharingPublic
-            _ -> bad
-          | otherwise -- x < 0 || x > 0xffffffff
-          = Left $ T.pack $ "networkMagic out of expected range [0..ffffffff]: " <> show x
-          where
-            good sharing
-              = Right
-                  NodeToNodeVersionData {
-                      networkMagic = NetworkMagic (fromIntegral x),
-                      diffusionMode = if diffusionMode
-                                      then InitiatorOnlyDiffusionMode
-                                      else InitiatorAndResponderDiffusionMode,
-                      peerSharing = sharing,
-                      query = query
-                    }
-            bad = Left $ T.pack $ "peerSharing out of expected range [0..2]: " <> show peerSharing
+          , Just ps <- case peerSharing of
+                        0 -> Just PeerSharingDisabled
+                        1 -> Just PeerSharingEnabled
+                        _ -> Nothing
+          = Right
+              NodeToNodeVersionData {
+                  networkMagic = NetworkMagic (fromIntegral x),
+                  diffusionMode = if diffusionMode
+                                  then InitiatorOnlyDiffusionMode
+                                  else InitiatorAndResponderDiffusionMode,
+                  peerSharing = ps,
+                  query = query
+                }
+          | x < 0 || x > 0xffffffff
+          = Left $ T.pack $ "networkMagic out of bound: " <> show x
+          | otherwise -- peerSharing < 0 || peerSharing > 1
+          = Left $ T.pack $ "peerSharing is out of bound: " <> show peerSharing
+        decodeTerm _ t
+          = Left $ T.pack $ "unknown encoding: " ++ show t
+     in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
+  | version >= NodeToNodeV_11
+  , version <= NodeToNodeV_12 =
+    let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
+        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
+          = CBOR.TList
+              [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+              , CBOR.TBool (case diffusionMode of
+                             InitiatorOnlyDiffusionMode         -> True
+                             InitiatorAndResponderDiffusionMode -> False)
+                          -- Need to be careful mapping here since older
+                          -- versions will map PeerSharingPrivate to 1.
+              , CBOR.TInt (case peerSharing of
+                             PeerSharingDisabled -> 0
+                             PeerSharingEnabled  -> 2)
+              , CBOR.TBool query
+              ]
+
+        decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
+        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
+          | x >= 0
+          , x <= 0xffffffff
+          , peerSharing >= 0
+          , peerSharing <= 2
+            -- This means if an older version node with
+            -- NodeToNodeV_{11,12} talks with a >NodeToNodeV_13
+            -- one it will map PeerSharingPrivate to PeerSharingDisabled
+          , Just ps <- case peerSharing of
+                        0 -> Just PeerSharingDisabled
+                        1 -> Just PeerSharingDisabled
+                        2 -> Just PeerSharingEnabled
+                        _ -> Nothing
+          = Right
+              NodeToNodeVersionData {
+                  networkMagic = NetworkMagic (fromIntegral x),
+                  diffusionMode = if diffusionMode
+                                  then InitiatorOnlyDiffusionMode
+                                  else InitiatorAndResponderDiffusionMode,
+                  peerSharing = ps,
+                  query = query
+                }
+          | x < 0 || x > 0xffffffff
+          = Left $ T.pack $ "networkMagic out of bound: " <> show x
+          | otherwise -- peerSharing < 0 || peerSharing > 2
+          = Left $ T.pack $ "Either peerSharing is out of bound: " <> show peerSharing
         decodeTerm _ t
           = Left $ T.pack $ "unknown encoding: " ++ show t
      in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
@@ -203,7 +252,7 @@ nodeToNodeCodecCBORTerm version
                                   else InitiatorAndResponderDiffusionMode
                   -- By default older versions do not participate in Peer
                   -- Sharing, since they do not support the new miniprotocol
-                , peerSharing = NoPeerSharing
+                , peerSharing = PeerSharingDisabled
                 , query = False
                 }
           | otherwise
@@ -214,7 +263,6 @@ nodeToNodeCodecCBORTerm version
 
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
-
 
 -- | Check whether a version enabling diffusion pipelining has been
 -- negotiated.

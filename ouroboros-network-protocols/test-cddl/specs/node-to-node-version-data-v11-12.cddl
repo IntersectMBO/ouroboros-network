@@ -1,5 +1,5 @@
 ;
-; NodeToNodeVersionData, v11
+; NodeToNodeVersionData, v11 to v12
 ;
 
 nodeToNodeVersionData = [ networkMagic, initiatorAndResponderDiffusionMode, peerSharing, query ]

@@ -59,7 +59,7 @@ belowTarget actions
                         }
             }
     -- Only start Peer Sharing request if PeerSharing was enabled
-  | peerSharing /= NoPeerSharing
+  | PeerSharingEnabled <- peerSharing
     -- Are we under target for number of known peers?
   , numKnownPeers < targetNumberOfKnownPeers
 

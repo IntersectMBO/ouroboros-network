@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -53,6 +54,7 @@ import           Data.IP (IP (..))
 import           Data.Map (Map)
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Data.Text (Text)
 import qualified Data.Text as Text
 import           Data.Void (Void)
 import           System.Random (StdGen, split)
@@ -365,24 +367,23 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     ntnUnversionedDataCodec = VersionDataCodec { encodeData, decodeData }
       where
         encodeData _ NtNVersionData { ntnDiffusionMode, ntnPeerSharing } =
-          case ntnDiffusionMode of
-            InitiatorOnlyDiffusionMode         -> case ntnPeerSharing of
-              NoPeerSharing      -> CBOR.TList [CBOR.TBool False, CBOR.TInt 0]
-              PeerSharingPrivate -> CBOR.TList [CBOR.TBool False, CBOR.TInt 1]
-              PeerSharingPublic  -> CBOR.TList [CBOR.TBool False, CBOR.TInt 2]
-            InitiatorAndResponderDiffusionMode -> case ntnPeerSharing of
-              NoPeerSharing      -> CBOR.TList [CBOR.TBool True, CBOR.TInt 0]
-              PeerSharingPrivate -> CBOR.TList [CBOR.TBool True, CBOR.TInt 1]
-              PeerSharingPublic  -> CBOR.TList [CBOR.TBool True, CBOR.TInt 2]
-        decodeData _ bytes = case bytes of
-          CBOR.TList [CBOR.TBool False, CBOR.TInt 0] -> Right (NtNVersionData InitiatorOnlyDiffusionMode NoPeerSharing)
-          CBOR.TList [CBOR.TBool False, CBOR.TInt 1] -> Right (NtNVersionData InitiatorOnlyDiffusionMode PeerSharingPrivate)
-          CBOR.TList [CBOR.TBool False, CBOR.TInt 2] -> Right (NtNVersionData InitiatorOnlyDiffusionMode PeerSharingPublic)
+          let peerSharing = case ntnPeerSharing of
+                PeerSharingDisabled -> 0
+                PeerSharingEnabled  -> 1
+           in case ntnDiffusionMode of
+             InitiatorOnlyDiffusionMode         ->
+               CBOR.TList [CBOR.TBool False, CBOR.TInt peerSharing]
+             InitiatorAndResponderDiffusionMode ->
+               CBOR.TList [CBOR.TBool True, CBOR.TInt peerSharing]
 
-          CBOR.TList [CBOR.TBool True, CBOR.TInt 0] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode NoPeerSharing)
-          CBOR.TList [CBOR.TBool True, CBOR.TInt 1] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode PeerSharingPrivate)
-          CBOR.TList [CBOR.TBool True, CBOR.TInt 2] -> Right (NtNVersionData InitiatorAndResponderDiffusionMode PeerSharingPublic)
-          _                -> Left (Text.pack "unversionedDataCodec: unexpected term")
+        toPeerSharing :: Int -> Either Text PeerSharing
+        toPeerSharing 0 = Right PeerSharingDisabled
+        toPeerSharing 1 = Right PeerSharingEnabled
+        toPeerSharing _ = Left "toPeerSharing: out of bounds"
+
+        decodeData _ (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = NtNVersionData InitiatorOnlyDiffusionMode <$> (toPeerSharing a)
+        decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> (toPeerSharing a)
+        decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
     args :: Diff.Arguments (NtNFD m) NtNAddr (NtCFD m) NtCAddr
     args = Diff.Arguments

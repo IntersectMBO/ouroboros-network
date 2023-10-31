@@ -1,4 +1,5 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Unversioned protocol, used in tests and demo applications.
 --
@@ -82,8 +83,8 @@ data DataFlowProtocolData =
   deriving (Eq, Show)
 
 instance Acceptable DataFlowProtocolData where
-  acceptableVersion (DataFlowProtocolData local _) (DataFlowProtocolData remote ps) =
-    Accept (DataFlowProtocolData (local `min` remote) ps)
+  acceptableVersion (DataFlowProtocolData local lps) (DataFlowProtocolData remote rps) =
+    Accept (DataFlowProtocolData (local `min` remote) (lps <> rps))
 
 instance Queryable DataFlowProtocolData where
   queryVersion (DataFlowProtocolData _ _) = False
@@ -92,20 +93,25 @@ dataFlowProtocolDataCodec :: UnversionedProtocol -> CodecCBORTerm Text DataFlowP
 dataFlowProtocolDataCodec _ = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: DataFlowProtocolData -> CBOR.Term
-      encodeTerm (DataFlowProtocolData Unidirectional NoPeerSharing)      = CBOR.TList [CBOR.TBool False, CBOR.TInt 0]
-      encodeTerm (DataFlowProtocolData Unidirectional PeerSharingPrivate) = CBOR.TList [CBOR.TBool False, CBOR.TInt 1]
-      encodeTerm (DataFlowProtocolData Unidirectional PeerSharingPublic)  = CBOR.TList [CBOR.TBool False, CBOR.TInt 2]
-      encodeTerm (DataFlowProtocolData Duplex NoPeerSharing)      = CBOR.TList [CBOR.TBool True, CBOR.TInt 0]
-      encodeTerm (DataFlowProtocolData Duplex PeerSharingPrivate) = CBOR.TList [CBOR.TBool True, CBOR.TInt 1]
-      encodeTerm (DataFlowProtocolData Duplex PeerSharingPublic)  = CBOR.TList [CBOR.TBool True, CBOR.TInt 2]
+      encodeTerm (DataFlowProtocolData Unidirectional ps) =
+        let peerSharing = case ps of
+              PeerSharingDisabled -> 0
+              PeerSharingEnabled  -> 1
+         in CBOR.TList [CBOR.TBool False, CBOR.TInt peerSharing]
+      encodeTerm (DataFlowProtocolData Duplex ps) =
+        let peerSharing = case ps of
+              PeerSharingDisabled -> 0
+              PeerSharingEnabled  -> 1
+         in CBOR.TList [CBOR.TBool True, CBOR.TInt peerSharing]
+
+      toPeerSharing :: Int -> Either Text PeerSharing
+      toPeerSharing 0 = Right PeerSharingDisabled
+      toPeerSharing 1 = Right PeerSharingEnabled
+      toPeerSharing _ = Left "toPeerSharing: out of bounds"
 
       decodeTerm :: CBOR.Term -> Either Text DataFlowProtocolData
-      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt 0]) = Right (DataFlowProtocolData Unidirectional NoPeerSharing)
-      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt 1]) = Right (DataFlowProtocolData Unidirectional PeerSharingPrivate)
-      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt 2]) = Right (DataFlowProtocolData Unidirectional PeerSharingPublic)
-      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt 0])  = Right (DataFlowProtocolData Duplex NoPeerSharing)
-      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt 1])  = Right (DataFlowProtocolData Duplex PeerSharingPrivate)
-      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt 2])  = Right (DataFlowProtocolData Duplex PeerSharingPublic)
+      decodeTerm (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = DataFlowProtocolData Unidirectional <$> (toPeerSharing a)
+      decodeTerm (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = DataFlowProtocolData Duplex <$> (toPeerSharing a)
       decodeTerm t                  = Left $ T.pack $ "unexpected term: " ++ show t
 
 dataFlowProtocol :: DataFlow
@@ -114,7 +120,7 @@ dataFlowProtocol :: DataFlow
                              DataFlowProtocolData
                              app
 dataFlowProtocol dataFlow =
-    simpleSingletonVersions UnversionedProtocol (DataFlowProtocolData dataFlow NoPeerSharing)
+    simpleSingletonVersions UnversionedProtocol (DataFlowProtocolData dataFlow PeerSharingDisabled)
 
 -- | 'Handshake' codec used in various tests.
 --
