@@ -13,14 +13,14 @@
 ### Non-breaking changes
 
 * Improved cdd specs by using `any` (PR #4638)
-* Add a 3673s timeout to chainsync's StIdle state.
-* Add a 97s timeout to keepalive's StClient state.
+* Added a 3673s timeout to chainsync's StIdle state.
+* Added a 97s timeout to keepalive's StClient state.
 
 * Added a test to check that Peer Sharing values after handshake are symmetric
   relative to the initiator and responder side.
 * Added cddl specs and tests for `NodeToNodeV_13` and handshake
 
-* Refactored cddl tests for `PeerSharing` to include versioning.
+* Refactored cddl tests for `PeerSharing` to take into account versioning.
 
 ## 0.5.2.0 -- 2023-09-08
 

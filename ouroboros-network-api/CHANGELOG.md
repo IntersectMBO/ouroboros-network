@@ -4,7 +4,7 @@
 
 ### Breaking changes
 
-* Remote `PeerSharingPrivate` option from the `PeerSharing` data type.
+* Remove `PeerSharingPrivate` option from the `PeerSharing` data type.
 * Rename `NoPeerSharing` and `PeerSharingPublic` to `PeerSharingDisabled` and
   `PeerSharingEnabled`, respectively.
 * Add new `NodeToNodeV_13` that encodes and decodes the updated `PeerSharing` flag data

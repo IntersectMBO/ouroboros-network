@@ -367,17 +367,14 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     ntnUnversionedDataCodec = VersionDataCodec { encodeData, decodeData }
       where
         encodeData _ NtNVersionData { ntnDiffusionMode, ntnPeerSharing } =
-          case ntnDiffusionMode of
-            InitiatorOnlyDiffusionMode         ->
-              let peerSharing = case ntnPeerSharing of
-                    PeerSharingDisabled -> 0
-                    PeerSharingEnabled  -> 1
-               in CBOR.TList [CBOR.TBool False, CBOR.TInt peerSharing]
-            InitiatorAndResponderDiffusionMode ->
-              let peerSharing = case ntnPeerSharing of
-                    PeerSharingDisabled -> 0
-                    PeerSharingEnabled  -> 1
-               in CBOR.TList [CBOR.TBool True, CBOR.TInt peerSharing]
+          let peerSharing = case ntnPeerSharing of
+                PeerSharingDisabled -> 0
+                PeerSharingEnabled  -> 1
+           in case ntnDiffusionMode of
+             InitiatorOnlyDiffusionMode         ->
+               CBOR.TList [CBOR.TBool False, CBOR.TInt peerSharing]
+             InitiatorAndResponderDiffusionMode ->
+               CBOR.TList [CBOR.TBool True, CBOR.TInt peerSharing]
 
         toPeerSharing :: Int -> Either Text PeerSharing
         toPeerSharing 0 = Right PeerSharingDisabled

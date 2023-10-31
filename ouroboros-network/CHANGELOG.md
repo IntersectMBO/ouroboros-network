@@ -6,10 +6,10 @@
 
 ### Non-breaking changes
 
-* Update types to accommodate `PeerSharing` data type changes.
-* Fix PeerSharing IPv6 enc/decoding
+* Updated types to accommodate `PeerSharing` data type changes.
+* Fixed PeerSharing IPv6 enc/decoding
 * Introduce NodeToNodeVersion 13
-* Update types to accommodate `PeerSharing` data type changes:
+* Updated types to accommodate `PeerSharing` data type changes:
   * `PeerSharingPrivate` got removed and hence, handshake is now symmetric,
   fixing issue [#4642](https://github.com/input-output-hk/ouroboros-network/issues/4642)
   * This implies that newer peer sharing node versions will see older
@@ -25,11 +25,11 @@
 
 ### Non-breaking changes
 
-* Update KeepAlive client to collect a rtt sample for the first packet.
+* Updated KeepAlive client to collect a rtt sample for the first packet.
 * Less aggresive churning of established and known peers.
-* Add peer sharing to wireshark dissector.
-* Adds ledger peers to diffusion simulation
-* Fix diffusion tests.
+* Added peer sharing to wireshark dissector.
+* Added ledger peers to diffusion simulation
+* Fixed diffusion tests.
 * `demo-chain-sync`: added option parser, added new options.
 * Lifted `chainGenerator` to be `Infinite`.
 * Strengthened precondition in `pickPeers` to check that the peers to be picked

@@ -1010,6 +1010,8 @@ prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions 
         queryVersion
         serverVersions)
   pure $ case (clientRes, serverRes) of
+    -- TODO: make this return ArbitraryNodeToNodeVersionData rather than a pair
+    -- of NodeToNodeVersionData
     (  Right (HandshakeNegotiationResult _ v (ArbitraryNodeToNodeVersionData clientResult))
      , Right (HandshakeNegotiationResult _ v' (ArbitraryNodeToNodeVersionData serverResult))
      ) | v == v'

@@ -48,14 +48,14 @@ encodeRemoteAddress ntnVersion sockAddr
                         <> CBOR.encodeWord32 w
                         <> encodePortNumber pn
       SockAddrInet6 pn fi (w1, w2, w3, w4) si -> CBOR.encodeListLen 8
-                                            <> CBOR.encodeWord 1
-                                            <> CBOR.encodeWord32 w1
-                                            <> CBOR.encodeWord32 w2
-                                            <> CBOR.encodeWord32 w3
-                                            <> CBOR.encodeWord32 w4
-                                            <> CBOR.encodeWord32 fi
-                                            <> CBOR.encodeWord32 si
-                                            <> encodePortNumber pn
+                                              <> CBOR.encodeWord 1
+                                              <> CBOR.encodeWord32 w1
+                                              <> CBOR.encodeWord32 w2
+                                              <> CBOR.encodeWord32 w3
+                                              <> CBOR.encodeWord32 w4
+                                              <> CBOR.encodeWord32 fi
+                                              <> CBOR.encodeWord32 si
+                                              <> encodePortNumber pn
       SockAddrUnix _ -> error "Should never be encoding a SockAddrUnix!"
 
 -- | This decoder should be faithful to the PeerSharing
