@@ -66,7 +66,7 @@ import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSActions (..), DNSorIOError (..), LookupReqs (..),
                      Resource (..), constantResource, ioDNSActions,
-                     withResource')
+                     retryResource)
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency, WarmValency)
 
@@ -255,32 +255,31 @@ localRootPeersProvider tracer
     -- domain name in the static configuration with the most up to date results
     -- from the DNS Domain Map.
     monitorDomain
-      :: Resource m (DNSorIOError exception) resolver
+      :: Resource m (Either (DNSorIOError exception) resolver)
       -> DNSSemaphore m
       -> StrictTVar m (Map DomainAccessPoint [peerAddr])
       -> DomainAccessPoint
       -> (DomainAccessPoint, m Void)
     monitorDomain rr0 dnsSemaphore dnsDomainMapVar domain =
-        (domain, go rr0 0)
+        (domain, go 0 (retryResource (TraceLocalRootFailure domain `contramap` tracer)
+                                     (1 :| [3, 6, 9, 12])
+                                     rr0))
       where
-        go :: Resource m (DNSorIOError exception) resolver
-           -> DiffTime
+        go :: DiffTime
+           -> Resource m resolver
            -> m Void
-        go !rr !ttl = do
+        go !ttl !rr = do
           when (ttl > 0) $ do
             traceWith tracer (TraceLocalRootWaiting domain ttl)
             threadDelay ttl
 
-          (resolver, rrNext) <-
-            withResource' (TraceLocalRootFailure domain `contramap` tracer)
-                          (1 :| [3, 6, 9, 12])
-                          rr
+          (resolver, rr') <- withResource rr
 
           --- Resolve 'domain'
           reply <- withDNSSemaphore dnsSemaphore (resolveDomain resolver domain)
           case reply of
-            Left errs -> go rrNext
-                           (minimum $ map (\err -> ttlForDnsError err ttl) errs)
+            Left errs -> go (minimum $ map (\err -> ttlForDnsError err ttl) errs)
+                           rr'
             Right results -> do
               (newRootPeersGroups, newDNSDomainMap) <- atomically $ do
                 -- Read current DNS Domain Map value
@@ -315,7 +314,7 @@ localRootPeersProvider tracer
               traceWith tracer (TraceLocalRootGroups newRootPeersGroups)
               traceWith tracer (TraceLocalRootDNSMap newDNSDomainMap)
 
-              go rrNext (ttlForResults (map snd results))
+              go (ttlForResults (map snd results)) rr'
 
     -- | Returns local root peers without any domain names, only 'peerAddr'
     -- (IP + PortNumber).
@@ -408,7 +407,7 @@ publicRootPeersProvider tracer
         return ((domain, pa), result)
 
     requestPublicRootPeers
-      :: StrictTVar m (Resource m (DNSorIOError exception) resolver)
+      :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
       -> Int
       -> m (Map peerAddr PeerAdvertise, DiffTime)
     requestPublicRootPeers resourceVar _numRequested = do
@@ -476,7 +475,7 @@ resolveDomainAccessPoint tracer
     resolveDomains resourceVar
   where
     resolveDomains
-      :: StrictTVar m (Resource m (DNSorIOError exception) resolver)
+      :: StrictTVar m (Resource m (Either (DNSorIOError exception) resolver))
       -> m (Map DomainAccessPoint (Set Socket.SockAddr))
     resolveDomains resourceVar = do
         rr <- atomically $ readTVar resourceVar
