@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+## 0.0.1.3 -- 2023-11-02
+
+### Non-breaking changes
+
 * Created a new `CompletedNtpStatus` to represent the subset of `NtpStatus`
   produced by `ntpQuery` and used it to eliminate an impossible case in
   `ntpClientThread` and its associated error.

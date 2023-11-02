@@ -8,6 +8,14 @@
 
 ### Non-breaking changes
 
+## 0.10.0.0 -- 2023-11-02
+
+### Breaking changes
+
+* Make chainsync idle timeout configurable.
+
+### Non-breaking changes
+
 * Updated types to accommodate `PeerSharing` data type changes.
 * Fixed PeerSharing IPv6 enc/decoding
 * Introduce NodeToNodeVersion 13

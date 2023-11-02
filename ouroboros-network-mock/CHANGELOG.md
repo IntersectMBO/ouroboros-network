@@ -1,8 +1,12 @@
 # Revision history for ouroboros-network-mock
 
-## next
+## next release
 
 ### Breaking changes
+
+### Non-breaking changes
+
+## 0.1.1.0 -- 2023-11-02
 
 ### Non-breaking changes
 

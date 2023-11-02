@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.3.0.2
+
+### Non-breaking changes
+
+* Updated package bounds.
+
 ## 0.3.0.1 -- 2023-10-26
 
 ### Non-breaking changes
