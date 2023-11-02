@@ -624,6 +624,20 @@ withConnectionManager ConnectionManagerArguments {
                    )
                    state
 
+        waitForOutboundDemotion
+          :: peerAddr
+          -> STM m ()
+        waitForOutboundDemotion addr = do
+          state <- readState
+          case Map.lookup addr state of
+            Nothing                  -> return ()
+            Just UnknownConnectionSt -> return ()
+            Just InboundIdleSt {}    -> return ()
+            Just InboundSt {}        -> return ()
+            Just WaitRemoteIdleSt    -> return ()
+            Just TerminatedSt        -> return ()
+            Just _                   -> retry
+
         connectionManager :: ConnectionManager muxMode socket peerAddr
                                                handle handleError m
         connectionManager =
@@ -639,7 +653,8 @@ withConnectionManager ConnectionManagerArguments {
                         ocmUnregisterConnection =
                           unregisterOutboundConnectionImpl stateVar
                       },
-                readState
+                readState,
+                waitForOutboundDemotion
               }
 
             WithResponderMode inboundHandler ->
@@ -659,7 +674,8 @@ withConnectionManager ConnectionManagerArguments {
                         icmNumberOfConnections =
                           readTMVar stateVar >>= countIncomingConnections
                       },
-                readState
+                readState,
+                waitForOutboundDemotion
               }
 
             WithInitiatorResponderMode outboundHandler inboundHandler ->
@@ -686,7 +702,8 @@ withConnectionManager ConnectionManagerArguments {
                         icmNumberOfConnections =
                           readTMVar stateVar >>= countIncomingConnections
                       },
-                readState
+                readState,
+                waitForOutboundDemotion
               }
 
     k connectionManager

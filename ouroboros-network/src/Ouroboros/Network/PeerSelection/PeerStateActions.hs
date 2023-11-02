@@ -631,12 +631,9 @@ withPeerStateActions PeerStateActionsArguments {
               PeerCold ->
                 return Nothing
               PeerCooling -> do
-                cmState <- readState spsConnectionManager
-                case Map.lookup (remoteAddress pchConnectionId) cmState of
-                  Just UnknownConnectionSt -> do
-                    writeTVar pchPeerStatus PeerCold
-                    return Nothing
-                  _ -> retry
+                waitForOutboundDemotion spsConnectionManager (remoteAddress pchConnectionId)
+                writeTVar pchPeerStatus PeerCold
+                return Nothing
               _ ->
                   (Just . WithSomeProtocolTemperature . WithEstablished
                     <$> awaitFirstResult SingEstablished pchAppHandles)
