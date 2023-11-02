@@ -1,5 +1,11 @@
 # Revision history for monoidal-synchronisation
 
+## 0.1.0.4
+
+### Non-breaking changes
+
+* Fixed cabal-fmt warnings.
+
 ## 0.1.0.3
 
 ### Non-breaking changes

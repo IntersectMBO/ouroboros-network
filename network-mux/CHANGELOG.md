@@ -6,7 +6,7 @@
 
 ### Non-breaking changes
 
-## 0.4.1.0
+## 0.4.2.0
 
 ### Breaking
 
@@ -17,6 +17,10 @@
   `error`.
 * Restructured `setupDispatchTable` to prevent an impossible case and eliminate
   the associated error.
+
+## 0.4.1.0
+
+* Use `io-classes-1.2`
 
 ## 0.4.0.0 -- 2023-04-28
 

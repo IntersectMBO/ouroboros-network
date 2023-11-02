@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.6.0.0 -- 2023-11-02
+
+### Breaking changes
+
 * Remove `PeerSharingPrivate` option from the `PeerSharing` data type.
 * Rename `NoPeerSharing` and `PeerSharingPublic` to `PeerSharingDisabled` and
   `PeerSharingEnabled`, respectively.

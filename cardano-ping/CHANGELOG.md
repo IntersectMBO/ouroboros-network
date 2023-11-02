@@ -1,6 +1,6 @@
 # Revision history for cardano-ping
 
-## next version
+## 0.2.0.8 -- 2023-11-02
 
 ### Breaking changes
 
