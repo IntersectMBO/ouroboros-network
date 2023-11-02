@@ -56,6 +56,7 @@ data ChainSyncTimeout = ChainSyncTimeout
   { canAwaitTimeout  :: Maybe DiffTime
   , intersectTimeout :: Maybe DiffTime
   , mustReplyTimeout :: Maybe DiffTime
+  , idleTimeout      :: Maybe DiffTime
   }
 
 -- | Time Limits
@@ -73,11 +74,12 @@ timeLimitsChainSync csTimeouts = ProtocolTimeLimits stateToLimit
       { canAwaitTimeout
       , intersectTimeout
       , mustReplyTimeout
+      , idleTimeout
       } = csTimeouts
 
     stateToLimit :: forall (pr :: PeerRole) (st :: ChainSync header point tip).
                     PeerHasAgency pr st -> Maybe DiffTime
-    stateToLimit (ClientAgency TokIdle)                = Just 3673
+    stateToLimit (ClientAgency TokIdle)                = idleTimeout
     stateToLimit (ServerAgency (TokNext TokCanAwait))  = canAwaitTimeout
     stateToLimit (ServerAgency (TokNext TokMustReply)) = mustReplyTimeout
     stateToLimit (ServerAgency TokIntersect)           = intersectTimeout

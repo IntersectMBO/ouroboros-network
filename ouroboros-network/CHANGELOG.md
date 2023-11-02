@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Make chainsync idle timeout configurable.
+
 ### Non-breaking changes
 
 * Updated types to accommodate `PeerSharing` data type changes.
