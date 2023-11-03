@@ -111,6 +111,7 @@ tests =
     [ testProperty "no excess busyness" prop_governor_nobusyness
     , testProperty "event coverage"     prop_governor_trace_coverage
     , testProperty "connection status"  prop_governor_connstatus
+    , testProperty "event number coverage" prop_governor_events_coverage
     ]
 
     -- The no livelock property is needed to ensure other tests terminate
@@ -580,6 +581,28 @@ envEventCredits  TraceEnvCloseConn {}           = 0
 
 
 
+-- | A coverage property that checks how many events are analysed when taking
+-- up to 10h of execution time.
+--
+prop_governor_events_coverage :: GovernorMockEnvironment -> Property
+prop_governor_events_coverage env =
+    let trace = Signal.eventsToList
+              . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+              . selectPeerSelectionTraceEvents
+              . runGovernorInMockEnvironment
+              $ env
+
+        printLength x
+          | x < 10 = "# events < 10"
+          | x >= 10 && x < 100 = "# events >= 10 && < 100"
+          | x >= 100 && x < 1000 = "# events >= 100 && < 1000"
+          | x >= 1000 && x < 10000 = "# events >= 1000 && < 10000"
+          | x >= 10000 && x < 100000 = "# events >= 10000 && < 100000"
+          | x >= 100000 && x < 1000000 = "# events >= 100000 && < 1000000"
+          | otherwise = "# events >= 1000000"
+     in tabulate   "# events" [printLength (length trace)]
+        True
+
 -- | A coverage property, much like 'prop_governor_nofail' but we look to see
 -- that we get adequate coverage of the state space. We look for all the trace
 -- events that the governor can produce, and tabules which ones we see.
@@ -836,9 +859,9 @@ prop_governor_target_root_below env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfRootPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfRootPeers . Governor.targets) events
 
         govLocalRootPeersSig :: Signal (Set PeerAddr)
         govLocalRootPeersSig =
@@ -863,7 +886,7 @@ prop_governor_target_root_below env =
         requestOpportunities :: Signal (Set PeerAddr)
         requestOpportunities =
           requestOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govPublicRootPeersSig
             <*> govRootPeersSig
 
@@ -880,7 +903,7 @@ prop_governor_target_root_below env =
 
         signalProperty 20 show
           (\(_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,) <$> envTargetsSig
+          ((,,,,,) <$> govTargetsSig
                    <*> govLocalRootPeersSig
                    <*> govPublicRootPeersSig
                    <*> govRootPeersSig
@@ -1276,9 +1299,9 @@ prop_governor_target_known_2_opportunity_taken env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfKnownPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfKnownPeers . Governor.targets) events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -1334,7 +1357,7 @@ prop_governor_target_known_2_opportunity_taken env =
                                Set PeerAddr,
                                Maybe PeerAddr)
         combinedSig =
-          (,,,) <$> envTargetsSig
+          (,,,) <$> govTargetsSig
                 <*> govKnownPeersSig
                 <*> peerShareOpportunitiesSig
                 <*> envPeerSharesEventsAsSig
@@ -1612,9 +1635,9 @@ prop_governor_target_known_4_results_used env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfKnownPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfKnownPeers . Governor.targets) events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -1636,7 +1659,7 @@ prop_governor_target_known_4_results_used env =
             (\(_, _, peerShares)    -> peerShares) -- start set
             (\(_, known, _)      -> known)   -- stop set
             (\(target, known, _) -> Set.size known <= target) -- reset condition
-            ((,,) <$> envTargetsSig
+            ((,,) <$> govTargetsSig
                   <*> govKnownPeersSig
                   <*> envPeerShareResultsSig)
 
@@ -1653,7 +1676,7 @@ prop_governor_target_known_4_results_used env =
 
         signalProperty 20 show
           (\(_,_,_,_,x) -> Set.null x) $
-          (,,,,) <$> envTargetsSig
+          (,,,,) <$> govTargetsSig
                  <*> govKnownPeersSig
                  <*> envPeerShareResultsSig
                  <*> peerShareResultsUntilKnown
@@ -1686,9 +1709,9 @@ prop_governor_target_known_5_no_shrink_below env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfKnownPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfKnownPeers . Governor.targets) events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -1726,7 +1749,7 @@ prop_governor_target_known_5_no_shrink_below env =
           (\target known shrinks ->
                 not (Set.null shrinks)
              && Set.size known < target
-          ) <$> envTargetsSig
+          ) <$> govTargetsSig
             <*> govKnownPeersSig
             <*> knownPeersShrinksSig
 
@@ -1735,7 +1758,7 @@ prop_governor_target_known_5_no_shrink_below env =
 
         signalProperty 20 show
           (\(_,_,_,unexpected) -> not unexpected)
-          ((,,,) <$> envTargetsSig
+          ((,,,) <$> govTargetsSig
                  <*> govKnownPeersSig
                  <*> knownPeersShrinksSig
                  <*> unexpectedShrink)
@@ -1750,9 +1773,9 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfKnownBigLedgerPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfKnownBigLedgerPeers . Governor.targets) events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -1779,7 +1802,7 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below env =
           (\target known shrinks ->
                 not (Set.null shrinks)
              && Set.size known < target
-          ) <$> envTargetsSig
+          ) <$> govTargetsSig
             <*> govKnownPeersSig
             <*> knownPeersShrinksSig
 
@@ -1788,7 +1811,7 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below env =
 
         signalProperty 20 show
           (\(_,_,_,unexpected) -> not unexpected)
-          ((,,,) <$> envTargetsSig
+          ((,,,) <$> govTargetsSig
                  <*> govKnownPeersSig
                  <*> knownPeersShrinksSig
                  <*> unexpectedShrink)
@@ -1825,9 +1848,9 @@ prop_governor_target_known_above env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal PeerSelectionTargets
-        envTargetsSig =
-          selectEnvTargets id events
+        govTargetsSig :: Signal PeerSelectionTargets
+        govTargetsSig =
+          selectGovState Governor.targets events
 
         govLocalRootPeersSig :: Signal (Set PeerAddr)
         govLocalRootPeersSig =
@@ -1876,7 +1899,7 @@ prop_governor_target_known_above env =
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govLocalRootPeersSig
             <*> govPublicRootPeersSig
             <*> govKnownPeersSig
@@ -1896,7 +1919,7 @@ prop_governor_target_known_above env =
         signalProperty 20 show
           (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
           ((,,,,,,) <$> ((\t -> (targetNumberOfRootPeers t,
-                                 targetNumberOfKnownPeers t)) <$> envTargetsSig)
+                                 targetNumberOfKnownPeers t)) <$> govTargetsSig)
                     <*> govLocalRootPeersSig
                     <*> govPublicRootPeersSig
                     <*> govKnownPeersSig
@@ -1915,9 +1938,9 @@ prop_governor_target_known_big_ledger_peers_above env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal PeerSelectionTargets
-        envTargetsSig =
-          selectEnvTargets id events
+        govTargetsSig :: Signal PeerSelectionTargets
+        govTargetsSig =
+          selectGovState Governor.targets events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -1945,7 +1968,7 @@ prop_governor_target_known_big_ledger_peers_above env =
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govKnownPeersSig
             <*> govEstablishedPeersSig
 
@@ -1963,7 +1986,7 @@ prop_governor_target_known_big_ledger_peers_above env =
         signalProperty 20 show
           (\(_,_,_,_,toolong) -> Set.null toolong)
           ((,,,,) <$> ((\t -> (targetNumberOfRootPeers t,
-                                 targetNumberOfKnownPeers t)) <$> envTargetsSig)
+                                 targetNumberOfKnownPeers t)) <$> govTargetsSig)
                     <*> govKnownPeersSig
                     <*> govEstablishedPeersSig
                     <*> demotionOpportunities
@@ -2005,9 +2028,9 @@ prop_governor_target_established_below env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfEstablishedPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfEstablishedPeers . Governor.targets) events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2068,7 +2091,7 @@ prop_governor_target_established_below env =
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
           promotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govKnownPeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
@@ -2086,7 +2109,7 @@ prop_governor_target_established_below env =
 
         signalProperty 20 show
           (\(_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,) <$> envTargetsSig
+          ((,,,,,) <$> govTargetsSig
                    <*> govKnownPeersSig
                    <*> govEstablishedPeersSig
                    <*> govEstablishedFailuresSig
@@ -2105,9 +2128,9 @@ prop_governor_target_established_big_ledger_peers_below env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfEstablishedBigLedgerPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfEstablishedBigLedgerPeers . Governor.targets) events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2172,7 +2195,7 @@ prop_governor_target_established_big_ledger_peers_below env =
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
           promotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govKnownPeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
@@ -2190,7 +2213,7 @@ prop_governor_target_established_big_ledger_peers_below env =
 
         signalProperty 20 show
           (\(_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,) <$> envTargetsSig
+          ((,,,,,) <$> govTargetsSig
                    <*> govKnownPeersSig
                    <*> govEstablishedPeersSig
                    <*> govEstablishedFailuresSig
@@ -2205,9 +2228,9 @@ prop_governor_target_active_below env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfActivePeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfActivePeers . Governor.targets) events
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
@@ -2283,7 +2306,7 @@ prop_governor_target_active_below env =
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
           promotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
@@ -2303,7 +2326,7 @@ prop_governor_target_active_below env =
 
         signalProperty 20 show
           (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,,) <$> envTargetsSig
+          ((,,,,,,) <$> govTargetsSig
                     <*> govLocalRootPeersSig
                     <*> govEstablishedPeersSig
                     <*> govActivePeersSig
@@ -2322,9 +2345,9 @@ prop_governor_target_active_big_ledger_peers_below env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfActiveBigLedgerPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfActiveBigLedgerPeers . Governor.targets) events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
@@ -2376,7 +2399,7 @@ prop_governor_target_active_big_ledger_peers_below env =
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
           promotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
             <*> govActiveFailuresSig
@@ -2395,7 +2418,7 @@ prop_governor_target_active_big_ledger_peers_below env =
 
         signalProperty 20 show
           (\(_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,) <$> envTargetsSig
+          ((,,,,,) <$> govTargetsSig
                     <*> govEstablishedPeersSig
                     <*> govActivePeersSig
                     <*> govActiveFailuresSig
@@ -2409,9 +2432,9 @@ prop_governor_target_established_above env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfEstablishedPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfEstablishedPeers . Governor.targets) events
 
         govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
         govInProgressDemoteToColdSig =
@@ -2447,7 +2470,7 @@ prop_governor_target_established_above env =
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
@@ -2466,7 +2489,7 @@ prop_governor_target_established_above env =
 
         signalProperty 20 show
           (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,,) <$> envTargetsSig
+          ((,,,,,,) <$> govTargetsSig
                    <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
                    <*> govEstablishedPeersSig
                    <*> govActivePeersSig
@@ -2485,9 +2508,9 @@ prop_governor_target_established_big_ledger_peers_above env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfEstablishedBigLedgerPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfEstablishedBigLedgerPeers . Governor.targets) events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
@@ -2518,7 +2541,7 @@ prop_governor_target_established_big_ledger_peers_above env =
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
             <*> govInProgressDemoteToColdSig
@@ -2536,7 +2559,7 @@ prop_governor_target_established_big_ledger_peers_above env =
 
         signalProperty 20 show
           (\(_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,) <$> envTargetsSig
+          ((,,,,) <$> govTargetsSig
                   <*> govEstablishedPeersSig
                   <*> govActivePeersSig
                   <*> demotionOpportunities
@@ -2550,9 +2573,9 @@ prop_governor_target_active_above env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfActivePeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfActivePeers . Governor.targets) events
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerAddr)
         govLocalRootPeersSig =
@@ -2572,7 +2595,7 @@ prop_governor_target_active_above env =
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govLocalRootPeersSig
             <*> govActivePeersSig
 
@@ -2589,7 +2612,7 @@ prop_governor_target_active_above env =
 
         signalProperty 20 show
           (\(_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,) <$> envTargetsSig
+          ((,,,,) <$> govTargetsSig
                   <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
                   <*> govActivePeersSig
                   <*> demotionOpportunities
@@ -2606,9 +2629,9 @@ prop_governor_target_active_big_ledger_peers_above env =
                . runGovernorInMockEnvironment
                $ env
 
-        envTargetsSig :: Signal Int
-        envTargetsSig =
-          selectEnvTargets targetNumberOfActiveBigLedgerPeers events
+        govTargetsSig :: Signal Int
+        govTargetsSig =
+          selectGovState (targetNumberOfActiveBigLedgerPeers . Governor.targets) events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
@@ -2624,7 +2647,7 @@ prop_governor_target_active_big_ledger_peers_above env =
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
-            <$> envTargetsSig
+            <$> govTargetsSig
             <*> govActivePeersSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
@@ -2640,10 +2663,10 @@ prop_governor_target_active_big_ledger_peers_above env =
 
         signalProperty 20 show
           (\(_,_,_,toolong) -> Set.null toolong)
-          ((,,,) <$> envTargetsSig
-                  <*> govActivePeersSig
-                  <*> demotionOpportunities
-                  <*> demotionOpportunitiesIgnoredTooLong)
+          ((,,,) <$> govTargetsSig
+                 <*> govActivePeersSig
+                 <*> demotionOpportunities
+                 <*> demotionOpportunitiesIgnoredTooLong)
 
 
 -- | A variant of 'prop_governor_target_established_below' but for the target
