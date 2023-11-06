@@ -1225,7 +1225,7 @@ prop_governor_target_known_big_ledger_peers_below env =
 prop_governor_target_known_1_valid_subset :: GovernorMockEnvironment
                                           -> Property
 prop_governor_target_known_1_valid_subset env =
-    let events = Signal.eventsFromListUpToTime (Time (60 * 60))
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
