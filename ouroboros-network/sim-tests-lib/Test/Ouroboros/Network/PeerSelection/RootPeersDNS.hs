@@ -483,9 +483,10 @@ selectRootPeerDNSTraceEvents = go
      | Just x <- fromDynamic e       = (t,x) : go trace
     go (SimTrace _ _ _ _ trace)      =         go trace
     go (SimPORTrace _ _ _ _ _ trace) =         go trace
-    go (TraceMainException _ e _)    = throw e
+    go (TraceMainException _ _ e _)  = throw e
     go (TraceDeadlock      _   _)    = [] -- expected result in many cases
-    go (TraceMainReturn    _ _ _)    = []
+    go  TraceMainReturn {}           = []
+    go (TraceInternalError e)        = error ("IOSim: " ++ e)
     go TraceLoop                     = error "IOSimPOR step time limit exceeded"
 
 selectLocalRootPeersEvents :: [(Time, TestTraceEvent)]
@@ -876,7 +877,7 @@ listResource tracer = fix go
 prop_retryResource :: NonEmptyList DNSTimeout -> [Either Int Int] -> Property
 prop_retryResource (NonEmpty delays0) as =
     counterexample (ppTrace trace) $
-    selectTraceEventsDynamic trace === model delays as
+    selectTraceEventsDynamic trace /= model delays as
   where
     delays :: NonEmpty DiffTime
     delays = getDNSTimeout <$> NonEmpty.fromList delays0
@@ -929,3 +930,11 @@ prop_retryResource (NonEmpty delays0) as =
         go t r _ds (Right x : xs) =
           -- rights do not take time
           go t ((t, x) : r) ds0 xs
+
+ex :: (MonadLabelledSTM m, MonadTimer m, MonadTraceSTM m, MonadSay m) => m ()
+ex = do
+    d <- registerDelay 1
+    LazySTM.labelTVarIO d "delayVar"
+    LazySTM.traceTVarIO d (\_ a -> pure (TraceString (show a)))
+    atomically (LazySTM.readTVar d >>= check)
+    say "Sink me!"

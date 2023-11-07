@@ -2,7 +2,11 @@
   description = "ouroboros-network";
 
   inputs = {
-    haskellNix.url = "github:input-output-hk/haskell.nix";
+    haskellNix = {
+      url = "github:input-output-hk/haskell.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.hackage.follows = "hackageNix";
+    };
     hackageNix = {
       url = "github:input-output-hk/hackage.nix";
       flake = false;

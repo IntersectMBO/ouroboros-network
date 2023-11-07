@@ -174,6 +174,9 @@ tests =
 #endif
   ]
 
+traceFromList :: [a] -> Trace (SimResult ()) a
+traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Just "main")) () [])
+
 -- | This test coverage of ConnectionManagerTrace constructors.
 --
 prop_connection_manager_trace_coverage :: AbsBearerInfo
@@ -197,7 +200,7 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.fromList (MainReturn (Time 0) () [])
+             . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
              . take 125000
              . traceEvents
@@ -231,7 +234,7 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.fromList (MainReturn (Time 0) () [])
+             . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
              . take 125000
              . traceEvents
@@ -266,7 +269,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.fromList (MainReturn (Time 0) () [])
+             . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
              . take 125000
              . traceEvents
@@ -299,7 +302,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.fromList (MainReturn (Time 0) () [])
+             . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
              . take 125000
              . traceEvents
@@ -334,7 +337,7 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.fromList (MainReturn (Time 0) () [])
+             . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
              . take 125000
              . traceEvents
@@ -446,7 +449,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.fromList (MainReturn (Time 0) () [])
+             . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
              . take 125000
              . traceEvents
@@ -478,7 +481,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.fromList (MainReturn (Time 0) () [])
+             . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
              . take 125000
              . traceEvents
@@ -521,7 +524,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.fromList (MainReturn (Time 0) () [])
+             . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
              . take 125000
              . traceEvents
@@ -732,7 +735,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -943,7 +946,7 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -1036,7 +1039,7 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -1117,7 +1120,7 @@ prop_diffusion_target_active_local defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -1199,7 +1202,7 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -1320,7 +1323,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -1490,7 +1493,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -1679,7 +1682,7 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 250000
                . traceEvents
@@ -1913,7 +1916,7 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . takeUntilEndofTurn 125000
                . traceEvents
@@ -2023,7 +2026,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -2144,7 +2147,7 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -2244,7 +2247,7 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -2399,7 +2402,7 @@ prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -2461,7 +2464,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -2713,7 +2716,7 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -2782,7 +2785,7 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -2850,7 +2853,7 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . Trace.fromList (MainReturn (Time 0) () [])
+               . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
                . take 125000
                . traceEvents
@@ -2873,7 +2876,7 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
     verify_timeouts :: Trace () (Time, DiffusionTestTrace) -> Property
     verify_timeouts events =
       let transitionSignal :: Trace (SimResult ()) [(Time, AbstractTransitionTrace NtNAddr)]
-          transitionSignal = Trace.fromList (MainReturn (Time 0) () [])
+          transitionSignal = Trace.fromList (MainReturn (Time 0) (Labelled (ThreadId []) (Just "main")) () [])
                            . Trace.toList
                            . groupConns snd abstractStateIsFinalTransition
                            . selectDiffusionConnectionManagerTransitionEventsTime
