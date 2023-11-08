@@ -63,8 +63,7 @@ import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSActions (..), DNSorIOError (..), Resource (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-                     (DNSSemaphore, newLedgerAndPublicRootDNSSemaphore,
-                     withDNSSemaphore)
+                     (DNSSemaphore, withDNSSemaphore)
 
 -- | Only use the ledger after the given slot number.
 data UseLedgerAfter = DontUseLedger | UseLedgerAfter SlotNo deriving (Eq, Show)
@@ -333,6 +332,7 @@ ledgerPeersThread :: forall m peerAddr resolver exception.
                      , Ord peerAddr
                      )
                   => StdGen
+                  -> DNSSemaphore m
                   -> (IP.IP -> Socket.PortNumber -> peerAddr)
                   -> Tracer m TraceLedgerPeers
                   -> STM m UseLedgerAfter
@@ -343,19 +343,17 @@ ledgerPeersThread :: forall m peerAddr resolver exception.
                   -- ledger peers
                   -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                   -> m Void
-ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter
+ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
                   LedgerPeersConsensusInterface{..} dnsActions
                   getReq putRsp = do
-    dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
-    go inRng (Time 0) Map.empty Map.empty dnsSemaphore
+    go inRng (Time 0) Map.empty Map.empty
   where
     go :: StdGen
        -> Time
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
-       -> DNSSemaphore m
        -> m Void
-    go rng oldTs peerMap bigPeerMap dnsSemaphore = do
+    go rng oldTs peerMap bigPeerMap = do
         useLedgerAfter <- atomically readUseLedgerAfter
         traceWith tracer (TraceUseLedgerAfter useLedgerAfter)
 
@@ -391,7 +389,7 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter
                when (isLedgerPeersEnabled useLedgerAfter) $
                    traceWith tracer FallingBackToPublicRootPeers
                atomically $ putRsp Nothing
-               go rng ts peerMap' bigPeerMap' dnsSemaphore
+               go rng ts peerMap' bigPeerMap'
            else do
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
@@ -428,7 +426,7 @@ ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter
                                   domainAddrs
 
                atomically $ putRsp $ Just (pickedAddrs, ttl)
-               go rng'' ts peerMap' bigPeerMap' dnsSemaphore
+               go rng'' ts peerMap' bigPeerMap'
 
     -- Randomly pick one of the addresses returned in the DNS result.
     pickDomainAddrs :: (StdGen, Set peerAddr)
@@ -462,6 +460,7 @@ withLedgerPeers :: forall peerAddr resolver exception m a.
                    , Ord peerAddr
                    )
                 => StdGen
+                -> DNSSemaphore m
                 -> (IP.IP -> Socket.PortNumber -> peerAddr)
                 -> Tracer m TraceLedgerPeers
                 -> STM m UseLedgerAfter
@@ -471,7 +470,7 @@ withLedgerPeers :: forall peerAddr resolver exception m a.
                      -> Async m Void
                      -> m a )
                 -> m a
-withLedgerPeers inRng toPeerAddr tracer readUseLedgerAfter interface dnsActions k = do
+withLedgerPeers inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter interface dnsActions k = do
     reqVar  <- newEmptyTMVarIO
     respVar <- newEmptyTMVarIO
     let getRequest  = takeTMVar reqVar
@@ -481,7 +480,7 @@ withLedgerPeers inRng toPeerAddr tracer readUseLedgerAfter interface dnsActions 
           atomically $ putTMVar reqVar (numberOfPeers, ledgerPeersKind)
           atomically $ takeTMVar respVar
     withAsync
-      ( ledgerPeersThread inRng toPeerAddr tracer readUseLedgerAfter
+      ( ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
                           interface dnsActions getRequest putResponse )
       $ \ thread -> k request thread
 

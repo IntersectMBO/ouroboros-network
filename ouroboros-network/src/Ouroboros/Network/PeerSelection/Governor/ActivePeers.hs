@@ -577,9 +577,9 @@ aboveTargetLocal actions
                                        Set.\\ inProgressDemoteHot
                                        Set.\\ inProgressDemoteToCold
                 numDemoteInProgress = Set.size inProgressDemoteHot
-                                    + Set.size (Set.intersection inProgressDemoteToCold
-                                                                 activePeers
-                                               )
+                                    + Set.size (inProgressDemoteToCold
+                                                `Set.intersection`
+                                                activePeers)
           , not (Set.null availableToDemote)
           , (HotValency hotTarget, members, membersActive) <- groupsAboveTarget
           , let membersAvailableToDemote = Set.intersection
@@ -647,6 +647,7 @@ aboveTargetOther actions
   , let numPeersToDemote = numActivePeers
                          - targetNumberOfActivePeers
                          - numDemoteInProgress
+                         - (Set.size inProgressDemoteToCold)
   , numPeersToDemote > 0
 
     -- Are there any hot peers we actually can pick to demote?

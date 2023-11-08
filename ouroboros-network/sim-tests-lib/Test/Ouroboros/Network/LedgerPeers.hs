@@ -19,7 +19,6 @@ import           Control.Monad.IOSim hiding (SimResult)
 import           Control.Tracer (Tracer (..), showTracing, traceWith)
 import qualified Data.IP as IP
 import           Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
-import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -32,27 +31,17 @@ import           Data.Word
 import           System.Random
 
 import           Network.DNS (Domain)
-import           Network.Socket (PortNumber)
 
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Data.IP (IP)
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (AccPoolStake (..), PoolStake (..))
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-                     (RelayAccessPoint (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                     (LedgerPeersConsensusInterface (..), LedgerPeersKind (..),
-                     NumberOfPeers (..), UseLedgerAfter (..), accBigPoolStake,
-                     accPoolStake, bigLedgerPeerQuota, withLedgerPeers)
-import           Ouroboros.Network.Testing.Data.Script (Script (..),
-                     initScript', stepScript')
+import           Ouroboros.Network.Testing.Data.Script
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DNSLookupDelay, DNSTimeout (..),
-                     DelayAndTimeoutScripts (..), MockRoots (..),
-                     mockDNSActions)
 import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Text.Printf
 
 tests :: TestTree
@@ -157,15 +146,16 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
         sim :: IOSim s [RelayAccessPoint]
         sim = do
-          dnsMapScriptVar <- initScript' dnsMapScript
-          dnsMap <- stepScript' dnsMapScriptVar
+          let dnsMap = scriptHead dnsMapScript
           dnsMapVar <- newTVarIO dnsMap
 
           dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
           dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
 
+          dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+
           withLedgerPeers
-                rng (curry IP.toSockAddr) verboseTracer
+                rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
                 (pure (UseLedgerAfter 0))
                 interface
                 (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
@@ -215,8 +205,10 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
 
           dnsTimeoutScriptVar <- initScript' (Script (DNSTimeout 0 :| []))
           dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
+          dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+
           withLedgerPeers
-                rng (curry IP.toSockAddr) verboseTracer
+                rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
                 (pure (UseLedgerAfter 0))
                 interface
                 (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)

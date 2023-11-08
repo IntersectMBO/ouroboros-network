@@ -630,13 +630,20 @@ withConnectionManager ConnectionManagerArguments {
         waitForOutboundDemotion addr = do
           state <- readState
           case Map.lookup addr state of
-            Nothing                  -> return ()
-            Just UnknownConnectionSt -> return ()
-            Just InboundIdleSt {}    -> return ()
-            Just InboundSt {}        -> return ()
-            Just WaitRemoteIdleSt    -> return ()
-            Just TerminatedSt        -> return ()
-            Just _                   -> retry
+            Nothing                        -> return ()
+            Just UnknownConnectionSt       -> return ()
+            Just InboundIdleSt {}          -> return ()
+            Just InboundSt {}              -> return ()
+            Just WaitRemoteIdleSt          -> return ()
+            Just TerminatedSt              -> return ()
+            Just (UnnegotiatedSt Inbound)  -> return ()
+            Just (UnnegotiatedSt Outbound) -> retry
+            Just ReservedOutboundSt        -> retry
+            Just OutboundUniSt             -> retry
+            Just OutboundIdleSt {}         -> retry
+            Just OutboundDupSt {}          -> retry
+            Just DuplexSt                  -> retry
+            Just TerminatingSt             -> retry
 
         connectionManager :: ConnectionManager muxMode socket peerAddr
                                                handle handleError m

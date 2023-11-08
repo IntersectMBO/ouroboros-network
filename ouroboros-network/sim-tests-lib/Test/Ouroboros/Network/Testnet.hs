@@ -672,8 +672,7 @@ prop_diffusion_nofail defaultBearerInfo diffScript =
         -- lastTime = fst (last trace)
 
      -- run in `IO` so we can catch the pure 'AssertionFailed' exception
-     in -- classifySimulatedTime lastTime $
-        ioProperty $ do
+     in ioProperty $ do
        r <-
          evaluate ( foldl' (flip seq) True
                 $ [ assertPeerSelectionState st ()
@@ -2055,27 +2054,23 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
-                       DiffusionPeerSelectionTrace (TraceDemoteWarmDone _ _ addr) ->
-                           Just $ Left failures
-                         where
-                           failures = Just $ Set.singleton addr
-                       DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerDone _ _ addr) ->
-                           Just $ Left failures
-                         where
-                           failures = Just $ Set.singleton addr
-                       DiffusionPeerSelectionTrace (TraceDemoteHotDone _ _ addr) ->
-                           Just $ Left failures
-                         where
-                           failures = Just $ Set.singleton addr
-                       DiffusionPeerSelectionTrace (TraceDemoteHotBigLedgerPeerDone _ _ addr) ->
-                           Just $ Left failures
-                         where
-                           failures = Just $ Set.singleton addr
                        DiffusionPeerSelectionTrace (TraceDemoteWarmFailed _ _ peeraddr _) ->
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TracePromoteColdFailed _ _ peeraddr _ _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
                        DiffusionPeerSelectionTrace (TracePromoteWarmFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmDone _ _ peeraddr) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TracePromoteColdBigLedgerPeerFailed _ _ peeraddr _ _) ->
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
@@ -2088,6 +2083,10 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                          where
                            failures = Set.singleton peeraddr
                        DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerDone _ _ peeraddr) ->
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr

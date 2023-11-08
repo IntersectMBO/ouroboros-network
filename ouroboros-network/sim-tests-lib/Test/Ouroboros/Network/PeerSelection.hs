@@ -71,26 +71,19 @@ import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.IOSim
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-                     (RelayAccessPoint)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSLookupType (..), ioDNSActions)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-                     (newLedgerAndPublicRootDNSSemaphore)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                     (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-                     (publicRootPeersProvider)
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency (..), LocalRootPeers, WarmValency (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type
                      (PeerSharingResult (..))
 import           Test.QuickCheck
-import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Pretty.Simple (pPrint)
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
+import           Text.Pretty.Simple
 
 -- Exactly as named.
 unfHydra :: Int
@@ -1444,8 +1437,8 @@ recentPeerShareActivity d =
     --TODO: we should be able to avoid primitiveTransformEvents and express
     -- this as some combo of keyed linger and keyed until.
   where
-    go :: Set PeerAddr
-       -> PSQ.OrdPSQ PeerAddr Time ()
+    go :: Set PeerAddr -- ^ Recently shared with peers
+       -> PSQ.OrdPSQ PeerAddr Time () -- ^ PSQ with next time to request to peers
        -> [E TestTraceEvent]
        -> [E (Maybe (Set PeerAddr), Set PeerAddr)]
     go !recentSet !recentPSQ txs@(E (TS t _) _ : _)
@@ -2585,12 +2578,17 @@ prop_governor_target_active_above env =
         govActivePeersSig =
           selectGovState (dropBigLedgerPeers Governor.activePeers) events
 
-        demotionOpportunity target local active
-          | Set.size active <= target
+        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
+        govInProgressDemoteToColdSig =
+          selectGovState Governor.inProgressDemoteToCold events
+
+        demotionOpportunity target local active inProgressDemoteToCold
+          | (Set.size active - Set.size inProgressDemoteToCold) <= target
           = Set.empty
 
           | otherwise
           = active Set.\\ LocalRootPeers.keysSet local
+                   Set.\\ inProgressDemoteToCold
 
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
@@ -2598,11 +2596,12 @@ prop_governor_target_active_above env =
             <$> govTargetsSig
             <*> govLocalRootPeersSig
             <*> govActivePeersSig
+            <*> govInProgressDemoteToColdSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            15 -- seconds
             id
             demotionOpportunities
 
@@ -2735,12 +2734,12 @@ prop_governor_target_established_local env =
           (\local established recentFailures inProgressPromoteCold ->
               Set.unions
                 [ -- There are no opportunities if we're at or above target
-                  if Set.size groupEstablished >= warmTarget
+                  if Set.size groupEstablished >= warmTarget'
                      then Set.empty
                      else group Set.\\ established
                                 Set.\\ recentFailures
                                 Set.\\ inProgressPromoteCold
-                | (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local
+                | (_, WarmValency warmTarget', group) <- LocalRootPeers.toGroupSets local
                 , let groupEstablished = group `Set.intersection` established
                 ]
           ) <$> govLocalRootPeersSig
@@ -2838,12 +2837,12 @@ prop_governor_target_active_local_below env =
           (\local established active recentFailures inProgressDemoteToCold ->
               Set.unions
                 [ -- There are no opportunities if we're at or above target
-                  if Set.size groupActive >= hotTarget
+                  if Set.size groupActive >= hotTarget'
                      then Set.empty
                      else groupEstablished Set.\\ active
                                            Set.\\ recentFailures
                                            Set.\\ inProgressDemoteToCold
-                | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
+                | (HotValency hotTarget', _, group) <- LocalRootPeers.toGroupSets local
                 , let groupActive      = group `Set.intersection` active
                       groupEstablished = group `Set.intersection` established
                 ]
@@ -2893,10 +2892,10 @@ prop_governor_target_active_local_above env =
           (\local active ->
               Set.unions
                 [ -- There are no opportunities if we're at or below target
-                  if Set.size groupActive <= hotTarget
+                  if Set.size groupActive <= hotTarget'
                      then Set.empty
                      else groupActive
-                | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
+                | (HotValency hotTarget', _, group) <- LocalRootPeers.toGroupSets local
                 , let groupActive = group `Set.intersection` active
                 ]
           ) <$> govLocalRootPeersSig

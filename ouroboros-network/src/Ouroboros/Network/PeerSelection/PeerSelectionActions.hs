@@ -112,8 +112,9 @@ withPeerSelectionActions
   getUseLedgerAfter
   k = do
     localRootsVar <- newTVarIO mempty
+    dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
 
-    withLedgerPeers ledgerPeersRng toPeerAddr ledgerPeersTracer getUseLedgerAfter
+    withLedgerPeers ledgerPeersRng dnsSemaphore toPeerAddr ledgerPeersTracer getUseLedgerAfter
                     ledgerPeersConsensusInterface dnsActions
       (\getLedgerPeers lpThread -> do
           let peerSelectionActions = PeerSelectionActions {
@@ -122,8 +123,8 @@ withPeerSelectionActions
                   readNewInboundConnection = readNewInboundConnections,
                   peerSharing,
                   peerConnToPeerSharing,
-                  requestBigLedgerPeers = requestBigLedgerPeers getLedgerPeers,
-                  requestPublicRootPeers = requestPublicRootPeers getLedgerPeers,
+                  requestBigLedgerPeers = requestBigLedgerPeers dnsSemaphore getLedgerPeers,
+                  requestPublicRootPeers = requestPublicRootPeers dnsSemaphore getLedgerPeers,
                   requestPeerShare,
                   peerStateActions
                 }
@@ -142,15 +143,16 @@ withPeerSelectionActions
     -- (for example because the node hasn't synced far enough) we fall back
     -- to using the manually configured bootstrap root peers.
     requestPublicRootPeers
-      :: (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+      :: DNSSemaphore m
+      -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
       -> Int
       -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime)
-    requestPublicRootPeers getLedgerPeers n = do
+    requestPublicRootPeers dnsSemaphore getLedgerPeers n = do
       peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n) AllLedgerPeers
       case peers_m of
            -- No peers from Ledger
            Nothing    -> do
-             (m, dt) <- requestConfiguredRootPeers n
+             (m, dt) <- requestConfiguredRootPeers dnsSemaphore n
              let m' = Map.map (\a -> (a, IsNotLedgerPeer)) m
              return (m', dt)
 
@@ -167,9 +169,8 @@ withPeerSelectionActions
     -- For each call we re-initialise the dns library which forces reading
     -- `/etc/resolv.conf`:
     -- https://github.com/input-output-hk/cardano-node/issues/731
-    requestConfiguredRootPeers :: Int -> m (Map peeraddr PeerAdvertise, DiffTime)
-    requestConfiguredRootPeers n = do
-      dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+    requestConfiguredRootPeers :: DNSSemaphore m -> Int -> m (Map peeraddr PeerAdvertise, DiffTime)
+    requestConfiguredRootPeers dnsSemaphore n = do
       publicRootPeersProvider publicRootTracer
                               toPeerAddr
                               dnsSemaphore
@@ -179,14 +180,15 @@ withPeerSelectionActions
                               ($ n)
 
     requestBigLedgerPeers
-      :: (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+      :: DNSSemaphore m
+      -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
       -> Int
       -> m (Set peeraddr, DiffTime)
-    requestBigLedgerPeers getLedgerPeers n = do
+    requestBigLedgerPeers dnsSemaphore getLedgerPeers n = do
       peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n) BigLedgerPeers
       case peers_m of
         Nothing    ->  do
-          (m, dt) <- requestConfiguredRootPeers n
+          (m, dt) <- requestConfiguredRootPeers dnsSemaphore n
           -- TODO: we need to ensure we only choose from big configured root
           -- peers, but for that the root peers need to contain stake
           -- information!

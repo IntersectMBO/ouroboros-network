@@ -175,7 +175,6 @@ belowTargetOther actions
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
-                   inProgressDemoteToCold,
                    targets = PeerSelectionTargets {
                                targetNumberOfEstablishedPeers
                              }
@@ -202,7 +201,6 @@ belowTargetOther actions
           availableToPromote = availableToConnect
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
-                                 Set.\\ inProgressDemoteToCold
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
@@ -255,7 +253,6 @@ belowTargetBigLedgerPeers actions
                             knownPeers,
                             establishedPeers,
                             inProgressPromoteCold,
-                            inProgressDemoteToCold,
                             targets = PeerSelectionTargets {
                                         targetNumberOfEstablishedBigLedgerPeers
                                       }
@@ -283,7 +280,6 @@ belowTargetBigLedgerPeers actions
           availableToPromote = availableToConnect
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
-                                 Set.\\ inProgressDemoteToCold
           numPeersToPromote  = targetNumberOfEstablishedBigLedgerPeers
                              - numEstablishedPeers
                              - numConnectInProgress
