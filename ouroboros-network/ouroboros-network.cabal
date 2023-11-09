@@ -121,7 +121,7 @@ library
                        monoidal-synchronisation,
                        strict-checked-vars ^>= 0.1.0.3,
 
-                       io-classes       ^>=1.2,
+                       io-classes       ^>=1.3,
                        io-classes-mtl   ^>=0.1,
                        network-mux,
                        si-timers,

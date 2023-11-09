@@ -576,9 +576,10 @@ selectPeerSelectionTraceEvents = go
     go (SimTrace _ _ _ _ trace)      =         go trace
     go (SimPORTrace _ _ _ _ _ trace) =         go trace
     go (TraceRacesFound _ trace)     =         go trace
-    go (TraceMainException _ e _)    = throw e
+    go (TraceMainException _ _ e _)  = throw e
     go (TraceDeadlock      _   _)    = [] -- expected result in many cases
-    go (TraceMainReturn    _ _ _)    = []
+    go  TraceMainReturn {}           = []
+    go (TraceInternalError e)        = error ("IOSim: " ++ e)
     go TraceLoop                     = error "Step time limit exceeded"
 
 selectPeerSelectionTraceEventsUntil :: Time -> SimTrace a -> [(Time, TestTraceEvent)]
@@ -595,9 +596,10 @@ selectPeerSelectionTraceEventsUntil tmax = go
     go (SimTrace _ _ _ _ trace)      =         go trace
     go (SimPORTrace _ _ _ _ _ trace) =         go trace
     go (TraceRacesFound _ trace)     =         go trace
-    go (TraceMainException _ e _)    = throw e
+    go (TraceMainException _ _ e _)  = throw e
     go (TraceDeadlock      _   _)    = [] -- expected result in many cases
-    go (TraceMainReturn    _ _ _)    = []
+    go  TraceMainReturn {}           = []
+    go (TraceInternalError e)        = error ("IOSim: " ++ e)
     go TraceLoop                     = error "Step time limit exceeded"
 
 selectGovernorEvents :: [(Time, TestTraceEvent)]

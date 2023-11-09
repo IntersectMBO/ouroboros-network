@@ -1994,7 +1994,7 @@ prop_never_above_hardlimit serverAcc
     . bifoldMap
         ( \ case
             MainReturn {} -> mempty
-            MainException _ e _
+            MainException _ _ e _
                           -> AllProperty (counterexample (show e) False)
             _             -> AllProperty (property False)
         )
