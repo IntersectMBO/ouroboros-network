@@ -27,6 +27,7 @@ import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
+import Ouroboros.Network.SizeInBytes (SizeInBytes)
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -119,7 +120,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                       !lastIdx'
                         | null txs  = lastIdx
                         | otherwise = idx where (_, idx, _) = last txs
-                      txs'         :: [(txid, TxSizeInBytes)]
+                      txs'         :: [(txid, SizeInBytes)]
                       txs'          = [ (txid, size) | (txid, _, size) <- txs ]
                       client'       = client unackedSeq'' lastIdx'
                   in  (txs', client')

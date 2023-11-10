@@ -30,6 +30,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 
 --
@@ -57,7 +58,7 @@ txSubmissionClient
      (Ord txid, Show txid, Monad m)
   => Tracer m (TraceEventClient txid tx)
   -> (tx -> txid)
-  -> (tx -> TxSizeInBytes)
+  -> (tx -> SizeInBytes)
   -> Word16  -- ^ Maximum number of unacknowledged txids allowed
   -> [tx]
   -> TxSubmissionClient txid tx m ()
@@ -182,7 +183,7 @@ data ServerState txid tx = ServerState {
        -- requested. This is not ordered to illustrate the fact that we can
        -- request txs out of order. We also remember the sizes, though this
        -- example does not make use of the size information.
-       availableTxids         :: Map txid TxSizeInBytes,
+       availableTxids         :: Map txid SizeInBytes,
 
        -- | Transactions we have successfully downloaded but have not yet added
        -- to the mempool or acknowledged. This is needed because we request
