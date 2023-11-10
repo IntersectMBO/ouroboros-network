@@ -662,7 +662,7 @@ prop_diffusion_nofail defaultBearerInfo diffScript =
               . withTimeNameTraceEvents
                  @DiffusionTestTrace
                  @NtNAddr
-              . Trace.fromList (MainReturn (Time 0) () [])
+              . traceFromList
               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
               . take 125000
               . traceEvents
