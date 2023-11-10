@@ -115,14 +115,15 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 1
      <> CBOR.encodeListLenIndef
-     <> foldr (\(txid, sz) r -> CBOR.encodeListLen 2
+     <> foldr (\(txid, SizeInBytes sz) r ->
+                                CBOR.encodeListLen 2
                              <> encodeTxId txid
                              <> CBOR.encodeWord32 sz
                              <> r)
               CBOR.encodeBreak
               txids'
       where
-        txids' :: [(txid, TxSizeInBytes)]
+        txids' :: [(txid, SizeInBytes)]
         txids' = case txids of
                    BlockingReply    xs -> NonEmpty.toList xs
                    NonBlockingReply xs -> xs
@@ -168,9 +169,10 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
           blocking <- CBOR.decodeBool
           ackNo    <- CBOR.decodeWord16
           reqNo    <- CBOR.decodeWord16
-          return $! case blocking of
-            True  -> SomeMessage (MsgRequestTxIds TokBlocking    ackNo reqNo)
-            False -> SomeMessage (MsgRequestTxIds TokNonBlocking ackNo reqNo)
+          return $!
+            if blocking
+            then SomeMessage (MsgRequestTxIds TokBlocking    ackNo reqNo)
+            else SomeMessage (MsgRequestTxIds TokNonBlocking ackNo reqNo)
 
         (ClientAgency (TokTxIds b),  2, 1) -> do
           CBOR.decodeListLenIndef
@@ -179,7 +181,7 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
                      (do CBOR.decodeListLenOf 2
                          txid <- decodeTxId
                          sz   <- CBOR.decodeWord32
-                         return (txid, sz))
+                         return (txid, SizeInBytes sz))
           case (b, txids) of
             (TokBlocking, t:ts) ->
               return $

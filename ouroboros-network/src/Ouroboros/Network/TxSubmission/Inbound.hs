@@ -40,6 +40,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.SizeInBytes (SizeInBytes)
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -118,7 +119,7 @@ data ServerState txid tx = ServerState {
        -- are a subset of the 'unacknowledgedTxIds' that we have not yet
        -- requested. This is not ordered to illustrate the fact that we can
        -- request txs out of order. We also remember the size.
-       availableTxids         :: !(Map txid TxSizeInBytes),
+       availableTxids         :: !(Map txid SizeInBytes),
 
        -- | Transactions we have successfully downloaded but have not yet added
        -- to the mempool or acknowledged. This needed because we can request
@@ -187,7 +188,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
       continueWithStateM (serverIdle Zero) initialServerState
   where
     -- TODO #1656: replace these fixed limits by policies based on
-    -- TxSizeInBytes and delta-Q and the bandwidth/delay product.
+    -- SizeInBytes and delta-Q and the bandwidth/delay product.
     -- These numbers are for demo purposes only, the throughput will be low.
     maxTxIdsToRequest = 3 :: Word16
     maxTxToRequest    = 2 :: Word16
@@ -378,7 +379,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
     --
     acknowledgeTxIds :: ServerState txid tx
                      -> StrictSeq txid
-                     -> Map txid TxSizeInBytes
+                     -> Map txid SizeInBytes
                      -> MempoolSnapshot txid tx idx
                      -> ServerState txid tx
     acknowledgeTxIds st txidsSeq _ _ | Seq.null txidsSeq  = st

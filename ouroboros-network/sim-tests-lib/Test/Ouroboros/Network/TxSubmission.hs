@@ -73,7 +73,7 @@ tests = testGroup "TxSubmission"
 
 data Tx txid = Tx {
     getTxId    :: txid,
-    getTxSize  :: TxSizeInBytes,
+    getTxSize  :: SizeInBytes,
     -- | If false this means that when this tx will be submitted to a remote
     -- mempool it will not be valid.  The outbound mempool might contain
     -- invalid tx's in this sense.
@@ -88,7 +88,7 @@ instance ShowProxy txid => ShowProxy (Tx txid) where
 instance Arbitrary txid => Arbitrary (Tx txid) where
     arbitrary =
       Tx <$> arbitrary
-         <*> arbitrary
+         <*> (SizeInBytes <$> arbitrary)
          <*> frequency [ (3, pure True)
                        , (1, pure False)
                        ]
@@ -136,7 +136,7 @@ getMempoolReader (Mempool mempool) =
           mempoolHasTx      = \txid -> isJust $ find (\tx -> getTxId tx == txid) seq
        }
 
-    f :: Int -> Tx txid -> (txid, Int, TxSizeInBytes)
+    f :: Int -> Tx txid -> (txid, Int, SizeInBytes)
     f idx Tx {getTxId, getTxSize} = (getTxId, idx, getTxSize)
 
 
@@ -177,13 +177,13 @@ txSubmissionCodec2 =
     encodeTx Tx {getTxId, getTxSize, getTxValid} =
          CBOR.encodeListLen 3
       <> CBOR.encodeInt getTxId
-      <> CBOR.encodeWord32 getTxSize
+      <> CBOR.encodeWord32 (getSizeInBytes getTxSize)
       <> CBOR.encodeBool getTxValid
 
     decodeTx = do
       _ <- CBOR.decodeListLen
       Tx <$> CBOR.decodeInt
-         <*> CBOR.decodeWord32
+         <*> (SizeInBytes <$> CBOR.decodeWord32)
          <*> CBOR.decodeBool
 
 
