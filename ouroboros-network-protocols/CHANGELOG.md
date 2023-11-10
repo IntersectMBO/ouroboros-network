@@ -25,6 +25,8 @@
 * Refactored CBOR mini-protocols codecs to a more modular structure
 * Added `deepseq` dependency and implemented `NFData` for `testlib` types.
 * Added miniprotocols codec benchmarks
+* Use `SizeInBytes` newtype instead of the `TxSizeInBytes` type aliase.
+  `TxSizeInBytes` is now deprecated.
 
 ## 0.8.0.0 -- 2024-02-21
 

@@ -65,7 +65,7 @@ data ClientStIdle txid tx m a = ClientStIdle {
   }
 
 data ClientStTxIds blocking txid tx m a where
-  SendMsgReplyTxIds :: BlockingReplyList blocking (txid, TxSizeInBytes)
+  SendMsgReplyTxIds :: BlockingReplyList blocking (txid, SizeInBytes)
                     -> ClientStIdle           txid tx m a
                     -> ClientStTxIds blocking txid tx m a
 

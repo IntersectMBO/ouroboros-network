@@ -11,20 +11,35 @@
 --
 -- This is used to relay transactions between nodes.
 --
-module Ouroboros.Network.Protocol.TxSubmission2.Type where
+module Ouroboros.Network.Protocol.TxSubmission2.Type
+  ( TxSubmission2 (..)
+  , Message (..)
+  , ClientHasAgency (..)
+  , ServerHasAgency (..)
+  , NobodyHasAgency (..)
+  , TokBlockingStyle (..)
+  , StBlockingStyle (..)
+  , BlockingReplyList (..)
+    -- re-exports
+  , SizeInBytes (..)
+    -- deprecated API
+  , TxSizeInBytes
+  ) where
 
+import Control.DeepSeq
 import Data.List.NonEmpty (NonEmpty)
-import Data.Word (Word16, Word32)
+import Data.Word (Word16)
 
 import Network.TypedProtocol.Core
 
-import Control.DeepSeq
+import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.Util.ShowProxy
 
 -- | Transactions are typically not big, but in principle in future we could
 -- have ones over 64k large.
 --
-type TxSizeInBytes = Word32
+type TxSizeInBytes = SizeInBytes
+{-# DEPRECATED TxSizeInBytes "Use 'Ouroboros.Network.SizeInBytes.SizeInBytes' instead" #-}
 
 -- | The kind of the transaction-submission protocol, and the types of the
 -- states in the protocol state machine.
