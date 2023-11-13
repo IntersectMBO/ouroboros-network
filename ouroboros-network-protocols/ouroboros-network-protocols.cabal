@@ -130,31 +130,38 @@ library testlib
                        Ouroboros.Network.Protocol.BlockFetch.Direct
                        Ouroboros.Network.Protocol.BlockFetch.Examples
                        Ouroboros.Network.Protocol.BlockFetch.Test
+                       Ouroboros.Network.Protocol.BlockFetch.Codecs
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.DirectPipelined
                        Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Test
+                       Ouroboros.Network.Protocol.ChainSync.Codecs
                        Ouroboros.Network.Protocol.Handshake.Direct
                        Ouroboros.Network.Protocol.Handshake.Test
                        Ouroboros.Network.Protocol.LocalStateQuery.Direct
                        Ouroboros.Network.Protocol.LocalStateQuery.Examples
                        Ouroboros.Network.Protocol.LocalStateQuery.Test
+                       Ouroboros.Network.Protocol.LocalStateQuery.Codecs
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Codecs
                        Ouroboros.Network.Protocol.LocalTxMonitor.Direct
                        Ouroboros.Network.Protocol.LocalTxMonitor.Examples
                        Ouroboros.Network.Protocol.LocalTxMonitor.Test
+                       Ouroboros.Network.Protocol.LocalTxMonitor.Codecs
                        Ouroboros.Network.Protocol.TxSubmission2.Direct
                        Ouroboros.Network.Protocol.TxSubmission2.Test
                        Ouroboros.Network.Protocol.TxSubmission2.Examples
+                       Ouroboros.Network.Protocol.TxSubmission2.Codecs
                        Ouroboros.Network.Protocol.KeepAlive.Direct
                        Ouroboros.Network.Protocol.KeepAlive.Examples
                        Ouroboros.Network.Protocol.KeepAlive.Test
                        Ouroboros.Network.Protocol.PeerSharing.Direct
                        Ouroboros.Network.Protocol.PeerSharing.Examples
                        Ouroboros.Network.Protocol.PeerSharing.Test
+                       Ouroboros.Network.Protocol.PeerSharing.Codecs
 
                        Test.Data.CDDL
                        Test.ChainGenerators
@@ -173,6 +180,7 @@ library testlib
                        tasty,
                        tasty-quickcheck,
                        text,
+                       network,
 
                        contra-tracer,
 

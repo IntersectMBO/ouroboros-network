@@ -119,6 +119,13 @@ import Test.Data.CDDL (Any (..))
 
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
+import Ouroboros.Network.Protocol.BlockFetch.Codecs
+import Ouroboros.Network.Protocol.ChainSync.Codecs
+import Ouroboros.Network.Protocol.LocalStateQuery.Codecs
+import Ouroboros.Network.Protocol.LocalTxMonitor.Codecs
+import Ouroboros.Network.Protocol.LocalTxSubmission.Codecs
+import Ouroboros.Network.Protocol.PeerSharing.Codecs
+import Ouroboros.Network.Protocol.TxSubmission2.Codecs
 import Test.QuickCheck hiding (Result (..))
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)
@@ -329,107 +336,6 @@ readCDDLSpecs = do
         cddlNodeToNodeVersionDataV11ToV12  = CDDLSpec nodeToNodeVersionDataV11ToV12,
         cddlNodeToNodeVersionDataV13ToLast = CDDLSpec nodeToNodeVersionDataV13ToLast
       }
-
-
-newtype BlockHeader = BlockHeader Any
-  deriving (Eq, Show, Arbitrary, Serialise)
-
-newtype HeaderPoint = HeaderPoint Any
-  deriving (Eq, Show, Arbitrary, Serialise)
-
-newtype HeaderTip = HeaderTip Any
-  deriving (Eq, Show, Arbitrary, Serialise)
-
-newtype Block = Block Any
-  deriving (Eq, Show, Arbitrary, Serialise)
-
-newtype BlockPoint = BlockPoint Any
-  deriving (Eq, Show, Arbitrary, Serialise)
-
-newtype Result = Result Any
-  deriving (Eq, Show, Arbitrary, Serialise)
-
--- TODO: add payload to the query
-data Query result where
-    Query :: Any -> Query Result
-
-encodeQuery :: Query result -> CBOR.Encoding
-encodeQuery (Query a) = Serialise.encode a
-
-decodeQuery :: forall s. CBOR.Decoder s (LocalStateQuery.Some Query)
-decodeQuery = LocalStateQuery.Some . Query <$> Serialise.decode
-
-instance LocalStateQuery.ShowQuery Query where
-    showResult (Query query) result = show (query, result)
-deriving instance Show (Query result)
-instance Arbitrary (Query Result) where
-    arbitrary = Query <$> arbitrary
-
---
--- Mini-Protocol Codecs
---
-
-chainSyncCodec :: Codec (ChainSync BlockHeader HeaderPoint HeaderTip)
-                        CBOR.DeserialiseFailure IO BL.ByteString
-chainSyncCodec =
-    codecChainSync
-      Serialise.encode
-      Serialise.decode
-      Serialise.encode
-      Serialise.decode
-      Serialise.encode
-      Serialise.decode
-
-
-blockFetchCodec :: Codec (BlockFetch Block BlockPoint)
-                         CBOR.DeserialiseFailure IO BL.ByteString
-blockFetchCodec =
-    codecBlockFetch
-      Serialise.encode
-      Serialise.decode
-      Serialise.encode
-      Serialise.decode
-
-
-txSubmissionCodec2 :: Codec (TxSubmission2 TxId Tx)
-                            CBOR.DeserialiseFailure IO BL.ByteString
-txSubmissionCodec2 =
-    codecTxSubmission2
-      Serialise.encode
-      Serialise.decode
-      Serialise.encode
-      Serialise.decode
-
-
-localTxSubmissionCodec :: Codec (LocalTxSubmission LocalTxSubmission.Tx LocalTxSubmission.Reject)
-                                CBOR.DeserialiseFailure IO BL.ByteString
-localTxSubmissionCodec =
-    codecLocalTxSubmission
-      Serialise.encode
-      Serialise.decode
-      Serialise.encode
-      Serialise.decode
-
-
-localTxMonitorCodec :: Codec (LocalTxMonitor TxId Tx SlotNo)
-                                CBOR.DeserialiseFailure IO BL.ByteString
-localTxMonitorCodec =
-    codecLocalTxMonitor
-      Serialise.encode Serialise.decode
-      Serialise.encode Serialise.decode
-      Serialise.encode Serialise.decode
-
-
-localStateQueryCodec :: Codec (LocalStateQuery Block BlockPoint Query)
-                              CBOR.DeserialiseFailure IO BL.ByteString
-localStateQueryCodec =
-    codecLocalStateQuery
-      maxBound
-      Serialise.encode Serialise.decode
-      encodeQuery decodeQuery
-      (\Query{} -> Serialise.encode) (\Query{} -> Serialise.decode)
-
-
 
 --
 -- Test encodings
@@ -724,7 +630,7 @@ prop_encodePeerSharingV11ToV12
     -> AnyMessageAndAgency (PeerSharing.PeerSharing SockAddr)
     -> Property
 prop_encodePeerSharingV11ToV12 spec (NtNVersionV11ToV12 ntnVersion) =
-  validateEncoder spec (codecPeerSharing (encodeRemoteAddress ntnVersion) (decodeRemoteAddress ntnVersion))
+  validateEncoder spec (peerSharingCodec ntnVersion)
 
 prop_encodePeerSharingV13ToLast
     :: CDDLSpec            (PeerSharing.PeerSharing SockAddr)
@@ -732,7 +638,7 @@ prop_encodePeerSharingV13ToLast
     -> AnyMessageAndAgency (PeerSharing.PeerSharing SockAddr)
     -> Property
 prop_encodePeerSharingV13ToLast spec (NtNVersionV13ToLast ntnVersion) =
-  validateEncoder spec (codecPeerSharing (encodeRemoteAddress ntnVersion) (decodeRemoteAddress ntnVersion))
+  validateEncoder spec (peerSharingCodec ntnVersion)
 
 newtype NtNVersionV7To10    = NtNVersionV7To10 NodeToNodeVersion
   deriving Show
@@ -1069,7 +975,7 @@ unit_decodePeerSharingV11ToV12
 unit_decodePeerSharingV11ToV12 spec =
     forM_ [NodeToNodeV_11 .. NodeToNodeV_12] $ \v ->
     validateDecoder Nothing
-      spec (codecPeerSharing (encodeRemoteAddress v) (decodeRemoteAddress v))
+      spec (peerSharingCodec v)
       [ SomeAgency $ ClientAgency TokIdle
       , SomeAgency $ ServerAgency TokBusy
       ]
@@ -1081,7 +987,7 @@ unit_decodePeerSharingV13ToLast
 unit_decodePeerSharingV13ToLast spec =
     forM_ [NodeToNodeV_13 ..] $ \v ->
     validateDecoder Nothing
-      spec (codecPeerSharing (encodeRemoteAddress v) (decodeRemoteAddress v))
+      spec (peerSharingCodec v)
       [ SomeAgency $ ClientAgency TokIdle
       , SomeAgency $ ServerAgency TokBusy
       ]
