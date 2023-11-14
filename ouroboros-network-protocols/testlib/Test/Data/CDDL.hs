@@ -20,12 +20,34 @@ import Test.QuickCheck as QC
 import Test.QuickCheck.Instances.ByteString ()
 import Test.QuickCheck.Instances.Text ()
 
+import Control.DeepSeq
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
 newtype Any = Any { getAny :: CBOR.Term }
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype Serialise
+
+instance NFData CBOR.Term where
+  rnf (CBOR.TBool x)     = rnf x
+  rnf (CBOR.TBytes x)    = rnf x
+  rnf (CBOR.TBytesI x)   = rnf x
+  rnf (CBOR.TDouble x)   = rnf x
+  rnf (CBOR.TFloat x)    = rnf x
+  rnf (CBOR.THalf x)     = rnf x
+  rnf (CBOR.TInt x)      = rnf x
+  rnf (CBOR.TInteger x)  = rnf x
+  rnf (CBOR.TList x)     = rnf x
+  rnf (CBOR.TListI x)    = rnf x
+  rnf (CBOR.TMap x)      = rnf x
+  rnf (CBOR.TMapI x)     = rnf x
+  rnf (CBOR.TSimple x)   = rnf x
+  rnf (CBOR.TString x)   = rnf x
+  rnf (CBOR.TStringI x)  = rnf x
+  rnf (CBOR.TTagged x y) = rnf x `seq` rnf y
+  rnf CBOR.TNull         = ()
+
+deriving instance NFData Any
 
 instance Arbitrary Any where
     -- | Generate a subset of `CBOR.Term` for which `deserialise` is a left

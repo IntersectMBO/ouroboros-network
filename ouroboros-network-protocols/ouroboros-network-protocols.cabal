@@ -97,6 +97,7 @@ library
   build-depends:       base              >=4.14 && <4.20,
                        bytestring        >=0.10 && <0.13,
                        cborg             >=0.2.1 && <0.3,
+                       deepseq,
 
                        io-classes       ^>=1.4.1,
                        si-timers,
@@ -181,6 +182,7 @@ library testlib
                        tasty-quickcheck,
                        text,
                        network,
+                       deepseq,
 
                        contra-tracer,
 
@@ -266,3 +268,36 @@ test-suite cddl
                        -Wunused-packages
                        -rtsopts
                        -with-rtsopts=-M400m
+
+test-suite bench
+  type:                exitcode-stdio-1.0
+  default-extensions:  ImportQualifiedPost
+  hs-source-dirs:      bench-cddl
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  build-depends:       base >=4.14 && <4.19,
+                       bytestring,
+                       cborg,
+                       containers,
+                       deepseq,
+                       network,
+
+                       tasty-bench,
+
+                       typed-protocols,
+                       ouroboros-network-api,
+                       ouroboros-network-framework,
+                       ouroboros-network-protocols,
+                       ouroboros-network-protocols:testlib
+
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
+                       -Wcompat
+                       -Wunused-packages
+                       -rtsopts
+                       -with-rtsopts=-A32m
+                       -with-rtsopts=-T
+  -- Important for comparing benchmarks results against a baseline run.
+  -- Read: https://hackage.haskell.org/package/tasty-bench for details
+  if impl(ghc >= 8.6)
+    ghc-options: -fproc-alignment=64

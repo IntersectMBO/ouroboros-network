@@ -15,8 +15,9 @@ module Ouroboros.Network.Protocol.ChainSync.Type where
 
 import Data.Proxy (Proxy (..))
 
-import Network.TypedProtocol.Core (Protocol (..))
+import Network.TypedProtocol.Core (PeerHasAgency (..), Protocol (..))
 
+import Control.DeepSeq
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
@@ -155,11 +156,40 @@ instance Protocol (ChainSync header point tip) where
   exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
+instance forall header point tip (st :: ChainSync header point tip). NFData (ClientHasAgency st) where
+  rnf TokIdle = ()
+
+instance forall header point tip (st :: ChainSync header point tip). NFData (ServerHasAgency st) where
+  rnf (TokNext k)  = rnf k
+  rnf TokIntersect = ()
+
+instance forall header point tip (st :: ChainSync header point tip). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance forall header point tip (st :: ChainSync header point tip) pr. NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
+
+instance ( NFData header
+         , NFData point
+         , NFData tip
+         ) => NFData (Message (ChainSync header point tip) from to) where
+  rnf MsgRequestNext           = ()
+  rnf MsgAwaitReply            = ()
+  rnf (MsgRollForward h t)     = rnf h `seq` rnf t
+  rnf (MsgRollBackward p t)    = rnf p `seq` rnf t
+  rnf (MsgFindIntersect ps)    = rnf ps
+  rnf (MsgIntersectFound p t)  = rnf p `seq` rnf t
+  rnf (MsgIntersectNotFound t) = rnf t
+  rnf MsgDone                  = ()
 
 data TokNextKind (k :: StNextKind) where
   TokCanAwait  :: TokNextKind StCanAwait
   TokMustReply :: TokNextKind StMustReply
 
+instance NFData (TokNextKind k) where
+  rnf TokCanAwait  = ()
+  rnf TokMustReply = ()
 
 instance (Show header, Show point, Show tip)
       => Show (Message (ChainSync header point tip) from to) where

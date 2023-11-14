@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -11,7 +12,9 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise (Serialise)
 import Codec.Serialise.Class qualified as Serialise
+import Control.DeepSeq (NFData (..))
 import Data.ByteString.Lazy qualified as BL
+import GHC.Generics (Generic)
 import Network.TypedProtocol.Codec
 import Ouroboros.Network.Protocol.BlockFetch.Codecs (Block, BlockPoint)
 import Ouroboros.Network.Protocol.LocalStateQuery.Codec
@@ -20,11 +23,14 @@ import Test.Data.CDDL (Any)
 import Test.QuickCheck (Arbitrary (..))
 
 newtype Result = Result Any
-  deriving (Eq, Show, Arbitrary, Serialise)
+  deriving (Eq, Show, Arbitrary, Serialise, Generic, NFData)
 
 -- TODO: add payload to the query
 data Query result where
     Query :: Any -> Query Result
+
+instance NFData (Query result) where
+  rnf (Query a) = rnf a
 
 encodeQuery :: Query result -> CBOR.Encoding
 encodeQuery (Query a) = Serialise.encode a
