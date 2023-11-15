@@ -2046,7 +2046,7 @@ prop_governor_target_established_below env =
               (\case TracePromoteColdFailed _ _ peer _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
-                       Just (Set.singleton peer)
+                       Just $! Set.singleton peer
                      --TODO: what about TraceDemoteWarmDone ?
                      -- these are also not immediate candidates
                      -- why does the property not fail for not tracking these?
@@ -2054,18 +2054,18 @@ prop_governor_target_established_below env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
+                         !failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
+                         !failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TracePromoteWarmFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
+                       Just $! Set.singleton peer
                      TraceDemoteWarmFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
+                       Just $!Set.singleton peer
                      TraceDemoteHotFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
+                       Just $! Set.singleton peer
                      _ -> Nothing
               )
           . selectGovEvents
