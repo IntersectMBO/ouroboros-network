@@ -1230,18 +1230,12 @@ diffusionSimulation
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
-        , Diff.P2P.dtDebugPeerSelectionInitiatorTracer = contramap
-                                                          ( DiffusionDebugPeerSelectionTrace
-                                                          . voidDebugPeerSelection
-                                                          )
+        , Diff.P2P.dtDebugPeerSelectionInitiatorTracer = contramap DiffusionDebugPeerSelectionTrace
                                                        . tracerWithName ntnAddr
                                                        . tracerWithTime
                                                        $ nodeTracer
         , Diff.P2P.dtDebugPeerSelectionInitiatorResponderTracer
-            = contramap
-               ( DiffusionDebugPeerSelectionTrace
-               . voidDebugPeerSelection
-               )
+            = contramap DiffusionDebugPeerSelectionTrace
             . tracerWithName ntnAddr
             . tracerWithTime
             $ nodeTracer
@@ -1279,10 +1273,6 @@ diffusionSimulation
         , Diff.P2P.dtLocalServerTracer                 = nullTracer
         , Diff.P2P.dtLocalInboundGovernorTracer        = nullTracer
       }
-      where
-        voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
-        voidDebugPeerSelection (TraceGovernorState btime wtime state) =
-                                TraceGovernorState btime wtime (const () <$> state)
 
 
 --

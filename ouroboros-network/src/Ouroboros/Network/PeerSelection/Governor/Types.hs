@@ -433,7 +433,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     Should also take account of DNS failures for root peer set.
 --     lastSuccessfulNetworkEvent :: Time
      }
-  deriving (Show, Functor)
+  deriving Show
 
 -- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
 -- mechanisms without any problem.

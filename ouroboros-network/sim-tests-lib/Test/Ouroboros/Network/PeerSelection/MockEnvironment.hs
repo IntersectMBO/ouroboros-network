@@ -561,12 +561,7 @@ tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection PeerAddr)
 tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
-tracerDebugPeerSelection = contramap (GovernorDebug . voidDebugPeerSelection)
-                                     tracerTestTraceEvent
-  where
-    voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
-    voidDebugPeerSelection (TraceGovernorState btime wtime state) =
-                            TraceGovernorState btime wtime (const () <$> state)
+tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent
 
 tracerTracePeerSelectionCounters :: Tracer (IOSim s) PeerSelectionCounters
 tracerTracePeerSelectionCounters = contramap GovernorCounters tracerTestTraceEvent
