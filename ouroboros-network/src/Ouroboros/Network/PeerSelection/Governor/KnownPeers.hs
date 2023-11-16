@@ -91,11 +91,9 @@ belowTarget actions
           --
           -- This is to increase diversity.
           numPeersToReq :: PeerSharingAmount
-          !numPeersToReq     = fromIntegral
-                             $ min 255 (max 1 (objective `div` numPeerShareReqs))
-          selForPSWithAmount = Set.toList
-                             $ Set.map (\a -> (numPeersToReq, a))
-                                       selectedForPeerShare
+          !numPeersToReq = fromIntegral
+                         $ min 255 (max 1 (objective `div` numPeerShareReqs))
+
       return $ \now -> Decision {
         decisionTrace = [TracePeerShareRequests
                           targetNumberOfKnownPeers
@@ -111,7 +109,7 @@ belowTarget actions
                                               establishedPeers
                         },
         decisionJobs  =
-          [jobPeerShare actions policy selForPSWithAmount]
+          [jobPeerShare actions policy numPeersToReq (Set.toList selectedForPeerShare)]
       }
 
     -- If we could peer share except that there are none currently available
@@ -139,11 +137,12 @@ jobPeerShare :: forall m peeraddr peerconn.
                 (MonadAsync m, MonadTimer m, Ord peeraddr)
              => PeerSelectionActions peeraddr peerconn m
              -> PeerSelectionPolicy peeraddr m
-             -> [(PeerSharingAmount, peeraddr)]
+             -> PeerSharingAmount
+             -> [peeraddr]
              -> Job () m (Completion m peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
              PeerSelectionPolicy{..} =
-    \peers -> Job (jobPhase1 peers) (handler (map snd peers)) () "peerSharePhase1"
+    \amount peers -> Job (jobPhase1 amount peers) (handler peers) () "peerSharePhase1"
   where
     handler :: [peeraddr] -> SomeException -> m (Completion m peeraddr peerconn)
     handler peers e = return $
@@ -156,15 +155,15 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                  decisionJobs = []
                }
 
-    jobPhase1 :: [(PeerSharingAmount, peeraddr)] -> m (Completion m peeraddr peerconn)
-    jobPhase1 peers = do
+    jobPhase1 :: PeerSharingAmount -> [peeraddr] -> m (Completion m peeraddr peerconn)
+    jobPhase1 amount peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
       -- add them to the known peers set in one go.
       --
       -- So fire them all off in one go:
       peerShares <- sequence [ async (requestPeerShare amount peer)
-                             | (amount, peer) <- peers ]
+                             | peer <- peers ]
 
       -- First to finish synchronisation between /all/ the peer share requests
       -- completing or the timeout (with whatever partial results we have at
@@ -173,7 +172,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
       case results of
         Right totalResults ->
           return $ Completion $ \st _ ->
-           let peerResults = zip (map snd peers) totalResults
+           let peerResults = zip peers totalResults
                -- Filter known-to-be ledger peers before adding them to known
                -- peers. We to improve efficacy of Peer Sharing, because ledger
                -- peers are going to be hub nodes in the network (i.e. nodes
@@ -211,9 +210,9 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
           -- We have to keep track of the relationship between the peer
           -- addresses and the peer share requests, completed and still in progress:
           let peerResults      = [ (p, r)
-                                 | ((_, p), Just r)  <- zip peers partialResults ]
+                                 | (p, Just r)  <- zip peers partialResults ]
               peersRemaining   = [  p
-                                 | ((_, p), Nothing) <- zip peers partialResults ]
+                                 | (p, Nothing) <- zip peers partialResults ]
               peerSharesRemaining = [  a
                                     | (a, Nothing) <- zip peerShares partialResults ]
 
