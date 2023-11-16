@@ -152,6 +152,7 @@
               packages.ouroboros-network-protocols.components.tests.test.doCheck      = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ouroboros-network-framework.components.tests.io-tests.doCheck  = !pkgs.stdenv.hostPlatform.isWindows;
+              packages.ouroboros-network-framework.components.tests.bench.doCheck     = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ouroboros-network.components.tests.sim-tests.doCheck           = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ouroboros-network.components.tests.io-tests.doCheck            = !pkgs.stdenv.hostPlatform.isWindows;
               packages.cardano-client.components.tests.test.doCheck                   = !pkgs.stdenv.hostPlatform.isWindows;
