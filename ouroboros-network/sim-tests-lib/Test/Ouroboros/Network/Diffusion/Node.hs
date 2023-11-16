@@ -98,6 +98,8 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface, UseLedgerAfter)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -105,8 +107,6 @@ import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint, RelayAccessPoint)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSLookupType)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                     (LedgerPeersConsensusInterface, UseLedgerAfter)
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency, WarmValency)
 import           Ouroboros.Network.PeerSharing

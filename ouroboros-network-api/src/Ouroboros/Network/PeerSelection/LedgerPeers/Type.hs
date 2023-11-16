@@ -1,6 +1,9 @@
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
+-- | Various types related to ledger peers.  This module is re-exported from
+-- "Ouroboros.Network.PeerSelection.LedgerPeers".
+--
 module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   ( PoolStake (..)
   , AccPoolStake (..)
@@ -8,6 +11,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   ) where
 
 import           Control.DeepSeq (NFData (..))
+
 
 -- | The relative stake of a stakepool in relation to the total amount staked.
 -- A value in the [0, 1] range.

@@ -71,12 +71,10 @@ import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRoo
                      (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (IsBigLedgerPeer)
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
+                     IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                     (IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
                      PeerSharingResult (..))

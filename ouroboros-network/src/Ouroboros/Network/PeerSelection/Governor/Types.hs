@@ -60,12 +60,10 @@ import           Control.Monad.Class.MonadTime.SI
 import           System.Random (StdGen)
 
 import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (IsBigLedgerPeer)
+import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
+                     IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                     (IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.State.EstablishedPeers
                      (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
