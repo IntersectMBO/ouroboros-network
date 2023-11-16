@@ -71,10 +71,12 @@ import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRoo
                      (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-                     IsLedgerPeer)
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (IsBigLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
                      PeerSharingResult (..))
@@ -415,8 +417,17 @@ mockPeerSelectionActions' tracer
                       case s of
                         PeerHot  -> writeTVar v PeerWarm
                                  >> return False
-                        PeerWarm -> return False
                         PeerCold -> return True
+                        _        -> return False
+                  ToCooling -> do
+                    threadDelay (interpretScriptDelay delay)
+                    atomically $ do
+                      s <- readTVar v
+                      case s of
+                        PeerCooling -> return False
+                        PeerCold -> return True
+                        _        -> writeTVar v PeerCooling
+                                 >> return False
                   ToCold -> do
                     threadDelay (interpretScriptDelay delay)
                     atomically $ do
@@ -441,8 +452,8 @@ mockPeerSelectionActions' tracer
       atomically $ do
         status <- readTVar conn
         case status of
-          PeerHot  -> error "activatePeerConnection of hot peer"
-          PeerWarm -> writeTVar conn PeerHot
+          PeerHot     -> error "activatePeerConnection of hot peer"
+          PeerWarm    -> writeTVar conn PeerHot
           --TODO: check it's just a race condition and not just wrong:
           --
           -- We throw 'ActivationError' for the following reason:
@@ -452,7 +463,8 @@ mockPeerSelectionActions' tracer
           -- errored.  Otherwise 'jobPromoteWarmPeer' will try to update the
           -- state as if the transition went fine which will violate
           -- 'invariantPeerSelectionState'.
-          PeerCold -> throwIO ActivationError
+          PeerCooling -> throwIO ActivationError
+          PeerCold    -> throwIO ActivationError
 
     deactivatePeerConnection :: PeerConn m -> m ()
     deactivatePeerConnection (PeerConn peeraddr _ conn) = do
@@ -460,12 +472,13 @@ mockPeerSelectionActions' tracer
       atomically $ do
         status <- readTVar conn
         case status of
-          PeerHot  -> writeTVar conn PeerWarm
+          PeerHot     -> writeTVar conn PeerWarm
           --TODO: check it's just a race condition and not just wrong:
-          PeerWarm -> return ()
+          PeerWarm    -> return ()
           -- See the note in 'activatePeerConnection' why we throw an exception
           -- here.
-          PeerCold -> throwIO DeactivationError
+          PeerCooling -> throwIO DeactivationError
+          PeerCold    -> throwIO DeactivationError
 
     closePeerConnection :: PeerConn m -> m ()
     closePeerConnection (PeerConn peeraddr _ conn) = do
@@ -473,10 +486,11 @@ mockPeerSelectionActions' tracer
       atomically $ do
         status <- readTVar conn
         case status of
-          PeerHot  -> writeTVar conn PeerCold
+          PeerHot     -> writeTVar conn PeerCold
           --TODO: check it's just a race condition and not just wrong:
-          PeerWarm -> writeTVar conn PeerCold
-          PeerCold -> return ()
+          PeerWarm    -> writeTVar conn PeerCold
+          PeerCooling -> writeTVar conn PeerCold
+          PeerCold    -> return ()
         conns <- readTVar connsVar
         let !conns' = Map.delete peeraddr conns
         writeTVar connsVar conns'
@@ -547,12 +561,7 @@ tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection PeerAddr)
 tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
-tracerDebugPeerSelection = contramap (GovernorDebug . voidDebugPeerSelection)
-                                     tracerTestTraceEvent
-  where
-    voidDebugPeerSelection :: DebugPeerSelection peeraddr -> DebugPeerSelection peeraddr
-    voidDebugPeerSelection (TraceGovernorState btime wtime state) =
-                            TraceGovernorState btime wtime (const () <$> state)
+tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent
 
 tracerTracePeerSelectionCounters :: Tracer (IOSim s) PeerSelectionCounters
 tracerTracePeerSelectionCounters = contramap GovernorCounters tracerTestTraceEvent

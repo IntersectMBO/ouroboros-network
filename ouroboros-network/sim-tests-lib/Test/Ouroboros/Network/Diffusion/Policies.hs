@@ -38,7 +38,7 @@ import           Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests = testGroup "Policies"
   [ testProperty "HotToWarm" prop_hotToWarm
-  , testProperty "WarmToCold" prop_randomDemotion
+  , testProperty "WarmToCooling" prop_randomDemotion
   ]
 
 newtype ArbitrarySockAddr = ArbitrarySockAddr SockAddr deriving (Eq, Ord, Show)

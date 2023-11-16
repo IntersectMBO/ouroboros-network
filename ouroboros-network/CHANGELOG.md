@@ -33,6 +33,11 @@
 
 ### Breaking changes
 
+* Refactors `PeerSelection.RootPeersDNS` module, enabling more sharing between
+  modules and providing just better module organisation overall.
+    * Tweaks exports and imports
+    * Shares semaphores with `withPeerSelectionActions` and `ledgerPeersThread`
+
 ### Non-breaking changes
 
 * Updated KeepAlive client to collect a rtt sample for the first packet.
@@ -50,6 +55,19 @@
   eliminate the associated error.
 
 * Increase keyed timeout on a testnet test that was failing.
+
+* Adds new constructor to `PeerStatus`: `PeerCooling`. This is in order to
+  fix a possible race where a node would be asynchronously demoted to cold
+  state, put into the cold set and wrongly forgotten, while its connection
+  was not yet cleaned up. This could lead to the peer being added to the known
+  set and promoted leading to a `TrConnectionExists` trace in the logs, which
+  is disallowed. With this being said, `PeerCold` status is now an
+  intermediate status that means the peer is cold but its connection still
+  lingers. This extra information warns the governor not to move the peer to
+  the cold set just yet.
+
+  Yes it can mean that the governor could promote the peer to hot, however it
+  will promptly fail since no mux will be running anyway.
 
 ## 0.9.1.0 -- 2023-08-22
 

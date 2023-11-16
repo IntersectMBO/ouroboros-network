@@ -23,7 +23,7 @@ import           Control.Monad.Class.MonadTimer.SI
 import           System.Random (randomR)
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (IsBigLedgerPeer (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
@@ -68,6 +68,7 @@ belowTargetBigLedgerPeers actions
                             activePeers,
                             inProgressPromoteWarm,
                             inProgressDemoteWarm,
+                            inProgressDemoteToCold,
                             targets = PeerSelectionTargets {
                                         targetNumberOfActiveBigLedgerPeers
                                       }
@@ -83,6 +84,7 @@ belowTargetBigLedgerPeers actions
                                Set.\\ activePeers
                                Set.\\ inProgressPromoteWarm
                                Set.\\ inProgressDemoteWarm
+                               Set.\\ inProgressDemoteToCold
         numPeersToPromote = targetNumberOfActiveBigLedgerPeers
                           - numActiveBigLedgerPeers
                           - numPromoteInProgressBigLedgerPeers
@@ -135,7 +137,8 @@ belowTargetLocal actions
                    establishedPeers,
                    activePeers,
                    inProgressPromoteWarm,
-                   inProgressDemoteWarm
+                   inProgressDemoteWarm,
+                   inProgressDemoteToCold
                  }
     -- Are there any groups of local peers that are below target?
   | not (null groupsBelowTarget)
@@ -153,6 +156,7 @@ belowTargetLocal actions
                      Set.\\ activePeers
                      Set.\\ inProgressPromoteWarm
                      Set.\\ inProgressDemoteWarm
+                     Set.\\ inProgressDemoteToCold
                 numPromoteInProgress = Set.size inProgressPromoteWarm
           , not (Set.null availableToPromote)
           , (HotValency hotTarget, members, membersActive) <- groupsBelowTarget
@@ -229,6 +233,7 @@ belowTargetOther actions
                    establishedPeers,
                    activePeers,
                    inProgressPromoteWarm,
+                   inProgressDemoteToCold,
                    inProgressDemoteWarm,
                    targets = PeerSelectionTargets {
                                targetNumberOfActivePeers
@@ -243,6 +248,7 @@ belowTargetOther actions
                                Set.\\ activePeers
                                Set.\\ inProgressPromoteWarm
                                Set.\\ inProgressDemoteWarm
+                               Set.\\ inProgressDemoteToCold
                                Set.\\ LocalRootPeers.keysSet localRootPeers
                                Set.\\ bigLedgerPeers
         numPeersToPromote = targetNumberOfActivePeers
@@ -475,6 +481,7 @@ aboveTargetBigLedgerPeers actions
                             establishedPeers,
                             activePeers,
                             inProgressDemoteHot,
+                            inProgressDemoteToCold,
                             targets = PeerSelectionTargets {
                                         targetNumberOfActiveBigLedgerPeers
                                       }
@@ -496,6 +503,7 @@ aboveTargetBigLedgerPeers actions
   , let availableToDemote = activePeers
                               `Set.intersection` bigLedgerPeers
                               Set.\\ inProgressDemoteHot
+                              Set.\\ inProgressDemoteToCold
                               Set.\\ LocalRootPeers.keysSet localRootPeers
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
@@ -545,7 +553,8 @@ aboveTargetLocal actions
                    localRootPeers,
                    establishedPeers,
                    activePeers,
-                   inProgressDemoteHot
+                   inProgressDemoteHot,
+                   inProgressDemoteToCold
                  }
     -- Are there any groups of local peers that are below target?
   | let groupsAboveTarget =
@@ -566,7 +575,11 @@ aboveTargetLocal actions
                                        `Set.intersection`
                                      activePeers)
                                        Set.\\ inProgressDemoteHot
+                                       Set.\\ inProgressDemoteToCold
                 numDemoteInProgress = Set.size inProgressDemoteHot
+                                    + Set.size (inProgressDemoteToCold
+                                                `Set.intersection`
+                                                activePeers)
           , not (Set.null availableToDemote)
           , (HotValency hotTarget, members, membersActive) <- groupsAboveTarget
           , let membersAvailableToDemote = Set.intersection
@@ -622,6 +635,7 @@ aboveTargetOther actions
                    establishedPeers,
                    activePeers,
                    inProgressDemoteHot,
+                   inProgressDemoteToCold,
                    targets = PeerSelectionTargets {
                                targetNumberOfActivePeers
                              }
@@ -633,6 +647,7 @@ aboveTargetOther actions
   , let numPeersToDemote = numActivePeers
                          - targetNumberOfActivePeers
                          - numDemoteInProgress
+                         - (Set.size inProgressDemoteToCold)
   , numPeersToDemote > 0
 
     -- Are there any hot peers we actually can pick to demote?
@@ -644,6 +659,7 @@ aboveTargetOther actions
                               Set.\\ inProgressDemoteHot
                               Set.\\ LocalRootPeers.keysSet localRootPeers
                               Set.\\ bigLedgerPeers
+                              Set.\\ inProgressDemoteToCold
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
       selectedToDemote <- pickPeers st

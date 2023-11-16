@@ -615,15 +615,35 @@ withConnectionManager ConnectionManagerArguments {
           return (freshIdSupply, v)
 
     let readState
-          :: m (Map peerAddr AbstractState)
-        readState =
-          atomically $ do
-              state <- readTMVar stateVar
-              traverse ( fmap (abstractState . Known)
-                       . readTVar
-                       . connVar
-                       )
-                       state
+          :: STM m (Map peerAddr AbstractState)
+        readState = do
+          state <- readTMVar stateVar
+          traverse ( fmap (abstractState . Known)
+                   . readTVar
+                   . connVar
+                   )
+                   state
+
+        waitForOutboundDemotion
+          :: peerAddr
+          -> STM m ()
+        waitForOutboundDemotion addr = do
+          state <- readState
+          case Map.lookup addr state of
+            Nothing                        -> return ()
+            Just UnknownConnectionSt       -> return ()
+            Just InboundIdleSt {}          -> return ()
+            Just InboundSt {}              -> return ()
+            Just WaitRemoteIdleSt          -> return ()
+            Just TerminatedSt              -> return ()
+            Just (UnnegotiatedSt Inbound)  -> return ()
+            Just (UnnegotiatedSt Outbound) -> retry
+            Just ReservedOutboundSt        -> retry
+            Just OutboundUniSt             -> retry
+            Just OutboundIdleSt {}         -> retry
+            Just OutboundDupSt {}          -> retry
+            Just DuplexSt                  -> retry
+            Just TerminatingSt             -> retry
 
         connectionManager :: ConnectionManager muxMode socket peerAddr
                                                handle handleError m
@@ -640,7 +660,8 @@ withConnectionManager ConnectionManagerArguments {
                         ocmUnregisterConnection =
                           unregisterOutboundConnectionImpl stateVar
                       },
-                readState
+                readState,
+                waitForOutboundDemotion
               }
 
             WithResponderMode inboundHandler ->
@@ -660,7 +681,8 @@ withConnectionManager ConnectionManagerArguments {
                         icmNumberOfConnections =
                           readTMVar stateVar >>= countIncomingConnections
                       },
-                readState
+                readState,
+                waitForOutboundDemotion
               }
 
             WithInitiatorResponderMode outboundHandler inboundHandler ->
@@ -687,7 +709,8 @@ withConnectionManager ConnectionManagerArguments {
                         icmNumberOfConnections =
                           readTMVar stateVar >>= countIncomingConnections
                       },
-                readState
+                readState,
+                waitForOutboundDemotion
               }
 
     k connectionManager

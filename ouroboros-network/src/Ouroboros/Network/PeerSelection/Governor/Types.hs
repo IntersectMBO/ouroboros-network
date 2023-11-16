@@ -60,10 +60,12 @@ import           Control.Monad.Class.MonadTime.SI
 import           System.Random (StdGen)
 
 import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-                     IsLedgerPeer)
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (IsBigLedgerPeer)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (IsLedgerPeer)
 import           Ouroboros.Network.PeerSelection.State.EstablishedPeers
                      (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
@@ -412,6 +414,10 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        inProgressDemoteWarm        :: !(Set peeraddr),
        inProgressDemoteHot         :: !(Set peeraddr),
 
+       -- | Peers that had an async demotion and their connections are still
+       -- being closed
+       inProgressDemoteToCold      :: !(Set peeraddr),
+
        -- | Rng for fuzzy delay
        fuzzRng                     :: !StdGen,
 
@@ -427,7 +433,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     Should also take account of DNS failures for root peer set.
 --     lastSuccessfulNetworkEvent :: Time
      }
-  deriving (Show, Functor)
+  deriving Show
 
 -- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
 -- mechanisms without any problem.
@@ -535,6 +541,7 @@ emptyPeerSelectionState rng localRoots =
       inProgressPromoteWarm         = Set.empty,
       inProgressDemoteWarm          = Set.empty,
       inProgressDemoteHot           = Set.empty,
+      inProgressDemoteToCold        = Set.empty,
       fuzzRng                       = rng,
       countersCache                 = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots)
     }
@@ -608,6 +615,12 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.isSubsetOf inProgressDemoteWarm  warmPeersSet)
   . assert (Set.isSubsetOf inProgressDemoteHot   hotPeersSet)
   . assert (Set.null (Set.intersection inProgressPromoteWarm inProgressDemoteWarm))
+
+  . assert (Set.isSubsetOf inProgressDemoteToCold establishedPeersSet)
+  . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressPromoteWarm))
+  . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressPromoteCold))
+  . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressDemoteHot))
+  . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressDemoteWarm))
 
     -- `bigLedgerPeers` is a subset of known peers and disjoint from public and
     -- local root peers.

@@ -503,10 +503,12 @@ peerSelectionGovernorLoop tracer
                           stateVar
                           actions
                           policy
-                          jobPool =
-    loop
+                          jobPool
+                          pst = do
+    loop pst
   where
-    loop :: PeerSelectionState peeraddr peerconn -> m Void
+    loop :: PeerSelectionState peeraddr peerconn
+         -> m Void
     loop !st = assertPeerSelectionState st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing

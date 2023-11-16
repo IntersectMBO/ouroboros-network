@@ -45,10 +45,11 @@ import           Control.Exception (assert)
 import           Control.Monad.Class.MonadTime.SI
 
 import           Data.Maybe (fromMaybe)
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (IsLedgerPeer (..))
 
 
 -------------------------------

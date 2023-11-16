@@ -9,7 +9,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
     DNSActions (..)
     -- * DNSActions IO
   , ioDNSActions
-  , LookupReqs (..)
+  , DNSLookupType (..)
     -- * Utils
     -- ** Resource
   , Resource (..)
@@ -45,10 +45,10 @@ import           Network.DNS (DNSError)
 import qualified Network.DNS as DNS
 
 
-data LookupReqs = LookupReqAOnly
-                | LookupReqAAAAOnly
-                | LookupReqAAndAAAA
-                deriving Show
+data DNSLookupType = LookupReqAOnly
+                   | LookupReqAAAAOnly
+                   | LookupReqAAndAAAA
+                   deriving Show
 
 data DNSorIOError exception
     = DNSError !DNSError
@@ -192,7 +192,7 @@ getResolver resolvConf = do
 --
 -- It guarantees that returned TTLs are strictly greater than 0.
 --
-ioDNSActions :: LookupReqs
+ioDNSActions :: DNSLookupType
              -> DNSActions DNS.Resolver IOException IO
 ioDNSActions =
     \reqs -> DNSActions {
@@ -362,7 +362,7 @@ ioDNSActions =
           ]
 
 
-    lookupWithTTL :: LookupReqs
+    lookupWithTTL :: DNSLookupType
                   -> DNS.ResolvConf
                   -> DNS.Resolver
                   -> DNS.Domain

@@ -346,7 +346,6 @@ instance Semigroup FirstToFinishResult where
     _ <> err@MiniProtocolError{}                       = err
     res@MiniProtocolSuccess{} <> MiniProtocolSuccess{} = res
 
-
 -- | Await first result from any of any of the protocols which belongs to
 -- the indicated bundle.
 --
@@ -603,18 +602,17 @@ withPeerStateActions PeerStateActionsArguments {
   where
 
     -- Update PeerState with the new state only if the current state isn't
-    -- cold. Returns True if the state wasn't PeerCold
-    updateUnlessCold :: StrictTVar m PeerStatus -> PeerStatus -> STM m Bool
-    updateUnlessCold stateVar newState = do
+    -- cold. Returns True if the state wasn't cold
+    updateUnlessCoolingOrCold :: StrictTVar m PeerStatus -> PeerStatus -> STM m Bool
+    updateUnlessCoolingOrCold stateVar newState = do
       status <- readTVar stateVar
-      if status == PeerCold
+      if status <= PeerCooling
          then return False
          else writeTVar stateVar newState >> return True
 
-    isNotCold :: StrictTVar m PeerStatus -> STM m Bool
-    isNotCold stateVar =
-      (/= PeerCold) <$> readTVar stateVar
-
+    isNotCoolingOrCold :: StrictTVar m PeerStatus -> STM m Bool
+    isNotCoolingOrCold stateVar =
+      (> PeerCooling) <$> readTVar stateVar
 
     peerMonitoringLoop
       :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
@@ -624,15 +622,27 @@ withPeerStateActions PeerStateActionsArguments {
         -- this is a first-to-finish synchronisation between all the
         -- mini-protocols runs toward the given peer.
         r <-
-          atomically $
-            (WithSomeProtocolTemperature . WithEstablished
-              <$> awaitFirstResult SingEstablished pchAppHandles)
-          `orElse`
-            (WithSomeProtocolTemperature . WithWarm
-              <$> awaitFirstResult SingWarm pchAppHandles)
-          `orElse`
-            (WithSomeProtocolTemperature . WithHot
-              <$> awaitFirstResult SingHot pchAppHandles)
+          atomically $ do
+            peerStatus <- readTVar pchPeerStatus
+            -- If we already monitored mux and are waiting for the peer connection
+            -- to be cleaned then the peer status will be 'PeerCold' and we can't
+            -- make progress until it is 'PeerReallyCold'
+            case peerStatus of
+              PeerCold ->
+                return Nothing
+              PeerCooling -> do
+                waitForOutboundDemotion spsConnectionManager (remoteAddress pchConnectionId)
+                writeTVar pchPeerStatus PeerCold
+                return Nothing
+              _ ->
+                  (Just . WithSomeProtocolTemperature . WithEstablished
+                    <$> awaitFirstResult SingEstablished pchAppHandles)
+                `orElse`
+                  (Just . WithSomeProtocolTemperature . WithWarm
+                    <$> awaitFirstResult SingWarm pchAppHandles)
+                `orElse`
+                  (Just . WithSomeProtocolTemperature . WithHot
+                    <$> awaitFirstResult SingHot pchAppHandles)
 
         traceWith spsTracer (PeerMonitoringResult pchConnectionId r)
         case r of
@@ -647,31 +657,36 @@ withPeerStateActions PeerStateActionsArguments {
           -- updated by the finally handler of a connection handler.
           --
 
-          WithSomeProtocolTemperature (WithHot MiniProtocolError{}) -> do
+          Just (WithSomeProtocolTemperature (WithHot MiniProtocolError{})) -> do
             -- current `pchPeerStatus` must be 'HotPeer'
             state <- atomically $ do
               peerState <- readTVar pchPeerStatus
-              _  <- updateUnlessCold pchPeerStatus PeerCold
+              _  <- updateUnlessCoolingOrCold pchPeerStatus PeerCooling
               return peerState
             case state of
-              PeerCold  -> return ()
+              PeerCold    -> return ()
+              PeerCooling -> return ()
               hotOrWarm -> assert (hotOrWarm == PeerHot) $
-                           traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
-          WithSomeProtocolTemperature (WithWarm MiniProtocolError{}) -> do
+                           traceWith spsTracer (PeerStatusChanged (HotToCooling pchConnectionId))
+            peerMonitoringLoop pch
+          Just (WithSomeProtocolTemperature (WithWarm MiniProtocolError{})) -> do
             -- current `pchPeerStatus` must be 'WarmPeer'
-            traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
-            void $ atomically (updateUnlessCold pchPeerStatus PeerCold)
-          WithSomeProtocolTemperature (WithEstablished MiniProtocolError{}) -> do
+            traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))
+            void $ atomically (updateUnlessCoolingOrCold pchPeerStatus PeerCooling)
+            peerMonitoringLoop pch
+          Just (WithSomeProtocolTemperature (WithEstablished MiniProtocolError{})) -> do
             -- update 'pchPeerStatus' and log (as the two other transition to
             -- cold state.
             state <- atomically $ do
               peerState <- readTVar pchPeerStatus
-              _  <- updateUnlessCold pchPeerStatus PeerCold
+              _  <- updateUnlessCoolingOrCold pchPeerStatus PeerCooling
               pure peerState
             case state of
-              PeerCold -> return ()
-              PeerWarm -> traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
-              PeerHot  -> traceWith spsTracer (PeerStatusChanged (HotToCold pchConnectionId))
+              PeerCold    -> return ()
+              PeerCooling -> return ()
+              PeerWarm    -> traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))
+              PeerHot     -> traceWith spsTracer (PeerStatusChanged (HotToCooling pchConnectionId))
+            peerMonitoringLoop pch
 
           --
           -- Successful termination
@@ -679,7 +694,7 @@ withPeerStateActions PeerStateActionsArguments {
 
           -- A /hot/ protocol terminated, we deactivate the connection and keep
           -- monitoring /warm/ and /established/ protocols.
-          WithSomeProtocolTemperature (WithHot MiniProtocolSuccess {}) -> do
+          Just (WithSomeProtocolTemperature (WithHot MiniProtocolSuccess {})) -> do
             deactivatePeerConnection pch
             peerMonitoringLoop pch
 
@@ -689,12 +704,15 @@ withPeerStateActions PeerStateActionsArguments {
           -- 'closePeerConnection'); also, established mini-protocols are not
           -- supposed to terminate (unless the remote peer did something
           -- wrong).
-          WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {}) ->
+          Just (WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {})) -> do
             closePeerConnection pch
-          WithSomeProtocolTemperature (WithEstablished MiniProtocolSuccess {}) ->
+            peerMonitoringLoop pch
+          Just (WithSomeProtocolTemperature (WithEstablished MiniProtocolSuccess {})) -> do
             closePeerConnection pch
+            peerMonitoringLoop pch
 
-
+          Nothing ->
+            traceWith spsTracer (PeerStatusChanged (CoolingToCold pchConnectionId))
 
     establishPeerConnection :: JobPool () m (Maybe SomeException)
                             -> IsBigLedgerPeer
@@ -746,6 +764,7 @@ withPeerStateActions PeerStateActionsArguments {
                                         Just SomeAsyncException {} -> Nothing
                                         Nothing                    -> Just e)
                                      (\e -> do
+                                        atomically $ writeTVar peerStateVar PeerCold
                                         traceWith spsTracer (PeerMonitoringError connectionId e)
                                         throwIO e)
                                      (peerMonitoringLoop connHandle $> Nothing))
@@ -856,7 +875,7 @@ withPeerStateActions PeerStateActionsArguments {
       -- quiesce warm peer protocols and set hot ones in 'Continue' mode.
       wasWarm <- atomically $ do
         -- if the peer is cold we can't activate it.
-        notCold <- isNotCold pchPeerStatus
+        notCold <- isNotCoolingOrCold pchPeerStatus
         when notCold $ do
           writeTVar (getControlVar SingHot pchAppHandles) Continue
           writeTVar (getControlVar SingWarm pchAppHandles) Quiesce
@@ -872,7 +891,7 @@ withPeerStateActions PeerStateActionsArguments {
 
       -- Only set the status to PeerHot if the peer isn't PeerCold.
       -- This can happen asynchronously between the check above and now.
-      wasWarm' <- atomically $ updateUnlessCold pchPeerStatus PeerHot
+      wasWarm' <- atomically $ updateUnlessCoolingOrCold pchPeerStatus PeerHot
       if wasWarm'
          then traceWith spsTracer (PeerStatusChanged (WarmToHot pchConnectionId))
          else do
@@ -892,7 +911,7 @@ withPeerStateActions PeerStateActionsArguments {
             pchAppHandles
           } = do
       wasCold <- atomically $ do
-        notCold <- isNotCold pchPeerStatus
+        notCold <- isNotCoolingOrCold pchPeerStatus
         when notCold $ do
           writeTVar (getControlVar SingHot pchAppHandles) Terminate
           writeTVar (getControlVar SingWarm pchAppHandles) Continue
@@ -914,7 +933,7 @@ withPeerStateActions PeerStateActionsArguments {
           Mux.stopMux pchMux
           atomically (writeTVar pchPeerStatus PeerCold)
           traceWith spsTracer (PeerStatusChangeFailure
-                                (HotToWarm pchConnectionId)
+                                (HotToCooling pchConnectionId)
                                 TimeoutError)
           throwIO (DeactivationTimeout pchConnectionId)
 
@@ -925,7 +944,7 @@ withPeerStateActions PeerStateActionsArguments {
           -- throws an exception as well.
           atomically (writeTVar pchPeerStatus PeerCold)
           traceWith spsTracer (PeerStatusChangeFailure
-                                (HotToCold pchConnectionId)
+                                (HotToCooling pchConnectionId)
                                 (ApplicationFailure errs))
           throwIO (MiniProtocolExceptions errs)
 
@@ -934,9 +953,9 @@ withPeerStateActions PeerStateActionsArguments {
           -- we don't notify the connection manager as this connection is still
           -- useful to the outbound governor (warm peer).
           wasWarm <- atomically $ do
-            -- Only set the status to PeerWarm if the peer isn't PeerCold
+            -- Only set the status to PeerWarm if the peer isn't cold
             -- (can happen asynchronously).
-            notCold <- updateUnlessCold pchPeerStatus PeerWarm
+            notCold <- updateUnlessCoolingOrCold pchPeerStatus PeerWarm
             when notCold $ do
               -- We need to update hot protocols to indicate that they are not
               -- running. Preserve the results returned by their previous
@@ -983,9 +1002,9 @@ withPeerStateActions PeerStateActionsArguments {
         Nothing -> do
           -- timeout fired
           Mux.stopMux pchMux
-          atomically (writeTVar pchPeerStatus PeerCold)
+          atomically (writeTVar pchPeerStatus PeerCooling)
           traceWith spsTracer (PeerStatusChangeFailure
-                                (WarmToCold pchConnectionId)
+                                (WarmToCooling pchConnectionId)
                                 TimeoutError)
 
         Just (SomeErrored errs) -> do
@@ -994,9 +1013,9 @@ withPeerStateActions PeerStateActionsArguments {
           -- we don't need to notify the connection manager, we can instead
           -- rely on mux property: if any of the mini-protocols errors, mux
           -- throws an exception as well.
-          atomically (writeTVar pchPeerStatus PeerCold)
+          atomically (writeTVar pchPeerStatus PeerCooling)
           traceWith spsTracer (PeerStatusChangeFailure
-                                (WarmToCold pchConnectionId)
+                                (WarmToCooling pchConnectionId)
                                 (ApplicationFailure errs))
           throwIO (MiniProtocolExceptions errs)
 
@@ -1007,8 +1026,8 @@ withPeerStateActions PeerStateActionsArguments {
           -- connection manager would simultaneously promote it, but this is not
           -- possible.
           _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
-          atomically (writeTVar pchPeerStatus PeerCold)
-          traceWith spsTracer (PeerStatusChanged (WarmToCold pchConnectionId))
+          atomically (writeTVar pchPeerStatus PeerCooling)
+          traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))
 
 --
 -- Utilities
@@ -1126,10 +1145,11 @@ data PeerStatusChangeType peerAddr =
       ColdToWarm
         !(Maybe peerAddr) -- ^ local peer address
         !peerAddr         -- ^ remote peer address
-    | WarmToHot  !(ConnectionId peerAddr)
-    | HotToWarm  !(ConnectionId peerAddr)
-    | WarmToCold !(ConnectionId peerAddr)
-    | HotToCold  !(ConnectionId peerAddr)
+    | WarmToHot        !(ConnectionId peerAddr)
+    | HotToWarm        !(ConnectionId peerAddr)
+    | WarmToCooling    !(ConnectionId peerAddr)
+    | HotToCooling     !(ConnectionId peerAddr)
+    | CoolingToCold    !(ConnectionId peerAddr)
   deriving Show
 
 -- | Traces produced by 'peerSelectionActions'.
@@ -1138,5 +1158,5 @@ data PeerSelectionActionsTrace peerAddr vNumber =
       PeerStatusChanged       (PeerStatusChangeType peerAddr)
     | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) (FailureType vNumber)
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
-    | PeerMonitoringResult    (ConnectionId peerAddr) (WithSomeProtocolTemperature FirstToFinishResult)
+    | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
   deriving Show

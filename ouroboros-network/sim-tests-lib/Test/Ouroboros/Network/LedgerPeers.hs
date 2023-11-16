@@ -1,8 +1,10 @@
-{-# LANGUAGE BangPatterns      #-}
-{-# LANGUAGE DerivingVia       #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.Ouroboros.Network.LedgerPeers where
 
@@ -17,11 +19,9 @@ import           Control.Monad.IOSim hiding (SimResult)
 import           Control.Tracer (Tracer (..), showTracing, traceWith)
 import qualified Data.IP as IP
 import           Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
-import           Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
 import           Data.Monoid (Sum (..))
 import           Data.Ord (Down (..))
 import           Data.Ratio
@@ -31,12 +31,17 @@ import           Data.Word
 import           System.Random
 
 import           Network.DNS (Domain)
-import           Network.Socket (SockAddr)
-import           Ouroboros.Network.PeerSelection.LedgerPeers
 
+import           Control.Concurrent.Class.MonadSTM.Strict
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+import           Ouroboros.Network.Testing.Data.Script
+import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import           Test.Tasty
+import           Test.Tasty.QuickCheck
 import           Text.Printf
 
 tests :: TestTree
@@ -124,8 +129,11 @@ instance Arbitrary ArbLedgerPeersKind where
 prop_pick100 :: Word16
              -> NonNegative Int -- ^ number of pools with 0 stake
              -> ArbLedgerPeersKind
+             -> MockRoots
+             -> DelayAndTimeoutScripts
              -> Property
-prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) =
+prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoots _ dnsMapScript _ _)
+             (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript) =
     let rng = mkStdGen $ fromIntegral seed
         sps = [ (0, RelayAccessAddress (read $ "0.0.0." ++ show a) 1 :| [])
               | a <- [0..n]
@@ -137,11 +145,20 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) =
           BigLedgerPeers -> accBigPoolStake sps
 
         sim :: IOSim s [RelayAccessPoint]
-        sim = withLedgerPeers
-                rng (curry IP.toSockAddr) verboseTracer
+        sim = do
+          let dnsMap = scriptHead dnsMapScript
+          dnsMapVar <- newTVarIO dnsMap
+
+          dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
+          dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
+
+          dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+
+          withLedgerPeers
+                rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
                 (pure (UseLedgerAfter 0))
                 interface
-                (\_ -> pure Map.empty) -- we're not relying on domain name resolution in this simulation
+                (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers 1) ledgerPeersKind
@@ -173,15 +190,28 @@ prop_pick :: LedgerPools
           -> ArbLedgerPeersKind
           -> Word16
           -> Word16
+          -> MockRoots
+          -> Script DNSLookupDelay
           -> Property
-prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed =
+prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (MockRoots _ dnsMapScript _ _)
+          dnsLookupDelayScript =
     let rng = mkStdGen $ fromIntegral seed
 
         sim :: IOSim s [RelayAccessPoint]
-        sim = withLedgerPeers
-                rng (curry IP.toSockAddr) verboseTracer
+        sim = do
+          dnsMapScriptVar <- initScript' dnsMapScript
+          dnsMap <- stepScript' dnsMapScriptVar
+          dnsMapVar <- newTVarIO dnsMap
+
+          dnsTimeoutScriptVar <- initScript' (Script (DNSTimeout 0 :| []))
+          dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
+          dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+
+          withLedgerPeers
+                rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
                 (pure (UseLedgerAfter 0))
-                interface resolve
+                interface
+                (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers count) ledgerPeersKind
@@ -197,17 +227,6 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed =
 
             domainMap :: Map Domain (Set IP)
             domainMap = Map.fromList [("relay.iohk.example", Set.singleton (read "2.2.2.2"))]
-
-            resolve :: [DomainAccessPoint]
-                    -> IOSim s (Map DomainAccessPoint (Set SockAddr))
-            resolve = \daps ->
-              pure $ Map.fromList
-                     [ (dap, addrs)
-                     | dap@(DomainAccessPoint domain port) <- daps
-                     , let addrs = Set.map (\ip -> IP.toSockAddr (ip, port))
-                                 . fromMaybe Set.empty
-                                 $ Map.lookup domain domainMap
-                     ]
 
             reverseLookup :: RelayAccessPoint -> RelayAccessPoint
             reverseLookup ap@(RelayAccessAddress ip port)
@@ -269,12 +288,6 @@ prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
           $ elems `isPrefixOf` lps'
   where
     accumulatedStakeMap = accBigPoolStake lps
-
-prop :: Property
-prop = prop_pick (LedgerPools [( PoolStake {unPoolStake = 1 % 1}
-                               , RelayAccessAddress (read "1.1.1.1") 1016 :| []
-                               )])
-                 (ArbLedgerPeersKind BigLedgerPeers) 0 2
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]

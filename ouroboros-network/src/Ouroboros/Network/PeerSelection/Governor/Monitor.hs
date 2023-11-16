@@ -144,25 +144,33 @@ connections PeerSelectionActions{
               inProgressDemoteHot,
               inProgressDemoteWarm,
               inProgressPromoteWarm,
+              inProgressDemoteToCold,
               fuzzRng
             } =
     Guarded Nothing $ do
+      -- Get previously cooling peers
       monitorStatus <- traverse monitorPeerConnection
                                 (EstablishedPeers.toMap establishedPeers)
+          -- filter previously cooling peers from the demotion sets
       let demotions = asynchronousDemotions monitorStatus
+                      `Map.withoutKeys` inProgressDemoteToCold
       check (not (Map.null demotions))
-      let (demotedToWarm, demotedToCold) = Map.partition ((==PeerWarm) . fst) demotions
+      let (demotedToWarm, demotedToCoolingOrCold) = Map.partition ((==PeerWarm) . fst) demotions
+          (demotedToCold, demotedToCooling) = Map.partition ((==PeerCold) . fst) demotedToCoolingOrCold
           -- fuzz reconnect delays
           (aFuzz, fuzzRng')  = randomR (-5, 5 :: Double) fuzzRng
           (rFuzz, fuzzRng'') = randomR (-2, 2 :: Double) fuzzRng'
           demotions' = (\a@(peerState, reconnectDelay) -> case peerState of
                          PeerHot  -> a
-                         PeerWarm -> ( peerState
-                                     , (\x -> (x + realToFrac aFuzz) `max` 0) <$> reconnectDelay
-                                     )
-                         PeerCold -> ( peerState
-                                     , (\x -> (x + realToFrac rFuzz) `max` 0) <$> reconnectDelay
-                                     )
+                         PeerWarm ->
+                           ( peerState
+                           , (\x -> (x + realToFrac aFuzz) `max` 0) <$> reconnectDelay
+                           )
+                         PeerCooling ->
+                           ( peerState
+                           , (\x -> (x + realToFrac rFuzz) `max` 0) <$> reconnectDelay
+                           )
+                         PeerCold -> a
                        ) <$> demotions
       return $ \now ->
         let -- Remove all asynchronous demotions from 'activePeers'
@@ -206,6 +214,10 @@ connections PeerSelectionActions{
             bigLedgerPeersDemotions = nonLocalDemotions
                    `Map.restrictKeys` bigLedgerPeers
 
+            -- Peers in this state won't be able to be promoted nor demoted.
+            inProgressDemoteToCold' =
+              (inProgressDemoteToCold Set.\\ Map.keysSet demotedToCold )
+               <> Map.keysSet demotedToCooling
         in assert (activePeers' `Set.isSubsetOf`
                      Map.keysSet (EstablishedPeers.toMap establishedPeers'))
             Decision {
@@ -228,7 +240,10 @@ connections PeerSelectionActions{
                                 -- reason we need to adjust 'inProgressPromoteWarm'.
                                 inProgressPromoteWarm
                                                   = inProgressPromoteWarm
-                                                      Set.\\ Map.keysSet demotedToCold,
+                                                      Set.\\ Map.keysSet demotedToCoolingOrCold,
+
+                                inProgressDemoteToCold =
+                                  inProgressDemoteToCold',
 
                                 -- Note that we do not need to adjust
                                 -- inProgressDemoteWarm or inProgressDemoteHot
@@ -242,13 +257,16 @@ connections PeerSelectionActions{
   where
     -- Those demotions that occurred not as a result of action by the governor.
     -- They're further classified into demotions to warm, and demotions to cold.
-    asynchronousDemotions :: Map peeraddr (PeerStatus, Maybe ReconnectDelay) -> Map peeraddr (PeerStatus, Maybe ReconnectDelay)
+    asynchronousDemotions :: Map peeraddr (PeerStatus, Maybe ReconnectDelay)
+                          -> Map peeraddr (PeerStatus, Maybe ReconnectDelay)
     asynchronousDemotions = Map.mapMaybeWithKey asyncDemotion
 
     -- The asynchronous ones, those not directed by the governor, are:
     -- hot -> warm, warm -> cold and hot -> cold, other than the ones in the in
     -- relevant progress set.
-    asyncDemotion :: peeraddr -> (PeerStatus, Maybe ReconnectDelay) -> Maybe (PeerStatus, Maybe ReconnectDelay)
+    asyncDemotion :: peeraddr
+                  -> (PeerStatus, Maybe ReconnectDelay)
+                  -> Maybe (PeerStatus, Maybe ReconnectDelay)
 
     -- a hot -> warm transition has occurred if it is now warm, and it was
     -- hot, but not in the set we were deliberately demoting synchronously
@@ -256,17 +274,32 @@ connections PeerSelectionActions{
       | peeraddr `Set.member`    activePeers
       , peeraddr `Set.notMember` inProgressDemoteHot  = Just (PeerWarm, returnCommand)
 
-    -- a warm -> cold transition has occurred if it is now cold, and it was
+    -- a warm -> cooling transition has occurred if it is now cooling, and it was
     -- warm, but not in the set we were deliberately demoting synchronously
-    asyncDemotion peeraddr (PeerCold, returnCommand)
+    --
+    -- If the peer is a member of inProgressDemoteToCold it means we already
+    -- accounted it, e.g. traced it. A peer in cooling state is going to be a
+    -- member of the established set until its connection is effectively
+    -- terminated on the outbound side so we have to be careful. So, we need to
+    -- check if the peer does not exist in the inProgressDemoteToCold to see if
+    -- it is a new/unique async demotion. Same for hot->cooling transitions.
+    asyncDemotion peeraddr (PeerCooling, returnCommand)
       | peeraddr `EstablishedPeers.member` establishedPeers
       , peeraddr `Set.notMember` activePeers
-      , peeraddr `Set.notMember` inProgressDemoteWarm = Just (PeerCold, returnCommand)
+      , peeraddr `Set.notMember` inProgressDemoteWarm
+      , peeraddr `Set.notMember` inProgressDemoteToCold = Just (PeerCooling, returnCommand)
 
-    -- a hot -> cold transition has occurred if it is now cold, and it was hot
-    asyncDemotion peeraddr (PeerCold, returnCommand)
+    -- a hot -> cooling transition has occurred if it is now cooling, and it was hot
+    asyncDemotion peeraddr (PeerCooling, returnCommand)
       | peeraddr `Set.member`    activePeers
-      , peeraddr `Set.notMember` inProgressDemoteHot  = Just (PeerCold, returnCommand)
+      , peeraddr `Set.notMember` inProgressDemoteHot
+      , peeraddr `Set.notMember` inProgressDemoteToCold = Just (PeerCooling, returnCommand)
+
+    -- a cooling -> cold transition has occurred if it is now cold, and it was cooling
+    asyncDemotion peeraddr (PeerCold, returnCommand)
+      | peeraddr `EstablishedPeers.member` establishedPeers || peeraddr `Set.member` activePeers
+      , peeraddr `Set.notMember` inProgressDemoteWarm
+      , peeraddr `Set.notMember` inProgressDemoteHot = Just (PeerCold, returnCommand)
 
     asyncDemotion _        _                          = Nothing
 
@@ -295,6 +328,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
              establishedPeers,
              activePeers,
              inProgressDemoteHot,
+             inProgressDemoteToCold,
              targets = PeerSelectionTargets{targetNumberOfKnownPeers}
            } =
     Guarded Nothing $ do
@@ -343,8 +377,9 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           selectedToDemote' :: Map peeraddr peerconn
 
           selectedToDemote  = activePeers `Set.intersection` removedSet
+                                Set.\\ inProgressDemoteToCold
           selectedToDemote' = EstablishedPeers.toMap establishedPeers
-                               `Map.restrictKeys` (selectedToDemote Set.\\ inProgressDemoteHot)
+                               `Map.restrictKeys` selectedToDemote
       return $ \_now ->
 
           assert (Set.isSubsetOf

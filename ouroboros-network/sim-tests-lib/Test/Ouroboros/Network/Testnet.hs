@@ -16,7 +16,7 @@ import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time),
                      addTime, diffTime)
 import           Control.Monad.IOSim
-import           Data.Bifoldable (bifoldMap)
+import           Data.Bifoldable (bifoldMap, bitraverse_)
 
 import           Data.List (find, intercalate, tails)
 import qualified Data.List.Trace as Trace
@@ -45,7 +45,6 @@ import           Ouroboros.Network.PeerSelection.Governor hiding
                      (PeerSelectionState (..))
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.PeerStateActions
-import           Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
@@ -67,6 +66,8 @@ import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.QuickCheck (testProperty)
 
+import           Control.Exception (AssertionFailed (..), catch, evaluate)
+import           Data.Foldable (foldl')
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState (..))
 import           Ouroboros.Network.ConnectionManager.Test.Timeouts
                      (AllProperty (..), TestProperty (..), classifyActivityType,
@@ -86,6 +87,10 @@ import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (DomainAccessPoint (..))
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+                     (TraceLocalRootPeers (..))
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency (..), WarmValency (..))
 import           Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
@@ -100,6 +105,8 @@ tests =
                    prop_diffusionScript_commandScript_valid
     ]
 #if !defined(mingw32_HOST_OS)
+  , testProperty "no fail"
+                 prop_diffusion_nofail
   , testProperty "no livelock"
                  prop_diffusion_nolivelock
   , testProperty "dns can recover from fails"
@@ -635,6 +642,51 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
    -- TODO: Add checkCoverage here
    in tabulate "peer selection trace" eventsSeenNames
       True
+
+-- | A variant of 'Test.Ouroboros.Network.PeerSelection.prop_governor_nofail'
+-- but for running on Diffusion.
+--
+prop_diffusion_nofail :: AbsBearerInfo
+                      -> DiffusionScript
+                      -> Property
+prop_diffusion_nofail defaultBearerInfo diffScript =
+    let sim :: SimTrace Void
+        sim = runSimTrace
+            $ diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                  diffScript
+                                  iosimTracer
+
+        trace :: [(Time, DiffusionTestTrace)]
+        trace = Trace.toList
+              . fmap (\(WithTime t (WithName _ b)) -> (t, b))
+              . withTimeNameTraceEvents
+                 @DiffusionTestTrace
+                 @NtNAddr
+              . traceFromList
+              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+              . take 125000
+              . traceEvents
+              $ sim
+
+        -- lastTime :: Time
+        -- lastTime = fst (last trace)
+
+     -- run in `IO` so we can catch the pure 'AssertionFailed' exception
+     in ioProperty $ do
+       r <-
+         evaluate ( foldl' (flip seq) True
+                $ [ assertPeerSelectionState st ()
+                  | (_, DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st)) <- trace ]
+                )
+         `catch` \(AssertionFailed _) -> return False
+       case r of
+         True  -> return $ property True
+         False -> do
+           bitraverse_ (putStrLn . show)
+                       (putStrLn . ppSimEvent 20 20 20)
+                       sim
+           -- the ioSimTrace is infinite, but it will terminate with `AssertionFailed`
+           error "impossible!"
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.ConnectionHandler.Network.PeerSelection.prop_governor_nolivelock'
@@ -1354,6 +1406,12 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
               Governor.inProgressPromoteCold
               events
 
+          govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
+          govInProgressDemoteToColdSig =
+            selectDiffusionPeerSelectionState
+              Governor.inProgressDemoteToCold
+              events
+
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
@@ -1378,13 +1436,13 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                          | otherwise         -> Just failures
                          where
                            failures =
-                             Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                             Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                        TraceDemoteLocalAsynchronous status
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
                            failures =
-                             Map.keysSet (Map.filter (==PeerCold) . fmap fst $ status)
+                             Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                        TracePromoteWarmFailed _ _ peer _ ->
                          Just (Set.singleton peer)
                        _ -> Nothing
@@ -1421,7 +1479,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
 
           promotionOpportunities :: Signal (Set NtNAddr)
           promotionOpportunities =
-            (\local established recentFailures inProgressPromoteCold isAlive ->
+            (\local established recentFailures inProgressPromoteCold isAlive inProgressDemoteToCold ->
               if isAlive then
                 Set.unions
                   [ -- There are no opportunities if we're at or above target
@@ -1430,6 +1488,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                        else groupEstablished Set.\\ established
                                              Set.\\ recentFailures
                                              Set.\\ inProgressPromoteCold
+                                             Set.\\ inProgressDemoteToCold
                   | (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local
                   , let groupEstablished = group `Set.intersection` established
                   ]
@@ -1439,6 +1498,7 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
               <*> govEstablishedFailuresSig
               <*> govInProgressPromoteColdSig
               <*> trIsNodeAlive
+              <*> govInProgressDemoteToColdSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
@@ -1524,6 +1584,12 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
               (targetNumberOfActivePeers . Governor.targets)
               events
 
+          govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
+          govInProgressDemoteToColdSig =
+            selectDiffusionPeerSelectionState
+              Governor.inProgressDemoteToCold
+              events
+
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
@@ -1566,7 +1632,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                          | Set.null failures -> Nothing
                          | otherwise -> Just failures
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents
@@ -1614,11 +1680,12 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
           -- want to promote any, since we'd then be above target for the local
           -- root peer group.
           --
-          promotionOpportunity target local established active recentFailures isAlive
+          promotionOpportunity target local established active recentFailures isAlive inProgressDemoteToCold
             | isAlive && Set.size active < target
             = established Set.\\ active
                           Set.\\ LocalRootPeers.keysSet local
                           Set.\\ recentFailures
+                          Set.\\ inProgressDemoteToCold
 
             | otherwise
             = Set.empty
@@ -1632,6 +1699,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
               <*> govActivePeersSig
               <*> govActiveFailuresSig
               <*> trIsNodeAlive
+              <*> govInProgressDemoteToColdSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
@@ -1713,6 +1781,12 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
               (EstablishedPeers.toSet . Governor.establishedPeers)
               events
 
+          govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
+          govInProgressDemoteToColdSig =
+            selectDiffusionPeerSelectionState
+              Governor.inProgressDemoteToCold
+              events
+
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
               Signal.fromChangeEvents Killed -- Default to TrKillingNode
@@ -1775,7 +1849,7 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
 
           promotionOpportunities :: Signal (Set NtNAddr)
           promotionOpportunities =
-            (\local established active recentFailures isAlive ->
+            (\local established active recentFailures isAlive inProgressDemoteToCold ->
               if isAlive then
                 Set.unions
                   [ -- There are no opportunities if we're at or above target
@@ -1783,6 +1857,7 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
                        then Set.empty
                        else groupEstablished Set.\\ active
                                              Set.\\ recentFailures
+                                             Set.\\ inProgressDemoteToCold
                   | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
                   , let groupActive      = group `Set.intersection` active
                         groupEstablished = group `Set.intersection` established
@@ -1794,6 +1869,7 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
               <*> govActivePeersSig
               <*> govActiveFailuresSig
               <*> trIsNodeAlive
+              <*> govInProgressDemoteToColdSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
@@ -1950,27 +2026,67 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                        _            -> False)
             . Signal.fromEventsWith (Right Set.empty)
             . Signal.selectEvents
-                (\case DiffusionPeerSelectionActionsTrace (PeerStatusChanged (HotToCold connId)) ->
+                (\case DiffusionPeerSelectionActionsTrace (PeerStatusChanged (HotToCooling connId)) ->
                            Just $ Right demotions
                          where
                            demotions = Set.singleton (remoteAddress connId)
+                       DiffusionPeerSelectionActionsTrace (PeerStatusChanged (WarmToCooling connId)) ->
+                           Just $ Right demotions
+                         where
+                           demotions = Set.singleton (remoteAddress connId)
+                       DiffusionConnectionManagerTrace (TrConnectionCleanup connId) ->
+                           Just $ Left failures
+                         where
+                           failures = Just $ Set.singleton (remoteAddress connId)
                        DiffusionPeerSelectionTrace (TraceDemoteAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                        DiffusionPeerSelectionTrace (TraceDemoteBigLedgerPeersAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                        DiffusionPeerSelectionTrace (TraceDemoteLocalAsynchronous status) ->
                            Just $ Left (Just failures)
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCold) . fst) status)
+                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
                        DiffusionPeerSelectionTrace (TraceDemoteHotFailed _ _ peeraddr _) ->
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TracePromoteColdFailed _ _ peeraddr _ _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TracePromoteWarmFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmDone _ _ peeraddr) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TracePromoteColdBigLedgerPeerFailed _ _ peeraddr _ _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TracePromoteWarmBigLedgerPeerFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
                        DiffusionPeerSelectionTrace (TraceDemoteHotBigLedgerPeerFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerFailed _ _ peeraddr _) ->
+                           Just $ Left (Just failures)
+                         where
+                           failures = Set.singleton peeraddr
+                       DiffusionPeerSelectionTrace (TraceDemoteWarmBigLedgerPeerDone _ _ peeraddr) ->
                            Just $ Left (Just failures)
                          where
                            failures = Set.singleton peeraddr
@@ -2055,6 +2171,10 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           govActivePeersSig =
             selectDiffusionPeerSelectionState Governor.activePeers events
 
+          govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
+          govInProgressDemoteToColdSig =
+            selectDiffusionPeerSelectionState Governor.inProgressDemoteToCold events
+
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
               Signal.fromChangeEvents Killed -- Default to TrKillingNode
@@ -2084,13 +2204,14 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
 
           demotionOpportunities :: Signal (Set NtNAddr)
           demotionOpportunities =
-            (\local active isAlive ->
+            (\local active isAlive inProgressDemoteToCold ->
               if isAlive
               then Set.unions
                     [ -- There are no opportunities if we're at or below target
                       if Set.size groupActive <= hotTarget
                          then Set.empty
                          else groupActive
+                                Set.\\ inProgressDemoteToCold
                     | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
                     , let groupActive = group `Set.intersection` active
                     ]
@@ -2098,6 +2219,7 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
             ) <$> govLocalRootPeersSig
               <*> govActivePeersSig
               <*> trIsNodeAlive
+              <*> govInProgressDemoteToColdSig
 
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
@@ -2574,9 +2696,20 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
                f as = conjoin $ g <$> tails as
 
                g :: [WithTime (PeerSelectionActionsTrace NtNAddr NtNVersion)] -> Property
-               g as@(WithTime demotionTime (PeerStatusChanged HotToWarm{}) : as') =
+               g as@(WithTime demotionTime (PeerStatusChanged HotToCooling{}) : as') =
                  case find (\case
-                               WithTime _ (PeerStatusChanged WarmToHot{}) -> True
+                               WithTime _ (PeerStatusChanged ColdToWarm{}) -> True
+                               _ -> False)
+                           as' of
+
+                   Nothing                         -> property True
+                   Just (WithTime promotionTime _) -> counterexample (show as)
+                                                    $ ( promotionTime `diffTime` demotionTime
+                                                     >= reconnectDelay config_RECONNECT_DELAY
+                                                      )
+               g as@(WithTime demotionTime (PeerStatusChanged WarmToCooling{}) : as') =
+                 case find (\case
+                               WithTime _ (PeerStatusChanged ColdToWarm{}) -> True
                                _ -> False)
                            as' of
 
@@ -2603,9 +2736,9 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
                                         -> False
                                     (WithTime _ (PeerStatusChangeFailure tr _)
                                       , _) -> case tr of
-                                                HotToCold{}  -> False
-                                                WarmToCold{} -> False
-                                                _            -> True
+                                                HotToCooling{}  -> False
+                                                WarmToCooling{} -> False
+                                                _               -> True
                                     _   -> True
                             )
                 )
@@ -2622,8 +2755,8 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
     getConnId :: PeerStatusChangeType addr -> Maybe (ConnectionId addr)
     getConnId (HotToWarm connId) = Just connId
     getConnId (WarmToHot connId) = Just connId
-    getConnId (WarmToCold connId) = Just connId
-    getConnId (HotToCold connId) = Just connId
+    getConnId (WarmToCooling connId) = Just connId
+    getConnId (HotToCooling connId)  = Just connId
     getConnId (ColdToWarm (Just localAddress) remoteAddress) = Just ConnectionId { localAddress, remoteAddress }
     getConnId _ = Nothing
 

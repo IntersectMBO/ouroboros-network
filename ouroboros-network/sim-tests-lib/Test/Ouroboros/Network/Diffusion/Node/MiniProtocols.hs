@@ -77,8 +77,6 @@ import qualified Ouroboros.Network.Mock.Chain as Chain
 import           Ouroboros.Network.Mock.ProducerState
 import           Ouroboros.Network.Mux
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface)
 import           Ouroboros.Network.Util.ShowProxy
 
 import           Ouroboros.Network.Mock.ConcreteBlock
@@ -91,6 +89,8 @@ import           Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
                      chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
                      peerSharingMiniProtocolNum)
 import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (LedgerPeersConsensusInterface)
 import           Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
                      peerSharingClient, peerSharingServer)
 import           Ouroboros.Network.Protocol.PeerSharing.Client

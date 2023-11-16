@@ -30,8 +30,8 @@ import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit,
                      ConnectionId, DiffusionMode)
 import qualified Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface, TraceLedgerPeers)
+import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+                     (LedgerPeersConsensusInterface)
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.Snocket (FileDescriptor)
 import           Ouroboros.Network.Socket (SystemdSocketTracer)
@@ -101,10 +101,6 @@ data Tracers ntnAddr ntnVersion ntcAddr ntcVersion m = Tracers {
       -- | Diffusion initialisation tracer
     , dtDiffusionTracer
         :: Tracer m (DiffusionTracer ntnAddr ntcAddr)
-
-      -- | Ledger Peers tracer
-    , dtLedgerPeersTracer
-        :: Tracer m TraceLedgerPeers
     }
 
 
@@ -118,7 +114,6 @@ nullTracers = Tracers {
   , dtLocalMuxTracer       = nullTracer
   , dtLocalHandshakeTracer = nullTracer
   , dtDiffusionTracer      = nullTracer
-  , dtLedgerPeersTracer    = nullTracer
   }
 
 -- | Common DiffusionArguments interface between P2P and NonP2P

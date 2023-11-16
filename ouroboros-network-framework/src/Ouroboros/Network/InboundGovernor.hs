@@ -346,7 +346,13 @@ inboundGovernor trTracer tracer inboundInfoChannel
               let state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
 
               return (Just connId, state')
-            UnsupportedState {} ->
+            -- It could happen that the connection got deleted by connection
+            -- manager due to some async exception so we need to unregister it
+            -- from the inbound governor state.
+            UnsupportedState UnknownConnectionSt -> do
+              let state' = unregisterConnection connId state
+              return (Just connId, state')
+            UnsupportedState {} -> do
               return (Just connId, state)
 
         -- @

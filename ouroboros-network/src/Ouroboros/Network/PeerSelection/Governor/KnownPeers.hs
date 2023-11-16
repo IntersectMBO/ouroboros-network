@@ -54,6 +54,7 @@ belowTarget actions
               knownPeers,
               establishedPeers,
               inProgressPeerShareReqs,
+              inProgressDemoteToCold,
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
                         }
@@ -125,6 +126,7 @@ belowTarget actions
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
                              - inProgressPeerShareReqs
     availableForPeerShare    = EstablishedPeers.availableForPeerShare establishedPeers
+                             Set.\\ inProgressDemoteToCold
     -- Only ask peers which have the correct willingness permission flags
     canAsk                   =
       KnownPeers.getAvailablePeerSharingPeers availableForPeerShare knownPeers

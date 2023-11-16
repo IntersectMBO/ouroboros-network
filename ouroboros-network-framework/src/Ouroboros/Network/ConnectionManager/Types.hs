@@ -541,7 +541,14 @@ data ConnectionManager (muxMode :: MuxMode) socket peerAddr handle handleError m
               (InboundConnectionManager  muxMode socket peerAddr handle handleError m),
 
         readState
-          :: m (Map peerAddr AbstractState)
+          :: STM m (Map peerAddr AbstractState),
+
+        -- | This STM action will block until the given connection is fully
+        -- closed/terminated. If the connection manager doesn't have any connection to
+        -- that peer it won't block.
+        waitForOutboundDemotion
+          :: peerAddr
+          -> STM m ()
       }
 
 --
