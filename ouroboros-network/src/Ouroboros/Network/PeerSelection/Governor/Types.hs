@@ -439,7 +439,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 -- This data type should not expose too much information and keep only
 -- essential data needed for computing the peer sharing request result
 --
-data PublicPeerSelectionState peeraddr =
+newtype PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
     availableToShare :: Set peeraddr
   }
@@ -461,12 +461,11 @@ toPublicState :: Ord peeraddr
 toPublicState PeerSelectionState { knownPeers
                                  , establishedPeers
                                  } =
-  let availableNow = EstablishedPeers.availableForPeerShare establishedPeers
-      availableNowWithPermission =
-        Set.filter (`KnownPeers.canPeerShareRequest` knownPeers) availableNow
-   in PublicPeerSelectionState {
-        availableToShare = availableNowWithPermission
-      }
+   PublicPeerSelectionState {
+     availableToShare =
+         Set.filter (`KnownPeers.canPeerShareRequest` knownPeers)
+       $ EstablishedPeers.availableForPeerShare establishedPeers
+   }
 
 -- Peer selection counters.
 --

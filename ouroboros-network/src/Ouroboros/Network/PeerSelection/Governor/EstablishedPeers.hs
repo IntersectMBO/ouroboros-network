@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -400,7 +401,7 @@ jobPromoteColdPeer PeerSelectionActions {
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
       peerconn <- establishPeerConnection isBigLedgerPeer peeraddr
-      let peerSharing = peerConnToPeerSharing peerconn
+      let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {
                                bigLedgerPeers,
@@ -614,7 +615,7 @@ aboveTargetBigLedgerPeers actions
                                               <> selectedToDemote
                         },
         decisionJobs  = [ jobDemoteEstablishedPeer actions policy peeraddr peerconn
-                        | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
+                        | (!peeraddr, !peerconn) <- Map.assocs selectedToDemote' ]
       }
 
   | otherwise

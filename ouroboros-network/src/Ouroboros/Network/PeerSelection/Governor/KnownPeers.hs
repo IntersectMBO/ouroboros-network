@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -89,9 +90,11 @@ belowTarget actions
           -- peer share requests available, ask for at 1 peer to each.
           --
           -- This is to increase diversity.
-          numPeersToReq      = min 255 (max 1 (objective `div` numPeerShareReqs))
+          numPeersToReq :: PeerSharingAmount
+          !numPeersToReq     = fromIntegral
+                             $ min 255 (max 1 (objective `div` numPeerShareReqs))
           selForPSWithAmount = Set.toList
-                             $ Set.map (\a -> (fromIntegral numPeersToReq, a))
+                             $ Set.map (\a -> (numPeersToReq, a))
                                        selectedForPeerShare
       return $ \now -> Decision {
         decisionTrace = [TracePeerShareRequests
@@ -133,7 +136,7 @@ belowTarget actions
 
 
 jobPeerShare :: forall m peeraddr peerconn.
-             (MonadAsync m, MonadTimer m, Ord peeraddr)
+                (MonadAsync m, MonadTimer m, Ord peeraddr)
              => PeerSelectionActions peeraddr peerconn m
              -> PeerSelectionPolicy peeraddr m
              -> [(PeerSharingAmount, peeraddr)]

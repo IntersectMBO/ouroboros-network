@@ -177,7 +177,7 @@ validGovernorMockEnvironment GovernorMockEnvironment {
    .&&. foldl (\p (a,_) -> p .&&. counterexample ("in sane targets: " ++ show a) (sanePeerSelectionTargets a))
               (property True) targets
    .&&. counterexample "big ledger peers not a subset of public roots"
-        (bigLedgerPeers `Set.isSubsetOf` (Map.keysSet publicRootPeers))
+        (bigLedgerPeers `Set.isSubsetOf` Map.keysSet publicRootPeers)
   where
     allPeersSet = allPeers peerGraph
 
@@ -222,26 +222,26 @@ exploreGovernorInMockEnvironment :: Testable test
 exploreGovernorInMockEnvironment optsf mockEnv k =
     exploreSimTrace optsf (governorAction mockEnv) k
 
-data TraceMockEnv = TraceEnvAddPeers       PeerGraph
-                  | TraceEnvSetLocalRoots  (LocalRootPeers PeerAddr)
+data TraceMockEnv = TraceEnvAddPeers       !PeerGraph
+                  | TraceEnvSetLocalRoots  !(LocalRootPeers PeerAddr)
                   | TraceEnvRequestPublicRootPeers
                   | TraceEnvRequestBigLedgerPeers
-                  | TraceEnvSetPublicRoots (Map PeerAddr (PeerAdvertise, IsLedgerPeer))
+                  | TraceEnvSetPublicRoots !(Map PeerAddr (PeerAdvertise, IsLedgerPeer))
                   | TraceEnvPublicRootTTL
                   | TraceEnvBigLedgerPeersTTL
-                  | TraceEnvPeerShareTTL   PeerAddr
-                  | TraceEnvSetTargets     PeerSelectionTargets
-                  | TraceEnvPeersDemote    AsyncDemotion PeerAddr
-                  | TraceEnvEstablishConn  PeerAddr
-                  | TraceEnvActivatePeer   PeerAddr
-                  | TraceEnvDeactivatePeer PeerAddr
-                  | TraceEnvCloseConn      PeerAddr
+                  | TraceEnvPeerShareTTL   !PeerAddr
+                  | TraceEnvSetTargets     !PeerSelectionTargets
+                  | TraceEnvPeersDemote    !AsyncDemotion !PeerAddr
+                  | TraceEnvEstablishConn  !PeerAddr
+                  | TraceEnvActivatePeer   !PeerAddr
+                  | TraceEnvDeactivatePeer !PeerAddr
+                  | TraceEnvCloseConn      !PeerAddr
 
-                  | TraceEnvRootsResult      [PeerAddr]
-                  | TraceEnvBigLedgerPeersResult (Set PeerAddr)
-                  | TraceEnvPeerShareRequest PeerAddr (Maybe ([PeerAddr], PeerShareTime))
-                  | TraceEnvPeerShareResult  PeerAddr [PeerAddr]
-                  | TraceEnvPeersStatus      (Map PeerAddr PeerStatus)
+                  | TraceEnvRootsResult      ![PeerAddr]
+                  | TraceEnvBigLedgerPeersResult !(Set PeerAddr)
+                  | TraceEnvPeerShareRequest !PeerAddr !(Maybe ([PeerAddr], PeerShareTime))
+                  | TraceEnvPeerShareResult  !PeerAddr ![PeerAddr]
+                  | TraceEnvPeersStatus      !(Map PeerAddr PeerStatus)
   deriving Show
 
 mockPeerSelectionActions :: forall m.
@@ -542,10 +542,10 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 -- Utils for properties
 --
 
-data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr)
-                    | GovernorEvent    (TracePeerSelection PeerAddr)
-                    | GovernorCounters PeerSelectionCounters
-                    | MockEnvEvent     TraceMockEnv
+data TestTraceEvent = GovernorDebug    !(DebugPeerSelection PeerAddr)
+                    | GovernorEvent    !(TracePeerSelection PeerAddr)
+                    | GovernorCounters !PeerSelectionCounters
+                    | MockEnvEvent     !TraceMockEnv
                    -- Warning: be careful with writing properties that rely
                    -- on trace events from both the governor and from the
                    -- environment. These events typically occur in separate
