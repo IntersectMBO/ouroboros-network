@@ -23,6 +23,9 @@
 
 ### Non-breaking changes
 
+- Added `Generic` and `NFData` instance derivations for `NodeToClientVersion`
+  data type
+
 ## 0.6.3.0 -- 2024-01-22
 
 ### Non-breaking changes
