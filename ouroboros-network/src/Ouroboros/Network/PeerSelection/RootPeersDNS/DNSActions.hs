@@ -19,9 +19,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   , DNSorIOError (..)
   ) where
 
-#if !defined(mingw32_HOST_OS)
 import           Data.Function (fix)
-#endif
 import           Data.List.NonEmpty (NonEmpty (..))
 
 import           Control.Exception (IOException)
@@ -33,7 +31,11 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
+#if MIN_VERSION_mtl(2,3,0)
 import           Control.Monad.Except
+#else
+import           Control.Monad.Except hiding (fix)
+#endif
 import           Control.Tracer (Tracer (..), traceWith)
 
 #if !defined(mingw32_HOST_OS)
