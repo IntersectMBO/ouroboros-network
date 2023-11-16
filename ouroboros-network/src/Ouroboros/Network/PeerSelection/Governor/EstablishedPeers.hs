@@ -666,25 +666,25 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
                                      peerSet
                                      establishedPeers in
         Decision {
-        decisionTrace = if peeraddr `Set.member` bigLedgerPeers
-                        then [TraceDemoteWarmBigLedgerPeerFailed
-                               targetNumberOfEstablishedBigLedgerPeers
-                               (Set.size $ EstablishedPeers.toSet establishedPeers
-                                           `Set.intersection`
-                                           bigLedgerPeers)
-                               peeraddr e]
-                        else [TraceDemoteWarmFailed
-                               targetNumberOfEstablishedPeers
-                               (Set.size $ EstablishedPeers.toSet establishedPeers
-                                    Set.\\ bigLedgerPeers)
-                               peeraddr e],
-        decisionState = st {
-                          inProgressDemoteWarm = inProgressDemoteWarm',
-                          fuzzRng = fuzzRng',
-                          knownPeers = knownPeers',
-                          establishedPeers = establishedPeers'
-                        },
-        decisionJobs  = []
+          decisionTrace = if peeraddr `Set.member` bigLedgerPeers
+                          then [TraceDemoteWarmBigLedgerPeerFailed
+                                 targetNumberOfEstablishedBigLedgerPeers
+                                 (Set.size $ EstablishedPeers.toSet establishedPeers
+                                             `Set.intersection`
+                                             bigLedgerPeers)
+                                 peeraddr e]
+                          else [TraceDemoteWarmFailed
+                                 targetNumberOfEstablishedPeers
+                                 (Set.size $ EstablishedPeers.toSet establishedPeers
+                                      Set.\\ bigLedgerPeers)
+                                 peeraddr e],
+          decisionState = st {
+                            inProgressDemoteWarm = inProgressDemoteWarm',
+                            fuzzRng = fuzzRng',
+                            knownPeers = knownPeers',
+                            establishedPeers = establishedPeers'
+                          },
+          decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)
