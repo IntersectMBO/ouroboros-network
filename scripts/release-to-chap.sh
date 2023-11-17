@@ -96,5 +96,5 @@ else
   git tag --points-at=HEAD
   trace "please run ./scripts/build-with-chap.sh"
   trace "once published, please push tags with:"
-  echo "git push origin \$(git tag --points-to=HEAD)"
+  echo "git push origin \$(git tag --points-at=HEAD)"
 fi
