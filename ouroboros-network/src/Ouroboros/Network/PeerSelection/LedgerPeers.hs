@@ -325,6 +325,8 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
                let (plainAddrs, domains) =
                      foldl' partitionPeer (Set.empty, []) pickedPeers
 
+               -- NOTE: we don't set `resolveConcurrent` because
+               -- of https://github.com/kazu-yamamoto/dns/issues/174
                domainAddrs <- resolveLedgerPeers tracer
                                                  toPeerAddr
                                                  dnsSemaphore

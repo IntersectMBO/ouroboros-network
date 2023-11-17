@@ -132,6 +132,8 @@ withPeerSelectionActions
             (localRootPeersProvider
               localRootTracer
               toPeerAddr
+              -- NOTE: we don't set `resolvConcurrent` because
+              -- of https://github.com/kazu-yamamoto/dns/issues/174
               DNS.defaultResolvConf
               dnsActions
               readLocalRootPeers
@@ -171,9 +173,13 @@ withPeerSelectionActions
     -- https://github.com/input-output-hk/cardano-node/issues/731
     requestConfiguredRootPeers :: DNSSemaphore m -> Int -> m (Map peeraddr PeerAdvertise, DiffTime)
     requestConfiguredRootPeers dnsSemaphore n = do
+      -- NOTE: we don't set `resolvConcurrent` because of
+      -- https://github.com/kazu-yamamoto/dns/issues/174
       publicRootPeersProvider publicRootTracer
                               toPeerAddr
                               dnsSemaphore
+                              -- NOTE: we don't set `resolveConcurrent` because
+                              -- of https://github.com/kazu-yamamoto/dns/issues/174
                               DNS.defaultResolvConf
                               readPublicRootPeers
                               dnsActions
