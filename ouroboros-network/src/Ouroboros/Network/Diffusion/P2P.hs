@@ -106,6 +106,9 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      PeerSelectionActions, PeerSelectionCounters (..),
                      PeerStateActions, PublicPeerSelectionState (..),
                      TracePeerSelection (..), emptyPublicPeerSelectionState)
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface, TraceLedgerPeers,
+                     UseLedgerAfter)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSelectionActions
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -117,9 +120,6 @@ import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (RelayAccessPoint)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSActions, DNSLookupType (..), ioDNSActions)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                     (LedgerPeersConsensusInterface, TraceLedgerPeers,
-                     UseLedgerAfter)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
                      (TraceLocalRootPeers)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers

@@ -70,12 +70,12 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.IOSim
+import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
 import           Ouroboros.Network.Protocol.PeerSharing.Type

@@ -1,12 +1,17 @@
 # Revision history for ouroboros-network
 
+
 ## next release
 
 ### Breaking changes
 
-* Make chainsync idle timeout configurable.
+### Non-breaking changes
+
+## 0.10.0.1 -- 2023-11-16
 
 ### Non-breaking changes
+
+* Use `io-sim-1.3.0.0`.
 
 ## 0.10.0.0 -- 2023-11-02
 

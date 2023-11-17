@@ -6,13 +6,18 @@
 
 ### Non-breaking changes
 
+## 0.10.1.0 -- 2023-11-16
+
+### Non-breaking changes
+
 * Updated code to accommodate changes on `PeerSharing` data type.
 * Fixed Server2 [sim test](https://github.com/input-output-hk/ouroboros-network/issues/4607) by synchronizing connection/disconnection events.
 * Changed connection manager `readState` function to be in `STM` instead of `m`
 * Added `waitForOutboundDemotion` function to Connection
   Manager's API
+* Use `io-sim-1.3.0.0`.
 
-## 0.10.0.01 -- 2023-11-02
+## 0.10.0.1 -- 2023-11-02
 
 ### Non-breaking changes
 

@@ -1,6 +1,6 @@
 cabal-version:          3.0
 name:                   ouroboros-network
-version:                0.10.0.0
+version:                0.10.0.1
 synopsis:               A networking layer for the Ouroboros blockchain protocol
 description:            A networking layer for the Ouroboros blockchain protocol.
 license:                Apache-2.0
@@ -46,18 +46,18 @@ library
                        Ouroboros.Network.NodeToClient
                        Ouroboros.Network.Tracers
                        Ouroboros.Network.PeerSelection.Types
+                       Ouroboros.Network.PeerSelection.LedgerPeers
                        Ouroboros.Network.PeerSelection.PeerMetric
                        Ouroboros.Network.PeerSelection.PeerSelectionActions
                        Ouroboros.Network.PeerSelection.PeerStateActions
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                       Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
                        Ouroboros.Network.PeerSelection.Governor
                        Ouroboros.Network.PeerSelection.State.EstablishedPeers
                        Ouroboros.Network.PeerSelection.State.KnownPeers
                        Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                       Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+                       Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+                       Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+                       Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
                        Ouroboros.Network.PeerSharing
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Mempool.Reader
@@ -70,6 +70,8 @@ library
                        Ouroboros.Network.PeerSelection.Governor.Monitor
                        Ouroboros.Network.PeerSelection.Governor.RootPeers
                        Ouroboros.Network.PeerSelection.Governor.Types
+                       Ouroboros.Network.PeerSelection.LedgerPeers.Common
+                       Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
                        Ouroboros.Network.PeerSelection.Churn
                        Ouroboros.Network.Diffusion.Utils
   reexported-modules:  Ouroboros.Network.AnchoredFragment,

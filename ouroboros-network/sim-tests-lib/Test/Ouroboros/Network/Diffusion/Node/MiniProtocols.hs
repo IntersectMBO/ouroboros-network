@@ -88,9 +88,9 @@ import qualified Pipes
 import           Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
                      chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
                      peerSharingMiniProtocolNum)
-import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface)
+import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
 import           Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
                      peerSharingClient, peerSharingServer)
 import           Ouroboros.Network.Protocol.PeerSharing.Client

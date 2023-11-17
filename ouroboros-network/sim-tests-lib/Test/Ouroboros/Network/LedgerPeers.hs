@@ -33,10 +33,9 @@ import           System.Random
 import           Network.DNS (Domain)
 
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 import           Ouroboros.Network.Testing.Data.Script
 import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import           Test.QuickCheck

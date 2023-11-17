@@ -119,6 +119,9 @@ import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface (..), TraceLedgerPeers,
+                     UseLedgerAfter (..), accPoolStake)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -126,9 +129,6 @@ import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint (..), PortNumber, RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSLookupType)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                     (LedgerPeersConsensusInterface (..), TraceLedgerPeers,
-                     UseLedgerAfter (..), accPoolStake)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
                      (TraceLocalRootPeers)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
