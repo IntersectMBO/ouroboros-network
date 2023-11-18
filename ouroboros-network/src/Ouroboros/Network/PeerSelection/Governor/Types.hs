@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -721,7 +722,7 @@ data Guarded m a =
     -- synchronisation, possibly with a timeout, to
     -- the governor main loop.
     --
-  | Guarded'   !(Maybe (Min Time)) (FirstToFinish m a)
+  | Guarded'   !(Maybe (Min Time)) !(FirstToFinish m a)
 
 
 -- | 'Guarded' constructor which provides an action, possibly with a timeout,
@@ -729,9 +730,9 @@ data Guarded m a =
 -- synchronisation.
 --
 pattern Guarded :: Maybe (Min Time) -> m a -> Guarded m a
-pattern Guarded a b <- Guarded' a (FirstToFinish b)
+pattern Guarded a b <- Guarded' !a (FirstToFinish !b)
   where
-    Guarded a b = Guarded' a (FirstToFinish b)
+    Guarded !a !b = Guarded' a (FirstToFinish b)
 
 {-# COMPLETE GuardedSkip, Guarded #-}
 
