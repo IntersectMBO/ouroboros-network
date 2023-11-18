@@ -229,7 +229,6 @@ data TraceMockEnv = TraceEnvAddPeers       !PeerGraph
                   | TraceEnvSetPublicRoots !(Map PeerAddr (PeerAdvertise, IsLedgerPeer))
                   | TraceEnvPublicRootTTL
                   | TraceEnvBigLedgerPeersTTL
-                  | TraceEnvPeerShareTTL   !PeerAddr
                   | TraceEnvSetTargets     !PeerSelectionTargets
                   | TraceEnvPeersDemote    !AsyncDemotion !PeerAddr
                   | TraceEnvEstablishConn  !PeerAddr
@@ -315,9 +314,7 @@ mockPeerSelectionActions' tracer
                             bigLedgerPeers,
                             peerSharing
                           }
-                          PeerSelectionPolicy {
-                            policyPeerShareRetryTime
-                          }
+                          _
                           scripts
                           targetsVar
                           connsVar =
@@ -366,9 +363,6 @@ mockPeerSelectionActions' tracer
       let Just (peerShareScript, _, _) = Map.lookup addr scripts
       mPeerShare <- stepScript peerShareScript
       traceWith tracer (TraceEnvPeerShareRequest addr mPeerShare)
-      _ <- async $ do
-        threadDelay policyPeerShareRetryTime
-        traceWith tracer (TraceEnvPeerShareTTL addr)
       case mPeerShare of
         Nothing                -> do
           threadDelay 1

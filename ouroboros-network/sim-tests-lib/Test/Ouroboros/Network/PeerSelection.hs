@@ -541,7 +541,6 @@ envEventCredits  TraceEnvRequestPublicRootPeers = 0
 envEventCredits  TraceEnvRequestBigLedgerPeers  = 0
 envEventCredits  TraceEnvPublicRootTTL          = 60
 envEventCredits  TraceEnvBigLedgerPeersTTL      = 60
-envEventCredits (TraceEnvPeerShareTTL _)        = 30
 
 envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
                    targetNumberOfRootPeers = _,
