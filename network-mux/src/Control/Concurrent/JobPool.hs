@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 
@@ -79,15 +80,13 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler group label) =
     mask $ \restore -> do
       jobAsync <- async $ do
         tid <- myThreadId
-        labelThread tid label
-        !res <- handleJust notAsyncExceptions handler $
-                 restore action
-        atomically $ do
-          writeTQueue completionQueue res
-          modifyTVar' jobsVar (Map.delete (group, tid))
+        io tid restore
+          `onException`
+          atomically (modifyTVar' jobsVar (Map.delete (group, tid)))
+        atomically (modifyTVar' jobsVar (Map.delete (group, tid)))
 
       let !tid = asyncThreadId jobAsync
-      atomically $ modifyTVar' jobsVar (Map.insert (group, tid) jobAsync)
+      atomically $ modifyTVar' jobsVar (Map.insert (group, tid) $! jobAsync)
       return ()
   where
     notAsyncExceptions :: SomeException -> Maybe SomeException
@@ -95,6 +94,15 @@ forkJob JobPool{jobsVar, completionQueue} (Job action handler group label) =
       | Just (SomeAsyncException _) <- fromException e
                   = Nothing
       | otherwise = Just e
+
+    io :: ThreadId m
+       -> (forall x. m x -> m x)
+       -> m ()
+    io tid restore = do
+      labelThread tid label
+      !res <- handleJust notAsyncExceptions handler $
+              restore action
+      atomically $ writeTQueue completionQueue res
 
 readSize :: MonadSTM m => JobPool group m a -> STM m Int
 readSize JobPool{jobsVar} = Map.size <$> readTVar jobsVar
