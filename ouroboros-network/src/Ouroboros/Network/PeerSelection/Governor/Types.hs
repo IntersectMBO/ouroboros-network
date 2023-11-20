@@ -472,23 +472,23 @@ toPublicState PeerSelectionState { knownPeers
 data PeerSelectionCounters = PeerSelectionCounters {
       -- | All cold peers including ledger peers, root peers, big ledger peers
       -- and peers discovered through peer sharing.
-      coldPeers          :: Int,
+      coldPeers          :: !Int,
       -- | All warm peers including ledger peers, root peers, big ledger peers,
       -- local root peers and peers discovered through peer sharing.
-      warmPeers          :: Int,
+      warmPeers          :: !Int,
       -- | All hot peers including ledger peers, root peers, big ledger peers,
       -- local root peers and peers discovered through peer sharing.
-      hotPeers           :: Int,
+      hotPeers           :: !Int,
       -- | Cold big ledger peers.
-      coldBigLedgerPeers :: Int,
+      coldBigLedgerPeers :: !Int,
       -- | Warm big ledger peers.
-      warmBigLedgerPeers :: Int,
+      warmBigLedgerPeers :: !Int,
       -- | Hot big ledger peers.
-      hotBigLedgerPeers  :: Int,
+      hotBigLedgerPeers  :: !Int,
       -- | Local root peers with one entry per group. First entry is the number
       -- of warm peers in that group the second is the number of hot peers in
       -- that group.
-      localRoots         :: [(Int, Int)]
+      localRoots         :: ![(Int, Int)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
