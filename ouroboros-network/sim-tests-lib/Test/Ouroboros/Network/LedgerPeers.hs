@@ -16,7 +16,7 @@ import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 import           Control.Monad.IOSim hiding (SimResult)
-import           Control.Tracer (Tracer (..), showTracing, traceWith)
+import           Control.Tracer (Tracer (..), nullTracer, traceWith)
 import qualified Data.IP as IP
 import           Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
 import qualified Data.List.NonEmpty as NonEmpty
@@ -329,7 +329,7 @@ verboseTracer :: forall a m.
                        , Show a
                        )
                => Tracer m a
-verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
+verboseTracer = nullTracer -- threadAndTimeTracer $ Tracer (say . show)
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
@@ -338,5 +338,5 @@ threadAndTimeTracer :: forall a m.
                     => Tracer m (WithThreadAndTime a) -> Tracer m a
 threadAndTimeTracer tr = Tracer $ \s -> do
     !now <- getMonotonicTime
-    !tid <- myThreadId
-    traceWith tr $ WithThreadAndTime now (show tid) s
+    !tid <- show <$> myThreadId
+    traceWith tr $! WithThreadAndTime now tid s
