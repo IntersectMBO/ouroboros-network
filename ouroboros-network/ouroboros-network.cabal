@@ -95,6 +95,7 @@ library
     Ouroboros.Network.PeerSelection.Types
     Ouroboros.Network.PeerSharing
     Ouroboros.Network.TxSubmission.Inbound
+    Ouroboros.Network.TxSubmission.Inbound.State
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
 
@@ -315,6 +316,7 @@ library testlib
     base >=4.14 && <4.22,
     bytestring,
     cardano-slotting,
+    cardano-strict-containers,
     cborg,
     containers,
     contra-tracer,
