@@ -69,6 +69,7 @@ library
                        Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
                        Ouroboros.Network.PeerSharing
                        Ouroboros.Network.TxSubmission.Inbound
+                       Ouroboros.Network.TxSubmission.Inbound.State
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
   other-modules:       Ouroboros.Network.Diffusion.Common
@@ -198,6 +199,7 @@ library sim-tests-lib
 
                        cardano-prelude,
                        cardano-slotting,
+                       cardano-strict-containers,
                        contra-tracer,
                        nothunks,
 
