@@ -343,12 +343,13 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
             bufferedTxs2 = Foldable.foldl' (flip Map.delete)
                                    bufferedTxs1 acknowledgedTxIds
 
-            -- If we are acknowleding transactions that are still in unacknowledgedTxIds'
-            -- we need to re-add them so that we also can acknowledge them again later.
-            -- This will happen incase of duplicate txids within the same window.
+            -- If we are acknowledging transactions that are still in
+            -- unacknowledgedTxIds' we need to re-add them so that we also can
+            -- acknowledge them again later. This will happen in case of
+            -- duplicate txids within the same window.
             live = filter (`elem` unacknowledgedTxIds') $ toList acknowledgedTxIds
             bufferedTxs3 = forceElemsToWHNF $ bufferedTxs2 <>
-                               (Map.fromList (zip live (repeat Nothing)))
+                               Map.fromList (zip live (repeat Nothing))
 
         let !collected = length txs
         traceWith tracer $
@@ -447,7 +448,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
         -- We will also uses the size of txs in bytes as our limit for
         -- upper and lower watermarks for pipelining. We'll also use the
         -- amount in flight and delta-Q to estimate when we're in danger of
-        -- becomming idle, and need to request stalled txs.
+        -- becoming idle, and need to request stalled txs.
         --
         let (txsToRequest, availableTxids') =
               Map.splitAt (fromIntegral maxTxToRequest) (availableTxids st)

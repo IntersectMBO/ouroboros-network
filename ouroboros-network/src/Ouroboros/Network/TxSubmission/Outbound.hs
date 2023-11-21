@@ -12,7 +12,7 @@ module Ouroboros.Network.TxSubmission.Outbound
 
 import Data.Foldable (find)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Maybe (catMaybes, isNothing)
+import Data.Maybe (catMaybes, isNothing, mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
 import Data.Word (Word16)
@@ -184,7 +184,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           -- The 'mempoolLookupTx' will return nothing if the transaction is no
           -- longer in the mempool. This is good. Neither the sending nor
           -- receiving side wants to forward txs that are no longer of interest.
-          let txs          = catMaybes (map mempoolLookupTx txidxs')
+          let txs          = mapMaybe mempoolLookupTx txidxs'
               client'      = client unackedSeq lastIdx
 
           -- Trace the transactions to be sent in the response.
