@@ -177,7 +177,7 @@ validGovernorMockEnvironment GovernorMockEnvironment {
    .&&. foldl (\p (a,_) -> p .&&. counterexample ("in sane targets: " ++ show a) (sanePeerSelectionTargets a))
               (property True) targets
    .&&. counterexample "big ledger peers not a subset of public roots"
-        (bigLedgerPeers `Set.isSubsetOf` (Map.keysSet publicRootPeers))
+        (bigLedgerPeers `Set.isSubsetOf` Map.keysSet publicRootPeers)
   where
     allPeersSet = allPeers peerGraph
 
@@ -222,26 +222,25 @@ exploreGovernorInMockEnvironment :: Testable test
 exploreGovernorInMockEnvironment optsf mockEnv k =
     exploreSimTrace optsf (governorAction mockEnv) k
 
-data TraceMockEnv = TraceEnvAddPeers       PeerGraph
-                  | TraceEnvSetLocalRoots  (LocalRootPeers PeerAddr)
+data TraceMockEnv = TraceEnvAddPeers       !PeerGraph
+                  | TraceEnvSetLocalRoots  !(LocalRootPeers PeerAddr)
                   | TraceEnvRequestPublicRootPeers
                   | TraceEnvRequestBigLedgerPeers
-                  | TraceEnvSetPublicRoots (Map PeerAddr (PeerAdvertise, IsLedgerPeer))
+                  | TraceEnvSetPublicRoots !(Map PeerAddr (PeerAdvertise, IsLedgerPeer))
                   | TraceEnvPublicRootTTL
                   | TraceEnvBigLedgerPeersTTL
-                  | TraceEnvPeerShareTTL   PeerAddr
-                  | TraceEnvSetTargets     PeerSelectionTargets
-                  | TraceEnvPeersDemote    AsyncDemotion PeerAddr
-                  | TraceEnvEstablishConn  PeerAddr
-                  | TraceEnvActivatePeer   PeerAddr
-                  | TraceEnvDeactivatePeer PeerAddr
-                  | TraceEnvCloseConn      PeerAddr
+                  | TraceEnvSetTargets     !PeerSelectionTargets
+                  | TraceEnvPeersDemote    !AsyncDemotion !PeerAddr
+                  | TraceEnvEstablishConn  !PeerAddr
+                  | TraceEnvActivatePeer   !PeerAddr
+                  | TraceEnvDeactivatePeer !PeerAddr
+                  | TraceEnvCloseConn      !PeerAddr
 
-                  | TraceEnvRootsResult      [PeerAddr]
-                  | TraceEnvBigLedgerPeersResult (Set PeerAddr)
-                  | TraceEnvPeerShareRequest PeerAddr (Maybe ([PeerAddr], PeerShareTime))
-                  | TraceEnvPeerShareResult  PeerAddr [PeerAddr]
-                  | TraceEnvPeersStatus      (Map PeerAddr PeerStatus)
+                  | TraceEnvRootsResult      ![PeerAddr]
+                  | TraceEnvBigLedgerPeersResult !(Set PeerAddr)
+                  | TraceEnvPeerShareRequest !PeerAddr !(Maybe ([PeerAddr], PeerShareTime))
+                  | TraceEnvPeerShareResult  !PeerAddr ![PeerAddr]
+                  | TraceEnvPeersStatus      !(Map PeerAddr PeerStatus)
   deriving Show
 
 mockPeerSelectionActions :: forall m.
@@ -315,9 +314,7 @@ mockPeerSelectionActions' tracer
                             bigLedgerPeers,
                             peerSharing
                           }
-                          PeerSelectionPolicy {
-                            policyPeerShareRetryTime
-                          }
+                          _
                           scripts
                           targetsVar
                           connsVar =
@@ -366,9 +363,6 @@ mockPeerSelectionActions' tracer
       let Just (peerShareScript, _, _) = Map.lookup addr scripts
       mPeerShare <- stepScript peerShareScript
       traceWith tracer (TraceEnvPeerShareRequest addr mPeerShare)
-      _ <- async $ do
-        threadDelay policyPeerShareRetryTime
-        traceWith tracer (TraceEnvPeerShareTTL addr)
       case mPeerShare of
         Nothing                -> do
           threadDelay 1
@@ -542,10 +536,10 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 -- Utils for properties
 --
 
-data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr)
-                    | GovernorEvent    (TracePeerSelection PeerAddr)
-                    | GovernorCounters PeerSelectionCounters
-                    | MockEnvEvent     TraceMockEnv
+data TestTraceEvent = GovernorDebug    !(DebugPeerSelection PeerAddr)
+                    | GovernorEvent    !(TracePeerSelection PeerAddr)
+                    | GovernorCounters !PeerSelectionCounters
+                    | MockEnvEvent     !TraceMockEnv
                    -- Warning: be careful with writing properties that rely
                    -- on trace events from both the governor and from the
                    -- environment. These events typically occur in separate
@@ -556,7 +550,59 @@ data TestTraceEvent = GovernorDebug    (DebugPeerSelection PeerAddr)
   deriving Show
 
 tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection PeerAddr)
-tracerTracePeerSelection = contramap GovernorEvent tracerTestTraceEvent
+tracerTracePeerSelection = contramap f tracerTestTraceEvent
+  where
+    -- make the tracer strict
+    f :: TracePeerSelection PeerAddr -> TestTraceEvent
+    f a@(TraceLocalRootPeersChanged !_ !_)                   = GovernorEvent a
+    f a@(TraceTargetsChanged !_ !_)                          = GovernorEvent a
+    f a@(TracePublicRootsRequest !_ !_)                      = GovernorEvent a
+    f a@(TracePublicRootsResults !_ !_ !_)                   = GovernorEvent a
+    f a@(TracePublicRootsFailure !_ !_ !_)                   = GovernorEvent a
+    f a@(TraceForgetColdPeers !_ !_ !_)                      = GovernorEvent a
+    f a@(TraceBigLedgerPeersRequest !_ !_)                   = GovernorEvent a
+    f a@(TraceBigLedgerPeersResults !_ !_ !_)                = GovernorEvent a
+    f a@(TraceBigLedgerPeersFailure !_ !_ !_)                = GovernorEvent a
+    f a@(TraceForgetBigLedgerPeers !_ !_ !_)                 = GovernorEvent a
+    f a@(TracePeerShareRequests !_ !_ !_ !_)                 = GovernorEvent a
+    f a@(TracePeerShareResults !_)                           = GovernorEvent a
+    f a@(TracePeerShareResultsFiltered !_)                   = GovernorEvent a
+    f a@(TraceKnownInboundConnection !_ !_)                  = GovernorEvent a
+    f a@(TracePromoteColdPeers !_ !_ !_)                     = GovernorEvent a
+    f a@(TracePromoteColdLocalPeers !_ !_)                   = GovernorEvent a
+    f a@(TracePromoteColdFailed !_ !_ !_ !_ !_)              = GovernorEvent a
+    f a@(TracePromoteColdDone !_ !_ !_)                      = GovernorEvent a
+    f a@(TracePromoteColdBigLedgerPeers !_ !_ !_)            = GovernorEvent a
+    f a@(TracePromoteColdBigLedgerPeerFailed !_ !_ !_ !_ !_) = GovernorEvent a
+    f a@(TracePromoteColdBigLedgerPeerDone !_ !_ !_)         = GovernorEvent a
+    f a@(TracePromoteWarmPeers !_ !_ !_)                     = GovernorEvent a
+    f a@(TracePromoteWarmLocalPeers !_ !_)                   = GovernorEvent a
+    f a@(TracePromoteWarmFailed !_ !_ !_ !_)                 = GovernorEvent a
+    f a@(TracePromoteWarmDone !_ !_ !_)                      = GovernorEvent a
+    f a@(TracePromoteWarmAborted !_ !_ !_)                   = GovernorEvent a
+    f a@(TracePromoteWarmBigLedgerPeers !_ !_ !_)            = GovernorEvent a
+    f a@(TracePromoteWarmBigLedgerPeerFailed !_ !_ !_ !_)    = GovernorEvent a
+    f a@(TracePromoteWarmBigLedgerPeerDone !_ !_ !_)         = GovernorEvent a
+    f a@(TracePromoteWarmBigLedgerPeerAborted !_ !_ !_)      = GovernorEvent a
+    f a@(TraceDemoteWarmPeers !_ !_ !_)                      = GovernorEvent a
+    f a@(TraceDemoteWarmFailed !_ !_ !_ !_)                  = GovernorEvent a
+    f a@(TraceDemoteWarmDone !_ !_ !_)                       = GovernorEvent a
+    f a@(TraceDemoteWarmBigLedgerPeers !_ !_ !_)             = GovernorEvent a
+    f a@(TraceDemoteWarmBigLedgerPeerFailed !_ !_ !_ !_)     = GovernorEvent a
+    f a@(TraceDemoteWarmBigLedgerPeerDone !_ !_ !_)          = GovernorEvent a
+    f a@(TraceDemoteHotPeers !_ !_ !_)                       = GovernorEvent a
+    f a@(TraceDemoteLocalHotPeers !_ !_)                     = GovernorEvent a
+    f a@(TraceDemoteHotFailed !_ !_ !_ !_)                   = GovernorEvent a
+    f a@(TraceDemoteHotDone !_ !_ !_)                        = GovernorEvent a
+    f a@(TraceDemoteHotBigLedgerPeers !_ !_ !_)              = GovernorEvent a
+    f a@(TraceDemoteHotBigLedgerPeerFailed !_ !_ !_ !_)      = GovernorEvent a
+    f a@(TraceDemoteHotBigLedgerPeerDone !_ !_ !_)           = GovernorEvent a
+    f a@(TraceDemoteAsynchronous !_)                         = GovernorEvent a
+    f a@(TraceDemoteLocalAsynchronous !_)                    = GovernorEvent a
+    f a@(TraceDemoteBigLedgerPeersAsynchronous !_)           = GovernorEvent a
+    f a@TraceGovernorWakeup                                  = GovernorEvent a
+    f a@(TraceChurnWait !_)                                  = GovernorEvent a
+    f a@(TraceChurnMode !_)                                  = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent

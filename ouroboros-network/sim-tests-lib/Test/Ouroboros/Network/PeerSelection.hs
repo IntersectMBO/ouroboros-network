@@ -541,7 +541,6 @@ envEventCredits  TraceEnvRequestPublicRootPeers = 0
 envEventCredits  TraceEnvRequestBigLedgerPeers  = 0
 envEventCredits  TraceEnvPublicRootTTL          = 60
 envEventCredits  TraceEnvBigLedgerPeersTTL      = 60
-envEventCredits (TraceEnvPeerShareTTL _)        = 30
 
 envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
                    targetNumberOfRootPeers = _,
@@ -1726,7 +1725,7 @@ prop_governor_target_known_5_no_shrink_below env =
               --
               -- By subtracting a sum of `y` and `y'` we also do not account
               -- forgetting big ledger peers.
-              (\(x,y) (x',y') -> x Set.\\ x' Set.\\ (y <> y'))
+              (\(x,y) (x',y') -> x Set.\\ x' Set.\\ y Set.\\ y')
           $ (,) <$> govKnownPeersSig
                 <*> bigLedgerPeersSig
 
@@ -2254,22 +2253,22 @@ prop_governor_target_active_below env =
               (\case TracePromoteWarmFailed _ _ peer _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
-                       Just (Set.singleton peer)
+                       Just $! Set.singleton peer
                      TraceDemoteWarmFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
+                       Just $! Set.singleton peer
                      TraceDemoteHotFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
+                       Just $! Set.singleton peer
                      --TODO
                      TraceDemoteAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                         !failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                         !failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
                      _ -> Nothing
               )
           . selectGovEvents
@@ -2928,13 +2927,13 @@ takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 
 selectEnvEvents :: Events TestTraceEvent -> Events TraceMockEnv
 selectEnvEvents = Signal.selectEvents
-                    (\case MockEnvEvent e -> Just e
+                    (\case MockEnvEvent e -> Just $! e
                            _              -> Nothing)
 
 selectGovEvents :: Events TestTraceEvent
                 -> Events (TracePeerSelection PeerAddr)
 selectGovEvents = Signal.selectEvents
-                    (\case GovernorEvent e -> Just e
+                    (\case GovernorEvent e -> Just $! e
                            _               -> Nothing)
 
 selectGovState :: Eq a
@@ -2944,9 +2943,9 @@ selectGovState :: Eq a
 selectGovState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [])
+  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) [])
   . Signal.selectEvents
-      (\case GovernorDebug (TraceGovernorState _ _ st) -> Just (f st)
+      (\case GovernorDebug (TraceGovernorState _ _ st) -> Just $! f st
              _                                         -> Nothing)
 
 selectEnvTargets :: Eq a
@@ -2958,7 +2957,7 @@ selectEnvTargets f =
   . fmap f
   . Signal.fromChangeEvents nullPeerSelectionTargets
   . Signal.selectEvents
-      (\case TraceEnvSetTargets targets -> Just targets
+      (\case TraceEnvSetTargets targets -> Just $! targets
              _                          -> Nothing)
   . selectEnvEvents
 

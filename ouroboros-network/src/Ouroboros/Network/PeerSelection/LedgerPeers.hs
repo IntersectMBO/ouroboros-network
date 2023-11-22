@@ -347,11 +347,12 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
     pickDomainAddrs :: (StdGen, Set peerAddr)
                     -> Set peerAddr
                     -> (StdGen, Set peerAddr)
-    pickDomainAddrs (rng, pickedAddrs) addrs | Set.null addrs = (rng, pickedAddrs)
-    pickDomainAddrs (rng, pickedAddrs) addrs =
-        let (ix, rng') = randomR (0, Set.size addrs - 1) rng
-            !pickedAddr = Set.elemAt ix addrs in
-        (rng', Set.insert pickedAddr pickedAddrs)
+    pickDomainAddrs (rng,  pickedAddrs) addrs | Set.null addrs = (rng, pickedAddrs)
+    pickDomainAddrs (rng, !pickedAddrs) addrs =
+        let (ix, rng')   = randomR (0, Set.size addrs - 1) rng
+            !pickedAddr  = Set.elemAt ix addrs
+            pickedAddrs' = Set.insert pickedAddr pickedAddrs
+        in (rng', pickedAddrs')
 
 
     -- Divide the picked peers form the ledger into addresses we can use
@@ -361,9 +362,10 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
                   -> (Set peerAddr, [DomainAccessPoint])
     partitionPeer (addrs, domains) (RelayDomainAccessPoint domain) =
       (addrs, domain : domains)
-    partitionPeer (addrs, domains) (RelayAccessAddress ip port) =
-      let !addr = toPeerAddr ip port
-       in (Set.insert addr addrs, domains)
+    partitionPeer (!addrs, domains) (RelayAccessAddress ip port) =
+      let !addr  = toPeerAddr ip port
+          addrs' = Set.insert addr addrs
+       in (addrs', domains)
 
 -- | For a LedgerPeers worker thread and submit request and receive responses.
 --

@@ -526,7 +526,7 @@ peerSelectionGovernorLoop tracer
       now <- getMonotonicTime
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
-          newCounters = peerStateToCounters decisionState
+          !newCounters = peerStateToCounters decisionState
       traverse_ (traceWith tracer) decisionTrace
       traceWithCache countersTracer
                      (countersCache decisionState)

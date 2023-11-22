@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -439,7 +440,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 -- This data type should not expose too much information and keep only
 -- essential data needed for computing the peer sharing request result
 --
-data PublicPeerSelectionState peeraddr =
+newtype PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
     availableToShare :: Set peeraddr
   }
@@ -461,35 +462,34 @@ toPublicState :: Ord peeraddr
 toPublicState PeerSelectionState { knownPeers
                                  , establishedPeers
                                  } =
-  let availableNow = EstablishedPeers.availableForPeerShare establishedPeers
-      availableNowWithPermission =
-        Set.filter (`KnownPeers.canPeerShareRequest` knownPeers) availableNow
-   in PublicPeerSelectionState {
-        availableToShare = availableNowWithPermission
-      }
+   PublicPeerSelectionState {
+     availableToShare =
+         Set.filter (`KnownPeers.canPeerShareRequest` knownPeers)
+       $ EstablishedPeers.availableForPeerShare establishedPeers
+   }
 
 -- Peer selection counters.
 --
 data PeerSelectionCounters = PeerSelectionCounters {
       -- | All cold peers including ledger peers, root peers, big ledger peers
       -- and peers discovered through peer sharing.
-      coldPeers          :: Int,
+      coldPeers          :: !Int,
       -- | All warm peers including ledger peers, root peers, big ledger peers,
       -- local root peers and peers discovered through peer sharing.
-      warmPeers          :: Int,
+      warmPeers          :: !Int,
       -- | All hot peers including ledger peers, root peers, big ledger peers,
       -- local root peers and peers discovered through peer sharing.
-      hotPeers           :: Int,
+      hotPeers           :: !Int,
       -- | Cold big ledger peers.
-      coldBigLedgerPeers :: Int,
+      coldBigLedgerPeers :: !Int,
       -- | Warm big ledger peers.
-      warmBigLedgerPeers :: Int,
+      warmBigLedgerPeers :: !Int,
       -- | Hot big ledger peers.
-      hotBigLedgerPeers  :: Int,
+      hotBigLedgerPeers  :: !Int,
       -- | Local root peers with one entry per group. First entry is the number
       -- of warm peers in that group the second is the number of hot peers in
       -- that group.
-      localRoots         :: [(Int, Int)]
+      localRoots         :: ![(Int, Int)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
@@ -722,7 +722,7 @@ data Guarded m a =
     -- synchronisation, possibly with a timeout, to
     -- the governor main loop.
     --
-  | Guarded'   !(Maybe (Min Time)) (FirstToFinish m a)
+  | Guarded'   !(Maybe (Min Time)) !(FirstToFinish m a)
 
 
 -- | 'Guarded' constructor which provides an action, possibly with a timeout,
@@ -730,9 +730,9 @@ data Guarded m a =
 -- synchronisation.
 --
 pattern Guarded :: Maybe (Min Time) -> m a -> Guarded m a
-pattern Guarded a b <- Guarded' a (FirstToFinish b)
+pattern Guarded a b <- Guarded' !a (FirstToFinish !b)
   where
-    Guarded a b = Guarded' a (FirstToFinish b)
+    Guarded !a !b = Guarded' a (FirstToFinish b)
 
 {-# COMPLETE GuardedSkip, Guarded #-}
 

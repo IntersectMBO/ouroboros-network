@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -400,7 +401,7 @@ jobPromoteColdPeer PeerSelectionActions {
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
       peerconn <- establishPeerConnection isBigLedgerPeer peeraddr
-      let peerSharing = peerConnToPeerSharing peerconn
+      let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {
                                bigLedgerPeers,
@@ -614,7 +615,7 @@ aboveTargetBigLedgerPeers actions
                                               <> selectedToDemote
                         },
         decisionJobs  = [ jobDemoteEstablishedPeer actions policy peeraddr peerconn
-                        | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
+                        | (!peeraddr, !peerconn) <- Map.assocs selectedToDemote' ]
       }
 
   | otherwise
@@ -665,25 +666,25 @@ jobDemoteEstablishedPeer PeerSelectionActions{peerStateActions = PeerStateAction
                                      peerSet
                                      establishedPeers in
         Decision {
-        decisionTrace = if peeraddr `Set.member` bigLedgerPeers
-                        then [TraceDemoteWarmBigLedgerPeerFailed
-                               targetNumberOfEstablishedBigLedgerPeers
-                               (Set.size $ EstablishedPeers.toSet establishedPeers
-                                           `Set.intersection`
-                                           bigLedgerPeers)
-                               peeraddr e]
-                        else [TraceDemoteWarmFailed
-                               targetNumberOfEstablishedPeers
-                               (Set.size $ EstablishedPeers.toSet establishedPeers
-                                    Set.\\ bigLedgerPeers)
-                               peeraddr e],
-        decisionState = st {
-                          inProgressDemoteWarm = inProgressDemoteWarm',
-                          fuzzRng = fuzzRng',
-                          knownPeers = knownPeers',
-                          establishedPeers = establishedPeers'
-                        },
-        decisionJobs  = []
+          decisionTrace = if peeraddr `Set.member` bigLedgerPeers
+                          then [TraceDemoteWarmBigLedgerPeerFailed
+                                 targetNumberOfEstablishedBigLedgerPeers
+                                 (Set.size $ EstablishedPeers.toSet establishedPeers
+                                             `Set.intersection`
+                                             bigLedgerPeers)
+                                 peeraddr e]
+                          else [TraceDemoteWarmFailed
+                                 targetNumberOfEstablishedPeers
+                                 (Set.size $ EstablishedPeers.toSet establishedPeers
+                                      Set.\\ bigLedgerPeers)
+                                 peeraddr e],
+          decisionState = st {
+                            inProgressDemoteWarm = inProgressDemoteWarm',
+                            fuzzRng = fuzzRng',
+                            knownPeers = knownPeers',
+                            establishedPeers = establishedPeers'
+                          },
+          decisionJobs  = []
       }
 
     job :: m (Completion m peeraddr peerconn)

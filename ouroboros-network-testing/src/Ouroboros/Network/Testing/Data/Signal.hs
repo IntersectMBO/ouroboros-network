@@ -373,19 +373,19 @@ keyedTimeout d arm =
        -> Set b
        -> [E a]
        -> [E (Set b)]
-    go _ armedPSQ _ [] =
+    go !_ !armedPSQ !_ [] =
       (\(b, t, _) -> E (TS t 0) (Set.singleton b))
       `map`
       PSQ.toList armedPSQ
 
-    go armedSet armedPSQ timedout (E ts@(TS t _) x : txs)
+    go !armedSet !armedPSQ !timedout (E ts@(TS t _) x : txs)
       | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ
       , t' < t
       , let armedSet' = Set.delete y armedSet
             timedout' = Set.insert y timedout
       = E (TS t' 0) timedout' : go armedSet' armedPSQ' timedout' (E ts x : txs)
 
-    go armedSet armedPSQ timedout (E ts@(TS t _) x : txs) =
+    go !armedSet !armedPSQ !timedout (E ts@(TS t _) x : txs) =
       let armedSet' = arm x
           armedAdd  = armedSet' Set.\\ armedSet
           armedDel  = armedSet  Set.\\ armedSet'
@@ -472,7 +472,7 @@ difference diff (Signal x0 txs0) =
     Signal Nothing (go x0 txs0)
   where
     go _ []                    = []
-    go x (E (TS t i) x' : txs) = E (TS t i)    (Just (diff x x'))
+    go x (E (TS t i) x' : txs) = E (TS t i)    (Just $! diff x x')
                                : E (TS t (i+1)) Nothing
                                : go x' txs
 
@@ -508,7 +508,7 @@ signalProperty atMost showSignalValue p =
           | n < atMost = go (n+1) (              Deque.snoc (t,x)  recent) txs
           | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) recent) txs
 
-    go !_ !recent ((t, x) : _) = counterexample details (property False)
+    go !_ !recent ((t, x) : _) = counterexample details False
       where
         details =
           unlines [ "Last " ++ show atMost ++ " signal values:"
