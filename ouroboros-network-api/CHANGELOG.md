@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+* Fixed Codec to disable `PeerSharing` with buggy versions 11 and 12.
+* Disable `PeerSharing` with `InitiatorOnly` nodes, since they do not run
+  peer sharing server side and can not reply to requests.
+- Fixed `Acceptable` instance of `NodeToNodeVersionData` to only negotiate
+  `PeerSharing` if diffusion mode is `InitiatorAndResponder`
+
 ## 0.6.0.1 -- 2023-11-16
 
 ### Non-breaking changes

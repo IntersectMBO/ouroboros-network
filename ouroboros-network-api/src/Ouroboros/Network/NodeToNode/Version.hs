@@ -60,7 +60,10 @@ data NodeToNodeVersion
     | NodeToNodeV_13
     -- ^ Changes:
     --
-    -- * Added `localPeerSharing` negotiation flag.
+    -- * Removed PeerSharingPrivate constructor
+    -- * Fixed Codec to disable PeerSharing with buggy versions 11 and 12.
+    -- * Disable PeerSharing with InitiatorOnly nodes, since they do not run
+    --   peer sharing server side and can not reply to requests.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -125,16 +128,22 @@ data NodeToNodeVersionData = NodeToNodeVersionData
 instance Acceptable NodeToNodeVersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one
     -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
-    -- agree on it. Keep the remote's PeerSharing information PeerSharing
-    -- information.
+    -- agree on it. Agree on the same 'PeerSharing' value, if the negotiated
+    -- diffusion mode is 'InitiatorAndResponder', otherwise default to
+    -- 'PeerSharingDisabled'.
     acceptableVersion local remote
       | networkMagic local == networkMagic remote
-      = Accept NodeToNodeVersionData
-          { networkMagic  = networkMagic local
-          , diffusionMode = diffusionMode local `min` diffusionMode remote
-          , peerSharing   = peerSharing local <> peerSharing remote
-          , query         = query local || query remote
-          }
+      = let acceptedDiffusionMode = diffusionMode local `min` diffusionMode remote
+         in Accept NodeToNodeVersionData
+              { networkMagic  = networkMagic local
+              , diffusionMode = acceptedDiffusionMode
+              , peerSharing   = case acceptedDiffusionMode of
+                                  InitiatorAndResponderDiffusionMode ->
+                                    peerSharing local <> peerSharing remote
+                                  InitiatorOnlyDiffusionMode         ->
+                                    PeerSharingDisabled
+              , query         = query local || query remote
+              }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
                        ++ show local
@@ -186,17 +195,18 @@ nodeToNodeCodecCBORTerm version
   | version >= NodeToNodeV_11
   , version <= NodeToNodeV_12 =
     let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
+        encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, query }
           = CBOR.TList
               [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
               , CBOR.TBool (case diffusionMode of
                              InitiatorOnlyDiffusionMode         -> True
                              InitiatorAndResponderDiffusionMode -> False)
-                          -- Need to be careful mapping here since older
-                          -- versions will map PeerSharingPrivate to 1.
-              , CBOR.TInt (case peerSharing of
-                             PeerSharingDisabled -> 0
-                             PeerSharingEnabled  -> 2)
+                              -- There's a bug in this versions where the
+                              -- agreed PeerSharing value on the remote side
+                              -- is whatever that got proposed, so we have to
+                              -- disable peer sharing with such nodes to avoid
+                              -- protocol violations
+              , CBOR.TInt 0 -- 0 corresponds to PeerSharingDisabled
               , CBOR.TBool query
               ]
 
