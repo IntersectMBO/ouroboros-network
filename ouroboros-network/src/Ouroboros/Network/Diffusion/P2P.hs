@@ -781,6 +781,8 @@ runM Interfaces
       -- demoting/promoting peers.
       policyRngVar <- newTVarIO policyRng
 
+      peerSharingRngVar <- newTVarIO peerSharingRng
+
       churnModeVar <- newTVarIO ChurnModeNormal
 
       peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
@@ -884,7 +886,7 @@ runM Interfaces
                    SingInitiatorResponderMode
                    (daApplicationInitiatorResponderMode
                       (computePeerSharingPeers (readTVar publicStateVar)
-                       peerSharingRng)))
+                       peerSharingRngVar)))
                 classifyHandleError
                 (InResponderMode inbndInfoChannel)
                 (if daOwnPeerSharing /= PeerSharingDisabled
@@ -1213,11 +1215,13 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 
 computePeerSharingPeers :: (MonadSTM m)
                         => STM m (PublicPeerSelectionState ntnAddr)
-                        -> StdGen
+                        -> StrictTVar m StdGen
                         -> PeerSharingAmount
                         -> m [ntnAddr]
-computePeerSharingPeers readPublicState gen amount = do
+computePeerSharingPeers readPublicState genVar amount = do
   publicState <- atomically readPublicState
+  gen <- atomically $ stateTVar genVar split
+
   let availableToShareSet = availableToShare publicState
       is = nub
          $ take (fromIntegral amount)
