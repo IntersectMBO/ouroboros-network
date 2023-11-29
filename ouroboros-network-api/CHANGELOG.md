@@ -2,6 +2,8 @@
 
 ## next release
 
+## 0.6.1.0 -- 2023-11-29
+
 ### Breaking changes
 
 ### Non-breaking changes
