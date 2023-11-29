@@ -174,8 +174,8 @@ controlDriver :: forall c m f t p
               => VersionedProtocol (ControlProtocol m c)
               => KESAlgorithm (KES c)
               => HasSerInfo (VerKeyKES (KES c))
-              => DirectDeserialise m (SignKeyKES (KES c))
-              => DirectSerialise m (SignKeyKES (KES c))
+              => DirectDeserialise (SignKeyKES (KES c))
+              => DirectSerialise (SignKeyKES (KES c))
               => MonadThrow m
               => MonadSTM m
               => MonadMVar m

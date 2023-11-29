@@ -468,6 +468,12 @@ kesAgentSelfHeal1 =
             ]
             ExitSuccess
             [ "KES key installed." ]
+          controlClientCheckP
+            [ "info"
+            , "--control-address", controlAddr1
+            ]
+            ExitSuccess
+            (const True)
         controlClientCheckP
           [ "info"
           , "--control-address", controlAddr2
@@ -475,6 +481,7 @@ kesAgentSelfHeal1 =
           (ExitFailure 1)
           (any ("kes-agent-control: Network.Socket.connect: " `isPrefixOf`))
         (agentOutLines2b, ()) <- withAgent controlAddr2 serviceAddr2 [serviceAddr1] coldVerKeyFile $ do
+          threadDelay 1000000
           controlClientCheckP
             [ "info"
             , "--control-address", controlAddr2
@@ -579,14 +586,16 @@ controlClientCheck :: [String] -> ExitCode -> [String] -> IO ()
 controlClientCheck args expectedExitCode expectedOutput = do
   (exitCode, outStr, errStr) <- controlClient args
   let outLines = lines outStr ++ lines errStr
-  assertEqual ("CONTROL CLIENT OUTPUT\n" ++ outStr ++ errStr) expectedOutput outLines
+  let cmd = show args
+  assertEqual (cmd ++ "\nCONTROL CLIENT OUTPUT\n" ++ outStr ++ errStr) expectedOutput outLines
   assertEqual ("CONTROL CLIENT EXIT CODE\n" ++ outStr ++ errStr) expectedExitCode exitCode
 
 controlClientCheckP :: [String] -> ExitCode -> ([String] -> Bool) -> IO ()
 controlClientCheckP args expectedExitCode outputAsExpected = do
   (exitCode, outStr, errStr) <- controlClient args
   let outLines = lines outStr ++ lines errStr
-  assertBool ("CONTROL CLIENT OUTPUT\n" ++ outStr ++ errStr) (outputAsExpected outLines)
+  let cmd = show args
+  assertBool (cmd ++ "\nCONTROL CLIENT OUTPUT\n" ++ outStr ++ errStr) (outputAsExpected outLines)
   assertEqual ("CONTROL CLIENT EXIT CODE\n" ++ outStr ++ errStr) expectedExitCode exitCode
 
 withAgentAndService :: FilePath -> FilePath -> [FilePath] -> FilePath -> IO a -> IO ([Text.Text], [Text.Text], a)

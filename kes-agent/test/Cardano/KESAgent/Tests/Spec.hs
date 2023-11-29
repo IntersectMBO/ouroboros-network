@@ -151,8 +151,8 @@ testSpecCrypto :: forall c.
                   , HasSerInfo (SignKeyKES (KES c))
                   , ContextDSIGN (DSIGN c) ~ ()
                   , DSIGN.Signable (DSIGN c) (OCertSignable c)
-                  , DirectSerialise IO (SignKeyKES (KES c))
-                  , DirectDeserialise IO (SignKeyKES (KES c))
+                  , DirectSerialise (SignKeyKES (KES c))
+                  , DirectDeserialise (SignKeyKES (KES c))
                   )
                => Proxy c
                -> TestTree

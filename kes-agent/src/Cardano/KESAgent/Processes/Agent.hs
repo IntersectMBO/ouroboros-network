@@ -178,12 +178,12 @@ data AgentTrace
   | AgentSkippingOldKey String String
   | AgentServiceSocketClosed String
   | AgentListeningOnServiceSocket String
-  | AgentServiceClientConnected String
+  | AgentServiceClientConnected String String
   | AgentServiceClientDisconnected String
   | AgentServiceSocketError String
   | AgentControlSocketClosed String
   | AgentListeningOnControlSocket String
-  | AgentControlClientConnected String
+  | AgentControlClientConnected String String
   | AgentControlClientDisconnected String
   | AgentControlSocketError String
   | AgentCheckEvolution KESPeriod
@@ -201,13 +201,13 @@ data AgentTrace
 instance Pretty AgentTrace where
   pretty (AgentServiceDriverTrace d) = "Agent: ServiceDriver: " ++ pretty d
   pretty (AgentServiceSocketClosed a) = "Agent: ServiceSocketClosed: " ++ a
-  pretty (AgentServiceClientConnected a) = "Agent: ServiceClientConnected: " ++ a
+  pretty (AgentServiceClientConnected a b) = "Agent: ServiceClientConnected: " ++ a ++ " " ++ b
   pretty (AgentServiceClientDisconnected a) = "Agent: ServiceClientDisconnected: " ++ a
   pretty (AgentServiceSocketError e) = "Agent: ServiceSocketError: " ++ e
 
   pretty (AgentControlDriverTrace d) = "Agent: ControlDriver: " ++ pretty d
   pretty (AgentControlSocketClosed a) = "Agent: ControlSocketClosed: " ++ a
-  pretty (AgentControlClientConnected a) = "Agent: ControlClientConnected: " ++ a
+  pretty (AgentControlClientConnected a b) = "Agent: ControlClientConnected: " ++ a ++ " " ++ b
   pretty (AgentControlClientDisconnected a) = "Agent: ControlClientDisconnected: " ++ a
   pretty (AgentControlSocketError e) = "Agent: ControlSocketError: " ++ e
   pretty x = "Agent: " ++ drop (strLength "Agent") (show x)
@@ -620,7 +620,7 @@ runListener :: forall m c fd addr st (pr :: PeerRole) t a
             -> Tracer m AgentTrace
             -> (String -> AgentTrace)
             -> (String -> AgentTrace)
-            -> (String -> AgentTrace)
+            -> (String -> String -> AgentTrace)
             -> (String -> AgentTrace)
             -> (String -> AgentTrace)
             -> (t -> AgentTrace)
@@ -643,7 +643,7 @@ runListener
   traceWith tracer (tListeningOnSocket addrStr)
 
   let handleConnection fd' = do
-        traceWith tracer (tClientConnected $ show fd')
+        traceWith tracer (tClientConnected (show fd) (show fd'))
         bearer <- getRawBearer mrb fd'
         handle bearer (tDriverTrace >$< tracer)
 

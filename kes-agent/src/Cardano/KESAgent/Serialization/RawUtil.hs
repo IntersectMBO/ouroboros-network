@@ -125,7 +125,7 @@ sendSKP :: ( MonadST m
               , MonadSTM m
               , MonadThrow m
               , KESAlgorithm k
-              , DirectSerialise m (SignKeyKES k)
+              , DirectSerialise (SignKeyKES k)
               )
            => RawBearer m
            -> CRef m (SignKeyWithPeriodKES k)
@@ -143,7 +143,7 @@ receiveSK :: ( MonadST m
              , MonadMVar m
              , MonadThrow m
              , KESAlgorithm k
-             , DirectDeserialise m (SignKeyKES k)
+             , DirectDeserialise (SignKeyKES k)
              )
            => RawBearer m
            -> Tracer m String
@@ -178,7 +178,7 @@ receiveSKP :: ( MonadST m
                  , MonadMVar m
                  , MonadThrow m
                  , KESAlgorithm k
-                 , DirectDeserialise m (SignKeyKES k)
+                 , DirectDeserialise (SignKeyKES k)
                  )
               => RawBearer m
               -> Tracer m String

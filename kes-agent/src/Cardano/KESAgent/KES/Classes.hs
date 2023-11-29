@@ -66,8 +66,8 @@ class ( Crypto c
       , ContextKES (KES c) ~ ()
       , VersionedProtocol (ServiceProtocol m c)
       , KESAlgorithm (KES c)
-      , DirectDeserialise m (SignKeyKES (KES c))
-      , DirectSerialise m (SignKeyKES (KES c))
+      , DirectDeserialise (SignKeyKES (KES c))
+      , DirectSerialise (SignKeyKES (KES c))
       , MonadMemoryEffects m
       ) => MonadKES m c
 
@@ -77,7 +77,7 @@ deriving anyclass instance {-# OVERLAPPING #-}
       , ContextKES (KES c) ~ ()
       , VersionedProtocol (ServiceProtocol m c)
       , KESAlgorithm (KES c)
-      , DirectDeserialise m (SignKeyKES (KES c))
-      , DirectSerialise m (SignKeyKES (KES c))
+      , DirectDeserialise (SignKeyKES (KES c))
+      , DirectSerialise (SignKeyKES (KES c))
       , MonadMemoryEffects m
       ) => MonadKES m c

@@ -25,7 +25,7 @@ import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Snocket (..) )
 
 import Control.Monad ( forever, void )
-import Control.Monad.Class.MonadThrow ( SomeException, bracket )
+import Control.Monad.Class.MonadThrow ( SomeException, bracket, catch )
 import Control.Monad.Class.MonadTimer ( threadDelay )
 import Control.Concurrent.Class.MonadMVar
 import Control.Tracer ( Tracer, traceWith )
@@ -45,7 +45,7 @@ data ServiceClientTrace
   = ServiceClientDriverTrace !ServiceDriverTrace
   | ServiceClientSocketClosed
   | ServiceClientConnected !String
-  | ServiceClientAttemptReconnect !Int !Int !String
+  | ServiceClientAttemptReconnect !Int !Int !String !String
   | ServiceClientReceivedKey
   | ServiceClientOpCertNumberCheck !Word64 !Word64
   | ServiceClientAbnormalTermination !String
@@ -58,6 +58,8 @@ instance Pretty ServiceClientTrace where
 
 -- | Run a Service Client indefinitely, restarting the connection once a
 -- session ends.
+-- In case of an abnormal session termination (via an exception), the exception
+-- is logged via the provided 'Tracer', and another connection attempt is made.
 runServiceClientForever :: forall c m fd addr
                          . (forall x y . Coercible x y => Coercible (m x) (m y))
                         => MonadKES m c
@@ -73,8 +75,13 @@ runServiceClientForever :: forall c m fd addr
                         -> m ()
 runServiceClientForever proxy mrb options handleKey tracer =
   forever $ do
-    runServiceClient proxy mrb options handleKey tracer
+    runServiceClient proxy mrb options handleKey tracer `catch` handle
     threadDelay 1000000
+  where
+    handle :: SomeException -> m ()
+    handle e = do
+      traceWith tracer $ ServiceClientAbnormalTermination (show e)
+      return ()
 
 -- | Run a single Service Client session. Once the peer closes the connection,
 -- return.
@@ -119,7 +126,8 @@ runServiceClient proxy mrb options handleKey tracer = do
       traceWith tracer ServiceClientSocketClosed
     )
     (\fd -> do
-      retrySocket (\(e :: SomeException) n i -> traceWith tracer $ ServiceClientAttemptReconnect n i (show e)) $
+      retrySocket (\(e :: SomeException) n i ->
+          traceWith tracer $ ServiceClientAttemptReconnect n i (show e) (show $ serviceClientAddress options)) $
         connect s fd (serviceClientAddress options)
       traceWith tracer $ ServiceClientConnected (show $ serviceClientAddress options)
       bearer <- getRawBearer mrb fd

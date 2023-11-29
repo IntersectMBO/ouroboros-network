@@ -137,8 +137,9 @@ instance (Monad m, IsSerItem m (SigDSIGN d)) => IsSerItem m (SignedDSIGN d a) wh
 
 instance ( MonadSTM m
          , MonadThrow m
-         , DirectSerialise m (SignKeyKES kes)
-         , DirectDeserialise m (SignKeyKES kes)
+         , MonadST m
+         , DirectSerialise (SignKeyKES kes)
+         , DirectDeserialise (SignKeyKES kes)
          , KESAlgorithm kes
          , HasSerInfo (SignKeyKES kes)
          ) => IsSerItem m (SignKeyKES kes) where
@@ -162,6 +163,7 @@ instance ( MonadSTM m
 
 instance ( MonadST m
          , MonadSTM m
+         , MonadST m
          , MonadThrow m
          , KESAlgorithm kes
          , HasSerInfo (VerKeyKES kes)
@@ -380,8 +382,8 @@ instance ( forall a b. Coercible a b => Coercible (m a) (m b)
          , MonadMVar m
          , IsSerItem m (SignKeyKES (KES c))
          , IsSerItem m (VerKeyKES (KES c))
-         , DirectSerialise m (SignKeyKES (KES c))
-         , DirectDeserialise m (SignKeyKES (KES c))
+         , DirectSerialise (SignKeyKES (KES c))
+         , DirectDeserialise (SignKeyKES (KES c))
          , Typeable c
          , Crypto c
          , KESAlgorithm (KES c)
