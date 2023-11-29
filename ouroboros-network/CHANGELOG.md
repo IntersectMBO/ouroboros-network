@@ -8,6 +8,9 @@
 ### Non-breaking changes
 
 * Fix random selection of peers to peershare with.
+* Reduce peersharing retry from 1h to 15m.
+* Delay peersharing with newly established peers until they have been around
+  for 5 minutes.
 
 ## 0.10.0.1 -- 2023-11-16
 
