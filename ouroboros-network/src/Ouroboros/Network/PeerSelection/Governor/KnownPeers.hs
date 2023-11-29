@@ -130,7 +130,7 @@ belowTarget actions
                              Set.\\ inProgressDemoteToCold
     -- Only ask peers which have the correct willingness permission flags
     canAsk                   =
-      KnownPeers.getAvailablePeerSharingPeers availableForPeerShare knownPeers
+      KnownPeers.getPeerSharingRequestPeers availableForPeerShare knownPeers
 
 
 jobPeerShare :: forall m peeraddr peerconn.

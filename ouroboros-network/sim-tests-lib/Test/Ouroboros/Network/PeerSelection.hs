@@ -1305,7 +1305,7 @@ prop_governor_target_known_2_opportunity_taken env =
         govAvailableEstablishedPeersSig =
           selectGovState
             (\x ->
-              KnownPeers.getAvailablePeerSharingPeers
+              KnownPeers.getPeerSharingRequestPeers
                 (EstablishedPeers.availableForPeerShare
                                     (Governor.establishedPeers x)
                 Set.\\ (Governor.inProgressDemoteToCold x))

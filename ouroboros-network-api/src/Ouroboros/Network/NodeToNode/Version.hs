@@ -211,32 +211,20 @@ nodeToNodeCodecCBORTerm version
               ]
 
         decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
+        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt _, CBOR.TBool query])
           | x >= 0
           , x <= 0xffffffff
-          , peerSharing >= 0
-          , peerSharing <= 2
-            -- This means if an older version node with
-            -- NodeToNodeV_{11,12} talks with a >NodeToNodeV_13
-            -- one it will map PeerSharingPrivate to PeerSharingDisabled
-          , Just ps <- case peerSharing of
-                        0 -> Just PeerSharingDisabled
-                        1 -> Just PeerSharingDisabled
-                        2 -> Just PeerSharingEnabled
-                        _ -> Nothing
           = Right
               NodeToNodeVersionData {
                   networkMagic = NetworkMagic (fromIntegral x),
                   diffusionMode = if diffusionMode
                                   then InitiatorOnlyDiffusionMode
                                   else InitiatorAndResponderDiffusionMode,
-                  peerSharing = ps,
+                  peerSharing = PeerSharingDisabled,
                   query = query
                 }
           | x < 0 || x > 0xffffffff
           = Left $ T.pack $ "networkMagic out of bound: " <> show x
-          | otherwise -- peerSharing < 0 || peerSharing > 2
-          = Left $ T.pack $ "Either peerSharing is out of bound: " <> show peerSharing
         decodeTerm _ t
           = Left $ T.pack $ "unknown encoding: " ++ show t
      in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }

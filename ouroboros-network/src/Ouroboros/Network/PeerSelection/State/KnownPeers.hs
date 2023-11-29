@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -27,7 +28,10 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
   , availableToConnect
     -- ** Selecting peers to ask
   , canPeerShareRequest
-  , getAvailablePeerSharingPeers
+  , getPeerSharingRequestPeers
+    -- * Selecting peers to share
+  , canSharePeers
+  , getPeerSharingResponsePeers
     -- ** Filtering ledger peers
   , isKnownLedgerPeer
   ) where
@@ -378,7 +382,7 @@ setConnectTimes times
 --
 
 -- Only make Peer Share requests to peers which wish to participate in
--- PeerSharing, i.e. have non-'NoPeerSharing' PeerSharing values.
+-- PeerSharing, i.e. have non-'NoPeerSharing' 'PeerSharing' values.
 --
 canPeerShareRequest :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canPeerShareRequest pa KnownPeers { allPeers } =
@@ -386,15 +390,37 @@ canPeerShareRequest pa KnownPeers { allPeers } =
     Just (KnownPeerInfo _ _ PeerSharingEnabled _ _) -> True
     _                                               -> False
 
--- Filter available for Peer Sharing peers according to their PeerSharing
--- information
+-- Only share peers which are allowed to be advertised, i.e. have
+-- 'DoAdvertisePeer' 'PeerAdvertise' values.
 --
-getAvailablePeerSharingPeers :: Ord peeraddr
-                             => Set peeraddr
-                             -> KnownPeers peeraddr
-                             -> Set peeraddr
-getAvailablePeerSharingPeers availableForPeerShare knownPeers =
+canSharePeers :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
+canSharePeers pa KnownPeers { allPeers } =
+  case Map.lookup pa allPeers of
+    Just (KnownPeerInfo _ _ _ DoAdvertisePeer _) -> True
+    _                                            -> False
+
+-- | Filter peers available for Peer Sharing requests, according to their
+-- 'PeerSharing' information
+--
+getPeerSharingRequestPeers :: Ord peeraddr
+                           => Set peeraddr
+                           -> KnownPeers peeraddr
+                           -> Set peeraddr
+getPeerSharingRequestPeers availableForPeerShare knownPeers =
   Set.filter (`canPeerShareRequest` knownPeers) availableForPeerShare
+
+-- | Filter peers available for Peer Sharing replies, according to their
+-- 'PeerAdvertise' information
+--
+getPeerSharingResponsePeers :: KnownPeers peeraddr
+                            -> Set peeraddr
+getPeerSharingResponsePeers knownPeers =
+    Map.keysSet
+  $ Map.filter (\case
+                  KnownPeerInfo _ _ _ DoAdvertisePeer _ -> True
+                  _                                     -> False
+               )
+  $ allPeers knownPeers
 
 
 ---------------------------------

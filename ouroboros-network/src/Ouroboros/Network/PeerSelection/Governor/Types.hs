@@ -456,16 +456,12 @@ emptyPublicPeerSelectionState =
 -- Peer Sharing mechanisms so we can know about which peers are available and
 -- possibly other needed context.
 --
-toPublicState :: Ord peeraddr
-              => PeerSelectionState peeraddr peerconn
+toPublicState :: PeerSelectionState peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
 toPublicState PeerSelectionState { knownPeers
-                                 , establishedPeers
                                  } =
    PublicPeerSelectionState {
-     availableToShare =
-         Set.filter (`KnownPeers.canPeerShareRequest` knownPeers)
-       $ EstablishedPeers.availableForPeerShare establishedPeers
+     availableToShare = KnownPeers.getPeerSharingResponsePeers knownPeers
    }
 
 -- Peer selection counters.
