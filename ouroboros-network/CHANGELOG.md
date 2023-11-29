@@ -7,7 +7,9 @@
 
 ### Non-breaking changes
 
-* Fix random selection of peers to peershare with.
+* Fix random selection of peers to peer share with.
+* Fix asynchronous demotions to `Cold` (`CoolingToCold`) not being noticed, hence
+  making peers stay in the `inProgressDemotedToCold` set forever.
 
 ## 0.10.0.1 -- 2023-11-16
 

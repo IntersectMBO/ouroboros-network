@@ -149,6 +149,8 @@ tests =
                  prop_diffusion_ig_valid_transition_order
   , testProperty "cm & ig timeouts enforced"
                  prop_diffusion_timeouts_enforced
+  , testProperty "any Cold async demotion"
+                 prop_track_coolingToCold_demotions
   , testProperty "unit #4177" unit_4177
 #endif
 #if !defined(mingw32_HOST_OS)
@@ -434,6 +436,118 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
             ]
           )
         ]
+
+
+-- | Attempt to reproduce local root disconnect bug
+--
+-- Configure relay A to have relay B as localroot peer.
+-- Start relay B then start relay A.
+-- Verify that the relay A is connected to relay B.
+-- Then just restart relay B.
+-- The connection will never be re-established again.
+--
+prop_track_coolingToCold_demotions :: AbsBearerInfo
+                                   -> DiffusionScript
+                                   -> Property
+prop_track_coolingToCold_demotions defaultBearerInfo diffScript =
+
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
+                                diffScript
+                                iosimTracer
+
+      events :: [Events DiffusionTestTrace]
+      events = fmap ( Signal.eventsFromList
+                    . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                    )
+             . Trace.toList
+             . splitWithNameTrace
+             . Trace.fromList ()
+             . fmap snd
+             . Signal.eventsToList
+             . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+             . Trace.toList
+             . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . traceFromList
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 125000
+             . traceEvents
+             $ runSimTrace sim
+
+     in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_coolingToColdDemotions ev
+        )
+      <$> events
+
+  where
+    verify_coolingToColdDemotions :: Events DiffusionTestTrace -> Property
+    verify_coolingToColdDemotions events =
+      let govInProgressDemoteToCold :: Signal (Set NtNAddr)
+          govInProgressDemoteToCold =
+            selectDiffusionPeerSelectionState
+              Governor.inProgressDemoteToCold
+              events
+
+
+          trJoinKillSig :: Signal JoinedOrKilled
+          trJoinKillSig =
+              Signal.fromChangeEvents Killed -- Default to TrKillingNode
+            . Signal.selectEvents
+                (\case TrJoiningNetwork -> Just Joined
+                       TrKillingNode    -> Just Killed
+                       _                -> Nothing
+                )
+            . selectDiffusionSimulationTrace
+            $ events
+
+          -- Signal.keyedUntil receives 2 functions one that sets start of the
+          -- set signal, one that ends it and another that stops all.
+          --
+          -- In this particular case we want a signal that is keyed beginning
+          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
+          -- with the periods when a node was alive.
+          trIsNodeAlive :: Signal Bool
+          trIsNodeAlive =
+                not . Set.null
+            <$> Signal.keyedUntil (fromJoinedOrKilled (Set.singleton ())
+                                                      Set.empty)
+                                  (fromJoinedOrKilled Set.empty
+                                                      (Set.singleton ()))
+                                  (const False)
+                                  trJoinKillSig
+
+          govInProgressDemoteToColdWhileAlive :: Signal (Maybe (Set NtNAddr))
+          govInProgressDemoteToColdWhileAlive =
+            (\isAlive inProgressDemoteToCold ->
+              if isAlive then Just inProgressDemoteToCold
+                         else Nothing
+            ) <$> trIsNodeAlive
+              <*> govInProgressDemoteToCold
+
+          decreasing []  = True
+          decreasing [_] = True
+          decreasing (x : y : t)
+            | x > y     = decreasing (y : t)
+            | otherwise = False
+
+       in property
+        . decreasing
+        . dropWhile (== 0)
+        . mapMaybe (fmap length . snd)
+        . Signal.eventsToList
+        . Signal.toChangeEvents
+        $ Signal.stable
+        $ govInProgressDemoteToColdWhileAlive
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
 --
