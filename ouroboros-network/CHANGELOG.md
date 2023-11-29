@@ -10,6 +10,9 @@
 * Fix random selection of peers to peer share with.
 * Fix asynchronous demotions to `Cold` (`CoolingToCold`) not being noticed, hence
   making peers stay in the `inProgressDemotedToCold` set forever.
+* Fixed bug where peers with 'DoNotAdvertisePeer' flag were being shared
+* Fixed peer sharing pool of peers to be shared being confused with the pool
+  of peers to request to.
 
 ## 0.10.0.1 -- 2023-11-16
 
