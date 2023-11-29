@@ -72,7 +72,7 @@ belowTargetLocal :: forall peeraddr peerconn m.
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetLocal actions
-                 PeerSelectionPolicy {
+                 policy@PeerSelectionPolicy {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
@@ -128,7 +128,7 @@ belowTargetLocal actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions peer IsNotBigLedgerPeer
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -168,7 +168,7 @@ belowTargetOther :: forall peeraddr peerconn m.
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetOther actions
-                 PeerSelectionPolicy {
+                 policy@PeerSelectionPolicy {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
@@ -218,7 +218,7 @@ belowTargetOther actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions peer IsNotBigLedgerPeer
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -246,7 +246,7 @@ belowTargetBigLedgerPeers :: forall peeraddr peerconn m.
                           => PeerSelectionActions peeraddr peerconn m
                           -> MkGuardedDecision peeraddr peerconn m
 belowTargetBigLedgerPeers actions
-                          PeerSelectionPolicy {
+                          policy@PeerSelectionPolicy {
                             policyPickColdPeersToPromote
                           }
                           st@PeerSelectionState {
@@ -297,7 +297,7 @@ belowTargetBigLedgerPeers actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions peer IsBigLedgerPeer
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -337,13 +337,16 @@ maxColdPeerRetryBackoff = 5
 jobPromoteColdPeer :: forall peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
                    => PeerSelectionActions peeraddr peerconn m
+                   -> PeerSelectionPolicy peeraddr m
                    -> peeraddr
                    -> IsBigLedgerPeer
                    -> Job () m (Completion m peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing
-                   } peeraddr isBigLedgerPeer =
+                   }
+                   PeerSelectionPolicy { policyPeerShareActivationDelay }
+                   peeraddr isBigLedgerPeer =
     Job job handler () "promoteColdPeer"
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
@@ -412,8 +415,9 @@ jobPromoteColdPeer PeerSelectionActions {
                                            targetNumberOfEstablishedBigLedgerPeers
                                          }
                              }
-                             _now ->
+                             now ->
         let establishedPeers' = EstablishedPeers.insert peeraddr peerconn
+                                                        (addTime policyPeerShareActivationDelay now)
                                                         establishedPeers
             -- Update PeerSharing value in KnownPeers
             knownPeers'       = KnownPeers.insert (Map.singleton peeraddr (Just peerSharing, Nothing, Nothing))
