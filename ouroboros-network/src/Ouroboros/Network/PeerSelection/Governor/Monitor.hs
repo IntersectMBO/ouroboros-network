@@ -151,9 +151,7 @@ connections PeerSelectionActions{
       -- Get previously cooling peers
       monitorStatus <- traverse monitorPeerConnection
                                 (EstablishedPeers.toMap establishedPeers)
-          -- filter previously cooling peers from the demotion sets
       let demotions = asynchronousDemotions monitorStatus
-                      `Map.withoutKeys` inProgressDemoteToCold
       check (not (Map.null demotions))
       let (demotedToWarm, demotedToCoolingOrCold) = Map.partition ((==PeerWarm) . fst) demotions
           (demotedToCold, demotedToCooling) = Map.partition ((==PeerCold) . fst) demotedToCoolingOrCold
@@ -299,7 +297,8 @@ connections PeerSelectionActions{
     asyncDemotion peeraddr (PeerCold, returnCommand)
       | peeraddr `EstablishedPeers.member` establishedPeers || peeraddr `Set.member` activePeers
       , peeraddr `Set.notMember` inProgressDemoteWarm
-      , peeraddr `Set.notMember` inProgressDemoteHot = Just (PeerCold, returnCommand)
+      , peeraddr `Set.notMember` inProgressDemoteHot
+      , peeraddr `Set.member` inProgressDemoteToCold = Just (PeerCold, returnCommand)
 
     asyncDemotion _        _                          = Nothing
 
