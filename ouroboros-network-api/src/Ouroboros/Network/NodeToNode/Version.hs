@@ -157,7 +157,7 @@ nodeToNodeCodecCBORTerm version
   | version >= NodeToNodeV_13 =
     let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
         encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
-          = CBOR.TList $
+          = CBOR.TList
               [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
               , CBOR.TBool (case diffusionMode of
                              InitiatorOnlyDiffusionMode         -> True
@@ -168,8 +168,8 @@ nodeToNodeCodecCBORTerm version
               , CBOR.TBool query
               ]
 
-        decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
+        decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
+        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
           | x >= 0
           , x <= 0xffffffff
           , Just ps <- case peerSharing of
@@ -189,9 +189,9 @@ nodeToNodeCodecCBORTerm version
           = Left $ T.pack $ "networkMagic out of bound: " <> show x
           | otherwise -- peerSharing < 0 || peerSharing > 1
           = Left $ T.pack $ "peerSharing is out of bound: " <> show peerSharing
-        decodeTerm _ t
+        decodeTerm t
           = Left $ T.pack $ "unknown encoding: " ++ show t
-     in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
+     in CodecCBORTerm { encodeTerm, decodeTerm }
   | version >= NodeToNodeV_11
   , version <= NodeToNodeV_12 =
     let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
@@ -210,8 +210,8 @@ nodeToNodeCodecCBORTerm version
               , CBOR.TBool query
               ]
 
-        decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt _, CBOR.TBool query])
+        decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
+        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt _, CBOR.TBool query])
           | x >= 0
           , x <= 0xffffffff
           = Right
@@ -225,21 +225,21 @@ nodeToNodeCodecCBORTerm version
                 }
           | x < 0 || x > 0xffffffff
           = Left $ T.pack $ "networkMagic out of bound: " <> show x
-        decodeTerm _ t
+        decodeTerm t
           = Left $ T.pack $ "unknown encoding: " ++ show t
-     in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
+     in CodecCBORTerm { encodeTerm, decodeTerm }
   | otherwise =
     let encodeTerm :: NodeToNodeVersionData -> CBOR.Term
         encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode }
-          = CBOR.TList $
+          = CBOR.TList
                   [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
                   , CBOR.TBool (case diffusionMode of
                                  InitiatorOnlyDiffusionMode         -> True
                                  InitiatorAndResponderDiffusionMode -> False)
                   ]
 
-        decodeTerm :: NodeToNodeVersion -> CBOR.Term -> Either Text NodeToNodeVersionData
-        decodeTerm _ (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode])
+        decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
+        decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode])
           | x >= 0
           , x <= 0xffffffff
           = Right
@@ -255,9 +255,9 @@ nodeToNodeCodecCBORTerm version
                 }
           | otherwise
           = Left $ T.pack $ "networkMagic out of bound: " <> show x
-        decodeTerm _ t
+        decodeTerm t
           = Left $ T.pack $ "unknown encoding: " ++ show t
-     in CodecCBORTerm {encodeTerm, decodeTerm = decodeTerm version }
+     in CodecCBORTerm { encodeTerm, decodeTerm }
 
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
