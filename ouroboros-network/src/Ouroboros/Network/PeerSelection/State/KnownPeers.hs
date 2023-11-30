@@ -175,7 +175,17 @@ member :: Ord peeraddr
 member peeraddr KnownPeers {allPeers} =
     peeraddr `Map.member` allPeers
 
--- TODO: `insert` ought to be idempotent, see issue #4616.
+-- | This inserts a map of peers with its respective peer sharing, peer
+-- advertise and ledger flags into the known peers set.
+--
+-- Please note that if in the map there's an entry for a peer already present
+-- in the known peers set, then its values will only be overwritten if they
+-- are a 'Just'. Otherwise the current information will be preserved. On the
+-- other hand if there's an entry for a peer that isn't a member of the known
+-- peer set, the 'Nothing' values will default to 'NoPeerSharing',
+-- 'DoNotAdvertisePeer' and 'IsNotLedgerPeer', respectively, unless a 'Just'
+-- value is used.
+--
 insert :: Ord peeraddr
        => Map peeraddr (Maybe PeerSharing, Maybe PeerAdvertise, Maybe IsLedgerPeer)
        -> KnownPeers peeraddr
@@ -187,40 +197,31 @@ insert peeraddrs
        } =
     let allPeersAddrs = Map.keysSet peeraddrs
         knownPeers' = knownPeers {
-          allPeers =
-              let (<+>) = Map.unionWith mergePeerInfo in
-              allPeers
-          <+> Map.map newPeerInfo peeraddrs,
-
+          allPeers = Map.foldlWithKey' (\m peer v -> Map.alter (alterPeerInfo v) peer m)
+                                       allPeers
+                                       peeraddrs,
           availableToConnect =
               availableToConnect
            <> Set.filter (`Map.notMember` allPeers) allPeersAddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeerInfo (peerSharing, peerAdvertise, ledgerPeers) =
-      let peerAdvertise' = fromMaybe DoNotAdvertisePeer peerAdvertise
-          peerSharing'   = fromMaybe PeerSharingDisabled peerSharing
-       in KnownPeerInfo {
-        knownPeerFailCount = 0
-      , knownPeerTepid     = False
-      , knownPeerSharing   = peerSharing'
-      , knownPeerAdvertise = peerAdvertise'
-      , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
-      }
-    mergePeerInfo old new =
-      KnownPeerInfo {
-        knownPeerFailCount = knownPeerFailCount old
-      , knownPeerTepid     = knownPeerTepid old
-      -- It might be the case we are updating a peer's particular willingness
-      -- flags or we just learned this peer comes from ledger.
-      , knownPeerSharing   = knownPeerSharing new
-      , knownPeerAdvertise = knownPeerAdvertise new
-      -- Preserve Ledger Peer information if the peer is ledger.
-      , knownLedgerPeer    = case knownLedgerPeer old of
-                               IsLedgerPeer    -> IsLedgerPeer
-                               IsNotLedgerPeer -> knownLedgerPeer new
-      }
+    alterPeerInfo (peerSharing, peerAdvertise, ledgerPeers) peerLookupResult =
+      case peerLookupResult of
+        Nothing -> Just $
+          KnownPeerInfo {
+            knownPeerFailCount = 0
+          , knownPeerTepid     = False
+          , knownPeerSharing   = fromMaybe PeerSharingDisabled peerSharing
+          , knownPeerAdvertise = fromMaybe DoNotAdvertisePeer peerAdvertise
+          , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
+          }
+        Just kpi -> Just $
+          kpi {
+            knownPeerSharing   = fromMaybe (knownPeerSharing kpi) peerSharing
+          , knownPeerAdvertise = fromMaybe (knownPeerAdvertise kpi) peerAdvertise
+          , knownLedgerPeer    = fromMaybe (knownLedgerPeer kpi) ledgerPeers
+          }
 
 delete :: Ord peeraddr
        => Set peeraddr
