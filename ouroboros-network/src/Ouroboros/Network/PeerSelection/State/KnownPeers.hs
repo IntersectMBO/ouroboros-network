@@ -22,6 +22,7 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
   , lookupTepidFlag
   , setTepidFlag
   , clearTepidFlag
+  , setSuccessfulConnectionFlag
     -- ** Tracking when we can (re)connect
   , minConnectTime
   , setConnectTimes
@@ -93,7 +94,7 @@ data KnownPeerInfo = KnownPeerInfo {
        -- It is used to implement the exponential backoff strategy and may also
        -- be used by policies to select peers to forget.
        --
-       knownPeerFailCount :: !Int,
+       knownPeerFailCount        :: !Int,
 
        -- | Indicates if the peer was hot but then got demoted.
        --
@@ -104,7 +105,7 @@ data KnownPeerInfo = KnownPeerInfo {
        -- It is also used as useful information for the Peer Selection Governor
        -- when deciding which peers to share when Peer Sharing.
        --
-       knownPeerTepid     :: !Bool,
+       knownPeerTepid            :: !Bool,
 
        -- | Indicates current remote Peer Willingness information.
        --
@@ -113,7 +114,7 @@ data KnownPeerInfo = KnownPeerInfo {
        --
        -- It is used by the Peer Sharing logic to decide if we should share/ask
        -- about/to this peer's address to others.
-       knownPeerSharing   :: !PeerSharing,
+       knownPeerSharing          :: !PeerSharing,
 
        -- | Indicates current local Peer Willingness information.
        --
@@ -122,7 +123,7 @@ data KnownPeerInfo = KnownPeerInfo {
        --
        -- It is used by the Peer Sharing logic to decide if we should share
        -- about this peer's address to others.
-       knownPeerAdvertise :: !PeerAdvertise,
+       knownPeerAdvertise        :: !PeerAdvertise,
 
        -- | Indicates if peer came from ledger.
        --
@@ -130,7 +131,16 @@ data KnownPeerInfo = KnownPeerInfo {
        -- reply, since ledger peers are not particularly what one is looking for
        -- in a Peer Sharing reply.
        --
-       knownLedgerPeer    :: !IsLedgerPeer
+       knownLedgerPeer           :: !IsLedgerPeer,
+
+       -- | Indicates if the node managed to connect to the peer at some point
+       -- in time.
+       --
+       -- This differs from the tepid flag in a way that this flag will be
+       -- set/enabled if we established a successful connection with this
+       -- peer. It won't be unset after this.
+       --
+       knownSuccessfulConnection :: !Bool
      }
   deriving (Eq, Show)
 
@@ -215,6 +225,7 @@ insert peeraddrs
           , knownPeerSharing   = fromMaybe PeerSharingDisabled peerSharing
           , knownPeerAdvertise = fromMaybe DoNotAdvertisePeer peerAdvertise
           , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
+          , knownSuccessfulConnection = False
           }
         Just kpi -> Just $
           kpi {
@@ -324,6 +335,17 @@ setTepidFlag' val peeraddr knownPeers@KnownPeers{allPeers} =
                               peeraddr allPeers
                }
 
+setSuccessfulConnectionFlag' :: Ord peeraddr
+                             => Bool
+                             -> peeraddr
+                             -> KnownPeers peeraddr
+                             -> KnownPeers peeraddr
+setSuccessfulConnectionFlag' val peeraddr knownPeers@KnownPeers{allPeers} =
+    assert (peeraddr `Map.member` allPeers) $
+    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownSuccessfulConnection = val })
+                              peeraddr allPeers
+               }
+
 clearTepidFlag :: Ord peeraddr
              => peeraddr
              -> KnownPeers peeraddr
@@ -335,6 +357,12 @@ setTepidFlag :: Ord peeraddr
              -> KnownPeers peeraddr
              -> KnownPeers peeraddr
 setTepidFlag = setTepidFlag' True
+
+setSuccessfulConnectionFlag :: Ord peeraddr
+                            => peeraddr
+                            -> KnownPeers peeraddr
+                            -> KnownPeers peeraddr
+setSuccessfulConnectionFlag = setSuccessfulConnectionFlag' True
 
 -----------------------------------
 -- Tracking when we can (re)connect
@@ -388,8 +416,10 @@ setConnectTimes times
 canPeerShareRequest :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canPeerShareRequest pa KnownPeers { allPeers } =
   case Map.lookup pa allPeers of
-    Just (KnownPeerInfo _ _ PeerSharingEnabled _ _) -> True
-    _                                               -> False
+    Just KnownPeerInfo
+          { knownPeerSharing = PeerSharingEnabled
+          } -> True
+    _     -> False
 
 -- Only share peers which are allowed to be advertised, i.e. have
 -- 'DoAdvertisePeer' 'PeerAdvertise' values.
@@ -397,8 +427,11 @@ canPeerShareRequest pa KnownPeers { allPeers } =
 canSharePeers :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canSharePeers pa KnownPeers { allPeers } =
   case Map.lookup pa allPeers of
-    Just (KnownPeerInfo _ _ _ DoAdvertisePeer _) -> True
-    _                                            -> False
+    Just KnownPeerInfo
+          { knownPeerAdvertise        = DoAdvertisePeer
+          , knownSuccessfulConnection = True
+          } -> True
+    _     -> False
 
 -- | Filter peers available for Peer Sharing requests, according to their
 -- 'PeerSharing' information
@@ -418,8 +451,11 @@ getPeerSharingResponsePeers :: KnownPeers peeraddr
 getPeerSharingResponsePeers knownPeers =
     Map.keysSet
   $ Map.filter (\case
-                  KnownPeerInfo _ _ _ DoAdvertisePeer _ -> True
-                  _                                     -> False
+                  KnownPeerInfo
+                    { knownPeerAdvertise        = DoAdvertisePeer
+                    , knownSuccessfulConnection = True
+                    } -> True
+                  _   -> False
                )
   $ allPeers knownPeers
 

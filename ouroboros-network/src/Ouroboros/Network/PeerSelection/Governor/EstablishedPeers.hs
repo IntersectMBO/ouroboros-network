@@ -24,6 +24,9 @@ import           System.Random (randomR)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (IsBigLedgerPeer (..))
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
@@ -419,8 +422,16 @@ jobPromoteColdPeer PeerSelectionActions {
         let establishedPeers' = EstablishedPeers.insert peeraddr peerconn
                                                         (addTime policyPeerShareActivationDelay now)
                                                         establishedPeers
+            advertise = case peerSharing of
+                          PeerSharingEnabled  -> DoAdvertisePeer
+                          PeerSharingDisabled -> DoNotAdvertisePeer
             -- Update PeerSharing value in KnownPeers
-            knownPeers'       = KnownPeers.insert (Map.singleton peeraddr (Just peerSharing, Nothing, Nothing))
+            knownPeers'       = KnownPeers.insert (Map.singleton peeraddr ( Just peerSharing
+                                                                          , newDefaultValue peeraddr
+                                                                                            advertise
+                                                                                            knownPeers
+                                                                          , Nothing))
+                              $ KnownPeers.setSuccessfulConnectionFlag peeraddr
                               $ KnownPeers.clearTepidFlag peeraddr $
                                     KnownPeers.resetFailCount
                                         peeraddr
