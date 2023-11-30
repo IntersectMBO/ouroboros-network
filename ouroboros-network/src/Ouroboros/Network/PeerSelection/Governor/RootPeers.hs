@@ -12,7 +12,6 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
@@ -115,9 +114,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
                                        `Map.withoutKeys` bigLedgerPeers st
             publicRootPeers' = publicRootPeers st <> Map.keysSet newPeers
             knownPeers'      = KnownPeers.insert
-                                 -- When we don't know about the PeerSharing information
-                                 -- we default to NoPeerSharing
-                                 (Map.map (\(a, b) -> (Just PeerSharingDisabled, Just a, Just b)) newPeers)
+                                 (Map.map (\(a, b) -> (Nothing, Just a, Just b)) newPeers)
                                  (knownPeers st)
 
             -- We got a successful response to our request, but if we're still
