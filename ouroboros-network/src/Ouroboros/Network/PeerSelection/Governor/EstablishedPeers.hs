@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -425,11 +426,18 @@ jobPromoteColdPeer PeerSelectionActions {
                           PeerSharingEnabled  -> DoAdvertisePeer
                           PeerSharingDisabled -> DoNotAdvertisePeer
             -- Update PeerSharing value in KnownPeers
-            knownPeers'       = KnownPeers.insert (Map.singleton peeraddr ( Just peerSharing
-                                                                          , newDefaultValue peeraddr
-                                                                                            advertise
-                                                                                            knownPeers
-                                                                          , Nothing))
+            knownPeers'       = KnownPeers.alter
+                                  (\x -> case x of
+                                    Nothing ->
+                                      KnownPeers.alterKnownPeerInfo
+                                        (Just peerSharing, Just advertise, Nothing)
+                                        x
+                                    Just _ ->
+                                      KnownPeers.alterKnownPeerInfo
+                                        (Just peerSharing, Nothing, Nothing)
+                                        x
+                                  )
+                                  (Set.singleton peeraddr)
                               $ KnownPeers.setSuccessfulConnectionFlag peeraddr
                               $ KnownPeers.clearTepidFlag peeraddr $
                                     KnownPeers.resetFailCount
