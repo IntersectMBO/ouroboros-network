@@ -42,8 +42,6 @@ module Ouroboros.Network.PeerSelection.Governor.Types
     -- * Traces
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
-    -- * Auxiliary function
-  , newDefaultValue
   ) where
 
 import           Data.Cache (Cache (..))
@@ -922,20 +920,4 @@ deriving instance (Ord peeraddr, Show peeraddr)
 
 data ChurnMode = ChurnModeBulkSync
                | ChurnModeNormal deriving Show
-
-
--- | Auxiliary function to set a different default value in case the peer is
--- not a member of the known peers set.
---
--- This function is useful to use with KnownPeers.insert function, in the
--- special cases of inbound peers and peer share result peers.
---
-newDefaultValue :: Ord peeraddr
-                => peeraddr
-                -> v
-                -> KnownPeers peeraddr
-                -> Maybe v
-newDefaultValue a value knownPeers
-  | KnownPeers.member a knownPeers = Nothing
-  | otherwise                      = Just value
 

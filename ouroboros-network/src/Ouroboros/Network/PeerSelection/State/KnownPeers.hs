@@ -7,10 +7,13 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
   ( -- * Types
     KnownPeers
   , invariant
+    -- * KnownPeerInfo operations
+  , alterKnownPeerInfo
     -- * Basic container operations
   , empty
   , size
   , insert
+  , alter
   , delete
   , toSet
   , member
@@ -160,6 +163,32 @@ invariant KnownPeers{..} =
 
 
 -------------------------------
+-- KnownPeerInfo manipulation
+--
+
+alterKnownPeerInfo
+  :: (Maybe PeerSharing, Maybe PeerAdvertise, Maybe IsLedgerPeer)
+  -> Maybe KnownPeerInfo
+  -> Maybe KnownPeerInfo
+alterKnownPeerInfo (peerSharing, peerAdvertise, ledgerPeers) peerLookupResult =
+  case peerLookupResult of
+    Nothing -> Just $
+      KnownPeerInfo {
+        knownPeerFailCount = 0
+      , knownPeerTepid     = False
+      , knownPeerSharing   = fromMaybe PeerSharingDisabled peerSharing
+      , knownPeerAdvertise = fromMaybe DoNotAdvertisePeer peerAdvertise
+      , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
+      , knownSuccessfulConnection = False
+      }
+    Just kpi -> Just $
+      kpi {
+        knownPeerSharing   = fromMaybe (knownPeerSharing kpi) peerSharing
+      , knownPeerAdvertise = fromMaybe (knownPeerAdvertise kpi) peerAdvertise
+      , knownLedgerPeer    = fromMaybe (knownLedgerPeer kpi) ledgerPeers
+      }
+
+-------------------------------
 -- Basic container operations
 --
 
@@ -207,7 +236,7 @@ insert peeraddrs
        } =
     let allPeersAddrs = Map.keysSet peeraddrs
         knownPeers' = knownPeers {
-          allPeers = Map.foldlWithKey' (\m peer v -> Map.alter (alterPeerInfo v) peer m)
+          allPeers = Map.foldlWithKey' (\m peer v -> Map.alter (alterKnownPeerInfo v) peer m)
                                        allPeers
                                        peeraddrs,
           availableToConnect =
@@ -215,24 +244,34 @@ insert peeraddrs
            <> Set.filter (`Map.notMember` allPeers) allPeersAddrs
         }
     in assert (invariant knownPeers') knownPeers'
-  where
-    alterPeerInfo (peerSharing, peerAdvertise, ledgerPeers) peerLookupResult =
-      case peerLookupResult of
-        Nothing -> Just $
-          KnownPeerInfo {
-            knownPeerFailCount = 0
-          , knownPeerTepid     = False
-          , knownPeerSharing   = fromMaybe PeerSharingDisabled peerSharing
-          , knownPeerAdvertise = fromMaybe DoNotAdvertisePeer peerAdvertise
-          , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
-          , knownSuccessfulConnection = False
-          }
-        Just kpi -> Just $
-          kpi {
-            knownPeerSharing   = fromMaybe (knownPeerSharing kpi) peerSharing
-          , knownPeerAdvertise = fromMaybe (knownPeerAdvertise kpi) peerAdvertise
-          , knownLedgerPeer    = fromMaybe (knownLedgerPeer kpi) ledgerPeers
-          }
+
+alter :: Ord peeraddr
+      => (Maybe KnownPeerInfo -> Maybe KnownPeerInfo)
+      -> Set peeraddr
+      -> KnownPeers peeraddr
+      -> KnownPeers peeraddr
+alter f ks knownPeers@KnownPeers {
+            allPeers = allPeers
+          , availableToConnect = availableToConnect
+          , nextConnectTimes
+          } =
+  let newAllPeers =
+        Set.foldl' (\acc k -> Map.alter f k acc)
+                   allPeers
+                   ks
+      deletedPeers =
+        Set.filter (`Map.notMember` newAllPeers) ks
+      newAvailableToConnect =
+        (availableToConnect <> ks)
+        `Set.difference`
+        deletedPeers
+      newNextConnectTimes =
+        Set.foldl' (flip PSQ.delete) nextConnectTimes ks
+   in knownPeers {
+        allPeers           = newAllPeers
+      , availableToConnect = newAvailableToConnect
+      , nextConnectTimes   = newNextConnectTimes
+      }
 
 delete :: Ord peeraddr
        => Set peeraddr
@@ -335,14 +374,13 @@ setTepidFlag' val peeraddr knownPeers@KnownPeers{allPeers} =
                               peeraddr allPeers
                }
 
-setSuccessfulConnectionFlag' :: Ord peeraddr
-                             => Bool
-                             -> peeraddr
+setSuccessfulConnectionFlag :: Ord peeraddr
+                             => peeraddr
                              -> KnownPeers peeraddr
                              -> KnownPeers peeraddr
-setSuccessfulConnectionFlag' val peeraddr knownPeers@KnownPeers{allPeers} =
+setSuccessfulConnectionFlag peeraddr knownPeers@KnownPeers{allPeers} =
     assert (peeraddr `Map.member` allPeers) $
-    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownSuccessfulConnection = val })
+    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownSuccessfulConnection = True })
                               peeraddr allPeers
                }
 
@@ -357,12 +395,6 @@ setTepidFlag :: Ord peeraddr
              -> KnownPeers peeraddr
              -> KnownPeers peeraddr
 setTepidFlag = setTepidFlag' True
-
-setSuccessfulConnectionFlag :: Ord peeraddr
-                            => peeraddr
-                            -> KnownPeers peeraddr
-                            -> KnownPeers peeraddr
-setSuccessfulConnectionFlag = setSuccessfulConnectionFlag' True
 
 -----------------------------------
 -- Tracking when we can (re)connect
