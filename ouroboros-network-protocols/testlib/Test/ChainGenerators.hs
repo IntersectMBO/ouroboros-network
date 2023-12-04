@@ -46,6 +46,7 @@ import           Ouroboros.Network.Point (WithOrigin (..), block,
                      blockPointHash, blockPointSlot, fromWithOrigin, origin)
 import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
+import           Test.Cardano.Slotting.Arbitrary ()
 import           Test.QuickCheck
 import           Test.QuickCheck.Instances.ByteString ()
 import           Test.Tasty (TestTree, testGroup)
@@ -100,15 +101,6 @@ instance Arbitrary BlockNo where
                -- need some room, we're assuming we'll never wrap around 64bits
 
   shrink (BlockNo n) = [ BlockNo n' | n' <- shrink n, n' > 0 ]
-
-instance Arbitrary SlotNo where
-  arbitrary = SlotNo <$>
-                ((getPositive <$> arbitrary)
-                   `suchThat`
-                 (\n -> n < maxBound - 2^(32 :: Int)))
-               -- need some room, we're assuming we'll never wrap around 64bits
-
-  shrink (SlotNo n) = [ SlotNo n' | n' <- shrink n, n' > 0 ]
 
 instance Arbitrary ConcreteHeaderHash where
   arbitrary = HeaderHash <$> arbitrary
