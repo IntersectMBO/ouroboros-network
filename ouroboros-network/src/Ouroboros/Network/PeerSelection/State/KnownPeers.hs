@@ -493,33 +493,6 @@ getPeerSharingResponsePeers knownPeers =
 
 
 ---------------------------------
--- Selecting peers to advertise
---
-
--- | Select a random subset of the known peers that are available to publish.
---
--- The selection is done in such a way that when the same initial PRNG state is
--- used, the selected set does not significantly vary with small perturbations
--- in the set of published peers.
---
--- The intention of this selection method is that the selection should give
--- approximately the same replies to the same peers over the course of multiple
--- requests from the same peer. This is to deliberately slow the rate at which
--- peers can discover and map out the entire network.
---
-{-
-sampleAdvertisedPeers :: RandomGen prng
-                      => KnownPeers peeraddr
-                      -> prng
-                      -> Int
-                      -> [peeraddr]
-sampleAdvertisedPeers _ _ _ = []
--- idea is to generate a sequence of random numbers and map them to locations
--- in a relatively stable way, that's mostly insensitive to additions or
--- deletions
--}
-
----------------------------------
 -- Filter ledger peers
 --
 

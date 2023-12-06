@@ -123,6 +123,8 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        -- allowed to take
        policyPeerShareActivationDelay   :: !DiffTime,
        -- ^ Delay until we consider a peer suitable for peer sharing
+       policyPeerShareMaxPeers          :: !PeerSharingAmount,
+       -- ^ Maximum number of peers to respond with in a single request
 
        -- | Reconnection delay, passed from `ExitPolicy`.
        --
