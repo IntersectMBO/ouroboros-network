@@ -11,6 +11,7 @@
 * Made (light) peer sharing results advertisable unless already known
 * Peer sharing is now delayed for 5minutes for newly established peers.
 * `policyPeerShareRetryTime` to 900s
+* When churning split restoring known peers and established peers targets into
 
 ## 0.10.2.0 -- 2023-12-14
 

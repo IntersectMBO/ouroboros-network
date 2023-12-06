@@ -990,9 +990,7 @@ runM Interfaces
                 fuzzRng
                 publicStateVar
                 peerSelectionActions
-                (Diffusion.Policies.simplePeerSelectionPolicy
-                   policyRngVar (readTVar churnModeVar)
-                   daPeerMetrics (epErrorDelay exitPolicy)))
+                peerSelectionPolicy)
 
       --
       -- The peer churn governor:
@@ -1001,6 +999,7 @@ runM Interfaces
                                  dtTracePeerSelectionTracer
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
+                                 (policyPeerShareOverallTimeout peerSelectionPolicy)
                                  daPeerMetrics
                                  churnModeVar
                                  churnRng
