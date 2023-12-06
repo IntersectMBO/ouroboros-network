@@ -104,8 +104,9 @@ import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types
                      (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
                      PeerSelectionActions, PeerSelectionCounters (..),
-                     PeerStateActions, PublicPeerSelectionState (..),
-                     TracePeerSelection (..), emptyPublicPeerSelectionState)
+                     PeerSelectionPolicy (..), PeerStateActions,
+                     PublicPeerSelectionState (..), TracePeerSelection (..),
+                     emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface, TraceLedgerPeers,
                      UseLedgerAfter)
@@ -844,6 +845,10 @@ runM Interfaces
                 cmGetPeerSharing      = diNtnPeerSharing
               }
 
+      let peerSelectionPolicy = Diffusion.Policies.simplePeerSelectionPolicy
+                                  policyRngVar (readTVar churnModeVar)
+                                  daPeerMetrics (epErrorDelay exitPolicy)
+
       let makeConnectionHandler'
             :: forall muxMode socket initiatorCtx responderCtx b c.
                SingMuxMode muxMode
@@ -981,9 +986,7 @@ runM Interfaces
                 fuzzRng
                 publicStateVar
                 peerSelectionActions
-                (Diffusion.Policies.simplePeerSelectionPolicy
-                   policyRngVar (readTVar churnModeVar)
-                   daPeerMetrics (epErrorDelay exitPolicy)))
+                peerSelectionPolicy)
 
       --
       -- The peer churn governor:
@@ -992,6 +995,7 @@ runM Interfaces
                                  dtTracePeerSelectionTracer
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
+                                 (policyPeerShareOverallTimeout peerSelectionPolicy)
                                  daPeerMetrics
                                  churnModeVar
                                  churnRng

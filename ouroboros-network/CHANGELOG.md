@@ -13,6 +13,8 @@
 * The internal `Guarded` type changed.  It is provided with pattern synonyms
   which hide both `Min` and `FirstToFinish`.
 * Adds 'unit_reconnect' testnet test
+* When churning split restoring known peers and established peers targets into
+  two separate steps. 
 
 ## 0.10.2.2 -- 2023-12-15
 

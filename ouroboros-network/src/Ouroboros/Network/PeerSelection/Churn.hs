@@ -38,6 +38,8 @@ peerChurnGovernor :: forall m peeraddr.
                   -- ^ the base for churn interval in the deadline mode.
                   -> DiffTime
                   -- ^ the base for churn interval in the bulk sync mode.
+                  -> DiffTime
+                  -- ^ the max peersharing timeout
                   -> PeerMetrics m peeraddr
                   -> StrictTVar m ChurnMode
                   -> StdGen
@@ -45,7 +47,7 @@ peerChurnGovernor :: forall m peeraddr.
                   -> PeerSelectionTargets
                   -> StrictTVar m PeerSelectionTargets
                   -> m Void
-peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
+peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeout
                   _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
@@ -173,12 +175,19 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
       -- Give the governor time to properly demote them.
       threadDelay $ 1 + closeConnectionTimeout
 
-      -- Pick new non-active peers
+      -- Pick new known peers
       atomically $ modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfRootPeers = targetNumberOfRootPeers base
         , targetNumberOfKnownPeers = targetNumberOfKnownPeers base
-        , targetNumberOfEstablishedPeers = targetNumberOfEstablishedPeers base
         , targetNumberOfKnownBigLedgerPeers = targetNumberOfKnownBigLedgerPeers base
+        })
+
+      -- Give the governor time to find some new peers
+      threadDelay $ 1 + psOverallTimeout
+
+      -- Pick new non-active peers
+      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfEstablishedPeers = targetNumberOfEstablishedPeers base
         , targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base
         })
       endTs <- getMonotonicTime
