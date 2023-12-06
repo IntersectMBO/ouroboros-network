@@ -5,6 +5,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
@@ -44,16 +45,18 @@ import           Control.Monad.Fix (MonadFix)
 import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.Foldable (asum)
+import           Data.Hashable
 import           Data.IP (IP)
 import qualified Data.IP as IP
+import           Data.List (sortBy)
 import           Data.List.NonEmpty (NonEmpty (..))
 import           Data.Map (Map)
 import           Data.Maybe (catMaybes, maybeToList)
-import           Data.Set (elemAt)
+import           Data.Set (elems)
 import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 import           System.Exit (ExitCode)
-import           System.Random (StdGen, newStdGen, randomRs, split)
+import           System.Random (StdGen, newStdGen, random, split)
 #ifdef POSIX
 import qualified System.Posix.Signals as Signals
 #endif
@@ -78,7 +81,6 @@ import           Ouroboros.Network.Protocol.Handshake.Version
 import           Ouroboros.Network.Socket (configureSocket,
                      configureSystemdSocket)
 
-import           Data.List (nub)
 import           Ouroboros.Network.ConnectionHandler
 import           Ouroboros.Network.ConnectionManager.Core
 import           Ouroboros.Network.ConnectionManager.InformationChannel
@@ -521,6 +523,7 @@ runM
        , MonadTime        m
        , MonadTimer       m
        , MonadMVar        m
+       , Hashable  ntnAddr
        , Typeable  ntnAddr
        , Ord       ntnAddr
        , Show      ntnAddr
@@ -783,6 +786,7 @@ runM Interfaces
       policyRngVar <- newTVarIO policyRng
 
       peerSharingRngVar <- newTVarIO peerSharingRng
+      reSaltAtVar       <- newTVarIO (Time 0)
 
       churnModeVar <- newTVarIO ChurnModeNormal
 
@@ -891,7 +895,7 @@ runM Interfaces
                    SingInitiatorResponderMode
                    (daApplicationInitiatorResponderMode
                       (computePeerSharingPeers (readTVar publicStateVar)
-                       peerSharingRngVar)))
+                       peerSharingRngVar reSaltAtVar peerSelectionPolicy)))
                 classifyHandleError
                 (InResponderMode inbndInfoChannel)
                 (if daOwnPeerSharing /= PeerSharingDisabled
@@ -1217,20 +1221,39 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
 -- Utility Function
 --
 
-computePeerSharingPeers :: (MonadSTM m)
+
+-- | Select a random subset of the known peers that are available to publish through peersharing.
+-- The list of peers will change after `policyPeerShareStickyTime` seconds.
+-- The list of peers shared does at most change by the number of peers added or removed.
+-- That is a newly added or removed peer can at most lead to one new peer beeing shared.
+--
+computePeerSharingPeers :: (  MonadSTM m
+                            , MonadMonotonicTime m
+                            , Hashable ntnAddr
+                           )
                         => STM m (PublicPeerSelectionState ntnAddr)
                         -> StrictTVar m StdGen
+                        -> StrictTVar m Time
+                        -> PeerSelectionPolicy ntnAddr m
                         -> PeerSharingAmount
                         -> m [ntnAddr]
-computePeerSharingPeers readPublicState genVar amount = do
+computePeerSharingPeers readPublicState genVar reSaltAtVar PeerSelectionPolicy{..} amount = do
+  now <- getMonotonicTime
   publicState <- atomically readPublicState
-  gen <- atomically $ stateTVar genVar split
+  salt <- atomically $ do
+    reSaltAt <- readTVar reSaltAtVar
+    if reSaltAt <= now
+       then do
+         writeTVar reSaltAtVar $ addTime policyPeerShareStickyTime now
+         stateTVar genVar random
+       else do
+         gen <- readTVar genVar
+         return $ fst $ random gen
 
   let availableToShareSet = availableToShare publicState
-      is = nub
-         $ take (fromIntegral amount)
-         $ randomRs (0, length availableToShareSet - 1) gen
-      randomList = map (`elemAt` availableToShareSet) is
+      randomList = take (fromIntegral policyPeerShareMaxPeers `min` fromIntegral amount)
+                 $ sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
+                 $ elems availableToShareSet
   if null availableToShareSet
      then return []
      else return randomList

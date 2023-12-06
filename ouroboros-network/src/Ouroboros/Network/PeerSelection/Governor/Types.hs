@@ -117,6 +117,9 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyPeerShareRetryTime         :: !DiffTime,
        -- ^ Amount of time a node has to wait before issuing a new peer sharing
        -- request
+       policyPeerShareStickyTime        :: !DiffTime,
+       -- ^ Amount of time between changes to the salt used to pick peers to
+       -- gossip about.
        policyPeerShareBatchWaitTime     :: !DiffTime,
        -- ^ Amount of time a batch of peer sharing requests is allowed to take
        policyPeerShareOverallTimeout    :: !DiffTime,
@@ -124,6 +127,8 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        -- allowed to take
        policyPeerShareActivationDelay   :: !DiffTime,
        -- ^ Delay until we consider a peer suitable for peer sharing
+       policyPeerShareMaxPeers          :: !PeerSharingAmount,
+       -- ^ Maximum number of peers to respond with in a single request
 
        -- | Re-promote delay, passed from `ExitPolicy`.
        --

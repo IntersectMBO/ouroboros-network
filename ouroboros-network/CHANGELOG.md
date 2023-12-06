@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Limit the rate at which one can discover peers through peersharing.
+
 ## 0.11.0.0 -- 2023-01-22
 
 ### Breaking changes
