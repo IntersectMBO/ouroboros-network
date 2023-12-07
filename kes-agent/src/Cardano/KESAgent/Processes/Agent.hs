@@ -69,8 +69,7 @@ import Cardano.KESAgent.Protocols.VersionedProtocol ( VersionedProtocol (..), Na
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver ( VersionHandshakeDriverTrace (..), versionHandshakeDriver )
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers ( versionHandshakeServer )
 import Cardano.KESAgent.Protocols.VersionHandshake.Protocol ( VersionHandshakeProtocol )
-import Cardano.KESAgent.Serialization.Spec (HasSerInfo)
-import Cardano.KESAgent.Serialization.TextEnvelope ( decodeTextEnvelopeFile )
+import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty ( Pretty (..), strLength )
 import Cardano.KESAgent.Util.RefCounting
   ( CRef
@@ -104,6 +103,10 @@ import Cardano.Crypto.Libsodium.MLockedSeed
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Accept (..), Accepted (..), Snocket (..) )
 
+import Data.SerDoc.Info ( Description (..), aliasField, annField )
+import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
+import qualified Data.SerDoc.Info
+import Data.SerDoc.TH (deriveSerDoc)
 import Control.Concurrent.Class.MonadMVar
   ( MVar
   , MonadMVar
@@ -678,11 +681,10 @@ runListener
   (accept s fd >>= loop) `catch` logAndContinue
 
 availableServiceDrivers :: forall c m fd addr
-                            . (forall x y. Coercible x y => Coercible (m x) (m y))
-                           => MonadKES m c
+                            . MonadKES m c
                            => MonadTimer m
-                           => HasSerInfo (SignKeyKES (KES c))
-                           => HasSerInfo (VerKeyKES (KES c))
+                           => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+                           => HasInfo (DirectCodec m) (VerKeyKES (KES c))
                            => [ ( VersionIdentifier
                                 , RawBearer m
                                   -> Tracer m ServiceDriverTrace
@@ -705,13 +707,14 @@ availableServiceDrivers =
 
 
 runAgent :: forall c m fd addr
-          . (forall x y. Coercible x y => Coercible (m x) (m y))
-         => MonadKES m c
+          . MonadKES m c
          => MonadTimer m
          => ContextDSIGN (DSIGN c) ~ ()
          => DSIGN.Signable (DSIGN c) (OCertSignable c)
-         => HasSerInfo (VerKeyKES (KES c))
-         => HasSerInfo (SignKeyKES (KES c))
+         => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+         => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+         => HasInfo (DirectCodec m) (AgentInfo c)
+         => Serializable (DirectCodec m) (AgentInfo c)
          => Crypto c
          => NamedCrypto c
          => Show addr

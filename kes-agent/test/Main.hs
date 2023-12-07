@@ -7,7 +7,6 @@ import Cardano.KESAgent.Tests.OCert qualified as OCert
 import Cardano.KESAgent.Tests.RefCounting qualified as RefCounting
 import Cardano.KESAgent.Tests.Serialization qualified as Serialization
 import Cardano.KESAgent.Tests.Simulation qualified as Simulation
-import Cardano.KESAgent.Tests.Spec qualified as Spec
 
 import Cardano.Crypto.Libsodium
 
@@ -29,7 +28,6 @@ tests lock ioManager = testGroup "KES Agent"
   [ RefCounting.tests
   , OCert.tests
   , Serialization.tests
-  , Spec.tests
   , Simulation.tests lock nullTracer ioManager
   , EndToEnd.tests
   ]

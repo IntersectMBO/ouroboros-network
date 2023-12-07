@@ -26,6 +26,7 @@ common project-config
          -threaded
          -rtsopts=all
          -haddock
+         -- -ddump-splices
 
 common base-dependencies
     build-depends: base ^>=4.14.0.0
@@ -46,12 +47,7 @@ library
                    Cardano.KESAgent.Serialization.CBOR
                    Cardano.KESAgent.Serialization.TextEnvelope
                    Cardano.KESAgent.Serialization.RawUtil
-                   Cardano.KESAgent.Serialization.Spec
-                   Cardano.KESAgent.Serialization.Spec.Types
-                   Cardano.KESAgent.Serialization.Spec.Class
-                   Cardano.KESAgent.Serialization.Spec.OrphansBase
-                   Cardano.KESAgent.Serialization.Spec.OrphansCardano
-                   Cardano.KESAgent.Serialization.Spec.TH
+                   Cardano.KESAgent.Serialization.DirectCodec
                    Cardano.KESAgent.Protocols.VersionHandshake.Driver
                    Cardano.KESAgent.Protocols.VersionHandshake.Peers
                    Cardano.KESAgent.Protocols.VersionHandshake.Protocol
@@ -71,6 +67,7 @@ library
                  , aeson >=2.0
                  , base16-bytestring
                  , binary
+                 , blaze-html >=0.9 && <0.10
                  , bytestring >=0.11
                  , cardano-crypto-class
                  , cardano-binary
@@ -93,6 +90,7 @@ library
                  , nothunks
                  , ouroboros-network-framework
                  , quiet
+                 , serdoc-core
                  , socket >= 0.8.3 && <0.9
                  , socket-unix >=0.2.0.0
                  , stm>=2.5 && <2.6
@@ -100,6 +98,7 @@ library
                  , template-haskell >=2.18.0.0
                  , time >=1.10
                  , typed-protocols
+                 , typed-protocols-doc
     hs-source-dirs:   src
     default-language: Haskell2010
 
@@ -120,6 +119,7 @@ executable kes-agent
                  , network
                  , ouroboros-network-framework
                  , optparse-applicative
+                 , serdoc-core
                  , text
                  , time
                  , typed-protocols
@@ -163,6 +163,7 @@ executable kes-agent-control
                  , network
                  , ouroboros-network-framework
                  , optparse-applicative
+                 , serdoc-core
                  , text
                  , time
                  , typed-protocols
@@ -174,7 +175,7 @@ executable kes-agent-protodocs
     default-language: Haskell2010
     hs-source-dirs: protodocs
     main-is: Main.hs
-    other-modules: Cardano.KESAgent.Protodocs.TH
+    -- other-modules: Cardano.KESAgent.Protodocs.TH
     build-depends: kes-agent
                  , bytestring
                  , blaze-html
@@ -184,11 +185,13 @@ executable kes-agent-protodocs
                  , io-classes
                  , network
                  , optparse-applicative
+                 , serdoc-core
                  , template-haskell
                  , text
                  , th-abstraction
                  , time
                  , typed-protocols
+                 , typed-protocols-doc
 
 
 test-suite kes-agent-tests
@@ -202,7 +205,6 @@ test-suite kes-agent-tests
                  , Cardano.KESAgent.Tests.RefCounting
                  , Cardano.KESAgent.Tests.OCert
                  , Cardano.KESAgent.Tests.Serialization
-                 , Cardano.KESAgent.Tests.Spec
                  , Cardano.KESAgent.Tests.EndToEnd
                  , Paths_kes_agent
     build-tool-depends: kes-agent:kes-agent
@@ -226,10 +228,11 @@ test-suite kes-agent-tests
                  , network-mux
                  , ouroboros-network-framework
                  , ouroboros-network-testing
-                 , primitive >=0.7.4 && <0.8
+                 , primitive >=0.7.4 && <0.10
                  , process
                  , QuickCheck
                  , random >=1.2.1 && <1.3
+                 , serdoc-core
                  , socket-unix >=0.2.0.0 && <0.3.0.0
                  , tasty
                  , tasty-hunit

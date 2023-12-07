@@ -16,11 +16,11 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Datatype
 import Language.Haskell.TH.Syntax (Lift (..))
 import Data.Maybe
-import Cardano.KESAgent.Serialization.Spec
-import Cardano.KESAgent.Serialization.Spec.Class
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Data.Char
 import Debug.Trace
+import Data.SerDoc.Class
+import Data.SerDoc.Info
 
 data AgencyID
   = ClientAgencyID

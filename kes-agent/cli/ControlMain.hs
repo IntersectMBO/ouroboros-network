@@ -4,6 +4,8 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 module Main
 where
@@ -13,10 +15,12 @@ import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Processes.ControlClient
 import Cardano.KESAgent.Protocols.Control.Peers
 import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.Control.Driver
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
+import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -45,6 +49,8 @@ import System.IOManager
 import System.Posix.Syslog.Priority as Syslog
 import Text.Printf
 import Text.Read (readMaybe)
+import Data.SerDoc.Class (HasInfo, Serializable)
+import Data.Coerce
 
 data CommonOptions =
   CommonOptions
@@ -310,7 +316,7 @@ runControlClientCommand :: CommonOptions
 runControlClientCommand opts ioManager peer = do
   controlClientOptions <- mkControlClientOptions opts ioManager
   let verbosity = fromMaybe 0 $ optVerbosity opts
-  runControlClient1
+  runControlClient1 @StandardCrypto @IO
     peer
     (Proxy @StandardCrypto)
     makeSocketRawBearer

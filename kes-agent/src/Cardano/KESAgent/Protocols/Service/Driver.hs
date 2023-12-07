@@ -27,7 +27,7 @@ import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.RawUtil
-import Cardano.KESAgent.Serialization.Spec
+import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -43,6 +43,10 @@ import Cardano.Crypto.Libsodium.Memory
 
 import Ouroboros.Network.RawBearer
 
+import Data.SerDoc.Info ( Description (..), aliasField, annField )
+import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
+import qualified Data.SerDoc.Info
+import Data.SerDoc.TH (deriveSerDoc)
 import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.TChan
 import Control.Monad ( void, when, forever, forM_ )
@@ -70,6 +74,8 @@ import Foreign.Marshal.Utils ( copyBytes )
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
+import Data.SerDoc.Info ( Description (..) )
+import Data.SerDoc.Class ( ViaEnum (..) )
 
 -- | Logging messages that the Driver may send
 data ServiceDriverTrace
@@ -146,12 +152,11 @@ withDuplexBearer s action = do
 
 serviceDriver :: forall c m f t p
                . Crypto c
-              => (forall x y. Coercible x y => Coercible (m x) (m y))
               => Typeable c
               => VersionedProtocol (ServiceProtocol m c)
               => KESAlgorithm (KES c)
-              => HasSerInfo (SignKeyKES (KES c))
-              => HasSerInfo (VerKeyKES (KES c))
+              => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+              => HasInfo (DirectCodec m) (VerKeyKES (KES c))
               => DirectDeserialise (SignKeyKES (KES c))
               => DirectSerialise (SignKeyKES (KES c))
               => MonadThrow m
@@ -249,37 +254,37 @@ readErrorToServiceDriverTrace (ReadMalformed what) =
 readErrorToServiceDriverTrace (ReadVersionMismatch expected actual) =
   ServiceDriverInvalidVersion expected actual
 
-instance NamedCrypto c => HasSerInfo (Message (ServiceProtocol m c) InitialState IdleState) where
-  info _ = aliasField
+instance NamedCrypto c => HasInfo (DirectCodec m) (Message (ServiceProtocol m c) InitialState IdleState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c))) ++
               ",InitialState,IdleState" ++
               ">")
-            (info (Proxy @VersionIdentifier))
+            (info codec (Proxy @VersionIdentifier))
 instance ( NamedCrypto c
          , Crypto c
          , Typeable c
-         , HasSerInfo (SignKeyKES (KES c))
-         , HasSerInfo (VerKeyKES (KES c))
-         ) => HasSerInfo (Message (ServiceProtocol m c) IdleState WaitForConfirmationState) where
-  info _ = aliasField
+         , HasInfo (DirectCodec m) (SignKeyKES (KES c))
+         , HasInfo (DirectCodec m) (VerKeyKES (KES c))
+         ) => HasInfo (DirectCodec m) (Message (ServiceProtocol m c) IdleState WaitForConfirmationState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c))) ++
               ",IdleState,WaitForConfirmationState" ++
               ">")
-            (info (Proxy @(Bundle m c)))
-instance NamedCrypto c => HasSerInfo (Message (ServiceProtocol m c) WaitForConfirmationState IdleState) where
-  info _ = aliasField
+            (info codec (Proxy @(Bundle m c)))
+instance NamedCrypto c => HasInfo (DirectCodec m) (Message (ServiceProtocol m c) WaitForConfirmationState IdleState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c))) ++
               ",WaitForConfirmationState,IdleState" ++
               ">")
-            (info (Proxy @RecvResult))
-instance NamedCrypto c => HasSerInfo (Message (ServiceProtocol m c) _st EndState) where
-  info _ = annField "This message is signalled by terminating the network connection, hence the encoding takes zero bytes." $
+            (info codec (Proxy @RecvResult))
+instance NamedCrypto c => HasInfo (DirectCodec m) (Message (ServiceProtocol m c) _st EndState) where
+  info codec _ = annField "This message is signalled by terminating the network connection, hence the encoding takes zero bytes." $
             aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ spVersionIdentifier (Proxy @(ServiceProtocol m c))) ++
               ",st,EndState" ++
               ">")
-            (info (Proxy @()))
+            (info codec (Proxy @()))

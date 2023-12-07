@@ -23,13 +23,17 @@ import Cardano.KESAgent.Protocols.VersionHandshake.Protocol ( VersionHandshakePr
 import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
 import Cardano.KESAgent.Util.RefCounting ( CRef )
 import Cardano.KESAgent.Util.RetrySocket ( retrySocket )
-import Cardano.KESAgent.Serialization.Spec ( HasSerInfo )
+import Cardano.KESAgent.Serialization.DirectCodec
 
 import Cardano.Crypto.KES.Class ( SignKeyWithPeriodKES (..), SignKeyKES, VerKeyKES )
 
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Snocket (..) )
 
+import Data.SerDoc.Info ( Description (..), aliasField, annField )
+import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
+import qualified Data.SerDoc.Info
+import Data.SerDoc.TH (deriveSerDoc)
 import Control.Monad ( forever, void )
 import Control.Monad.Class.MonadThrow ( SomeException, bracket, catch )
 import Control.Monad.Class.MonadTimer ( threadDelay )
@@ -65,10 +69,9 @@ instance Pretty ServiceClientTrace where
 
 
 availableServiceDrivers :: forall c m fd addr
-                            . (forall x y. Coercible x y => Coercible (m x) (m y))
-                           => MonadKES m c
-                           => HasSerInfo (SignKeyKES (KES c))
-                           => HasSerInfo (VerKeyKES (KES c))
+                            . MonadKES m c
+                           => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+                           => HasInfo (DirectCodec m) (VerKeyKES (KES c))
                            => [ ( VersionIdentifier
                                 , RawBearer m
                                   -> Tracer m ServiceClientTrace
@@ -90,12 +93,11 @@ availableServiceDrivers =
 -- In case of an abnormal session termination (via an exception), the exception
 -- is logged via the provided 'Tracer', and another connection attempt is made.
 runServiceClientForever :: forall c m fd addr
-                         . (forall x y . Coercible x y => Coercible (m x) (m y))
-                        => MonadKES m c
+                         . MonadKES m c
                         => MonadMVar m
                         => Show addr
-                        => HasSerInfo (SignKeyKES (KES c))
-                        => HasSerInfo (VerKeyKES (KES c))
+                        => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+                        => HasInfo (DirectCodec m) (VerKeyKES (KES c))
                         => Proxy c
                         -> MakeRawBearer m fd
                         -> ServiceClientOptions m fd addr
@@ -115,12 +117,11 @@ runServiceClientForever proxy mrb options handleKey tracer =
 -- | Run a single Service Client session. Once the peer closes the connection,
 -- return.
 runServiceClient :: forall c m fd addr
-                  . (forall x y . Coercible x y => Coercible (m x) (m y))
-                 => MonadKES m c
+                  . MonadKES m c
                  => MonadMVar m
                  => Show addr
-                 => HasSerInfo (SignKeyKES (KES c))
-                 => HasSerInfo (VerKeyKES (KES c))
+                 => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+                 => HasInfo (DirectCodec m) (VerKeyKES (KES c))
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr

@@ -39,7 +39,7 @@ import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
-import Cardano.KESAgent.Serialization.Spec
+import Cardano.KESAgent.Serialization.DirectCodec
 
 import Cardano.Binary ( FromCBOR )
 import Cardano.Crypto.DSIGN.Class
@@ -152,6 +152,8 @@ import Test.QuickCheck ( Arbitrary (..), vectorOf )
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf ( printf )
+import Data.SerDoc.Class
+import Data.SerDoc.TH
 
 tests :: Lock IO
       -> (forall a. (Show a, Pretty a) => Tracer IO a)
@@ -194,8 +196,11 @@ testCrypto :: forall c kes
            => Crypto c
            => NamedCrypto c
            => Show (SignKeyWithPeriodKES (KES c))
-           => HasSerInfo (VerKeyKES (KES c))
-           => HasSerInfo (SignKeyKES (KES c))
+           => HasInfo (DirectCodec IO) (VerKeyKES (KES c))
+           => HasInfo (DirectCodec IO) (SignKeyKES (KES c))
+           => (forall s. HasInfo (DirectCodec (IOSim s)) (VerKeyKES kes))
+           => (forall s. HasInfo (DirectCodec (IOSim s)) (SignKeyKES kes))
+           => (forall s. HasInfo (DirectCodec (IOSim s)) (AgentInfo c))
            => Proxy c
            -> Lock IO
            -> (forall a. (Show a, Pretty a) => Tracer IO a)
@@ -359,8 +364,7 @@ instance Show (FD (IOSim s) (TestAddress Int)) where
 -- of "entropy" when generating KES keys. This makes it possible to compare KES
 -- keys received by the node against the expected keys.
 runTestNetwork :: forall c m fd addr
-                . (forall x y. Coercible x y => Coercible (m x) (m y))
-               => MonadKES m c
+                . MonadKES m c
                => Show addr
                => Show fd
                => MonadTimer m
@@ -369,8 +373,10 @@ runTestNetwork :: forall c m fd addr
                => Crypto c
                => NamedCrypto c
                => Show (SignKeyWithPeriodKES (KES c))
-               => HasSerInfo (VerKeyKES (KES c))
-               => HasSerInfo (SignKeyKES (KES c))
+               => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+               => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+               => HasInfo (DirectCodec m) (AgentInfo c)
+               => Serializable (DirectCodec m) (AgentInfo c)
                => Proxy c
                -> MakeRawBearer m fd
                -> Snocket m fd addr
@@ -596,8 +602,7 @@ instance (KESAlgorithm (KES c)) => Arbitrary (OutOfOrderPushesSeeds c) where
     map OutOfOrderPushesSeeds $ filter ((>= 2) . length) (shrink xs)
 
 testOneKeyThroughChain :: forall c m fd addr
-                        . (forall x y. Coercible x y => Coercible (m x) (m y))
-                       => MonadKES m c
+                        . MonadKES m c
                        => Show addr
                        => Show fd
                        => MonadTimer m
@@ -607,8 +612,10 @@ testOneKeyThroughChain :: forall c m fd addr
                        => NamedCrypto c
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
-                       => HasSerInfo (VerKeyKES (KES c))
-                       => HasSerInfo (SignKeyKES (KES c))
+                       => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                       => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+                       => HasInfo (DirectCodec m) (AgentInfo c)
+                       => Serializable (DirectCodec m) (AgentInfo c)
                        => Proxy c
                        -> MakeRawBearer m fd
                        -> Snocket m fd addr

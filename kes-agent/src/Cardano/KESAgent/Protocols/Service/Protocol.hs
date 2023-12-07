@@ -42,6 +42,8 @@ import GHC.Generics ( Generic )
 import Network.TypedProtocol.Core
 import NoThunks.Class ( NoThunks (..) )
 import Quiet
+import Data.SerDoc.Info ( Description (..) )
+import Data.SerDoc.Class ( ViaEnum (..) )
 
 data ServiceProtocol (m :: * -> *) (k :: *) where
   -- | Default state after connecting, but before the protocol version has been

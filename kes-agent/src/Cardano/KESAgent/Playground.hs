@@ -1,191 +1,44 @@
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DataKinds #-}
 
 module Cardano.KESAgent.Playground
 where
 
+
 import Data.Proxy
-import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.Bundle
+import Cardano.KESAgent.KES.Classes
+import Cardano.KESAgent.Protocols.VersionHandshake.Protocol
+import Cardano.KESAgent.Protocols.VersionHandshake.Driver
 import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.Control.Driver
+import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.Service.Driver
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Serialization.DirectCodec
+
 import GHC.Generics
 import Cardano.Crypto.KES.Class
 import Text.Printf
+import Data.Text (Text)
+import qualified Data.Text.Lazy as LText
+import Text.Blaze.Html.Renderer.Text (renderHtml)
+import qualified Text.Blaze.Html.Renderer.Pretty as Pretty
+import Data.SerDoc.Class
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Documentation
+import Network.TypedProtocol.Documentation.Html
 
-htmlencode :: String -> String
-htmlencode = concatMap htmlencodeChar
-
-htmlencodeChar :: Char -> String
-htmlencodeChar '&' = "&amp;"
-htmlencodeChar '<' = "&lt;"
-htmlencodeChar '>' = "&gt;"
-htmlencodeChar '"' = "&quot;"
-htmlencodeChar '\'' = "&apos;"
-htmlencodeChar c = [c]
-
-specToHTML :: FieldInfo -> String
-specToHTML =
-  wrapHTML . fieldSpecToHTML
-
-specsToHTML :: [FieldInfo] -> String
-specsToHTML =
-  wrapHTML . concatMap fieldSpecToHTML
-
-wrapHTML :: String -> String
-wrapHTML inner =
-  unlines
-    [ "<!DOCTYPE html>"
-    , "<html>"
-    , "<head>"
-    , "<style type='text/css'>"
-    , "table { border-collapse: collapse; }"
-    , "table td, table th {"
-    , "  border: solid 1px black;"
-    , "  text-align: left;"
-    , "  vertical-align: top;"
-    , "  padding: 0.25em;"
-    , "}"
-    , "table th {"
-    , "  background-color: #DDD"
-    , "}"
-    , ".field-size {"
-    , "  text-align: right;"
-    , "}"
-    , "</style>"
-    , "</head>"
-    , "<body>"
-    , inner
-    , "</body>"
-    , "</html>"
-    ]
-
-fieldSpecToHTML :: FieldInfo -> String
-fieldSpecToHTML fi =
-  mconcat
-    [ "<h3 id='", htmlencode (shortFieldType fi), "'>"
-    , htmlencode (shortFieldType fi)
-    , "</h3>"
-    , subfieldsToHTML (compoundField "" [("", fi)])
-    ]
-
-subfieldsToHTML :: FieldInfo -> String
-subfieldsToHTML (AliasField afi) =
-  subfieldsToHTML (aliasFieldTarget afi)
-subfieldsToHTML (CompoundField cfi) =
-  mconcat
-    [ "<table>"
-    , concatMap subfieldToHtmlTR (compoundFieldSubfields cfi)
-    , "</table>"
-    ]
-subfieldsToHTML _ = ""
-
-fieldTypeToHtml :: FieldInfo -> String
-fieldTypeToHtml (AliasField info) =
-  htmlencode (aliasFieldName info) ++
-  "<br/>= " ++
-  fieldTypeToHtml (aliasFieldTarget info)
-fieldTypeToHtml (ListField info) =
-  mconcat $
-    [ "<strong>["
-    , htmlencode (shortFieldType (listElemInfo info))
-    , "]</strong><br/>"
-    , "<em>#items: </em>"
-    , htmlencode (formatFieldSize $ listSize info)
-    , "<br/>"
-    , "<em>item type: </em>"
-    , fieldTypeToHtml (listElemInfo info)
-    , "<br/>"
-    , subfieldsToHTML (listElemInfo info)
-    ]
-fieldTypeToHtml (ChoiceField info) =
-  mconcat $
-    [ "<em>Choose by: </em>"
-    , case choiceCondition info of
-        IndexField ref -> htmlencode ref
-        IndexFlag ref mask -> htmlencode ref <> " &amp; " <> htmlencode (printf "0x%04x" mask)
-    , "<table>"
-    , "<tr><th>choice</th><th>size</th><th>type</th></tr>"
-    ] ++
-    [ "<tr>" <>
-      "<td>" <>
-      htmlencode (show n) <>
-      "</td>" <>
-      "<td class='field-size'>" <>
-      htmlencode (formatFieldSize (fieldSize optInfo)) <>
-      "</td>" <>
-      "<td>" <>
-      fieldTypeToHtml optInfo <>
-      subfieldsToHTML optInfo <>
-      "</td>" <>
-      "</tr>"
-    | (n, optInfo) <- zip [0,1..] (choiceFieldAlternatives info)
-    ] ++
-    [ "</table>"
-    ]
-fieldTypeToHtml (EnumField info) =
-  mconcat $
-    [ htmlencode (enumFieldType info)
-    , "<em> (enum)</em>"
-    , "<table>"
-    , "<tr><th>value</th><th>name</th></tr>"
-    ] ++
-    [ "<tr>" <>
-      "<td>" <>
-      htmlencode (show val) <>
-      "</td>" <>
-      "<td>" <>
-      htmlencode name <>
-      "</td>" <>
-      "</tr>"
-    | (val, name) <- enumFieldValues info
-    ] ++
-    [ "</table>"
-    ]
-fieldTypeToHtml fi =
-  htmlencode . fieldType $ fi
-
-subfieldToHtmlTR :: SubfieldInfo -> String
-subfieldToHtmlTR sfi =
-  case subfieldsToHTML (subfieldInfo sfi) of
-    "" ->
-      mconcat
-        [ "<tr>"
-        , "<th>"
-        , subfieldName sfi
-        , "</th>"
-        , "<td class='field-size'>", htmlencode $ formatFieldSize (fieldSize (subfieldInfo sfi)), "</td>"
-        , "<td>", fieldTypeToHtml (subfieldInfo sfi), "</td>"
-        , "</tr>"
-        ]
-    sfiHtml ->
-      mconcat
-        [ "<tr>"
-        , "<th rowspan=2>"
-        , subfieldName sfi
-        , "</th>"
-        , "<td rowspan=2 class='field-size'>", htmlencode $ formatFieldSize (fieldSize (subfieldInfo sfi)), "</td>"
-        , "<td colspan=2>", fieldTypeToHtml (subfieldInfo sfi), "</td>"
-        , "</tr>"
-        , "<tr>"
-        , "<td colspan=2>", subfieldsToHTML (subfieldInfo sfi), "</td>"
-        , "</tr>"
-        ]
-
-allInfos =
-  [ info @(AgentInfo StandardCrypto) Proxy
-  , info @(BundleInfo StandardCrypto) Proxy
-  , info @(OCert StandardCrypto) Proxy
-  , info @(VerKeyKES (KES StandardCrypto)) Proxy
-  , info @RecvResult Proxy
-  , info @(Bundle IO StandardCrypto) Proxy
-  , info @(Bundle IO CompactStandardCrypto) Proxy
+allDocs =
+  [ $(describeProtocol ''VersionHandshakeProtocol [] ''DirectCodec [''IO])
+  , $(describeProtocol ''ServiceProtocol [''IO, ''StandardCrypto] ''DirectCodec [''IO])
+  , $(describeProtocol ''ControlProtocol [''IO, ''StandardCrypto] ''DirectCodec [''IO])
   ]
   
-
 runPlayground :: IO ()
 runPlayground = do
-  writeFile "spec.html" (specsToHTML allInfos)
+  writeFile "spec.html" (Pretty.renderHtml . wrapDocument . renderProtocolDescriptions $ allDocs)

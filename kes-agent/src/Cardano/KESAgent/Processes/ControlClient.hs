@@ -17,9 +17,9 @@ import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.Control.Driver
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Protocols.VersionedProtocol ( NamedCrypto )
-import Cardano.KESAgent.Serialization.Spec (HasSerInfo)
 import Cardano.KESAgent.Util.RefCounting ( CRef, withCRef )
 import Cardano.KESAgent.Util.RetrySocket ( retrySocketWith )
+import Cardano.KESAgent.Serialization.DirectCodec
 
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.DSIGN.Class
@@ -28,6 +28,10 @@ import Cardano.Crypto.DirectSerialise
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket ( Snocket (..) )
 
+import Data.SerDoc.Info ( Description (..), aliasField, annField )
+import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
+import qualified Data.SerDoc.Info
+import Data.SerDoc.TH (deriveSerDoc)
 import Control.Monad ( forever, void )
 import Control.Monad.Extra ( whenJust )
 import Control.Monad.Class.MonadThrow ( SomeException, bracket )
@@ -65,11 +69,13 @@ instance Pretty ControlClientTrace where
   pretty x = "Control: " ++ drop (length "ControlClient") (show x)
 
 runControlClient1 :: forall c m fd addr a
-                   . (forall x y. Coercible x y => Coercible (m x) (m y))
-                  => MonadKES m c
+                   . MonadKES m c
                   => Crypto c
                   => NamedCrypto c
-                  => HasSerInfo (VerKeyKES (KES c))
+                  => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                  => Serializable (DirectCodec m) (VerKeyKES (KES c))
+                  => HasInfo (DirectCodec m) (AgentInfo c)
+                  => Serializable (DirectCodec m) (AgentInfo c)
                   => Peer (ControlProtocol m c) AsServer InitialState m a
                   -> Proxy c
                   -> MakeRawBearer m fd

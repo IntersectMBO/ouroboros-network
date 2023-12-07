@@ -20,7 +20,6 @@ import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.RecvResult
-import Cardano.KESAgent.Serialization.Spec
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Binary
@@ -44,6 +43,8 @@ import Network.TypedProtocol.Core
 import NoThunks.Class ( NoThunks (..) )
 import Quiet
 import Data.Time (UTCTime)
+import Data.SerDoc.Info ( Description (..) )
+import Data.SerDoc.Class ( ViaEnum (..) )
 
 data AgentInfo c =
   AgentInfo

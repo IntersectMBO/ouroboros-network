@@ -26,7 +26,7 @@ import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.RawUtil
-import Cardano.KESAgent.Serialization.Spec
+import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -72,6 +72,10 @@ import Foreign.Marshal.Utils ( copyBytes )
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
+import Data.SerDoc.Info ( Description (..), aliasField )
+import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
+import qualified Data.SerDoc.Info
+import Data.SerDoc.TH (deriveSerDoc)
 
 -- | Logging messages that the Driver may send
 data ControlDriverTrace
@@ -112,13 +116,21 @@ data Command
   deriving (Show, Read, Eq, Ord, Enum, Bounded)
 
 deriving via (ViaEnum Command)
-  instance HasSerInfo Command
+  instance
+    ( Codec codec
+    , HasInfo codec (DefEnumEncoding codec)
+    , Integral (DefEnumEncoding codec)
+    ) => HasInfo codec Command
 
-deriving via (ViaEnum Command)
-  instance ( forall x y. Coercible x y => Coercible (m x) (m y)
-           , MonadThrow m
-           , MonadST m
-           ) => IsSerItem m Command
+instance
+  ( Codec codec
+  , Serializable codec (DefEnumEncoding codec)
+  , Integral (DefEnumEncoding codec)
+  , Monad (MonadEncode codec)
+  , Monad (MonadDecode codec)
+  ) => Serializable codec Command where
+    encode codec = encodeEnum codec (Proxy @(DefEnumEncoding codec))
+    decode codec = decodeEnum codec (Proxy @(DefEnumEncoding codec))
 
 flagHasBundle, flagHasStagedKey :: Word8
 flagHasBundle = 0x01
@@ -138,42 +150,53 @@ whenFlag flag flags action =
   else
     pure Nothing
 
-deriving via (ViaEnum ConnectionStatus)
-  instance HasSerInfo ConnectionStatus
-deriving via (ViaEnum ConnectionStatus)
-  instance ( forall x y. Coercible x y => Coercible (m x) (m y)
-           , MonadThrow m
-           , MonadST m
-           , MonadSTM m
-           ) => IsSerItem m ConnectionStatus
+
+instance
+  ( Codec codec
+  , HasInfo codec Word8
+  , HasInfo codec (DefEnumEncoding codec)
+  ) => HasInfo codec ConnectionStatus where
+    info codec _ = enumInfo codec (Proxy @ConnectionStatus) (Proxy @Word8)
+
+instance
+  ( Codec codec
+  , Serializable codec Word8
+  , Monad (MonadEncode codec)
+  , Monad (MonadDecode codec)
+  ) => Serializable codec ConnectionStatus where
+      encode codec = encodeEnum codec (Proxy @Word8)
+      decode codec = decodeEnum codec (Proxy @Word8)
 
 deriving newtype instance
-  ( HasSerInfo (VerKeyKES (KES c))
+  ( HasInfo codec (VerKeyKES (KES c))
   , KESAlgorithm (KES c)
+  , Codec codec
   )
-  => HasSerInfo (KeyInfo c)
+  => HasInfo codec (KeyInfo c)
 
-deriving newtype instance
-  ( (forall x y. Coercible x y => Coercible (m x) (m y))
-  , HasSerInfo (VerKeyKES (KES c))
+instance
+  ( Serializable codec (VerKeyKES (KES c))
   , KESAlgorithm (KES c)
-  , MonadThrow m
-  , MonadST m
-  , MonadSTM m
+  , Codec codec
+  , Monad (MonadEncode codec)
+  , Monad (MonadDecode codec)
   )
-  => IsSerItem m (KeyInfo c)
+  => Serializable codec (KeyInfo c) where
+        encode codec (KeyInfo k) = Data.SerDoc.Class.encode codec k
+        decode codec = KeyInfo <$> Data.SerDoc.Class.decode codec
 
-$(deriveSer ''BootstrapInfo)
-$(deriveSerWithCrypto ''BundleInfo)
-$(deriveSerWithCrypto ''AgentInfo)
+$(deriveSerDoc ''DirectCodec [] ''BootstrapInfo)
+$(deriveSerDoc ''DirectCodec [] ''BundleInfo)
+$(deriveSerDoc ''DirectCodec [] ''AgentInfo)
 
 controlDriver :: forall c m f t p
-               . (forall x y. Coercible x y => Coercible (m x) (m y))
-              => Crypto c
+               . Crypto c
               => Typeable c
               => VersionedProtocol (ControlProtocol m c)
               => KESAlgorithm (KES c)
-              => HasSerInfo (VerKeyKES (KES c))
+              => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+              => HasInfo (DirectCodec m) (AgentInfo c)
+              => Serializable (DirectCodec m) (AgentInfo c)
               => DirectDeserialise (SignKeyKES (KES c))
               => DirectSerialise (SignKeyKES (KES c))
               => MonadThrow m
@@ -316,63 +339,70 @@ readErrorToControlDriverTrace (ReadVersionMismatch expected actual) =
   ControlDriverInvalidVersion expected actual
 
 
-instance NamedCrypto c => HasSerInfo (Message (ControlProtocol m c) InitialState IdleState) where
-  info _ = aliasField
+instance NamedCrypto c => HasInfo (DirectCodec m) (Message (ControlProtocol m c) InitialState IdleState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
               ",InitialState,IdleState" ++
               ">")
-            (info (Proxy @VersionIdentifier))
-instance NamedCrypto c => HasSerInfo (Message (ControlProtocol m c) IdleState WaitForPublicKeyState) where
-  info _ = aliasField
+            (info codec (Proxy @VersionIdentifier))
+instance NamedCrypto c => HasInfo (DirectCodec m) (Message (ControlProtocol m c) IdleState WaitForPublicKeyState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
               ",IdleState,WaitForPublicKeyState" ++
               ">")
-            (info (Proxy @Command))
-  infoOf c = case c of
-    GenStagedKeyMessage -> infoOf GenStagedKeyCmd
-    QueryStagedKeyMessage -> infoOf QueryStagedKeyCmd
-    DropStagedKeyMessage -> infoOf DropStagedKeyCmd
-instance (NamedCrypto c, HasSerInfo (VerKeyKES (KES c))) => HasSerInfo (Message (ControlProtocol m c) WaitForPublicKeyState IdleState) where
-  info _ = aliasField
+            (info codec (Proxy @Command))
+
+--  infoOf c = case c of
+--    GenStagedKeyMessage -> infoOf GenStagedKeyCmd
+--    QueryStagedKeyMessage -> infoOf QueryStagedKeyCmd
+--    DropStagedKeyMessage -> infoOf DropStagedKeyCmd
+
+instance (NamedCrypto c, HasInfo (DirectCodec m) (VerKeyKES (KES c))) => HasInfo (DirectCodec m) (Message (ControlProtocol m c) WaitForPublicKeyState IdleState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
               ",WaitForPublicKeyState,IdleState" ++
               ">")
-            (info (Proxy @(Maybe (VerKeyKES (KES c)))))
-instance (NamedCrypto c, HasSerInfo (VerKeyKES (KES c)), KESAlgorithm (KES c), DSIGNAlgorithm (DSIGN c)) => HasSerInfo (Message (ControlProtocol m c) IdleState WaitForConfirmationState) where
-  info _ = aliasField
+            (info codec (Proxy @(Maybe (VerKeyKES (KES c)))))
+instance (NamedCrypto c, HasInfo (DirectCodec m) (VerKeyKES (KES c)), KESAlgorithm (KES c), DSIGNAlgorithm (DSIGN c)) => HasInfo (DirectCodec m) (Message (ControlProtocol m c) IdleState WaitForConfirmationState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
               ",IdleState,WaitForConfirmationState" ++
               ">")
-            (info (Proxy @(OCert c)))
-instance (NamedCrypto c) => HasSerInfo (Message (ControlProtocol m c) WaitForConfirmationState IdleState) where
-  info _ = aliasField
+            (info codec (Proxy @(OCert c)))
+instance (NamedCrypto c) => HasInfo (DirectCodec m) (Message (ControlProtocol m c) WaitForConfirmationState IdleState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
               ",WaitForConfirmationState,IdleState" ++
               ">")
-            (info (Proxy @RecvResult))
-instance (NamedCrypto c) => HasSerInfo (Message (ControlProtocol m c) IdleState WaitForInfoState) where
-  info _ = aliasField
+            (info codec (Proxy @RecvResult))
+instance (NamedCrypto c) => HasInfo (DirectCodec m) (Message (ControlProtocol m c) IdleState WaitForInfoState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
               ",IdleState,WaitForInfoState" ++
               ">")
-            (info (Proxy @()))
-instance (NamedCrypto c, KESAlgorithm (KES c), DSIGNAlgorithm (DSIGN c), HasSerInfo (VerKeyKES (KES c))) => HasSerInfo (Message (ControlProtocol m c) WaitForInfoState IdleState) where
-  info _ = aliasField
+            (info codec (Proxy @()))
+instance ( NamedCrypto c
+         , KESAlgorithm (KES c)
+         , DSIGNAlgorithm (DSIGN c)
+         , HasInfo (DirectCodec m) (VerKeyKES (KES c))
+         , HasInfo (DirectCodec m) (AgentInfo c)
+         ) => HasInfo (DirectCodec m) (Message (ControlProtocol m c) WaitForInfoState IdleState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
               ",WaitForInfoState,IdleState" ++
               ">")
-            (info (Proxy @(AgentInfo c)))
-instance (NamedCrypto c) => HasSerInfo (Message (ControlProtocol m c) _st EndState) where
-  info _ = aliasField
+            (info codec (Proxy @(AgentInfo c)))
+instance (NamedCrypto c) => HasInfo (DirectCodec m) (Message (ControlProtocol m c) _st EndState) where
+  info codec _ = aliasField
             ("Message<" ++
               (Text.unpack . decodeUtf8 . unVersionIdentifier $ cpVersionIdentifier (Proxy @(ControlProtocol m c))) ++
               ",st,EndState" ++
               ">")
-            (info (Proxy @()))
+            (info codec (Proxy @()))
