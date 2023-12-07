@@ -7,7 +7,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Cardano.Network.Ping
   ( PingOpts(..)
@@ -15,11 +14,15 @@ module Cardano.Network.Ping
   , NodeVersion(..)
   , HandshakeFailure(..)
   , StatPoint(..)
+  , InitiatorOnly(..)
   , mainnetMagic
   , pingClient
   , logger
   , supportedNodeToNodeVersions
   , supportedNodeToClientVersions
+  , handshakeDec
+  , handshakeReq
+  , isSameVersionAndMagic
   ) where
 
 import           Control.Exception (bracket)
@@ -603,30 +606,6 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
         then encodeToLazyText $ object ["queried_versions" .= toJSONList recVersions]
         else TL.pack $ printf "Queried versions %s" (show recVersions)
 
-    isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
-    isSameVersionAndMagic v1 v2 = extract v1 == extract v2
-      where extract :: NodeVersion -> (Int, Word32)
-            extract (NodeToClientVersionV9 m)  = (-9, m)
-            extract (NodeToClientVersionV10 m) = (-10, m)
-            extract (NodeToClientVersionV11 m) = (-11, m)
-            extract (NodeToClientVersionV12 m) = (-12, m)
-            extract (NodeToClientVersionV13 m) = (-13, m)
-            extract (NodeToClientVersionV14 m) = (-14, m)
-            extract (NodeToClientVersionV15 m) = (-15, m)
-            extract (NodeToClientVersionV16 m) = (-16, m)
-            extract (NodeToNodeVersionV1 m)    = (1, m)
-            extract (NodeToNodeVersionV2 m)    = (2, m)
-            extract (NodeToNodeVersionV3 m)    = (3, m)
-            extract (NodeToNodeVersionV4 m _)  = (4, m)
-            extract (NodeToNodeVersionV5 m _)  = (5, m)
-            extract (NodeToNodeVersionV6 m _)  = (6, m)
-            extract (NodeToNodeVersionV7 m _)  = (7, m)
-            extract (NodeToNodeVersionV8 m _)  = (8, m)
-            extract (NodeToNodeVersionV9 m _)  = (9, m)
-            extract (NodeToNodeVersionV10 m _) = (10, m)
-            extract (NodeToNodeVersionV11 m _) = (11, m)
-            extract (NodeToNodeVersionV12 m _) = (12, m)
-
     peerString :: IO String
     peerString =
       case Socket.addrFamily peer of
@@ -679,3 +658,28 @@ pingClient stdout stderr PingOpts{pingOptsQuiet, pingOptsJson, pingOptsCount, pi
             else traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
           MT.threadDelay keepAliveDelay
           keepAlive bearer timeoutfn peerStr version td' (cookie + 1)
+
+
+isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
+isSameVersionAndMagic v1 v2 = extract v1 == extract v2
+  where extract :: NodeVersion -> (Int, Word32)
+        extract (NodeToClientVersionV9 m)  = (-9, m)
+        extract (NodeToClientVersionV10 m) = (-10, m)
+        extract (NodeToClientVersionV11 m) = (-11, m)
+        extract (NodeToClientVersionV12 m) = (-12, m)
+        extract (NodeToClientVersionV13 m) = (-13, m)
+        extract (NodeToClientVersionV14 m) = (-14, m)
+        extract (NodeToClientVersionV15 m) = (-15, m)
+        extract (NodeToClientVersionV16 m) = (-16, m)
+        extract (NodeToNodeVersionV1 m)    = (1, m)
+        extract (NodeToNodeVersionV2 m)    = (2, m)
+        extract (NodeToNodeVersionV3 m)    = (3, m)
+        extract (NodeToNodeVersionV4 m _)  = (4, m)
+        extract (NodeToNodeVersionV5 m _)  = (5, m)
+        extract (NodeToNodeVersionV6 m _)  = (6, m)
+        extract (NodeToNodeVersionV7 m _)  = (7, m)
+        extract (NodeToNodeVersionV8 m _)  = (8, m)
+        extract (NodeToNodeVersionV9 m _)  = (9, m)
+        extract (NodeToNodeVersionV10 m _) = (10, m)
+        extract (NodeToNodeVersionV11 m _) = (11, m)
+        extract (NodeToNodeVersionV12 m _) = (12, m)
