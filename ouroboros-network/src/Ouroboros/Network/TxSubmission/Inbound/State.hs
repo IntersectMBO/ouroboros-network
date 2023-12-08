@@ -10,6 +10,7 @@ module Ouroboros.Network.TxSubmission.Inbound.State
   ( -- * Core API
     SharedTxState (..)
   , PeerTxState (..)
+  , numTxIdsToRequest
   , SharedTxStateVar
   , newSharedTxStateVar
   , receivedTxIds
@@ -47,6 +48,7 @@ import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
+import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..))
 
 
@@ -93,6 +95,43 @@ data PeerTxState txid tx = PeerTxState {
 instance ( NoThunks txid
          , NoThunks tx
          ) => NoThunks (PeerTxState txid tx)
+
+
+-- | Compute number of `txids` to request respecting `TxDecisionPolicy`; update
+-- `PeerTxState`.
+--
+numTxIdsToRequest :: TxDecisionPolicy
+                  -> PeerTxState txid tx
+                  -> (NumTxIdsToReq, PeerTxState txid tx)
+numTxIdsToRequest
+    TxDecisionPolicy { maxNumTxIdsToRequest,
+                       maxUnacknowledgedTxIds }
+    ps@PeerTxState { unacknowledgedTxIds,
+                     requestedTxIdsInflight }
+    =
+    ( txIdsToRequest
+    , ps { requestedTxIdsInflight = requestedTxIdsInflight
+                                  + txIdsToRequest }
+    )
+  where
+    -- we are forcing two invariants here:
+    -- * there are at most `maxUnacknowledgedTxIds` (what we request is added to
+    --   `unacknowledgedTxIds`)
+    -- * there are at most `maxNumTxIdsToRequest` txid requests at a time per
+    --   peer
+    --
+    -- TODO: both conditions provide an upper bound for overall requests for
+    -- `txid`s to all inbound peers.
+    txIdsToRequest, unacked, unackedAndRequested :: NumTxIdsToReq
+
+    txIdsToRequest =
+        assert (unackedAndRequested <= maxUnacknowledgedTxIds) $
+        assert (requestedTxIdsInflight <= maxNumTxIdsToRequest) $
+        (maxUnacknowledgedTxIds - unackedAndRequested)
+        `min` (maxNumTxIdsToRequest - requestedTxIdsInflight)
+
+    unackedAndRequested = unacked + requestedTxIdsInflight
+    unacked = fromIntegral $ StrictSeq.length unacknowledgedTxIds
 
 
 -- | Shared state of all `TxSubmission` clients.
