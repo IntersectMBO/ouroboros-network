@@ -39,7 +39,9 @@ import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable as Foldable (find, fold, foldl', toList)
 import Data.Function (on)
-import Data.List (intercalate, isPrefixOf, isSuffixOf, nub, nubBy, stripPrefix)
+import Data.List (intercalate, isPrefixOf, isSuffixOf, mapAccumR, nub, nubBy,
+           stripPrefix)
+import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust, maybeToList)
@@ -63,6 +65,9 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound
+import Ouroboros.Network.TxSubmission.Inbound.Decision
+import Ouroboros.Network.TxSubmission.Inbound.Decision qualified as TXS
+import Ouroboros.Network.TxSubmission.Inbound.Policy
 import Ouroboros.Network.TxSubmission.Inbound.State (PeerTxState (..),
            SharedTxState (..))
 import Ouroboros.Network.TxSubmission.Inbound.State qualified as TXS
@@ -70,6 +75,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
+import Test.Ouroboros.Network.BlockFetch (PeerGSVT (..))
 import Test.Ouroboros.Network.Utils
 
 import Test.QuickCheck
@@ -77,6 +83,7 @@ import Test.QuickCheck.Function (apply)
 import Test.QuickCheck.Monoids (All (..))
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
+import Text.Pretty.Simple
 import Text.Printf
 
 
@@ -105,10 +112,23 @@ tests = testGroup "Ouroboros.Network.TxSubmission"
     , testProperty "hasTxIdsToAcknowledge"      prop_hasTxIdsToAcknowledge
     , testProperty "receivedTxIdsImpl"          prop_receivedTxIdsImpl
     , testProperty "collectTxsImpl"             prop_collectTxsImpl
+    , testProperty "numTxIdsToRequest"          prop_numTxIdsToRequest
     , testGroup "NoThunks"
       [ testProperty "receivedTxIdsImpl"        prop_receivedTxIdsImpl_nothunks
       , testProperty "collectTxsImpl"           prop_collectTxsImpl_nothunks
       ]
+    ]
+  , testGroup "Decisions"
+    [ testGroup "ArbDecisionContexts"
+      [ testProperty "generator"               prop_ArbDecisionContexts_generator
+      , testProperty "shrinker"              $ withMaxSuccess 33
+                                               prop_ArbDecisionContexts_shrinker
+      ]
+    , testProperty "shared state invariant"    prop_makeDecisions_sharedstate
+    , testProperty "inflight"                  prop_makeDecisions_inflight
+    , testProperty "policy"                    prop_makeDecisions_policy
+    , testProperty "acknowledged"              prop_makeDecisions_acknowledged
+    , testProperty "exhaustive"                prop_makeDecisions_exhaustive
     ]
   ]
 
@@ -1227,6 +1247,554 @@ prop_collectTxsImpl_nothunks (ArbCollectTxs _mempoolHasTxFun txidsRequested txsR
   where
     st' = TXS.collectTxsImpl peeraddr txidsRequested txsReceived st
 
+
+newtype ArbTxDecisionPolicy = ArbTxDecisionPolicy TxDecisionPolicy
+  deriving Show
+
+instance Arbitrary ArbTxDecisionPolicy where
+    arbitrary =
+          ArbTxDecisionPolicy . fixupTxDecisionPolicy
+      <$> ( TxDecisionPolicy
+            <$> (getSmall <$> arbitrary)
+            <*> (getSmall <$> arbitrary)
+            <*> (SizeInBytes . getPositive <$> arbitrary)
+            <*> (SizeInBytes . getPositive <$> arbitrary)
+            <*> (getPositive <$> arbitrary))
+
+    shrink (ArbTxDecisionPolicy a@TxDecisionPolicy {
+              maxNumTxIdsToRequest,
+              txsSizeInflightPerPeer,
+              maxTxsSizeInflight,
+              txInflightMultiplicity }) =
+      [ ArbTxDecisionPolicy a { maxNumTxIdsToRequest = NumTxIdsToReq x }
+      | x <- shrink (getNumTxIdsToReq maxNumTxIdsToRequest)
+      ]
+      ++
+      [ ArbTxDecisionPolicy . fixupTxDecisionPolicy
+      $ a { txsSizeInflightPerPeer = SizeInBytes s }
+      | s <- shrink (getSizeInBytes txsSizeInflightPerPeer)
+      ]
+      ++
+      [ ArbTxDecisionPolicy . fixupTxDecisionPolicy
+      $ a { maxTxsSizeInflight = SizeInBytes s }
+      | s <- shrink (getSizeInBytes maxTxsSizeInflight)
+      ]
+      ++
+      [ ArbTxDecisionPolicy . fixupTxDecisionPolicy
+      $ a { txInflightMultiplicity = x }
+      | Positive x <- shrink (Positive txInflightMultiplicity)
+      ]
+
+
+fixupTxDecisionPolicy :: TxDecisionPolicy -> TxDecisionPolicy
+fixupTxDecisionPolicy a@TxDecisionPolicy { txsSizeInflightPerPeer,
+                                           maxTxsSizeInflight }
+ = a { txsSizeInflightPerPeer = txsSizeInflightPerPeer',
+       maxTxsSizeInflight     = maxTxsSizeInflight' }
+ where
+   txsSizeInflightPerPeer' = min txsSizeInflightPerPeer maxTxsSizeInflight
+   maxTxsSizeInflight'     = max txsSizeInflightPerPeer maxTxsSizeInflight
+
+
+-- | Generate  `TxDecisionPolicy` and a valid `PeerTxState` with respect to
+-- that policy.
+--
+data ArbPeerTxStateWithPolicy =
+    ArbPeerTxStateWithPolicy {
+        ptspState  :: PeerTxState TxId (Tx TxId),
+        ptspPolicy :: TxDecisionPolicy
+    }
+    deriving Show
+
+-- | Fix-up `PeerTxState` according to `TxDecisionPolicy`.
+--
+fixupPeerTxStateWithPolicy :: Ord txid
+                           => TxDecisionPolicy
+                           -> PeerTxState txid tx
+                           -> PeerTxState txid tx
+fixupPeerTxStateWithPolicy
+    TxDecisionPolicy { maxUnacknowledgedTxIds,
+                       maxNumTxIdsToRequest }
+    ps@PeerTxState { unacknowledgedTxIds,
+                     availableTxIds,
+                     requestedTxsInflight,
+                     requestedTxIdsInflight,
+                     unknownTxs
+                   }
+    =
+    ps { unacknowledgedTxIds    = unacknowledgedTxIds',
+         availableTxIds         = availableTxIds',
+         requestedTxsInflight   = requestedTxsInflight',
+         requestedTxIdsInflight = requestedTxIdsInflight',
+         unknownTxs             = unknownTxs'
+       }
+  where
+    -- limit the number of unacknowledged txids, and then fix-up all the other
+    -- sets.
+    unacknowledgedTxIds'    = StrictSeq.take (fromIntegral maxUnacknowledgedTxIds)
+                                             unacknowledgedTxIds
+    unackedSet              = Set.fromList (toList unacknowledgedTxIds')
+    availableTxIds'         = availableTxIds `Map.restrictKeys` unackedSet
+    requestedTxsInflight'   = requestedTxsInflight `Set.intersection` unackedSet
+    -- requestedTxIdsInflight must be smaller than `maxNumTxIdsToRequest, and
+    -- also `requestedTxIdsInflight` and the number of `unacknowledgedTxIds'`
+    -- must be smaller or equal to `maxUnacknowledgedTxIds`.
+    requestedTxIdsInflight' = requestedTxIdsInflight
+                              `min` maxNumTxIdsToRequest
+                              `min` (maxUnacknowledgedTxIds - fromIntegral (StrictSeq.length unacknowledgedTxIds'))
+    unknownTxs'             = unknownTxs `Set.intersection` unackedSet
+
+
+instance Arbitrary ArbPeerTxStateWithPolicy where
+    arbitrary = do
+      mempoolHasTx <- arbitrary
+      ArbTxDecisionPolicy policy
+        <- arbitrary
+      ArbPeerTxState { arbPeerTxState = ps }
+        <- genArbPeerTxState
+            mempoolHasTx
+            (fromIntegral (maxUnacknowledgedTxIds policy))
+      return ArbPeerTxStateWithPolicy { ptspState  = fixupPeerTxStateWithPolicy policy ps,
+                                        ptspPolicy = policy
+                                      }
+
+
+prop_numTxIdsToRequest
+  :: ArbPeerTxStateWithPolicy
+  -> Property
+prop_numTxIdsToRequest
+    ArbPeerTxStateWithPolicy {
+      ptspPolicy = policy@TxDecisionPolicy { maxNumTxIdsToRequest,
+                                             maxUnacknowledgedTxIds },
+      ptspState  = ps
+    }
+    =
+    case TXS.numTxIdsToRequest policy ps of
+      (numToReq, ps') ->
+             numToReq <= maxNumTxIdsToRequest
+        .&&. numToReq + requestedTxIdsInflight ps === requestedTxIdsInflight ps'
+        .&&. fromIntegral (StrictSeq.length (unacknowledgedTxIds ps'))
+           + requestedTxIdsInflight ps'
+          <= maxUnacknowledgedTxIds
+
+
+data ArbDecisionContexts txid = ArbDecisionContexts {
+    arbDecisionPolicy :: TxDecisionPolicy,
+
+    arbSharedContext  :: SharedDecisionContext PeerAddr txid (Tx txid),
+
+    arbMempoolHasTx   :: Fun txid Bool
+    -- ^ needed just for shrinking
+  }
+
+instance Show txid => Show (ArbDecisionContexts txid) where
+  show ArbDecisionContexts {
+      arbDecisionPolicy,
+      arbSharedContext = SharedDecisionContext {
+          sdcPeerGSV = gsv,
+          sdcSharedTxState = st
+        },
+      arbMempoolHasTx
+    }
+    =
+    intercalate "\n\t"
+    [ "ArbDecisionContext"
+    , show arbDecisionPolicy
+    , show gsv
+    , show st
+    , show arbMempoolHasTx
+    ]
+
+
+-- | Fix-up `SharedTxState` so it satisfies `TxDecisionPolicy`.
+--
+fixupSharedTxStateForPolicy
+  :: forall peeraddr txid tx.
+     Ord txid
+  => (txid -> Bool) -- ^ mempoolHasTx
+  -> TxDecisionPolicy
+  -> SharedTxState peeraddr txid tx
+  -> SharedTxState peeraddr txid tx
+fixupSharedTxStateForPolicy
+    mempoolHasTx
+    policy@TxDecisionPolicy {
+      txsSizeInflightPerPeer,
+      maxTxsSizeInflight,
+      txInflightMultiplicity
+    }
+    st@SharedTxState { peerTxStates }
+    =
+    fixupSharedTxState
+      mempoolHasTx
+      st { peerTxStates = snd . mapAccumR fn (0, Map.empty) $ peerTxStates }
+  where
+    -- fixup `PeerTxState` and accumulate size of all `tx`'s in-flight across
+    -- all peers.
+    fn :: (SizeInBytes, Map txid Int)
+       -> PeerTxState txid tx
+       -> ((SizeInBytes, Map txid Int), PeerTxState txid tx)
+    fn
+        (sizeInflightAll, inflightMap)
+        ps
+        =
+        ( ( sizeInflightAll + requestedTxsInflightSize'
+          , inflightMap'
+          )
+        , ps' { requestedTxsInflight     = requestedTxsInflight',
+                requestedTxsInflightSize = requestedTxsInflightSize'
+              }
+        )
+      where
+        ps' = fixupPeerTxStateWithPolicy policy ps
+
+        (requestedTxsInflightSize', requestedTxsInflight', inflightMap') =
+          Map.foldrWithKey
+            (\txid txSize r@(!inflightSize, !inflightSet, !inflight) ->
+              let (multiplicity, inflight') =
+                    Map.alterF
+                      (\case
+                          Nothing -> (1, Just 1)
+                          Just x  -> let x' = x + 1 in (x',  Just $! x'))
+                      txid inflight
+              in if inflightSize <= txsSizeInflightPerPeer
+                 && sizeInflightAll + inflightSize <= maxTxsSizeInflight
+                 && multiplicity <= txInflightMultiplicity
+                then (txSize + inflightSize, Set.insert txid inflightSet, inflight')
+                else r
+            )
+            (0, Set.empty, inflightMap)
+            (availableTxIds ps' `Map.restrictKeys` requestedTxsInflight ps')
+
+instance (Arbitrary txid, Ord txid, Function txid, CoArbitrary txid)
+      => Arbitrary (ArbDecisionContexts txid) where
+
+    arbitrary = do
+      ArbTxDecisionPolicy policy <- arbitrary
+      (mempoolHasTx, _ps, st, _) <-
+        genSharedTxState (fromIntegral $ maxNumTxIdsToRequest policy)
+      let pss   = Map.toList (peerTxStates st)
+          peers = fst `map` pss
+      -- each peer must have a GSV
+      gsvs <- zip peers
+          <$> infiniteListOf (unPeerGSVT <$> arbitrary)
+      let st' = fixupSharedTxStateForPolicy
+                  (apply mempoolHasTx) policy st
+
+      return $ ArbDecisionContexts {
+          arbDecisionPolicy    = policy,
+          arbMempoolHasTx      = mempoolHasTx,
+          arbSharedContext     = SharedDecisionContext {
+              sdcPeerGSV       = Map.fromList gsvs,
+              sdcSharedTxState = st'
+            }
+          }
+
+    shrink a@ArbDecisionContexts {
+               arbDecisionPolicy = policy,
+               arbMempoolHasTx   = mempoolHasTx,
+               arbSharedContext = b@SharedDecisionContext {
+                   sdcPeerGSV = gsvs,
+                   sdcSharedTxState = sharedState
+                 }
+               } =
+        -- shrink shared state
+        [ a { arbSharedContext = b { sdcSharedTxState = sharedState'' } }
+        | sharedState' <- shrinkSharedTxState (apply mempoolHasTx) sharedState
+        , let sharedState'' = fixupSharedTxStateForPolicy
+                                (apply mempoolHasTx) policy sharedState'
+        , sharedState'' /= sharedState
+        ]
+        ++
+        -- shrink peers; note all peers are present in `sdcPeerGSV`.
+        [ a { arbSharedContext = SharedDecisionContext {
+                                   sdcPeerGSV       = gsvs',
+                                   sdcSharedTxState = sharedState'
+                                 } }
+        | -- shrink the set of peers
+          peers' <- Set.fromList <$> shrinkList (const []) (Map.keys gsvs)
+        , let gsvs' = gsvs `Map.restrictKeys` peers'
+              sharedState' =
+                  fixupSharedTxStateForPolicy
+                    (apply mempoolHasTx) policy
+                $ sharedState { peerTxStates = peerTxStates sharedState
+                                               `Map.restrictKeys`
+                                               peers'
+                              }
+        , sharedState' /= sharedState
+        ]
+
+
+prop_ArbDecisionContexts_generator
+  :: ArbDecisionContexts TxId
+  -> Property
+prop_ArbDecisionContexts_generator
+  ArbDecisionContexts { arbSharedContext = SharedDecisionContext { sdcSharedTxState = st } }
+  =
+  -- whenFail (pPrint a) $
+  sharedTxStateInvariant st
+
+
+prop_ArbDecisionContexts_shrinker
+  :: ArbDecisionContexts TxId
+  -> All
+prop_ArbDecisionContexts_shrinker
+  ctx
+  =
+  foldMap (\a ->
+            All
+          . counterexample (show a)
+          . sharedTxStateInvariant
+          . sdcSharedTxState
+          . arbSharedContext
+          $ a)
+        $ shrink ctx
+
+
+-- | Verify that `makeDecisions` preserves the `SharedTxState` invariant.
+--
+prop_makeDecisions_sharedstate
+  :: ArbDecisionContexts TxId
+  -> Property
+prop_makeDecisions_sharedstate
+    ArbDecisionContexts { arbDecisionPolicy = policy,
+                          arbSharedContext = sharedCtx } =
+    let (sharedState, decisions) = TXS.makeDecisions policy sharedCtx (peerTxStates (sdcSharedTxState sharedCtx))
+    in counterexample (show sharedState)
+     $ counterexample (show decisions)
+     $ sharedTxStateInvariant sharedState
+
+
+-- | Verify that `makeDecisions`:
+--
+-- * modifies `inflightTxs` map by adding `tx`s which are inflight;
+-- * updates `requestedTxsInflightSize` correctly;
+-- * in-flight `tx`s set is disjoint with `bufferedTxs`;
+-- * requested `tx`s are coming from `availableTxIds`.
+--
+prop_makeDecisions_inflight
+  :: ArbDecisionContexts TxId
+  -> Property
+prop_makeDecisions_inflight
+    ArbDecisionContexts {
+      arbDecisionPolicy = policy,
+      arbSharedContext  = sharedCtx@SharedDecisionContext {
+                            sdcSharedTxState = sharedState
+                          }
+    }
+    =
+    let (sharedState', decisions) = TXS.makeDecisions policy sharedCtx (peerTxStates sharedState)
+
+        inflightSet :: Set TxId
+        inflightSet = foldMap txdTxsToRequest decisions
+
+        inflightSize :: Map PeerAddr SizeInBytes
+        inflightSize = Map.foldrWithKey
+                        (\peer TxDecision { txdTxsToRequest } m ->
+                          Map.insert peer
+                            (foldMap (\txid -> fromMaybe 0 $ Map.lookup peer (peerTxStates sharedState)
+                                                         >>= Map.lookup txid . availableTxIds)
+                                     txdTxsToRequest)
+                            m
+                        ) Map.empty decisions
+
+        bufferedSet :: Set TxId
+        bufferedSet = Map.keysSet (bufferedTxs sharedState)
+    in
+        counterexample (show sharedState') $
+        counterexample (show decisions) $
+
+        -- 'inflightTxs' set is increased by exactly the requested txs
+        counterexample (concat
+                          [ show inflightSet
+                          , " not a subset of "
+                          , show (inflightTxs sharedState')
+                          ])
+                       ( inflightSet <> Map.keysSet (inflightTxs sharedState')
+                         ===
+                         Map.keysSet (inflightTxs sharedState')
+                       )
+
+    .&&.
+
+        -- for each peer size in flight is equal to the original size in flight
+        -- plus size of all requested txs
+        property
+          (fold
+            (Map.merge
+              (Map.mapMaybeMissing
+                (\peer a ->
+                  Just ( All
+                       . counterexample
+                           ("missing peer in requestedTxsInflightSize: " ++ show peer)
+                       $ (a === 0))))
+              (Map.mapMaybeMissing (\_ _ -> Nothing))
+              (Map.zipWithMaybeMatched
+                (\peer delta PeerTxState { requestedTxsInflightSize } ->
+                  let original =
+                        case Map.lookup peer (peerTxStates sharedState) of
+                          Nothing                                           -> 0
+                          Just PeerTxState { requestedTxsInflightSize = a } -> a
+                  in Just ( All
+                          . counterexample (show peer)
+                          $ original + delta
+                            ===
+                            requestedTxsInflightSize
+                          )
+                ))
+              inflightSize
+              (peerTxStates sharedState')))
+
+    .&&. counterexample ("requested txs must not be buffered: "
+                         ++ show (inflightSet `Set.intersection` bufferedSet))
+         (inflightSet `Set.disjoint` bufferedSet)
+
+    .&&. counterexample "requested txs must be available"
+         ( fold $
+           Map.merge
+             (Map.mapMissing (\peeraddr _ ->
+                               All $
+                               counterexample ("peer missing in peerTxStates " ++ show peeraddr)
+                               False))
+             (Map.mapMissing (\_ _ -> All True))
+             (Map.zipWithMatched (\peeraddr a b -> All
+                                                 . counterexample (show peeraddr)
+                                                 $ a `Set.isSubsetOf` b))
+             -- map of requested txs
+             (Map.fromList [ (peeraddr, txids)
+                           | (peeraddr, TxDecision { txdTxsToRequest = txids })
+                             <- Map.assocs decisions
+                           ])
+             -- map of available txs
+             (Map.map (Map.keysSet . availableTxIds)
+                      (peerTxStates sharedState)))
+
+
+-- | Verify that `makeTxDecisions` obeys `TxDecisionPolicy`.
+--
+prop_makeDecisions_policy
+  :: ArbDecisionContexts TxId
+  -> Property
+prop_makeDecisions_policy
+    ArbDecisionContexts {
+      arbDecisionPolicy = policy@TxDecisionPolicy { maxTxsSizeInflight,
+                                                    txsSizeInflightPerPeer,
+                                                    txInflightMultiplicity },
+      arbSharedContext  = sharedCtx@SharedDecisionContext { sdcSharedTxState = sharedState }
+    } =
+    let (sharedState', _decisions) = TXS.makeDecisions policy sharedCtx (peerTxStates sharedState)
+        maxTxsSizeInflightEff      = maxTxsSizeInflight + maxTxSize
+        txsSizeInflightPerPeerEff  = txsSizeInflightPerPeer + maxTxSize
+
+        sizeInflight =
+          foldMap (\PeerTxState { availableTxIds, requestedTxsInflight } ->
+                     fold (availableTxIds `Map.restrictKeys` requestedTxsInflight))
+                  (peerTxStates sharedState')
+
+    in counterexample (show sharedState') $
+
+         -- size of txs inflight cannot exceed `maxTxsSizeInflight` by more
+         -- than maximal tx size.
+         counterexample ("txs inflight exceed limit " ++ show (sizeInflight, maxTxsSizeInflightEff))
+         (sizeInflight <= maxTxsSizeInflightEff)
+    .&&.
+         -- size in flight for each peer cannot exceed `txsSizeInflightPerPeer`
+         counterexample "size in flight per peer vaiolation" (
+           foldMap
+             (\PeerTxState { availableTxIds, requestedTxsInflight } ->
+               let inflight = fold (availableTxIds `Map.restrictKeys` requestedTxsInflight)
+               in All $ counterexample (show (inflight, txsSizeInflightPerPeerEff)) $
+                 inflight
+                 <=
+                 txsSizeInflightPerPeerEff
+             )
+             (peerTxStates sharedState')
+         )
+
+    .&&.
+         (
+         -- none of the multiplicities should go above the
+         -- `txInflightMultiplicity`
+         let inflight = inflightTxs sharedState'
+         in
+              counterexample ("multiplicities violation: " ++ show inflight)
+            . foldMap (All . (<= txInflightMultiplicity))
+            $ inflight
+         )
+
+
+-- | Verify that `makeDecisions` and `acknowledgeTxIds` are compatible.
+--
+prop_makeDecisions_acknowledged
+  :: ArbDecisionContexts TxId
+  -> Property
+prop_makeDecisions_acknowledged
+    ArbDecisionContexts { arbDecisionPolicy = policy,
+                          arbSharedContext =
+                            sharedCtx@SharedDecisionContext {
+                              sdcSharedTxState = sharedTxState
+                            }
+                        } =
+    whenFail (pPrintOpt CheckColorTty defaultOutputOptionsDarkBg { outputOptionsCompact = True } sharedTxState) $
+    let (_, decisions) = TXS.makeDecisions policy sharedCtx (peerTxStates sharedTxState)
+
+        ackFromDecisions :: Map PeerAddr NumTxIdsToAck
+        ackFromDecisions = Map.fromList
+                         [ (peer, txdTxIdsToAcknowledge)
+                         | (peer, TxDecision { txdTxIdsToAcknowledge })
+                           <- Map.assocs decisions
+                         ]
+
+        ackFromState :: Map PeerAddr NumTxIdsToAck
+        ackFromState =
+            Map.map (\ps -> case TXS.acknowledgeTxIds sharedTxState ps of
+                              (a, _, _, _) -> a)
+          . peerTxStates
+          $ sharedTxState
+
+    in counterexample (show (ackFromDecisions, ackFromState))
+     . fold
+     $ Map.merge
+        -- it is an error if `ackFromDecisions` contains a result which is
+        -- missing in `ackFromState`
+        (Map.mapMissing (\addr num -> All $ counterexample ("missing " ++ show (addr, num)) False))
+        -- if `ackFromState` contains an enty which is missing in
+        -- `ackFromDecisions` it must be `0`; `makeDecisions` might want to
+        -- download some `tx`s even if there's nothing to acknowledge
+        (Map.mapMissing (\_ d -> All (d === 0)))
+        -- if both entries exists they must be equal
+        (Map.zipWithMatched (\_ a b -> All (a === b)))
+        ackFromDecisions
+        ackFromState
+
+
+-- | `makeDecision` is exhaustive in the sense that it returns an empty
+-- decision list on a state returned by a prior call of `makeDecision`.
+--
+prop_makeDecisions_exhaustive
+  :: ArbDecisionContexts TxId
+  -> Property
+prop_makeDecisions_exhaustive
+  ArbDecisionContexts {
+    arbDecisionPolicy = policy,
+    arbSharedContext =
+      sharedCtx@SharedDecisionContext {
+        sdcSharedTxState = sharedTxState
+      }
+  }
+  =
+  let (sharedTxState',  decisions')
+        = TXS.makeDecisions policy
+                            sharedCtx
+                            (peerTxStates sharedTxState)
+      (sharedTxState'', decisions'')
+        = TXS.makeDecisions policy
+                            sharedCtx { sdcSharedTxState = sharedTxState' }
+                            (peerTxStates sharedTxState')
+  in counterexample ("decisions':  " ++ show decisions')
+   . counterexample ("state':      " ++ show sharedTxState')
+   . counterexample ("decisions'': " ++ show decisions'')
+   . counterexample ("state'':     " ++ show sharedTxState'')
+   $ null decisions''
 
 --
 -- Auxiliary functions
