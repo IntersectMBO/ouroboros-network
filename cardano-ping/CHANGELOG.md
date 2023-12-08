@@ -1,6 +1,14 @@
 # Revision history for cardano-ping
 
-## Next
+## next version
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.2.0.10 -- 2023-12-08
+
+### Non-breaking changes
 
 * Expose more `InitiatorOnly`, `handshakeDec`, `handshakeReq` and `isSameVersionAndMagic` from `Cardano.Network.Ping`.
 
