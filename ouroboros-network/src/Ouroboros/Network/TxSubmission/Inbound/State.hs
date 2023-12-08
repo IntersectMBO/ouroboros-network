@@ -242,6 +242,14 @@ canRequestMoreTxsImpl peeraddr SharedTxState { peerTxStates } =
       toSet unacknowledgedTxIds
 
 
+-- TODO: `maxUnacked` and `maxTxIdsToRequests` are constants, should we make
+-- them configurable?  This could allow us to do some benchmarking and adjust
+-- the numbers for better performance.
+--
+-- TODO: this is only needed for a legacy implementation of the `tx-submission`
+-- inbound side, and it should be removed.
+-- TODO: should update `requestedTxInflight`
+--
 getNumTxIdsToRequestImpl
   :: Word16 -- ^ max unacknowledged `tx`s
   -> Word16 -- ^ max `txid`s to request

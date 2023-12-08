@@ -1278,6 +1278,14 @@ prop_collectTxsImpl_nothunks (ArbCollectTxs _mempoolHasTxFun txidsRequested txsR
         Just ctx -> counterexample (show ctx) False
 
 
+-- TODO:
+-- * verify that `getNumTxIdsToRequest` will never send more requests than `maxUnacked`:
+--   we need to formulate a property about `requestedTxIdsInflight`
+--   & `unackanowledgedTxIds`, can this be stated outside of running the
+--   protocol (`prop_txSubmission` verifies this, but it would be nice to have
+--   a pure check).
+
+
 --
 -- Auxiliary functions
 --
