@@ -33,7 +33,7 @@ data ClientSubscriptionParams a = ClientSubscriptionParams
   -- ^ error policies for subscription worker
   }
 
--- | Client subscription worker keeps subsribing to the 'LocalAddress' using
+-- | Client subscription worker keeps subscribing to the 'LocalAddress' using
 -- either unix socket or named pipe.
 --
 clientSubscriptionWorker

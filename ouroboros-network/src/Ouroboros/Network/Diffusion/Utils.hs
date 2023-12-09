@@ -28,7 +28,7 @@ import           Ouroboros.Network.Diffusion.Common
 --
 
 withSockets :: forall m ntnFd ntnAddr ntcAddr a.
-               ( MonadThrow m
+               ( MonadCatch m
                , Typeable ntnAddr
                , Show     ntnAddr
                )
@@ -54,13 +54,10 @@ withSockets tracer sn
                -> ((ntnFd, ntnAddr) -> m a)
                -> m a
     withSocket (Left sock) f =
-      bracket
-        (pure sock)
-        (Snocket.close sn)
-        $ \_sock -> do
-          !addr <- Snocket.getLocalAddr sn sock
-          configureSystemdSocket sock addr
-          f (sock, addr)
+      do !addr <- Snocket.getLocalAddr sn sock
+         configureSystemdSocket sock addr
+         f (sock, addr)
+      `onException` Snocket.close sn sock
     withSocket (Right addr) f =
       bracket
         (do traceWith tracer (CreatingServerSocket addr)
