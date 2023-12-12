@@ -18,6 +18,14 @@ data PeerStatus =
      | PeerCooling
      -- ^ Peer is in cold state but its connection still lingers.
      -- I.e. it is still in progress to be fully demoted.
+     --
+     -- Note:
+     -- The `PeerCooling -> PeerCold` state transition is an `outbound-governor`
+     -- reflection of the connection-manager's `TerminatingSt -> TerminatedSt`
+     -- state transition (our version of tcp's `TimeWait`).  It is only
+     -- triggered in case of a clean connection shutdown, not in the case of
+     -- errors.
+     --
      | PeerWarm
      | PeerHot
   deriving (Eq, Ord, Show)
