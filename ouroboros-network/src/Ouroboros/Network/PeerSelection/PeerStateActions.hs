@@ -596,7 +596,7 @@ withPeerStateActions PeerStateActionsArguments {
           monitorPeerConnection,
           activatePeerConnection,
           deactivatePeerConnection,
-          closePeerConnection
+          closePeerConnection = void . closePeerConnection
         }
 
   where
@@ -705,11 +705,15 @@ withPeerStateActions PeerStateActionsArguments {
           -- supposed to terminate (unless the remote peer did something
           -- wrong).
           Just (WithSomeProtocolTemperature (WithWarm MiniProtocolSuccess {})) -> do
-            closePeerConnection pch
-            peerMonitoringLoop pch
+            isCooling <- closePeerConnection pch
+            if isCooling
+                then peerMonitoringLoop pch
+                else return ()
           Just (WithSomeProtocolTemperature (WithEstablished MiniProtocolSuccess {})) -> do
-            closePeerConnection pch
-            peerMonitoringLoop pch
+            isCooling <- closePeerConnection pch
+            if isCooling
+                then peerMonitoringLoop pch
+                else return ()
 
           Nothing ->
             traceWith spsTracer (PeerStatusChanged (CoolingToCold pchConnectionId))
@@ -974,7 +978,7 @@ withPeerStateActions PeerStateActionsArguments {
 
 
     closePeerConnection :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
-                        -> m ()
+                        -> m Bool
     closePeerConnection
         PeerConnectionHandle {
             pchConnectionId,
@@ -1002,10 +1006,12 @@ withPeerStateActions PeerStateActionsArguments {
         Nothing -> do
           -- timeout fired
           Mux.stopMux pchMux
-          atomically (writeTVar pchPeerStatus PeerCooling)
-          traceWith spsTracer (PeerStatusChangeFailure
-                                (WarmToCooling pchConnectionId)
-                                TimeoutError)
+          wasWarm <- atomically (updateUnlessCoolingOrCold pchPeerStatus PeerCooling)
+          when wasWarm $
+            traceWith spsTracer (PeerStatusChangeFailure
+                                  (WarmToCooling pchConnectionId)
+                                  TimeoutError)
+          return wasWarm
 
         Just (SomeErrored errs) -> do
           -- some mini-protocol errored
@@ -1013,10 +1019,11 @@ withPeerStateActions PeerStateActionsArguments {
           -- we don't need to notify the connection manager, we can instead
           -- rely on mux property: if any of the mini-protocols errors, mux
           -- throws an exception as well.
-          atomically (writeTVar pchPeerStatus PeerCooling)
-          traceWith spsTracer (PeerStatusChangeFailure
-                                (WarmToCooling pchConnectionId)
-                                (ApplicationFailure errs))
+          wasWarm <- atomically (updateUnlessCoolingOrCold pchPeerStatus PeerCooling)
+          when wasWarm $
+            traceWith spsTracer (PeerStatusChangeFailure
+                                  (WarmToCooling pchConnectionId)
+                                  (ApplicationFailure errs))
           throwIO (MiniProtocolExceptions errs)
 
         Just AllSucceeded {} -> do
@@ -1026,8 +1033,10 @@ withPeerStateActions PeerStateActionsArguments {
           -- connection manager would simultaneously promote it, but this is not
           -- possible.
           _ <- unregisterOutboundConnection spsConnectionManager (remoteAddress pchConnectionId)
-          atomically (writeTVar pchPeerStatus PeerCooling)
-          traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))
+          wasWarm <- atomically (updateUnlessCoolingOrCold pchPeerStatus PeerCooling)
+          when wasWarm $
+            traceWith spsTracer (PeerStatusChanged (WarmToCooling pchConnectionId))
+          return wasWarm
 
 --
 -- Utilities
