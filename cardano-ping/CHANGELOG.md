@@ -17,6 +17,7 @@
 ### Non-breaking changes
 
 * Use `io-sim-1.3.0.0`.
+* ghc-9.8 support.
 
 ## 0.2.0.8 -- 2023-11-02
 

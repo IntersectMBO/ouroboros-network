@@ -8,6 +8,10 @@
 {-# LANGUAGE TypeApplications    #-}
 
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
+#if __GLASGOW_HASKELL__ >= 908
+{-# OPTIONS_GHC -Wno-x-partial #-}
+#endif
+
 module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   ( tests
   , mockDNSActions
