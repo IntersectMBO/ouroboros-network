@@ -297,8 +297,16 @@ connections PeerSelectionActions{
     asyncDemotion peeraddr (PeerCold, returnCommand)
       | peeraddr `EstablishedPeers.member` establishedPeers || peeraddr `Set.member` activePeers
       , peeraddr `Set.notMember` inProgressDemoteWarm
-      , peeraddr `Set.notMember` inProgressDemoteHot
-      , peeraddr `Set.member` inProgressDemoteToCold = Just (PeerCold, returnCommand)
+      , peeraddr `Set.notMember` inProgressDemoteHot  = Just (PeerCold, returnCommand)
+      -- Note:
+      --
+      -- We need to take care of direct transitions too `PeerCold` without going
+      -- through `PeerCooling` which can be triggered by
+      -- `deactivatePeerConnection`.
+      --
+      -- Also the peer might not be in `inProgressDemoteToCold`, that could
+      -- happen in `outbound-governor` skipped seeing `PeerCooling`.  This can
+      -- happen under load or we could be just unlucky.
 
     asyncDemotion _        _                          = Nothing
 
