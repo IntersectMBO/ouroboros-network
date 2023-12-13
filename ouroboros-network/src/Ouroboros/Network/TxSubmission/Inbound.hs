@@ -29,7 +29,7 @@ import           NoThunks.Class (NoThunks (..), unsafeNoThunks)
 
 import           Cardano.Prelude (forceElemsToWHNF)
 
-import           Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked.Switch
+import           Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked
 import           Control.Exception (assert)
 import           Control.Monad (unless)
 import           Control.Monad.Class.MonadSTM
