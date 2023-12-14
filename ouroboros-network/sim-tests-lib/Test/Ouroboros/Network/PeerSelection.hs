@@ -91,6 +91,7 @@ import           Test.QuickCheck
 import           Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
 import           Text.Pretty.Simple (pPrint)
+import Data.Maybe (mapMaybe)
 
 -- Exactly as named.
 unfHydra :: Int
@@ -2188,6 +2189,15 @@ prop_governor_target_established_big_ledger_peers_below env =
           ("\nSignal key: (target, known big ledger peers, established big ledger peers, recent failures, " ++
            "opportunities, ignored too long)") $
 
+        counterexample (unlines $ show `map`
+                            let as = -- mapMaybe (\(t, x) -> case x of
+                                     --                        GovernorDebug s -> Just (t, s)
+                                     --                        _               -> Nothing)
+                                     Signal.eventsToList events
+                                l = length as
+                            in drop (l - 20) as
+                       ) $
+
         signalProperty 20 show
           (\(_,_,_,_,_,toolong) -> Set.null toolong)
           ((,,,,,) <$> envTargetsSig
@@ -2197,6 +2207,75 @@ prop_governor_target_established_big_ledger_peers_below env =
                    <*> promotionOpportunities
                    <*> promotionOpportunitiesIgnoredTooLong)
 
+prop_x = prop_governor_target_established_big_ledger_peers_below
+   GovernorMockEnvironment {
+       peerGraph = PeerGraph
+         [
+         (PeerAddr 2
+          ,[]
+          ,GovernorScripts {peerShareScript   = Script (Just ([PeerAddr 13],PeerShareTimeQuick) :| []),
+                            peerSharingScript = Script (PeerSharingDisabled :| [PeerSharingEnabled]),
+                            connectionScript  = Script ((ToCold,NoDelay)    :| [(Noop,NoDelay)])}
+          ),
+          (PeerAddr 9
+          ,[]
+          ,GovernorScripts {peerShareScript = Script (Nothing :| []),
+                            peerSharingScript = Script (PeerSharingDisabled :| []),
+                            connectionScript = Script ((Noop,NoDelay) :| [])}),
+          (PeerAddr 13
+          ,[]
+          ,GovernorScripts {peerShareScript = Script (Nothing :| []),
+                            peerSharingScript = Script (PeerSharingDisabled :| []),
+                            connectionScript = Script ((ToCooling,NoDelay) :| [(ToCold,NoDelay), (Noop,NoDelay)])})] ,
+       localRootPeers  = LocalRootPeers.fromGroups [],
+       publicRootPeers = Map.fromList [(PeerAddr 2,(DoAdvertisePeer,IsLedgerPeer)),
+                                       (PeerAddr 9,(DoAdvertisePeer,IsNotLedgerPeer))
+                                      ],
+       bigLedgerPeers  = Set.fromList [PeerAddr 9],
+       targets = Script ((PeerSelectionTargets {targetNumberOfRootPeers = 0,
+                                                targetNumberOfKnownPeers = 0,
+                                                targetNumberOfEstablishedPeers = 0,
+                                                targetNumberOfActivePeers = 0,
+                                                targetNumberOfKnownBigLedgerPeers = 0,
+                                                targetNumberOfEstablishedBigLedgerPeers = 0,
+                                                targetNumberOfActiveBigLedgerPeers = 0},NoDelay) :|
+                        [ (PeerSelectionTargets {targetNumberOfRootPeers = 1,
+                                                targetNumberOfKnownPeers = 2,
+                                                targetNumberOfEstablishedPeers = 1,
+                                                targetNumberOfActivePeers = 0,
+                                                targetNumberOfKnownBigLedgerPeers = 1,
+                                                targetNumberOfEstablishedBigLedgerPeers = 0,
+                                                targetNumberOfActiveBigLedgerPeers = 0},LongDelay),
+                          (PeerSelectionTargets {targetNumberOfRootPeers = 0,
+                                                 targetNumberOfKnownPeers = 2,
+                                                 targetNumberOfEstablishedPeers = 1,
+                                                 targetNumberOfActivePeers = 0,
+                                                 targetNumberOfKnownBigLedgerPeers = 0,
+                                                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                                                 targetNumberOfActiveBigLedgerPeers = 0},LongDelay),
+                          (PeerSelectionTargets {targetNumberOfRootPeers = 0,
+                                                 targetNumberOfKnownPeers = 2,
+                                                 targetNumberOfEstablishedPeers = 2,
+                                                 targetNumberOfActivePeers = 0,
+                                                 targetNumberOfKnownBigLedgerPeers = 0,
+                                                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                                                 targetNumberOfActiveBigLedgerPeers = 0},LongDelay),
+                          (PeerSelectionTargets {targetNumberOfRootPeers = 0,
+                                                 targetNumberOfKnownPeers = 0,
+                                                 targetNumberOfEstablishedPeers = 0,
+                                                 targetNumberOfActivePeers = 0,
+                                                 targetNumberOfKnownBigLedgerPeers = 1,
+                                                 targetNumberOfEstablishedBigLedgerPeers = 1,
+                                                 targetNumberOfActiveBigLedgerPeers = 0},NoDelay)
+                        ]),
+       pickKnownPeersForPeerShare = Script (PickFirst :| []),
+       pickColdPeersToPromote     = Script (PickFirst :| []),
+       pickWarmPeersToPromote     = Script (PickFirst :| []),
+       pickHotPeersToDemote       = Script (PickFirst :| []),
+       pickWarmPeersToDemote      = Script (PickFirst :| []),
+       pickColdPeersToForget      = Script (PickFirst :| []),
+       peerSharing                = PeerSharingEnabled
+     }
 
 prop_governor_target_active_below :: GovernorMockEnvironment -> Property
 prop_governor_target_active_below env =

@@ -657,16 +657,7 @@ prop_diffusion_nofail defaultBearerInfo diffScript =
                                   iosimTracer
 
         trace :: [(Time, DiffusionTestTrace)]
-        trace = Trace.toList
-              . fmap (\(WithTime t (WithName _ b)) -> (t, b))
-              . withTimeNameTraceEvents
-                 @DiffusionTestTrace
-                 @NtNAddr
-              . Trace.fromList (MainReturn (Time 0) () [])
-              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-              . take 125000
-              . traceEvents
-              $ sim
+        trace = undefined 
 
         -- lastTime :: Time
         -- lastTime = fst (last trace)
