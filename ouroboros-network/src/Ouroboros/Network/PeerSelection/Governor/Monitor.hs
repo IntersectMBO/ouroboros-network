@@ -272,15 +272,20 @@ connections PeerSelectionActions{
       | peeraddr `Set.member`    activePeers
       , peeraddr `Set.notMember` inProgressDemoteHot  = Just (PeerWarm, returnCommand)
 
-    -- a warm -> cooling transition has occurred if it is now cooling, and it was
-    -- warm, but not in the set we were deliberately demoting synchronously
+    -- a `{PeerHot,PeerWarm} -> PeerCooling` transition has occurred if it is
+    -- now cooling, and it was warm, but not in the set of peers being demoted
+    -- synchronously, e.g. `inProgressDemote{Hot,Warm}`.
     --
-    -- If the peer is a member of inProgressDemoteToCold it means we already
-    -- accounted it, e.g. traced it. A peer in cooling state is going to be a
-    -- member of the established set until its connection is effectively
-    -- terminated on the outbound side so we have to be careful. So, we need to
-    -- check if the peer does not exist in the inProgressDemoteToCold to see if
-    -- it is a new/unique async demotion. Same for hot->cooling transitions.
+    -- If the peer is a member of the `inProgressDemoteToCold` set it means we
+    -- already accounted it, since we are adding peers to
+    -- `inProgressDemoteToCold` only if this function returns
+    -- `Just (PeerCooling, ...)`.
+    --
+    -- A peer in the `PeerCooling` state is going to be a member of the established set
+    -- until its connection is effectively terminated on the outbound side when
+    -- it will become `PeerCold`. We check if the peer does not exist in the
+    -- `inProgressDemoteToCold` to see if it is a new asynchronous demotion.
+    --
     asyncDemotion peeraddr (PeerCooling, returnCommand)
       | peeraddr `EstablishedPeers.member` establishedPeers
       , peeraddr `Set.notMember` activePeers
