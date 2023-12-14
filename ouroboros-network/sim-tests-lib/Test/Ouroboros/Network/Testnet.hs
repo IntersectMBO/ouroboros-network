@@ -119,6 +119,8 @@ tests =
                  prop_diffusion_target_active_public
   , testProperty "target established local"
                  prop_diffusion_target_established_local
+  , testProperty "unit reconnect"
+                 prop_unit_reconnect
   , testProperty "target active local"
                  prop_diffusion_target_active_local
   , testProperty "target active root"
@@ -2614,6 +2616,140 @@ prop_unit_4258 =
          )]
    in prop_diffusion_cm_valid_transition_order bearerInfo diffScript
 
+-- | This unit tests checks that for every * -> TerminatedSt Connection
+-- Manager transition, there's a corresponding peer selection state update
+-- where the peer gets removed from the established set.
+--
+-- Due to how IOSim currently works, the outbound governor thread is always
+-- going to be scheduled first since it is always the first to block (on STM).
+-- However this bug is triggered by a race condition between the
+-- 'peerMonitoringLoop' and the outbound governor, where the
+-- 'peerMonitoringLoop' will update the peer status way too fast and the
+-- out-governor won't be able to notice the intermediate state (STM doesn't
+-- guarantee all intermediate states are seen). If this happens the
+-- out-governor will fail to remove the peer from the established peers set
+-- and will think it has a connection to it when it does not.
+--
+-- If one wishes to check if the bug is present one should (unless IOSim is
+-- patched to explore more schedules or IOSimPOR is made more efficient) add a
+-- 'threadDelay' to 'evalGuardedDecisions' in the outbound governor code to
+-- force it to go to the back of the queue everytime.
+--
+prop_unit_reconnect :: Property
+prop_unit_reconnect =
+  let diffScript =
+        DiffusionScript
+          (SimArgs 1 10)
+          (singletonTimedScript Map.empty)
+          [(NodeArgs
+              (-3)
+              InitiatorAndResponderDiffusionMode
+              (Just 224)
+              Map.empty
+              (TestAddress (IPAddr (read "0.0.0.0") 0))
+              PeerSharingDisabled
+              [ (2,2,Map.fromList [ (RelayAccessAddress "0.0.0.1" 0,DoNotAdvertisePeer)
+                                  , (RelayAccessAddress "0.0.0.2" 0,DoNotAdvertisePeer)
+                                  ])
+              ]
+              (Script (LedgerPools [] :| []))
+              PeerSelectionTargets {
+                targetNumberOfRootPeers = 1,
+                targetNumberOfKnownPeers = 1,
+                targetNumberOfEstablishedPeers = 1,
+                targetNumberOfActivePeers = 1,
+
+                targetNumberOfKnownBigLedgerPeers = 0,
+                targetNumberOfEstablishedBigLedgerPeers = 0,
+                targetNumberOfActiveBigLedgerPeers = 0
+              }
+              (Script (DNSTimeout {getDNSTimeout = 10} :| []))
+              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+              Nothing
+              False
+          , [ JoinNetwork 0
+            ])
+          , (NodeArgs
+               (-1)
+               InitiatorAndResponderDiffusionMode
+               (Just 2)
+               Map.empty
+               (TestAddress (IPAddr (read "0.0.0.1") 0))
+               PeerSharingDisabled
+               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,DoNotAdvertisePeer)])]
+               (Script (LedgerPools [] :| []))
+               PeerSelectionTargets {
+                 targetNumberOfRootPeers = 1,
+                 targetNumberOfKnownPeers = 1,
+                 targetNumberOfEstablishedPeers = 1,
+                 targetNumberOfActivePeers = 1,
+
+                 targetNumberOfKnownBigLedgerPeers = 0,
+                 targetNumberOfEstablishedBigLedgerPeers = 0,
+                 targetNumberOfActiveBigLedgerPeers = 0
+               }
+             (Script (DNSTimeout {getDNSTimeout = 10} :| [ ]))
+             (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+             Nothing
+             False
+         , [ JoinNetwork 10
+           ])
+         ]
+
+      sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo (absNoAttenuation { abiInboundAttenuation  = SpeedAttenuation SlowSpeed (Time 20) 1000
+                                                                } ))
+                                diffScript
+                                iosimTracer
+
+      events :: [Events DiffusionTestTrace]
+      events = fmap ( Signal.eventsFromList
+                    . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                    )
+             . Trace.toList
+             . splitWithNameTrace
+             . Trace.fromList ()
+             . fmap snd
+             . Trace.toList
+             . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             . traceFromList
+             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+             . take 125000
+             . traceEvents
+             $ runSimTrace sim
+
+   in conjoin
+    $ verify_consistency
+   <$> events
+
+  where
+    verify_consistency :: Events DiffusionTestTrace -> Property
+    verify_consistency events =
+      let govEstablishedPeersSig :: Signal (Set NtNAddr)
+          govEstablishedPeersSig =
+            selectDiffusionPeerSelectionState'
+              (EstablishedPeers.toSet . Governor.establishedPeers)
+              events
+
+          govConnectionManagerTransitionsSig :: [E (AbstractTransitionTrace NtNAddr)]
+          govConnectionManagerTransitionsSig =
+            Signal.eventsToListWithId
+            $ Signal.selectEvents
+                (\case
+                   DiffusionConnectionManagerTransitionTrace tr -> Just tr
+                   _                                            -> Nothing
+                ) events
+
+       in conjoin
+        $ map (\(E ts a) -> case a of
+                TransitionTrace addr (Transition _ TerminatedSt) ->
+                  eventually ts (Set.notMember addr) govEstablishedPeersSig
+                _ -> True -- TODO: Do the opposite
+              )
+              govConnectionManagerTransitionsSig
 
 -- | Verify that certain traces are never emitted by the simulation.
 --
@@ -3192,6 +3328,18 @@ selectDiffusionPeerSelectionState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
   . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [])
+  . Signal.selectEvents
+      (\case
+        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
+        _                                                            -> Nothing)
+
+selectDiffusionPeerSelectionState' :: Eq a
+                                  => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
+                                  -> Events DiffusionTestTrace
+                                  -> Signal a
+selectDiffusionPeerSelectionState' f =
+  -- TODO: #3182 Rng seed should come from quickcheck.
+    Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [])
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)

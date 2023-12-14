@@ -9,6 +9,7 @@ module Ouroboros.Network.Testing.Data.Signal
   , eventsFromList
   , eventsFromListUpToTime
   , eventsToList
+  , eventsToListWithId
   , selectEvents
     -- * Low level access
   , primitiveTransformEvents
@@ -34,6 +35,7 @@ module Ouroboros.Network.Testing.Data.Signal
   , until
   , difference
   , scanl
+  , eventually
     -- * Set-based temporal operations
   , keyedTimeout
   , keyedTimeoutTruncated
@@ -121,6 +123,9 @@ eventsFromListUpToTime horizon txs =
 
 eventsToList :: Events a -> [(Time, a)]
 eventsToList (Events txs) = [ (t, x) | E (TS t _i) x <- txs ]
+
+eventsToListWithId :: Events a -> [E a]
+eventsToListWithId (Events txs) = txs
 
 selectEvents :: (a -> Maybe b) -> Events a -> Events b
 selectEvents select (Events txs) =
@@ -487,6 +492,16 @@ scanl f z (Signal x0 txs0) =
     go !a (E ts x : txs) = E ts a' : go a' txs
                           where
                             a' = f a x
+
+-- | Starting on a given event does the predicate eventually holds.
+--
+-- If there's no events after the given time, return True
+eventually :: TS -> (b -> Bool) -> Signal b -> Bool
+eventually (TS time i) p (Signal x0 txs0)
+  | time <= Time 0 = p x0 || any (\(E _ b) -> p b) txs0
+  | otherwise = case dropWhile (\(E (TS time' i') _) -> time' <= time && i' < i) txs0 of
+    [] -> True
+    r  -> any (\(E _ b) -> p b) r
 
 --
 -- QuickCheck
