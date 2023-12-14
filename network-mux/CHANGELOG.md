@@ -10,6 +10,13 @@
 
 ### Non-breaking changes
 
+* Make sure jobs are removed from the `JobPool`.
+* Use `io-sim-1.3.1.0`.
+
+## 0.4.3.0 -- 2023-11-16
+
+### Non-breaking changes
+
 * Use `io-sim-1.3.0.0`.
 
 ## 0.4.2.0

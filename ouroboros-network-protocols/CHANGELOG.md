@@ -6,8 +6,13 @@
 
 ### Non-breaking changes
 
+## 0.6.1.0 -- 2023-12-14
+
+### Non-breaking changes
+
 * Testlib depends on `cardano-slotting`'s `testlib` at version
   `0.1.2.0` and uses its instances.
+* Use `io-sim-1.3.1.0`.
 
 ## 0.6.0.1 -- 2023-11-16
 

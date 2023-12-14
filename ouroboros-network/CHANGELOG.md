@@ -1,15 +1,20 @@
 # Revision history for ouroboros-network
 
-
 ## next release
 
 ### Breaking changes
 
 ### Non-breaking changes
 
-## 0.10.1.0 -- 2023-11-29
+## 0.10.2.0 -- 2023-12-14
 
-### Breaking changes
+### Non-breaking changes
+
+* Fixed a bug in `outbound-governor`: PR #4748.  In rare cases the Outbound
+  Governor could lose track of a connection, and thus not being able to
+  reconnect to a remote peer.
+
+## 0.10.1.0 -- 2023-11-29
 
 ### Non-breaking changes
 

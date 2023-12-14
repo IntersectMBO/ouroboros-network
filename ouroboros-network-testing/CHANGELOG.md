@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.4.1.0 -- 2023-12-14
+
+### Non-breaking changes
+
+* Use `io-sim-1.3.1.0`
+
 ## 0.4.0.1 -- 2023-11-16
 
 ### Non-breaking changes
