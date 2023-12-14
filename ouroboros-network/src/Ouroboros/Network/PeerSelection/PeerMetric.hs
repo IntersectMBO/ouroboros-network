@@ -32,7 +32,7 @@ module Ouroboros.Network.PeerSelection.PeerMetric
   , newPeerMetric'
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked.Switch
+import           Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked
 import           Control.DeepSeq (NFData (..))
 import           Control.Monad (when)
 import           Control.Monad.Class.MonadSTM
