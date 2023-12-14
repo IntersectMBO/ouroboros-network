@@ -2,6 +2,12 @@
 
 ## next release
 
+## 0.6.2.0 -- 2023-12-14
+
+### Non-breaking changes
+
+* Refactored `NodeToNodeVersionData` decoder.
+
 ## 0.6.1.0 -- 2023-11-29
 
 ### Breaking changes
