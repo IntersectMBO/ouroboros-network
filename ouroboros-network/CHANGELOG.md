@@ -6,7 +6,25 @@
 
 ### Non-breaking changes
 
+## 0.10.2.2 -- 2023-12-15
+
+### Non-breaking changes
+
+* Use `checked-strict-vars-0.2.0.0`.
+
+## 0.10.2.1 -- 2023-12-14
+
+This release is based directly on top of `ouroboros-network-0.10.1.0`.
+
+### Non-breaking changes
+
+* Fixed a bug in `outbound-governor`: PR #4748.  In rare cases the Outbound
+  Governor could lose track of a connection, and thus not being able to
+  reconnect to a remote peer.
+
 ## 0.10.2.0 -- 2023-12-14
+
+Deprecated release.
 
 ### Non-breaking changes
 
@@ -280,7 +298,7 @@
     - Add versionData to PeerConnectionHandle
     - New CDDL tests
 
-### Non breaking
+### Non-breaking
 
 - Fix interop problems between NonP2P and P2P nodes (PR #4465)
 - Refactors requestPublicRootPeers to include PeerAdvertise
@@ -290,7 +308,7 @@
 
 ## 0.4.0.1 -- 2023-02-24
 
-### Non-Breaking
+### Non-breaking
 
 * Fixed bugs in peer state actions & testing framework (PR #4385)
 
