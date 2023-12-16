@@ -17,7 +17,7 @@
 ### Non-breaking changes
 
 * Updated code to accommodate changes on `PeerSharing` data type.
-* Fixed Server2 [sim test](https://github.com/input-output-hk/ouroboros-network/issues/4607) by synchronizing connection/disconnection events.
+* Fixed Server2 [sim test](https://github.com/intersectmbo/ouroboros-network/issues/4607) by synchronizing connection/disconnection events.
 * Changed connection manager `readState` function to be in `STM` instead of `m`
 * Added `waitForOutboundDemotion` function to Connection
   Manager's API

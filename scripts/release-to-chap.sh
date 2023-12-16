@@ -32,10 +32,10 @@ while getopts ${optstring} arg; do
   esac
 done
 
-REPO_URL="https://github.com/input-output-hk/ouroboros-network"
+REPO_URL="https://github.com/intersectmbo/ouroboros-network"
 
 CHAP_DIR=${CARDANO_HASKELL_PACKAGES_DIR:-"/tmp/chap"}
-CHAP_URL="https://github.com/input-output-hk/cardano-haskell-packages"
+CHAP_URL="https://github.com/intersectmbo/cardano-haskell-packages"
 CYAN='[36m'
 NC='[0m'
 

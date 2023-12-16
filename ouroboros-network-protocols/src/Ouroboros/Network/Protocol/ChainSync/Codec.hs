@@ -51,7 +51,7 @@ byteLimitsChainSync = ProtocolSizeLimits stateToLimit
 -- o So that deployment and testing can use different values.
 --
 -- o So that a net running Praos can better cope with streaks of empty slots.
---   (See @input-output-hk/ouroboros-network#2245@.)
+--   (See @intersectmbo/ouroboros-network#2245@.)
 data ChainSyncTimeout = ChainSyncTimeout
   { canAwaitTimeout  :: Maybe DiffTime
   , intersectTimeout :: Maybe DiffTime

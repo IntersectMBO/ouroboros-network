@@ -2518,7 +2518,7 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
          $ abstractTransitionEvents
 
 -- | Unit test that checks issue 4258
--- https://github.com/input-output-hk/ouroboros-network/issues/4258
+-- https://github.com/intersectmbo/ouroboros-network/issues/4258
 --
 -- TODO: prettify the expression so it's easier to maintain it when things
 -- change.

@@ -62,7 +62,7 @@ Deprecated release.
 * Introduce NodeToNodeVersion 13
 * Updated types to accommodate `PeerSharing` data type changes:
   * `PeerSharingPrivate` got removed and hence, handshake is now symmetric,
-  fixing issue [#4642](https://github.com/input-output-hk/ouroboros-network/issues/4642)
+  fixing issue [#4642](https://github.com/intersectmbo/ouroboros-network/issues/4642)
   * This implies that newer peer sharing node versions will see older
   version's `PeerSharingPrivate` as `PeerSharingEnabled`. So older version
   node's should not rely on `PeerSharingPrivate` semantics from newer version
@@ -284,7 +284,7 @@ Deprecated release.
   discover new peers. It is only used if enabled. It should be disabled by default. Please
   read this design plan to understand the rationale and how Peer Sharing works with more
   detail:
-  https://github.com/input-output-hk/ouroboros-network/wiki/Peer-Sharing-Implementation-Plan
+  https://github.com/intersectmbo/ouroboros-network/wiki/Peer-Sharing-Implementation-Plan
 
   This new feature includes the following changes:
 

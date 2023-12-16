@@ -42,4 +42,4 @@
 
 * Initial release
 
-[onf-changelog]: https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network-framework/CHANGELOG.md
+[onf-changelog]: https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network-framework/CHANGELOG.md

@@ -8,7 +8,7 @@ alongside an incremental decoder.
 
 Example protocol with an incremental
 decoder is implemented in
-[Test.Mux.ReqResp](https://github.com/input-output-hk/ouroboros-network/blob/master/network-mux/test/Test/Mux/ReqResp.hs)
+[Test.Mux.ReqResp](https://github.com/intersectmbo/ouroboros-network/blob/master/network-mux/test/Test/Mux/ReqResp.hs)
 for other examples of protocols see 'typed-protocols' or 'ouroboros-network'
 packages.
 

@@ -3,7 +3,7 @@
 ; transactions, transaction ids, etc. In CDDL we need concrete values so we
 ; instantiate them using `any`.  See `CBOR and CDDL` in the network
 ; technical report
-; https://input-output-hk.github.io/ouroboros-network/pdfs/network-spec
+; https://ouroboros-network.cardano.intersectmbo.org/pdfs/network-spec
 ; if you need further advise how to find concrete encoding of `Cardano` data
 ; types.
 
