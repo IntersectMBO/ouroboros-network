@@ -57,7 +57,7 @@ This site contains Haskell documentation of __Ouroboros-Network__
     * /APIs:/
 
           * __[Data Diffusion](ouroboros-network/Ouroboros-Network-Diffusion.html)__ which combines all the pieces for supporting
-            a [node](https://github.com://input-output-hk/cardano-node)
+            a [node](https://github.com://intersectmbo/cardano-node)
           * __[NodeToNode API](ouroboros-network/Ouroboros-Network-NodeToNode.html)__
           * __[NodeToClient API](ouroboros-network/Ouroboros-Network-NodeToClient.html)__
 

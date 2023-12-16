@@ -170,7 +170,7 @@ withPeerSelectionActions
 
     -- For each call we re-initialise the dns library which forces reading
     -- `/etc/resolv.conf`:
-    -- https://github.com/input-output-hk/cardano-node/issues/731
+    -- https://github.com/intersectmbo/cardano-node/issues/731
     requestConfiguredRootPeers :: DNSSemaphore m -> Int -> m (Map peeraddr PeerAdvertise, DiffTime)
     requestConfiguredRootPeers dnsSemaphore n = do
       -- NOTE: we don't set `resolvConcurrent` because of

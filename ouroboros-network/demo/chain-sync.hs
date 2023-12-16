@@ -209,7 +209,7 @@ rmIfExists path = do
   when b (removeFile path)
 
 -- TODO: provide sensible limits
--- https://github.com/input-output-hk/ouroboros-network/issues/575
+-- https://github.com/intersectmbo/ouroboros-network/issues/575
 maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
     MiniProtocolLimits {

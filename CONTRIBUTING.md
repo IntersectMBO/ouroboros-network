@@ -139,7 +139,7 @@ to it the same options as in the previous section (the options after `--`).
 Any contributions should be well documented.  APIs should have well-written
 `haddocks`.  If a particular function expects a precondition to be satisfied it
 should be explicitly mentioned.  The inline documentation is published at
-<https://input-output-hk.github.io/ouroboros-network>.  When writing haddocks
+<https://ouroboros-network.cardano.intersectmbo.org>.  When writing haddocks
 it's always good to put oneself in the position of somebody who hasn't yet
 interacted with your code changes.  It's good to explain the key design choices
 as well as implementation-level comments.
@@ -198,7 +198,7 @@ comes with [`io-sim`]: `io-classes` expose a very similar API that the `base`,
 The network & consensus have slightly different style guides, see
 
 * [network style guide](./docs/StyleGuide.md)
-* [consensus style guide](https://github.com/input-output-hk/ouroboros-consensus/blob/main/docs/StyleGuide.md)
+* [consensus style guide](https://github.com/intersectmbo/ouroboros-consensus/blob/main/docs/StyleGuide.md)
 
 ### Git History
 
@@ -227,7 +227,7 @@ modifies.  Sometimes referring to package name is good enough, sometimes
 something more specific like `outbound-governor` is more appropriate.  At this
 stage, this is only advisory.  Please check <https://commit.style>.  Here's an
 example from our own [git
-history](https://github.com/input-output-hk/ouroboros-network/commit/96584fc66a8ea5c0625b2ad5c91959a3c909568c).
+history](https://github.com/intersectmbo/ouroboros-network/commit/96584fc66a8ea5c0625b2ad5c91959a3c909568c).
 
 We require all commits to be signed, see [this guide][gh-signing-commits].
 
@@ -309,7 +309,7 @@ time one wants to add new commits from `master`, one SHOULD:
 * cherry-pick them to a new branch,
 * create a PR which targets the right release branch,
 * mention in the PR's description from which original PR(s) (to the `master`
-  branch) the commits are coming from ([example](https://github.com/input-output-hk/ouroboros-network/pull/4120)).
+  branch) the commits are coming from ([example](https://github.com/intersectmbo/ouroboros-network/pull/4120)).
 
 This forces the changes to go through the normal pull request review process
 & let CI validate the release patch set.
@@ -320,7 +320,7 @@ Note that we never merge release branches back to `master`.
 
 Our Haskell packages come from two package repositories:
 - Hackage
-- [CHaP](https://github.com/input-output-hk/cardano-haskell-packages) (which is essentially another Hackage)
+- [CHaP](https://github.com/intersectmbo/cardano-haskell-packages) (which is essentially another Hackage)
 
 The `index-state` of each repository is pinned to a particular time in
 `cabal.project`.  This tells Cabal to treat the repository as if it was
@@ -363,7 +363,7 @@ consumers would not be able to build such a package.
 
 If we are stuck in a situation where we need a long-running fork of a
 package, we should release it to CHaP instead (see the
-[CHaP README](https://github.com/input-output-hk/cardano-haskell-packages)
+[CHaP README](https://github.com/intersectmbo/cardano-haskell-packages)
 for more).
 
 If you do add a temporary `source-repository-package` stanza, you need to
@@ -374,7 +374,7 @@ of the content. There are two relatively straightforward ways to do this:
 2. Calculate the hash with `nix-shell -p nix-prefetch-git --run 'nix-prefetch-git <URL> <COMMIT_HASH>'`
 
 
-[CODEOWNERS]: https://github.com/input-output-hk/ouroboros-network/blob/master/.github/CODEOWNERS
+[CODEOWNERS]: https://github.com/intersectmbo/ouroboros-network/blob/master/.github/CODEOWNERS
 [`ghcup`]: https://www.haskell.org/ghcup/
 [`QuickCheck`]: https://hackage.haskell.org/package/QuickCheck
 [`io-sim`]: https://github.com/input-output-hk/io-sim
@@ -386,7 +386,7 @@ of the content. There are two relatively straightforward ways to do this:
 [gh-signing-commits]: https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits
 [`tasty`]: https://github.com/UnkindPartition/tasty#readmy
 [tasty-options]: https://github.com/UnkindPartition/tasty#options
-[CHaP]: https://github.com/input-output-hk/cardano-haskell-packages
+[CHaP]: https://github.com/intersectmbo/cardano-haskell-packages
 [Hackage]: https://hackage.haskell.org
 [hydra]: https://github.com/NixOS/hydra
-[nix-setup]: https://github.com/input-output-hk/cardano-node-wiki/blob/main/docs/getting-started/building-the-node-using-nix.md
+[nix-setup]: https://github.com/intersectmbo/cardano-node-wiki/blob/main/docs/getting-started/building-the-node-using-nix.md

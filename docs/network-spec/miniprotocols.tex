@@ -173,56 +173,56 @@ following pieces of information:
     {ping-pong-protocol}
     {A simple ping-pong protocol for testing.}
     {typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
+    {https://ouroboros-network.cardano.intersectmbo.org/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
 
 \miniEntry
     {Request Response Protocol}
     {request-response-protocol}
     {A ping pong like protocol which allows to exchanges data.}
     {typed-protocols/src/Network/TypedProtocol/ReqResp/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
+    {https://ouroboros-network.cardano.intersectmbo.org/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 
 \miniEntry
     {Handshake Mini Protocol}
     {handshake-protocol}
     {This protocol is used for version negotiation.}
     {ouroboros-network/src/Ouroboros/Network/Protocol/Handshake/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html\#t:Handshake}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Type.html\#t:Handshake}
 
 \miniEntry
     {Chain Synchronisation Protocol}
     {chain-sync-protocol}
     {The protocol by which a downstream chain consumer follows an upstream chain producer.}
     {ouroboros-network/src/Ouroboros/Network/Protocol/ChainSync/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type.html\#t:ChainSync}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-ChainSync-Type.html\#t:ChainSync}
 
 \miniEntry
     {Block Fetch Protocol}
     {block-fetch-protocol}
     {The block fetching mechanism enables a node to download ranges of blocks.}
     {ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html\#t:BlockFetch}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-BlockFetch-Type.html\#t:BlockFetch}
 
 \miniEntry
     {Transaction Submission Protocol v2}
     {tx-submission-protocol2}
     {A Protocol for transmitting transaction between core nodes.}
     {ouroboros-network/src/Ouroboros/Network/Protocol/TxSubmission2/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-TxSubmission2-Type.html\#t:TxSubmission2}
 
 \miniEntry
     {Keep Alive Protocol}
     {keep-alive-protocol}
     {A protocol for sending keep alive messages and round trip measurements}
     {ouroboros-network/src/Ouroboros/Network/Protocol/KeepAlive/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-KeepAlive-Type.html\#t:KeepAlive}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-KeepAlive-Type.html\#t:KeepAlive}
 
 \miniEntry
     {Locat State Query Mini Protocol}
     {local-state-query-protocol}
     {Protocol used by local clients to query ledger state}
     {ouroboros-network/src/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
-    {https://input-output-hk.github.io/ouroboros-network/ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
 
 \section{CBOR and CDDL}
 All mini-protocols are encoded using concise binary object representation
@@ -236,15 +236,15 @@ their identifiers.  We use parametric polymorphism in the implementation which
 is not present in CDDL.  For this reason we use \texttt{any} in our CDDL specifications.
 If you want to find concrete instatiations of these types in by `Cardano` you
 will need to consult
-\href{https://github.com/input-output-hk/cardano-ledger}{cardano-ledger} and
-\href{https://github.com/input-output-hk/ouroboros-consensus}{ouroboros-consensus}.
+\href{https://github.com/intersectmbo/cardano-ledger}{cardano-ledger} and
+\href{https://github.com/intersectmbo/ouroboros-consensus}{ouroboros-consensus}.
 Each ledger era has its own CDDL spec which you can find
-\href{https://github.com/input-output-hk/cardano-ledger#cardano-ledger}{here}.
+\href{https://github.com/intersectmbo/cardano-ledger#cardano-ledger}{here}.
 Note that there's also the hard fork combinator (HFC) which allows us to
 combine multiple eras into a single blockchain.  It affects how many of the
 data types are encoded across different eras.  Currently this is not properly
 documented (see
-\href{https://github.com/input-output-hk/ouroboros-consensus/issues/7}{issue
+\href{https://github.com/intersectmbo/ouroboros-consensus/issues/7}{issue
 \#7}). In the meantime we can only offer informal advise: data is encoded
 as tuples (length 2 lists), where the first element is a zero based index of an
 era while the second item is the era dependent encoding.
@@ -519,7 +519,7 @@ following sense:
                     deriving Eq
 \end{verbatim}
     See
-    \href{https://input-output-hk.github.io/ouroboros-network/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
+    \href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
     Both \texttt{acceptable proposed received} and \texttt{acceptable received
     proposed} must satisfy the following condition:
     \begin{itemize}
@@ -536,7 +536,7 @@ A weaker condition, in which the return values are equal if they both return
 \texttt{Accept}, does not guarantee this property.  We also verify that the
 whole Handshake protocol, not just the \texttt{acceptable} satisfies the above
 property, see
-\href{https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs}{Ouroboros-Network
+\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs}{Ouroboros-Network
 test suite}.
 
 The fact that we are using non-injective encoding in the handshake protocol
@@ -549,7 +549,7 @@ true for the handshake protocol.  Event though the opening message
 other side as termination message \texttt{MsgReplyVersions}, the same will
 happen to the \texttt{MsgProposeVersion} transmitted in the other direction.
 We include a special test case
-(\href{https://github.com/input-output-hk/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs\#L551}{\texttt{prop\_channel\_simultaneous\_open}})
+(\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs\#L551}{\texttt{prop\_channel\_simultaneous\_open}})
 to verify that simultaneous open well behaves and does not lead to protocol
 errors.
 
