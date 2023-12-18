@@ -28,7 +28,6 @@ scripts/install.ps1                @coot @karknu                        @interse
 
 # CICD
 
-bors.toml                                                               @intersectmbo/cardano-tech-release @intersectmbo/network-superowners
 nix/                                                                    @intersectmbo/cardano-tech-release @intersectmbo/network-superowners
 *.nix                                                                   @intersectmbo/cardano-tech-release @intersectmbo/network-superowners
 .github/workflows/                 @coot @newhoggy                      @intersectmbo/cardano-tech-release @intersectmbo/network-superowners
