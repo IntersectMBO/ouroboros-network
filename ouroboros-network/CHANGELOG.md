@@ -12,6 +12,7 @@
 
 * The internal `Guarded` type changed.  It is provided with pattern synonyms
   which hide both `Min` and `FirstToFinish`.
+* Adds 'unit_reconnect' testnet test
 
 ## 0.10.2.2 -- 2023-12-15
 
