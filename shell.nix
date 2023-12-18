@@ -11,7 +11,7 @@ let
     ouroborosNetworkHaskellPackages;
 
   # This provides a development environment that can be used with nix-shell or
-  # lorri. See https://input-output-hk.github.io/haskell.nix/user-guide/development/
+  # lorri. See https://input-output-hk.github.io/haskell.nix/tutorials/development.html
   shell = hsPkgs.shellFor {
     name = "cabal-dev-shell";
 
