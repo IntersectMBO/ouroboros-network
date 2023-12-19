@@ -1145,7 +1145,7 @@ diffusionSimulation
                     (pure maxBound)
                     (pure TooOld)
                     (do
-                      ledgerPools <- stepScriptSTM ledgerPeersVar
+                      ledgerPools <- stepScriptSTM' ledgerPeersVar
                       return $ Map.elems
                              $ accPoolStake
                              $ getLedgerPools

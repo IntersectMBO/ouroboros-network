@@ -30,7 +30,6 @@ module Test.Ouroboros.Network.Diffusion.Node
 
 import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadMVar (MonadMVar)
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadAsync
@@ -95,7 +94,7 @@ import           Ouroboros.Network.Snocket (MakeBearer, Snocket,
                      TestAddress (..), invalidFileDescriptor)
 
 import           Ouroboros.Network.Testing.Data.Script (Script (..),
-                     stepScriptSTM)
+                     stepScriptSTM')
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
@@ -205,9 +204,9 @@ run :: forall resolver m.
 run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
-        dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
-        dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
-        useBootstrapPeersScriptVar <- LazySTM.newTVarIO (aReadUseBootstrapPeers na)
+        dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
+        dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
+        useBootstrapPeersScriptVar <- newTVarIO (aReadUseBootstrapPeers na)
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
         peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
@@ -395,12 +394,12 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Diff.daMode          = aDiffusionMode na
       }
 
-    argsExtra :: LazySTM.TVar m (Script UseBootstrapPeers) -> Diff.P2P.ArgumentsExtra m
+    argsExtra :: StrictTVar m (Script UseBootstrapPeers) -> Diff.P2P.ArgumentsExtra m
     argsExtra ubpVar = Diff.P2P.ArgumentsExtra
       { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
-      , Diff.P2P.daReadUseBootstrapPeers = stepScriptSTM ubpVar
+      , Diff.P2P.daReadUseBootstrapPeers = stepScriptSTM' ubpVar
       , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
       , Diff.P2P.daReadUseLedgerPeers    = aReadUseLedgerPeers na
       , Diff.P2P.daProtocolIdleTimeout   = aProtocolIdleTimeout na
