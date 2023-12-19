@@ -49,9 +49,11 @@ The KES Agent system consist of 3 components:
 
 - The *Agent* itself, a standalone process that accepts connections on two
   sockets: a "service" socket, on which keys are sent out, and a "control"
-  socket, on which keys are received. The Agent will also automonously evolve
-  keys, such that any keys it sends out on demand will match the current KES
-  period on the ledger.
+  socket, on which commands are received. The Agent will also automonously
+  evolve keys, such that any keys it sends out on demand will match the current
+  KES period on the ledger. Further, the KES Agent can generate new KES keys;
+  they have to be signed externally, and until they are, the KES Agent will
+  store them in a staging area.
 - The *Node* (cardano-node), which connects to an Agent's "service" socket, and
   receives keys upon first connecting and when a fresh key is pushed to the
   Agent. Once the Node has received a valid key, it will evolve it
@@ -63,10 +65,16 @@ The KES Agent system consist of 3 components:
   socket. This utility should run on a separate host, and needs access to the
   "cold" key in order to sign the "hot" keys managed by the Agent.
 
-This package will contain:
+This package contains:
 
-- A `cardano-kes-agent` binary (the Agent).
-- A `cardano-kes-agent-control` binary (the Control Client).
-- A `kes-agent` library that contains shared code for all of the above as well
+- The `kes-agent` binary (the Agent).
+- The `kes-agent-control` binary (the Control Client, used to interact with
+  running `kes-agent` processes).
+- The `kes-agent` library that contains shared code for all of the above as well
   as client code to be used in `cardano-node`.
-- An extensive test suite.
+- A test suite.
+- The `kes-service-client-demo` binary, which implements the service client
+  protocol and can be used as a mock `cardano-node` for testing and
+  demonstration purposes.
+- The `kes-agent-protodocs` binary, a tool that will output documentation of
+  the KES Agent protocols as used in the current versions of the library.

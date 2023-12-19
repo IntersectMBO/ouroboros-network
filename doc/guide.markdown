@@ -42,9 +42,12 @@ receive new keys as they are created. We call `cardano-node` the "Service
 Client" in this context (because the KES Agent sends out KES sign keys as a
 "service")
 
-A CLI tool, `kes-agent-control`, can be used to generate new KES sign keys and
-store them in the Agent. The control CLI is called "Control Client" (because it
-connects to the KES Agent in order to "control" it).
+A CLI tool, `kes-agent-control`, can be used to interact with a running
+`kes-agent` process. The control CLI is called "Control Client" (because it
+connects to the KES Agent in order to "control" it). Through the Control
+Client, we can command the KES Agent to generate new sign keys, export the
+corresponding verification key, and we can upload an OpCert, which triggers the
+KES Agent to start using it.
 
 And finally, we need a CLI tool for signing KES keys and metadata, producing
 *Operational Certificates* ("OpCerts"). `cardano-cli` already has functionality
@@ -75,21 +78,21 @@ sensitive to leaks are in **boldface**.
 
 Data flow works as follows:
 
-1. Start `kes-agent-control` on a regular (but trusted) computer (the "control
-   host"). It will generate a new KES Sign Key, and write the corresponding KES
-   Verification Key to a local file.
+1. Run `kes-agent-control` on a regular (but trusted) computer (the "control
+   host"), using the `gen-staged-key` command. This will make the KES Agent generate
+   a new KES Sign Key, keep it in its staging area, and write the corresponding
+   KES Verification Key to a local file.
 2. Copy the KES Verification Key to an air-gapped key signing host that
    holds the Cold Verification Key (using a secure removable storage medium -
    we cannot use a network connection, as that would defeat the air-gapping).
 3. On the air-gapped machine, generate an OpCert.
 4. Copy the OpCert back to the control host.
-5. `kes-agent-control` loads the OpCert, verifies that it matches the KES
-   SignKey it currently holds, and pushes both to the KES Agent
-6. KES Agent verifies the KES Sign Key and OpCert, pushes them to any connected
-   Node, and keeps them in memory. KES Agent will also independently evolve the
-   KES Key as time passes; this is important, because we won't get full forward
-   security if we keep old evolutions of the key around anywhere, including the
-   Agent.
+5. Run `kes-agent-control` to load the OpCert and push it to the KES Agent.
+6. KES Agent verifies the OpCert against the staged sign key, moves them to the
+   "active" slot, and pushes them to any connected Nodes.  KES Agent will also
+   independently evolve the KES Key as time passes; this is important, because
+   we won't get full forward security if we keep old evolutions of the key
+   around anywhere, including the Agent.
 
 This way, sensitive items are handled correctly:
 
@@ -242,16 +245,11 @@ To generate and push a new KES sign key:
   expr 26633911 / 3600
   > 7398
   ```
-- Start the kes-agent-control's new-key procedure:
+- Generate a new key by using the kes-agent-control's `gen-staged-key` command:
   ```sh
-  kes-agent-control new-key \
-    --kes-verification-key-file kes.vkey \
-    --opcert-file ocert.cert
-  > KES VerKey written to kes.vkey
-  > OpCert will be read from ocert.cert
-  > Press ENTER to continue...
+  kes-agent-control gen-staged-key \
+    --kes-verification-key-file kes.vkey
   ```
-- Switch to another terminal, or background the control CLI.
 - Copy `kes.vkey` to your secure removable storage device
 
 ### On The Signing Host
@@ -271,12 +269,16 @@ To generate and push a new KES sign key:
 ### On The Control Host
 
 - Copy `ocert.cert` from the secure removable storage device
-- Switch back to the control CLI (or foreground it)
-- Press ENTER to confirm that the OpCert has been copied into place
-- The control CLI will now upload the key; it should respond with the following
-  message:
+- Use the kes-agent-control's `install-key` command to upload the opcert and
+  activate the staged key:
   ```sh
-  > Key accepted.
+  kes-agent-control install-key --opcert-file opcert.cert
+  ```
+- The control CLI will now upload the key.
+- You can use the `info` command to verify that the key has been uploaded
+  correctly:
+  ```sh
+  kes-agent-control info
   ```
 
 Command Reference
