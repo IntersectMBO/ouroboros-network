@@ -35,6 +35,7 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers hiding
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Ouroboros.Network.PeerSelection.PublicRootPeers
                      (PublicRootPeers)
 import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
@@ -69,7 +70,7 @@ withPeerSelectionActions
   -> STM m LedgerStateJudgement
   -> STM m [( HotValency
             , WarmValency
-            , Map RelayAccessPoint PeerAdvertise)]
+            , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
   -- ^ local root peers
   -> STM m (Map RelayAccessPoint PeerAdvertise)
   -- ^ public root peers

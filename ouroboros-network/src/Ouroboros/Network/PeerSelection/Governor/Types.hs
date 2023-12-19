@@ -68,6 +68,7 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (LedgerStateJudgement (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Ouroboros.Network.PeerSelection.PublicRootPeers
                      (PublicRootPeers)
 import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
@@ -259,7 +260,8 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        readLocalRootPeers       :: STM m [( HotValency
                                           , WarmValency
-                                          , Map peeraddr PeerAdvertise)],
+                                          , Map peeraddr ( PeerAdvertise
+                                                         , PeerTrustable))],
 
        readNewInboundConnection :: STM m (peeraddr, PeerSharing),
 

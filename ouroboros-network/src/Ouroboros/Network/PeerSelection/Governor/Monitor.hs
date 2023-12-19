@@ -363,7 +363,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           removed      = LocalRootPeers.toMap localRootPeers  Map.\\
                          LocalRootPeers.toMap localRootPeers'
           -- LocalRoots are not ledger!
-          addedInfoMap = Map.map (\a -> (Nothing, Just a)) added
+          addedInfoMap = Map.map (\(pa, _) -> (Nothing, Just pa)) added
           removedSet   = Map.keysSet removed
           knownPeers'  = KnownPeers.insert addedInfoMap knownPeers
                         -- We do not immediately remove old ones from the

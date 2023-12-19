@@ -56,6 +56,8 @@ import           Data.List (intercalate)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerTrustable
+                     (PeerTrustable (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
@@ -98,7 +100,7 @@ tests =
 data MockRoots = MockRoots {
     mockLocalRootPeers        :: [( HotValency
                                   , WarmValency
-                                  , Map RelayAccessPoint PeerAdvertise)]
+                                  , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
   , mockLocalRootPeersDNSMap  :: Script (Map Domain [(IP, TTL)])
   , mockPublicRootPeers       :: Map RelayAccessPoint PeerAdvertise
   , mockPublicRootPeersDNSMap :: Script (Map Domain [(IP, TTL)])
@@ -117,7 +119,7 @@ genMockRoots = sized $ \relaysNumber -> do
     targets <- vectorOf relaysNumber genTargets
 
     peerAdvertise <- blocks relaysPerGroup
-                      <$> vectorOf relaysNumber (arbitrary @PeerAdvertise)
+                      <$> vectorOf relaysNumber arbitrary
 
         -- concat unique identifier to DNS domains to simplify tests
     let taggedLocalRelays = tagRelays localRootRelays
@@ -232,10 +234,10 @@ simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map
       [ ( 2, 2
         , Map.fromList
           [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
-            , DoAdvertisePeer
+            , (DoAdvertisePeer, IsNotTrustable)
             )
           , ( RelayAccessDomain  "test.domain"      (read "4444")
-            , DoNotAdvertisePeer
+            , (DoNotAdvertisePeer, IsNotTrustable)
             )
           ]
         )
@@ -459,7 +461,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 --
 
 data TestTraceEvent = RootPeerDNSLocal  (TraceLocalRootPeers SockAddr Failure)
-                    | LocalRootPeersResults [(HotValency, WarmValency, Map SockAddr PeerAdvertise)]
+                    | LocalRootPeersResults [(HotValency, WarmValency, Map SockAddr (PeerAdvertise, PeerTrustable))]
                     | RootPeerDNSPublic TracePublicRootPeers
   deriving (Show, Typeable)
 
@@ -495,13 +497,13 @@ selectLocalRootPeersEvents :: [(Time, TestTraceEvent)]
 selectLocalRootPeersEvents trace = [ (t, e) | (t, RootPeerDNSLocal e) <- trace ]
 
 selectLocalRootPeersResults :: [(Time, TestTraceEvent)]
-                            -> [(Time, [(HotValency, WarmValency, Map SockAddr PeerAdvertise)])]
+                            -> [(Time, [(HotValency, WarmValency, Map SockAddr (PeerAdvertise, PeerTrustable))])]
 selectLocalRootPeersResults trace = [ (t, r) | (t, LocalRootPeersResults r) <- trace ]
 
 selectLocalRootGroupsEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
                             -> [(Time, [( HotValency
                                         , WarmValency
-                                        , Map SockAddr PeerAdvertise)])]
+                                        , Map SockAddr (PeerAdvertise, PeerTrustable))])]
 selectLocalRootGroupsEvents trace = [ (t, e) | (t, TraceLocalRootGroups e) <- trace ]
 
 selectLocalRootResultEvents :: [(Time, TraceLocalRootPeers SockAddr Failure)]
@@ -551,13 +553,13 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
   where
     checkAll :: [(Time, [( HotValency
                          , WarmValency
-                         , Map SockAddr PeerAdvertise)])]
+                         , Map SockAddr (PeerAdvertise, PeerTrustable))])]
              -> Property
     checkAll [] = property True
     checkAll (x:t) =
       let thrd (_, _, c) = c
           -- get local root ip addresses
-          localRootAddresses :: [(a, b, Map RelayAccessPoint PeerAdvertise)]
+          localRootAddresses :: [(a, b, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
                              -> Set SockAddr
           localRootAddresses lrp =
             Set.fromList
@@ -569,7 +571,7 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
           -- get ip addresses out of LocalRootGroup trace events
           localGroupEventsAddresses :: (a, [( HotValency
                                             , WarmValency
-                                            , Map SockAddr PeerAdvertise)])
+                                            , Map SockAddr (PeerAdvertise, PeerTrustable))])
                                     -> Set SockAddr
           localGroupEventsAddresses (_, s) =
               Set.fromList
