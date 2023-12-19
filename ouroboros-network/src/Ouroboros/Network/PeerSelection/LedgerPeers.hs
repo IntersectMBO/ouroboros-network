@@ -2,6 +2,9 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -13,8 +16,6 @@
 module Ouroboros.Network.PeerSelection.LedgerPeers
   ( DomainAccessPoint (..)
   , IP.IP (..)
-  , LedgerPeersConsensusInterface (..)
-  , LedgerStateJudgement (..)
   , LedgerPeers (..)
   , getLedgerPeers
   , RelayAccessPoint (..)
