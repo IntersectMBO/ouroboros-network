@@ -63,12 +63,11 @@ import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRo
 
 import           Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
                      ScriptDelay (..), TimedScript, arbitraryPickScript,
-                     arbitraryScriptOf, initScript', interpretPickScript,
-                     playTimedScript, prop_shrink_Script, singletonScript,
-                     stepScript, stepScriptSTM')
+                     arbitraryScriptOf, initScript, initScript',
+                     interpretPickScript, playTimedScript, prop_shrink_Script,
+                     singletonScript, stepScript, stepScriptSTM, stepScriptSTM')
 import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
-                     arbitrarySubset, nightlyTest, prop_shrink_nonequal,
-                     prop_shrink_valid)
+                     arbitrarySubset, prop_shrink_nonequal, prop_shrink_valid)
 
 import           Test.Ouroboros.Network.PeerSelection.Instances
 import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
@@ -88,13 +87,13 @@ import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPe
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
                      PeerSharingResult (..))
+import           Ouroboros.Network.Testing.Utils (nightlyTest)
 import           Test.Ouroboros.Network.LedgerPeers
                      (ArbitraryLedgerStateJudgement (..))
 import           Test.Ouroboros.Network.PeerSelection.PublicRootPeers ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, localOption, testGroup)
 import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
-
 
 tests :: TestTree
 tests =
@@ -283,9 +282,9 @@ mockPeerSelectionActions tracer
     scripts <- Map.fromList <$>
                  sequence
                    [ (\a b c -> (addr, (a, b, c)))
-                     <$> initScript' peerShareScript
-                     <*> initScript' peerSharingScript
-                     <*> initScript' connectionScript
+                     <$> initScript peerShareScript
+                     <*> initScript peerSharingScript
+                     <*> initScript connectionScript
                    | let PeerGraph adjacency = peerGraph
                    , (addr, _, GovernorScripts {
                                  peerShareScript,
@@ -424,7 +423,7 @@ mockPeerSelectionActions' tracer
         conns <- readTVar connsVar
         let !conns' = Map.insert peeraddr conn conns
         writeTVar connsVar conns'
-        remotePeerSharing <- stepScriptSTM' peerSharingScript
+        remotePeerSharing <- stepScriptSTM peerSharingScript
         return (PeerConn peeraddr (peerSharing <> remotePeerSharing) conn)
       _ <- async $
         -- monitoring loop which does asynchronous demotions. It will terminate

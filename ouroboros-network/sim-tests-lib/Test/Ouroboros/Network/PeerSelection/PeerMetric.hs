@@ -172,7 +172,7 @@ simulatePeerMetricScript tracer config script = do
       peerMetrics <- newPeerMetric config
       let reporter :: ReportPeerMetrics m (ConnectionId TestAddress)
           reporter = reportMetric config peerMetrics
-      v <- atomically (initScript timedScript)
+      v <- initScript timedScript
       go v peerMetrics reporter
     where
       timedScript ::  TimedScript Event
@@ -496,7 +496,7 @@ simulatePeerMetricScriptWithoutDelays tracer config script = do
       peerMetrics <- newPeerMetric config
       let reporter :: ReportPeerMetrics m (ConnectionId TestAddress)
           reporter = reportMetric config peerMetrics
-      v <- atomically (initScript timedScript)
+      v <- initScript timedScript
       go v peerMetrics reporter (Time 0)
     where
       timedScript ::  TimedScript Event

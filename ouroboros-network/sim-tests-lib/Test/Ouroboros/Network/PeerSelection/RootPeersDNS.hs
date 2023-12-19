@@ -38,7 +38,6 @@ import           Network.DNS (DNSError (NameError, TimeoutExpired), Domain, TTL)
 import qualified Network.DNS.Resolver as DNSResolver
 import           Network.Socket (SockAddr (..))
 
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (throw)
 import           Control.Monad.Class.MonadAsync
@@ -52,7 +51,9 @@ import           Control.Monad.IOSim
 import           Control.Tracer (Tracer (Tracer), contramap, nullTracer,
                      traceWith)
 
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Data.List (intercalate)
+import           Data.List.NonEmpty (NonEmpty (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
@@ -63,7 +64,9 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-import           Ouroboros.Network.Testing.Data.Script
+                     (HotValency (..), WarmValency (..))
+import           Ouroboros.Network.Testing.Data.Script (Script (Script),
+                     initScript', scriptHead, singletonScript, stepScript')
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
@@ -290,8 +293,8 @@ mockDNSActions :: forall exception m.
                   , MonadTimer m
                   )
                => StrictTVar m (Map Domain [(IP, TTL)])
-               -> LazySTM.TVar m (Script DNSTimeout)
-               -> LazySTM.TVar m (Script DNSLookupDelay)
+               -> StrictTVar m (Script DNSTimeout)
+               -> StrictTVar m (Script DNSLookupDelay)
                -> DNSActions () exception m
 mockDNSActions dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
     DNSActions {
@@ -309,8 +312,8 @@ mockDNSActions dnsMapVar dnsTimeoutScript dnsLookupDelayScript =
                     -> m ([DNSError], [(IP, TTL)])
    dnsLookupWithTTL _ _ domain = do
      dnsMap <- readTVarIO dnsMapVar
-     DNSTimeout dnsTimeout <- stepScript dnsTimeoutScript
-     DNSLookupDelay dnsLookupDelay <- stepScript dnsLookupDelayScript
+     DNSTimeout dnsTimeout <- stepScript' dnsTimeoutScript
+     DNSLookupDelay dnsLookupDelay <- stepScript' dnsLookupDelayScript
 
      dnsLookup <-
         MonadTimer.timeout dnsTimeout $ do
@@ -370,7 +373,7 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
         -- once.
         atomically $ readTVar resultVar >>= writeTVar resultVar
   where
-    updateDNSMap :: LazySTM.TVar m (Script (Map Domain [(IP, TTL)]))
+    updateDNSMap :: StrictTVar m (Script (Map Domain [(IP, TTL)]))
                  -> StrictTVar m (Map Domain [(IP, TTL)])
                  -> m Void
     updateDNSMap dnsMapScriptVar dnsMapVar =

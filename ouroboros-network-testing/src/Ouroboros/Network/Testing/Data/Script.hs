@@ -37,7 +37,9 @@ import qualified Data.List.NonEmpty as NonEmpty
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-import           Control.Concurrent.Class.MonadSTM as LazySTM
+import           Control.Concurrent.Class.MonadSTM.Strict
+import           Control.Concurrent.Class.MonadSTM (TVar)
+import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork
 import           Control.Monad.Class.MonadTimer.SI
@@ -68,8 +70,8 @@ arbitraryScriptOf maxSz a =
 
 initScript :: MonadSTM m
             => Script a
-            -> STM m (TVar m (Script a))
-initScript = LazySTM.newTVar
+            -> m (TVar m (Script a))
+initScript = LazySTM.newTVarIO
 
 stepScript :: MonadSTM m => TVar m (Script a) -> m a
 stepScript scriptVar = atomically (stepScriptSTM scriptVar)
@@ -93,16 +95,16 @@ stepScriptOrFinishSTM scriptVar = do
     Script (x :| xs) <- LazySTM.readTVar scriptVar
     case xs of
       []     -> return (Left x)
-      x':xs' -> writeTVar scriptVar (Script (x' :| xs'))
+      x':xs' -> LazySTM.writeTVar scriptVar (Script (x' :| xs'))
              $> Right x
 
-initScript' :: MonadSTM m => Script a -> m (TVar m (Script a))
+initScript' :: MonadSTM m => Script a -> m (StrictTVar m (Script a))
 initScript' = newTVarIO
 
-stepScript' :: MonadSTM m => TVar m (Script a) -> m a
-stepScript' scriptVar = atomically (stepScriptSTM scriptVar)
+stepScript' :: MonadSTM m => StrictTVar m (Script a) -> m a
+stepScript' scriptVar = atomically (stepScriptSTM' scriptVar)
 
-stepScriptSTM' :: MonadSTM m => TVar m (Script a) -> STM m a
+stepScriptSTM' :: MonadSTM m => StrictTVar m (Script a) -> STM m a
 stepScriptSTM' scriptVar = do
     Script (x :| xs) <- readTVar scriptVar
     case xs of
@@ -153,12 +155,12 @@ instance Arbitrary ScriptDelay where
 playTimedScript :: (MonadAsync m, MonadDelay m)
                 => Tracer m a -> TimedScript a -> m (TVar m a)
 playTimedScript tracer (Script ((x0,d0) :| script)) = do
-    v <- newTVarIO x0
+    v <- LazySTM.newTVarIO x0
     traceWith tracer x0
     _ <- async $ do
            labelThisThread "timed-script"
            threadDelay (interpretScriptDelay d0)
-           sequence_ [ do atomically (writeTVar v x)
+           sequence_ [ do atomically (LazySTM.writeTVar v x)
                           traceWith tracer x
                           threadDelay (interpretScriptDelay d)
                      | (x,d) <- script ]
@@ -211,7 +213,7 @@ arbitraryPickScript pickSome =
       arbitraryScriptOf sz (arbitraryPickMembers pickSome)
 
 interpretPickScript :: (MonadSTM m, Ord peeraddr)
-                    => TVar m (PickScript peeraddr)
+                    => StrictTVar m (PickScript peeraddr)
                     -> Set peeraddr
                     -> Int
                     -> STM m (Set peeraddr)
@@ -222,13 +224,15 @@ interpretPickScript scriptVar available pickNum
   = error "interpretPickScript: given invalid pickNum"
 
   | otherwise
-  = do pickmembers <- stepScriptSTM scriptVar
+  = do pickmembers <- stepScriptSTM' scriptVar
        return (interpretPickMembers pickmembers available pickNum)
 
 interpretPickMembers :: Ord peeraddr
                      => PickMembers peeraddr
                      -> Set peeraddr -> Int -> Set peeraddr
-interpretPickMembers PickFirst     ps _ = Set.singleton (Set.elemAt 0 ps)
+interpretPickMembers PickFirst     ps _
+  | Set.null ps = ps
+  | otherwise   = Set.singleton (Set.elemAt 0 ps)
 interpretPickMembers PickAll       ps n = Set.take n ps
 interpretPickMembers (PickSome as) ps n
   | Set.null ps' = Set.singleton (Set.elemAt 0 ps)
