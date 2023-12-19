@@ -4,9 +4,42 @@
 
 ### Breaking changes
 
+* Moved `LedgerConsensusInterface` type to `ouroboros-network-api`.
+* Preserved `PeerAdvertise` information when connecting to peers.
+* Added `daReadUseBootstrapPeers` to `ArgumentsExtra`.
+
+* Added `PeerTrustable` to Local Root Peers
+
+* Added new trace constructors for `TracePeerSelection`
+* Updated type of constructor in `TraceLedgerPeers`
+* Updated type of constructor in `TraceLocalRootPeers`
+
 ### Non-breaking changes
 
 * Limit the rate at which one can discover peers through peersharing.
+* Created `PublicRootPeers` and adds `BootstrapPeers` and big ledger peers to
+  `PublicRootPeers` abstraction.
+
+* Adjusted `PeerSelectionActions` `requestPublicRootPeers` function to
+  provide either only ledger peers or bootstrap peers according to the
+  current ledger state. The same for `requestBigLedgerPeers`.
+
+* Added `readLedgerStateJudgement` to `PeerSelectionActions`
+* Added `ledgerStateJudgement` to `PeerSelectionState`
+* Added `bootstrapPeersFlag` to `PeerSelectionState`
+* Added `hasOnlyBootstrapPeers` to `PeerSelectionState`
+
+* Simplified `KnownPeerInfo` by removing `IsLedgerPeer`, `PeerTrustable` and
+  `IsBootstrapPeer`
+
+* Preserved `PeerAdvertise` information when connecting to peers.
+
+* Added new monitoring tasks to monitor the bootstrap peers flag, the ledger
+  state judgement value and act accordingly (`monitorBootstrapPeersFlag`,
+  `monitorLedgerStateJudgement` and `waitForOnlyBootstrapPeers`) .
+
+* Updated other monitoring tasks to consider a possible sensitive state that
+  involves the bootstrap peers flag and the ledger state judgement value.
 
 ## 0.11.0.0 -- 2023-01-22
 
