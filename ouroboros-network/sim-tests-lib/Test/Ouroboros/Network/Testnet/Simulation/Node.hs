@@ -80,10 +80,9 @@ import           Ouroboros.Network.PeerSelection.Governor
                      (DebugPeerSelection (..), PeerSelectionTargets (..),
                      TracePeerSelection)
 import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface (..),
-                     LedgerStateJudgement (..), TraceLedgerPeers,
-                     UseLedgerAfter (..), accPoolStake)
+import           Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
+                     LedgerPeersConsensusInterface (..),
+                     LedgerStateJudgement (..), TraceLedgerPeers, accPoolStake)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerSelectionActionsTrace)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -123,6 +122,8 @@ import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (UseLedgerPeers (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -1060,7 +1061,7 @@ diffusionSimulation
           diffusionMode = InitiatorAndResponderDiffusionMode
           readLocalRootPeers  = readTVar lrpVar
           readPublicRootPeers = return publicRoots
-          readUseLedgerAfter  = return (UseLedgerAfter 0)
+          readUseLedgerPeers  = return (UseLedgerPeers (After 0))
 
           acceptVersion = \_ v -> Accept v
 
@@ -1166,7 +1167,7 @@ diffusionSimulation
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
               , NodeKernel.aOwnPeerSharing       = peerSharing
-              , NodeKernel.aReadUseLedgerAfter   = readUseLedgerAfter
+              , NodeKernel.aReadUseLedgerPeers   = readUseLedgerPeers
               , NodeKernel.aProtocolIdleTimeout  = 5
               , NodeKernel.aTimeWaitTimeout      = 30
               , NodeKernel.aDNSTimeoutScript     = dnsTimeout
