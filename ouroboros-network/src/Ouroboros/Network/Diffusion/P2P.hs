@@ -110,8 +110,9 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      PublicPeerSelectionState (..), TracePeerSelection (..),
                      emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface, TraceLedgerPeers,
-                     UseLedgerAfter)
+                     (LedgerPeersConsensusInterface, TraceLedgerPeers)
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (UseLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSelectionActions
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -245,7 +246,7 @@ data ArgumentsExtra m = ArgumentsExtra {
     --
     -- This value comes from the node's configuration file and is static.
     , daOwnPeerSharing      :: PeerSharing
-    , daReadUseLedgerAfter  :: STM m UseLedgerAfter
+    , daReadUseLedgerPeers  :: STM m UseLedgerPeers
 
       -- | Timeout which starts once all responder protocols are idle. If the
       -- responders stay idle for duration of the timeout, the connection will
@@ -616,7 +617,7 @@ runM Interfaces
        , daReadLocalRootPeers
        , daReadPublicRootPeers
        , daOwnPeerSharing
-       , daReadUseLedgerAfter
+       , daReadUseLedgerPeers
        , daProtocolIdleTimeout
        , daTimeWaitTimeout
        , daDeadlineChurnInterval
@@ -951,7 +952,7 @@ runM Interfaces
             -- ^ Random generator for picking ledger peers
             -> LedgerPeersConsensusInterface m
             -- ^ Get Ledger Peers comes from here
-            -> STM m UseLedgerAfter
+            -> STM m UseLedgerPeers
             -- ^ Get Use Ledger After value
             -> (   (Async m Void, Async m Void)
                 -> PeerSelectionActions
@@ -1054,7 +1055,7 @@ runM Interfaces
               peerStateActions
               ledgerPeersRng
               daLedgerPeersCtx
-              daReadUseLedgerAfter
+              daReadUseLedgerPeers
                 $ \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
 
                Async.withAsync
@@ -1086,7 +1087,7 @@ runM Interfaces
                 peerStateActions
                 ledgerPeersRng
                 daLedgerPeersCtx
-                daReadUseLedgerAfter
+                daReadUseLedgerPeers
                   $ \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
               Async.withAsync
                 (peerSelectionGovernor'

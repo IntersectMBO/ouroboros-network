@@ -83,7 +83,7 @@ withPeerSelectionActions
   -- ^ Random generator for picking ledger peers
   -> LedgerPeersConsensusInterface m
   -- ^ Get Ledger Peers comes from here
-  -> STM m UseLedgerAfter
+  -> STM m UseLedgerPeers
   -- ^ Get Use Ledger After value
   -> (   (Async m Void, Async m Void)
       -> PeerSelectionActions peeraddr peerconn m
@@ -107,12 +107,12 @@ withPeerSelectionActions
   peerStateActions
   ledgerPeersRng
   ledgerPeersConsensusInterface
-  getUseLedgerAfter
+  getUseLedgerPeers
   k = do
     localRootsVar <- newTVarIO mempty
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
 
-    withLedgerPeers ledgerPeersRng dnsSemaphore toPeerAddr ledgerPeersTracer getUseLedgerAfter
+    withLedgerPeers ledgerPeersRng dnsSemaphore toPeerAddr ledgerPeersTracer getUseLedgerPeers
                     ledgerPeersConsensusInterface dnsActions
       (\getLedgerPeers lpThread -> do
           let peerSelectionActions = PeerSelectionActions {

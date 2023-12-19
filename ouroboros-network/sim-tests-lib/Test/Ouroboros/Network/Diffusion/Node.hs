@@ -77,6 +77,8 @@ import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric
                      (PeerMetricsConfiguration (..), newPeerMetric)
 import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -98,8 +100,8 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface, UseLedgerAfter)
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (UseLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -153,7 +155,7 @@ data Arguments m = Arguments
                                       , Map RelayAccessPoint PeerAdvertise)]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
     , aOwnPeerSharing       :: PeerSharing
-    , aReadUseLedgerAfter   :: STM m UseLedgerAfter
+    , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
     , aTimeWaitTimeout      :: DiffTime
     , aDNSTimeoutScript     :: Script DNSTimeout
@@ -395,7 +397,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
       , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
-      , Diff.P2P.daReadUseLedgerAfter    = aReadUseLedgerAfter na
+      , Diff.P2P.daReadUseLedgerPeers    = aReadUseLedgerPeers na
       , Diff.P2P.daProtocolIdleTimeout   = aProtocolIdleTimeout na
       , Diff.P2P.daTimeWaitTimeout       = aTimeWaitTimeout na
       , Diff.P2P.daDeadlineChurnInterval = 3300

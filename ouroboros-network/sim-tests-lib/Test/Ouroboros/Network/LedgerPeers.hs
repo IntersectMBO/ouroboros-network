@@ -187,7 +187,7 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
           withLedgerPeers
                 rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
-                (pure (UseLedgerAfter 0))
+                (pure (UseLedgerPeers (After 0)))
                 interface
                 (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
                 (\request _ -> do
@@ -244,7 +244,7 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
 
           withLedgerPeers
                 rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
-                (pure (UseLedgerAfter 0))
+                (pure (UseLedgerPeers (After 0)))
                 interface
                 (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
                 (\request _ -> do
