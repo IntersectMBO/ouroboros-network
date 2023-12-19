@@ -30,7 +30,7 @@ import qualified Ouroboros.Network.NodeToClient as NodeToClient
 import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit,
                      ConnectionId, DiffusionMode)
 import qualified Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (LedgerPeersConsensusInterface)
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import           Ouroboros.Network.Snocket (FileDescriptor)

@@ -24,7 +24,6 @@ import           Control.Tracer (Tracer)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
-import qualified Data.Set as Set
 import           Data.Void (Void)
 
 import qualified Network.DNS as DNS
@@ -36,6 +35,9 @@ import           Ouroboros.Network.PeerSelection.LedgerPeers hiding
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PublicRootPeers
+                     (PublicRootPeers)
+import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSActions)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
@@ -64,6 +66,7 @@ withPeerSelectionActions
   -> (IP -> Socket.PortNumber -> peeraddr)
   -> DNSActions resolver exception m
   -> STM m PeerSelectionTargets
+  -> STM m LedgerStateJudgement
   -> STM m [( HotValency
             , WarmValency
             , Map RelayAccessPoint PeerAdvertise)]
@@ -98,6 +101,7 @@ withPeerSelectionActions
   toPeerAddr
   dnsActions
   readPeerSelectionTargets
+  readLedgerStateJudgement
   readLocalRootPeers
   readPublicRootPeers
   peerSharing
@@ -121,10 +125,11 @@ withPeerSelectionActions
                   readNewInboundConnection = readNewInboundConnections,
                   peerSharing,
                   peerConnToPeerSharing,
-                  requestBigLedgerPeers = requestBigLedgerPeers dnsSemaphore getLedgerPeers,
-                  requestPublicRootPeers = requestPublicRootPeers dnsSemaphore getLedgerPeers,
+                  requestPublicRootPeers =
+                    \lpk n -> requestPublicRootPeers lpk n getLedgerPeers dnsSemaphore,
                   requestPeerShare,
-                  peerStateActions
+                  peerStateActions,
+                  readLedgerStateJudgement
                 }
           withAsync
             (localRootPeersProvider
@@ -139,32 +144,39 @@ withPeerSelectionActions
             (\lrppThread -> k (lpThread, lrppThread) peerSelectionActions)
       )
   where
-    -- We first try to get public root peers from the ledger, but if it fails
-    -- (for example because the node hasn't synced far enough) we fall back
-    -- to using the manually configured bootstrap root peers.
+    -- We start by reading the current ledger state judgement, if it is
+    -- YoungEnough we only care about fetching for ledger peers, otherwise we
+    -- aim to fetch bootstrap peers.
     requestPublicRootPeers
-      :: DNSSemaphore m
-      -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+      :: LedgerPeersKind
       -> Int
-      -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime)
-    requestPublicRootPeers dnsSemaphore getLedgerPeers n = do
-      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n) AllLedgerPeers
-      case peers_m of
-           -- No peers from Ledger
-           Nothing    -> do
-             (m, dt) <- requestConfiguredRootPeers dnsSemaphore n
-             let m' = Map.map (\a -> (a, IsNotLedgerPeer)) m
-             return (m', dt)
-
-           -- These peers come from Ledger
-           --
-           -- We set peers coming from ledger as DoNotAdvertisePeer so they do
-           -- not get shared via Peer Sharing
-           Just (peers, dt) ->
-             return ( Map.fromList
-                      $ map (\a -> (a, (DoNotAdvertisePeer, IsLedgerPeer)))
-                      $ Set.toList peers
-                    , dt)
+      -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+      -> DNSSemaphore m
+      -> m (PublicRootPeers peeraddr, DiffTime)
+    requestPublicRootPeers ledgerPeersKind n getLedgerPeers dnsSemaphore = do
+      -- Read the current ledger state judgement
+      lsj <- atomically readLedgerStateJudgement
+      -- If the ledger state is YoungEnough we should get ledger peers, the
+      -- Nothing case should not happen but there can be a race condition.
+      -- If that's the case we try again soon enough.
+      case lsj of
+        YoungEnough -> do
+          mbLedgerPeers <- getLedgerPeers (NumberOfPeers $ fromIntegral n) ledgerPeersKind
+          case mbLedgerPeers of
+            Nothing -> pure (PublicRootPeers.empty, 0)
+            Just (ledgerPeers, dt) ->
+              case ledgerPeersKind of
+                AllLedgerPeers ->
+                  pure (PublicRootPeers.fromLedgerPeers ledgerPeers, dt)
+                BigLedgerPeers ->
+                  pure (PublicRootPeers.fromBigLedgerPeers ledgerPeers, dt)
+        TooOld      -> do
+          -- If the ledger state is YoungEnough we should get trustable peers.
+          -- However TODO: we need to ensure we only choose from big configured
+          -- root peers, but for that the root peers need to contain stake
+          -- information!
+          (configuredRootPeers, dt) <- requestConfiguredRootPeers dnsSemaphore n
+          pure (PublicRootPeers.fromPublicRootPeers configuredRootPeers, dt)
 
     -- For each call we re-initialise the dns library which forces reading
     -- `/etc/resolv.conf`:
@@ -182,22 +194,6 @@ withPeerSelectionActions
                               readPublicRootPeers
                               dnsActions
                               ($ n)
-
-    requestBigLedgerPeers
-      :: DNSSemaphore m
-      -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-      -> Int
-      -> m (Set peeraddr, DiffTime)
-    requestBigLedgerPeers dnsSemaphore getLedgerPeers n = do
-      peers_m <- getLedgerPeers (NumberOfPeers $ fromIntegral n) BigLedgerPeers
-      case peers_m of
-        Nothing    ->  do
-          (m, dt) <- requestConfiguredRootPeers dnsSemaphore n
-          -- TODO: we need to ensure we only choose from big configured root
-          -- peers, but for that the root peers need to contain stake
-          -- information!
-          return (Map.keysSet m, dt)
-        Just peers -> return peers
 
     requestPeerShare :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr)
     requestPeerShare amount peer = do

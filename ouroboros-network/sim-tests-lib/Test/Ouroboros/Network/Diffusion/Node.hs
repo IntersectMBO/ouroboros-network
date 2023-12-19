@@ -77,8 +77,6 @@ import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface (..))
 import           Ouroboros.Network.PeerSelection.PeerMetric
                      (PeerMetricsConfiguration (..), newPeerMetric)
 import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -101,7 +99,7 @@ import           Ouroboros.Network.Testing.Data.Script (Script (..))
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (UseLedgerPeers)
+                     (LedgerPeersConsensusInterface, UseLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))

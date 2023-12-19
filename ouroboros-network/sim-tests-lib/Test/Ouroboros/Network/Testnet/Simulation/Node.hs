@@ -82,7 +82,8 @@ import           Ouroboros.Network.PeerSelection.Governor
 import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
 import           Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
                      LedgerPeersConsensusInterface (..),
-                     LedgerStateJudgement (..), TraceLedgerPeers, accPoolStake)
+                     LedgerStateJudgement (..), TraceLedgerPeers,
+                     UseLedgerPeers (..), accPoolStake)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerSelectionActionsTrace)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -122,8 +123,6 @@ import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (UseLedgerPeers (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)

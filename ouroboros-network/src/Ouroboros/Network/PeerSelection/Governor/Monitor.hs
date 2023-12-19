@@ -35,6 +35,10 @@ import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
                      (jobDemoteActivePeer)
 import           Ouroboros.Network.PeerSelection.Governor.Types hiding
                      (PeerSelectionCounters (..))
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
+import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
+import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PubliRootPeers
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
@@ -51,7 +55,7 @@ targetPeers :: (MonadSTM m, Ord peeraddr)
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 targetPeers PeerSelectionActions{readPeerSelectionTargets}
             st@PeerSelectionState{
-              bigLedgerPeers,
+              publicRootPeers,
               localRootPeers,
               targets
             } =
@@ -72,9 +76,9 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
                               localRootPeers
 
           -- We have to enforce that local and big ledger peers are disjoint.
-          bigLedgerPeers' = bigLedgerPeers
-                            Set.\\
-                            LocalRootPeers.keysSet localRootPeers'
+          publicRootPeers' = PublicRootPeers.difference
+                              publicRootPeers
+                              (LocalRootPeers.keysSet localRootPeers')
 
       return $ \_now -> Decision {
         decisionTrace = [TraceTargetsChanged targets targets'],
@@ -82,7 +86,7 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
         decisionState = st {
                           targets        = targets',
                           localRootPeers = localRootPeers',
-                          bigLedgerPeers = bigLedgerPeers'
+                          publicRootPeers = publicRootPeers'
                         }
       }
 
@@ -118,7 +122,7 @@ inboundPeers PeerSelectionActions{
     return $ \_ ->
       let -- If peer happens to already be present in the Known Peer set
           -- 'insert' is going to do its due diligence before adding.
-          newEntry    = Map.singleton addr (Just ps, Nothing, Nothing)
+          newEntry    = Map.singleton addr (Just ps, Just DoAdvertisePeer)
           knownPeers' = KnownPeers.insert newEntry knownPeers
        in Decision {
             decisionTrace = [TraceKnownInboundConnection addr ps],
@@ -137,7 +141,7 @@ connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
             }
             st@PeerSelectionState {
-              bigLedgerPeers,
+              publicRootPeers,
               localRootPeers,
               activePeers,
               establishedPeers,
@@ -207,9 +211,9 @@ connections PeerSelectionActions{
                 demotions'
 
             publicRootDemotions     = nonLocalDemotions
-                   `Map.withoutKeys`  bigLedgerPeers
+                   `Map.withoutKeys`  bigLedgerPeersSet
             bigLedgerPeersDemotions = nonLocalDemotions
-                   `Map.restrictKeys` bigLedgerPeers
+                   `Map.restrictKeys` bigLedgerPeersSet
 
             -- Peers in this state won't be able to be promoted nor demoted.
             inProgressDemoteToCold' =
@@ -252,6 +256,7 @@ connections PeerSelectionActions{
                               }
           }
   where
+    bigLedgerPeersSet = PubliRootPeers.getBigLedgerPeers publicRootPeers
     -- Those demotions that occurred not as a result of action by the governor.
     -- They're further classified into demotions to warm, and demotions to cold.
     asynchronousDemotions :: Map peeraddr (PeerStatus, Maybe RepromoteDelay)
@@ -332,7 +337,6 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
                                        }
            policy
            st@PeerSelectionState{
-             bigLedgerPeers,
              localRootPeers,
              publicRootPeers,
              knownPeers,
@@ -359,7 +363,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           removed      = LocalRootPeers.toMap localRootPeers  Map.\\
                          LocalRootPeers.toMap localRootPeers'
           -- LocalRoots are not ledger!
-          addedInfoMap = Map.map (\a -> (Nothing, Just a, Nothing)) added
+          addedInfoMap = Map.map (\a -> (Nothing, Just a)) added
           removedSet   = Map.keysSet removed
           knownPeers'  = KnownPeers.insert addedInfoMap knownPeers
                         -- We do not immediately remove old ones from the
@@ -370,11 +374,10 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 
           -- We have to adjust the publicRootPeers to maintain the invariant
           -- that the local and public sets are non-overlapping.
-          publicRootPeers' = publicRootPeers Set.\\ localRootPeersSet
-
-          -- We have to adjust the bigLedgerPeers to maintain the invariant that
-          -- the local and big ledger peer sets are non-overlapping.
-          bigLedgerPeers'  = bigLedgerPeers Set.\\ localRootPeersSet
+          --
+          publicRootPeers' = publicRootPeers
+                             `PublicRootPeers.difference`
+                             localRootPeersSet
 
           -- If we are removing local roots and we have active connections to
           -- them then things are a little more complicated. We would typically
@@ -394,7 +397,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
       return $ \_now ->
 
           assert (Set.isSubsetOf
-                    publicRootPeers'
+                    (PublicRootPeers.toSet publicRootPeers')
                    (KnownPeers.toSet knownPeers'))
         . assert (Set.isSubsetOf
                    (LocalRootPeers.keysSet localRootPeers')
@@ -404,7 +407,6 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
             decisionTrace = [TraceLocalRootPeersChanged localRootPeers
                                                         localRootPeers'],
             decisionState = st {
-                              bigLedgerPeers      = bigLedgerPeers',
                               localRootPeers      = localRootPeers',
                               publicRootPeers     = publicRootPeers',
                               knownPeers          = knownPeers',

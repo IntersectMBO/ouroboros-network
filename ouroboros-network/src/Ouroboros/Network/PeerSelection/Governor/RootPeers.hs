@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Network.PeerSelection.Governor.RootPeers (belowTarget) where
 
@@ -12,7 +13,9 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersKind (..))
+import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
@@ -64,7 +67,7 @@ belowTarget actions
   = GuardedSkip Nothing
   where
     numRootPeers      = LocalRootPeers.size localRootPeers
-                      + Set.size publicRootPeers
+                      + PublicRootPeers.size publicRootPeers
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 
@@ -108,17 +111,37 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
 
     job :: m (Completion m peeraddr peerconn)
     job = do
-      (results, ttl) <- requestPublicRootPeers numExtraAllowed
+      (results, ttl) <- requestPublicRootPeers AllLedgerPeers numExtraAllowed
       return $ Completion $ \st now ->
-        let newPeers         = results `Map.withoutKeys` LocalRootPeers.keysSet (localRootPeers st)
-                                       `Map.withoutKeys` publicRootPeers st
-                                       `Map.withoutKeys` bigLedgerPeers st
-            publicRootPeers' = publicRootPeers st <> Map.keysSet newPeers
-            knownPeers'      = KnownPeers.insert
-                                 -- When we don't know about the PeerSharing information
-                                 -- we default to NoPeerSharing
-                                 (Map.map (\(a, b) -> (Just PeerSharingDisabled, Just a, Just b)) newPeers)
-                                 (knownPeers st)
+        let newPeers = results `PublicRootPeers.difference` LocalRootPeers.keysSet (localRootPeers st)
+                               `PublicRootPeers.difference` PublicRootPeers.toSet (publicRootPeers st)
+            publicRootPeers'  = publicRootPeers st <> newPeers
+            publicConfigPeers = PublicRootPeers.getPublicConfigPeers publicRootPeers'
+            bootstrapPeers    = PublicRootPeers.getBootstrapPeers publicRootPeers'
+            ledgerPeers       = PublicRootPeers.toAllLedgerPeerSet publicRootPeers'
+            -- Add bootstrapPeers peers
+            knownPeers' = KnownPeers.insert
+                            -- When we don't know about the PeerSharing information
+                            -- we default to NoPeerSharing. I.e. we only pass
+                            -- a Just value if we want a different value than
+                            -- the the default one.
+                            ( Map.fromList
+                            . map (\(p, pa) -> (p, (Nothing, Just pa)))
+                            $ Map.assocs publicConfigPeers
+                            )
+                            (knownPeers st)
+
+            -- Add all other peers
+            knownPeers'' = KnownPeers.insert
+                            -- When we don't know about the PeerSharing information
+                            -- we default to NoPeerSharing. I.e. we only pass
+                            -- a Just value if we want a different value than
+                            -- the the default one.
+                            ( Map.fromList
+                            . map (,(Nothing, Nothing))
+                            $ Set.toList (bootstrapPeers <> ledgerPeers)
+                            )
+                            knownPeers'
 
             -- We got a successful response to our request, but if we're still
             -- below target we're going to want to try again at some point.
@@ -128,8 +151,8 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             -- seconds is just over an hour.
             publicRootBackoffs' :: Int
             publicRootBackoffs'
-              | Map.null newPeers = (publicRootBackoffs st `max` 0) + 1
-              | otherwise         = 0
+              | PublicRootPeers.null newPeers = (publicRootBackoffs st `max` 0) + 1
+              | otherwise                     = 0
 
             publicRootRetryDiffTime :: DiffTime
             publicRootRetryDiffTime
@@ -141,17 +164,17 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             publicRootRetryTime = addTime publicRootRetryDiffTime now
 
          in assert (Set.isSubsetOf
-                      publicRootPeers'
-                     (KnownPeers.toSet knownPeers'))
+                     (PublicRootPeers.toSet publicRootPeers')
+                     (KnownPeers.toSet knownPeers''))
 
              Decision {
                 decisionTrace = [TracePublicRootsResults
-                                  (Map.map fst newPeers)
+                                  newPeers
                                   publicRootBackoffs'
                                   publicRootRetryDiffTime],
                 decisionState = st {
                                   publicRootPeers     = publicRootPeers',
-                                  knownPeers          = knownPeers',
+                                  knownPeers          = knownPeers'',
                                   publicRootBackoffs  = publicRootBackoffs',
                                   publicRootRetryTime = publicRootRetryTime,
                                   inProgressPublicRootsReq = False

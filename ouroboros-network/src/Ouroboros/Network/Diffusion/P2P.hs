@@ -109,7 +109,7 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface, TraceLedgerPeers)
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (UseLedgerPeers)
+                     (LedgerPeersConsensusInterface (..), UseLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSelectionActions
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -623,7 +623,9 @@ runM Interfaces
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
-       , daLedgerPeersCtx
+       , daLedgerPeersCtx =
+          daLedgerPeersCtx@LedgerPeersConsensusInterface
+            { lpGetLedgerStateJudgement }
        }
      ApplicationsExtra
        { daRethrowPolicy
@@ -963,6 +965,7 @@ runM Interfaces
                   diNtnToPeerAddr
                   (diDnsActions lookupReqs)
                   (readTVar peerSelectionTargetsVar)
+                  lpGetLedgerStateJudgement
                   daReadLocalRootPeers
                   daReadPublicRootPeers
                   daOwnPeerSharing

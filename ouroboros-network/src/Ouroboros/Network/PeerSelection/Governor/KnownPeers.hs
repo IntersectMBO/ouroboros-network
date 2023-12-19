@@ -22,9 +22,8 @@ import           Control.Monad.Class.MonadTimer.SI
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.State.KnownPeers
-                     (isKnownLedgerPeer)
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
@@ -50,8 +49,8 @@ belowTarget actions
               policyPeerShareRetryTime
             }
             st@PeerSelectionState {
-              bigLedgerPeers,
               knownPeers,
+              publicRootPeers,
               establishedPeers,
               inProgressPeerShareReqs,
               inProgressDemoteToCold,
@@ -122,7 +121,7 @@ belowTarget actions
   = GuardedSkip Nothing
   where
     numKnownPeers            = Set.size $ KnownPeers.toSet knownPeers
-                                   Set.\\ bigLedgerPeers
+                                   Set.\\ PublicRootPeers.getBigLedgerPeers publicRootPeers
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
                              - inProgressPeerShareReqs
     availableForPeerShare    = EstablishedPeers.availableForPeerShare establishedPeers
@@ -181,7 +180,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                -- sharing results is welcome.
                newPeers    = [ p | Right (PeerSharingResult ps) <- totalResults
                                  , p <- ps
-                                 , not (isKnownLedgerPeer p (knownPeers st)) ]
+                                 , not (Set.member p (PublicRootPeers.toAllLedgerPeerSet (publicRootPeers st))) ]
             in Decision { decisionTrace = [ TracePeerShareResults peerResults
                                           , TracePeerShareResultsFiltered newPeers
                                           ]
@@ -191,7 +190,6 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                                (Map.fromList
                                                 $ map (\a -> ( a
                                                              , ( Nothing
-                                                               , Nothing
                                                                , Nothing))
                                                       )
                                                       newPeers)
@@ -225,7 +223,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                 -- sharing results is welcome.
             let newPeers = [ p | Just (Right (PeerSharingResult ps)) <- partialResults
                                , p <- ps
-                               , not (isKnownLedgerPeer p (knownPeers st)) ]
+                               , not (Set.member p (PublicRootPeers.toAllLedgerPeerSet (publicRootPeers st))) ]
              in Decision { decisionTrace = [ TracePeerShareResults peerResults
                                            , TracePeerShareResultsFiltered newPeers
                                            ]
@@ -235,7 +233,6 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                                 (Map.fromList
                                                  $ map (\a -> ( a
                                                               , ( Nothing
-                                                                , Nothing
                                                                 , Nothing))
                                                        )
                                                        newPeers)
@@ -285,10 +282,10 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
               case results of
                 Right totalResults  -> [ p | Right (PeerSharingResult ps) <- totalResults
                                            , p <- ps
-                                           , not (isKnownLedgerPeer p (knownPeers st)) ]
+                                           , not (Set.member p (PublicRootPeers.toAllLedgerPeerSet (publicRootPeers st))) ]
                 Left partialResults -> [ p | Just (Right (PeerSharingResult ps)) <- partialResults
                                            , p <- ps
-                                           , not (isKnownLedgerPeer p (knownPeers st)) ]
+                                           , not (Set.member p (PublicRootPeers.toAllLedgerPeerSet (publicRootPeers st))) ]
 
          in Decision { decisionTrace = [ TracePeerShareResults peerResults
                                        , TracePeerShareResultsFiltered newPeers
@@ -299,7 +296,6 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                             (Map.fromList
                                              $ map (\a -> ( a
                                                           , ( Nothing
-                                                            , Nothing
                                                             , Nothing))
                                                    )
                                                    newPeers)
@@ -329,7 +325,6 @@ aboveTarget PeerSelectionPolicy {
             st@PeerSelectionState {
               localRootPeers,
               publicRootPeers,
-              bigLedgerPeers,
               knownPeers,
               establishedPeers,
               inProgressPromoteCold,
@@ -357,15 +352,16 @@ aboveTarget PeerSelectionPolicy {
     -- below the target for root peers.
     --
   , let numRootPeersCanForget = LocalRootPeers.size localRootPeers
-                              + Set.size publicRootPeers
+                              + PublicRootPeers.size publicRootPeers
                               - targetNumberOfRootPeers
         availableToForget     = KnownPeers.toSet knownPeers
                                   Set.\\ EstablishedPeers.toSet establishedPeers
                                   Set.\\ LocalRootPeers.keysSet localRootPeers
                                   Set.\\ (if numRootPeersCanForget <= 0
-                                            then publicRootPeers else Set.empty)
+                                            then PublicRootPeers.toSet publicRootPeers
+                                            else Set.empty)
                                   Set.\\ inProgressPromoteCold
-                                  Set.\\ bigLedgerPeers
+                                  Set.\\ bigLedgerPeersSet
 
   , not (Set.null availableToForget)
   = Guarded Nothing $ do
@@ -387,9 +383,9 @@ aboveTarget PeerSelectionPolicy {
                                  selectedToForget
                                  knownPeers
             publicRootPeers' = publicRootPeers
-                                 Set.\\ selectedToForget
+                                `PublicRootPeers.difference` selectedToForget
         in assert (Set.isSubsetOf
-                     publicRootPeers'
+                     (PublicRootPeers.toSet publicRootPeers')
                     (KnownPeers.toSet knownPeers'))
 
               Decision {
@@ -405,11 +401,12 @@ aboveTarget PeerSelectionPolicy {
   | otherwise
   = GuardedSkip Nothing
   where
+    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
     numKnownPeers, numEstablishedPeers :: Int
     numKnownPeers        = Set.size $ KnownPeers.toSet knownPeers
-                               Set.\\ bigLedgerPeers
+                               Set.\\ bigLedgerPeersSet
     numEstablishedPeers  = Set.size $ EstablishedPeers.toSet establishedPeers
-                               Set.\\ bigLedgerPeers
+                               Set.\\ bigLedgerPeersSet
 
 
 -------------------------------

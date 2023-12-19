@@ -87,6 +87,7 @@ import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
@@ -1137,7 +1138,7 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
       let govPublicRootPeersSig :: Signal (Set NtNAddr)
           govPublicRootPeersSig =
             selectDiffusionPeerSelectionState
-              Governor.publicRootPeers
+              (PublicRootPeers.toSet . Governor.publicRootPeers)
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
@@ -1231,7 +1232,9 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
     verify_target_active_public events =
         let govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
-              selectDiffusionPeerSelectionState Governor.publicRootPeers events
+              selectDiffusionPeerSelectionState
+                (PublicRootPeers.toSet . Governor.publicRootPeers)
+                events
 
             govActivePeersSig :: Signal (Set NtNAddr)
             govActivePeersSig =
@@ -1397,7 +1400,8 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
 
             govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
-              selectDiffusionPeerSelectionState Governor.publicRootPeers events
+              selectDiffusionPeerSelectionState
+                (PublicRootPeers.toSet . Governor.publicRootPeers) events
 
             govRootPeersSig :: Signal (Set NtNAddr)
             govRootPeersSig = Set.union <$> govLocalRootPeersSig
@@ -3457,4 +3461,4 @@ dropBigLedgerPeers
     :: (Governor.PeerSelectionState NtNAddr peerconn -> Set NtNAddr)
     ->  Governor.PeerSelectionState NtNAddr peerconn -> Set NtNAddr
 dropBigLedgerPeers f =
-  \st -> f st Set.\\ Governor.bigLedgerPeers st
+  \st -> f st Set.\\ PublicRootPeers.getBigLedgerPeers (Governor.publicRootPeers st)

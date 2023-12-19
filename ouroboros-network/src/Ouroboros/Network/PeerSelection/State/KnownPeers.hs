@@ -32,8 +32,6 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
     -- * Selecting peers to share
   , canSharePeers
   , getPeerSharingResponsePeers
-    -- ** Filtering ledger peers
-  , isKnownLedgerPeer
   ) where
 
 import qualified Data.List as List
@@ -43,13 +41,11 @@ import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
---import           System.Random (RandomGen(..))
 
 import           Control.Exception (assert)
 import           Control.Monad.Class.MonadTime.SI
 
 import           Data.Maybe (fromMaybe)
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -122,15 +118,7 @@ data KnownPeerInfo = KnownPeerInfo {
        --
        -- It is used by the Peer Sharing logic to decide if we should share
        -- about this peer's address to others.
-       knownPeerAdvertise :: !PeerAdvertise,
-
-       -- | Indicates if peer came from ledger.
-       --
-       -- It is used so we can filter out the ledger Peers from a Peer Sharing
-       -- reply, since ledger peers are not particularly what one is looking for
-       -- in a Peer Sharing reply.
-       --
-       knownLedgerPeer    :: !IsLedgerPeer
+       knownPeerAdvertise :: !PeerAdvertise
      }
   deriving (Eq, Show)
 
@@ -175,9 +163,8 @@ member :: Ord peeraddr
 member peeraddr KnownPeers {allPeers} =
     peeraddr `Map.member` allPeers
 
--- TODO: `insert` ought to be idempotent, see issue #4616.
 insert :: Ord peeraddr
-       => Map peeraddr (Maybe PeerSharing, Maybe PeerAdvertise, Maybe IsLedgerPeer)
+       => Map peeraddr (Maybe PeerSharing, Maybe PeerAdvertise)
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
 insert peeraddrs
@@ -198,7 +185,7 @@ insert peeraddrs
         }
     in assert (invariant knownPeers') knownPeers'
   where
-    newPeerInfo (peerSharing, peerAdvertise, ledgerPeers) =
+    newPeerInfo (peerSharing, peerAdvertise) =
       let peerAdvertise' = fromMaybe DoNotAdvertisePeer peerAdvertise
           peerSharing'   = fromMaybe PeerSharingDisabled peerSharing
        in KnownPeerInfo {
@@ -206,7 +193,6 @@ insert peeraddrs
       , knownPeerTepid     = False
       , knownPeerSharing   = peerSharing'
       , knownPeerAdvertise = peerAdvertise'
-      , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
       }
     mergePeerInfo old new =
       KnownPeerInfo {
@@ -216,10 +202,6 @@ insert peeraddrs
       -- flags or we just learned this peer comes from ledger.
       , knownPeerSharing   = knownPeerSharing new
       , knownPeerAdvertise = knownPeerAdvertise new
-      -- Preserve Ledger Peer information if the peer is ledger.
-      , knownLedgerPeer    = case knownLedgerPeer old of
-                               IsLedgerPeer    -> IsLedgerPeer
-                               IsNotLedgerPeer -> knownLedgerPeer new
       }
 
 delete :: Ord peeraddr
@@ -387,8 +369,10 @@ setConnectTimes times
 canPeerShareRequest :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canPeerShareRequest pa KnownPeers { allPeers } =
   case Map.lookup pa allPeers of
-    Just (KnownPeerInfo _ _ PeerSharingEnabled _ _) -> True
-    _                                               -> False
+    Just KnownPeerInfo
+          { knownPeerSharing = PeerSharingEnabled
+          } -> True
+    _       -> False
 
 -- Only share peers which are allowed to be advertised, i.e. have
 -- 'DoAdvertisePeer' 'PeerAdvertise' values.
@@ -396,8 +380,10 @@ canPeerShareRequest pa KnownPeers { allPeers } =
 canSharePeers :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
 canSharePeers pa KnownPeers { allPeers } =
   case Map.lookup pa allPeers of
-    Just (KnownPeerInfo _ _ _ DoAdvertisePeer _) -> True
-    _                                            -> False
+    Just KnownPeerInfo
+          { knownPeerAdvertise = DoAdvertisePeer
+          } -> True
+    _       -> False
 
 -- | Filter peers available for Peer Sharing requests, according to their
 -- 'PeerSharing' information
@@ -417,8 +403,10 @@ getPeerSharingResponsePeers :: KnownPeers peeraddr
 getPeerSharingResponsePeers knownPeers =
     Map.keysSet
   $ Map.filter (\case
-                  KnownPeerInfo _ _ _ DoAdvertisePeer _ -> True
-                  _                                     -> False
+                  KnownPeerInfo
+                    { knownPeerAdvertise = DoAdvertisePeer
+                    } -> True
+                  _   -> False
                )
   $ allPeers knownPeers
 
@@ -449,21 +437,3 @@ sampleAdvertisedPeers _ _ _ = []
 -- in a relatively stable way, that's mostly insensitive to additions or
 -- deletions
 -}
-
----------------------------------
--- Filter ledger peers
---
-
--- | Checks the KnownPeers Set for known ledger peers.
---
--- This is used in Peer Selection Governor to filter out the known-to-te ledger
--- peers from the share result set.
---
-isKnownLedgerPeer :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
-isKnownLedgerPeer peeraddr KnownPeers { allPeers } =
-  case Map.lookup peeraddr allPeers of
-    Just KnownPeerInfo { knownLedgerPeer } ->
-      case knownLedgerPeer of
-        IsLedgerPeer    -> True
-        IsNotLedgerPeer -> False
-    Nothing             -> False

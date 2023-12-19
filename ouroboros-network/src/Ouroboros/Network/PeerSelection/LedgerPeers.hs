@@ -11,8 +11,6 @@
 module Ouroboros.Network.PeerSelection.LedgerPeers
   ( DomainAccessPoint (..)
   , IP.IP (..)
-  , LedgerPeersConsensusInterface (..)
-  , LedgerStateJudgement (..)
   , LedgerPeers (..)
   , getLedgerPeers
   , RelayAccessPoint (..)
