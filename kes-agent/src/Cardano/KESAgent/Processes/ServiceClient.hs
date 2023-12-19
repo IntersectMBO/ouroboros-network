@@ -82,12 +82,14 @@ availableServiceDrivers :: forall c m fd addr
 availableServiceDrivers =
   [ ( versionIdentifier (Proxy @(ServiceProtocol m c))
     , \bearer tracer handleKey ->
-        void $ runPeerWithDriver
-          (serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-          (serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
-          ()
+        void $
+          runPeerWithDriver
+            (serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+            (serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+            ()
     )
   ]
+
 -- | Run a Service Client indefinitely, restarting the connection once a
 -- session ends.
 -- In case of an abnormal session termination (via an exception), the exception
