@@ -493,7 +493,7 @@ data PeerSelectionCounters = PeerSelectionCounters {
       -- | Local root peers with one entry per group. First entry is the number
       -- of warm peers in that group the second is the number of hot peers in
       -- that group.
-      localRoots         :: ![(Int, Int)]
+      localRoots         :: ![(HotValency, WarmValency)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
@@ -513,15 +513,13 @@ peerStateToCounters st@PeerSelectionState { activePeers, bigLedgerPeers, localRo
     coldPeersSet  = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet  = establishedPeersSet Set.\\ activePeers
     hotPeersSet   = activePeers
-    localRoots    =
-      [ (warm, hot)
-      | (_,_, members) <- LocalRootPeers.toGroupSets localRootPeers
-      , let warm   = Set.size $ members `Set.intersection` warmPeersSet
-            hot    = Set.size $ members `Set.intersection` hotPeersSet
+    localRoots =
+      [ (hot, warm)
+      | (hot, warm, _) <- LocalRootPeers.toGroupSets localRootPeers
       ]
 
 emptyPeerSelectionState :: StdGen
-                        -> [(Int, Int)]
+                        -> [(HotValency, WarmValency)]
                         -> PeerSelectionState peeraddr peerconn
 emptyPeerSelectionState rng localRoots =
     PeerSelectionState {
