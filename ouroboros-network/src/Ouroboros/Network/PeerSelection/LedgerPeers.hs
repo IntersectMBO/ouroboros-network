@@ -11,11 +11,17 @@
 #endif
 
 module Ouroboros.Network.PeerSelection.LedgerPeers
-  ( -- * Ledger Peers specific data types
-    UseLedgerAfter (..)
-  , IsLedgerPeer (..)
-  , NumberOfPeers (..)
+  ( DomainAccessPoint (..)
+  , IP.IP (..)
   , LedgerPeersConsensusInterface (..)
+  , LedgerStateJudgement (..)
+  , LedgerPeers (..)
+  , getLedgerPeers
+  , RelayAccessPoint (..)
+  , PoolStake (..)
+  , AccPoolStake (..)
+  , TraceLedgerPeers (..)
+  , NumberOfPeers (..)
   , LedgerPeersKind (..)
     -- * Ledger Peers specific functions
   , accPoolStake
@@ -69,16 +75,31 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
                      (DNSSemaphore)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 
-
--- | Which ledger peers to pick.
+-- | Internal API to deal with 'UseLedgerAfter' configuration
+-- option
 --
-data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
-  deriving Show
-
-newtype LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
-      lpGetPeers :: SlotNo -> STM m (Maybe [(PoolStake, NonEmpty RelayAccessPoint)])
-    }
-
+-- Receiving the 'LedgerPeersConsensusInterface' we are able to compute a
+-- function that given a 'SlotNo' will give us 'LedgerPeers' according to the
+-- following invariants:
+--
+-- * 'BeforeSlot' is returned iff the latest slot is before the 'slotNo';
+-- * 'LedgerPeers lsj peers' is returned iff the latest slot is after the
+--   'slotNo'.
+--
+getLedgerPeers
+  :: MonadSTM m
+  => LedgerPeersConsensusInterface m
+  -> SlotNo
+  -> STM m LedgerPeers
+getLedgerPeers (LedgerPeersConsensusInterface lpGetLatestSlot
+                                              lpGetLedgerStateJudgement
+                                              lpGetLedgerPeers)
+               slot = do
+  curSlot <- lpGetLatestSlot
+  if curSlot < slot
+     then pure BeforeSlot
+     else LedgerPeers <$> lpGetLedgerStateJudgement
+                      <*> lpGetLedgerPeers
 
 -- | Convert a list of pools with stake to a Map keyed on the accumulated stake.
 -- Consensus provides a list of pairs of relative stake and corresponding relays for all usable
@@ -260,7 +281,7 @@ ledgerPeersThread :: forall m peerAddr resolver exception.
                   -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                   -> m Void
 ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
-                  LedgerPeersConsensusInterface{..} dnsActions
+                  ledgerPeersConsensusInterface dnsActions
                   getReq putRsp = do
     go inRng (Time 0) Map.empty Map.empty
   where
@@ -291,12 +312,15 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
                                      traceWith tracer DisabledLedgerPeers
                                      return (Map.empty, Map.empty, now)
                                    UseLedgerAfter slot -> do
-                                     peers_m <- atomically $ lpGetPeers slot
-                                     let peers    = maybe Map.empty accPoolStake peers_m
-                                         bigPeers = maybe Map.empty accBigPoolStake peers_m
-                                     traceWith tracer $ FetchingNewLedgerState (Map.size peers) (Map.size bigPeers)
-                                     return (peers, bigPeers, now)
-
+                                     peers <- (\case
+                                                BeforeSlot          -> []
+                                                LedgerPeers _ peers -> peers
+                                              )
+                                          <$> atomically (getLedgerPeers ledgerPeersConsensusInterface slot)
+                                     let peers' = accPoolStake peers
+                                         bigPeers = accBigPoolStake peers
+                                     traceWith tracer $ FetchingNewLedgerState (Map.size peers') (Map.size bigPeers)
+                                     return (peers', bigPeers, now)
                              else do
                                  traceWith tracer $ ReusingLedgerState (Map.size peerMap) age
                                  return (peerMap, bigPeerMap, oldTs)

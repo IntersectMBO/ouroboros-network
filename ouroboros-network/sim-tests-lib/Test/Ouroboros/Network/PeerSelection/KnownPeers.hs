@@ -4,7 +4,6 @@ import           Data.Map (Map)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck (Property, counterexample)

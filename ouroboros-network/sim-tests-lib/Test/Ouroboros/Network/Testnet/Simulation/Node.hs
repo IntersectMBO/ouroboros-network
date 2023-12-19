@@ -80,6 +80,10 @@ import           Ouroboros.Network.PeerSelection.Governor
                      (DebugPeerSelection (..), PeerSelectionTargets (..),
                      TracePeerSelection)
 import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
+import           Ouroboros.Network.PeerSelection.LedgerPeers
+                     (LedgerPeersConsensusInterface (..),
+                     LedgerStateJudgement (..), TraceLedgerPeers,
+                     UseLedgerAfter (..), accPoolStake)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerSelectionActionsTrace)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -119,9 +123,6 @@ import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface (..), TraceLedgerPeers,
-                     UseLedgerAfter (..), accPoolStake)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -1123,15 +1124,17 @@ diffusionSimulation
               , NodeKernel.iNtcBearer         = makeFDBearer
               , NodeKernel.iRng               = rng
               , NodeKernel.iDomainMap         = dMapVar
-              , NodeKernel.iLedgerPeersConsensusInterface =
-                  LedgerPeersConsensusInterface $
-                    \_ -> do
+              , NodeKernel.iLedgerPeersConsensusInterface
+                                        =
+                  LedgerPeersConsensusInterface
+                    (pure maxBound)
+                    (pure TooOld)
+                    (do
                       ledgerPools <- stepScriptSTM ledgerPeersVar
-                      return $ Just
-                             $ Map.elems
+                      return $ Map.elems
                              $ accPoolStake
                              $ getLedgerPools
-                             $ ledgerPools
+                             $ ledgerPools)
               }
 
           shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> BlockHeader -> m Bool
