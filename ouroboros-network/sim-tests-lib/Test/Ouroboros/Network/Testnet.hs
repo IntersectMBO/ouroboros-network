@@ -90,6 +90,8 @@ import           Ouroboros.Network.NodeToNode (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerTrustable
+                     (PeerTrustable (..))
 import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint (..))
@@ -392,7 +394,8 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
               PeerSharingDisabled
-              [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoNotAdvertisePeer),(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoNotAdvertisePeer)])]
+              [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,(DoNotAdvertisePeer, IsNotTrustable))
+                                 ,(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoNotAdvertisePeer, IsNotTrustable))])]
               (Script (LedgerPools [] :| []))
               nullPeerSelectionTargets {
                 targetNumberOfKnownPeers = 2,
@@ -408,11 +411,11 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               Nothing
               False
           , [JoinNetwork 1.742857142857
-            ,Reconfigure 6.33333333333 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)]),
-                                        (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)
+            ,Reconfigure 6.33333333333 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,(DoAdvertisePeer, IsNotTrustable))]),
+                                        (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoAdvertisePeer, IsNotTrustable))
                                        ])]
-            ,Reconfigure 23.88888888888 [(1,1,Map.fromList []),(1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,DoAdvertisePeer)])]
-            ,Reconfigure 4.870967741935 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,DoAdvertisePeer)])]
+            ,Reconfigure 23.88888888888 [(1,1,Map.fromList []),(1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoAdvertisePeer, IsNotTrustable))])]
+            ,Reconfigure 4.870967741935 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,(DoAdvertisePeer, IsNotTrustable))])]
             ]
           )
         , ( NodeArgs (1) InitiatorAndResponderDiffusionMode (Just 135)
@@ -1034,8 +1037,8 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
             Map.empty
             (TestAddress (IPAddr (read "0.0.1.236") 65527))
             PeerSharingDisabled
-            [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,DoNotAdvertisePeer)
-                                , (RelayAccessDomain "test3" 4,DoAdvertisePeer)])
+            [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,(DoNotAdvertisePeer, IsNotTrustable))
+                                , (RelayAccessDomain "test3" 4,(DoAdvertisePeer, IsNotTrustable))])
             ]
             (Script (LedgerPools [] :| []))
             PeerSelectionTargets
@@ -1082,7 +1085,7 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
               , Reconfigure 0.415384615384 [(1,1,Map.fromList [])
               , (1,1,Map.fromList [])]
               , Reconfigure 15.550561797752 [(1,1,Map.fromList [])
-              , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,DoAdvertisePeer)])]
+              , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,(DoAdvertisePeer, IsNotTrustable))])]
               , Reconfigure 82.85714285714 []
               ])
         ]
@@ -2038,21 +2041,21 @@ async_demotion_network_script =
           ]
         )
       , ( common { naAddr           = addr2,
-                   naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
+                   naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, (DoNotAdvertisePeer, IsNotTrustable))])] }
         , [JoinNetwork 0, Kill 5, JoinNetwork 20]
         )
       , ( common { naAddr           = addr3,
-                   naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, DoNotAdvertisePeer)])] }
+                   naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, (DoNotAdvertisePeer, IsNotTrustable))])] }
         , [JoinNetwork 0]
         )
       ]
   where
     addr1    = TestAddress (IPAddr (read "10.0.0.1") 3000)
     ra_addr1 = RelayAccessAddress (read "10.0.0.1") 3000
-    localRoots1  = [(2,2, Map.fromList [(ra_addr2, DoNotAdvertisePeer)
-                                       ,(ra_addr3, DoNotAdvertisePeer)])]
-    localRoots1' = [(2,2, Map.fromList [(ra_addr2, DoAdvertisePeer)
-                                       ,(ra_addr3, DoAdvertisePeer)])]
+    localRoots1  = [(2,2, Map.fromList [(ra_addr2, (DoNotAdvertisePeer, IsNotTrustable))
+                                       ,(ra_addr3, (DoNotAdvertisePeer, IsNotTrustable))])]
+    localRoots1' = [(2,2, Map.fromList [(ra_addr2, (DoAdvertisePeer, IsNotTrustable))
+                                       ,(ra_addr3, (DoAdvertisePeer, IsNotTrustable))])]
 
     addr2    = TestAddress (IPAddr (read "10.0.0.2") 3000)
     ra_addr2 = RelayAccessAddress (read "10.0.0.2") 3000
@@ -2553,7 +2556,7 @@ prop_unit_4258 =
               Map.empty
               (TestAddress (IPAddr (read "0.0.0.4") 9))
               PeerSharingDisabled
-              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,DoNotAdvertisePeer)])]
+              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,(DoNotAdvertisePeer, IsNotTrustable))])]
               (Script (LedgerPools [] :| []))
               PeerSelectionTargets {
                 targetNumberOfRootPeers = 2,
@@ -2587,7 +2590,7 @@ prop_unit_4258 =
                (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoNotAdvertisePeer)])
                (TestAddress (IPAddr (read "0.0.0.8") 65531))
                PeerSharingDisabled
-               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])]
+               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,(DoNotAdvertisePeer, IsNotTrustable))])]
                (Script (LedgerPools [] :| []))
                PeerSelectionTargets {
                  targetNumberOfRootPeers = 4,
@@ -2615,7 +2618,7 @@ prop_unit_4258 =
              Nothing
              False
          , [ JoinNetwork 3.384615384615,
-             Reconfigure 3.583333333333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,DoNotAdvertisePeer)])],
+             Reconfigure 3.583333333333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,(DoNotAdvertisePeer, IsNotTrustable))])],
              Kill 15.55555555555,
              JoinNetwork 30.53333333333,
              Kill 71.11111111111
@@ -2655,8 +2658,8 @@ prop_unit_reconnect =
               Map.empty
               (TestAddress (IPAddr (read "0.0.0.0") 0))
               PeerSharingDisabled
-              [ (2,2,Map.fromList [ (RelayAccessAddress "0.0.0.1" 0,DoNotAdvertisePeer)
-                                  , (RelayAccessAddress "0.0.0.2" 0,DoNotAdvertisePeer)
+              [ (2,2,Map.fromList [ (RelayAccessAddress "0.0.0.1" 0,(DoNotAdvertisePeer, IsNotTrustable))
+                                  , (RelayAccessAddress "0.0.0.2" 0,(DoNotAdvertisePeer, IsNotTrustable))
                                   ])
               ]
               (Script (LedgerPools [] :| []))
@@ -2683,7 +2686,7 @@ prop_unit_reconnect =
                Map.empty
                (TestAddress (IPAddr (read "0.0.0.1") 0))
                PeerSharingDisabled
-               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,DoNotAdvertisePeer)])]
+               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,(DoNotAdvertisePeer, IsNotTrustable))])]
                (Script (LedgerPools [] :| []))
                PeerSelectionTargets {
                  targetNumberOfRootPeers = 1,

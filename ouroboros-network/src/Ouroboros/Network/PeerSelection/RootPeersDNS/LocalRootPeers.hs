@@ -31,6 +31,7 @@ import qualified Network.Socket as Socket
 
 import           Data.Bifunctor (second)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
@@ -41,22 +42,22 @@ import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
 data TraceLocalRootPeers peerAddr exception =
        TraceLocalRootDomains [( HotValency
                               , WarmValency
-                              , Map RelayAccessPoint PeerAdvertise)]
+                              , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAccessPoint DiffTime
      | TraceLocalRootResult  DomainAccessPoint [(IP, DNS.TTL)]
      | TraceLocalRootGroups  [( HotValency
                               , WarmValency
-                              , Map peerAddr PeerAdvertise)]
+                              , Map peerAddr (PeerAdvertise, PeerTrustable))]
        -- ^ This traces the results of the local root peer provider
      | TraceLocalRootDNSMap  (Map DomainAccessPoint [peerAddr])
        -- ^ This traces the results of the domain name resolution
      | TraceLocalRootReconfigured [( HotValency
                                    , WarmValency
-                                   , Map RelayAccessPoint PeerAdvertise)] -- ^ Old value
+                                   , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))] -- ^ Old value
                                   [( HotValency
                                    , WarmValency
-                                   , Map RelayAccessPoint PeerAdvertise)] -- ^ New value
+                                   , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))] -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (DNSorIOError exception)
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException
@@ -81,11 +82,11 @@ localRootPeersProvider
   -> DNSActions resolver exception m
   -> STM m [( HotValency
             , WarmValency
-            , Map RelayAccessPoint PeerAdvertise)]
+            , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
   -- ^ input
   -> StrictTVar m [( HotValency
                    , WarmValency
-                   , Map peerAddr PeerAdvertise)]
+                   , Map peerAddr (PeerAdvertise, PeerTrustable))]
   -- ^ output 'TVar'
   -> m Void
 localRootPeersProvider tracer
@@ -107,7 +108,7 @@ localRootPeersProvider tracer
     -- if either these threads fail or detects the local configuration changed.
     --
     loop :: DNSSemaphore m
-         -> [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
+         -> [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
          -> m Void
     loop dnsSemaphore domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
@@ -266,10 +267,10 @@ localRootPeersProvider tracer
     getLocalRootPeersGroups :: Map DomainAccessPoint [peerAddr]
                             -> [( HotValency
                                 , WarmValency
-                                , Map RelayAccessPoint PeerAdvertise)]
+                                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
                             -> [( HotValency
                                 , WarmValency
-                                , Map peerAddr PeerAdvertise)]
+                                , Map peerAddr (PeerAdvertise, PeerTrustable))]
     getLocalRootPeersGroups dnsMap =
       -- The idea is to traverse the static configuration. Enter each local
       -- group and check if any of the RelayAccessPoint has a Domain Name.

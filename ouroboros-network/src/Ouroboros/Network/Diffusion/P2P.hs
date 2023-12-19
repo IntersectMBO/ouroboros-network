@@ -120,6 +120,7 @@ import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), pchPeerSharing,
                      withPeerStateActions)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (RelayAccessPoint)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
@@ -240,7 +241,7 @@ data ArgumentsExtra m = ArgumentsExtra {
       --
       daPeerSelectionTargets :: PeerSelectionTargets
 
-    , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
+    , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
     , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
     -- | Peer's own PeerSharing value.
     --

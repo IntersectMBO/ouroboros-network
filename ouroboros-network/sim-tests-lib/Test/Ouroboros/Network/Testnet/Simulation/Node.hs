@@ -126,6 +126,7 @@ import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint (..), PortNumber, RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
@@ -201,7 +202,8 @@ data NodeArgs =
       -- ^ 'Arguments' 'aOwnPeerSharing' value
     , naLocalRootPeers         :: [( HotValency
                                    , WarmValency
-                                   , Map RelayAccessPoint PeerAdvertise
+                                   , Map RelayAccessPoint ( PeerAdvertise
+                                                          , PeerTrustable)
                                    )]
     , naLedgerPeers            :: Script LedgerPools
       -- ^ 'Arguments' 'LocalRootPeers' values
@@ -240,7 +242,8 @@ data Command = JoinNetwork DiffTime
              | Reconfigure DiffTime
                            [( HotValency
                             , WarmValency
-                            , Map RelayAccessPoint PeerAdvertise
+                            , Map RelayAccessPoint ( PeerAdvertise
+                                                   , PeerTrustable)
                             )]
   deriving Eq
 
@@ -256,7 +259,7 @@ instance Show Command where
 
 genCommands :: [( HotValency
                 , WarmValency
-                , Map RelayAccessPoint PeerAdvertise
+                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                 )]
             -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
@@ -270,7 +273,7 @@ genCommands localRoots = sized $ \size -> do
   where
     subLocalRootPeers :: Gen [( HotValency
                               , WarmValency
-                              , Map RelayAccessPoint PeerAdvertise
+                              , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                               )]
     subLocalRootPeers = do
       subLRP <- sublistOf localRoots
@@ -351,7 +354,7 @@ instance Arbitrary SmallPeerSelectionTargets where
 -- Simulation
 genNodeArgs :: [RelayAccessInfo]
             -> Int
-            -> [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
+            -> [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
             -> RelayAccessInfo
             -> Gen NodeArgs
 genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream $ do
@@ -657,7 +660,7 @@ genDiffusionScript :: ([RelayAccessInfo]
                         -> RelayAccessInfo
                         -> Gen [( HotValency
                                 , WarmValency
-                                , Map RelayAccessPoint PeerAdvertise)])
+                                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))])
                    -> RelayAccessInfosWithDNS
                    -> Gen (SimArgs, DomainMapScript, [(NodeArgs, [Command])])
 genDiffusionScript genLocalRootPeers
@@ -700,7 +703,7 @@ genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
                       -> RelayAccessInfo
                       -> Gen [( HotValency
                               , WarmValency
-                              , Map RelayAccessPoint PeerAdvertise
+                              , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                               )]
     genLocalRootPeers relays _relay = flip suchThat hasUpstream $ do
       nrGroups <- chooseInt (1, 3)
@@ -733,7 +736,7 @@ genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
 
     hasUpstream :: [( HotValency
                     , WarmValency
-                    , Map RelayAccessPoint PeerAdvertise
+                    , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                     )]
                 -> Bool
     hasUpstream localRootPeers =
@@ -760,7 +763,7 @@ genHotDiffusionScript = genDiffusionScript genLocalRootPeers
                         -> RelayAccessInfo
                         -> Gen [( HotValency
                                 , WarmValency
-                                , Map RelayAccessPoint PeerAdvertise
+                                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                                 )]
       genLocalRootPeers relays _relay = flip suchThat hasUpstream $ do
         let size = length relays
@@ -780,7 +783,7 @@ genHotDiffusionScript = genDiffusionScript genLocalRootPeers
 
       hasUpstream :: [( HotValency
                       , WarmValency
-                      , Map RelayAccessPoint PeerAdvertise
+                      , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                       )]
                   -> Bool
       hasUpstream localRootPeers =
@@ -969,7 +972,7 @@ diffusionSimulation
       :: Maybe ( Async m Void
                , StrictTVar m [( HotValency
                                , WarmValency
-                               , Map RelayAccessPoint PeerAdvertise
+                               , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                                )])
          -- ^ If the node is running and corresponding local root configuration
          -- TVar.
@@ -1027,7 +1030,7 @@ diffusionSimulation
             -> Snocket m (FD m NtCAddr) NtCAddr
             -> StrictTVar m [( HotValency
                              , WarmValency
-                             , Map RelayAccessPoint PeerAdvertise
+                             , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                              )]
             -> StrictTVar m (Map Domain [(IP, TTL)])
             -> m Void

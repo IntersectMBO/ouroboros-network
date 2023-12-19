@@ -25,6 +25,8 @@ module Ouroboros.Network.PeerSelection.State.LocalRootPeers
   , keysSet
     -- * Special operations
   , clampToLimit
+  , clampToTrustable
+  , isPeerTrustable
   ) where
 
 import           Prelude hiding (null)
@@ -35,6 +37,8 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerTrustable
+                     (PeerTrustable (..))
 
 
 ---------------------------------------
@@ -46,9 +50,11 @@ data LocalRootPeers peeraddr =
        -- We use two partial & overlapping representations:
 
        -- The collection of all the peers, with the associated PeerAdvertise
-       (Map peeraddr PeerAdvertise)
+       -- and PeerTrustable values
+       (Map peeraddr (PeerAdvertise, PeerTrustable))
 
-       -- The groups, but without the associated PeerAdvertise
+       -- The groups, but without the associated PeerAdvertise and
+       -- PeerTrustable values
        [(HotValency, WarmValency, Set peeraddr)]
   deriving Eq
 
@@ -110,7 +116,7 @@ hotTarget (LocalRootPeers _ gs) = sum [ h | (h, _, _) <- gs ]
 warmTarget :: LocalRootPeers peeraddr -> WarmValency
 warmTarget (LocalRootPeers _ gs) = sum [ w | (_, w, _) <- gs ]
 
-toMap :: LocalRootPeers peeraddr -> Map peeraddr PeerAdvertise
+toMap :: LocalRootPeers peeraddr -> Map peeraddr (PeerAdvertise, PeerTrustable)
 toMap (LocalRootPeers m _) = m
 
 keysSet :: LocalRootPeers peeraddr -> Set peeraddr
@@ -130,7 +136,7 @@ toGroupSets (LocalRootPeers _ gs) = gs
 -- trace a warning about dodgy config.
 --
 fromGroups :: Ord peeraddr
-           => [(HotValency, WarmValency, Map peeraddr PeerAdvertise)]
+           => [(HotValency, WarmValency, Map peeraddr (PeerAdvertise, PeerTrustable))]
            -> LocalRootPeers peeraddr
 fromGroups =
     (\gs -> let m'  = Map.unions [ g | (_, _, g) <- gs ]
@@ -157,7 +163,7 @@ fromGroups =
 --
 toGroups :: Ord peeraddr
          => LocalRootPeers peeraddr
-         -> [(HotValency, WarmValency, Map peeraddr PeerAdvertise)]
+         -> [(HotValency, WarmValency, Map peeraddr (PeerAdvertise, PeerTrustable))]
 toGroups (LocalRootPeers m gs) =
     [ (h, w, Map.fromSet (m Map.!) g)
     | (h, w, g) <- gs ]
@@ -211,3 +217,38 @@ clampToLimit totalLimit (LocalRootPeers m gs0) =
             !w' = min w (WarmValency (Set.size g'))
             !h' = HotValency (getHotValency h `min` getWarmValency w')
       = [(h', w', g')]
+
+clampToTrustable :: Ord peeraddr
+                 => LocalRootPeers peeraddr
+                 -> LocalRootPeers peeraddr
+clampToTrustable (LocalRootPeers m gs) =
+  let trustedMap = Map.filter (\(_, pt) -> case pt of
+                                 IsTrustable    -> True
+                                 IsNotTrustable -> False
+                              )
+                              m
+   in LocalRootPeers trustedMap (trustedGroups gs)
+  where
+    trustedGroups [] = []
+    trustedGroups ((h, w, g):gss) =
+      let trusted = Map.filter (\(_, pt) -> case pt of
+                                  IsTrustable    -> True
+                                  IsNotTrustable -> False
+                               )
+                               m
+          trustedSet = Map.keysSet trusted
+          trustedGroup = Set.intersection g trustedSet
+          w' = min w (WarmValency (Set.size trustedGroup))
+          h' = HotValency (getHotValency h `min` getWarmValency w')
+       in if Set.null trustedGroup
+             then trustedGroups gss
+             else (h', w', trustedGroup) : trustedGroups gss
+
+isPeerTrustable :: Ord peeraddr
+                => peeraddr
+                -> LocalRootPeers peeraddr
+                -> Bool
+isPeerTrustable peeraddr lrp =
+  case Map.lookup peeraddr (toMap lrp) of
+    Just (_, IsTrustable) -> True
+    _                     -> False
