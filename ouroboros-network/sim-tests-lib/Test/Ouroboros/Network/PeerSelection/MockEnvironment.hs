@@ -75,13 +75,15 @@ import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRoo
                      (tests)
 import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (UseBootstrapPeers (..), requiresBootstrapPeers)
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-                     IsLedgerPeer (..), LedgerPeersKind (..))
+                     LedgerPeersKind (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (LedgerStateJudgement (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.PublicRootPeers
-                     (PublicRootPeers)
+                     (PublicRootPeers (..))
 import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
@@ -138,6 +140,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        pickWarmPeersToDemote      :: PickScript PeerAddr,
        pickColdPeersToForget      :: PickScript PeerAddr,
        peerSharing                :: PeerSharing,
+       useBootstrapPeers          :: TimedScript UseBootstrapPeers,
        ledgerStateJudgement       :: TimedScript LedgerStateJudgement
      }
   deriving (Show, Eq)
@@ -209,8 +212,10 @@ governorAction mockEnv = do
     publicStateVar <- StrictTVar.newTVarIO emptyPublicPeerSelectionState
     lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
                              (ledgerStateJudgement mockEnv)
+    usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
+                             (useBootstrapPeers mockEnv)
     policy  <- mockPeerSelectionPolicy                mockEnv
-    actions <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar lsjVar) policy
+    actions <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar usbVar) (readTVar lsjVar) policy
     exploreRaces      -- explore races within the governor
     _ <- forkIO $ do  -- races with the governor should be explored
       labelThisThread "outbound-governor"
@@ -240,6 +245,7 @@ data TraceMockEnv = TraceEnvAddPeers       !PeerGraph
                   | TraceEnvSetPublicRoots !(PublicRootPeers PeerAddr)
                   | TraceEnvPublicRootTTL
                   | TraceEnvBigLedgerPeersTTL
+                  | TraceEnvPeerShareTTL   !PeerAddr
                   | TraceEnvSetTargets     !PeerSelectionTargets
                   | TraceEnvPeersDemote    !AsyncDemotion !PeerAddr
                   | TraceEnvEstablishConn  !PeerAddr
@@ -251,6 +257,7 @@ data TraceMockEnv = TraceEnvAddPeers       !PeerGraph
                   | TraceEnvPeerShareRequest !PeerAddr !(Maybe ([PeerAddr], PeerShareTime))
                   | TraceEnvPeerShareResult  !PeerAddr ![PeerAddr]
                   | TraceEnvPeersStatus      !(Map PeerAddr PeerStatus)
+                  | TraceEnvSetUseBootstrapPeers !UseBootstrapPeers
                   | TraceEnvSetLedgerStateJudgement !LedgerStateJudgement
   deriving Show
 
@@ -259,6 +266,7 @@ mockPeerSelectionActions :: forall m.
                              Fail.MonadFail m, MonadThrow (STM m), MonadTraceSTM m)
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
+                         -> STM m UseBootstrapPeers
                          -> STM m LedgerStateJudgement
                          -> PeerSelectionPolicy PeerAddr m
                          -> m (PeerSelectionActions PeerAddr (PeerConn m) m)
@@ -269,6 +277,7 @@ mockPeerSelectionActions tracer
                            publicRootPeers,
                            targets
                          }
+                         readUseBootstrapPeers
                          getLedgerStateJudgement
                          policy = do
     scripts <- Map.fromList <$>
@@ -296,7 +305,7 @@ mockPeerSelectionActions tracer
     traceWith tracer (TraceEnvSetPublicRoots publicRootPeers) --TODO: make dynamic
     return $ mockPeerSelectionActions'
                tracer env policy
-               scripts targetsVar getLedgerStateJudgement peerConns
+               scripts targetsVar readUseBootstrapPeers getLedgerStateJudgement peerConns
   where
     proxy :: Proxy m
     proxy = Proxy
@@ -318,6 +327,7 @@ mockPeerSelectionActions' :: forall m.
                           -> PeerSelectionPolicy PeerAddr m
                           -> Map PeerAddr (TVar m PeerShareScript, TVar m PeerSharingScript, TVar m ConnectionScript)
                           -> TVar m PeerSelectionTargets
+                          -> STM m UseBootstrapPeers
                           -> STM m LedgerStateJudgement
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
                           -> PeerSelectionActions PeerAddr (PeerConn m) m
@@ -330,6 +340,7 @@ mockPeerSelectionActions' tracer
                           _
                           scripts
                           targetsVar
+                          readUseBootstrapPeers
                           readLedgerStateJudgement
                           connsVar =
     PeerSelectionActions {
@@ -347,6 +358,7 @@ mockPeerSelectionActions' tracer
           deactivatePeerConnection,
           closePeerConnection
         },
+      readUseBootstrapPeers,
       readLedgerStateJudgement
     }
   where
@@ -360,19 +372,28 @@ mockPeerSelectionActions' tracer
         traceWith tracer TraceEnvPublicRootTTL
 
       -- Read the current ledger state judgement
-      lsj <- atomically readLedgerStateJudgement
+      isSensitive <- atomically $ requiresBootstrapPeers <$> readUseBootstrapPeers
+                                                         <*> readLedgerStateJudgement
       -- If the ledger state is YoungEnough we should get ledger peers.
       -- Otherwise we should get bootstrap peers
-      let ( publicConfiguredRoots , ledgerPeers , bigLedgerPeers) =
-            ( PublicRootPeers.getPublicConfigPeers publicRootPeers
-            , PublicRootPeers.getLedgerPeers publicRootPeers
-            , PublicRootPeers.getBigLedgerPeers publicRootPeers
-            )
-          result = case lsj of
-            YoungEnough -> case ledgerPeersKind of
-                AllLedgerPeers -> PublicRootPeers.fromLedgerPeers ledgerPeers
-                BigLedgerPeers -> PublicRootPeers.fromBigLedgerPeers bigLedgerPeers
-            TooOld      -> PublicRootPeers.fromPublicRootPeers publicConfiguredRoots
+      let publicConfigPeers = PublicRootPeers.getPublicConfigPeers publicRootPeers
+          bootstrapPeers    = PublicRootPeers.getBootstrapPeers publicRootPeers
+          ledgerPeers       = PublicRootPeers.getLedgerPeers publicRootPeers
+          bigLedgerPeers    = PublicRootPeers.getBigLedgerPeers publicRootPeers
+          result =
+            if isSensitive
+               then PublicRootPeers.fromBootstrapPeers bootstrapPeers
+               else case ledgerPeersKind of
+                 AllLedgerPeers
+                   | Set.null ledgerPeers ->
+                     PublicRootPeers.fromPublicRootPeers publicConfigPeers
+                   | otherwise            ->
+                     PublicRootPeers.fromLedgerPeers ledgerPeers
+                 BigLedgerPeers
+                   | Set.null ledgerPeers ->
+                     PublicRootPeers.fromPublicRootPeers publicConfigPeers
+                   | otherwise            ->
+                     PublicRootPeers.fromBigLedgerPeers bigLedgerPeers
 
       traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet result)))
       return (result, ttl)
@@ -632,6 +653,11 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@TraceGovernorWakeup                                  = GovernorEvent a
     f a@(TraceChurnWait !_)                                  = GovernorEvent a
     f a@(TraceChurnMode !_)                                  = GovernorEvent a
+    f a@(TraceLedgerStateJudgementChanged !_)                = GovernorEvent a
+    f a@TraceOnlyBootstrapPeers                              = GovernorEvent a
+    f a@TraceBootstrapPeersFlagChangedWhilstInSensitiveState = GovernorEvent a
+    f a@(TraceUseBootstrapPeersChanged !_)                   = GovernorEvent a
+    f a@(TraceOutboundGovernorCriticalFailure !_)            = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent
@@ -712,6 +738,7 @@ instance Arbitrary GovernorMockEnvironment where
       pickWarmPeersToDemote   <- arbitraryPickScript arbitrarySubsetOfPeers
       pickColdPeersToForget   <- arbitraryPickScript arbitrarySubsetOfPeers
       peerSharing             <- arbitrary
+      useBootstrapPeers       <- arbitrary
       ledgerStateJudgementList <- fmap getArbitraryLedgerStateJudgement <$> arbitrary
       ledgerStateJudgementDelays <- listOf1 (elements [NoDelay, ShortDelay])
       let ledgerStateJudgementWithDelay =
@@ -762,18 +789,23 @@ instance Arbitrary GovernorMockEnvironment where
                                        ix == ix' `mod` Map.size publicRoots)
                            $ zip3 [0..] ixs' (Map.keys publicRoots)
 
-        let (bootstrapPeers, ledgerPeers) =
-              span (\case
-                      (_, (IsNotLedgerPeer, _)) -> True
-                      (_, (IsLedgerPeer   , _)) -> False
-                   ) (zip publicRootsSet pAdvPLedger)
-            (bootstrapPeersMap, ledgerPeersSet) =
-              ( Map.fromList $ map (\(p, (_, pa)) -> (p, pa)) bootstrapPeers
-              , Set.fromList (map fst ledgerPeers)
+        let (publicConfigPeers, otherPeers) =
+              span (\case (_, (x, _)) -> not x)
+                   (zip publicRootsSet pAdvPLedger)
+            (publicConfigPeersMap, (boostrapPeers, ledgerPeers)) =
+              ( Map.fromList $ map (\(p, (_, pa)) -> (p, pa)) publicConfigPeers
+              , let otherPeers' = map fst otherPeers
+                 in splitAt (length otherPeers' `div` 2) otherPeers'
               )
 
         localRoots <- arbitraryLocalRootPeers localRootsSet
-        return (localRoots, PublicRootPeers.fromMapAndSet bootstrapPeersMap Set.empty ledgerPeersSet bigLedgerPeers)
+        return ( localRoots
+               , PublicRootPeers.fromMapAndSet
+                  publicConfigPeersMap
+                  (Set.fromList boostrapPeers)
+                  (Set.fromList ledgerPeers)
+                  bigLedgerPeers
+               )
 
   shrink env@GovernorMockEnvironment {
            peerGraph,
@@ -787,6 +819,7 @@ instance Arbitrary GovernorMockEnvironment where
            pickWarmPeersToDemote,
            pickColdPeersToForget,
            peerSharing,
+           useBootstrapPeers,
            ledgerStateJudgement
          } =
       -- Special rule for shrinking the peerGraph because the localRootPeers
@@ -811,10 +844,11 @@ instance Arbitrary GovernorMockEnvironment where
           pickWarmPeersToDemote   = pickWarmPeersToDemote',
           pickColdPeersToForget   = pickColdPeersToForget',
           peerSharing,
+          useBootstrapPeers       = useBootstrapPeers',
           ledgerStateJudgement    = fmap (first getArbitraryLedgerStateJudgement)
                                          ledgerStateJudgement'
         }
-      | (localRootPeers', publicRootPeers', targets',
+      | (targets',
          pickKnownPeersForPeerShare',
          pickColdPeersToPromote',
          pickWarmPeersToPromote',
@@ -822,7 +856,7 @@ instance Arbitrary GovernorMockEnvironment where
          pickWarmPeersToDemote',
          pickColdPeersToForget',
          ledgerStateJudgement')
-          <- shrink (localRootPeers, publicRootPeers, targets,
+          <- shrink (targets,
                      pickKnownPeersForPeerShare,
                      pickColdPeersToPromote,
                      pickWarmPeersToPromote,
@@ -830,8 +864,22 @@ instance Arbitrary GovernorMockEnvironment where
                      pickWarmPeersToDemote,
                      pickColdPeersToForget,
                      fmap (first ArbitraryLedgerStateJudgement) ledgerStateJudgement
-                    )
+                    ),
+         localRootPeers' <- shrinkLocalRootPeers localRootPeers,
+         publicRootPeers' <- shrinkPublicRootPeers publicRootPeers,
+         useBootstrapPeers' <- shrink useBootstrapPeers
       ]
+    where
+      shrinkLocalRootPeers (LocalRootPeers m g) =
+        [ LocalRootPeers (Map.restrictKeys m' s) g'
+          | g' <- shrink g
+          , (_, _, s) <- g'
+          , m' <- shrink m
+        ]
+      shrinkPublicRootPeers (PublicRootPeers pp bsp lp blp) =
+        [ PublicRootPeers pp' bsp' lp' blp'
+          | (pp', bsp', lp', blp') <- shrink (pp, bsp, lp, blp)
+        ]
 
 
 --

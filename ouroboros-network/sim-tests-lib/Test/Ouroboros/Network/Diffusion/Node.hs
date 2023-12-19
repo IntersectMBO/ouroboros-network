@@ -94,10 +94,12 @@ import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket (MakeBearer, Snocket,
                      TestAddress (..), invalidFileDescriptor)
 
-import           Ouroboros.Network.Testing.Data.Script (Script (..))
+import           Ouroboros.Network.Testing.Data.Script (Script (..),
+                     stepScriptSTM)
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
+import           Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (LedgerPeersConsensusInterface, UseLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
@@ -154,6 +156,7 @@ data Arguments m = Arguments
                                       , Map RelayAccessPoint ( PeerAdvertise
                                                              , PeerTrustable))]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , aReadUseBootstrapPeers :: Script UseBootstrapPeers
     , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
@@ -204,6 +207,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
+        useBootstrapPeersScriptVar <- LazySTM.newTVarIO (aReadUseBootstrapPeers na)
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
         peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
@@ -280,7 +284,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
            (Diff.P2P.runM interfaces
                           Diff.nullTracers
                           tracersExtra
-                          args argsExtra apps appsExtra)
+                          args (argsExtra useBootstrapPeersScriptVar) apps appsExtra)
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  wait diffusionThread
@@ -391,11 +395,12 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Diff.daMode          = aDiffusionMode na
       }
 
-    argsExtra :: Diff.P2P.ArgumentsExtra m
-    argsExtra = Diff.P2P.ArgumentsExtra
+    argsExtra :: LazySTM.TVar m (Script UseBootstrapPeers) -> Diff.P2P.ArgumentsExtra m
+    argsExtra ubpVar = Diff.P2P.ArgumentsExtra
       { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
+      , Diff.P2P.daReadUseBootstrapPeers = stepScriptSTM ubpVar
       , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
       , Diff.P2P.daReadUseLedgerPeers    = aReadUseLedgerPeers na
       , Diff.P2P.daProtocolIdleTimeout   = aProtocolIdleTimeout na

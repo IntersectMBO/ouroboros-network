@@ -42,6 +42,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
     -- * Traces
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
+    -- * Error types
+  , BootstrapPeersCriticalTimeoutError (..)
   ) where
 
 import           Data.Cache (Cache (..))
@@ -55,12 +57,14 @@ import qualified Data.Set as Set
 
 import           Control.Applicative (Alternative)
 import           Control.Concurrent.JobPool (Job)
-import           Control.Exception (SomeException, assert)
+import           Control.Exception (Exception (..), SomeException, assert)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 import           System.Random (StdGen)
 
 import           Ouroboros.Network.ExitPolicy
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (UseBootstrapPeers (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
                      LedgerPeersKind)
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
@@ -309,7 +313,11 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        peerStateActions       :: PeerStateActions peeraddr peerconn m,
 
+       -- | Read the current bootstrap peers flag
+       readUseBootstrapPeers :: STM m UseBootstrapPeers,
+
        -- | Read the current ledger state judgement
+       --
        readLedgerStateJudgement :: STM m LedgerStateJudgement
      }
 
@@ -440,9 +448,21 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        --
        countersCache               :: !(Cache PeerSelectionCounters),
 
-       -- | Cached value of 'LedgerStateJudgement'. If this changes the peer selection
-       -- governor will act on it
-       currentLedgerStateJudgement :: !LedgerStateJudgement
+       -- | Current ledger state judgement
+       --
+       ledgerStateJudgement        :: !LedgerStateJudgement,
+
+       -- | Current value of 'UseBootstrapPeers'.
+       --
+       bootstrapPeersFlag          :: !UseBootstrapPeers,
+
+       -- | Has the governor fully reset its state
+       --
+       hasOnlyBootstrapPeers       :: !Bool,
+
+       -- | Has the governor fully reset its state
+       --
+       bootstrapPeersTimeout       :: !(Maybe Time)
 
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
@@ -556,7 +576,10 @@ emptyPeerSelectionState rng localRoots =
       inProgressDemoteToCold      = Set.empty,
       fuzzRng                     = rng,
       countersCache               = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots),
-      currentLedgerStateJudgement = TooOld
+      ledgerStateJudgement        = TooOld,
+      bootstrapPeersFlag          = DontUseBootstrapPeers,
+      hasOnlyBootstrapPeers       = False,
+      bootstrapPeersTimeout       = Nothing
     }
 
 
@@ -618,6 +641,16 @@ assertPeerSelectionState PeerSelectionState{..} =
     -- All currently established peers are in the availableToConnect set since
     -- the alternative is a record of failure, but these are not (yet) failed.
   . assert (Set.isSubsetOf establishedPeersSet (KnownPeers.availableToConnect knownPeers))
+
+    -- The following aren't hard invariants but rather eventually consistent
+    -- invariants that are checked via testing:
+
+    -- 1. If node is not in sensitive state then it can't have only BootstrapPeers
+    --
+    -- 2. If hasOnlyBootstrapPeers is true and bootstrap peers are enabled then known
+    -- peers set is a subset of the bootstrap peers + trusted local roots.
+    -- Unless the TargetKnownRootPeers is 0, in that case there can be a delay
+    -- where the node forgets the local roots.
 
     -- No constraint for publicRootBackoffs, publicRootRetryTime
     -- or inProgressPublicRootsReq
@@ -971,7 +1004,24 @@ data TracePeerSelection peeraddr =
 
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
+     | TraceLedgerStateJudgementChanged LedgerStateJudgement
+     | TraceOnlyBootstrapPeers
+     | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
+     | TraceUseBootstrapPeersChanged UseBootstrapPeers
+
+     --
+     -- Critical Failures
+     --
+     | TraceOutboundGovernorCriticalFailure SomeException
   deriving Show
+
+data BootstrapPeersCriticalTimeoutError =
+  BootstrapPeersCriticalTimeoutError
+  deriving (Eq, Show)
+
+instance Exception BootstrapPeersCriticalTimeoutError where
+   displayException BootstrapPeersCriticalTimeoutError =
+     "The peer selection did not converged to a clean state in 15 minutes. Something is wrong!"
 
 data DebugPeerSelection peeraddr where
   TraceGovernorState :: forall peeraddr peerconn.

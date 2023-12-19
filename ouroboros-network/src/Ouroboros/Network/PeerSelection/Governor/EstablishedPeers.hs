@@ -20,6 +20,8 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 import           System.Random (randomR)
 
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (requiresBootstrapPeers)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (IsBigLedgerPeer (..))
@@ -246,7 +248,11 @@ belowTargetOther actions
     numAvailableToConnect = Set.size availableToConnect
 
 
-
+-- |
+--
+-- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
+-- state) then this monitoring action will be disabled.
+--
 belowTargetBigLedgerPeers :: forall peeraddr peerconn m.
                              (MonadSTM m, Ord peeraddr)
                           => PeerSelectionActions peeraddr peerconn m
@@ -262,7 +268,9 @@ belowTargetBigLedgerPeers actions
                             inProgressPromoteCold,
                             targets = PeerSelectionTargets {
                                         targetNumberOfEstablishedBigLedgerPeers
-                                      }
+                                      },
+                            ledgerStateJudgement,
+                            bootstrapPeersFlag
                           }
     -- Are we below the target for number of established peers?
   | numEstablishedPeers + numConnectInProgress
@@ -274,6 +282,9 @@ belowTargetBigLedgerPeers actions
     -- We can also subtract the in progress ones since they are also already
     -- in the connect set and we cannot pick them again.
   , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
+
+    -- Are we in insensitive state, i.e. using bootstrap peers?
+  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
   = Guarded Nothing $ do
       -- The availableToPromote here is non-empty due to the second guard.
       -- The known peers map restricted to the connect set is the same size as
