@@ -17,6 +17,7 @@ import           Control.Exception (SomeException)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 
+import           Ouroboros.Network.PeerSelection.Bootstrap (isInSensitiveState)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersKind (..))
@@ -44,10 +45,16 @@ belowTarget actions
               inProgressBigLedgerPeersReq,
               targets = PeerSelectionTargets {
                           targetNumberOfKnownBigLedgerPeers
-                        }
+                        },
+              ledgerStateJudgement,
+              bootstrapPeersFlag
             }
+      -- Are we in a sensitive state? We shouldn't attempt to fetch ledger peers
+      -- in a sensitive state since we only want to connect to trustable peers.
+    | not (isInSensitiveState bootstrapPeersFlag ledgerStateJudgement)
+
       -- Do we need more big ledger peers?
-    | maxExtraBigLedgerPeers > 0
+    , maxExtraBigLedgerPeers > 0
 
     , not inProgressBigLedgerPeersReq
 
@@ -118,7 +125,7 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
                        (   LocalRootPeers.keysSet (localRootPeers st)
                         <> PublicRootPeers.toSet (publicRootPeers st))
 
-            newPeersSet = PublicRootPeers.toSet newPeers
+            newPeersSet      = PublicRootPeers.toSet newPeers
             publicRootPeers' = publicRootPeers st <> newPeers
 
             knownPeers'
@@ -141,7 +148,7 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
             bigLedgerPeerBackoffs' :: Int
             bigLedgerPeerBackoffs'
               | PublicRootPeers.null newPeers = (bigLedgerPeerBackoffs st `max` 0) + 1
-              | otherwise         = 0
+              | otherwise = 0
 
             bigLedgerPeerRetryDiffTime :: DiffTime
             bigLedgerPeerRetryDiffTime

@@ -20,6 +20,7 @@ import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 
+import           Ouroboros.Network.PeerSelection.Bootstrap (isInSensitiveState)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
@@ -36,6 +37,9 @@ import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 -- | If we are below the target of /known peers/ we peer share (if we are above
 -- the peer share request threshold).
+--
+-- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
+-- state) then this monitoring action will be disabled.
 --
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
@@ -56,7 +60,9 @@ belowTarget actions
               inProgressDemoteToCold,
               targets = PeerSelectionTargets {
                           targetNumberOfKnownPeers
-                        }
+                        },
+              ledgerStateJudgement,
+              bootstrapPeersFlag
             }
     -- Only start Peer Sharing request if PeerSharing was enabled
   | PeerSharingEnabled <- peerSharing
@@ -73,6 +79,10 @@ belowTarget actions
     -- Are there any peers from the availableForPeerShare set we can really ask
     -- (i.e. have correct PeerSharing permissions)?
   , not (Set.null canAsk)
+
+    -- No peer share requests should be issued when the node is in a sensitive
+    -- state
+  , not (isInSensitiveState bootstrapPeersFlag ledgerStateJudgement)
   = Guarded Nothing $ do
       -- Max selected should be <= numPeerShareReqsPossible
       selectedForPeerShare <- pickPeers st
@@ -190,7 +200,9 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                                (Map.fromList
                                                 $ map (\a -> ( a
                                                              , ( Nothing
-                                                               , Nothing))
+                                                               , Nothing
+                                                               )
+                                                             )
                                                       )
                                                       newPeers)
                                                (knownPeers st),
@@ -233,7 +245,9 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                                 (Map.fromList
                                                  $ map (\a -> ( a
                                                               , ( Nothing
-                                                                , Nothing))
+                                                                , Nothing
+                                                                )
+                                                              )
                                                        )
                                                        newPeers)
                                                 (knownPeers st),
@@ -296,7 +310,9 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                             (Map.fromList
                                              $ map (\a -> ( a
                                                           , ( Nothing
-                                                            , Nothing))
+                                                            , Nothing
+                                                            )
+                                                          )
                                                    )
                                                    newPeers)
                                             (knownPeers st),

@@ -1,8 +1,10 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
@@ -29,6 +31,9 @@ import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
+import           Data.Bifunctor (first)
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (UseBootstrapPeers (..), isInSensitiveState)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers hiding
                      (getLedgerPeers)
@@ -74,6 +79,8 @@ withPeerSelectionActions
   -- ^ local root peers
   -> STM m (Map RelayAccessPoint PeerAdvertise)
   -- ^ public root peers
+  -> STM m UseBootstrapPeers
+  -- ^ bootstrap peers
   -> PeerSharing
   -- ^ peer sharing configured value
   -> (peerconn -> PeerSharing)
@@ -105,6 +112,7 @@ withPeerSelectionActions
   readLedgerStateJudgement
   readLocalRootPeers
   readPublicRootPeers
+  readUseBootstrapPeers
   peerSharing
   peerConnToPeerSharing
   readPeerSharingController
@@ -130,7 +138,8 @@ withPeerSelectionActions
                     \lpk n -> requestPublicRootPeers lpk n getLedgerPeers dnsSemaphore,
                   requestPeerShare,
                   peerStateActions,
-                  readLedgerStateJudgement
+                  readLedgerStateJudgement,
+                  readUseBootstrapPeers
                 }
           withAsync
             (localRootPeersProvider
@@ -155,35 +164,36 @@ withPeerSelectionActions
       -> DNSSemaphore m
       -> m (PublicRootPeers peeraddr, DiffTime)
     requestPublicRootPeers ledgerPeersKind n getLedgerPeers dnsSemaphore = do
-      -- Read the current ledger state judgement
-      lsj <- atomically readLedgerStateJudgement
-      -- If the ledger state is YoungEnough we should get ledger peers, the
-      -- Nothing case should not happen but there can be a race condition.
-      -- If that's the case we try again soon enough.
-      case lsj of
-        YoungEnough -> do
+      -- Check if the node is in a sensitive state
+      isSensitive <- atomically $ isInSensitiveState <$> readUseBootstrapPeers
+                                                     <*> readLedgerStateJudgement
+      if isSensitive
+         then do
+          -- If the ledger state is in sensitive state we should get trustable peers.
+          (bootstrapPeers, dt) <- requestConfiguredBootstrapPeers dnsSemaphore n
+          pure (PublicRootPeers.fromBootstrapPeers bootstrapPeers, dt)
+         else do
+          -- If the ledger state is not in a sensitive state we should get ledger
+          -- peers, the Nothing case should not happen but there can be a race
+          -- condition. If that's the case we try again soon enough.
           mbLedgerPeers <- getLedgerPeers (NumberOfPeers $ fromIntegral n) ledgerPeersKind
           case mbLedgerPeers of
-            Nothing -> pure (PublicRootPeers.empty, 0)
+            -- no peers from the ledger
+            Nothing -> do
+              (publicRootPeers, dt) <- requestConfiguredPublicRootPeers dnsSemaphore n
+              pure (PublicRootPeers.fromPublicRootPeers publicRootPeers, dt)
             Just (ledgerPeers, dt) ->
               case ledgerPeersKind of
                 AllLedgerPeers ->
                   pure (PublicRootPeers.fromLedgerPeers ledgerPeers, dt)
                 BigLedgerPeers ->
                   pure (PublicRootPeers.fromBigLedgerPeers ledgerPeers, dt)
-        TooOld      -> do
-          -- If the ledger state is YoungEnough we should get trustable peers.
-          -- However TODO: we need to ensure we only choose from big configured
-          -- root peers, but for that the root peers need to contain stake
-          -- information!
-          (configuredRootPeers, dt) <- requestConfiguredRootPeers dnsSemaphore n
-          pure (PublicRootPeers.fromPublicRootPeers configuredRootPeers, dt)
 
     -- For each call we re-initialise the dns library which forces reading
     -- `/etc/resolv.conf`:
     -- https://github.com/intersectmbo/cardano-node/issues/731
-    requestConfiguredRootPeers :: DNSSemaphore m -> Int -> m (Map peeraddr PeerAdvertise, DiffTime)
-    requestConfiguredRootPeers dnsSemaphore n = do
+    requestConfiguredPublicRootPeers :: DNSSemaphore m -> Int -> m (Map peeraddr PeerAdvertise, DiffTime)
+    requestConfiguredPublicRootPeers dnsSemaphore n =
       -- NOTE: we don't set `resolvConcurrent` because of
       -- https://github.com/kazu-yamamoto/dns/issues/174
       publicRootPeersProvider publicRootTracer
@@ -195,6 +205,25 @@ withPeerSelectionActions
                               readPublicRootPeers
                               dnsActions
                               ($ n)
+
+    requestConfiguredBootstrapPeers :: DNSSemaphore m -> Int -> m (Set peeraddr, DiffTime)
+    requestConfiguredBootstrapPeers dnsSemaphore n = do
+      let readBootstrapPeersMap =
+            fmap (\case
+                    DontUseBootstrapPeers     -> Map.empty
+                    UseBootstrapPeers domains ->
+                      Map.fromList (map (\a -> (RelayDomainAccessPoint a, DoNotAdvertisePeer))
+                                        domains)
+                 )
+                 readUseBootstrapPeers
+
+      publicRootPeersProvider publicRootTracer
+                              toPeerAddr
+                              dnsSemaphore
+                              DNS.defaultResolvConf
+                              readBootstrapPeersMap
+                              dnsActions
+                              (fmap (first Map.keysSet) . ($ n))
 
     requestPeerShare :: PeerSharingAmount -> peeraddr -> m (PeerSharingResult peeraddr)
     requestPeerShare amount peer = do

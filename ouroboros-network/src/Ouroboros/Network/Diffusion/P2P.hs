@@ -100,6 +100,7 @@ import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
                      DiffusionMode (..), NodeToNodeVersion (..),
                      NodeToNodeVersionData (..), RemoteAddress)
 import qualified Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types
                      (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
@@ -240,6 +241,8 @@ data ArgumentsExtra m = ArgumentsExtra {
 
     , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
     , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , daReadUseBootstrapPeers :: STM m UseBootstrapPeers
+
     -- | Peer's own PeerSharing value.
     --
     -- This value comes from the node's configuration file and is static.
@@ -613,6 +616,7 @@ runM Interfaces
        { daPeerSelectionTargets
        , daReadLocalRootPeers
        , daReadPublicRootPeers
+       , daReadUseBootstrapPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
        , daProtocolIdleTimeout
@@ -969,6 +973,7 @@ runM Interfaces
                   lpGetLedgerStateJudgement
                   daReadLocalRootPeers
                   daReadPublicRootPeers
+                  daReadUseBootstrapPeers
                   daOwnPeerSharing
                   (pchPeerSharing diNtnPeerSharing)
                   (readTVar (getPeerSharingRegistry daPeerSharingRegistry))

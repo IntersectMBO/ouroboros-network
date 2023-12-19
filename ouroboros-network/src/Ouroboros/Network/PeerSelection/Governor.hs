@@ -512,6 +512,7 @@ peerSelectionGovernorLoop tracer
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar stateVar (toPublicState st)
+
       blockedAt <- getMonotonicTime
       let knownPeers'       = KnownPeers.setCurrentTime blockedAt (knownPeers st)
           establishedPeers' = EstablishedPeers.setCurrentTime blockedAt (establishedPeers st)
@@ -564,7 +565,15 @@ peerSelectionGovernorLoop tracer
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
     guardedDecisions blockedAt peerSharing st =
       -- All the alternative potentially-blocking decisions.
-         Monitor.connections          actions st
+
+      -- The Governor needs to react to ledger state changes as soon as possible
+         Monitor.monitorBootstrapPeersFlag   actions st
+      <> Monitor.monitorLedgerStateJudgement actions st
+      -- If the node is in fallback state it needs to connect to trusted peers
+      -- as soon as possible
+      <> Monitor.waitForOnlyBootstrapPeers           st
+
+      <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions policy st

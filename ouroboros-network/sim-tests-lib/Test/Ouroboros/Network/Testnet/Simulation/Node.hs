@@ -123,6 +123,8 @@ import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (UseBootstrapPeers (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -196,6 +198,8 @@ data NodeArgs =
       -- ^ 'LimitsAndTimeouts' argument
     , naPublicRoots            :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
+    , naBootstrapPeers         :: Script UseBootstrapPeers
+      -- ^ 'Interfaces' relays auxiliary value
     , naAddr                   :: NtNAddr
       -- ^ 'Arguments' 'aIPAddress' value
     , naPeerSharing            :: PeerSharing
@@ -218,7 +222,7 @@ data NodeArgs =
     }
 
 instance Show NodeArgs where
-    show NodeArgs { naSeed, naDiffusionMode, naMbTime, naPublicRoots,
+    show NodeArgs { naSeed, naDiffusionMode, naMbTime, naBootstrapPeers, naPublicRoots,
                    naAddr, naPeerSharing, naLocalRootPeers, naLocalSelectionTargets,
                    naDNSTimeoutScript, naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
                    naChainSyncEarlyExit } =
@@ -227,6 +231,7 @@ instance Show NodeArgs where
               , show naDiffusionMode
               , "(" ++ show naMbTime ++ ")"
               , "(" ++ show naPublicRoots ++ ")"
+              , "(" ++ show naBootstrapPeers ++ ")"
               , "(" ++ show naAddr ++ ")"
               , show naPeerSharing
               , show naLocalRootPeers
@@ -279,9 +284,8 @@ genCommands localRoots = sized $ \size -> do
       subLRP <- sublistOf localRoots
       mapM (\(h, w, g) -> (h, w,) <$> (fmap Map.fromList . sublistOf . Map.toList $ g)) subLRP
 
-    delay = frequency [ (3, genDelayWithPrecision 100)
-                      , (2, (* 10) <$> genDelayWithPrecision 100)
-                      , (1, (/ 10) <$> genDelayWithPrecision 100)
+    delay = frequency [ (3, genDelayWithPrecision 65)
+                      , (1, (/ 10) <$> genDelayWithPrecision 60)
                       ]
 
 fixupCommands :: [Command] -> [Command]
@@ -420,6 +424,12 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
   firstLedgerPool <- arbitrary
   let ledgerPeerPoolsScript = Script (firstLedgerPool :| ledgerPeerPools)
 
+  firstBootstrapPeer <- maybe DontUseBootstrapPeers UseBootstrapPeers
+                      <$> arbitrary
+  bootstrapPeers <- listOf (maybe DontUseBootstrapPeers UseBootstrapPeers
+                           <$> arbitrary)
+  let bootstrapPeersDomain = Script (firstBootstrapPeer :| bootstrapPeers)
+
   return
    $ NodeArgs
       { naSeed                   = seed
@@ -428,6 +438,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
       , naPublicRoots            = publicRoots
         -- TODO: we haven't been using public root peers so far because we set
         -- `UseLedgerPeers 0`!
+      , naBootstrapPeers         = bootstrapPeersDomain
       , naAddr                   = makeNtNAddr relay
       , naLocalRootPeers         = localRootPeers
       , naLedgerPeers            = ledgerPeerPoolsScript
@@ -1042,6 +1053,7 @@ diffusionSimulation
             { naSeed                   = seed
             , naMbTime                 = mustReplyTimeout
             , naPublicRoots            = publicRoots
+            , naBootstrapPeers         = bootstrapPeers
             , naAddr                   = addr
             , naLedgerPeers            = ledgerPeers
             , naLocalSelectionTargets  = peerSelectionTargets
@@ -1168,6 +1180,7 @@ diffusionSimulation
               , NodeKernel.aChainSyncEarlyExit   = chainSyncEarlyExit
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
+              , NodeKernel.aReadUseBootstrapPeers = bootstrapPeers
               , NodeKernel.aOwnPeerSharing       = peerSharing
               , NodeKernel.aReadUseLedgerPeers   = readUseLedgerPeers
               , NodeKernel.aProtocolIdleTimeout  = 5

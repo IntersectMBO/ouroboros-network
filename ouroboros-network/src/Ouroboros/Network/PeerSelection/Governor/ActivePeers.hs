@@ -21,6 +21,7 @@ import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 import           System.Random (randomR)
 
+import           Ouroboros.Network.PeerSelection.Bootstrap (isInSensitiveState)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (IsBigLedgerPeer (..))
@@ -53,7 +54,12 @@ belowTarget = belowTargetBigLedgerPeers
            <> belowTargetLocal
            <> belowTargetOther
 
-
+-- | If we are below the target of /hot big ledger peers peers/ we promote some
+-- of the /warm peers/ according to 'policyPickWarmPeersToPromote' policy.
+--
+-- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
+-- state) then this monitoring action will be disabled.
+--
 belowTargetBigLedgerPeers :: forall peeraddr peerconn m.
                              (MonadDelay m, MonadSTM m, Ord peeraddr)
                           => PeerSelectionActions peeraddr peerconn m
@@ -71,7 +77,9 @@ belowTargetBigLedgerPeers actions
                             inProgressDemoteToCold,
                             targets = PeerSelectionTargets {
                                         targetNumberOfActiveBigLedgerPeers
-                                      }
+                                      },
+                            ledgerStateJudgement,
+                            bootstrapPeersFlag
                           }
     -- Are we below the target for number of active peers?
   | numActiveBigLedgerPeers + numPromoteInProgressBigLedgerPeers
@@ -90,7 +98,8 @@ belowTargetBigLedgerPeers actions
                           - numPromoteInProgressBigLedgerPeers
   , not (Set.null availableToPromote)
   , numPeersToPromote > 0
-
+  -- Are we in a insensitive state, i.e. using bootstrap peers?
+  , not (isInSensitiveState bootstrapPeersFlag ledgerStateJudgement)
   = Guarded Nothing $ do
       selectedToPromote <- pickPeers st
                              policyPickWarmPeersToPromote

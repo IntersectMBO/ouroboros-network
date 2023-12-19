@@ -74,11 +74,15 @@ import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.IOSim
 import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (UseBootstrapPeers (..), isInSensitiveState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.PeerTrustable
                      (PeerTrustable (..))
+import           Ouroboros.Network.PeerSelection.PublicRootPeers
+                     (PublicRootPeers)
 import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
@@ -168,6 +172,16 @@ tests =
                      prop_governor_target_active_big_ledger_peers_below
       , testProperty "progresses towards active target (from above)"
                      prop_governor_target_active_big_ledger_peers_above
+      ]
+    , testGroup "bootstrap peers"
+      [ testProperty "progress towards only bootstrap peers after changing to fallback state"
+                     prop_governor_only_bootstrap_peers_in_fallback_state
+      , testProperty "node does not learn about non trustable peers when in fallback state"
+                     prop_governor_no_non_trustable_peers_before_caught_up_state
+      , testProperty "node does not use only bootstrap peers if not in sensitive state"
+                     prop_governor_stops_using_bootstrap_peers
+      , testProperty "node uses ledger peers in non-sensitive mode"
+                     prop_governor_uses_ledger_peers
       ]
     ]
   , testGroup "issues"
@@ -571,6 +585,7 @@ envEventCredits  TraceEnvRootsResult{}          = 0
 envEventCredits  TraceEnvBigLedgerPeersResult{} = 0
 envEventCredits  TraceEnvPeerShareRequest{}     = 0
 envEventCredits  TraceEnvPeerShareResult{}      = 0
+envEventCredits  TraceEnvPeerShareTTL   {}      = 0
 
 envEventCredits  TraceEnvEstablishConn {}       = 0
 envEventCredits  TraceEnvActivatePeer {}        = 0
@@ -578,6 +593,8 @@ envEventCredits  TraceEnvDeactivatePeer {}      = 0
 envEventCredits  TraceEnvCloseConn {}           = 0
 
 envEventCredits  TraceEnvSetLedgerStateJudgement {} = 30
+
+envEventCredits  TraceEnvSetUseBootstrapPeers {} = 30
 
 
 -- | A coverage property that checks how many events are analysed when taking
@@ -626,55 +643,59 @@ collectTraces trace =
     Set.fromList [ traceNum e | (_, GovernorEvent e) <- trace ]
 
 traceNum :: TracePeerSelection peeraddr -> Int
-traceNum TraceLocalRootPeersChanged{}            = 00
-traceNum TraceTargetsChanged{}                   = 01
-traceNum TracePublicRootsRequest{}               = 02
-traceNum TracePublicRootsResults{}               = 03
-traceNum TracePublicRootsFailure{}               = 04
-traceNum TracePeerShareRequests{}                = 05
-traceNum TracePeerShareResults{}                 = 06
-traceNum TracePeerShareResultsFiltered{}         = 07
-traceNum TraceForgetColdPeers{}                  = 08
-traceNum TracePromoteColdPeers{}                 = 09
-traceNum TracePromoteColdLocalPeers{}            = 10
-traceNum TracePromoteColdFailed{}                = 11
-traceNum TracePromoteColdDone{}                  = 12
-traceNum TracePromoteWarmPeers{}                 = 13
-traceNum TracePromoteWarmLocalPeers{}            = 14
-traceNum TracePromoteWarmFailed{}                = 15
-traceNum TracePromoteWarmDone{}                  = 16
-traceNum TraceDemoteWarmPeers{}                  = 17
-traceNum TraceDemoteWarmFailed{}                 = 18
-traceNum TraceDemoteWarmDone{}                   = 19
-traceNum TraceDemoteHotPeers{}                   = 20
-traceNum TraceDemoteLocalHotPeers{}              = 21
-traceNum TraceDemoteHotFailed{}                  = 22
-traceNum TraceDemoteHotDone{}                    = 23
-traceNum TraceDemoteAsynchronous{}               = 24
-traceNum TraceGovernorWakeup{}                   = 25
-traceNum TraceChurnWait{}                        = 26
-traceNum TraceChurnMode{}                        = 27
-traceNum TracePromoteWarmAborted{}               = 28
-traceNum TraceDemoteLocalAsynchronous{}          = 29
-traceNum TraceBigLedgerPeersRequest{}            = 30
-traceNum TraceBigLedgerPeersResults{}            = 31
-traceNum TraceBigLedgerPeersFailure{}            = 32
-traceNum TraceForgetBigLedgerPeers{}             = 33
-traceNum TracePromoteColdBigLedgerPeers{}        = 34
-traceNum TracePromoteColdBigLedgerPeerFailed{}   = 35
-traceNum TracePromoteColdBigLedgerPeerDone{}     = 36
-traceNum TracePromoteWarmBigLedgerPeers{}        = 37
-traceNum TracePromoteWarmBigLedgerPeerFailed{}   = 38
-traceNum TracePromoteWarmBigLedgerPeerDone{}     = 39
-traceNum TracePromoteWarmBigLedgerPeerAborted{}  = 40
-traceNum TraceDemoteWarmBigLedgerPeers{}         = 41
-traceNum TraceDemoteWarmBigLedgerPeerFailed{}    = 42
-traceNum TraceDemoteWarmBigLedgerPeerDone{}      = 43
-traceNum TraceDemoteHotBigLedgerPeers{}          = 44
-traceNum TraceDemoteHotBigLedgerPeerFailed{}     = 45
-traceNum TraceDemoteHotBigLedgerPeerDone{}       = 46
-traceNum TraceKnownInboundConnection{}           = 47
-traceNum TraceDemoteBigLedgerPeersAsynchronous{} = 48
+traceNum TraceLocalRootPeersChanged{}                         = 00
+traceNum TraceTargetsChanged{}                                = 01
+traceNum TracePublicRootsRequest{}                            = 02
+traceNum TracePublicRootsResults{}                            = 03
+traceNum TracePublicRootsFailure{}                            = 04
+traceNum TracePeerShareRequests{}                             = 05
+traceNum TracePeerShareResults{}                              = 06
+traceNum TracePeerShareResultsFiltered{}                      = 07
+traceNum TraceForgetColdPeers{}                               = 08
+traceNum TracePromoteColdPeers{}                              = 09
+traceNum TracePromoteColdLocalPeers{}                         = 10
+traceNum TracePromoteColdFailed{}                             = 11
+traceNum TracePromoteColdDone{}                               = 12
+traceNum TracePromoteWarmPeers{}                              = 13
+traceNum TracePromoteWarmLocalPeers{}                         = 14
+traceNum TracePromoteWarmFailed{}                             = 15
+traceNum TracePromoteWarmDone{}                               = 16
+traceNum TraceDemoteWarmPeers{}                               = 17
+traceNum TraceDemoteWarmFailed{}                              = 18
+traceNum TraceDemoteWarmDone{}                                = 19
+traceNum TraceDemoteHotPeers{}                                = 20
+traceNum TraceDemoteLocalHotPeers{}                           = 21
+traceNum TraceDemoteHotFailed{}                               = 22
+traceNum TraceDemoteHotDone{}                                 = 23
+traceNum TraceDemoteAsynchronous{}                            = 24
+traceNum TraceGovernorWakeup{}                                = 25
+traceNum TraceChurnWait{}                                     = 26
+traceNum TraceChurnMode{}                                     = 27
+traceNum TracePromoteWarmAborted{}                            = 28
+traceNum TraceDemoteLocalAsynchronous{}                       = 29
+traceNum TraceBigLedgerPeersRequest{}                         = 30
+traceNum TraceBigLedgerPeersResults{}                         = 31
+traceNum TraceBigLedgerPeersFailure{}                         = 32
+traceNum TraceForgetBigLedgerPeers{}                          = 33
+traceNum TracePromoteColdBigLedgerPeers{}                     = 34
+traceNum TracePromoteColdBigLedgerPeerFailed{}                = 35
+traceNum TracePromoteColdBigLedgerPeerDone{}                  = 36
+traceNum TracePromoteWarmBigLedgerPeers{}                     = 37
+traceNum TracePromoteWarmBigLedgerPeerFailed{}                = 38
+traceNum TracePromoteWarmBigLedgerPeerDone{}                  = 39
+traceNum TracePromoteWarmBigLedgerPeerAborted{}               = 40
+traceNum TraceDemoteWarmBigLedgerPeers{}                      = 41
+traceNum TraceDemoteWarmBigLedgerPeerFailed{}                 = 42
+traceNum TraceDemoteWarmBigLedgerPeerDone{}                   = 43
+traceNum TraceDemoteHotBigLedgerPeers{}                       = 44
+traceNum TraceDemoteHotBigLedgerPeerFailed{}                  = 45
+traceNum TraceDemoteHotBigLedgerPeerDone{}                    = 46
+traceNum TraceKnownInboundConnection{}                        = 47
+traceNum TraceDemoteBigLedgerPeersAsynchronous{}              = 48
+traceNum TraceLedgerStateJudgementChanged{}                   = 49
+traceNum TraceOnlyBootstrapPeers{}                            = 50
+traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 51
+traceNum TraceUseBootstrapPeersChanged {}                     = 52
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -728,6 +749,10 @@ allTraceNames =
    , (46, "TraceDemoteHotBigLedgerPeerDone")
    , (47, "TraceKnownInboundConnection")
    , (48, "TraceDemoteBigLedgerPeersAsynchronous")
+   , (49, "TraceLedgerStateJudgementChanged")
+   , (50, "TraceOnlyBootstrapPeers")
+   , (51, "TraceBootstrapPeersFlagChangedWhilstInSensitiveState")
+   , (52, "TraceUseBootstrapPeersChanged")
    ]
 
 
@@ -985,6 +1010,11 @@ prop_governor_target_established_big_ledger_peers (MaxTime maxTime) env =
           selectGovState (PublicRootPeers.getBigLedgerPeers . Governor.publicRootPeers)
                          events
 
+        govLedgerStateJudgement :: Signal LedgerStateJudgement
+        govLedgerStateJudgement =
+          selectGovState (Governor.ledgerStateJudgement)
+                         events
+
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
@@ -999,13 +1029,17 @@ prop_governor_target_established_big_ledger_peers (MaxTime maxTime) env =
 
         bigLedgerPeersInEstablished :: Signal Bool
         bigLedgerPeersInEstablished =
-          (\bigLedgerPeers established inProgressPromoteCold ->
-            not . Set.null $
-            (bigLedgerPeers `Set.intersection`
-              (established `Set.union` inProgressPromoteCold))
+          (\bigLedgerPeers established inProgressPromoteCold lsj ->
+            case lsj of
+              YoungEnough ->
+                not . Set.null $
+                (bigLedgerPeers `Set.intersection`
+                  (established `Set.union` inProgressPromoteCold))
+              TooOld -> True
           ) <$> govBigLedgerPeersSig
             <*> govEstablishedPeersSig
             <*> govInProgressPromoteColdSig
+            <*> govLedgerStateJudgement
 
         meaning :: Bool -> String
         meaning False = "No BigLedgerPeers in Established Set"
@@ -1342,6 +1376,14 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
               (maybe Set.empty Set.singleton)
               envPeerSharesEventsAsSig
 
+        govLedgerStateJudgementSig :: Signal LedgerStateJudgement
+        govLedgerStateJudgementSig =
+          selectGovState Governor.ledgerStateJudgement events
+
+        govUseBootstrapPeersSig :: Signal UseBootstrapPeers
+        govUseBootstrapPeersSig =
+          selectGovState Governor.bootstrapPeersFlag events
+
         -- We define the governor's peer sharing opportunities at any point in time
         -- to be the governor's set of established peers, less the ones we can see
         -- that it has peer shared with recently.
@@ -1357,12 +1399,17 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
         combinedSig :: Signal (Int,
                                Set PeerAddr,
                                Set PeerAddr,
-                               Maybe PeerAddr)
+                               Maybe PeerAddr,
+                               LedgerStateJudgement,
+                               UseBootstrapPeers
+                              )
         combinedSig =
-          (,,,) <$> govTargetsSig
-                <*> govKnownPeersSig
-                <*> peerShareOpportunitiesSig
-                <*> envPeerSharesEventsAsSig
+          (,,,,,) <$> govTargetsSig
+                  <*> govKnownPeersSig
+                  <*> peerShareOpportunitiesSig
+                  <*> envPeerSharesEventsAsSig
+                  <*> govLedgerStateJudgementSig
+                  <*> govUseBootstrapPeersSig
 
         -- This is the ultimate predicate signal
         peerShareOpportunitiesOkSig :: Signal Bool
@@ -1381,7 +1428,7 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
 
 governorEventuallyTakesPeerShareOpportunities
   :: PeerSharing
-  -> Signal (Int, Set PeerAddr, Set PeerAddr, Maybe PeerAddr)
+  -> Signal (Int, Set PeerAddr, Set PeerAddr, Maybe PeerAddr, LedgerStateJudgement, UseBootstrapPeers)
   -> Signal Bool
 governorEventuallyTakesPeerShareOpportunities peerSharing =
     -- Time out and fail after 30 seconds if we enter and remain in a bad state
@@ -1391,7 +1438,7 @@ governorEventuallyTakesPeerShareOpportunities peerSharing =
     timeLimit :: DiffTime
     timeLimit = 30
 
-    badState (target, govKnownPeers, peerShareOpportunities, peerShareEvent) =
+    badState (target, govKnownPeers, peerShareOpportunities, peerShareEvent, ledgerState, useBootstrapPeersFlag) =
 
         -- A bad state is one where we are below target;
         Set.size govKnownPeers < target
@@ -1404,6 +1451,9 @@ governorEventuallyTakesPeerShareOpportunities peerSharing =
 
         -- Peer Sharing must be enabled
      && peerSharing /= PeerSharingDisabled
+
+       -- ledger state should be caught up state
+     && not (isInSensitiveState useBootstrapPeersFlag ledgerState)
 
         -- Note that if a peer share does take place, we do /not/ require
         -- the peer sharing target to be a member of the peerShareOpportunities.
@@ -2932,6 +2982,205 @@ prop_governor_target_active_local_above (MaxTime maxTime) env =
                  <*> deomotionOpportunities
                  <*> demotionOpportunitiesIgnoredTooLong)
 
+-- | When in 'TooOld' state make sure we don't stay connected to non trustable
+-- peers for too long
+prop_governor_only_bootstrap_peers_in_fallback_state :: GovernorMockEnvironment -> Property
+prop_governor_only_bootstrap_peers_in_fallback_state env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govUseBootstrapPeers :: Signal UseBootstrapPeers
+        govUseBootstrapPeers =
+          selectGovState Governor.bootstrapPeersFlag events
+
+        govLedgerStateJudgement :: Signal LedgerStateJudgement
+        govLedgerStateJudgement =
+          selectGovState (Governor.ledgerStateJudgement) events
+
+        govKnownPeers :: Signal (Set PeerAddr)
+        govKnownPeers =
+          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+
+        govTrustedPeers :: Signal (Set PeerAddr)
+        govTrustedPeers =
+          selectGovState
+            (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
+                 <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
+            ) events
+
+        keepNonTrustablePeersTooLong :: Signal (Set PeerAddr)
+        keepNonTrustablePeersTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            (\(knownPeers, useBootstrapPeers, trustedPeers, lsj) ->
+              if isInSensitiveState useBootstrapPeers lsj
+                 then knownPeers `Set.difference` trustedPeers
+                 else Set.empty
+            )
+            ((,,,) <$> govKnownPeers
+                   <*> govUseBootstrapPeers
+                   <*> govTrustedPeers
+                   <*> govLedgerStateJudgement
+            )
+
+     in signalProperty 20 show
+          Set.null
+          keepNonTrustablePeersTooLong
+
+-- | When in 'TooOld' state make sure that after we disconnected from all non
+-- trustable peers, we don't get any non trustable peers in our known set
+-- until we are in caught up state
+prop_governor_no_non_trustable_peers_before_caught_up_state :: GovernorMockEnvironment -> Property
+prop_governor_no_non_trustable_peers_before_caught_up_state env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govUseBootstrapPeers :: Signal UseBootstrapPeers
+        govUseBootstrapPeers =
+          selectGovState Governor.bootstrapPeersFlag events
+
+        govLedgerStateJudgement :: Signal LedgerStateJudgement
+        govLedgerStateJudgement =
+          selectGovState (Governor.ledgerStateJudgement) events
+
+        govKnownPeers :: Signal (Set PeerAddr)
+        govKnownPeers =
+          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+
+        govTrustedPeers :: Signal (Set PeerAddr)
+        govTrustedPeers =
+          selectGovState
+            (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
+                 <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
+            ) events
+
+        govHasOnlyBootstrapPeers :: Signal Bool
+        govHasOnlyBootstrapPeers =
+          selectGovState Governor.hasOnlyBootstrapPeers events
+
+        keepNonTrustablePeersTooLong :: Signal (Set PeerAddr)
+        keepNonTrustablePeersTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            (\( knownPeers, trustedPeers
+              , useBootstrapPeers, lsj, hasOnlyBootstrapPeers) ->
+                if hasOnlyBootstrapPeers && isInSensitiveState useBootstrapPeers lsj
+                   then Set.difference knownPeers trustedPeers
+                   else Set.empty
+            )
+            ((,,,,) <$> govKnownPeers
+                    <*> govTrustedPeers
+                    <*> govUseBootstrapPeers
+                    <*> govLedgerStateJudgement
+                    <*> govHasOnlyBootstrapPeers
+            )
+
+     in signalProperty 20 show
+          Set.null
+          keepNonTrustablePeersTooLong
+
+-- | This test checks that if the node is not in a sensitive state it will not
+-- stay connected to _only_ bootstrap peers for too long.
+--
+prop_governor_stops_using_bootstrap_peers :: GovernorMockEnvironment -> Property
+prop_governor_stops_using_bootstrap_peers env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govUseBootstrapPeers :: Signal UseBootstrapPeers
+        govUseBootstrapPeers =
+          selectGovState Governor.bootstrapPeersFlag events
+
+        govLedgerStateJudgement :: Signal LedgerStateJudgement
+        govLedgerStateJudgement =
+          selectGovState (Governor.ledgerStateJudgement) events
+
+        govLocalRootPeers :: Signal (Set PeerAddr)
+        govLocalRootPeers =
+          selectGovState (LocalRootPeers.keysSet . Governor.localRootPeers) events
+
+        govKnownPeers :: Signal (Set PeerAddr)
+        govKnownPeers =
+          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
+
+        govBootstrapPeers :: Signal (Set PeerAddr)
+        govBootstrapPeers =
+          selectGovState (PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers) events
+
+        keepBootstrapPeersTooLong :: Signal (Set ())
+        keepBootstrapPeersTooLong =
+          Signal.keyedTimeout
+            10 -- seconds
+            (\(knownPeers, localRootPeers, bootstrapPeers, useBootstrapPeers, lsj) ->
+                if not (isInSensitiveState useBootstrapPeers lsj)
+                   then if not (Set.null knownPeers)
+                        && not (Set.null localRootPeers)
+                        && knownPeers `Set.isSubsetOf` bootstrapPeers
+                           then Set.singleton ()
+                           else Set.empty
+                   else Set.empty
+            )
+            ((,,,,) <$> govKnownPeers
+                    <*> govLocalRootPeers
+                    <*> govBootstrapPeers
+                    <*> govUseBootstrapPeers
+                    <*> govLedgerStateJudgement
+            )
+
+     in signalProperty 20 show
+          Set.null
+          keepBootstrapPeersTooLong
+
+-- | This test checks that if the node is not in a sensitive state it will use
+-- ledger peers
+--
+prop_governor_uses_ledger_peers :: GovernorMockEnvironment -> Property
+prop_governor_uses_ledger_peers env =
+    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+               . selectPeerSelectionTraceEvents
+               . runGovernorInMockEnvironment
+               $ env
+
+        govUseBootstrapPeers :: Signal UseBootstrapPeers
+        govUseBootstrapPeers =
+          selectGovState Governor.bootstrapPeersFlag events
+
+        govLedgerStateJudgement :: Signal LedgerStateJudgement
+        govLedgerStateJudgement =
+          selectGovState (Governor.ledgerStateJudgement) events
+
+        govPublicRootPeersResultsSig :: Signal (PublicRootPeers PeerAddr)
+        govPublicRootPeersResultsSig =
+            Signal.fromEventsWith (PublicRootPeers.empty)
+          . Signal.selectEvents
+              (\case
+                  TracePublicRootsResults prp _ _ -> Just prp
+                  _ -> Nothing
+              )
+          . selectGovEvents
+          $ events
+
+        usesLedgerPeers =
+            Signal.eventsToList
+          $ Signal.toChangeEvents
+          $ ((\ubp lsj prp ->
+                if not (isInSensitiveState ubp lsj)
+                   then Set.null (PublicRootPeers.getBootstrapPeers prp)
+                   else True)
+            <$> govUseBootstrapPeers
+            <*> govLedgerStateJudgement
+            <*> govPublicRootPeersResultsSig
+            )
+
+     in counterexample (intercalate "\n" $ map show $ usesLedgerPeers)
+      $ all snd usesLedgerPeers
+
 --
 -- Utils for properties
 --
@@ -2987,10 +3236,11 @@ selectEnvTargets f =
 --
 _governorFindingPublicRoots :: Int
                             -> STM IO (Map RelayAccessPoint PeerAdvertise)
+                            -> STM IO UseBootstrapPeers
                             -> STM IO LedgerStateJudgement
                             -> PeerSharing
                             -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers readDomains readLedgerStateJudgement peerSharing = do
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing = do
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     publicRootPeersProvider
       tracer
@@ -3029,6 +3279,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readLedgerStateJ
                   deactivatePeerConnection = error "deactivatePeerConnection",
                   closePeerConnection      = error "closePeerConnection"
                 },
+                readUseBootstrapPeers,
                 readLedgerStateJudgement
               }
 
@@ -3071,14 +3322,11 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
         [ (1, 1, Map.fromList [(PeerAddr 16,(DoAdvertisePeer, IsNotTrustable))])
         , (1, 1, Map.fromList [(PeerAddr 4,(DoAdvertisePeer, IsNotTrustable))])
         ],
-      publicRootPeers = PublicRootPeers.fromMapAndSet
+      publicRootPeers = PublicRootPeers.fromPublicRootPeers
         (Map.fromList [ (PeerAddr 14, DoNotAdvertisePeer)
                       , (PeerAddr 29, DoNotAdvertisePeer)
                       ]
-        )
-        Set.empty
-        Set.empty
-        Set.empty,
+        ),
       targets = Script
         ((nullPeerSelectionTargets {
            targetNumberOfRootPeers = 1,
@@ -3093,6 +3341,7 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
+      useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
 
@@ -3128,6 +3377,7 @@ prop_issue_3515 = prop_governor_nolivelock $
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
+      useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
 
@@ -3146,7 +3396,7 @@ prop_issue_3494 = prop_governor_nofail $
                                                 peerSharingScript = Script (PeerSharingDisabled :| []),
                                                 connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                                               })],
-      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64,(DoAdvertisePeer, IsNotTrustable))])],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64, (DoAdvertisePeer, IsNotTrustable))])],
       publicRootPeers = PublicRootPeers.empty,
       targets = Script
         (( nullPeerSelectionTargets,NoDelay)
@@ -3163,6 +3413,7 @@ prop_issue_3494 = prop_governor_nofail $
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
+      useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
 
@@ -3187,14 +3438,11 @@ prop_issue_3233 = prop_governor_nolivelock $
          (PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])})
         ],
       localRootPeers = LocalRootPeers.fromGroups
-        [ (1, 1, Map.fromList [(PeerAddr 15,(DoAdvertisePeer, IsNotTrustable))])
-        , (1, 1, Map.fromList [(PeerAddr 13,(DoAdvertisePeer, IsNotTrustable))])
+        [ (1, 1, Map.fromList [(PeerAddr 15, (DoAdvertisePeer, IsNotTrustable))])
+        , (1, 1, Map.fromList [(PeerAddr 13, (DoAdvertisePeer, IsNotTrustable))])
         ],
-      publicRootPeers = PublicRootPeers.fromMapAndSet
-        (Map.fromList [(PeerAddr 4, DoNotAdvertisePeer)])
-        Set.empty
-        Set.empty
-        Set.empty,
+      publicRootPeers = PublicRootPeers.fromPublicRootPeers
+        (Map.fromList [(PeerAddr 4, DoNotAdvertisePeer)]),
       targets = Script
         ((nullPeerSelectionTargets,NoDelay)
         :| [(nullPeerSelectionTargets {
@@ -3217,6 +3465,7 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
+      useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
 
