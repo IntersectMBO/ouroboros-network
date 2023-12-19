@@ -77,7 +77,6 @@ import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers

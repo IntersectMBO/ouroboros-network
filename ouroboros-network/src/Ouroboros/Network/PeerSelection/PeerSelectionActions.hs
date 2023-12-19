@@ -30,14 +30,12 @@ import           Data.Void (Void)
 import qualified Network.DNS as DNS
 import qualified Network.Socket as Socket
 
-import           Data.IP (IP)
 import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers hiding
+                     (getLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-                     (RelayAccessPoint)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                      (DNSActions)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore

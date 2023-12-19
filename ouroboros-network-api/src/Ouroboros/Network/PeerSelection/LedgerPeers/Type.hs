@@ -8,9 +8,16 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   ( PoolStake (..)
   , AccPoolStake (..)
   , IsBigLedgerPeer (..)
+  , LedgerStateJudgement (..)
+  , LedgerPeersConsensusInterface (..)
   ) where
 
+import           Cardano.Slotting.Slot (SlotNo)
+import           Control.Concurrent.Class.MonadSTM
 import           Control.DeepSeq (NFData (..))
+import           Data.List.NonEmpty (NonEmpty)
+import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+                     (RelayAccessPoint)
 
 
 -- | The relative stake of a stakepool in relation to the total amount staked.
@@ -41,3 +48,15 @@ data IsBigLedgerPeer
    = IsBigLedgerPeer
    | IsNotBigLedgerPeer
   deriving Eq
+
+-- | Wether the node is caught up or fell too far behind the chain
+data LedgerStateJudgement = YoungEnough | TooOld
+  deriving (Eq, Show)
+
+-- | Return ledger state information and ledger peers.
+--
+data LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
+    lpGetLatestSlot           :: STM m SlotNo,
+    lpGetLedgerStateJudgement :: STM m LedgerStateJudgement,
+    lpGetLedgerPeers          :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]
+  }

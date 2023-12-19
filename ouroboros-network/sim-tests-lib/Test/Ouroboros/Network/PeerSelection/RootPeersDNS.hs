@@ -56,7 +56,6 @@ import           Data.List (intercalate)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers

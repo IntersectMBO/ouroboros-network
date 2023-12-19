@@ -32,6 +32,7 @@ import           System.Random
 
 import           Network.DNS (Domain)
 
+import           Cardano.Slotting.Slot (SlotNo)
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
@@ -48,6 +49,7 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
   [ testProperty "Pick 100%" prop_pick100
   , testProperty "Pick" prop_pick
   , testProperty "accBigPoolStake" prop_accBigPoolStake
+  , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
   ]
 
 newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
@@ -67,6 +69,33 @@ instance Arbitrary ArbitraryRelayAccessPoint where
         oneof [ RelayAccessAddress (read "1.1.1.1")     . getArbitraryPortNumber <$> arbitrary
               , RelayAccessDomain  "relay.iohk.example" . getArbitraryPortNumber <$> arbitrary
               ]
+
+newtype ArbitraryLedgerStateJudgement =
+  ArbitraryLedgerStateJudgement {
+    getArbitraryLedgerStateJudgement :: LedgerStateJudgement
+  } deriving Show
+
+instance Arbitrary ArbitraryLedgerStateJudgement where
+    arbitrary =
+      ArbitraryLedgerStateJudgement <$>
+        oneof [ pure YoungEnough
+              , pure TooOld
+              ]
+    shrink (ArbitraryLedgerStateJudgement YoungEnough) =
+      [ArbitraryLedgerStateJudgement TooOld]
+    shrink (ArbitraryLedgerStateJudgement TooOld)      =
+      []
+
+newtype ArbitrarySlotNo =
+  ArbitrarySlotNo {
+    getArbitrarySlotNo :: SlotNo
+  } deriving Show
+
+-- We generate integers including negative ones, which is fine for the purpose
+-- of the tests we run.
+instance Arbitrary ArbitrarySlotNo where
+    arbitrary =
+      ArbitrarySlotNo . fromInteger <$> arbitrary
 
 data StakePool = StakePool {
       spStake :: !Word64
@@ -130,9 +159,12 @@ prop_pick100 :: Word16
              -> ArbLedgerPeersKind
              -> MockRoots
              -> DelayAndTimeoutScripts
+             -> ArbitrarySlotNo
+             -> ArbitraryLedgerStateJudgement
              -> Property
 prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoots _ dnsMapScript _ _)
-             (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript) =
+             (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
+             (ArbitrarySlotNo slot) (ArbitraryLedgerStateJudgement lsj) =
     let rng = mkStdGen $ fromIntegral seed
         sps = [ (0, RelayAccessAddress (read $ "0.0.0." ++ show a) 1 :| [])
               | a <- [0..n]
@@ -170,8 +202,10 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
                 )
           where
             interface =
-                LedgerPeersConsensusInterface $ \_ ->
-                  pure (Just (Map.elems accumulatedStakeMap))
+              LedgerPeersConsensusInterface
+                (pure slot)
+                (pure lsj)
+                (pure (Map.elems accumulatedStakeMap))
 
     in counterexample (show accumulatedStakeMap) $ ioProperty $ do
         tr' <- evaluateTrace (runSimTrace sim)
@@ -191,9 +225,11 @@ prop_pick :: LedgerPools
           -> Word16
           -> MockRoots
           -> Script DNSLookupDelay
+          -> ArbitrarySlotNo
+          -> ArbitraryLedgerStateJudgement
           -> Property
 prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (MockRoots _ dnsMapScript _ _)
-          dnsLookupDelayScript =
+          dnsLookupDelayScript (ArbitrarySlotNo slot) (ArbitraryLedgerStateJudgement lsj) =
     let rng = mkStdGen $ fromIntegral seed
 
         sim :: IOSim s [RelayAccessPoint]
@@ -222,7 +258,11 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                                         ]
                 )
           where
-            interface = LedgerPeersConsensusInterface $ \_ -> pure (Just lps)
+            interface :: LedgerPeersConsensusInterface (IOSim s)
+            interface = LedgerPeersConsensusInterface
+                          (pure slot)
+                          (pure lsj)
+                          (pure lps)
 
             domainMap :: Map Domain (Set IP)
             domainMap = Map.fromList [("relay.iohk.example", Set.singleton (read "2.2.2.2"))]
@@ -287,6 +327,32 @@ prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
           $ elems `isPrefixOf` lps'
   where
     accumulatedStakeMap = accBigPoolStake lps
+
+prop_getLedgerPeers :: ArbitrarySlotNo
+                    -> ArbitraryLedgerStateJudgement
+                    -> LedgerPools
+                    -> ArbitrarySlotNo
+                    -> Property
+prop_getLedgerPeers (ArbitrarySlotNo curSlot)
+                    (ArbitraryLedgerStateJudgement lsj)
+                    (LedgerPools lps)
+                    slot =
+  let sim :: IOSim m LedgerPeers
+      sim = atomically $ getLedgerPeers interface (getArbitrarySlotNo slot)
+
+      result :: LedgerPeers
+      result = runSimOrThrow sim
+
+   in counterexample (show result) $
+      case result of
+        LedgerPeers _ _ -> property (curSlot >= getArbitrarySlotNo slot)
+        BeforeSlot      -> property (curSlot < getArbitrarySlotNo slot)
+  where
+    interface :: LedgerPeersConsensusInterface (IOSim s)
+    interface = LedgerPeersConsensusInterface
+                  (pure curSlot)
+                  (pure lsj)
+                  (pure (Map.elems (accPoolStake lps)))
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]
