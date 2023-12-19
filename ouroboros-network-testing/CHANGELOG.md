@@ -5,6 +5,8 @@
 ### Breaking changes
 
 * Adds `eventually` and `eventsToListWithId` functions to Signal API
+* Fixed Script strict API functions. Now functions with an apostrophe `'` are
+  properly strict variants of the non-apostrophe functions.
 
 ### Non-breaking changes
 
@@ -27,6 +29,8 @@
 - Changed `prop_shrink_valid` to use `ShrinkCarefully`
 - Changed `prop_shrink_nonempty` to use `ShrinkCarefully` (formerlly
   `prop_shrinkCarefully` was defined in `ouroboros-network:sim-test`)
+- Fixed Script strict API functions. Now functions with an apostrophe `'` are
+  properly strict variants of the non-apostrophe functions.
 
 ### Non-breaking changes
 

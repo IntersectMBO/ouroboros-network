@@ -8,11 +8,45 @@
   demotion to `cold` as well as `warm` state.  A `ReconnectDelay` type alias is
   still provided but deprecated.
 
+* Moved `LedgerConsensusInterface` type to `ouroboros-network-api`.
+* Preserved `PeerAdvertise` information when connecting to peers.
+* Added `daReadUseBootstrapPeers` to `ArgumentsExtra`.
+
+* Added `PeerTrustable` to Local Root Peers
+
+* Added new trace constructors for `TracePeerSelection`
+* Updated type of constructor in `TraceLedgerPeers`
+* Updated type of constructor in `TraceLocalRootPeers`
+
 ### Non-breaking changes
 
 * The internal `Guarded` type changed.  It is provided with pattern synonyms
   which hide both `Min` and `FirstToFinish`.
 * Adds 'unit_reconnect' testnet test
+
+* Creates `PublicRootPeers` and adds `BootstrapPeers` and big ledger peers to
+  `PublicRootPeers` abstraction.
+
+* Adjusts `PeerSelectionActions` `requestPublicRootPeers` function to
+  provide either only ledger peers or bootstrap peers according to the
+  current ledger state. The same for `requestBigLedgerPeers`.
+
+* Adds `readLedgerStateJudgement` to `PeerSelectionActions`
+* Adds `ledgerStateJudgement` to `PeerSelectionState`
+* Adds `bootstrapPeersFlag` to `PeerSelectionState`
+* Adds `hasOnlyBootstrapPeers` to `PeerSelectionState`
+
+* Simplified `KnownPeerInfo` by removing `IsLedgerPeer`, `PeerTrustable` and
+  `IsBootstrapPeer`
+
+* Preserved `PeerAdvertise` information when connecting to peers.
+
+* Added new monitoring tasks to monitor the bootstrap peers flag, the ledger
+  state judgement value and act accordingly (`monitorBootstrapPeersFlag`,
+  `monitorLedgerStateJudgement` and `waitForOnlyBootstrapPeers`) .
+
+* Updated other monitoring tasks to consider a possible sensitive state that
+  involves the bootstrap peers flag and the ledger state judgement value.
 
 ## 0.10.2.2 -- 2023-12-15
 

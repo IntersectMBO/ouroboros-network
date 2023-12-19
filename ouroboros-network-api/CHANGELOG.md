@@ -12,12 +12,23 @@
 
 ### Breaking changes
 
+* Changed `LedgerConsensusInterface` type:
+    `LedgerConsensusInterface` now has to fill 3 STM actions:
+        * `lpGetLatestSlot :: STM m SlotNo`
+        * `lpGetLedgerStateJudgment :: STM m LedgerStateJudgement`
+        * `lpGetLedgerPeers :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]`
+
+* Added `PeerTrustable` flag
+* Added `UseBootstrapPeers`, this data type is now a flag
+  to enable/disable bootstrap peers usage.
+* Added `UseLedgerPeers` flag with an indirection layer to `UseLedgerAfter`
+
 ### Non-breaking changes
 
 * Fixed handshake codec: disabled `PeerSharing` for `node-to-node` versions 11 and 12.
 * Disable `PeerSharing` with `InitiatorOnly` nodes, since they do not run
   peer sharing server side and can not reply to requests.
-- Fixed `Acceptable` instance of `NodeToNodeVersionData` to only negotiate
+* Fixed `Acceptable` instance of `NodeToNodeVersionData` to only negotiate
   `PeerSharing` if diffusion mode is `InitiatorAndResponder`
 
 ## 0.6.0.1 -- 2023-11-16
@@ -42,7 +53,6 @@
 
 * Restructured `decodeTerm` to prevent an impossible case and eliminate the
   associated `error`.
-
 
 ## 0.5.1.1 -- 2023-10-26
 

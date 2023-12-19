@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Fixed correct transition tracing in the case of self connect
+
 ## 0.10.2.0 -- 2023-12-14
 
 ### Non-breaking changes
