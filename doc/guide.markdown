@@ -135,29 +135,38 @@ Installation
 
 KES Agent can run in two modes:
 
-- "Service Mode", in which it acts as a systemd service. The process can be
-  managed using the `start`, `stop`, `restart` and `status` subcommands; when
-  started, it will double-fork, drop privileges, and send all log output to
-  syslog.
+- "Service Mode", in which it acts as a Unix service ("daemon"). The process
+  can be managed using the `start`, `stop`, `restart` and `status` subcommands;
+  when started, it will double-fork and drop privileges, and it will send all
+  log output to syslog.
   This is the recommended mode for a production setup.
 - "Normal Mode", in which it runs as a regular process; the process starts
   immediately, does not fork or drop privileges, and writes log output to
   stdout. This mode is mainly useful for debugging and development purposes; it
   is not recommended for production use.
 
-To run KES Agent as a daemon, the following steps are necessary:
+To run KES Agent as a daemon using systemd, the following steps are necessary:
 
 1. Install the `kes-agent` binary into a suitable location, e.g.
    `/usr/local/bin`.
 2. Create a kes-agent system user and group; the default name for both is
    `kes-agent`, and we suggest to keep this.
-3. Add the control user (the interactive user who will manage KES keys for this
-   Agent) to the kes-agent group.
-4. Write systemd service to drive the `kes-agent` binary.
-   (TODO: we should provide a service template)
-5. Edit configuration
-   (TODO)
-6. Start the kes-agent service
+3. Add all users that need to connect to
+   the KES Agent (whether as a Node or via the `kes-agent-control` tool) to the
+   `kes-agent` group.
+4. Obtain a verification key for your Cold Key and copy it into a suitable
+   location (e.g. `/etc/kes-agent/cold.vkey`). KES Agent needs this file in
+   order to verify OpCerts.
+5. Make a systemd service to drive the `kes-agent` binary. An example service
+   file can be found in `./systemd/etc/systemd/system/kes-agent.service`.
+6. Create an environment file for the systemd service to configure it. An
+   example file can be found in `./systemd/etc/kes-agent/kes-agent.env`.
+7. Make systemd reload the service configuration (`systemctl daemon-reload`).
+8. Start the kes-agent service (`systemctl start kes-agent`).
+
+An example installation script that performs the above steps is provided in
+`etc/systemd/install.sh`; it should work on a typical Debian or Debian-based
+system.
 
 ### Installing KES Agent Control
 

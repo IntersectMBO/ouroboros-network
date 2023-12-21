@@ -1,0 +1,12 @@
+[Unit]
+Description=KES Agent
+
+[Service]
+Type=forking
+ExecStart=/usr/local/bin/kes-agent start
+ExecStop=/usr/local/bin/kes-agent stop
+EnvironmentFile=/etc/kes-agent/kes-agent.env
+PIDFile=kes-agent.pid
+
+[Install]
+WantedBy=multi-user.target
