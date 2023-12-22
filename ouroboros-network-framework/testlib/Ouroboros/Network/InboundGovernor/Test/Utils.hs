@@ -6,7 +6,8 @@ module Ouroboros.Network.InboundGovernor.Test.Utils where
 
 import Test.QuickCheck
 
-import Ouroboros.Network.ConnectionManager.Test.Timeouts
+import Ouroboros.Network.Testing.Utils (AllProperty (..))
+
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
            RemoteSt (..))

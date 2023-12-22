@@ -11,6 +11,7 @@ module Ouroboros.Network.Testing.Utils
   , genDelayWithPrecision
   , SmallDelay (..)
     -- * QuickCheck Utils
+  , AllProperty (..)
   , arbitrarySubset
   , shrinkVector
   , ShrinkCarefully (..)
@@ -55,6 +56,15 @@ import           Test.QuickCheck
 import           Test.Tasty (TestTree)
 import           Test.Tasty.ExpectedFailure (ignoreTest)
 import           Debug.Trace (traceShowM)
+
+newtype AllProperty = AllProperty { getAllProperty :: Property }
+
+instance Semigroup AllProperty where
+    AllProperty a <> AllProperty b = AllProperty (a .&&. b)
+
+instance Monoid AllProperty where
+    mempty = AllProperty (property True)
+
 
 
 newtype Delay = Delay { getDelay :: DiffTime }

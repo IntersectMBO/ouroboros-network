@@ -69,8 +69,8 @@ import Test.Tasty.QuickCheck (testProperty)
 
 import Control.Exception (AssertionFailed (..), catch, evaluate)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
-import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..),
-           TestProperty (..), classifyActivityType, classifyEffectiveDataFlow,
+import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
+           classifyActivityType, classifyEffectiveDataFlow,
            classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
            groupConns, mkProperty, ppTransition, verifyAllTimeouts)
 import Ouroboros.Network.ConnectionManager.Test.Utils
@@ -82,7 +82,8 @@ import Ouroboros.Network.InboundGovernor.Test.Utils (inboundGovernorTraceMap,
            verifyRemoteTransition, verifyRemoteTransitionOrder)
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import Ouroboros.Network.NodeToNode (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..), requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
@@ -92,9 +93,6 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
-
-import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
-import Ouroboros.Network.PeerSelection.LedgerPeers
 
 tests :: TestTree
 tests =

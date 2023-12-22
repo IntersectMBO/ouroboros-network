@@ -43,8 +43,8 @@ import Control.Monad.IOSim
 
 import NoThunks.Class
 
-import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..))
 import Ouroboros.Network.Testing.Data.Script
+import Ouroboros.Network.Testing.Utils (AllProperty (..))
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)

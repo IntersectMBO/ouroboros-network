@@ -61,12 +61,11 @@ import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as Estab
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
-import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..))
 import Ouroboros.Network.Testing.Data.Script
 import Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal, TS (TS),
            signalProperty)
 import Ouroboros.Network.Testing.Data.Signal qualified as Signal
-import Ouroboros.Network.Testing.Utils (nightlyTest)
+import Ouroboros.Network.Testing.Utils (AllProperty (..), nightlyTest)
 
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)

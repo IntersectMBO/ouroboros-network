@@ -89,6 +89,7 @@ import Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
            genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
 
 import Ouroboros.Network.Test.Orphans ()
+import Ouroboros.Network.Testing.Utils (AllProperty (..))
 import Test.Simulation.Network.Snocket hiding (tests)
 
 import Ouroboros.Network.ConnectionManager.Test.Experiments

@@ -28,6 +28,8 @@ import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Snocket qualified as Snocket
 
+import Ouroboros.Network.Testing.Utils (AllProperty (..))
+
 
 verifyAllTimeouts :: Show addr
                   => Bool
@@ -525,14 +527,6 @@ classifyPruning
   -> Sum Int
 classifyPruning TrPruneConnections {} = Sum 1
 classifyPruning _                     = Sum 0
-
-newtype AllProperty = AllProperty { getAllProperty :: Property }
-
-instance Semigroup AllProperty where
-    AllProperty a <> AllProperty b = AllProperty (a .&&. b)
-
-instance Monoid AllProperty where
-    mempty = AllProperty (property True)
 
 newtype ArbDataFlow = ArbDataFlow DataFlow
   deriving Show
