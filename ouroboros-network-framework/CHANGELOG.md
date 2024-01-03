@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Add Socket.NoDelay option to configureOutboundSocket
+
 ## 0.10.2.0 -- 2023-12-14
 
 ### Non-breaking changes
