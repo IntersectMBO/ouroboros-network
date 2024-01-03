@@ -164,11 +164,11 @@ connections PeerSelectionActions{
                            ( peerState
                            , (\x -> (x + realToFrac aFuzz) `max` 0) <$> reconnectDelay
                            )
-                         PeerCooling ->
+                         PeerCooling -> a
+                         PeerCold ->
                            ( peerState
                            , (\x -> (x + realToFrac rFuzz) `max` 0) <$> reconnectDelay
                            )
-                         PeerCold -> a
                        ) <$> demotions
       return $ \now ->
         let -- Remove all asynchronous demotions from 'activePeers'
