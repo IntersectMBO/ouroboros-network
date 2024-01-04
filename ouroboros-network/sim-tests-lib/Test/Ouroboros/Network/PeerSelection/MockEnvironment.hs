@@ -25,6 +25,7 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , module Ouroboros.Network.PeerSelection.Types
   , tests
   , prop_shrink_nonequal_GovernorMockEnvironment
+  , config_REPROMOTE_DELAY
   ) where
 
 import           Data.Dynamic (fromDynamic)
@@ -488,8 +489,15 @@ mockPeerSelectionActions' tracer
         writeTVar connsVar conns'
 
     monitorPeerConnection :: PeerConn m -> STM m (PeerStatus, Maybe RepromoteDelay)
-    monitorPeerConnection (PeerConn _peeraddr _ conn) = (,) <$> readTVar conn
-                                                              <*> pure Nothing
+    monitorPeerConnection (PeerConn _peeraddr _ conn) = do
+      st <- readTVar conn
+      pure $ case st of
+        PeerCooling -> (st, Nothing)
+        _           -> (st, Just config_REPROMOTE_DELAY)
+
+
+config_REPROMOTE_DELAY :: RepromoteDelay
+config_REPROMOTE_DELAY = 10
 
 
 snapshotPeersStatus :: MonadInspectSTM m
