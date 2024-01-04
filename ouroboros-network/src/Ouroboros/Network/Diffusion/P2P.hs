@@ -105,14 +105,23 @@ import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters (..),
-           PeerSelectionPolicy (..), PeerStateActions,
+           PeerSelectionPolicy (..), PeerSelectionState, PeerStateActions,
            PublicPeerSelectionState (..), TracePeerSelection (..),
-           emptyPublicPeerSelectionState)
+           emptyPeerSelectionState, emptyPublicPeerSelectionState)
+#ifdef POSIX
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (makeDebugPeerSelectionState)
+#endif
 import Ouroboros.Network.PeerSelection.LedgerPeers
            (LedgerPeersConsensusInterface, TraceLedgerPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface (..), UseLedgerPeers)
+#ifdef POSIX
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
+           fetchynessBlocks, upstreamyness)
+#else
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+#endif
 import Ouroboros.Network.PeerSelection.PeerSelectionActions
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
@@ -498,6 +507,9 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diInstallSigUSR1Handler
           :: forall mode x y.
              NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersionData ntnVersion  m x y
+          -> StrictTVar m (PeerSelectionState ntnAddr (NodeToNodePeerConnectionHandle
+                               mode ntnAddr ntnVersionData m x y))
+          -> PeerMetrics m ntnAddr
           -> m (),
 
         -- | diffusion dns actions
@@ -985,15 +997,19 @@ runM Interfaces
           peerSelectionGovernor'
             :: forall (muxMode :: MuxMode) b.
                Tracer m (DebugPeerSelection ntnAddr)
+            -> StrictTVar m (PeerSelectionState ntnAddr
+                              (NodeToNodePeerConnectionHandle
+                               muxMode ntnAddr ntnVersionData m a b))
             -> NodeToNodePeerSelectionActions muxMode ntnAddr ntnVersionData m a b
             -> m Void
-          peerSelectionGovernor' peerSelectionTracer peerSelectionActions =
+          peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
               (Governor.peerSelectionGovernor
                 dtTracePeerSelectionTracer
                 peerSelectionTracer
                 dtTracePeerSelectionCounters
                 fuzzRng
                 publicStateVar
+                dbgVar
                 peerSelectionActions
                 peerSelectionPolicy)
 
@@ -1052,7 +1068,8 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          diInstallSigUSR1Handler connectionManager
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng []
+          diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
               retry
@@ -1065,6 +1082,7 @@ runM Interfaces
                Async.withAsync
                  (peerSelectionGovernor'
                     dtDebugPeerSelectionInitiatorTracer
+                    debugStateVar
                     peerSelectionActions)
                $ \governorThread ->
                Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
@@ -1084,7 +1102,8 @@ runM Interfaces
           withConnectionManagerInitiatorAndResponderMode
             inboundInfoChannel outboundInfoChannel
             observableStateVar $ \connectionManager-> do
-            diInstallSigUSR1Handler connectionManager
+            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng []
+            diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
             withPeerStateActions' connectionManager $ \peerStateActions->
               withPeerSelectionActions'
                 (readMessage outboundInfoChannel)
@@ -1096,6 +1115,7 @@ runM Interfaces
               Async.withAsync
                 (peerSelectionGovernor'
                    dtDebugPeerSelectionInitiatorResponderTracer
+                   debugStateVar
                    peerSelectionActions) $ \governorThread ->
               -- begin, unique to InitiatorAndResponder mode:
               withSockets' $ \sockets addresses -> do
@@ -1175,24 +1195,33 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                      }
 
                  diInstallSigUSR1Handler
-                   :: forall mode x y.
+                   :: forall mode x y ntnconn.
                       NodeToNodeConnectionManager mode Socket RemoteAddress
                                                   NodeToNodeVersionData NodeToNodeVersion IO x y
+                   -> StrictTVar IO (PeerSelectionState RemoteAddress ntnconn)
+                   -> PeerMetrics IO RemoteAddress
                    -> IO ()
 #ifdef POSIX
-                 diInstallSigUSR1Handler = \connectionManager -> do
+                 diInstallSigUSR1Handler = \connectionManager dbgStateVar metrics -> do
                    _ <- Signals.installHandler
                      Signals.sigUSR1
                      (Signals.Catch
                        (do state <- atomically $ readState connectionManager
                            traceWith (dtConnectionManagerTracer tracersExtra)
                                      (TrState state)
+                           ps <- readTVarIO dbgStateVar
+                           now <- getMonotonicTime
+                           (up, bp) <- atomically $ (,) <$> upstreamyness metrics
+                                                        <*> fetchynessBlocks metrics
+                           let dbgState = makeDebugPeerSelectionState ps up bp
+                           traceWith (dtTracePeerSelectionTracer tracersExtra)
+                                     (TraceDebugState now dbgState)
                        )
                      )
                      Nothing
                    return ()
 #else
-                 diInstallSigUSR1Handler = \_ -> pure ()
+                 diInstallSigUSR1Handler = \_ _ _ -> pure ()
 #endif
 
              diRng <- newStdGen

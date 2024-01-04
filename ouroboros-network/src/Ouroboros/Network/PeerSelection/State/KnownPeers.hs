@@ -6,7 +6,9 @@
 module Ouroboros.Network.PeerSelection.State.KnownPeers
   ( -- * Types
     KnownPeers
+  , KnownPeerInfo (..)
   , invariant
+  , allPeers
     -- * KnownPeerInfo operations
   , alterKnownPeerInfo
     -- * Basic container operations

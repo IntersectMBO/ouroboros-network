@@ -13,6 +13,8 @@
 * Added new trace constructors for `TracePeerSelection`
 * Updated type of constructor in `TraceLedgerPeers`
 * Updated type of constructor in `TraceLocalRootPeers`
+* Added `TraceDebugState` message to `TracePeerSelection` for tracing
+  peer selection upon getting a USR1 sig.
 
 ### Non-breaking changes
 
