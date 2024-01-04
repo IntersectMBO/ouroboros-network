@@ -750,6 +750,8 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceDemoteHotBigLedgerPeerDone"
       peerSelectionTraceMap TraceDemoteBigLedgerPeersAsynchronous {} =
         "TraceDemoteBigLedgerPeersAsynchronous"
+      peerSelectionTraceMap TraceDebugState {}                       =
+        "TraceDebugState"
 
       eventsSeenNames = map peerSelectionTraceMap events
 

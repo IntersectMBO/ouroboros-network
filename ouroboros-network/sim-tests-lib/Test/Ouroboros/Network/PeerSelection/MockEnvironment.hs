@@ -198,6 +198,7 @@ runGovernorInMockEnvironment mockEnv =
 governorAction :: GovernorMockEnvironment -> IOSim s Void
 governorAction mockEnv = do
     publicStateVar <- StrictTVar.newTVarIO emptyPublicPeerSelectionState
+    debugVar <- StrictTVar.newTVarIO Nothing
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv policy
     exploreRaces      -- explore races within the governor
@@ -209,6 +210,7 @@ governorAction mockEnv = do
         tracerTracePeerSelectionCounters
         (mkStdGen 42)
         publicStateVar
+        debugVar
         actions
         policy
       atomically retry
@@ -605,6 +607,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@TraceGovernorWakeup                                  = GovernorEvent a
     f a@(TraceChurnWait !_)                                  = GovernorEvent a
     f a@(TraceChurnMode !_)                                  = GovernorEvent a
+    f a@(TraceDebugState !_ !_)                              = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent

@@ -17,6 +17,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , PeerStateActions (..)
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
+  , DebugPeerSelectionState (..)
   , peerSelectionGovernor
     -- * Peer churn governor
   , peerChurnGovernor
@@ -447,10 +448,11 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
                       -> StrictTVar m (PublicPeerSelectionState peeraddr)
+                      -> StrictTVar m (Maybe (PeerSelectionState peeraddr peerconn))
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugStateVar actions policy =
     JobPool.withJobPool $ \jobPool -> do
       localPeers <- map (\_ -> (0, 0))
                 <$> atomically (readLocalRootPeers actions)
@@ -459,6 +461,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar actions
         debugTracer
         countersTracer
         stateVar
+        debugStateVar
         actions
         policy
         jobPool
@@ -492,6 +495,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           -> Tracer m (DebugPeerSelection peeraddr)
                           -> Tracer m PeerSelectionCounters
                           -> StrictTVar m (PublicPeerSelectionState peeraddr)
+                          -> StrictTVar m (Maybe (PeerSelectionState peeraddr peerconn))
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
                           -> JobPool () m (Completion m peeraddr peerconn)
@@ -501,19 +505,26 @@ peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
                           stateVar
+                          debugStateVar
                           actions
                           policy
                           jobPool
                           pst = do
-    loop pst
+    loop pst (Time 0)
   where
     loop :: PeerSelectionState peeraddr peerconn
+         -> Time
          -> m Void
-    loop !st = assertPeerSelectionState st $ do
+    loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar stateVar (toPublicState st)
       blockedAt <- getMonotonicTime
+      dbgUpdateAt' <- if dbgUpdateAt <= blockedAt
+                         then do
+                           atomically $ writeTVar debugStateVar $ Just st
+                           return $ 83 `addTime` blockedAt
+                         else return dbgUpdateAt
       let knownPeers'       = KnownPeers.setCurrentTime blockedAt (knownPeers st)
           establishedPeers' = EstablishedPeers.setCurrentTime blockedAt (establishedPeers st)
           st'               = st { knownPeers       = knownPeers',
@@ -533,7 +544,7 @@ peerSelectionGovernorLoop tracer
                      newCounters
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop (decisionState { countersCache = Cache newCounters })
+      loop (decisionState { countersCache = Cache newCounters }) dbgUpdateAt'
 
     evalGuardedDecisions :: Time
                          -> PeerSharing

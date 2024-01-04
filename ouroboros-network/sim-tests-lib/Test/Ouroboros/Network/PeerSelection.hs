@@ -668,6 +668,7 @@ traceNum TraceDemoteHotBigLedgerPeerFailed{}     = 45
 traceNum TraceDemoteHotBigLedgerPeerDone{}       = 46
 traceNum TraceKnownInboundConnection{}           = 47
 traceNum TraceDemoteBigLedgerPeersAsynchronous{} = 48
+traceNum TraceDebugState {}                      = 49
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -2985,11 +2986,13 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
         publicStateVar <- newTVarIO (emptyPublicPeerSelectionState @SockAddr)
+        debugVar <- newTVarIO Nothing
         peerSelectionGovernor
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
           publicStateVar
+          debugVar
           actions
             { requestPublicRootPeers =
                 transformPeerSelectionAction requestPublicRootPeers }

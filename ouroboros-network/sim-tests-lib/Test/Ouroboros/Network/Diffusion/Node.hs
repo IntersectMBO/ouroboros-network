@@ -246,7 +246,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                     }
               , Diff.P2P.diNtcGetFileDescriptor  = \_ -> pure invalidFileDescriptor
               , Diff.P2P.diRng                   = diffStgGen
-              , Diff.P2P.diInstallSigUSR1Handler = \_ -> pure ()
+              , Diff.P2P.diInstallSigUSR1Handler = \_ _ -> pure ()
               , Diff.P2P.diDnsActions            = const (mockDNSActions
                                                      (iDomainMap ni)
                                                      dnsTimeoutScriptVar

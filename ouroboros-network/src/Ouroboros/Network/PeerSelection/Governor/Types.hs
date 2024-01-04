@@ -24,6 +24,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , ChurnMode (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
+  , DebugPeerSelectionState (..)
   , emptyPeerSelectionState
   , assertPeerSelectionState
   , establishedPeersStatus
@@ -437,6 +438,29 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     lastSuccessfulNetworkEvent :: Time
      }
   deriving Show
+
+data DebugPeerSelectionState peeraddr = DebugPeerSelectionState {
+       dpssTargets                     :: !PeerSelectionTargets,
+       dpssLocalRootPeers              :: !(LocalRootPeers peeraddr),
+       dpssPublicRootPeers             :: !(Set peeraddr),
+       dpssBigLedgerPeers              :: !(Set peeraddr),
+       dpssKnownPeers                  :: !(KnownPeers peeraddr),
+       dpssEstablishedPeers            :: !(Set peeraddr),
+       dpssActivePeers                 :: !(Set peeraddr),
+       dpssPublicRootBackoffs          :: !Int,
+       dpssPublicRootRetryTime         :: !Time,
+       dpssInProgressPublicRootsReq    :: !Bool,
+       dpssBigLedgerPeerBackoffs       :: !Int,
+       dpssBigLedgerPeerRetryTime      :: !Time,
+       dpssInProgressBigLedgerPeersReq :: !Bool,
+       dpssInProgressPeerShareReqs     :: !Int,
+       dpssInProgressPromoteCold       :: !(Set peeraddr),
+       dpssInProgressPromoteWarm       :: !(Set peeraddr),
+       dpssInProgressDemoteWarm        :: !(Set peeraddr),
+       dpssInProgressDemoteHot         :: !(Set peeraddr),
+       dpssInProgressDemoteToCold      :: !(Set peeraddr)
+} deriving Show
+
 
 -- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
 -- mechanisms without any problem.
@@ -907,6 +931,12 @@ data TracePeerSelection peeraddr =
      | TraceGovernorWakeup
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
+
+     --
+     -- Debug Tracer
+     --
+ 
+     | TraceDebugState Time (DebugPeerSelectionState peeraddr)
   deriving Show
 
 data DebugPeerSelection peeraddr where

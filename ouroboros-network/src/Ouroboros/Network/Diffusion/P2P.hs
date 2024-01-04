@@ -105,10 +105,12 @@ import qualified Ouroboros.Network.NodeToNode as NodeToNode
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types
                      (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
+                     DebugPeerSelectionState (..),
                      PeerSelectionActions, PeerSelectionCounters (..),
-                     PeerStateActions, PeerSelectionPolicy (..),
-                     PublicPeerSelectionState (..),
-                     TracePeerSelection (..), emptyPublicPeerSelectionState)
+                     PeerSelectionPolicy (..), PeerStateActions,
+                     PeerSelectionState (..), PublicPeerSelectionState (..),
+                     TracePeerSelection (..),
+                     emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
                      (LedgerPeersConsensusInterface, TraceLedgerPeers,
                      UseLedgerAfter)
@@ -127,6 +129,7 @@ import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
                      (TraceLocalRootPeers)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
                      (TracePublicRootPeers)
+import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
                      (HotValency, WarmValency)
 import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
@@ -498,6 +501,8 @@ data Interfaces ntnFd ntnAddr ntnVersion ntnVersionData
         diInstallSigUSR1Handler
           :: forall mode x y.
              NodeToNodeConnectionManager mode ntnFd ntnAddr ntnVersionData ntnVersion  m x y
+          -> StrictTVar m (Maybe (PeerSelectionState ntnAddr (NodeToNodePeerConnectionHandle
+                               mode ntnAddr ntnVersionData m x y)))
           -> m (),
 
         -- | diffusion dns actions
@@ -798,6 +803,8 @@ runM Interfaces
         }
 
       publicStateVar <- newTVarIO emptyPublicPeerSelectionState
+      debugStateVarA <- newTVarIO Nothing
+      debugStateVarB <- newTVarIO Nothing
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -980,15 +987,19 @@ runM Interfaces
           peerSelectionGovernor'
             :: forall (muxMode :: MuxMode) b.
                Tracer m (DebugPeerSelection ntnAddr)
+            -> StrictTVar m (Maybe (PeerSelectionState ntnAddr
+                              (NodeToNodePeerConnectionHandle
+                               muxMode ntnAddr ntnVersionData m a b)))
             -> NodeToNodePeerSelectionActions muxMode ntnAddr ntnVersionData m a b
             -> m Void
-          peerSelectionGovernor' peerSelectionTracer peerSelectionActions =
+          peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
               (Governor.peerSelectionGovernor
                 dtTracePeerSelectionTracer
                 peerSelectionTracer
                 dtTracePeerSelectionCounters
                 fuzzRng
                 publicStateVar
+                dbgVar
                 peerSelectionActions
                 peerSelectionPolicy)
 
@@ -1047,7 +1058,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          diInstallSigUSR1Handler connectionManager
+          diInstallSigUSR1Handler connectionManager debugStateVarB
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
               retry
@@ -1060,6 +1071,7 @@ runM Interfaces
                Async.withAsync
                  (peerSelectionGovernor'
                     dtDebugPeerSelectionInitiatorTracer
+                    debugStateVarB
                     peerSelectionActions)
                $ \governorThread ->
                Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
@@ -1079,7 +1091,7 @@ runM Interfaces
           withConnectionManagerInitiatorAndResponderMode
             inboundInfoChannel outboundInfoChannel
             observableStateVar $ \connectionManager-> do
-            diInstallSigUSR1Handler connectionManager
+            diInstallSigUSR1Handler connectionManager debugStateVarA
             withPeerStateActions' connectionManager $ \peerStateActions->
               withPeerSelectionActions'
                 (readMessage outboundInfoChannel)
@@ -1091,6 +1103,7 @@ runM Interfaces
               Async.withAsync
                 (peerSelectionGovernor'
                    dtDebugPeerSelectionInitiatorResponderTracer
+                   debugStateVarA
                    peerSelectionActions) $ \governorThread ->
               -- begin, unique to InitiatorAndResponder mode:
               withSockets' $ \sockets addresses -> do
@@ -1170,24 +1183,64 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                      }
 
                  diInstallSigUSR1Handler
-                   :: forall mode x y.
+                   :: forall mode x y ntnconn.
                       NodeToNodeConnectionManager mode Socket RemoteAddress
                                                   NodeToNodeVersionData NodeToNodeVersion IO x y
+                   -> StrictTVar IO (Maybe (PeerSelectionState RemoteAddress ntnconn ))
                    -> IO ()
 #ifdef POSIX
-                 diInstallSigUSR1Handler = \connectionManager -> do
+                 diInstallSigUSR1Handler = \connectionManager dbgStateVar -> do
                    _ <- Signals.installHandler
                      Signals.sigUSR1
                      (Signals.Catch
                        (do state <- atomically $ readState connectionManager
                            traceWith (dtConnectionManagerTracer tracersExtra)
                                      (TrState state)
+                           peerState_m <- atomically $ readTVar dbgStateVar
+                           case peerState_m of
+                                Just PeerSelectionState{..} -> do
+                                  now <- getMonotonicTime
+                                  let dbgState = DebugPeerSelectionState {
+                                                     dpssTargets = targets
+                                                   , dpssLocalRootPeers = localRootPeers
+                                                   , dpssPublicRootPeers = publicRootPeers
+                                                   , dpssBigLedgerPeers = bigLedgerPeers
+                                                   , dpssKnownPeers = knownPeers
+                                                   , dpssEstablishedPeers =
+                                                       EstablishedPeers.toSet establishedPeers
+                                                   , dpssActivePeers = activePeers
+                                                   , dpssPublicRootBackoffs = publicRootBackoffs
+                                                   , dpssPublicRootRetryTime = publicRootRetryTime
+                                                   , dpssInProgressPublicRootsReq =
+                                                       inProgressPublicRootsReq
+                                                   , dpssBigLedgerPeerBackoffs =
+                                                       bigLedgerPeerBackoffs
+                                                   , dpssBigLedgerPeerRetryTime =
+                                                       bigLedgerPeerRetryTime
+                                                   , dpssInProgressBigLedgerPeersReq =
+                                                       inProgressBigLedgerPeersReq
+                                                   , dpssInProgressPeerShareReqs =
+                                                       inProgressPeerShareReqs
+                                                   , dpssInProgressPromoteCold =
+                                                       inProgressPromoteCold
+                                                   , dpssInProgressPromoteWarm =
+                                                       inProgressPromoteWarm
+                                                   , dpssInProgressDemoteWarm =
+                                                       inProgressDemoteWarm
+                                                   , dpssInProgressDemoteHot =
+                                                       inProgressDemoteHot
+                                                   , dpssInProgressDemoteToCold =
+                                                       inProgressDemoteToCold
+                                               }
+                                  traceWith (dtTracePeerSelectionTracer tracersExtra)
+                                            (TraceDebugState now dbgState)
+                                Nothing        -> return ()
                        )
                      )
                      Nothing
                    return ()
 #else
-                 diInstallSigUSR1Handler = \_ -> pure ()
+                 diInstallSigUSR1Handler = \_ _ -> pure ()
 #endif
 
              diRng <- newStdGen
