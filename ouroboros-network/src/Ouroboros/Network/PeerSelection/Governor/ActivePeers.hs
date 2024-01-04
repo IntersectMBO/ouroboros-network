@@ -111,6 +111,11 @@ belowTargetBigLedgerPeers actions
                         | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
+    -- If we could promote except that there are no peers currently available
+    -- then we return the next wakeup time (if any)
+  | numActiveBigLedgerPeers + numPromoteInProgressBigLedgerPeers < targetNumberOfActiveBigLedgerPeers
+  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.member` bigLedgerPeers))
+
   | otherwise
   = GuardedSkip Nothing
   where
