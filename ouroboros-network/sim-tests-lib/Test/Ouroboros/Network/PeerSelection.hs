@@ -56,6 +56,8 @@ import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as Estab
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 
+import           Ouroboros.Network.ConnectionManager.Test.Timeouts
+                     (AllProperty (..))
 import           Ouroboros.Network.Testing.Data.Script
 import           Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal,
                      TS (TS), signalProperty)
@@ -70,6 +72,7 @@ import           Test.Ouroboros.Network.PeerSelection.PeerGraph
 import           Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
 import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.IOSim
+import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -170,6 +173,7 @@ tests =
     , testProperty "3515" prop_issue_3515
     , testProperty "3550" prop_issue_3550
     ]
+  , testProperty "governor repromote delay with fuzz"   prop_governor_repromote_delay
   , testProperty "governor peer share reachable in 1hr" prop_governor_peershare_1hr
   , testProperty "governor connection status"           prop_governor_connstatus
   , testProperty "governor no livelock"                 prop_governor_nolivelock
@@ -2091,7 +2095,7 @@ prop_governor_target_established_below env =
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            (repromoteDelay config_REPROMOTE_DELAY + 20) -- seconds
             id
             promotionOpportunities
 
@@ -2195,7 +2199,7 @@ prop_governor_target_established_big_ledger_peers_below env =
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            (repromoteDelay config_REPROMOTE_DELAY + 20) -- seconds
             id
             promotionOpportunities
 
@@ -2400,7 +2404,7 @@ prop_governor_target_active_big_ledger_peers_below env =
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            (repromoteDelay config_REPROMOTE_DELAY + 20) -- seconds
             id
             promotionOpportunities
 
@@ -2416,6 +2420,7 @@ prop_governor_target_active_big_ledger_peers_below env =
                     <*> govActiveFailuresSig
                     <*> promotionOpportunities
                     <*> promotionOpportunitiesIgnoredTooLong)
+
 
 prop_governor_target_established_above :: GovernorMockEnvironment -> Property
 prop_governor_target_established_above env =
@@ -2854,7 +2859,7 @@ prop_governor_target_active_local_below env =
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            (repromoteDelay config_REPROMOTE_DELAY + 20) -- seconds
             id
             promotionOpportunities
 
@@ -3190,6 +3195,42 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled
     }
+
+
+-- | Verify that re-promote delay is applied with a fuzz.
+--
+prop_governor_repromote_delay :: GovernorMockEnvironment -> Property
+prop_governor_repromote_delay env =
+    let evs = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+            . selectPeerSelectionTraceEvents
+            . runGovernorInMockEnvironment
+            $ env
+    in  getAllProperty
+      . foldMap (\case
+                   TraceDemoteAsynchronous m ->
+                     foldMap
+                       (\(st, mx) -> maybe ok (\x -> AllProperty
+                                                   $ counterexample (show st)
+                                                   $ x =/= config_REPROMOTE_DELAY) mx)
+                       m
+                   TraceDemoteLocalAsynchronous m ->
+                     foldMap
+                       (\(st, mx) -> maybe ok (\x -> AllProperty
+                                                   $ counterexample (show st)
+                                                   $ x =/= config_REPROMOTE_DELAY) mx)
+                       m
+                   TraceDemoteBigLedgerPeersAsynchronous m ->
+                     foldMap
+                       (\(st, mx) -> maybe ok (\x -> AllProperty
+                                                   $ counterexample (show st)
+                                                   $ x =/= config_REPROMOTE_DELAY) mx)
+                       m
+                   _ -> ok
+                )
+      . selectGovEvents
+      $ evs
+  where
+    ok = AllProperty (property True)
 
 
 --

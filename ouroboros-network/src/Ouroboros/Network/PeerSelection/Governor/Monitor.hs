@@ -156,8 +156,8 @@ connections PeerSelectionActions{
       let (demotedToWarm, demotedToCoolingOrCold) = Map.partition ((==PeerWarm) . fst) demotions
           (demotedToCold, demotedToCooling) = Map.partition ((==PeerCold) . fst) demotedToCoolingOrCold
           -- fuzz reconnect delays
-          (aFuzz, fuzzRng')  = randomR (-5, 5 :: Double) fuzzRng
-          (rFuzz, fuzzRng'') = randomR (-2, 2 :: Double) fuzzRng'
+          (aFuzz, fuzzRng')  = randomR (0.1, 10 :: Double) fuzzRng
+          (rFuzz, fuzzRng'') = randomR (0.1, 4  :: Double) fuzzRng'
           demotions' = (\a@(peerState, repromoteDelay) -> case peerState of
                          PeerHot  -> a
                          PeerWarm ->
