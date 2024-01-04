@@ -10,6 +10,9 @@
 
 ### Non-breaking changes
 
+* The internal `Guarded` type changed.  It is provided with pattern synonyms
+  which hide both `Min` and `FirstToFinish`.
+
 ## 0.10.2.2 -- 2023-12-15
 
 ### Non-breaking changes

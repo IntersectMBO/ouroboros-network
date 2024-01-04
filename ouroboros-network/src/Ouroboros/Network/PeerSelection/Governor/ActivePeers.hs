@@ -10,7 +10,6 @@ module Ouroboros.Network.PeerSelection.Governor.ActivePeers
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Semigroup (Min (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -207,7 +206,7 @@ belowTargetLocal actions
              Set.\\ activePeers
              Set.\\ EstablishedPeers.readyPeers establishedPeers
   , not (Set.null potentialToPromote)
-  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeers))
+  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
@@ -280,7 +279,7 @@ belowTargetOther actions
     -- If we could promote except that there are no peers currently available
     -- then we return the next wakeup time (if any)
   | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
-  = GuardedSkip (Min <$> EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeers))
+  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
