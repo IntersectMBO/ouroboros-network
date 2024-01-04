@@ -487,7 +487,7 @@ mockPeerSelectionActions' tracer
         let !conns' = Map.delete peeraddr conns
         writeTVar connsVar conns'
 
-    monitorPeerConnection :: PeerConn m -> STM m (PeerStatus, Maybe ReconnectDelay)
+    monitorPeerConnection :: PeerConn m -> STM m (PeerStatus, Maybe RepromoteDelay)
     monitorPeerConnection (PeerConn _peeraddr _ conn) = (,) <$> readTVar conn
                                                               <*> pure Nothing
 

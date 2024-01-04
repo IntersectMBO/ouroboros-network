@@ -4,6 +4,10 @@
 
 ### Breaking changes
 
+* Renamed `ReconnectDelay` to `RepromoteDelay` - the dalay is used after
+  demotion to `cold` as well as `warm` state.  A `ReconnectDelay` type alias is
+  still provided but deprecated.
+
 ### Non-breaking changes
 
 ## 0.10.2.0 -- 2023-12-14

@@ -38,7 +38,7 @@ import qualified Network.DNS.Types as DNS
 import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import           Ouroboros.Network.ConnectionId
 import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
+import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import           Ouroboros.Network.InboundGovernor hiding
                      (TrUnexpectedlyFalseAssertion)
 import           Ouroboros.Network.PeerSelection.Governor hiding
@@ -59,7 +59,7 @@ import           Ouroboros.Network.Testing.Utils hiding (SmallDelay,
 
 import           Simulation.Network.Snocket (BearerInfo (..))
 
-import           Test.Ouroboros.Network.Diffusion.Node (config_RECONNECT_DELAY)
+import           Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
 import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 import           Test.Ouroboros.Network.Testnet.Simulation.Node
 import           Test.QuickCheck
@@ -2819,7 +2819,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
                    Nothing                         -> property True
                    Just (WithTime promotionTime _) -> counterexample (show as)
                                                     $ ( promotionTime `diffTime` demotionTime
-                                                     >= reconnectDelay config_RECONNECT_DELAY
+                                                     >= repromoteDelay config_REPROMOTE_DELAY
                                                       )
                g as@(WithTime demotionTime (PeerStatusChanged WarmToCooling{}) : as') =
                  case find (\case
@@ -2830,7 +2830,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
                    Nothing                         -> property True
                    Just (WithTime promotionTime _) -> counterexample (show as)
                                                     $ ( promotionTime `diffTime` demotionTime
-                                                     >= reconnectDelay config_RECONNECT_DELAY
+                                                     >= repromoteDelay config_REPROMOTE_DELAY
                                                       )
                g _ = property True
            in

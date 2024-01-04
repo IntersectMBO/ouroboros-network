@@ -75,7 +75,7 @@ simplePeerSelectionPolicy :: forall m peerAddr.
                           => StrictTVar m StdGen
                           -> STM m ChurnMode
                           -> PeerMetrics m peerAddr
-                          -> ReconnectDelay
+                          -> RepromoteDelay
                           -> PeerSelectionPolicy peerAddr m
 simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelectionPolicy {
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
@@ -92,7 +92,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
 
-      policyErrorDelay = ExitPolicy.reconnectDelay errorDelay
+      policyErrorDelay = ExitPolicy.repromoteDelay errorDelay
     }
   where
 

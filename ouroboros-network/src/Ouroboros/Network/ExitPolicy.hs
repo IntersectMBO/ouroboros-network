@@ -4,7 +4,8 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 
 module Ouroboros.Network.ExitPolicy
-  ( ReconnectDelay (..)
+  ( RepromoteDelay (..)
+  , ReconnectDelay
   , ExitPolicy (..)
   , stdExitPolicy
   , ReturnPolicy
@@ -14,33 +15,40 @@ module Ouroboros.Network.ExitPolicy
 import           Control.Monad.Class.MonadTime.SI
 import           Data.Semigroup (Max (..))
 
-newtype ReconnectDelay = ReconnectDelay { reconnectDelay :: DiffTime }
+-- | After demoting a peer to Warm or Cold, we use a delay to re-promote it
+-- back.
+--
+newtype RepromoteDelay = RepromoteDelay { repromoteDelay :: DiffTime }
   deriving (Eq, Ord)
   deriving newtype Num
   deriving newtype Fractional
   deriving Semigroup via Max DiffTime
 
--- It ought to be derived via 'Quiet' but 'Difftime' lacks 'Generic' instance.
-instance Show ReconnectDelay where
-    show (ReconnectDelay d) = "ReconnectDelay " ++ show d
+-- | Deprecated in `ouroboros-network-0.11.0.0`
+type ReconnectDelay = RepromoteDelay
+{-# DEPRECATED ReconnectDelay "Use RepromoteDelay instead" #-}
 
-type ReturnPolicy a = a -> ReconnectDelay
+-- It ought to be derived via 'Quiet' but 'Difftime' lacks 'Generic' instance.
+instance Show RepromoteDelay where
+    show (RepromoteDelay d) = "RepromoteDelay " ++ show d
+
+type ReturnPolicy a = a -> RepromoteDelay
 
 -- | 'ReturnPolicy' allows to compute reconnection delay from value return by
 -- a mini-protocol.  If a mini-protocol returned with an error 'epErrorDelay'
 -- is used.
 data ExitPolicy a =
     ExitPolicy {
-        -- | Compute 'ReturnCommand' from return value.
+        -- | Compute 'RepromoteDelay' from a return value.
         --
         epReturnDelay :: ReturnPolicy a,
 
         -- | The delay when a mini-protocol returned with an error.
         --
-        epErrorDelay  :: ReconnectDelay
+        epErrorDelay  :: RepromoteDelay
       }
 
-alwaysCleanReturnPolicy :: ReconnectDelay -- ^ reconnection delay on error
+alwaysCleanReturnPolicy :: RepromoteDelay -- ^ re-promote delay on error
                         -> ExitPolicy a
 alwaysCleanReturnPolicy = ExitPolicy $ \_ -> 0
 
