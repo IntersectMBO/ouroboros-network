@@ -18,7 +18,7 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, isJust)
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -185,8 +185,7 @@ connections PeerSelectionActions{
                                       -- (e.g.  this possible for warm or hot
                                       -- peers).  In such case we don't want to
                                       -- `setActivateTimes`
-                                      <$> Map.filter (\(_, a) -> a /= Nothing)
-                                                     demotedToWarm
+                                      <$> Map.filter (isJust . snd) demotedToWarm
                                    )
                                . EstablishedPeers.deletePeers
                                   (Map.keysSet demotedToCold)

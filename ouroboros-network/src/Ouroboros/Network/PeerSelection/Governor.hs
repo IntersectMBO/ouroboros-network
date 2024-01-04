@@ -553,10 +553,9 @@ peerSelectionGovernorLoop tracer
           let wakeupIn = diffTime wakeupAt blockedAt
           traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
           (readTimeout, cancelTimeout) <- registerDelayCancellable wakeupIn
-          let wakeup    = readTimeout >>= (\case TimeoutPending -> retry
-                                                 _              -> return ())
-                                      >>  pure (wakeupDecision st)
-          timedDecision     <- atomically (decisionAction <|> wakeup)
+          let wakeup = readTimeout >>= (\case TimeoutPending -> retry
+                                              _              -> pure (wakeupDecision st))
+          timedDecision <- atomically (decisionAction <|> wakeup)
           cancelTimeout
           return timedDecision
 
