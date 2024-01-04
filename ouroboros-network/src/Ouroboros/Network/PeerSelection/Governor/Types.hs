@@ -122,7 +122,7 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        -- ^ Amount of time the overall batches of peer sharing requests are
        -- allowed to take
 
-       -- | Reconnection delay, passed from `ExitPolicy`.
+       -- | Re-promote delay, passed from `ExitPolicy`.
        --
        policyErrorDelay                 :: !DiffTime
      }
@@ -302,7 +302,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 data PeerStateActions peeraddr peerconn m = PeerStateActions {
     -- | Monitor peer state.  Must be non-blocking.
     --
-    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, Maybe ReconnectDelay),
+    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, Maybe RepromoteDelay),
 
     -- | Establish new connection: cold to warm.
     --
@@ -927,10 +927,10 @@ data TracePeerSelection peeraddr =
      -- Async Demotions
      --
 
-     | TraceDemoteAsynchronous      (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
-     | TraceDemoteLocalAsynchronous (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
+     | TraceDemoteAsynchronous      (Map peeraddr (PeerStatus, Maybe RepromoteDelay))
+     | TraceDemoteLocalAsynchronous (Map peeraddr (PeerStatus, Maybe RepromoteDelay))
      | TraceDemoteBigLedgerPeersAsynchronous
-                                    (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
+                                    (Map peeraddr (PeerStatus, Maybe RepromoteDelay))
 
      | TraceGovernorWakeup
 

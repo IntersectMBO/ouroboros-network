@@ -832,7 +832,7 @@ withPeerStateActions PeerStateActionsArguments {
     -- or still executing.
     --
     monitorPeerConnection :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
-                          -> STM m (PeerStatus, Maybe ReconnectDelay)
+                          -> STM m (PeerStatus, Maybe RepromoteDelay)
     monitorPeerConnection PeerConnectionHandle { pchPeerStatus, pchAppHandles } =
          p  <$> readTVar pchPeerStatus
             <*> (g <$> traverse f pchAppHandles)
@@ -848,10 +848,10 @@ withPeerStateActions PeerStateActionsArguments {
          <=< readTVar . ahMiniProtocolResults
 
         g :: TemperatureBundle (Map MiniProtocolNum (Maybe (HasReturned a)))
-          -> Maybe ReconnectDelay
+          -> Maybe RepromoteDelay
         g = foldMap (foldMap h)
 
-        h :: Maybe (HasReturned a) -> Maybe ReconnectDelay
+        h :: Maybe (HasReturned a) -> Maybe RepromoteDelay
         h (Just (Returned a)) = Just $ epReturnDelay spsExitPolicy a
         -- Note: we do 'RethrowPolicy' in 'ConnectionHandler' (see
         -- 'makeConnectionHandler').
@@ -865,8 +865,8 @@ withPeerStateActions PeerStateActionsArguments {
         -- the delay in the `PeerCooling` state is ignored, let's make it
         -- explicit.
         p :: PeerStatus
-          -> Maybe ReconnectDelay
-          -> (PeerStatus, Maybe ReconnectDelay)
+          -> Maybe RepromoteDelay
+          -> (PeerStatus, Maybe RepromoteDelay)
         p st@PeerCooling _ = (st, Nothing)
         p st delay         = (st, delay)
 
