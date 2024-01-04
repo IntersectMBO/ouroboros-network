@@ -129,9 +129,9 @@ library
                        io-classes-mtl   ^>=0.1,
                        network-mux,
                        si-timers,
-                       ouroboros-network-api       ^>=0.6.2,
-                       ouroboros-network-framework ^>=0.10.2,
-                       ouroboros-network-protocols ^>=0.6.1,
+                       ouroboros-network-api       ^>=0.6.1,
+                       ouroboros-network-framework ^>=0.10.1,
+                       ouroboros-network-protocols ^>=0.6.0.1,
                        strict-stm,
                        typed-protocols  ^>=0.1.1,
   if !os(windows)
