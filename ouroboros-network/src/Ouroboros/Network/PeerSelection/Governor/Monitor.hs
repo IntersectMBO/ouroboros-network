@@ -181,7 +181,7 @@ connections PeerSelectionActions{
                                    ( (\(_, a) -> ExitPolicy.reconnectDelay (fromMaybe 0 a) `addTime` now)
                                       -- 'monitorPeerConnection' returns
                                       -- 'Nothing' iff all mini-protocols are
-                                      -- either still running or 'NotRunning'
+                                      -- either still running or 'NotStarted'
                                       -- (e.g.  this possible for warm or hot
                                       -- peers).  In such case we don't want to
                                       -- `setActivateTimes`
