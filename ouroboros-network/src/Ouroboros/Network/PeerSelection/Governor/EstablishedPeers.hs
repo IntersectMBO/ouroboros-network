@@ -511,6 +511,7 @@ aboveTargetOther actions
         availableToDemote = EstablishedPeers.toSet establishedPeers
                               Set.\\ activePeers
                               Set.\\ LocalRootPeers.keysSet localRootPeers
+                              Set.\\ bigLedgerPeers
                               Set.\\ inProgressDemoteWarm
                               Set.\\ inProgressPromoteWarm
                               Set.\\ inProgressDemoteToCold
