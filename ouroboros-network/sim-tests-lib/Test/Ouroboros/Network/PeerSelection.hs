@@ -44,6 +44,7 @@ import           System.Random (mkStdGen)
 
 import           Control.Exception (AssertionFailed (..), catch, evaluate)
 import           Control.Monad.Class.MonadSTM (STM, retry)
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer (..))
 
 import qualified Network.DNS as DNS (defaultResolvConf)
@@ -912,9 +913,9 @@ prop_governor_target_root_below env =
 -- We do not need separate above and below variants of this property since it
 -- is not possible to exceed the target.
 --
-prop_governor_target_established_public :: GovernorMockEnvironment -> Property
-prop_governor_target_established_public env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_established_public :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_established_public (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -968,10 +969,11 @@ prop_governor_target_established_public env =
 -- peers.
 --
 prop_governor_target_established_big_ledger_peers
-    :: GovernorMockEnvironment
+    :: MaxTime
+    -> GovernorMockEnvironment
     -> Property
-prop_governor_target_established_big_ledger_peers env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_established_big_ledger_peers (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1024,9 +1026,9 @@ prop_governor_target_established_big_ledger_peers env =
 -- number of public root peers becomes active, since there's no target for
 -- how many public root peers should be active.
 --
-prop_governor_target_active_public :: GovernorMockEnvironment -> Property
-prop_governor_target_active_public env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_active_public :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_active_public (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1185,23 +1187,23 @@ prop_governor_target_active_public env =
 -- frequency is relatively long, and the other progress bounds are relatively
 -- short.
 --
-prop_governor_target_known_below :: GovernorMockEnvironment -> Property
-prop_governor_target_known_below env =
+prop_governor_target_known_below :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_known_below maxTime env =
       counterexample "invalid subset"
-      (prop_governor_target_known_1_valid_subset      env)
+      (prop_governor_target_known_1_valid_subset      maxTime env)
  .&&. counterexample "opportunity not taken"
-      (prop_governor_target_known_2_opportunity_taken env)
+      (prop_governor_target_known_2_opportunity_taken maxTime env)
  .&&. counterexample "too chatty"
-      (prop_governor_target_known_3_not_too_chatty    env)
+      (prop_governor_target_known_3_not_too_chatty    maxTime env)
  .&&. counterexample "not used results"
-      (prop_governor_target_known_4_results_used      env)
+      (prop_governor_target_known_4_results_used      maxTime env)
  .&&. counterexample "shrinked below"
-      (prop_governor_target_known_5_no_shrink_below   env)
+      (prop_governor_target_known_5_no_shrink_below   maxTime env)
 
-prop_governor_target_known_big_ledger_peers_below :: GovernorMockEnvironment -> Property
-prop_governor_target_known_big_ledger_peers_below env =
+prop_governor_target_known_big_ledger_peers_below :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_known_big_ledger_peers_below maxTime env =
       counterexample "shrinked big ledger peers below"
-      (prop_governor_target_known_5_no_shrink_big_ledger_peers_below env)
+      (prop_governor_target_known_5_no_shrink_big_ledger_peers_below maxTime env)
 
 -- | The set of peers the governor knows about is a subset of the peers the
 -- environment has told the governor about.
@@ -1218,10 +1220,11 @@ prop_governor_target_known_big_ledger_peers_below env =
 -- * That the governor known peers is a subset of the accumulated environment
 --   known peers.
 --
-prop_governor_target_known_1_valid_subset :: GovernorMockEnvironment
+prop_governor_target_known_1_valid_subset :: MaxTime
+                                          -> GovernorMockEnvironment
                                           -> Property
-prop_governor_target_known_1_valid_subset env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_known_1_valid_subset (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1286,11 +1289,12 @@ prop_governor_target_known_1_valid_subset env =
 --
 -- * That the signal 6 remains True at all times.
 --
-prop_governor_target_known_2_opportunity_taken :: GovernorMockEnvironment
+prop_governor_target_known_2_opportunity_taken :: MaxTime
+                                               -> GovernorMockEnvironment
                                                -> Property
-prop_governor_target_known_2_opportunity_taken env =
+prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
 
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1415,10 +1419,11 @@ governorEventuallyTakesPeerShareOpportunities peerSharing =
 --
 -- Based on these signals we check:
 --
-prop_governor_target_known_3_not_too_chatty :: GovernorMockEnvironment
+prop_governor_target_known_3_not_too_chatty :: MaxTime
+                                            -> GovernorMockEnvironment
                                             -> Property
-prop_governor_target_known_3_not_too_chatty env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_known_3_not_too_chatty (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1624,9 +1629,9 @@ recentPeerShareActivity d =
 --
 -- * That the signal 4 above is always empty.
 --
-prop_governor_target_known_4_results_used :: GovernorMockEnvironment -> Property
-prop_governor_target_known_4_results_used env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_known_4_results_used :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_known_4_results_used (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1698,9 +1703,9 @@ prop_governor_target_known_4_results_used env =
 --
 -- * That the signal 4 above is always False.
 --
-prop_governor_target_known_5_no_shrink_below :: GovernorMockEnvironment -> Property
-prop_governor_target_known_5_no_shrink_below env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_known_5_no_shrink_below :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1762,9 +1767,9 @@ prop_governor_target_known_5_no_shrink_below env =
 -- | Like 'prop_governor_target_known_5_no_shrink_below' but for big ledger
 -- peers.
 --
-prop_governor_target_known_5_no_shrink_big_ledger_peers_below :: GovernorMockEnvironment -> Property
-prop_governor_target_known_5_no_shrink_big_ledger_peers_below env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_known_5_no_shrink_big_ledger_peers_below :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_known_5_no_shrink_big_ledger_peers_below (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1837,9 +1842,9 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below env =
 --
 -- * That the signal 5 above is always False.
 --
-prop_governor_target_known_above :: GovernorMockEnvironment -> Property
-prop_governor_target_known_above env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_known_above :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_known_above (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -1927,9 +1932,9 @@ prop_governor_target_known_above env =
 -- | Like 'prop_governor_target_known_above' but for big ledger peers.
 --
 prop_governor_target_known_big_ledger_peers_above
-    :: GovernorMockEnvironment -> Property
-prop_governor_target_known_big_ledger_peers_above env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+  :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_known_big_ledger_peers_above (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2017,9 +2022,9 @@ prop_governor_target_known_big_ledger_peers_above env =
 -- we label the cases where this happens, and then we can use a statistical
 -- test to assert that this happens in some fraction of test cases.
 --
-prop_governor_target_established_below :: GovernorMockEnvironment -> Property
-prop_governor_target_established_below env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_established_below :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_established_below (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2112,14 +2117,13 @@ prop_governor_target_established_below env =
                    <*> promotionOpportunities
                    <*> promotionOpportunitiesIgnoredTooLong)
 
-
 -- | A version of the `prop_governor_target_established_below` for big ledger
 -- peers.
 --
 prop_governor_target_established_big_ledger_peers_below
-    :: GovernorMockEnvironment -> Property
-prop_governor_target_established_big_ledger_peers_below env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+    :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2207,6 +2211,8 @@ prop_governor_target_established_big_ledger_peers_below env =
           ("\nSignal key: (target, known big ledger peers, established big ledger peers, recent failures, " ++
            "opportunities, ignored too long)") $
 
+        -- counterexample (unlines $ fmap show $ Signal.eventsToList events) $
+
         signalProperty 20 show
           (\(_,_,_,_,_,toolong) -> Set.null toolong)
           ((,,,,,) <$> govTargetsSig
@@ -2217,9 +2223,9 @@ prop_governor_target_established_big_ledger_peers_below env =
                    <*> promotionOpportunitiesIgnoredTooLong)
 
 
-prop_governor_target_active_below :: GovernorMockEnvironment -> Property
-prop_governor_target_active_below env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_active_below :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_active_below (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2334,9 +2340,9 @@ prop_governor_target_active_below env =
 -- | A variant of 'prop_governor_target_active_below' but for big ledger peers.
 --
 prop_governor_target_active_big_ledger_peers_below
-    :: GovernorMockEnvironment -> Property
-prop_governor_target_active_big_ledger_peers_below env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+  :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2422,9 +2428,9 @@ prop_governor_target_active_big_ledger_peers_below env =
                     <*> promotionOpportunitiesIgnoredTooLong)
 
 
-prop_governor_target_established_above :: GovernorMockEnvironment -> Property
-prop_governor_target_established_above env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_established_above :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_established_above (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2498,9 +2504,9 @@ prop_governor_target_established_above env =
 -- | Like 'prop_governor_target_established_above' but for big ledger peers.
 --
 prop_governor_target_established_big_ledger_peers_above
-    :: GovernorMockEnvironment -> Property
-prop_governor_target_established_big_ledger_peers_above env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+    :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_established_big_ledger_peers_above (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2563,9 +2569,9 @@ prop_governor_target_established_big_ledger_peers_above env =
                   <*> demotionOpportunitiesIgnoredTooLong)
 
 
-prop_governor_target_active_above :: GovernorMockEnvironment -> Property
-prop_governor_target_active_above env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_active_above :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_active_above (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2625,9 +2631,9 @@ prop_governor_target_active_above env =
 -- | Like 'prop_governor_target_active_above' but for big ledger peers.
 --
 prop_governor_target_active_big_ledger_peers_above
-    :: GovernorMockEnvironment -> Property
-prop_governor_target_active_big_ledger_peers_above env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+    :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_active_big_ledger_peers_above (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2678,9 +2684,9 @@ prop_governor_target_active_big_ledger_peers_above env =
 -- We do not need separate above and below variants of this property since it
 -- is not possible to exceed the target.
 --
-prop_governor_target_established_local :: GovernorMockEnvironment -> Property
-prop_governor_target_established_local env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_established_local :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_established_local (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2784,9 +2790,9 @@ prop_governor_target_established_local env =
 -- TODO: perhaps we do need a below property that we do not demote active peers
 -- causing us to undershoot the target for local root peers being active.
 --
-prop_governor_target_active_local_below :: GovernorMockEnvironment -> Property
-prop_governor_target_active_local_below env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_active_local_below :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_active_local_below (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -2876,9 +2882,9 @@ prop_governor_target_active_local_below env =
                    <*> promotionOpportunities
                    <*> promotionOpportunitiesIgnoredTooLong)
 
-prop_governor_target_active_local_above :: GovernorMockEnvironment -> Property
-prop_governor_target_active_local_above env =
-    let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_target_active_local_above :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_active_local_above (MaxTime maxTime) env =
+    let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
                $ env
@@ -3049,7 +3055,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
     transformPeerSelectionAction = fmap (fmap (\(x, y) -> (Map.map (\z -> (z, IsNotLedgerPeer)) x, y)))
 
 prop_issue_3550 :: Property
-prop_issue_3550 = prop_governor_target_established_below $
+prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
   GovernorMockEnvironment {
       peerGraph = PeerGraph
         [ (PeerAddr 4,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])}),
@@ -3199,9 +3205,9 @@ prop_issue_3233 = prop_governor_nolivelock $
 
 -- | Verify that re-promote delay is applied with a fuzz.
 --
-prop_governor_repromote_delay :: GovernorMockEnvironment -> Property
-prop_governor_repromote_delay env =
-    let evs = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
+prop_governor_repromote_delay :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_repromote_delay (MaxTime maxTime) env =
+    let evs = Signal.eventsFromListUpToTime maxTime
             . selectPeerSelectionTraceEvents
             . runGovernorInMockEnvironment
             $ env
@@ -3236,6 +3242,23 @@ prop_governor_repromote_delay env =
 --
 -- Utils
 --
+
+
+-- | Max simulation time.  We start with 10hrs, and shrink it to smaller values
+-- if needed.
+--
+newtype MaxTime = MaxTime { getTime :: Time }
+  deriving (Show)
+
+defaultMaxTime :: MaxTime
+defaultMaxTime = MaxTime (Time (10 * 3600))
+
+instance Arbitrary MaxTime where
+    arbitrary = pure defaultMaxTime
+    shrink (MaxTime (Time t)) =
+      [ MaxTime (Time (microsecondsAsIntToDiffTime t'))
+      | t' <- shrink  (diffTimeToMicrosecondsAsInt t)
+      ]
 
 
 -- | filter big ledger peers
