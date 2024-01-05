@@ -4,7 +4,14 @@
 
 ### Breaking changes
 
+* Renamed `ReconnectDelay` to `RepromoteDelay` - the dalay is used after
+  demotion to `cold` as well as `warm` state.  A `ReconnectDelay` type alias is
+  still provided but deprecated.
+
 ### Non-breaking changes
+
+* The internal `Guarded` type changed.  It is provided with pattern synonyms
+  which hide both `Min` and `FirstToFinish`.
 
 ## 0.10.2.2 -- 2023-12-15
 

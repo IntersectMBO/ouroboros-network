@@ -4,7 +4,6 @@
 module Ouroboros.Network.PeerSelection.Governor.RootPeers (belowTarget) where
 
 import qualified Data.Map.Strict as Map
-import           Data.Semigroup (Min (..))
 import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (Job (..))
@@ -59,7 +58,7 @@ belowTarget actions
     -- next retry time.
   | maxExtraRootPeers > 0
   , not inProgressPublicRootsReq
-  = GuardedSkip (Just (Min publicRootRetryTime))
+  = GuardedSkip (Just publicRootRetryTime)
 
   | otherwise
   = GuardedSkip Nothing

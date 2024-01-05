@@ -10,7 +10,6 @@ module Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Semigroup (Min (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -141,7 +140,7 @@ belowTargetLocal actions
              Set.\\ localEstablishedPeers
              Set.\\ KnownPeers.availableToConnect knownPeers
   , not (Set.null potentialToPromote)
-  = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeers))
+  = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
@@ -225,7 +224,7 @@ belowTargetOther actions
     -- If we could connect except that there are no peers currently available
     -- then we return the next wakeup time (if any)
   | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
-  = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeers))
+  = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
@@ -305,7 +304,7 @@ belowTargetBigLedgerPeers actions
     -- then we return the next wakeup time (if any)
   | numEstablishedPeers + numConnectInProgress
       < targetNumberOfEstablishedBigLedgerPeers
-  = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeers))
+  = GuardedSkip (KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
@@ -512,6 +511,7 @@ aboveTargetOther actions
         availableToDemote = EstablishedPeers.toSet establishedPeers
                               Set.\\ activePeers
                               Set.\\ LocalRootPeers.keysSet localRootPeers
+                              Set.\\ bigLedgerPeers
                               Set.\\ inProgressDemoteWarm
                               Set.\\ inProgressPromoteWarm
                               Set.\\ inProgressDemoteToCold

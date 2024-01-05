@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.Testing.Data.Signal
@@ -83,7 +84,7 @@ data TS = TS !Time !Int
 -- A single event or entry in a time series, annotated with its timestamp.
 --
 data E a = E {-# UNPACK #-} !TS a
-  deriving (Show, Functor)
+  deriving (Show, Functor, Foldable)
 
 
 --
@@ -96,7 +97,7 @@ data E a = E {-# UNPACK #-} !TS a
 -- simulation.
 --
 newtype Events a = Events [E a]
-  deriving (Show, Functor)
+  deriving (Show, Functor, Foldable)
 
 -- | Construct 'Events' from a time series.
 --

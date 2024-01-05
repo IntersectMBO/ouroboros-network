@@ -25,7 +25,7 @@ module Test.Ouroboros.Network.Diffusion.Node
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)
     -- * configuration constants
-  , config_RECONNECT_DELAY
+  , config_REPROMOTE_DELAY
   ) where
 
 import           Control.Applicative (Alternative)
@@ -73,7 +73,7 @@ import           Ouroboros.Network.BlockFetch
 import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import qualified Ouroboros.Network.Diffusion as Diff
 import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
-import           Ouroboros.Network.ExitPolicy (ReconnectDelay (..))
+import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import           Ouroboros.Network.PeerSelection.Governor
                      (PeerSelectionTargets (..))
@@ -268,7 +268,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
               , Diff.P2P.daPeerMetrics            = peerMetrics
                 -- fetch mode is not used (no block-fetch mini-protocol)
               , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
-              , Diff.P2P.daReturnPolicy           = \_ -> config_RECONNECT_DELAY
+              , Diff.P2P.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
               , Diff.P2P.daPeerSharingRegistry    = peerSharingRegistry
               }
 
@@ -431,5 +431,5 @@ ntnToIPv6 (TestAddress _)                                  = Nothing
 -- Constants
 --
 
-config_RECONNECT_DELAY :: ReconnectDelay
-config_RECONNECT_DELAY = 10
+config_REPROMOTE_DELAY :: RepromoteDelay
+config_REPROMOTE_DELAY = 10

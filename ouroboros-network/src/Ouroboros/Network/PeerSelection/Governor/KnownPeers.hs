@@ -11,7 +11,6 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
 
 import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
-import           Data.Semigroup (Min (..))
 import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (Job (..))
@@ -117,7 +116,7 @@ belowTarget actions
   | numKnownPeers < targetNumberOfKnownPeers
   , numPeerShareReqsPossible > 0
   , Set.null availableForPeerShare
-  = GuardedSkip (Min <$> EstablishedPeers.minPeerShareTime establishedPeers)
+  = GuardedSkip (EstablishedPeers.minPeerShareTime establishedPeers)
 
   | otherwise
   = GuardedSkip Nothing

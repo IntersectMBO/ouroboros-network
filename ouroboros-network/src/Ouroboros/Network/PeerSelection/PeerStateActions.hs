@@ -832,9 +832,9 @@ withPeerStateActions PeerStateActionsArguments {
     -- or still executing.
     --
     monitorPeerConnection :: PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
-                          -> STM m (PeerStatus, Maybe ReconnectDelay)
+                          -> STM m (PeerStatus, Maybe RepromoteDelay)
     monitorPeerConnection PeerConnectionHandle { pchPeerStatus, pchAppHandles } =
-        (,) <$> readTVar pchPeerStatus
+         p  <$> readTVar pchPeerStatus
             <*> (g <$> traverse f pchAppHandles)
         `orElse` throwSTM MonitorPeerConnectionBlocked
       where
@@ -844,14 +844,14 @@ withPeerStateActions PeerStateActionsArguments {
              -- outbound governor
              -- `Ouroboros.Network.PeerSelection.Governor.Monitor.connections`
              -- will not be able to get the 'PeerStatus' of all peers.
-        f =  traverse (((\stm -> (Just <$> stm) `orElse` pure Nothing)))
+        f =  traverse (\stm -> (Just <$> stm) `orElse` pure Nothing)
          <=< readTVar . ahMiniProtocolResults
 
         g :: TemperatureBundle (Map MiniProtocolNum (Maybe (HasReturned a)))
-          -> Maybe ReconnectDelay
+          -> Maybe RepromoteDelay
         g = foldMap (foldMap h)
 
-        h :: Maybe (HasReturned a) -> Maybe ReconnectDelay
+        h :: Maybe (HasReturned a) -> Maybe RepromoteDelay
         h (Just (Returned a)) = Just $ epReturnDelay spsExitPolicy a
         -- Note: we do 'RethrowPolicy' in 'ConnectionHandler' (see
         -- 'makeConnectionHandler').
@@ -861,6 +861,14 @@ withPeerStateActions PeerStateActionsArguments {
                                     Right b -> Just $ epReturnDelay spsExitPolicy b
         h (Just NotStarted)     = Nothing
         h Nothing               = Nothing
+
+        -- the delay in the `PeerCooling` state is ignored, let's make it
+        -- explicit.
+        p :: PeerStatus
+          -> Maybe RepromoteDelay
+          -> (PeerStatus, Maybe RepromoteDelay)
+        p st@PeerCooling _ = (st, Nothing)
+        p st delay         = (st, delay)
 
 
     -- Take a warm peer and promote it to a hot one.

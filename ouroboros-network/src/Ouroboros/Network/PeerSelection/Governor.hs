@@ -35,7 +35,6 @@ module Ouroboros.Network.PeerSelection.Governor
 
 import           Data.Cache
 import           Data.Foldable (traverse_)
-import           Data.Semigroup (Min (..))
 import           Data.Void (Void)
 
 import           Control.Applicative (Alternative ((<|>)))
@@ -549,14 +548,13 @@ peerSelectionGovernorLoop tracer
           traceWith debugTracer (TraceGovernorState blockedAt Nothing st)
           atomically decisionAction
 
-        Guarded (Just (Min wakeupAt)) decisionAction -> do
+        Guarded (Just wakeupAt) decisionAction -> do
           let wakeupIn = diffTime wakeupAt blockedAt
           traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
           (readTimeout, cancelTimeout) <- registerDelayCancellable wakeupIn
-          let wakeup    = readTimeout >>= (\case TimeoutPending -> retry
-                                                 _              -> return ())
-                                      >>  pure (wakeupDecision st)
-          timedDecision     <- atomically (decisionAction <|> wakeup)
+          let wakeup = readTimeout >>= (\case TimeoutPending -> retry
+                                              _              -> pure (wakeupDecision st))
+          timedDecision <- atomically (decisionAction <|> wakeup)
           cancelTimeout
           return timedDecision
 

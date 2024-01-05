@@ -8,6 +8,7 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE ViewPatterns              #-}
 
 module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
@@ -122,7 +123,7 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        -- ^ Amount of time the overall batches of peer sharing requests are
        -- allowed to take
 
-       -- | Reconnection delay, passed from `ExitPolicy`.
+       -- | Re-promote delay, passed from `ExitPolicy`.
        --
        policyErrorDelay                 :: !DiffTime
      }
@@ -302,7 +303,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 data PeerStateActions peeraddr peerconn m = PeerStateActions {
     -- | Monitor peer state.  Must be non-blocking.
     --
-    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, Maybe ReconnectDelay),
+    monitorPeerConnection    :: peerconn -> STM m (PeerStatus, Maybe RepromoteDelay),
 
     -- | Establish new connection: cold to warm.
     --
@@ -701,34 +702,45 @@ pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
 -- is an 'STM' monad, to drive its progress.
 --
 data Guarded m a =
-    -- | 'GuardedSkip' is used to instruct that there is no action to be made
-    -- by the governor.
+    -- | `GuardedSkip'` is used to instruct that there is no action to be made
+    -- by the governor. See 'GuardedSkip'.
     --
-    -- Let us note that the combined value which is computed by
-    -- @guardedDecisions@ term in
-    -- 'Ouroboros.Network.PeerSelection.Governor.peerSelectionGovernorLoop' will
-    -- never return it: this is because there are monitoring decisions which
-    -- never return this constructor, e.g.  'Monitor.targetPeers',
-    -- 'Monitor.jobs', 'Monitor.connections', and thus the governor has always
-    -- something to do.
-    --
-    GuardedSkip !(Maybe (Min Time))
+    GuardedSkip' !(Maybe (Min Time))
 
-    -- | 'Guarded' is used to provide an action through 'FirstToFinish'
-    -- synchronisation, possibly with a timeout, to
-    -- the governor main loop.
+    -- | `Guarded'` is used to provide an action through 'FirstToFinish'
+    -- synchronisation, possibly with a timeout, to the governor main loop. See
+    -- 'Guarded'.
     --
-  | Guarded'   !(Maybe (Min Time)) !(FirstToFinish m a)
+  | Guarded'     !(Maybe (Min Time)) !(FirstToFinish m a)
 
 
--- | 'Guarded' constructor which provides an action, possibly with a timeout,
--- to the governor main loop.  It hides the use of 'FirstToFinish'
--- synchronisation.
+-- | 'Guarded' is used to provide an action possibly with a timeout, to the
+-- governor main loop.
 --
-pattern Guarded :: Maybe (Min Time) -> m a -> Guarded m a
-pattern Guarded a b <- Guarded' !a (FirstToFinish !b)
+-- 'Guarded' is a pattern which which  hides the use of 'FirstToFinish' and
+-- 'Min' newtype wrappers.
+--
+pattern Guarded :: Maybe Time -> m a -> Guarded m a
+pattern Guarded a b <- Guarded' !(fmap getMin -> a) (FirstToFinish !b)
   where
-    Guarded !a !b = Guarded' a (FirstToFinish b)
+    Guarded !a !b = Guarded' (Min <$> a) (FirstToFinish b)
+
+-- | 'GuardedSkip' is used to instruct that there is no action to be made
+-- by the governor. See 'GuardedSkip'.
+--
+-- 'GuardedSkip' is a pattern which hides the usage of `Min` newtype wrapper in
+-- `GuardedSkip'` constructor (private).
+--
+-- Let us note that the combined value which is computed by @guardedDecisions@
+-- term in 'Ouroboros.Network.PeerSelection.Governor.peerSelectionGovernorLoop'
+-- will never return it: this is because there are monitoring decisions which
+-- never return this constructor, e.g.  'Monitor.targetPeers', 'Monitor.jobs',
+-- 'Monitor.connections', and thus the governor has always something to do.
+--
+pattern GuardedSkip :: Maybe Time -> Guarded m a
+pattern GuardedSkip a <- GuardedSkip' !(fmap getMin -> a)
+  where
+    GuardedSkip !a = GuardedSkip' (Min <$> a)
 
 {-# COMPLETE GuardedSkip, Guarded #-}
 
@@ -744,10 +756,10 @@ pattern Guarded a b <- Guarded' !a (FirstToFinish !b)
 -- Ref. [absorbing element](https://en.wikipedia.org/wiki/Absorbing_element)
 --
 instance Alternative m => Semigroup (Guarded m a) where
-  Guarded'    ta a <> Guarded'    tb b = Guarded'    (ta <> tb) (a <> b)
-  Guarded'    ta a <> GuardedSkip tb   = Guarded'    (ta <> tb)  a
-  GuardedSkip ta   <> Guarded'    tb b = Guarded'    (ta <> tb)  b
-  GuardedSkip ta   <> GuardedSkip tb   = GuardedSkip (ta <> tb)
+  Guarded'     ta a <> Guarded'     tb b = Guarded'     (ta <> tb) (a <> b)
+  Guarded'     ta a <> GuardedSkip' tb   = Guarded'     (ta <> tb)  a
+  GuardedSkip' ta   <> Guarded'     tb b = Guarded'     (ta <> tb)  b
+  GuardedSkip' ta   <> GuardedSkip' tb   = GuardedSkip' (ta <> tb)
 
 
 data Decision m peeraddr peerconn = Decision {
@@ -927,10 +939,10 @@ data TracePeerSelection peeraddr =
      -- Async Demotions
      --
 
-     | TraceDemoteAsynchronous      (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
-     | TraceDemoteLocalAsynchronous (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
+     | TraceDemoteAsynchronous      (Map peeraddr (PeerStatus, Maybe RepromoteDelay))
+     | TraceDemoteLocalAsynchronous (Map peeraddr (PeerStatus, Maybe RepromoteDelay))
      | TraceDemoteBigLedgerPeersAsynchronous
-                                    (Map peeraddr (PeerStatus, Maybe ReconnectDelay))
+                                    (Map peeraddr (PeerStatus, Maybe RepromoteDelay))
 
      | TraceGovernorWakeup
 
