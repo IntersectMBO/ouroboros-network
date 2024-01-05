@@ -5,7 +5,7 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Examples where
 import           Ouroboros.Network.Protocol.LocalStateQuery.Client
 import           Ouroboros.Network.Protocol.LocalStateQuery.Server
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (AcquireFailure (..))
+                     (AcquireFailure (..), Target)
 
 
 --
@@ -20,39 +20,40 @@ import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 localStateQueryClient
   :: forall block point query result m.
      Applicative m
-  => [(Maybe point, query result)]
+  => [(Target point, query result)]
   -> LocalStateQueryClient block point query m
-                           [(Maybe point, Either AcquireFailure result)]
+                           [(Target point, Either AcquireFailure result)]
 localStateQueryClient = LocalStateQueryClient . pure . goIdle []
   where
     goIdle
-      :: [(Maybe point, Either AcquireFailure result)]  -- ^ Accumulator
-      -> [(Maybe point, query result)]                  -- ^ Remainder
+      :: [(Target point, Either AcquireFailure result)]  -- ^ Accumulator
+      -> [(Target point, query result)]                  -- ^ Remainder
       -> ClientStIdle block point query m
-                      [(Maybe point, Either AcquireFailure result)]
-    goIdle acc []              = SendMsgDone $ reverse acc
-    goIdle acc ((pt, q):ptqs') = SendMsgAcquire pt $ goAcquiring acc pt q ptqs'
+                      [(Target point, Either AcquireFailure result)]
+    goIdle acc []               = SendMsgDone $ reverse acc
+    goIdle acc ((tgt, q):ptqs') = SendMsgAcquire tgt $
+      goAcquiring acc tgt q ptqs'
 
     goAcquiring
-      :: [(Maybe point, Either AcquireFailure result)]  -- ^ Accumulator
-      -> Maybe point
+      :: [(Target point, Either AcquireFailure result)]  -- ^ Accumulator
+      -> Target point
       -> query result
-      -> [(Maybe point, query result)]                  -- ^ Remainder
+      -> [(Target point, query result)]                  -- ^ Remainder
       -> ClientStAcquiring block point query m
-                           [(Maybe point, Either AcquireFailure result)]
+                           [(Target point, Either AcquireFailure result)]
     goAcquiring acc pt q ptqss' = ClientStAcquiring {
         recvMsgAcquired = pure $ goQuery q $ \r -> goAcquired ((pt, Right r):acc) ptqss'
       , recvMsgFailure  = \failure -> pure $ goIdle ((pt, Left failure):acc) ptqss'
       }
 
     goAcquired
-      :: [(Maybe point, Either AcquireFailure result)]
-      -> [(Maybe point, query result)]   -- ^ Remainder
+      :: [(Target point, Either AcquireFailure result)]
+      -> [(Target point, query result)]   -- ^ Remainder
       -> ClientStAcquired block point query m
-                          [(Maybe point, Either AcquireFailure result)]
+                          [(Target point, Either AcquireFailure result)]
     goAcquired acc [] = SendMsgRelease $ pure $ SendMsgDone $ reverse acc
-    goAcquired acc ((pt, qs):ptqss') = SendMsgReAcquire pt $
-      goAcquiring acc pt qs ptqss'
+    goAcquired acc ((tgt, qs):ptqss') = SendMsgReAcquire tgt $
+      goAcquiring acc tgt qs ptqss'
 
     goQuery
       :: forall a.
@@ -71,7 +72,7 @@ localStateQueryClient = LocalStateQueryClient . pure . goIdle []
 --
 localStateQueryServer
   :: forall block point query m state. Applicative m
-  => (Maybe point -> Either AcquireFailure state)
+  => (Target point -> Either AcquireFailure state)
   -> (forall result. state -> query result -> result)
   -> LocalStateQueryServer block point query m ()
 localStateQueryServer acquire answer =
@@ -83,8 +84,8 @@ localStateQueryServer acquire answer =
       , recvMsgDone    = pure ()
       }
 
-    goAcquiring :: Maybe point -> m (ServerStAcquiring block point query m ())
-    goAcquiring pt = pure $ case acquire pt of
+    goAcquiring :: Target point -> m (ServerStAcquiring block point query m ())
+    goAcquiring tgt = pure $ case acquire tgt of
       Left failure -> SendMsgFailure failure goIdle
       Right state  -> SendMsgAcquired $ goAcquired state
 

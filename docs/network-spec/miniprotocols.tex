@@ -1282,25 +1282,36 @@ ledger state.
 \end{figure}
 
 \paragraph{Protocol messages}
-% TODO description of each message
+
+See Figure~\ref{fig:lsq-messages}, in which $AcquireFailure$ is either
+$AcquireFailurePointTooOld$ or $AcquireFailurePointNotOnChain$, and $Target$ is
+either $ImmutableTip$, $VolatileTip$, or $SpecificPoint pt$.
+
+The primary motivation for being able to acquire the $ImmutableTip$ is that
+it's the most recent ledger state that the node will never abandon: the node
+will never rollback to prefix of that immutable chain (unless the on-disk
+ChainDB is corrupted/manipulated). Therefore, answers to queries against the
+$ImmutableTip$ are necessarily not subject rollback.
+
+% TODO natural language description of each message
+
 \begin{figure}[h]
   \begin{tabular}{|l|l|l|l|}
     \hline
     \multicolumn{4}{|c|}{Transition table} \\ \hline
     from state          & message             & parameters          & to state \\ \hline\hline
-    \StIdle             & \MsgAcquire         & $Maybe\ point$      & \StAcquiring \\\hline
+    \StIdle             & \MsgAcquire         & $Target\ point$     & \StAcquiring \\\hline
     \StAcquiring        & \MsgFailure         & $AcquireFailure$    & \StIdle      \\\hline
     \StAcquiring        & \MsgAcquired        &                     & \StAcquired  \\\hline
     \StAcquired         & \MsgQuery           & $query$             & \StQuerying  \\\hline
     \StQuerying         & \MsgResult          & $result$            & \StAcquired  \\\hline
-    \StAcquired         & \MsgReAcquire       & $Maybe\ point$      & \StAcquiring \\\hline
+    \StAcquired         & \MsgReAcquire       & $Target\ point$     & \StAcquiring \\\hline
     \StAcquired         & \MsgRelease         &                     & \StIdle      \\\hline
     \StIdle             & \MsgDone            &                     & \StDone        \\\hline
   \end{tabular}
   \caption{Local State Query mini-protocol messages.}
+  \label{fig:lsq-messages}
 \end{figure}
-where $AcquireFailure$ is either $AcquireFailurePointTooOld$ or
-$AcquireFailurePointNotOnChain$.
 
 \subsection{CDDL encoding specification}
 \lstinputlisting[style=cddl]{../../ouroboros-network-protocols/test-cddl/specs/local-state-query.cddl}

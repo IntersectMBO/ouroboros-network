@@ -20,8 +20,8 @@ direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
       :: ClientStIdle block point query m a
       -> ServerStIdle block point query m b
       -> m (a, b)
-    directIdle (SendMsgAcquire pt client') ServerStIdle{recvMsgAcquire} = do
-      server' <- recvMsgAcquire pt
+    directIdle (SendMsgAcquire tgt client') ServerStIdle{recvMsgAcquire} = do
+      server' <- recvMsgAcquire tgt
       directAcquiring client' server'
     directIdle (SendMsgDone a) ServerStIdle{recvMsgDone} = do
       b <- recvMsgDone
@@ -45,8 +45,8 @@ direct (LocalStateQueryClient mclient) (LocalStateQueryServer mserver) = do
     directAcquired (SendMsgQuery query client') ServerStAcquired{recvMsgQuery} = do
       server' <- recvMsgQuery query
       directQuerying client' server'
-    directAcquired (SendMsgReAcquire pt client') ServerStAcquired{recvMsgReAcquire} = do
-      server' <- recvMsgReAcquire pt
+    directAcquired (SendMsgReAcquire tgt client') ServerStAcquired{recvMsgReAcquire} = do
+      server' <- recvMsgReAcquire tgt
       directAcquiring client' server'
     directAcquired (SendMsgRelease client) ServerStAcquired{recvMsgRelease} = do
       client' <- client

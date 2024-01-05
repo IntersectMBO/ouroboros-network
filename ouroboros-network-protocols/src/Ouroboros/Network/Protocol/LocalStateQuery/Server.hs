@@ -35,7 +35,7 @@ newtype LocalStateQueryServer block point (query :: Type -> Type) m a = LocalSta
 -- It must be prepared to handle either.
 --
 data ServerStIdle block point query m a = ServerStIdle {
-       recvMsgAcquire :: Maybe point
+       recvMsgAcquire :: Target point
                       -> m (ServerStAcquiring block point query m a),
 
        recvMsgDone    :: m a
@@ -69,7 +69,7 @@ data ServerStAcquired block point query m a = ServerStAcquired {
                           query result
                        -> m (ServerStQuerying  block point query m a result),
 
-      recvMsgReAcquire :: Maybe point
+      recvMsgReAcquire :: Target point
                        -> m (ServerStAcquiring block point query m a),
 
       recvMsgRelease   :: m (ServerStIdle      block point query m a)
@@ -100,9 +100,9 @@ localStateQueryServerPeer (LocalStateQueryServer handler) =
       -> Peer (LocalStateQuery block point query) AsServer StIdle m a
     handleStIdle ServerStIdle{recvMsgAcquire, recvMsgDone} =
       Await (ClientAgency TokIdle) $ \req -> case req of
-        MsgAcquire pt -> Effect $
-          handleStAcquiring <$> recvMsgAcquire pt
-        MsgDone       -> Effect $
+        MsgAcquire tgt -> Effect $
+          handleStAcquiring <$> recvMsgAcquire tgt
+        MsgDone        -> Effect $
           Done TokDone <$> recvMsgDone
 
     handleStAcquiring
@@ -123,9 +123,9 @@ localStateQueryServerPeer (LocalStateQueryServer handler) =
       -> Peer (LocalStateQuery block point query) AsServer StAcquired m a
     handleStAcquired ServerStAcquired{recvMsgQuery, recvMsgReAcquire, recvMsgRelease} =
       Await (ClientAgency TokAcquired) $ \req -> case req of
-        MsgQuery query  -> Effect $ handleStQuerying query <$> recvMsgQuery query
-        MsgReAcquire pt -> Effect $ handleStAcquiring      <$> recvMsgReAcquire pt
-        MsgRelease      -> Effect $ handleStIdle           <$> recvMsgRelease
+        MsgQuery query   -> Effect $ handleStQuerying query <$> recvMsgQuery query
+        MsgReAcquire tgt -> Effect $ handleStAcquiring      <$> recvMsgReAcquire tgt
+        MsgRelease       -> Effect $ handleStIdle           <$> recvMsgRelease
 
     handleStQuerying
       :: query result

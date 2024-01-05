@@ -1,11 +1,12 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Network.Protocol.LocalStateQuery.Test
@@ -29,6 +30,7 @@ import           Control.Tracer (nullTracer)
 
 import           Codec.Serialise (DeserialiseFailure)
 import qualified Codec.Serialise as Serialise (decode, encode)
+import qualified Codec.Serialise.Class as SerialiseClass
 
 import           Network.TypedProtocol.Codec hiding (prop_codec)
 import           Network.TypedProtocol.Proofs
@@ -97,51 +99,58 @@ instance ( Arbitrary (query result)
     arbitrary = QueryWithResult <$> arbitrary <*> arbitrary
 
 data Query result where
-  QueryPoint :: Query (Maybe (Point Block))
+  -- | An arbitrary query that happens to be trivial to implement in this test
+  GetTheLedgerState :: Query MockLedgerState
 
 deriving instance Show (Query result)
 instance ShowProxy Query where
 
+newtype MockLedgerState = MockLedgerState (Target (Point Block))
+  deriving (Arbitrary, Eq, Show, SerialiseClass.Serialise)
+
 -- | Information to test an example server and client.
 data Setup = Setup
-  { clientInput   :: [(Maybe (Point Block), Query (Maybe (Point Block)))]
+  { clientInput   :: [(Target (Point Block), Query MockLedgerState)]
     -- ^ Input for 'localStateQueryClient'
-  , serverAcquire :: Maybe (Point Block) -> Either AcquireFailure (Maybe (Point Block))
+  , serverAcquire :: Target (Point Block) -> Either AcquireFailure MockLedgerState
     -- ^ First input parameter for 'localStateQueryServer'
-  , serverAnswer  :: forall result. Maybe (Point Block) -> Query result -> result
+  , serverAnswer  :: forall result. MockLedgerState -> Query result -> result
     -- ^ Second input parameter for 'localStateQueryServer'
-  , expected      :: [(Maybe (Point Block), Either AcquireFailure (Maybe (Point Block)))]
+  , expected      :: [(Target (Point Block), Either AcquireFailure MockLedgerState)]
     -- ^ Expected result for the 'localStateQueryClient'.
   }
 
-mkSetup
-  :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
-     -- ^ For each point, the given state queries will be executed. In case of
-     -- the second field is an 'AcquireFailure', the server will fail with
-     -- that failure.
-     --
-     -- This is the randomly generated input for the 'Setup'.
-  -> Setup
+-- | This map determines the input to the server and client defined in
+-- "Ouroboros.Network.Protocol.LocalStateQuery.Examples"
+--
+-- For each entry, in order, the client will attempt to acquire the key, the
+-- server will respond either with the given @'Just' 'AcquireFailure'@ or else
+-- in the affirmative, in which case the client will issue the given query.
+--
+-- This is the randomly generated input for the 'Setup'.
+type SetupData = Map (Target (Point Block)) (Maybe AcquireFailure, Query MockLedgerState)
+
+mkSetup :: SetupData -> Setup
 mkSetup input = Setup {
       clientInput   = [(pt, q) | (pt, (_, q)) <- Map.toList input]
-    , serverAcquire = \pt -> case Map.lookup pt input of
-        Just (Just failure, _qs) -> Left failure
-        Just (Nothing,      _qs) -> Right pt
-        Nothing                  -> error $
-          "a point not in the input was tried to be acquired: " <> show pt
+    , serverAcquire = \tgt -> case Map.lookup tgt input of
+        Just (Just failure, _q) -> Left failure
+        Just (Nothing,      _q) -> Right (MockLedgerState tgt)
+        Nothing                 -> error $
+          "a point not in the input was tried to be acquired: " <> show tgt
     , serverAnswer  = answer
     , expected      =
-        [ (pt, res)
-        | (pt, (mbFailure, q)) <- Map.toList input
+        [ (tgt, res)
+        | (tgt, (mbFailure, q)) <- Map.toList input
         , let res = case mbFailure of
-                Nothing      -> Right $ answer pt q
+                Nothing      -> Right $ answer (MockLedgerState tgt) q
                 Just failure -> Left failure
         ]
     }
   where
-    answer :: Maybe (Point Block) -> Query result -> result
-    answer pt q = case q of
-      QueryPoint -> pt
+    answer :: MockLedgerState -> Query result -> result
+    answer st q = case q of
+      GetTheLedgerState -> st
 
 
 --
@@ -151,7 +160,7 @@ mkSetup input = Setup {
 -- | Run a simple local state query client and server, directly on the wrappers,
 -- without going via the 'Peer'.
 --
-prop_direct :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_direct :: SetupData
             -> Property
 prop_direct input =
     runSimOrThrow
@@ -171,7 +180,7 @@ prop_direct input =
 -- | Run a simple local state query client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
-prop_connect :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_connect :: SetupData
              -> Property
 prop_connect input =
     case runSimOrThrow
@@ -197,7 +206,7 @@ prop_channel :: ( MonadAsync m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)
-             -> Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+             -> SetupData
              -> m Property
 prop_channel createChannels input =
 
@@ -216,7 +225,7 @@ prop_channel createChannels input =
 
 -- | Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_channel_ST :: SetupData
                 -> Property
 prop_channel_ST input =
     runSimOrThrow
@@ -224,14 +233,14 @@ prop_channel_ST input =
 
 -- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_channel_IO :: SetupData
                 -> Property
 prop_channel_IO input =
     ioProperty (prop_channel createConnectedChannels input)
 
 -- | Run 'prop_channel' in the IO monad using local pipes.
 --
-prop_pipe_IO :: Map (Maybe (Point Block)) (Maybe AcquireFailure, Query (Maybe (Point Block)))
+prop_pipe_IO :: SetupData
              -> Property
 prop_pipe_IO input =
     ioProperty (prop_channel createPipeConnectedChannels input)
@@ -241,14 +250,23 @@ prop_pipe_IO input =
 -- Codec properties
 --
 
+instance Arbitrary point => Arbitrary (Target point) where
+  arbitrary = oneof
+    [ pure ImmutableTip
+    , SpecificPoint <$> arbitrary
+    , pure VolatileTip
+    ]
+
+instance SerialiseClass.Serialise point => SerialiseClass.Serialise (Target point)
+
 instance Arbitrary AcquireFailure where
   arbitrary = elements
     [ AcquireFailurePointTooOld
     , AcquireFailurePointNotOnChain
     ]
 
-instance Arbitrary (Query (Maybe (Point Block))) where
-  arbitrary = pure QueryPoint
+instance Arbitrary (Query MockLedgerState) where
+  arbitrary = pure GetTheLedgerState
 
 -- | A newtype wrapper which captures type of response generated for all
 -- queries.
@@ -266,32 +284,9 @@ instance ( Arbitrary point
          , Arbitrary result
          )
       => Arbitrary (AnyMessageAndAgencyWithResult block point query result) where
-      arbitrary = oneof
-        [ AnyMessageAndAgencyWithResult . getAnyMessageAndAgencyV7 <$> (arbitrary :: Gen (AnyMessageAndAgencyV7 block point query result))
-
-        , pure $ AnyMessageAndAgencyWithResult $ AnyMessageAndAgency (ClientAgency TokIdle)
-            (MsgAcquire Nothing)
-
-        , pure $ AnyMessageAndAgencyWithResult $ AnyMessageAndAgency (ClientAgency TokAcquired)
-            (MsgReAcquire Nothing)
-        ]
-
--- Newtype wrapper which generates only valid data for 'NodeToClientV7' protocol.
---
-newtype AnyMessageAndAgencyV7 block point query result = AnyMessageAndAgencyV7 {
-    getAnyMessageAndAgencyV7
-      :: AnyMessageAndAgency (LocalStateQuery block point query)
-  }
-  deriving Show
-
-instance ( Arbitrary point
-         , Arbitrary (query result)
-         , Arbitrary result
-         )
-      => Arbitrary (AnyMessageAndAgencyV7 block point query result) where
-  arbitrary = AnyMessageAndAgencyV7 <$> oneof
+  arbitrary = AnyMessageAndAgencyWithResult <$> oneof
     [ AnyMessageAndAgency (ClientAgency TokIdle) <$>
-        (MsgAcquire . Just <$> arbitrary)
+        (MsgAcquire <$> arbitrary)
 
     , AnyMessageAndAgency (ServerAgency TokAcquiring) <$>
         pure MsgAcquired
@@ -311,20 +306,19 @@ instance ( Arbitrary point
         pure MsgRelease
 
     , AnyMessageAndAgency (ClientAgency TokAcquired) <$>
-        (MsgReAcquire . Just <$> arbitrary)
+        (MsgReAcquire <$> arbitrary)
 
     , AnyMessageAndAgency (ClientAgency TokIdle) <$>
         pure MsgDone
     ]
 
-
 instance ShowQuery Query where
-  showResult QueryPoint = show
+  showResult GetTheLedgerState = show
 
 instance  Eq (AnyMessage (LocalStateQuery Block (Point Block) Query)) where
 
-  (==) (AnyMessage (MsgAcquire pt))
-       (AnyMessage (MsgAcquire pt')) = pt == pt'
+  (==) (AnyMessage (MsgAcquire tgt))
+       (AnyMessage (MsgAcquire tgt')) = tgt == tgt'
 
   (==) (AnyMessage MsgAcquired)
        (AnyMessage MsgAcquired) = True
@@ -335,18 +329,18 @@ instance  Eq (AnyMessage (LocalStateQuery Block (Point Block) Query)) where
   (==) (AnyMessage (MsgQuery query))
        (AnyMessage (MsgQuery query')) =
          case (query, query') of
-           (QueryPoint, QueryPoint) -> True
+           (GetTheLedgerState, GetTheLedgerState) -> True
 
   (==) (AnyMessage (MsgResult query  result))
        (AnyMessage (MsgResult query' result')) =
          case (query, query') of
-           (QueryPoint, QueryPoint) -> result == result'
+           (GetTheLedgerState, GetTheLedgerState) -> result == result'
 
   (==) (AnyMessage MsgRelease)
        (AnyMessage MsgRelease) = True
 
-  (==) (AnyMessage (MsgReAcquire pt))
-       (AnyMessage (MsgReAcquire pt')) = pt == pt'
+  (==) (AnyMessage (MsgReAcquire tgt))
+       (AnyMessage (MsgReAcquire tgt')) = tgt == tgt'
 
   (==) (AnyMessage MsgDone)
        (AnyMessage MsgDone) = True
@@ -360,28 +354,29 @@ codec :: MonadST m
                 m ByteString
 codec =
     codecLocalStateQuery
+      maxBound
       Serialise.encode Serialise.decode
       encodeQuery      decodeQuery
       encodeResult     decodeResult
   where
     encodeQuery :: Query result -> CBOR.Encoding
-    encodeQuery QueryPoint = Serialise.encode ()
+    encodeQuery GetTheLedgerState = Serialise.encode ()
 
     decodeQuery :: forall s . CBOR.Decoder s (Some Query)
     decodeQuery = do
       () <- Serialise.decode
-      return $ Some QueryPoint
+      return $ Some GetTheLedgerState
 
     encodeResult :: Query result -> result -> CBOR.Encoding
-    encodeResult QueryPoint = Serialise.encode
+    encodeResult GetTheLedgerState = Serialise.encode
 
     decodeResult :: Query result -> forall s. CBOR.Decoder s result
-    decodeResult QueryPoint = Serialise.decode
+    decodeResult GetTheLedgerState = Serialise.decode
 
 -- | Check the codec round trip property.
 --
 prop_codec
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query MockLedgerState
   -> Bool
 prop_codec (AnyMessageAndAgencyWithResult msg) =
   runST (prop_codecM codec msg)
@@ -389,7 +384,7 @@ prop_codec (AnyMessageAndAgencyWithResult msg) =
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
 prop_codec_splits2
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query MockLedgerState
   -> Bool
 prop_codec_splits2 (AnyMessageAndAgencyWithResult msg) =
   runST (prop_codec_splitsM splits2 codec msg)
@@ -397,13 +392,13 @@ prop_codec_splits2 (AnyMessageAndAgencyWithResult msg) =
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
 prop_codec_splits3
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query MockLedgerState
   -> Bool
 prop_codec_splits3 (AnyMessageAndAgencyWithResult msg) =
   runST (prop_codec_splitsM splits3 codec msg)
 
 prop_codec_cbor
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query MockLedgerState
   -> Bool
 prop_codec_cbor (AnyMessageAndAgencyWithResult msg) =
   runST (prop_codec_cborM codec msg)
@@ -411,6 +406,6 @@ prop_codec_cbor (AnyMessageAndAgencyWithResult msg) =
 -- | Check that the encoder produces a valid CBOR.
 --
 prop_codec_valid_cbor
-  :: AnyMessageAndAgencyWithResult Block (Point Block) Query (Maybe (Point Block))
+  :: AnyMessageAndAgencyWithResult Block (Point Block) Query MockLedgerState
   -> Property
 prop_codec_valid_cbor (AnyMessageAndAgencyWithResult msg) = prop_codec_valid_cbor_encoding codec msg

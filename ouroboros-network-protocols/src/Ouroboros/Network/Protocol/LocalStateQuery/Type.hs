@@ -1,4 +1,8 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveFoldable        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -18,6 +22,7 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 
 import           Data.Kind (Type)
 import           Data.Proxy (Proxy (..))
+import           GHC.Generics (Generic)
 
 import           Network.TypedProtocol.Core
 
@@ -68,6 +73,23 @@ instance ( ShowProxy block
       , showProxy (Proxy :: Proxy query)
       ]
 
+data Target point = -- | The tip of the volatile chain
+                    --
+                    -- Cannot fail to be acquired.
+                    VolatileTip
+                  | -- | A specified point
+                    --
+                    -- Fails to be acquired if the point is not between
+                    -- 'VolatileTip' and 'ImmutableTip' (inclusive).
+                    SpecificPoint point
+                    -- | The tip of the immutable chain
+                    --
+                    -- Cannot fail to be acquired.
+                    --
+                    -- Requires at least 'NodeToClientV_16'.
+                  | ImmutableTip
+  deriving (Eq, Foldable, Functor, Generic, Ord, Show, Traversable)
+
 instance Protocol (LocalStateQuery block point query) where
 
   -- | The messages in the state query protocol.
@@ -76,16 +98,11 @@ instance Protocol (LocalStateQuery block point query) where
   --
   data Message (LocalStateQuery block point query) from to where
 
-    -- | The client requests that the state as of a particular recent point on
-    -- the server's chain (within K of the tip) be made available to query,
-    -- and waits for confirmation or failure.
-    --
-    -- From 'NodeToClient_V8' onwards if the point is not specified, current tip
-    -- will be acquired.  For previous versions of the protocol 'point' must be
-    -- given.
+    -- | The client requests that the 'Target' ledger state on the server's
+    -- chain be made available to query, and waits for confirmation or failure.
     --
     MsgAcquire
-      :: Maybe point
+      :: Target point
       -> Message (LocalStateQuery block point query) StIdle StAcquiring
 
     -- | The server can confirm that it has the state at the requested point.
@@ -122,19 +139,15 @@ instance Protocol (LocalStateQuery block point query) where
       :: Message (LocalStateQuery block point query) StAcquired StIdle
 
     -- | This is like 'MsgAcquire' but for when the client already has a
-    -- state. By moveing to another state directly without a 'MsgRelease' it
+    -- state. By moving to another state directly without a 'MsgRelease' it
     -- enables optimisations on the server side (e.g. moving to the state for
     -- the immediate next block).
     --
     -- Note that failure to re-acquire is equivalent to 'MsgRelease',
     -- rather than keeping the exiting acquired state.
     --
-    -- From 'NodeToClient_V8' onwards if the point is not specified, current tip
-    -- will be acquired.  For previous versions of the protocol 'point' must be
-    -- given.
-    --
     MsgReAcquire
-      :: Maybe point
+      :: Target point
       -> Message (LocalStateQuery block point query) StAcquired StAcquiring
 
     -- | The client can terminate the protocol.
@@ -191,9 +204,9 @@ class (forall result. Show (query result)) => ShowQuery query where
 instance (ShowQuery query, Show point)
       => Show (Message (LocalStateQuery block point query) st st') where
   showsPrec p msg = case msg of
-      MsgAcquire pt -> showParen (p >= 11) $
+      MsgAcquire tgt -> showParen (p >= 11) $
         showString "MsgAcquire " .
-        showsPrec 11 pt
+        showsPrec 11 tgt
       MsgAcquired ->
         showString "MsgAcquired"
       MsgFailure failure -> showParen (p >= 11) $
@@ -207,8 +220,8 @@ instance (ShowQuery query, Show point)
         showParen True (showString (showResult query result))
       MsgRelease ->
         showString "MsgRelease"
-      MsgReAcquire pt -> showParen (p >= 11) $
+      MsgReAcquire tgt -> showParen (p >= 11) $
         showString "MsgReAcquire " .
-        showsPrec 11 pt
+        showsPrec 11 tgt
       MsgDone ->
         showString "MsgDone"
