@@ -389,12 +389,10 @@ connections PeerSelectionActions{
 localRoots :: forall peeraddr peerconn m.
               (MonadSTM m, Ord peeraddr)
            => PeerSelectionActions peeraddr peerconn m
-           -> PeerSelectionPolicy peeraddr m
            -> PeerSelectionState peeraddr peerconn
            -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
                                        }
-           policy
            st@PeerSelectionState{
              localRootPeers,
              publicRootPeers,
@@ -516,7 +514,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
                               hasOnlyBootstrapPeers = hasOnlyBootstrapPeers',
                               ledgerStateJudgement  = ledgerStateJudgement'
                             },
-            decisionJobs  = [ jobDemoteActivePeer actions policy peeraddr peerconn
+            decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                           | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
           }
   | otherwise = GuardedSkip Nothing
