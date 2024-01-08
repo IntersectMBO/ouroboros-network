@@ -63,7 +63,7 @@ sudo install /tmp/kes-agent "$PREFIX/bin/kes-agent"
 sudo install "$COLDKEY" "$CONFIGDIR/cold.vkey"
 sudo install etc/kes-agent/kes-agent.env "$CONFIGDIR/kes-agent.env"
 sudo install etc/kes-agent/mainnet-shelley-genesis.json "$CONFIGDIR/mainnet-shelley-genesis.json.vkey"
-sudo install etc/systemd/system/kes-agent.service "$SERVICEDIR"/kes-agent.service 
+sudo install etc/systemd/system/kes-agent.service "$SERVICEDIR"/kes-agent.service
 sudo systemctl daemon-reload
 sudo systemctl start kes-agent
 sudo systemctl status kes-agent
