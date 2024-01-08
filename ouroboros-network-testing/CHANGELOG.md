@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Adds `eventually` and `eventsToListWithId` functions to Signal API
+
 ### Non-breaking changes
 
 ## 0.4.1.0 -- 2023-12-14
