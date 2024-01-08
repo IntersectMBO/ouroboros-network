@@ -576,7 +576,7 @@ peerSelectionGovernorLoop tracer
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
       <> Monitor.targetPeers          actions st
-      <> Monitor.localRoots           actions policy st
+      <> Monitor.localRoots           actions st
 
       -- The non-blocking decisions regarding (known) big ledger peers
       <> BigLedgerPeers.belowTarget   actions blockedAt        st

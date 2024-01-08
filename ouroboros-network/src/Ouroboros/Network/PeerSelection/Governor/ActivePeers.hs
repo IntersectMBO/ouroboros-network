@@ -490,7 +490,7 @@ aboveTargetBigLedgerPeers :: forall peeraddr peerconn m.
                           => PeerSelectionActions peeraddr peerconn m
                           -> MkGuardedDecision peeraddr peerconn m
 aboveTargetBigLedgerPeers actions
-                          policy@PeerSelectionPolicy {
+                          PeerSelectionPolicy {
                             policyPickHotPeersToDemote
                           }
                           st@PeerSelectionState {
@@ -542,7 +542,7 @@ aboveTargetBigLedgerPeers actions
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
                         },
-        decisionJobs  = [ jobDemoteActivePeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
@@ -565,7 +565,7 @@ aboveTargetLocal :: forall peeraddr peerconn m.
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 aboveTargetLocal actions
-                 policy@PeerSelectionPolicy {
+                 PeerSelectionPolicy {
                    policyPickHotPeersToDemote
                  }
                  st@PeerSelectionState {
@@ -632,7 +632,7 @@ aboveTargetLocal actions
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
                         },
-        decisionJobs  = [ jobDemoteActivePeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
@@ -645,7 +645,7 @@ aboveTargetOther :: forall peeraddr peerconn m.
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 aboveTargetOther actions
-                 policy@PeerSelectionPolicy {
+                 PeerSelectionPolicy {
                    policyPickHotPeersToDemote
                  }
                  st@PeerSelectionState {
@@ -698,7 +698,7 @@ aboveTargetOther actions
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
                         },
-        decisionJobs  = [ jobDemoteActivePeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
@@ -715,47 +715,30 @@ aboveTargetOther actions
 jobDemoteActivePeer :: forall peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
                     => PeerSelectionActions peeraddr peerconn m
-                    -> PeerSelectionPolicy peeraddr m
                     -> peeraddr
                     -> peerconn
                     -> Job () m (Completion m peeraddr peerconn)
 jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection}}
-                    PeerSelectionPolicy { policyErrorDelay }
                     peeraddr peerconn =
     Job job handler () "demoteActivePeer"
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
     handler e = return $
-      -- It's quite bad if demoting fails. The peer is cold so
-      -- remove if from the set of established and hot peers.
+      -- It's quite bad if demoting fails. The peer is cooling so
+      -- we can't remove it from the set of established and hot peers.
+      --
       Completion $ \st@PeerSelectionState {
                       publicRootPeers,
                       activePeers,
-                      establishedPeers,
                       inProgressDemoteHot,
-                      knownPeers,
                       targets = PeerSelectionTargets {
                                   targetNumberOfActivePeers,
                                   targetNumberOfActiveBigLedgerPeers
-                                },
-                      fuzzRng
+                                }
                     }
-                    now ->
-        let (rFuzz, fuzzRng')     = randomR (-2, 2 :: Double) fuzzRng
-            peerSet               = Set.singleton peeraddr
-            activePeers'          = Set.delete peeraddr activePeers
+                    _ ->
+        let
             inProgressDemoteHot'  = Set.delete peeraddr inProgressDemoteHot
-            knownPeers'           = KnownPeers.setConnectTimes
-                                      (Map.singleton
-                                        peeraddr
-                                        ((realToFrac rFuzz + policyErrorDelay) `addTime` now))
-                                  . Set.foldr'
-                                      ((snd .) . KnownPeers.incrementFailCount)
-                                      knownPeers
-                                  $ peerSet
-            establishedPeers'     = EstablishedPeers.deletePeers
-                                     peerSet
-                                     establishedPeers
             bigLedgerPeersSet     = PublicRootPeers.getBigLedgerPeers publicRootPeers
          in Decision {
               decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
@@ -771,11 +754,7 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                                           Set.\\ bigLedgerPeersSet)
                                      peeraddr e],
               decisionState = st {
-                                inProgressDemoteHot = inProgressDemoteHot',
-                                fuzzRng = fuzzRng',
-                                activePeers = activePeers',
-                                knownPeers = knownPeers',
-                                establishedPeers = establishedPeers'
+                                inProgressDemoteHot = inProgressDemoteHot'
                               },
               decisionJobs  = []
             }
