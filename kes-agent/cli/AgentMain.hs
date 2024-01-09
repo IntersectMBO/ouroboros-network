@@ -103,19 +103,21 @@ data ServiceModeOptions
       , smoBootstrapPaths :: Set String
       , smoUser :: Maybe String
       , smoGroup :: Maybe String
+      , smoColdVerKeyFile :: Maybe FilePath
       , smoGenesisFile :: Maybe FilePath
       }
   deriving (Show)
 
 instance Semigroup ServiceModeOptions where
-  ServiceModeOptions sp1 cp1 bps1 uid1 gid1 gf1 <>
-    ServiceModeOptions sp2 cp2 bps2 uid2 gid2 gf2 =
+  ServiceModeOptions sp1 cp1 bps1 uid1 gid1 vkp1 gf1 <>
+    ServiceModeOptions sp2 cp2 bps2 uid2 gid2 vkp2 gf2 =
       ServiceModeOptions
         (sp1 <|> sp2)
         (cp1 <|> cp2)
         (bps1 <> bps2)
         (uid1 <|> uid2)
         (gid1 <|> gid2)
+        (vkp1 <|> vkp2)
         (gf1 <|> gf2)
 
 instance Monoid ServiceModeOptions where
@@ -129,6 +131,7 @@ defServiceModeOptions =
     , smoBootstrapPaths = Set.empty
     , smoUser = Just "kes-agent"
     , smoGroup = Just "kes-agent"
+    , smoColdVerKeyFile = Nothing
     , smoGenesisFile = Nothing
     }
 
@@ -140,6 +143,7 @@ nullServiceModeOptions =
     , smoBootstrapPaths = Set.empty
     , smoUser = Nothing
     , smoGroup = Nothing
+    , smoColdVerKeyFile = Nothing
     , smoGenesisFile = Nothing
     }
 
@@ -150,6 +154,7 @@ serviceModeTomlCodec = ServiceModeOptions
   <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= smoBootstrapPaths
   <*> Toml.dioptional (Toml.string "user") .= smoUser
   <*> Toml.dioptional (Toml.string "group") .= smoGroup
+  <*> Toml.dioptional (Toml.string "cold-vkey") .= smoColdVerKeyFile
   <*> Toml.dioptional (Toml.string "genesis-file") .= smoGenesisFile
 
 data ProgramOptions
@@ -254,6 +259,7 @@ smoFromEnv = do
   bootstrapPathsRaw <- lookupEnv "KES_AGENT_BOOTSTRAP_PATHS"
   let bootstrapPaths =
         Set.fromList $ maybe [] (splitBy ':') bootstrapPathsRaw
+  coldVerKeyPath <- lookupEnv "KES_AGENT_COLD_VK"
   groupSpec <- lookupEnv "KES_AGENT_GROUP"
   userSpec <- lookupEnv "KES_AGENT_USER"
   genesisFile <- lookupEnv "KES_AGENT_GENESIS_FILE"
@@ -263,6 +269,7 @@ smoFromEnv = do
     , smoBootstrapPaths = bootstrapPaths
     , smoUser = userSpec
     , smoGroup = groupSpec
+    , smoColdVerKeyFile = coldVerKeyPath
     , smoGenesisFile = genesisFile
     }
 
@@ -294,6 +301,8 @@ smoToAgentOptions smo = do
   servicePath <- maybe (error "No service address") return (smoServicePath smo)
   controlPath <- maybe (error "No control address") return (smoControlPath smo)
   let bootstrapPaths = Set.toList $ smoBootstrapPaths smo
+  coldVerKeyPath <- maybe (error "No cold verification key") return (smoColdVerKeyFile smo)
+  (ColdVerKey coldVerKey) <- either error return =<< decodeTextEnvelopeFile coldVerKeyPath
   evolutionConfig <- maybe
                       (pure defEvolutionConfig)
                       (either error return <=< evolutionConfigFromGenesisFile)
@@ -302,6 +311,7 @@ smoToAgentOptions smo = do
             { agentServiceAddr = SockAddrUnix servicePath
             , agentControlAddr = SockAddrUnix controlPath
             , agentBootstrapAddr = map SockAddrUnix bootstrapPaths
+            , agentColdVerKey = coldVerKey
             , agentGenSeed = mlockedSeedNewRandom
             , agentEvolutionConfig = evolutionConfig
             }
@@ -328,9 +338,10 @@ getConfigPaths = do
   home <- getEnv "HOME"
   let tail = "agent.toml"
   return
-    [ "/etc/kes-agent" </> tail
-    , home </> ".config/kes-agent" </> tail
+    [ "." </> tail
     , home </> ".kes-agent" </> tail
+    , home </> ".config/kes-agent" </> tail
+    , "/etc/kes-agent" </> tail
     ]
 
 agentTracePrio :: AgentTrace -> Priority
@@ -432,6 +443,8 @@ runNormally nmo' = withIOManager $ \ioManager -> do
   let nmo = nmo' <> nmoEnv <> nmoFiles <> defNormalModeOptions
   agentOptions <- nmoToAgentOptions nmo
   maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
+
+  Text.putStrLn $ Toml.encode normalModeTomlCodec nmo
 
   logLock <- newMVar ()
   bracket
