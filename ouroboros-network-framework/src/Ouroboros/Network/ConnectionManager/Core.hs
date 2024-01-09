@@ -876,7 +876,7 @@ withConnectionManager ConnectionManagerArguments {
                 Left mbTransition -> do
                   traverse_ (traceWith trTracer) mbTransition
                   close cmSnocket socket
-                  return ( Map.delete peerAddr state
+                  return ( state
                          , Left ()
                          )
                 Right transition -> do
@@ -887,13 +887,23 @@ withConnectionManager ConnectionManagerArguments {
 
             case eTransition of
               Left () -> do
-                traceWith trTracer
-                          (TransitionTrace
-                            peerAddr
-                            Transition
-                               { fromState = Known (TerminatedState Nothing)
-                               , toState   = Unknown
-                               })
+
+                let transition =
+                      TransitionTrace
+                        peerAddr
+                        Transition
+                           { fromState = Known (TerminatedState Nothing)
+                           , toState   = Unknown
+                           }
+                mbTransition <- modifyTMVar stateVar $ \state ->
+                  case Map.lookup peerAddr state of
+                    Nothing -> pure (state, Nothing)
+                    Just v  ->
+                      if mutableConnState == v
+                         then pure (Map.delete peerAddr state , Just transition)
+                         else pure (state                     , Nothing)
+
+                traverse_ (traceWith trTracer) mbTransition
                 traceCounters stateVar
               Right transition ->
                 do traceWith tracer (TrConnectionTimeWait connId)
