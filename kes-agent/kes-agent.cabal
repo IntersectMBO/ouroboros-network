@@ -113,6 +113,8 @@ executable kes-agent
                  , cardano-crypto-class
                  , contra-tracer
                  , containers
+                 , directory
+                 , filepath
                  , hdaemonize
                  , hsyslog
                  , io-classes
@@ -122,6 +124,7 @@ executable kes-agent
                  , serdoc-core
                  , text
                  , time
+                 , tomland
                  , typed-protocols
                  , unix
                  , Win32-network

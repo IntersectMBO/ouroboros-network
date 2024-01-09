@@ -26,6 +26,7 @@ import Control.Concurrent.Class.MonadMVar
 import Control.Tracer
 import Data.Proxy (Proxy (..))
 import Data.Maybe
+import Data.Monoid
 import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
 import System.IO (hFlush, stdout)
 import System.IOManager
@@ -36,6 +37,7 @@ import System.Posix.Syslog.Priority as Syslog
 import Data.ByteString (ByteString)
 import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
 import Text.Printf
 import Text.Read ( readMaybe )
 import Options.Applicative
@@ -44,6 +46,10 @@ import System.Posix.Types as Posix
 import System.Posix.User as Posix
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Toml (TomlCodec, (.=))
+import qualified Toml
+import System.Directory
+import System.FilePath ( (</>) )
 
 data NormalModeOptions
   = NormalModeOptions
@@ -78,6 +84,18 @@ defNormalModeOptions =
     , nmoGenesisFile = Nothing
     }
 
+instance Monoid NormalModeOptions where
+  mempty = defNormalModeOptions
+
+normalModeTomlCodec :: TomlCodec NormalModeOptions
+normalModeTomlCodec = NormalModeOptions
+  <$> Toml.dioptional (Toml.string "service-path") .= nmoServicePath
+  <*> Toml.dioptional (Toml.string "control-path") .= nmoControlPath
+  <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= nmoBootstrapPaths
+  <*> Toml.dioptional (Toml.read "log-level") .= nmoLogLevel
+  <*> Toml.dioptional (Toml.string "cold-vkey") .= nmoColdVerKeyFile
+  <*> Toml.dioptional (Toml.string "genesis-file") .= nmoGenesisFile
+
 data ServiceModeOptions
   = ServiceModeOptions
       { smoServicePath :: Maybe String
@@ -100,6 +118,9 @@ instance Semigroup ServiceModeOptions where
         (gid1 <|> gid2)
         (gf1 <|> gf2)
 
+instance Monoid ServiceModeOptions where
+  mempty = defServiceModeOptions
+
 defServiceModeOptions :: ServiceModeOptions
 defServiceModeOptions =
   ServiceModeOptions
@@ -121,6 +142,15 @@ nullServiceModeOptions =
     , smoGroup = Nothing
     , smoGenesisFile = Nothing
     }
+
+serviceModeTomlCodec :: TomlCodec ServiceModeOptions
+serviceModeTomlCodec = ServiceModeOptions
+  <$> Toml.dioptional (Toml.string "service-path") .= smoServicePath
+  <*> Toml.dioptional (Toml.string "control-path") .= smoControlPath
+  <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= smoBootstrapPaths
+  <*> Toml.dioptional (Toml.string "user") .= smoUser
+  <*> Toml.dioptional (Toml.string "group") .= smoGroup
+  <*> Toml.dioptional (Toml.string "genesis-file") .= smoGenesisFile
 
 data ProgramOptions
   = RunAsService ServiceModeOptions
@@ -213,6 +243,10 @@ nmoFromEnv = do
     , nmoGenesisFile = genesisFile
     }
 
+nmoFromFiles :: IO NormalModeOptions
+nmoFromFiles = optionsFromFiles defNormalModeOptions normalModeTomlCodec =<< getConfigPaths
+
+
 smoFromEnv :: IO ServiceModeOptions
 smoFromEnv = do
   servicePath <- lookupEnv "KES_AGENT_SERVICE_PATH"
@@ -231,6 +265,9 @@ smoFromEnv = do
     , smoGroup = groupSpec
     , smoGenesisFile = genesisFile
     }
+
+smoFromFiles :: IO ServiceModeOptions
+smoFromFiles = optionsFromFiles defServiceModeOptions serviceModeTomlCodec =<< getConfigPaths
 
 nmoToAgentOptions :: NormalModeOptions -> IO (AgentOptions IO SockAddr StandardCrypto)
 nmoToAgentOptions nmo = do
@@ -268,6 +305,33 @@ smoToAgentOptions smo = do
             , agentGenSeed = mlockedSeedNewRandom
             , agentEvolutionConfig = evolutionConfig
             }
+
+optionsFromFile :: a -> TomlCodec a -> FilePath -> IO a
+optionsFromFile def codec path = do
+  exists <- doesFileExist path
+  if exists then do
+    tomlRes <- Toml.decodeFileEither codec path
+    case tomlRes of
+      Left errs -> do
+        error . Text.unpack $ Toml.prettyTomlDecodeErrors errs
+      Right opts -> do
+        return opts
+  else
+    return def
+
+optionsFromFiles :: Monoid a => a -> TomlCodec a -> [FilePath] -> IO a
+optionsFromFiles def codec paths =
+  mconcat <$> mapM (optionsFromFile def codec) paths
+
+getConfigPaths :: IO [FilePath]
+getConfigPaths = do
+  home <- getEnv "HOME"
+  let tail = "agent.toml"
+  return
+    [ "/etc/kes-agent" </> tail
+    , home </> ".config/kes-agent" </> tail
+    , home </> ".kes-agent" </> tail
+    ]
 
 agentTracePrio :: AgentTrace -> Priority
 agentTracePrio AgentVersionHandshakeDriverTrace {} = Syslog.Debug
@@ -334,7 +398,8 @@ runAsService smo' =
     go :: IO ()
     go =  withIOManager $ \ioManager -> do
       smoEnv <- smoFromEnv
-      let smo = smo' <> smoEnv <> defServiceModeOptions
+      smoFiles <- smoFromFiles
+      let smo = smo' <> smoEnv <> smoFiles <> defServiceModeOptions
       agentOptions <- smoToAgentOptions smo
       groupName <- maybe (error "Invalid group") return $ smoGroup smo
       userName <- maybe (error "Invalid user") return $ smoUser smo
@@ -363,7 +428,8 @@ runAsService smo' =
 runNormally :: NormalModeOptions -> IO ()
 runNormally nmo' = withIOManager $ \ioManager -> do
   nmoEnv <- nmoFromEnv
-  let nmo = nmo' <> nmoEnv <> defNormalModeOptions
+  nmoFiles <- nmoFromFiles
+  let nmo = nmo' <> nmoEnv <> nmoFiles <> defNormalModeOptions
   agentOptions <- nmoToAgentOptions nmo
   maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
 
