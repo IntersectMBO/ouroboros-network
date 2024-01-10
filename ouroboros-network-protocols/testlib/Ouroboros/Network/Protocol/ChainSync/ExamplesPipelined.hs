@@ -15,7 +15,7 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
   ) where
 
 import           Control.Concurrent.Class.MonadSTM.Strict
-import           Data.Word
+import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Pipelined
 
@@ -244,7 +244,7 @@ chainSyncClientPipelinedMax
          ( HasHeader header
          , MonadSTM m
          )
-      => Word32
+      => Word16
       -- ^ maximal number of outstanding requests
       -> StrictTVar m (Chain header)
       -> Client header (Point header) (Tip header) m a
@@ -297,7 +297,7 @@ chainSyncClientPipelinedMin
          ( HasHeader header
          , MonadSTM m
          )
-      => Word32
+      => Word16
       -- ^ maximal number of outstanding requests
       -> StrictTVar m (Chain header)
       -> Client header (Point header) (Tip header) m a
@@ -310,9 +310,9 @@ chainSyncClientPipelinedLowHigh
          ( HasHeader header
          , MonadSTM m
          )
-      => Word32
+      => Word16
       -- ^ low mark
-      -> Word32
+      -> Word16
       -- ^ high mark
       -> StrictTVar m (Chain header)
       -> Client header (Point header) (Tip header) m a

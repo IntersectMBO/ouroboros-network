@@ -252,3 +252,4 @@ test-suite cddl
                        -Wcompat
                        -Wunused-packages
                        -rtsopts
+                       -with-rtsopts=-M400m

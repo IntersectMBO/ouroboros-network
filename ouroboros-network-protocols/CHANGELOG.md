@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Pipeline depth type changed from `Word32` to `Word16`.
+
 ### Non-breaking changes
 
 * ghc-9.8 support.
