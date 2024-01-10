@@ -9,9 +9,9 @@ import Cardano.KESAgent.KES.Evolution
 import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
-import Cardano.KESAgent.Util.Pretty
-import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Serialization.CBOR
+import Cardano.KESAgent.Serialization.TextEnvelope
+import Cardano.KESAgent.Util.Pretty
 
 import Cardano.Crypto.Libsodium (sodiumInit)
 import Cardano.Crypto.Libsodium.MLockedSeed
@@ -19,38 +19,40 @@ import Cardano.Crypto.Libsodium.MLockedSeed
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
+import Control.Concurrent.Class.MonadMVar
 import Control.Monad ( when, (<=<) )
 import Control.Monad.Class.MonadThrow ( bracket, finally, catch, SomeException )
 import Control.Monad.Class.MonadTime ( getCurrentTime )
-import Control.Concurrent.Class.MonadMVar
 import Control.Tracer
-import Data.Proxy (Proxy (..))
+import Data.ByteString (ByteString)
+import Data.Char
 import Data.Maybe
 import Data.Monoid
-import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
-import System.IO (hFlush, stdout)
-import System.IOManager
-import Network.Socket
-import System.Environment
-import System.Posix.Daemonize
-import System.Posix.Syslog.Priority as Syslog
-import Data.ByteString (ByteString)
-import Data.Text.Encoding (encodeUtf8)
-import qualified Data.Text as Text
-import qualified Data.Text.IO as Text
-import Text.Printf
-import Text.Read ( readMaybe )
-import Options.Applicative
-import System.Posix.Files as Posix
-import System.Posix.Types as Posix
-import System.Posix.User as Posix
+import Data.Bifunctor
+import Data.Proxy (Proxy (..))
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Toml (TomlCodec, (.=))
-import qualified Toml
+import qualified Data.Text as Text
+import Data.Text.Encoding (encodeUtf8)
+import qualified Data.Text.IO as Text
+import Data.Time.Clock.POSIX ( utcTimeToPOSIXSeconds )
+import Network.Socket
+import Options.Applicative
 import System.Directory
+import System.Environment
 import System.FilePath ( (</>) )
-
+import System.IO (hFlush, stdout)
+import System.IOManager
+import System.Posix.Daemonize
+import System.Posix.Files as Posix
+import System.Posix.Syslog.Priority as Syslog
+import System.Posix.Types as Posix
+import System.Posix.User as Posix
+import Text.Printf
+import Text.Read ( readMaybe )
+import qualified Toml
+import Toml (TomlCodec, (.=))
+import Control.Arrow ( (>>>) )
 data NormalModeOptions
   = NormalModeOptions
       { nmoServicePath :: Maybe String
@@ -80,7 +82,7 @@ defNormalModeOptions =
     , nmoControlPath = Just "/tmp/kes-agent-control.socket"
     , nmoBootstrapPaths = Set.empty
     , nmoLogLevel = Just Syslog.Notice
-    , nmoColdVerKeyFile = Just "./cold.vkey"
+    , nmoColdVerKeyFile = Nothing -- Just "./cold.vkey"
     , nmoGenesisFile = Nothing
     }
 
@@ -92,7 +94,7 @@ normalModeTomlCodec = NormalModeOptions
   <$> Toml.dioptional (Toml.string "service-path") .= nmoServicePath
   <*> Toml.dioptional (Toml.string "control-path") .= nmoControlPath
   <*> Toml.arraySetOf Toml._String "bootstrap-paths" .= nmoBootstrapPaths
-  <*> Toml.dioptional (Toml.read "log-level") .= nmoLogLevel
+  <*> (Just <$> Toml.match (_ReadLogLevel >>> Toml._String) "log-level") .= (fromMaybe Syslog.Notice . nmoLogLevel)
   <*> Toml.dioptional (Toml.string "cold-vkey") .= nmoColdVerKeyFile
   <*> Toml.dioptional (Toml.string "genesis-file") .= nmoGenesisFile
 
@@ -157,12 +159,32 @@ serviceModeTomlCodec = ServiceModeOptions
   <*> Toml.dioptional (Toml.string "cold-vkey") .= smoColdVerKeyFile
   <*> Toml.dioptional (Toml.string "genesis-file") .= smoGenesisFile
 
-data ProgramOptions
+data ProgramModeOptions
   = RunAsService ServiceModeOptions
   | RunNormally NormalModeOptions
   deriving (Show)
 
-pProgramOptions = subparser
+data ProgramOptions =
+  ProgramOptions
+    { poMode :: ProgramModeOptions
+    , poExtraConfigPath :: Maybe FilePath
+    }
+    deriving (Show)
+
+pProgramOptions =
+  ProgramOptions
+    <$> pProgramModeOptions
+    <*> option (Just <$> str)
+          (  long "config-file"
+          <> long "config"
+          <> short 'F'
+          <> value Nothing
+          <> metavar "FILE"
+          <> help "Load configuration from FILE"
+          )
+
+
+pProgramModeOptions = subparser
     (  command "start" (info (pure $ RunAsService nullServiceModeOptions) idm)
     <> command "stop" (info (pure $ RunAsService nullServiceModeOptions) idm)
     <> command "restart" (info (pure $ RunAsService nullServiceModeOptions) idm)
@@ -222,6 +244,12 @@ readLogLevel "error" = Right Syslog.Error
 readLogLevel "critical" = Right Syslog.Critical
 readLogLevel "emergency" = Right Syslog.Emergency
 readLogLevel x = Left $ "Invalid log level " ++ show x
+
+_ReadLogLevel :: Toml.TomlBiMap Priority String
+_ReadLogLevel =
+  Toml.BiMap
+    (Right . map toLower . show)
+    (first (Toml.ArbitraryError . Text.pack) . readLogLevel)
 
 splitBy :: Ord a => a -> [a] -> [[a]]
 splitBy sep [] = []
@@ -316,20 +344,22 @@ smoToAgentOptions smo = do
             , agentEvolutionConfig = evolutionConfig
             }
 
-optionsFromFile :: a -> TomlCodec a -> FilePath -> IO a
+optionsFromFile :: Show a => a -> TomlCodec a -> FilePath -> IO a
 optionsFromFile def codec path = do
   exists <- doesFileExist path
   if exists then do
+    -- putStrLn $ "Loading configuration file: " <> path
     tomlRes <- Toml.decodeFileEither codec path
+    print tomlRes
     case tomlRes of
       Left errs -> do
         error . Text.unpack $ Toml.prettyTomlDecodeErrors errs
       Right opts -> do
         return opts
-  else
+  else do
     return def
 
-optionsFromFiles :: Monoid a => a -> TomlCodec a -> [FilePath] -> IO a
+optionsFromFiles :: (Show a, Monoid a) => a -> TomlCodec a -> [FilePath] -> IO a
 optionsFromFiles def codec paths =
   mconcat <$> mapM (optionsFromFile def codec) paths
 
@@ -338,8 +368,7 @@ getConfigPaths = do
   home <- getEnv "HOME"
   let tail = "agent.toml"
   return
-    [ "." </> tail
-    , home </> ".kes-agent" </> tail
+    [ home </> ".kes-agent" </> tail
     , home </> ".config/kes-agent" </> tail
     , "/etc/kes-agent" </> tail
     ]
@@ -401,16 +430,20 @@ stdoutAgentTracer maxPrio lock = Tracer $ \msg -> do
           hFlush stdout
 
 
-runAsService :: ServiceModeOptions -> IO ()
-runAsService smo' =
+runAsService :: Maybe FilePath -> ServiceModeOptions -> IO ()
+runAsService configPathMay smo' =
   go `catch` (\(e :: SomeException) ->
     syslog Syslog.Critical (encodeUtf8 . Text.pack $ show e))
   where
     go :: IO ()
     go =  withIOManager $ \ioManager -> do
       smoEnv <- smoFromEnv
+      smoExtra <- maybe
+                    (pure defServiceModeOptions)
+                    (optionsFromFile defServiceModeOptions serviceModeTomlCodec)
+                    configPathMay
       smoFiles <- smoFromFiles
-      let smo = smo' <> smoEnv <> smoFiles <> defServiceModeOptions
+      let smo = smo' <> smoEnv <> smoExtra <> smoFiles <> defServiceModeOptions
       agentOptions <- smoToAgentOptions smo
       groupName <- maybe (error "Invalid group") return $ smoGroup smo
       userName <- maybe (error "Invalid user") return $ smoUser smo
@@ -436,15 +469,17 @@ runAsService smo' =
           , group = Just groupName
           }
 
-runNormally :: NormalModeOptions -> IO ()
-runNormally nmo' = withIOManager $ \ioManager -> do
+runNormally :: Maybe FilePath -> NormalModeOptions -> IO ()
+runNormally configPathMay nmo' = withIOManager $ \ioManager -> do
   nmoEnv <- nmoFromEnv
+  nmoExtra <- maybe
+                (pure defNormalModeOptions)
+                (optionsFromFile defNormalModeOptions normalModeTomlCodec)
+                configPathMay
   nmoFiles <- nmoFromFiles
-  let nmo = nmo' <> nmoEnv <> nmoFiles <> defNormalModeOptions
+  let nmo = nmo' <> nmoEnv <> nmoExtra <> nmoFiles <> defNormalModeOptions
   agentOptions <- nmoToAgentOptions nmo
   maxPrio <- maybe (error "invalid priority") return $ nmoLogLevel nmo
-
-  Text.putStrLn $ Toml.encode normalModeTomlCodec nmo
 
   logLock <- newMVar ()
   bracket
@@ -461,7 +496,7 @@ programDesc = fullDesc
 
 main = do
   sodiumInit
-  programOptions <- execParser (info (pProgramOptions <**> helper) programDesc)
-  case programOptions of
-    RunNormally nmo -> runNormally nmo
-    RunAsService smo -> runAsService smo
+  po <- execParser (info (pProgramOptions <**> helper) programDesc)
+  case poMode po of
+    RunNormally nmo -> runNormally (poExtraConfigPath po) nmo
+    RunAsService smo -> runAsService (poExtraConfigPath po) smo
