@@ -7,7 +7,7 @@ description:            An API for ouroboros-network.
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG).
+copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
 author:                 IOHK Engineering Team
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network

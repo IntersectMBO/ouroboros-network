@@ -7,7 +7,7 @@ description:            Multiplexing library.
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG)
+copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
 author:                 Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network

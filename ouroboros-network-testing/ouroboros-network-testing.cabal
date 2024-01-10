@@ -7,7 +7,7 @@ description:            Common modules used for testing in ouroboros-network and
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG)
+copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
 author:                 Alexander Vieth, Marcin Szamotulski, Duncan Coutts, Karl Knuttson
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
