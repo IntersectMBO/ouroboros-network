@@ -40,6 +40,7 @@ import           Ouroboros.Network.Protocol.BlockFetch.Direct
 import           Ouroboros.Network.Protocol.BlockFetch.Examples
 import           Ouroboros.Network.Protocol.BlockFetch.Server
 import           Ouroboros.Network.Protocol.BlockFetch.Type
+import           Test.Data.PipeliningDepth (PipeliningDepth (..))
 
 import           Test.ChainGenerators (TestChainAndPoints (..))
 import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
@@ -109,7 +110,7 @@ testClientPipelinedMax,
 
 testClientPipelinedLimited
   :: MonadSTM m
-  => Int
+  => Int -- pipelining depth
   -> Chain Block
   -> [Point Block]
   -> TestClientPipelined m
@@ -258,15 +259,15 @@ prop_connect_pipelined4 (TestChainAndPoints chain points) choices =
 -- reference specification 'pipelineInterleaving', for that limit of
 -- outstanding messages.
 --
-prop_connect_pipelined5 :: TestChainAndPoints -> NonNegative Int
+prop_connect_pipelined5 :: TestChainAndPoints -> PipeliningDepth
                         -> [Bool] -> Bool
 prop_connect_pipelined5 (TestChainAndPoints chain points)
-                        (NonNegative omax) choices =
+                        (PipeliningDepth omax) choices =
     runSimOrThrow
       (connect_pipelined (testClientPipelinedLimited omax chain points)
                          chain choices)
  ==
-    pipelineInterleaving omax choices
+    pipelineInterleaving (omax) choices
                          (pointsToRanges      chain points)
                          (receivedBlockBodies chain points)
 
