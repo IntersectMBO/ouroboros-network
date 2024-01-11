@@ -117,7 +117,7 @@ import           Data.Void (Void)
 import           Data.Word
 import           Network.Mux (WithMuxBearer (..))
 import           Network.Mux.Types (MuxRuntimeError (..))
-import           Network.Socket (Socket)
+import           Network.Socket (Socket, StructLinger (..))
 import qualified Network.Socket as Socket
 
 import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
@@ -459,6 +459,13 @@ connectTo sn tr =
     connectToNode sn makeSocketBearer configureOutboundSocket nodeToNodeHandshakeCodec timeLimitsHandshake
                   (cborTermVersionDataCodec nodeToNodeCodecCBORTerm)
                   tr (HandshakeCallbacks acceptableVersion queryVersion)
+  where
+    configureOutboundSocket :: Socket -> IO ()
+    configureOutboundSocket sock = do
+        Socket.setSocketOption sock Socket.NoDelay 1
+        Socket.setSockOpt sock Socket.Linger
+                              (StructLinger { sl_onoff  = 1,
+                                              sl_linger = 0 })
 
 
 -- | A specialised version of @'Ouroboros.Network.Socket.withServerNode'@.

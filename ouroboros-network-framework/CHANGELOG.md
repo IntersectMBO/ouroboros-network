@@ -4,10 +4,13 @@
 
 ### Breaking changes
 
+* Moved `configureOutboundSocket` to `ouroboros-network` (it's not exported
+  anymore).
+
 ### Non-breaking changes
 
 * ghc-9.8 support.
-* Add Socket.NoDelay option to configureOutboundSocket
+* Add Socket.NoDelay option to `configureOutboundSocket`
 
 ## 0.10.2.0 -- 2023-12-14
 
