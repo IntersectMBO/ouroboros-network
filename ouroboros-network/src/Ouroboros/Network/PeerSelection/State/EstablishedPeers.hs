@@ -162,20 +162,13 @@ member peeraddr = Map.member peeraddr . allPeers
 insert :: Ord peeraddr
        => peeraddr
        -> peerconn
+       -> Time
        -> EstablishedPeers peeraddr peerconn
        -> EstablishedPeers peeraddr peerconn
-insert peeraddr peerconn ep@EstablishedPeers { allPeers, availableForPeerShare } =
-   ep { allPeers = Map.insert peeraddr peerconn allPeers,
-
-        -- The sets tracking peers ready for peer share need to be updated with any
-        -- /fresh/ peers, but any already present are ignored since they are
-        -- either already in these sets or they are in the corresponding PSQs,
-        -- for which we also preserve existing info.
-        availableForPeerShare =
-          if Map.member peeraddr allPeers
-             then availableForPeerShare
-             else Set.insert peeraddr availableForPeerShare
-      }
+insert peeraddr peerconn peerShareAt ep@EstablishedPeers { allPeers } =
+   -- Ask newly established peers for its peers after the specified delay.
+   setPeerShareTime (Set.singleton peeraddr) peerShareAt $
+     ep { allPeers = Map.insert peeraddr peerconn allPeers }
 
 delete :: Ord peeraddr
        => peeraddr

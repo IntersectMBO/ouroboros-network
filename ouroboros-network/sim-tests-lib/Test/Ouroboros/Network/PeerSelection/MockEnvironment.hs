@@ -536,6 +536,7 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyPeerShareRetryTime         = 3600, -- seconds
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
+      policyPeerShareActivationDelay   = 300,  -- seconds
       policyErrorDelay              = 10    -- seconds
     }
 

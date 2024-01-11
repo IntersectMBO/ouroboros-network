@@ -14,7 +14,12 @@
   which hide both `Min` and `FirstToFinish`.
 * Adds 'unit_reconnect' testnet test
 * When churning split restoring known peers and established peers targets into
-  two separate steps. 
+  two separate steps.
+* Fix `KnownPeers.insert` function semantic bug where it could easily misused,
+  overwriting values.
+* Made (light) peer sharing results advertisable unless already known
+* Peer sharing is now delayed for 5minutes for newly established peers.
+* `policyPeerShareRetryTime` to 900s
 
 ## 0.10.2.2 -- 2023-12-15
 

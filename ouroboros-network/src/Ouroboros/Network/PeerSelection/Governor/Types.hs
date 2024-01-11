@@ -122,6 +122,8 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyPeerShareOverallTimeout    :: !DiffTime,
        -- ^ Amount of time the overall batches of peer sharing requests are
        -- allowed to take
+       policyPeerShareActivationDelay   :: !DiffTime,
+       -- ^ Delay until we consider a peer suitable for peer sharing
 
        -- | Re-promote delay, passed from `ExitPolicy`.
        --
@@ -462,7 +464,8 @@ toPublicState :: PeerSelectionState peeraddr peerconn
 toPublicState PeerSelectionState { knownPeers
                                  } =
    PublicPeerSelectionState {
-     availableToShare = KnownPeers.getPeerSharingResponsePeers knownPeers
+     availableToShare =
+       KnownPeers.getPeerSharingResponsePeers knownPeers
    }
 
 -- Peer selection counters.

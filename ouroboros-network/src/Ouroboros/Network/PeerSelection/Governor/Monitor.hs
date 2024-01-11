@@ -35,6 +35,8 @@ import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
                      (jobDemoteActivePeer)
 import           Ouroboros.Network.PeerSelection.Governor.Types hiding
                      (PeerSelectionCounters (..))
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
@@ -116,10 +118,20 @@ inboundPeers PeerSelectionActions{
   Guarded Nothing $ do
     (addr, ps) <- readNewInboundConnection
     return $ \_ ->
-      let -- If peer happens to already be present in the Known Peer set
-          -- 'insert' is going to do its due diligence before adding.
-          newEntry    = Map.singleton addr (Just ps, Nothing, Nothing)
-          knownPeers' = KnownPeers.insert newEntry knownPeers
+      let knownPeers' =
+            KnownPeers.alter
+              (\x -> case x of
+                Nothing ->
+                  KnownPeers.alterKnownPeerInfo
+                    (Just ps, Just DoAdvertisePeer, Nothing)
+                    x
+                Just _ ->
+                  KnownPeers.alterKnownPeerInfo
+                    (Just ps, Nothing, Nothing)
+                    x
+              )
+              (Set.singleton addr)
+              knownPeers
        in Decision {
             decisionTrace = [TraceKnownInboundConnection addr ps],
             decisionJobs = [],
