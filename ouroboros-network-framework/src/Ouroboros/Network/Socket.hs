@@ -225,6 +225,7 @@ data SystemdSocketTracer = SocketOptionNotSet Socket.SocketOption
 --
 configureOutboundSocket :: Socket -> IO ()
 configureOutboundSocket sock = do
+    Socket.setSocketOption sock Socket.NoDelay 1
     Socket.setSockOpt sock Socket.Linger
                           (StructLinger { sl_onoff  = 1,
                                           sl_linger = 0 })
