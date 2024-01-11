@@ -14,7 +14,6 @@ import qualified Codec.Serialise as S
 import           Control.Monad (unless, void)
 import qualified Control.Monad.ST as ST
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Word (Word16)
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
@@ -51,6 +50,7 @@ import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamp
 import qualified Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined as ChainSyncExamples
 import           Ouroboros.Network.Protocol.ChainSync.Server
 import           Ouroboros.Network.Protocol.ChainSync.Type
+import           Test.Data.PipeliningDepth (PipeliningDepth (..))
 
 import           Test.ChainGenerators ()
 import           Test.ChainProducerState (ChainProducerStateForkTest (..))
@@ -224,43 +224,43 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
 --
 
 propChainSyncPipelinedMaxDirectST :: ChainProducerStateForkTest
-                                  -> Positive Word16
+                                  -> PipeliningDepth
                                   -> Bool
-propChainSyncPipelinedMaxDirectST cps (Positive omax) =
+propChainSyncPipelinedMaxDirectST cps (PipeliningDepth omax) =
     runSimOrThrow $
       chainSyncPipelinedForkExperiment
         ((fmap . fmap) void directPipelined)
-        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMax (fromIntegral omax))
         cps
 
 propChainSyncPipelinedMaxDirectIO :: ChainProducerStateForkTest
-                                  -> Positive Word16
+                                  -> PipeliningDepth
                                   -> Property
-propChainSyncPipelinedMaxDirectIO cps (Positive omax) =
+propChainSyncPipelinedMaxDirectIO cps (PipeliningDepth omax) =
     ioProperty $
       chainSyncPipelinedForkExperiment
         ((fmap . fmap) void directPipelined)
-        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMax (fromIntegral omax))
         cps
 
 propChainSyncPipelinedMinDirectST :: ChainProducerStateForkTest
-                                  -> Positive Word16
+                                  -> PipeliningDepth
                                   -> Bool
-propChainSyncPipelinedMinDirectST cps (Positive omax) =
+propChainSyncPipelinedMinDirectST cps (PipeliningDepth omax) =
     runSimOrThrow $
       chainSyncPipelinedForkExperiment
         ((fmap . fmap) void directPipelined)
-        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMin (fromIntegral omax))
         cps
 
 propChainSyncPipelinedMinDirectIO :: ChainProducerStateForkTest
-                                  -> Positive Word16
+                                  -> PipeliningDepth
                                   -> Property
-propChainSyncPipelinedMinDirectIO cps (Positive omax) =
+propChainSyncPipelinedMinDirectIO cps (PipeliningDepth omax) =
     ioProperty $
       chainSyncPipelinedForkExperiment
         ((fmap . fmap) void directPipelined)
-        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMin (fromIntegral omax))
         cps
 
 --
@@ -269,9 +269,9 @@ propChainSyncPipelinedMinDirectIO cps (Positive omax) =
 
 propChainSyncPipelinedMaxConnectST :: ChainProducerStateForkTest
                                    -> [Bool]
-                                   -> Positive Word16
+                                   -> PipeliningDepth
                                    -> Bool
-propChainSyncPipelinedMaxConnectST cps choices (Positive omax) =
+propChainSyncPipelinedMaxConnectST cps choices (PipeliningDepth omax) =
     runSimOrThrow $
       chainSyncPipelinedForkExperiment
         (\ser cli ->
@@ -280,15 +280,15 @@ propChainSyncPipelinedMaxConnectST cps choices (Positive omax) =
               (chainSyncClientPeerPipelined cli)
               (chainSyncServerPeer ser)
         )
-        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMax (fromIntegral omax))
         cps
 
 
 propChainSyncPipelinedMinConnectST :: ChainProducerStateForkTest
                                    -> [Bool]
-                                   -> Positive Word16
+                                   -> PipeliningDepth
                                    -> Bool
-propChainSyncPipelinedMinConnectST cps choices (Positive omax) =
+propChainSyncPipelinedMinConnectST cps choices (PipeliningDepth omax) =
     runSimOrThrow $
       chainSyncPipelinedForkExperiment
         (\ser cli ->
@@ -297,14 +297,14 @@ propChainSyncPipelinedMinConnectST cps choices (Positive omax) =
               (chainSyncClientPeerPipelined cli)
               (chainSyncServerPeer ser)
         )
-        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMin (fromIntegral omax))
         cps
 
 propChainSyncPipelinedMaxConnectIO :: ChainProducerStateForkTest
                                    -> [Bool]
-                                   -> Positive Word16
+                                   -> PipeliningDepth
                                    -> Property
-propChainSyncPipelinedMaxConnectIO cps choices (Positive omax) =
+propChainSyncPipelinedMaxConnectIO cps choices (PipeliningDepth omax) =
     ioProperty $
       chainSyncPipelinedForkExperiment
         (\ser cli ->
@@ -313,14 +313,14 @@ propChainSyncPipelinedMaxConnectIO cps choices (Positive omax) =
               (chainSyncClientPeerPipelined cli)
               (chainSyncServerPeer ser)
         )
-        (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMax (fromIntegral omax))
         cps
 
 propChainSyncPipelinedMinConnectIO :: ChainProducerStateForkTest
                                    -> [Bool]
-                                   -> Positive Word16
+                                   -> PipeliningDepth
                                    -> Property
-propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
+propChainSyncPipelinedMinConnectIO cps choices (PipeliningDepth omax) =
     ioProperty $
       chainSyncPipelinedForkExperiment
         (\ser cli ->
@@ -329,7 +329,7 @@ propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
               (chainSyncClientPeerPipelined cli)
               (chainSyncServerPeer ser)
         )
-        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMin (fromIntegral omax))
         cps
 
 
@@ -693,58 +693,63 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
 
 propChainSyncDemoPipelinedMaxST
   :: ChainProducerStateForkTest
-  -> Positive Word16
+  -> PipeliningDepth
   -> Property
-propChainSyncDemoPipelinedMaxST cps (Positive omax) =
+propChainSyncDemoPipelinedMaxST cps (PipeliningDepth omax) =
+  omax > 0 ==>
   runSimOrThrow $ do
     (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral omax)
     chainSyncDemoPipelined
       clientChan serverChan
-      (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+      (ChainSyncExamples.chainSyncClientPipelinedMax (fromIntegral omax))
       cps
 
 propChainSyncDemoPipelinedMaxIO
   :: ChainProducerStateForkTest
-  -> Positive Word16
+  -> PipeliningDepth
   -> Property
-propChainSyncDemoPipelinedMaxIO cps (Positive omax) =
+propChainSyncDemoPipelinedMaxIO cps (PipeliningDepth omax) =
+  omax > 0 ==>
   ioProperty $ do
     (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral omax)
     chainSyncDemoPipelined
       clientChan serverChan
-      (ChainSyncExamples.chainSyncClientPipelinedMax omax)
+      (ChainSyncExamples.chainSyncClientPipelinedMax (fromIntegral omax))
       cps
 
 propChainSyncDemoPipelinedMinST
   :: ChainProducerStateForkTest
-  -> Positive Word16
+  -> PipeliningDepth
   -> Property
-propChainSyncDemoPipelinedMinST cps (Positive omax) =
+propChainSyncDemoPipelinedMinST cps (PipeliningDepth omax) =
+  omax > 0 ==>
   runSimOrThrow $ do
     (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral omax)
     chainSyncDemoPipelined
       clientChan serverChan
-      (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+      (ChainSyncExamples.chainSyncClientPipelinedMin (fromIntegral omax))
       cps
 
 propChainSyncDemoPipelinedMinIO
   :: ChainProducerStateForkTest
-  -> Positive Word16
+  -> PipeliningDepth
   -> Property
-propChainSyncDemoPipelinedMinIO cps (Positive omax) =
+propChainSyncDemoPipelinedMinIO cps (PipeliningDepth omax) =
+  omax > 0 ==>
   ioProperty $ do
     (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral omax)
     chainSyncDemoPipelined
       clientChan serverChan
-      (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+      (ChainSyncExamples.chainSyncClientPipelinedMin (fromIntegral omax))
       cps
 
 propChainSyncDemoPipelinedLowHighST
   :: ChainProducerStateForkTest
-  -> Positive Word16
-  -> Positive Word16
+  -> PipeliningDepth
+  -> PipeliningDepth
   -> Property
-propChainSyncDemoPipelinedLowHighST cps (Positive x) (Positive y) =
+propChainSyncDemoPipelinedLowHighST cps (PipeliningDepth x) (PipeliningDepth y) =
+    highMark > 0 ==>
     runSimOrThrow $ do
       (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral highMark)
       chainSyncDemoPipelined
@@ -752,15 +757,16 @@ propChainSyncDemoPipelinedLowHighST cps (Positive x) (Positive y) =
         (ChainSyncExamples.chainSyncClientPipelinedLowHigh lowMark highMark)
         cps
   where
-    lowMark = min x y
-    highMark = max x y
+    lowMark = fromIntegral $ min x y
+    highMark = fromIntegral $ max x y
 
 propChainSyncDemoPipelinedLowHighIO
   :: ChainProducerStateForkTest
-  -> Positive Word16
-  -> Positive Word16
+  -> PipeliningDepth
+  -> PipeliningDepth
   -> Property
-propChainSyncDemoPipelinedLowHighIO cps (Positive x) (Positive y) =
+propChainSyncDemoPipelinedLowHighIO cps (PipeliningDepth x) (PipeliningDepth y) =
+    highMark > 0 ==>
     ioProperty $ do
       (clientChan, serverChan) <- createPipelineTestChannels (fromIntegral highMark)
       chainSyncDemoPipelined
@@ -768,20 +774,21 @@ propChainSyncDemoPipelinedLowHighIO cps (Positive x) (Positive y) =
         (ChainSyncExamples.chainSyncClientPipelinedLowHigh lowMark highMark)
         cps
   where
-    lowMark = min x y
-    highMark = max x y
+    lowMark = fromIntegral $ min x y
+    highMark = fromIntegral $ max x y
 
 propChainSyncDemoPipelinedMinBufferedIO
   :: ChainProducerStateForkTest
-  -> Positive Word16
-  -> Positive Word16
+  -> PipeliningDepth
+  -> PipeliningDepth
   -> Property
-propChainSyncDemoPipelinedMinBufferedIO cps (Positive n) (Positive m) =
+propChainSyncDemoPipelinedMinBufferedIO cps (PipeliningDepth n) (PipeliningDepth m) =
+    omin > 0 ==>
     ioProperty $ do
       (clientChan, serverChan) <- createConnectedBufferedChannels (fromIntegral omin)
       chainSyncDemoPipelined
         clientChan serverChan
-        (ChainSyncExamples.chainSyncClientPipelinedMin omax)
+        (ChainSyncExamples.chainSyncClientPipelinedMin (fromIntegral omax))
         cps
   where
     omin = min n m
