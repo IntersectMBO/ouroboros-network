@@ -49,7 +49,7 @@ localStateQueryClientNull =
 --  * a termination messge
 --
 data ClientStIdle block point query (m :: Type -> Type) a where
-  SendMsgAcquire :: Maybe point
+  SendMsgAcquire :: Target point
                  -> ClientStAcquiring block point query m a
                  -> ClientStIdle      block point query m a
 
@@ -82,7 +82,7 @@ data ClientStAcquired block point query m a where
                    -> ClientStQuerying block point query m a result
                    -> ClientStAcquired block point query m a
 
-  SendMsgReAcquire :: Maybe point
+  SendMsgReAcquire :: Target point
                    -> ClientStAcquiring block point query m a
                    -> ClientStAcquired  block point query m a
 
@@ -119,8 +119,8 @@ mapLocalStateQueryClient fpoint fquery fresult =
   where
     goIdle :: ClientStIdle block  point  query  m a
            -> ClientStIdle block' point' query' m a
-    goIdle (SendMsgAcquire pt k) =
-      SendMsgAcquire (fpoint <$> pt) (goAcquiring k)
+    goIdle (SendMsgAcquire tgt k) =
+      SendMsgAcquire (fpoint <$> tgt) (goAcquiring k)
 
     goIdle (SendMsgDone a) = SendMsgDone a
 
@@ -136,8 +136,8 @@ mapLocalStateQueryClient fpoint fquery fresult =
                -> ClientStAcquired block' point' query' m a
     goAcquired (SendMsgQuery     q  k) = case fquery q of
                                            Some q' -> SendMsgQuery q' (goQuerying q q' k)
-    goAcquired (SendMsgReAcquire pt k) = SendMsgReAcquire (fpoint <$> pt) (goAcquiring k)
-    goAcquired (SendMsgRelease      k) = SendMsgRelease (fmap goIdle k)
+    goAcquired (SendMsgReAcquire tgt k) = SendMsgReAcquire (fpoint <$> tgt) (goAcquiring k)
+    goAcquired (SendMsgRelease       k) = SendMsgRelease (fmap goIdle k)
 
     goQuerying :: forall result result'.
                   query  result
@@ -168,9 +168,9 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
       :: ClientStIdle block point query m a
       -> Peer (LocalStateQuery block point query) AsClient StIdle m a
     handleStIdle req = case req of
-      SendMsgAcquire pt stAcquiring ->
+      SendMsgAcquire tgt stAcquiring ->
         Yield (ClientAgency TokIdle)
-              (MsgAcquire pt)
+              (MsgAcquire tgt)
               (handleStAcquiring stAcquiring)
       SendMsgDone a ->
         Yield (ClientAgency TokIdle)
@@ -193,9 +193,9 @@ localStateQueryClientPeer (LocalStateQueryClient handler) =
         Yield (ClientAgency TokAcquired)
               (MsgQuery query)
               (handleStQuerying query stQuerying)
-      SendMsgReAcquire pt stAcquiring ->
+      SendMsgReAcquire tgt stAcquiring ->
         Yield (ClientAgency TokAcquired)
-              (MsgReAcquire pt)
+              (MsgReAcquire tgt)
               (handleStAcquiring stAcquiring)
       SendMsgRelease stIdle ->
         Yield (ClientAgency TokAcquired)

@@ -6,6 +6,11 @@
 
 * Pipeline depth type changed from `Word32` to `Word16`.
 
+* In LocalStateQuery, changed the argument of `MsgAcquire` and `MsgReAcquire`
+  from `Maybe point` to a new ADT `Target point`. It still allows the client to
+  acquire either the volatile tip or a specific point, but now also allows them
+  to instead acquire the immutable tip.
+
 ### Non-breaking changes
 
 * ghc-9.8 support.

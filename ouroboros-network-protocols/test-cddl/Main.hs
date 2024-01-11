@@ -429,6 +429,7 @@ localStateQueryCodec :: Codec (LocalStateQuery Block BlockPoint Query)
                               CBOR.DeserialiseFailure IO BL.ByteString
 localStateQueryCodec =
     codecLocalStateQuery
+      maxBound
       Serialise.encode Serialise.decode
       encodeQuery decodeQuery
       (\Query{} -> Serialise.encode) (\Query{} -> Serialise.decode)

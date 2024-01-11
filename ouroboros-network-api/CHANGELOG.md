@@ -2,6 +2,12 @@
 
 ## next release
 
+### Non-breaking changes
+
+- CI requires me to add an entry here even though I merely updated a comment on
+  `NodeToClientV_16` mention new `ImmutableTip` argument in LocalStateQuery
+  mini protocol
+
 ## 0.6.2.0 -- 2023-12-14
 
 ### Non-breaking changes

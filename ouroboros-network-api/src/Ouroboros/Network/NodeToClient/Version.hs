@@ -38,7 +38,8 @@ data NodeToClientVersion
     | NodeToClientV_15
     -- ^ added `query` to NodeToClientVersionData
     | NodeToClientV_16
-    -- ^ enabled @CardanoNodeToClientVersion11@, i.e., Conway and
+    -- ^ add @ImmutableTip@ to @LocalStateQuery@, enabled
+    -- @CardanoNodeToClientVersion11@, i.e., Conway and
     -- @GetStakeDelegDeposits@.
   deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
 

@@ -24,6 +24,7 @@ import           Text.Printf
 
 import           Network.TypedProtocol.Codec.CBOR
 
+import qualified Ouroboros.Network.NodeToClient.Version as V
 import           Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
@@ -35,18 +36,23 @@ codecLocalStateQuery
      ( MonadST m
      , ShowQuery query
      )
-  => (point -> CBOR.Encoding)
+  => V.NodeToClientVersion
+     -- ^ eg whether to allow 'ImmutableTip' in @'MsgAcquire'
+  -> (point -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s point)
   -> (forall result . query result -> CBOR.Encoding)
   -> (forall s . CBOR.Decoder s (Some query))
   -> (forall result . query result -> result -> CBOR.Encoding)
   -> (forall result . query result -> forall s . CBOR.Decoder s result)
   -> Codec (LocalStateQuery block point query) CBOR.DeserialiseFailure m ByteString
-codecLocalStateQuery encodePoint  decodePoint
+codecLocalStateQuery version
+                     encodePoint  decodePoint
                      encodeQuery  decodeQuery
                      encodeResult decodeResult =
     mkCodecCborLazyBS encode decode
   where
+    canAcquireImmutable = version >= V.NodeToClientV_16
+
     encodeFailure :: AcquireFailure -> CBOR.Encoding
     encodeFailure AcquireFailurePointTooOld     = CBOR.encodeWord8 0
     encodeFailure AcquireFailurePointNotOnChain = CBOR.encodeWord8 1
@@ -65,14 +71,23 @@ codecLocalStateQuery encodePoint  decodePoint
               PeerHasAgency pr st
            -> Message (LocalStateQuery block point query) st st'
            -> CBOR.Encoding
-    encode (ClientAgency TokIdle) (MsgAcquire (Just pt)) =
+    encode (ClientAgency TokIdle) (MsgAcquire (SpecificPoint pt)) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 0
      <> encodePoint pt
 
-    encode (ClientAgency TokIdle) (MsgAcquire Nothing) =
+    encode (ClientAgency TokIdle) (MsgAcquire VolatileTip) =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 8
+
+    encode (ClientAgency TokIdle) (MsgAcquire ImmutableTip)
+      | canAcquireImmutable =
+        CBOR.encodeListLen 1
+     <> CBOR.encodeWord 10
+      | otherwise =
+      error $ "encodeFailure: local state query: acquiring the immutable tip "
+           ++ "must be conditional on negotiating v16 of the node-to-client "
+           ++ "protocol"
 
     encode (ServerAgency TokAcquiring) MsgAcquired =
         CBOR.encodeListLen 1
@@ -97,14 +112,23 @@ codecLocalStateQuery encodePoint  decodePoint
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 5
 
-    encode (ClientAgency TokAcquired) (MsgReAcquire (Just pt)) =
+    encode (ClientAgency TokAcquired) (MsgReAcquire (SpecificPoint pt)) =
         CBOR.encodeListLen 2
      <> CBOR.encodeWord 6
      <> encodePoint pt
 
-    encode (ClientAgency TokAcquired) (MsgReAcquire Nothing) =
+    encode (ClientAgency TokAcquired) (MsgReAcquire VolatileTip) =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 9
+
+    encode (ClientAgency TokAcquired) (MsgReAcquire ImmutableTip)
+      | canAcquireImmutable =
+        CBOR.encodeListLen 1
+     <> CBOR.encodeWord 11
+      | otherwise =
+      error $ "encodeFailure: local state query: re-acquiring the immutable "
+           ++ "tip must be conditional on negotiating v16 of the "
+           ++ "node-to-client protocol"
 
     encode (ClientAgency TokIdle) MsgDone =
         CBOR.encodeListLen 1
@@ -119,10 +143,13 @@ codecLocalStateQuery encodePoint  decodePoint
       case (stok, len, key) of
         (ClientAgency TokIdle, 2, 0) -> do
           pt <- decodePoint
-          return (SomeMessage (MsgAcquire (Just pt)))
+          return (SomeMessage (MsgAcquire (SpecificPoint pt)))
 
         (ClientAgency TokIdle, 1, 8) -> do
-          return (SomeMessage (MsgAcquire Nothing))
+          return (SomeMessage (MsgAcquire VolatileTip))
+
+        (ClientAgency TokIdle, 1, 10) -> do
+          return (SomeMessage (MsgAcquire ImmutableTip))
 
         (ServerAgency TokAcquiring, 1, 1) ->
           return (SomeMessage MsgAcquired)
@@ -144,10 +171,13 @@ codecLocalStateQuery encodePoint  decodePoint
 
         (ClientAgency TokAcquired, 2, 6) -> do
           pt <- decodePoint
-          return (SomeMessage (MsgReAcquire (Just pt)))
+          return (SomeMessage (MsgReAcquire (SpecificPoint pt)))
 
         (ClientAgency TokAcquired, 1, 9) -> do
-          return (SomeMessage (MsgReAcquire Nothing))
+          return (SomeMessage (MsgReAcquire VolatileTip))
+
+        (ClientAgency TokAcquired, 1, 11) -> do
+          return (SomeMessage (MsgReAcquire ImmutableTip))
 
         (ClientAgency TokIdle, 1, 7) ->
           return (SomeMessage MsgDone)
