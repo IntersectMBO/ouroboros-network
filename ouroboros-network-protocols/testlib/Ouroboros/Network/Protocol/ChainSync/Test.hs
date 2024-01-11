@@ -14,7 +14,7 @@ import qualified Codec.Serialise as S
 import           Control.Monad (unless, void)
 import qualified Control.Monad.ST as ST
 import           Data.ByteString.Lazy (ByteString)
-import           Data.Word
+import           Data.Word (Word16)
 
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadAsync
@@ -224,7 +224,7 @@ chainSyncPipelinedForkExperiment run mkClient (ChainProducerStateForkTest cps ch
 --
 
 propChainSyncPipelinedMaxDirectST :: ChainProducerStateForkTest
-                                  -> Positive Word32
+                                  -> Positive Word16
                                   -> Bool
 propChainSyncPipelinedMaxDirectST cps (Positive omax) =
     runSimOrThrow $
@@ -234,7 +234,7 @@ propChainSyncPipelinedMaxDirectST cps (Positive omax) =
         cps
 
 propChainSyncPipelinedMaxDirectIO :: ChainProducerStateForkTest
-                                  -> Positive Word32
+                                  -> Positive Word16
                                   -> Property
 propChainSyncPipelinedMaxDirectIO cps (Positive omax) =
     ioProperty $
@@ -244,7 +244,7 @@ propChainSyncPipelinedMaxDirectIO cps (Positive omax) =
         cps
 
 propChainSyncPipelinedMinDirectST :: ChainProducerStateForkTest
-                                  -> Positive Word32
+                                  -> Positive Word16
                                   -> Bool
 propChainSyncPipelinedMinDirectST cps (Positive omax) =
     runSimOrThrow $
@@ -254,7 +254,7 @@ propChainSyncPipelinedMinDirectST cps (Positive omax) =
         cps
 
 propChainSyncPipelinedMinDirectIO :: ChainProducerStateForkTest
-                                  -> Positive Word32
+                                  -> Positive Word16
                                   -> Property
 propChainSyncPipelinedMinDirectIO cps (Positive omax) =
     ioProperty $
@@ -269,7 +269,7 @@ propChainSyncPipelinedMinDirectIO cps (Positive omax) =
 
 propChainSyncPipelinedMaxConnectST :: ChainProducerStateForkTest
                                    -> [Bool]
-                                   -> Positive Word32
+                                   -> Positive Word16
                                    -> Bool
 propChainSyncPipelinedMaxConnectST cps choices (Positive omax) =
     runSimOrThrow $
@@ -286,7 +286,7 @@ propChainSyncPipelinedMaxConnectST cps choices (Positive omax) =
 
 propChainSyncPipelinedMinConnectST :: ChainProducerStateForkTest
                                    -> [Bool]
-                                   -> Positive Word32
+                                   -> Positive Word16
                                    -> Bool
 propChainSyncPipelinedMinConnectST cps choices (Positive omax) =
     runSimOrThrow $
@@ -302,7 +302,7 @@ propChainSyncPipelinedMinConnectST cps choices (Positive omax) =
 
 propChainSyncPipelinedMaxConnectIO :: ChainProducerStateForkTest
                                    -> [Bool]
-                                   -> Positive Word32
+                                   -> Positive Word16
                                    -> Property
 propChainSyncPipelinedMaxConnectIO cps choices (Positive omax) =
     ioProperty $
@@ -318,7 +318,7 @@ propChainSyncPipelinedMaxConnectIO cps choices (Positive omax) =
 
 propChainSyncPipelinedMinConnectIO :: ChainProducerStateForkTest
                                    -> [Bool]
-                                   -> Positive Word32
+                                   -> Positive Word16
                                    -> Property
 propChainSyncPipelinedMinConnectIO cps choices (Positive omax) =
     ioProperty $
@@ -693,7 +693,7 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
 
 propChainSyncDemoPipelinedMaxST
   :: ChainProducerStateForkTest
-  -> Positive Word32
+  -> Positive Word16
   -> Property
 propChainSyncDemoPipelinedMaxST cps (Positive omax) =
   runSimOrThrow $ do
@@ -705,7 +705,7 @@ propChainSyncDemoPipelinedMaxST cps (Positive omax) =
 
 propChainSyncDemoPipelinedMaxIO
   :: ChainProducerStateForkTest
-  -> Positive Word32
+  -> Positive Word16
   -> Property
 propChainSyncDemoPipelinedMaxIO cps (Positive omax) =
   ioProperty $ do
@@ -717,7 +717,7 @@ propChainSyncDemoPipelinedMaxIO cps (Positive omax) =
 
 propChainSyncDemoPipelinedMinST
   :: ChainProducerStateForkTest
-  -> Positive Word32
+  -> Positive Word16
   -> Property
 propChainSyncDemoPipelinedMinST cps (Positive omax) =
   runSimOrThrow $ do
@@ -729,7 +729,7 @@ propChainSyncDemoPipelinedMinST cps (Positive omax) =
 
 propChainSyncDemoPipelinedMinIO
   :: ChainProducerStateForkTest
-  -> Positive Word32
+  -> Positive Word16
   -> Property
 propChainSyncDemoPipelinedMinIO cps (Positive omax) =
   ioProperty $ do
@@ -741,8 +741,8 @@ propChainSyncDemoPipelinedMinIO cps (Positive omax) =
 
 propChainSyncDemoPipelinedLowHighST
   :: ChainProducerStateForkTest
-  -> Positive Word32
-  -> Positive Word32
+  -> Positive Word16
+  -> Positive Word16
   -> Property
 propChainSyncDemoPipelinedLowHighST cps (Positive x) (Positive y) =
     runSimOrThrow $ do
@@ -757,8 +757,8 @@ propChainSyncDemoPipelinedLowHighST cps (Positive x) (Positive y) =
 
 propChainSyncDemoPipelinedLowHighIO
   :: ChainProducerStateForkTest
-  -> Positive Word32
-  -> Positive Word32
+  -> Positive Word16
+  -> Positive Word16
   -> Property
 propChainSyncDemoPipelinedLowHighIO cps (Positive x) (Positive y) =
     ioProperty $ do
@@ -773,8 +773,8 @@ propChainSyncDemoPipelinedLowHighIO cps (Positive x) (Positive y) =
 
 propChainSyncDemoPipelinedMinBufferedIO
   :: ChainProducerStateForkTest
-  -> Positive Word32
-  -> Positive Word32
+  -> Positive Word16
+  -> Positive Word16
   -> Property
 propChainSyncDemoPipelinedMinBufferedIO cps (Positive n) (Positive m) =
     ioProperty $ do

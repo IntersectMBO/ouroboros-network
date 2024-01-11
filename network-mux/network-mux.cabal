@@ -7,7 +7,7 @@ description:            Multiplexing library.
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG)
+copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
 author:                 Duncan Coutts, Marc Fontaine, Karl Knutsson, Marcin Szamotulski, Alexander Vieth, Neil Davies
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
@@ -40,7 +40,7 @@ common demo-deps
                        -Wunused-packages
 
 library
-  build-depends:       base            >=4.14 && <4.19,
+  build-depends:       base            >=4.14 && <4.20,
                        io-classes     ^>=1.3.1,
                        strict-stm,
                        si-timers,
@@ -50,7 +50,7 @@ library
 
                        array           >=0.5 && <0.6,
                        binary          >=0.8 && <0.11,
-                       bytestring      >=0.10 && <0.12,
+                       bytestring      >=0.10 && <0.13,
                        containers      >=0.5 && <0.7,
                        -- The Windows version of network-3.1.2 is missing
                        -- functions, see
@@ -117,7 +117,7 @@ test-suite test
                        Test.Mux.ReqResp
                        Test.Mux.Timeout
   default-language:    Haskell2010
-  build-depends:       base >=4.14 && <4.19,
+  build-depends:       base >=4.14 && <4.20,
                        io-classes,
                        si-timers,
                        strict-stm,
@@ -161,7 +161,7 @@ executable mux-demo
   hs-source-dirs:      demo, test
   main-is:             mux-demo.hs
   other-modules:       Test.Mux.ReqResp
-  build-depends:       base >=4.14 && <4.19,
+  build-depends:       base >=4.14 && <4.20,
                        network-mux,
                        io-classes,
                        contra-tracer,

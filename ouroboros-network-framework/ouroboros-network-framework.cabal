@@ -6,7 +6,7 @@ description:            Ouroboros network framework.
 license:                Apache-2.0
 license-files:          LICENSE
                         NOTICE
-copyright:              2019-2023 Input Output Global Inc (IOG)
+copyright:              2019-2023 Input Output Global Inc (IOG), 2023-2024 Intersect
 author:                 Alexander Vieth, Duncan Coutts, Marcin Szamotulski
 maintainer:             marcin.szamotulski@iohk.io
 category:               Network
@@ -68,13 +68,13 @@ library
                        Simulation.Network.Snocket
 
   -- other-extensions:
-  build-depends:       base            >=4.12  && <4.19
+  build-depends:       base            >=4.12  && <4.20
                      , async           >=2.1   && <2.3
-                     , bytestring      >=0.10  && <0.12
+                     , bytestring      >=0.10  && <0.13
                      , cborg           >=0.2.1 && <0.3
-                     , containers      >=0.5   && <0.7
+                     , containers      >=0.5   && <0.8
                      , deepseq
-                     , dns                        < 4.0
+                     , dns                        < 4.3
                      , iproute         >=1.7   && < 1.8
                      , hashable
                      , mtl
@@ -134,7 +134,7 @@ library testlib
 
     other-modules:
 
-    build-depends:   base              >=4.14 && <4.19
+    build-depends:   base              >=4.14 && <4.20
                    , bytestring
                    , cborg
                    , containers
@@ -176,7 +176,7 @@ test-suite sim-tests
                        Test.Ouroboros.Network.RateLimiting
                        Test.Simulation.Network.Snocket
 
-  build-depends:       base              >=4.14 && <4.19
+  build-depends:       base              >=4.14 && <4.20
                      , bytestring
                      , cborg
                      , containers
@@ -242,7 +242,7 @@ test-suite io-tests
                        Test.Ouroboros.Network.Socket
                        Test.Ouroboros.Network.Subscription
 
-  build-depends:       base              >=4.14 && <4.19
+  build-depends:       base              >=4.14 && <4.20
                      , bytestring
                      , containers
                      , dns
@@ -289,7 +289,7 @@ test-suite io-tests
 executable demo-ping-pong
   hs-source-dirs:      demo
   main-is:             ping-pong.hs
-  build-depends:       base >=4.14 && <4.19,
+  build-depends:       base >=4.14 && <4.20,
                        async,
                        bytestring,
                        directory,
@@ -316,7 +316,7 @@ executable demo-ping-pong
 executable demo-connection-manager
   hs-source-dirs:      demo
   main-is:             connection-manager.hs
-  build-depends:       base >=4.14 && <4.19,
+  build-depends:       base >=4.14 && <4.20,
                        bytestring,
                        network,
                        optparse-applicative,

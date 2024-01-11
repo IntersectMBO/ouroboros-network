@@ -4,13 +4,30 @@
 
 ### Breaking changes
 
+* Renamed `ReconnectDelay` to `RepromoteDelay` - the dalay is used after
+  demotion to `cold` as well as `warm` state.  A `ReconnectDelay` type alias is
+  still provided but deprecated.
+
 ### Non-breaking changes
+
+* The internal `Guarded` type changed.  It is provided with pattern synonyms
+  which hide both `Min` and `FirstToFinish`.
+* Adds 'unit_reconnect' testnet test
+* When churning split restoring known peers and established peers targets into
+  two separate steps.
+* Fix `KnownPeers.insert` function semantic bug where it could easily misused,
+  overwriting values.
+* Made (light) peer sharing results advertisable unless already known
+* Peer sharing is now delayed for 5minutes for newly established peers.
+* `policyPeerShareRetryTime` to 900s
 
 ## 0.10.2.2 -- 2023-12-15
 
 ### Non-breaking changes
 
 * Use `checked-strict-vars-0.2.0.0`.
+* ghc-9.8 support.
+
 
 ## 0.10.2.1 -- 2023-12-14
 

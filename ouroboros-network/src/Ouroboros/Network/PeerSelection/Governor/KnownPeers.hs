@@ -9,9 +9,7 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
   , aboveTarget
   ) where
 
-import qualified Data.Map as Map
 import           Data.Maybe (fromMaybe)
-import           Data.Semigroup (Min (..))
 import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (Job (..))
@@ -22,6 +20,8 @@ import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 
 import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.State.KnownPeers
@@ -117,7 +117,7 @@ belowTarget actions
   | numKnownPeers < targetNumberOfKnownPeers
   , numPeerShareReqsPossible > 0
   , Set.null availableForPeerShare
-  = GuardedSkip (Min <$> EstablishedPeers.minPeerShareTime establishedPeers)
+  = GuardedSkip (EstablishedPeers.minPeerShareTime establishedPeers)
 
   | otherwise
   = GuardedSkip Nothing
@@ -188,15 +188,19 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                           ]
                         , decisionState =
                            st { -- TODO: also update with the failures
-                                knownPeers = KnownPeers.insert
-                                               (Map.fromList
-                                                $ map (\a -> ( a
-                                                             , ( Nothing
-                                                               , Nothing
-                                                               , Nothing))
-                                                      )
-                                                      newPeers)
-                                               (knownPeers st),
+                                knownPeers = KnownPeers.alter
+                                              (\x -> case x of
+                                                Nothing ->
+                                                  KnownPeers.alterKnownPeerInfo
+                                                    (Nothing, Just DoAdvertisePeer, Nothing)
+                                                    x
+                                                Just _ ->
+                                                  KnownPeers.alterKnownPeerInfo
+                                                    (Nothing, Nothing, Nothing)
+                                                    x
+                                              )
+                                              (Set.fromList newPeers)
+                                              (knownPeers st),
                                 inProgressPeerShareReqs = inProgressPeerShareReqs st
                                                         - length peers
                            }
@@ -232,15 +236,19 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                            ]
                          , decisionState =
                             st { -- TODO: also update with the failures
-                                 knownPeers = KnownPeers.insert
-                                                (Map.fromList
-                                                 $ map (\a -> ( a
-                                                              , ( Nothing
-                                                                , Nothing
-                                                                , Nothing))
-                                                       )
-                                                       newPeers)
-                                                (knownPeers st),
+                                 knownPeers = KnownPeers.alter
+                                               (\x -> case x of
+                                                 Nothing ->
+                                                   KnownPeers.alterKnownPeerInfo
+                                                     (Nothing, Just DoAdvertisePeer, Nothing)
+                                                     x
+                                                 Just _ ->
+                                                   KnownPeers.alterKnownPeerInfo
+                                                     (Nothing, Nothing, Nothing)
+                                                     x
+                                               )
+                                               (Set.fromList newPeers)
+                                               (knownPeers st),
                                  inProgressPeerShareReqs = inProgressPeerShareReqs st
                                                          - length peerResults
                                }
@@ -290,21 +298,24 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                 Left partialResults -> [ p | Just (Right (PeerSharingResult ps)) <- partialResults
                                            , p <- ps
                                            , not (isKnownLedgerPeer p (knownPeers st)) ]
-
          in Decision { decisionTrace = [ TracePeerShareResults peerResults
                                        , TracePeerShareResultsFiltered newPeers
                                        ]
                      , decisionState =
                         st { -- TODO: also update with the failures
-                             knownPeers = KnownPeers.insert
-                                            (Map.fromList
-                                             $ map (\a -> ( a
-                                                          , ( Nothing
-                                                            , Nothing
-                                                            , Nothing))
-                                                   )
-                                                   newPeers)
-                                            (knownPeers st),
+                             knownPeers = KnownPeers.alter
+                                           (\x -> case x of
+                                             Nothing ->
+                                               KnownPeers.alterKnownPeerInfo
+                                                 (Nothing, Just DoAdvertisePeer, Nothing)
+                                                 x
+                                             Just _ ->
+                                               KnownPeers.alterKnownPeerInfo
+                                                 (Nothing, Nothing, Nothing)
+                                                 x
+                                           )
+                                           (Set.fromList newPeers)
+                                           (knownPeers st),
                              inProgressPeerShareReqs = inProgressPeerShareReqs st
                                                      - length peers
                            }

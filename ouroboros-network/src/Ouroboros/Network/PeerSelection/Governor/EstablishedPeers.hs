@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -10,7 +11,6 @@ module Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
 
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Semigroup (Min (..))
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -24,6 +24,9 @@ import           System.Random (randomR)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (IsBigLedgerPeer (..))
+import           Ouroboros.Network.PeerSelection.PeerAdvertise
+                     (PeerAdvertise (..))
+import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
@@ -72,7 +75,7 @@ belowTargetLocal :: forall peeraddr peerconn m.
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetLocal actions
-                 PeerSelectionPolicy {
+                 policy@PeerSelectionPolicy {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
@@ -128,7 +131,7 @@ belowTargetLocal actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions peer IsNotBigLedgerPeer
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -141,7 +144,7 @@ belowTargetLocal actions
              Set.\\ localEstablishedPeers
              Set.\\ KnownPeers.availableToConnect knownPeers
   , not (Set.null potentialToPromote)
-  = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeers))
+  = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
@@ -168,7 +171,7 @@ belowTargetOther :: forall peeraddr peerconn m.
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetOther actions
-                 PeerSelectionPolicy {
+                 policy@PeerSelectionPolicy {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
@@ -218,14 +221,14 @@ belowTargetOther actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions peer IsNotBigLedgerPeer
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer
                         | peer <- Set.toList selectedToPromote ]
       }
 
     -- If we could connect except that there are no peers currently available
     -- then we return the next wakeup time (if any)
   | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
-  = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeers))
+  = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
@@ -246,7 +249,7 @@ belowTargetBigLedgerPeers :: forall peeraddr peerconn m.
                           => PeerSelectionActions peeraddr peerconn m
                           -> MkGuardedDecision peeraddr peerconn m
 belowTargetBigLedgerPeers actions
-                          PeerSelectionPolicy {
+                          policy@PeerSelectionPolicy {
                             policyPickColdPeersToPromote
                           }
                           st@PeerSelectionState {
@@ -297,7 +300,7 @@ belowTargetBigLedgerPeers actions
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions peer IsBigLedgerPeer
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -305,7 +308,7 @@ belowTargetBigLedgerPeers actions
     -- then we return the next wakeup time (if any)
   | numEstablishedPeers + numConnectInProgress
       < targetNumberOfEstablishedBigLedgerPeers
-  = GuardedSkip (Min <$> KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeers))
+  = GuardedSkip (KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeers))
 
   | otherwise
   = GuardedSkip Nothing
@@ -337,13 +340,16 @@ maxColdPeerRetryBackoff = 5
 jobPromoteColdPeer :: forall peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
                    => PeerSelectionActions peeraddr peerconn m
+                   -> PeerSelectionPolicy peeraddr m
                    -> peeraddr
                    -> IsBigLedgerPeer
                    -> Job () m (Completion m peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing
-                   } peeraddr isBigLedgerPeer =
+                   }
+                   PeerSelectionPolicy { policyPeerShareActivationDelay }
+                   peeraddr isBigLedgerPeer =
     Job job handler () "promoteColdPeer"
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
@@ -412,11 +418,27 @@ jobPromoteColdPeer PeerSelectionActions {
                                            targetNumberOfEstablishedBigLedgerPeers
                                          }
                              }
-                             _now ->
+                             now ->
         let establishedPeers' = EstablishedPeers.insert peeraddr peerconn
+                                                        (addTime policyPeerShareActivationDelay now)
                                                         establishedPeers
+            advertise = case peerSharing of
+                          PeerSharingEnabled  -> DoAdvertisePeer
+                          PeerSharingDisabled -> DoNotAdvertisePeer
             -- Update PeerSharing value in KnownPeers
-            knownPeers'       = KnownPeers.insert (Map.singleton peeraddr (Just peerSharing, Nothing, Nothing))
+            knownPeers'       = KnownPeers.alter
+                                  (\x -> case x of
+                                    Nothing ->
+                                      KnownPeers.alterKnownPeerInfo
+                                        (Just peerSharing, Just advertise, Nothing)
+                                        x
+                                    Just _ ->
+                                      KnownPeers.alterKnownPeerInfo
+                                        (Just peerSharing, Nothing, Nothing)
+                                        x
+                                  )
+                                  (Set.singleton peeraddr)
+                              $ KnownPeers.setSuccessfulConnectionFlag peeraddr
                               $ KnownPeers.clearTepidFlag peeraddr $
                                     KnownPeers.resetFailCount
                                         peeraddr
@@ -512,6 +534,7 @@ aboveTargetOther actions
         availableToDemote = EstablishedPeers.toSet establishedPeers
                               Set.\\ activePeers
                               Set.\\ LocalRootPeers.keysSet localRootPeers
+                              Set.\\ bigLedgerPeers
                               Set.\\ inProgressDemoteWarm
                               Set.\\ inProgressPromoteWarm
                               Set.\\ inProgressDemoteToCold

@@ -5,6 +5,7 @@
 ### Non-breaking changes
 
 * Fixed cabal-fmt warnings.
+* ghc-9.8 support.
 
 ## 0.1.0.3
 

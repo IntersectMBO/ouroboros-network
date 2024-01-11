@@ -4,7 +4,11 @@
 
 ### Breaking changes
 
+* Adds `eventually` and `eventsToListWithId` functions to Signal API
+
 ### Non-breaking changes
+
+* ghc-9.8 support
 
 ## 0.4.1.0 -- 2023-12-14
 

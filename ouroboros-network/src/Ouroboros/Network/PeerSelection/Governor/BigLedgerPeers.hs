@@ -21,7 +21,6 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
@@ -116,7 +115,7 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestBigLedgerPeers }
 
             knownPeers'
                      = KnownPeers.insert
-                         (Map.fromSet (\_ -> ( Just PeerSharingDisabled
+                         (Map.fromSet (\_ -> ( Nothing
                                                -- the peer sharing flag will be
                                                -- updated once we negotiate
                                                -- the connection
