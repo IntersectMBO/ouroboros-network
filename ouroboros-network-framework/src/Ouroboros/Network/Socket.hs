@@ -42,7 +42,6 @@ module Ouroboros.Network.Socket
   , configureSocket
   , configureSystemdSocket
   , SystemdSocketTracer (..)
-  , configureOutboundSocket
     -- * Traces
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
@@ -219,16 +218,6 @@ configureSystemdSocket tracer sock addr = do
 
 data SystemdSocketTracer = SocketOptionNotSet Socket.SocketOption
   deriving Show
-
-
--- | Configure an connection socket.
---
-configureOutboundSocket :: Socket -> IO ()
-configureOutboundSocket sock = do
-    Socket.setSocketOption sock Socket.NoDelay 1
-    Socket.setSockOpt sock Socket.Linger
-                          (StructLinger { sl_onoff  = 1,
-                                          sl_linger = 0 })
 
 
 instance Hashable Socket.SockAddr where
