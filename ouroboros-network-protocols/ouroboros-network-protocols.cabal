@@ -93,8 +93,8 @@ library
                        TypeFamilies,
                        TypeInType
 
-  build-depends:       base              >=4.14 && <4.19,
-                       bytestring        >=0.10 && <0.12,
+  build-depends:       base              >=4.14 && <4.20,
+                       bytestring        >=0.10 && <0.13,
                        cborg             >=0.2.1 && <0.3,
 
                        io-classes       ^>=1.3.1,
@@ -157,7 +157,7 @@ library testlib
                        Test.ChainGenerators
                        Test.ChainProducerState
                        Test.Ouroboros.Network.Testing.Utils
-  build-depends:       base >=4.14 && <4.19,
+  build-depends:       base >=4.14 && <4.20,
                        bytestring,
                        cborg,
                        containers,
@@ -196,7 +196,7 @@ test-suite test
   other-modules:       Test.AnchoredFragment
                        Test.Chain
   default-language:    Haskell2010
-  build-depends:       base >=4.14 && <4.19,
+  build-depends:       base >=4.14 && <4.20,
                        QuickCheck,
                        tasty,
                        tasty-quickcheck,
@@ -220,7 +220,7 @@ test-suite cddl
   else
     buildable: False
   default-language:    Haskell2010
-  build-depends:       base >=4.14 && <4.19,
+  build-depends:       base >=4.14 && <4.20,
                        bytestring,
                        cborg,
                        containers,
@@ -252,3 +252,4 @@ test-suite cddl
                        -Wcompat
                        -Wunused-packages
                        -rtsopts
+                       -with-rtsopts=-M400m

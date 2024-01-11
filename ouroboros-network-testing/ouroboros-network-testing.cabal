@@ -58,7 +58,7 @@ library
                        TypeApplications,
                        TypeFamilies,
                        TypeInType
-  build-depends:       base              >=4.14 && <4.19,
+  build-depends:       base              >=4.14 && <4.20,
                        containers,
                        contra-tracer,
                        deque            ^>=0.4,
@@ -94,7 +94,7 @@ test-suite test
   hs-source-dirs:      test
   other-modules:       Test.Ouroboros.Network.Testing.Data.AbsBearerInfo
 
-  build-depends:       base              >=4.14 && <4.19
+  build-depends:       base              >=4.14 && <4.20
 
                      , QuickCheck
                      , tasty

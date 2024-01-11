@@ -16,6 +16,9 @@
 
 -- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+#if __GLASGOW_HASKELL__ >= 908
+{-# OPTIONS_GHC -Wno-x-partial #-}
+#endif
 
 -- | This module contains experiments which can be executed either in `IO` or
 -- in `IOSim`.

@@ -8,8 +8,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
-
 {-# OPTIONS_GHC -Wno-orphans     #-}
+#if __GLASGOW_HASKELL__ >= 908
+{-# OPTIONS_GHC -Wno-x-partial   #-}
+#endif
 
 module Test.Ouroboros.Network.Subscription (tests) where
 

@@ -14,6 +14,10 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
+#if __GLASGOW_HASKELL__ >= 908
+{-# OPTIONS_GHC -Wno-x-partial #-}
+#endif
+
 module Test.Ouroboros.Network.Server2.IO (tests) where
 
 import           Control.Monad.Class.MonadThrow

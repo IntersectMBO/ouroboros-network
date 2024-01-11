@@ -52,3 +52,9 @@ package network-mux
 
 package ouroboros-network
   flags: +asserts +cddl
+
+if impl(ghc >= 9.8)
+  allow-newer:
+    -- https://github.com/serokell/haskell-with-utf8/pull/25
+    , with-utf8:base
+    , with-utf8:text

@@ -19,6 +19,7 @@
   peer sharing server side and can not reply to requests.
 - Fixed `Acceptable` instance of `NodeToNodeVersionData` to only negotiate
   `PeerSharing` if diffusion mode is `InitiatorAndResponder`
+* ghc-9.8 support.
 
 ## 0.6.0.1 -- 2023-11-16
 

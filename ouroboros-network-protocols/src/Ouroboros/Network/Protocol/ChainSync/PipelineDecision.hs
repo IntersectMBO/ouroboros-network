@@ -14,7 +14,7 @@ module Ouroboros.Network.Protocol.ChainSync.PipelineDecision
   ) where
 
 import           Control.Exception (assert)
-import           Data.Word
+import           Data.Word (Word16)
 
 import           Network.TypedProtocol.Pipelined
 
@@ -100,7 +100,7 @@ constantPipelineDecision f = MkPipelineDecision
 --    Collect
 -- @
 --
-pipelineDecisionMax :: Word32 -> Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo
+pipelineDecisionMax :: Word16 -> Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo
                     -> PipelineDecision n
 pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
     case n of
@@ -139,7 +139,7 @@ pipelineDecisionMax omax n cliTipBlockNo srvTipBlockNo =
 -- | Present minimum pipelining of at most @omax@ requests, collect responses
 -- eagerly.
 --
-pipelineDecisionMin :: Word32 -> Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo
+pipelineDecisionMin :: Word16 -> Nat n -> WithOrigin BlockNo -> WithOrigin BlockNo
                     -> PipelineDecision n
 pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
     case n of
@@ -172,7 +172,7 @@ pipelineDecisionMin omax n cliTipBlockNo srvTipBlockNo =
 -- number of pipelined messages exceeds the high mark, it collects messages
 -- until there are at most @lowMark@ outstanding requests.
 --
-pipelineDecisionLowHighMark :: Word32 -> Word32-> MkPipelineDecision
+pipelineDecisionLowHighMark :: Word16 -> Word16-> MkPipelineDecision
 pipelineDecisionLowHighMark lowMark highMark =
     assert (lowMark <= highMark) goLow
   where

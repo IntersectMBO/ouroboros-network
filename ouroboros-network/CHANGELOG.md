@@ -21,6 +21,8 @@
 ### Non-breaking changes
 
 * Use `checked-strict-vars-0.2.0.0`.
+* ghc-9.8 support.
+
 
 ## 0.10.2.1 -- 2023-12-14
 
