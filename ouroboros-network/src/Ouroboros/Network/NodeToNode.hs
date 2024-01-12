@@ -330,19 +330,19 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
     -- @maxInFlightReqsPerPeer = 100@ is specified).  In the future the
     -- block fetch client will count bytes rather than blocks.  By far
     -- the largest (and the only pipelined message) in 'block-fetch'
-    -- protocol is 'MsgBlock'.  Current block size limit is 64KB and
+    -- protocol is 'MsgBlock'.  Current block size limit is 88kiB and
     -- `blockFetchPipeliningMax` below is set to `100`.  This means that
     -- overall queue limit must be:
     --
     --   ```
-        -- 100 * 64KB = 6.4MB
+        -- 100 * 88kiB = 8.8MiB
     --   ```
     --
-    -- In the byron era this limit was set to `10 * 2MB`, we keep the more
+    -- In the byron era this limit was set to `10 * 2MiB`, we keep the more
     -- relaxed limit here.
     --
     maximumIngressQueue = addSafetyMargin $
-      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 65_535)
+      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112)
   }
 
 txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = MiniProtocolLimits {
@@ -388,7 +388,7 @@ txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = M
       --    1      -- encodeListLen 2
       --  + 1      -- encodeWord 3
       --  + 1      -- encodeListLenIndef
-      --  + 65_536 -- 64kb transaction
+      --  + 65_536 -- 64kiB transaction
       --  + 1      -- encodeBreak
       --  = 65_540
       -- ```
