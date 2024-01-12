@@ -335,14 +335,14 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
     -- overall queue limit must be:
     --
     --   ```
-        -- 100 * 64KB = 6.4MB
+        -- 100 * 88KB = 8.8MB
     --   ```
     --
     -- In the byron era this limit was set to `10 * 2MB`, we keep the more
     -- relaxed limit here.
     --
     maximumIngressQueue = addSafetyMargin $
-      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 65_535)
+      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112)
   }
 
 txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = MiniProtocolLimits {
