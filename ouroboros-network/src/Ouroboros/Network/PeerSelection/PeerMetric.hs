@@ -595,7 +595,8 @@ adjustAvg :: PeerMetricsConfiguration
           -> SlotNo       -- ^ current slot
           -> Int
           -> Int
-adjustAvg PeerMetricsConfiguration { maxEntriesToTrack } minSlotNo joinedSlotNo lastSlotNo avg
+adjustAvg _ _ _ _ _ = 0
+{-adjustAvg PeerMetricsConfiguration { maxEntriesToTrack } minSlotNo joinedSlotNo lastSlotNo avg
     -- when there are only a few results in the 'PeerMetricsState' we don't
     -- take into account the average.  This allows the system to start, without
     -- penalising the peers which we connected to early.
@@ -613,4 +614,4 @@ adjustAvg PeerMetricsConfiguration { maxEntriesToTrack } minSlotNo joinedSlotNo 
     minSlot, lastSlot, joinedSlot :: Int
     minSlot    = maybe 1 slotToInt minSlotNo
     lastSlot   = slotToInt lastSlotNo
-    joinedSlot = slotToInt joinedSlotNo
+    joinedSlot = slotToInt joinedSlotNo -}
