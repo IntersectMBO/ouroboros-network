@@ -194,11 +194,11 @@ type NodeToNodeProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
 
 
 data MiniProtocolParameters = MiniProtocolParameters {
-      chainSyncPipeliningHighMark :: !Word32,
+      chainSyncPipeliningHighMark :: !Word16,
       -- ^ high threshold for pipelining (we will never exceed that many
       -- messages pipelined).
 
-      chainSyncPipeliningLowMark  :: !Word32,
+      chainSyncPipeliningLowMark  :: !Word16,
       -- ^ low threshold: if we hit the 'chainSyncPipeliningHighMark' we will
       -- listen for responses until there are at most
       -- 'chainSyncPipeliningLowMark' pipelined message
@@ -208,7 +208,7 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- Note: 'chainSyncPipeliningLowMark' and 'chainSyncPipeliningLowMark'
       -- are passed to 'pipelineDecisionLowHighMark'.
 
-      blockFetchPipeliningMax     :: !Word,
+      blockFetchPipeliningMax     :: !Word16,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
       txSubmissionMaxUnacked      :: !Word16
@@ -341,8 +341,8 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
     -- In the byron era this limit was set to `10 * 2MB`, we keep the more
     -- relaxed limit here.
     --
-    maximumIngressQueue = addSafetyMargin $ fromIntegral $
-      max (10 * 2_097_154) (blockFetchPipeliningMax * 65535)
+    maximumIngressQueue = addSafetyMargin $
+      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 65_535)
   }
 
 txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = MiniProtocolLimits {

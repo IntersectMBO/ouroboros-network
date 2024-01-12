@@ -8,6 +8,9 @@
   demotion to `cold` as well as `warm` state.  A `ReconnectDelay` type alias is
   still provided but deprecated.
 
+* Changed pipelining parameters in `MiniProtocolParameters` from `Word32` to
+  `Word16` to match the types elsewhere.
+
 ### Non-breaking changes
 
 * The internal `Guarded` type changed.  It is provided with pattern synonyms
