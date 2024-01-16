@@ -48,15 +48,25 @@ library
                    Cardano.KESAgent.Serialization.TextEnvelope
                    Cardano.KESAgent.Serialization.RawUtil
                    Cardano.KESAgent.Serialization.DirectCodec
+                   Cardano.KESAgent.Protocols.Types
                    Cardano.KESAgent.Protocols.VersionHandshake.Driver
                    Cardano.KESAgent.Protocols.VersionHandshake.Peers
                    Cardano.KESAgent.Protocols.VersionHandshake.Protocol
-                   Cardano.KESAgent.Protocols.Service.Driver
-                   Cardano.KESAgent.Protocols.Service.Peers
-                   Cardano.KESAgent.Protocols.Service.Protocol
-                   Cardano.KESAgent.Protocols.Control.Driver
-                   Cardano.KESAgent.Protocols.Control.Peers
-                   Cardano.KESAgent.Protocols.Control.Protocol
+
+                   Cardano.KESAgent.Protocols.Service.Next.Driver
+                   Cardano.KESAgent.Protocols.Service.Next.Peers
+                   Cardano.KESAgent.Protocols.Service.Next.Protocol
+                   Cardano.KESAgent.Protocols.Service.V1.Driver
+                   Cardano.KESAgent.Protocols.Service.V1.Peers
+                   Cardano.KESAgent.Protocols.Service.V1.Protocol
+
+                   Cardano.KESAgent.Protocols.Control.Next.Driver
+                   Cardano.KESAgent.Protocols.Control.Next.Peers
+                   Cardano.KESAgent.Protocols.Control.Next.Protocol
+                   Cardano.KESAgent.Protocols.Control.V1.Driver
+                   Cardano.KESAgent.Protocols.Control.V1.Peers
+                   Cardano.KESAgent.Protocols.Control.V1.Protocol
+
                    Cardano.KESAgent.Protocols.VersionedProtocol
                    Cardano.KESAgent.Protocols.RecvResult
                    Cardano.KESAgent.Protocols.StandardCrypto

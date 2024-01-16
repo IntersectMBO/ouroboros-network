@@ -13,11 +13,12 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Cardano.KESAgent.Protocols.Control.Protocol
+module Cardano.KESAgent.Protocols.Control.Next.Protocol
   where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
+import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.RefCounting

@@ -17,16 +17,17 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Cardano.KESAgent.Protocols.Control.Driver
+module Cardano.KESAgent.Protocols.Control.Next.Driver
   where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.Control.Next.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Serialization.DirectCodec
+import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -60,6 +61,10 @@ import Data.Coerce
 import Data.Functor.Contravariant ( (>$<) )
 import Data.Maybe ( isJust )
 import Data.Proxy
+import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
+import qualified Data.SerDoc.Info
+import Data.SerDoc.Info ( Description (..), aliasField )
+import Data.SerDoc.TH (deriveSerDoc)
 import qualified Data.Text as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Data.Time (UTCTime)
@@ -72,65 +77,6 @@ import Foreign.Marshal.Utils ( copyBytes )
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Text.Printf
-import Data.SerDoc.Info ( Description (..), aliasField )
-import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
-import qualified Data.SerDoc.Info
-import Data.SerDoc.TH (deriveSerDoc)
-
--- | Logging messages that the Driver may send
-data ControlDriverTrace
-  = ControlDriverSendingVersionID !VersionIdentifier
-  | ControlDriverReceivingVersionID
-  | ControlDriverReceivedVersionID !VersionIdentifier
-  | ControlDriverInvalidVersion !VersionIdentifier !VersionIdentifier
-  | ControlDriverSendingCommand !Command
-  | ControlDriverSentCommand !Command
-  | ControlDriverReceivingKey
-  | ControlDriverReceivedKey !ByteString
-  | ControlDriverInvalidKey
-  | ControlDriverReceivingCommand
-  | ControlDriverReceivedCommand !Command
-  | ControlDriverConfirmingKey
-  | ControlDriverConfirmedKey
-  | ControlDriverDecliningKey
-  | ControlDriverDeclinedKey
-  | ControlDriverNoPublicKeyToReturn
-  | ControlDriverReturningPublicKey
-  | ControlDriverConnectionClosed
-  | ControlDriverCRefEvent CRefEvent
-  | ControlDriverInvalidCommand
-  | ControlDriverProtocolError String
-  | ControlDriverMisc String
-  deriving (Show)
-
-instance Pretty ControlDriverTrace where
-  pretty (ControlDriverMisc x) = x
-  pretty x = drop (strLength "ControlDriver") (show x)
-
-data Command
-  = GenStagedKeyCmd
-  | QueryStagedKeyCmd
-  | DropStagedKeyCmd
-  | InstallKeyCmd
-  | RequestInfoCmd
-  deriving (Show, Read, Eq, Ord, Enum, Bounded)
-
-deriving via (ViaEnum Command)
-  instance
-    ( Codec codec
-    , HasInfo codec (DefEnumEncoding codec)
-    , Integral (DefEnumEncoding codec)
-    ) => HasInfo codec Command
-
-instance
-  ( Codec codec
-  , Serializable codec (DefEnumEncoding codec)
-  , Integral (DefEnumEncoding codec)
-  , Monad (MonadEncode codec)
-  , Monad (MonadDecode codec)
-  ) => Serializable codec Command where
-    encode codec = encodeEnum codec (Proxy @(DefEnumEncoding codec))
-    decode codec = decodeEnum codec (Proxy @(DefEnumEncoding codec))
 
 flagHasBundle, flagHasStagedKey :: Word8
 flagHasBundle = 0x01

@@ -13,7 +13,7 @@ module Cardano.KESAgent.KES.Classes
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.Protocols.VersionedProtocol
-import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.Service.V1.Protocol
 
 import Cardano.Binary
 import Cardano.Crypto.DirectSerialise

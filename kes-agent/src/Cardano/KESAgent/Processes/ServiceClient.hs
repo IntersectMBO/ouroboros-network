@@ -12,9 +12,9 @@ import Cardano.KESAgent.KES.Classes ( MonadKES )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert ( OCert (..) )
 import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
-import Cardano.KESAgent.Protocols.Service.Driver ( ServiceDriverTrace, serviceDriver )
-import Cardano.KESAgent.Protocols.Service.Peers ( servicePusher, serviceReceiver )
-import Cardano.KESAgent.Protocols.Service.Protocol ( ServiceProtocol )
+import Cardano.KESAgent.Protocols.Service.Next.Driver ( ServiceDriverTrace, serviceDriver )
+import Cardano.KESAgent.Protocols.Service.Next.Peers ( servicePusher, serviceReceiver )
+import Cardano.KESAgent.Protocols.Service.Next.Protocol ( ServiceProtocol )
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver ( VersionHandshakeDriverTrace, versionHandshakeDriver )
@@ -72,6 +72,7 @@ availableServiceDrivers :: forall c m fd addr
                             . MonadKES m c
                            => HasInfo (DirectCodec m) (SignKeyKES (KES c))
                            => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                           => NamedCrypto c
                            => [ ( VersionIdentifier
                                 , RawBearer m
                                   -> Tracer m ServiceClientTrace
@@ -100,6 +101,7 @@ runServiceClientForever :: forall c m fd addr
                         => Show addr
                         => HasInfo (DirectCodec m) (SignKeyKES (KES c))
                         => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                        => NamedCrypto c
                         => Proxy c
                         -> MakeRawBearer m fd
                         -> ServiceClientOptions m fd addr
@@ -124,6 +126,7 @@ runServiceClient :: forall c m fd addr
                  => Show addr
                  => HasInfo (DirectCodec m) (SignKeyKES (KES c))
                  => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                 => NamedCrypto c
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr

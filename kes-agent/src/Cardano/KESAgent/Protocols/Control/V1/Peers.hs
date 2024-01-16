@@ -4,13 +4,14 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Cardano.KESAgent.Protocols.Control.Peers
+module Cardano.KESAgent.Protocols.Control.V1.Peers
   where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Protocols.Control.Protocol
+import Cardano.KESAgent.Protocols.Control.V1.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Crypto.KES.Class
@@ -19,22 +20,21 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Network.TypedProtocol.Core
 
-controlReceiver :: forall (c :: *) (m :: * -> *)
-             . KESAlgorithm (KES c)
-            => Monad m
-            => m (Maybe (VerKeyKES (KES c)))
-            -> m (Maybe (VerKeyKES (KES c)))
-            -> m (Maybe (VerKeyKES (KES c)))
-            -> (OCert c -> m RecvResult)
-            -> m (AgentInfo c)
-            -> Peer (ControlProtocol m c) AsClient InitialState m ()
+controlReceiver :: forall (m :: * -> *)
+             .  Monad m
+            => m (Maybe (VerKeyKES (KES StandardCrypto)))
+            -> m (Maybe (VerKeyKES (KES StandardCrypto)))
+            -> m (Maybe (VerKeyKES (KES StandardCrypto)))
+            -> (OCert StandardCrypto -> m RecvResult)
+            -> m AgentInfo
+            -> Peer (ControlProtocol m) AsClient InitialState m ()
 controlReceiver genKey dropKey queryKey installKey getAgentInfo =
     Await (ServerAgency TokInitial) $ \case
       VersionMessage -> go
       AbortMessage -> Done TokEnd ()
       ProtocolErrorMessage -> Done TokEnd ()
   where
-    go :: Peer (ControlProtocol m c) AsClient IdleState m ()
+    go :: Peer (ControlProtocol m) AsClient IdleState m ()
     go = Await (ServerAgency TokIdle) $ \case
           InstallKeyMessage oc ->
             Effect $ do
@@ -64,13 +64,12 @@ controlReceiver genKey dropKey queryKey installKey getAgentInfo =
           ProtocolErrorMessage ->
             Done TokEnd ()
 
-type ControlPeer c m a = Peer (ControlProtocol m c) AsServer InitialState m a
+type ControlPeer m a = Peer (ControlProtocol m) AsServer InitialState m a
 
-controlGenKey :: forall (c :: *) (m :: (* -> *))
-               . KESAlgorithm (KES c)
-              => MonadSTM m
+controlGenKey :: forall (m :: (* -> *))
+               . MonadSTM m
               => MonadThrow m
-              => ControlPeer c m (Maybe (VerKeyKES (KES c)))
+              => ControlPeer m (Maybe (VerKeyKES (KES StandardCrypto)))
 controlGenKey = do
   Yield (ServerAgency TokInitial) VersionMessage $
     Yield (ServerAgency TokIdle) GenStagedKeyMessage $
@@ -78,11 +77,10 @@ controlGenKey = do
         Yield (ServerAgency TokIdle) EndMessage $
           Done TokEnd vkeyMay
 
-controlQueryKey :: forall (c :: *) (m :: (* -> *))
-               . KESAlgorithm (KES c)
-              => MonadSTM m
+controlQueryKey :: forall (m :: (* -> *))
+               . MonadSTM m
               => MonadThrow m
-              => ControlPeer c m (Maybe (VerKeyKES (KES c)))
+              => ControlPeer m (Maybe (VerKeyKES (KES StandardCrypto)))
 controlQueryKey = do
   Yield (ServerAgency TokInitial) VersionMessage $
     Yield (ServerAgency TokIdle) QueryStagedKeyMessage $
@@ -90,11 +88,10 @@ controlQueryKey = do
         Yield (ServerAgency TokIdle) EndMessage $
           Done TokEnd vkeyMay
 
-controlDropKey :: forall (c :: *) (m :: (* -> *))
-               . KESAlgorithm (KES c)
-              => MonadSTM m
+controlDropKey :: forall (m :: (* -> *))
+               . MonadSTM m
               => MonadThrow m
-              => ControlPeer c m (Maybe (VerKeyKES (KES c)))
+              => ControlPeer m (Maybe (VerKeyKES (KES StandardCrypto)))
 controlDropKey = do
   Yield (ServerAgency TokInitial) VersionMessage $
     Yield (ServerAgency TokIdle) DropStagedKeyMessage $
@@ -102,12 +99,11 @@ controlDropKey = do
         Yield (ServerAgency TokIdle) EndMessage $
           Done TokEnd vkeyMay
 
-controlInstallKey :: forall (c :: *) (m :: (* -> *))
-               . KESAlgorithm (KES c)
-              => MonadSTM m
+controlInstallKey :: forall (m :: (* -> *))
+               . MonadSTM m
               => MonadThrow m
-              => OCert c
-              -> ControlPeer c m RecvResult
+              => OCert StandardCrypto
+              -> ControlPeer m RecvResult
 controlInstallKey oc = do
   Yield (ServerAgency TokInitial) VersionMessage $
     Yield (ServerAgency TokIdle) (InstallKeyMessage oc) $
@@ -115,11 +111,10 @@ controlInstallKey oc = do
         Yield (ServerAgency TokIdle) EndMessage $
           Done TokEnd result
 
-controlGetInfo :: forall (c :: *) (m :: (* -> *))
-               . KESAlgorithm (KES c)
-              => MonadSTM m
+controlGetInfo :: forall (m :: (* -> *))
+               . MonadSTM m
               => MonadThrow m
-              => ControlPeer c m (AgentInfo c)
+              => ControlPeer m AgentInfo
 controlGetInfo = do
   Yield (ServerAgency TokInitial) VersionMessage $
     Yield (ServerAgency TokIdle) RequestInfoMessage $

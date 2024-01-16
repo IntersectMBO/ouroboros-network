@@ -13,10 +13,10 @@ import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Classes
 import Cardano.KESAgent.Protocols.VersionHandshake.Protocol
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver
-import Cardano.KESAgent.Protocols.Control.Protocol
-import Cardano.KESAgent.Protocols.Control.Driver
-import Cardano.KESAgent.Protocols.Service.Protocol
-import Cardano.KESAgent.Protocols.Service.Driver
+import Cardano.KESAgent.Protocols.Control.Next.Protocol
+import Cardano.KESAgent.Protocols.Control.Next.Driver
+import Cardano.KESAgent.Protocols.Service.Next.Protocol
+import Cardano.KESAgent.Protocols.Service.Next.Driver
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.DirectCodec
