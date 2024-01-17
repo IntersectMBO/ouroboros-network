@@ -13,9 +13,6 @@ where
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Processes.ControlClient
-import Cardano.KESAgent.Protocols.Control.Peers
-import Cardano.KESAgent.Protocols.Control.Protocol
-import Cardano.KESAgent.Protocols.Control.Driver
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR

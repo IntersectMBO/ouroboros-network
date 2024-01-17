@@ -52,6 +52,7 @@ import Cardano.KESAgent.Processes.ServiceClient
   , ServiceClientTrace (..)
   )
 import Cardano.KESAgent.Protocols.Types
+import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.StandardCrypto
 import qualified Cardano.KESAgent.Protocols.Control.V0.Driver as CP0
 import qualified Cardano.KESAgent.Protocols.Control.V0.Peers as CP0
@@ -470,47 +471,11 @@ installKey agent oc = do
     (\newKey -> pushKey agent (Bundle newKey oc))
     newKeyMay
 
-data AgentInfo c =
-  AgentInfo
-    { agentInfoCurrentBundle :: !(Maybe (BundleInfo c))
-    , agentInfoStagedKey :: !(Maybe (KeyInfo c))
-    , agentInfoCurrentTime :: !UTCTime
-    , agentInfoCurrentKESPeriod :: !KESPeriod
-    , agentInfoBootstrapConnections :: ![BootstrapInfo]
-    }
+class FromAgentInfo c a where
+  fromAgentInfo :: AgentInfo c -> a
 
-data BootstrapInfo =
-  BootstrapInfo
-    { bootstrapInfoAddress :: !Text
-    , bootstrapInfoStatus :: !ConnectionStatus
-    }
-    deriving (Show, Eq)
-
-data BundleInfo c =
-  BundleInfo
-    { bundleInfoEvolution :: !Word32
-    , bundleInfoStartKESPeriod :: !KESPeriod
-    , bundleInfoOCertN :: !Word64
-    , bundleInfoVK :: !(VerKeyKES (KES c))
-    , bundleInfoSigma :: !(DSIGN.SignedDSIGN (DSIGN c) (OCertSignable c))
-    }
-
-newtype KeyInfo c =
-  KeyInfo
-    { keyInfoVK :: VerKeyKES (KES c)
-    }
-
-data ConnectionStatus
-  = ConnectionUp
-  | ConnectionConnecting
-  | ConnectionDown
-  deriving (Show, Read, Eq, Ord, Enum, Bounded)
-
-class IsAgentInfo c a where
-  convertAgentInfo :: AgentInfo c -> a
-
-instance IsAgentInfo c (CP0.AgentInfo c) where
-  convertAgentInfo info =
+instance FromAgentInfo c (CP0.AgentInfo c) where
+  fromAgentInfo info =
     CP0.AgentInfo
       { CP0.agentInfoCurrentBundle = convertBundleInfoCP0 <$> agentInfoCurrentBundle info
       , CP0.agentInfoStagedKey = convertKeyInfoCP0 <$> agentInfoStagedKey info
@@ -805,7 +770,7 @@ instance ControlCrypto StandardCrypto where
                   (dropKey agent)
                   (queryKey agent)
                   (installKey agent)
-                  (convertAgentInfo <$> getInfo agent))
+                  (fromAgentInfo <$> getInfo agent))
                 ()
       )
     ]

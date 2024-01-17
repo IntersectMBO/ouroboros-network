@@ -11,6 +11,7 @@ module Cardano.KESAgent.Protocols.Types
 where
 
 import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
 
@@ -72,3 +73,4 @@ instance
   ) => Serializable codec Command where
     encode codec = encodeEnum codec (Proxy @(DefEnumEncoding codec))
     decode codec = decodeEnum codec (Proxy @(DefEnumEncoding codec))
+

@@ -7,7 +7,6 @@ where
 
 import Cardano.KESAgent.KES.Evolution
 import Cardano.KESAgent.Processes.Agent
-import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope

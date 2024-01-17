@@ -49,6 +49,7 @@ library
                    Cardano.KESAgent.Serialization.RawUtil
                    Cardano.KESAgent.Serialization.DirectCodec
                    Cardano.KESAgent.Protocols.Types
+                   Cardano.KESAgent.Protocols.AgentInfo
                    Cardano.KESAgent.Protocols.VersionHandshake.Driver
                    Cardano.KESAgent.Protocols.VersionHandshake.Peers
                    Cardano.KESAgent.Protocols.VersionHandshake.Protocol
