@@ -13,9 +13,9 @@ import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert ( OCert (..) )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
 import Cardano.KESAgent.Protocols.Types
-import Cardano.KESAgent.Protocols.Control.Next.Peers
-import Cardano.KESAgent.Protocols.Control.Next.Protocol
-import Cardano.KESAgent.Protocols.Control.Next.Driver
+import Cardano.KESAgent.Protocols.Control.V0.Peers
+import Cardano.KESAgent.Protocols.Control.V0.Protocol
+import Cardano.KESAgent.Protocols.Control.V0.Driver
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
 import Cardano.KESAgent.Protocols.VersionedProtocol ( NamedCrypto )
 import Cardano.KESAgent.Util.RefCounting ( CRef, withCRef )

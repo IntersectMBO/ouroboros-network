@@ -52,13 +52,17 @@ import Cardano.KESAgent.Processes.ServiceClient
   , ServiceClientTrace (..)
   )
 import Cardano.KESAgent.Protocols.Types
-import qualified Cardano.KESAgent.Protocols.Control.Next.Driver as CP
-import qualified Cardano.KESAgent.Protocols.Control.Next.Peers as CP
-import qualified Cardano.KESAgent.Protocols.Control.Next.Protocol as CP
+import Cardano.KESAgent.Protocols.StandardCrypto
+import qualified Cardano.KESAgent.Protocols.Control.V0.Driver as CP0
+import qualified Cardano.KESAgent.Protocols.Control.V0.Peers as CP0
+import qualified Cardano.KESAgent.Protocols.Control.V0.Protocol as CP0
+import qualified Cardano.KESAgent.Protocols.Control.V1.Driver as CP1
+import qualified Cardano.KESAgent.Protocols.Control.V1.Peers as CP1
+import qualified Cardano.KESAgent.Protocols.Control.V1.Protocol as CP1
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
-import Cardano.KESAgent.Protocols.Service.Next.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
-import Cardano.KESAgent.Protocols.Service.Next.Peers ( servicePusher )
-import Cardano.KESAgent.Protocols.Service.Next.Protocol ( ServiceProtocol )
+import Cardano.KESAgent.Protocols.Service.V0.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
+import Cardano.KESAgent.Protocols.Service.V0.Peers ( servicePusher )
+import Cardano.KESAgent.Protocols.Service.V0.Protocol ( ServiceProtocol )
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver ( VersionHandshakeDriverTrace (..), versionHandshakeDriver )
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers ( versionHandshakeServer )
@@ -505,40 +509,40 @@ data ConnectionStatus
 class IsAgentInfo c a where
   convertAgentInfo :: AgentInfo c -> a
 
-instance IsAgentInfo c (CP.AgentInfo c) where
+instance IsAgentInfo c (CP0.AgentInfo c) where
   convertAgentInfo info =
-    CP.AgentInfo
-      { CP.agentInfoCurrentBundle = convertBundleInfoCP <$> agentInfoCurrentBundle info
-      , CP.agentInfoStagedKey = convertKeyInfoCP <$> agentInfoStagedKey info
-      , CP.agentInfoCurrentTime = agentInfoCurrentTime info
-      , CP.agentInfoCurrentKESPeriod = agentInfoCurrentKESPeriod info
-      , CP.agentInfoBootstrapConnections = convertBootstrapInfoCP <$> agentInfoBootstrapConnections info
+    CP0.AgentInfo
+      { CP0.agentInfoCurrentBundle = convertBundleInfoCP0 <$> agentInfoCurrentBundle info
+      , CP0.agentInfoStagedKey = convertKeyInfoCP0 <$> agentInfoStagedKey info
+      , CP0.agentInfoCurrentTime = agentInfoCurrentTime info
+      , CP0.agentInfoCurrentKESPeriod = agentInfoCurrentKESPeriod info
+      , CP0.agentInfoBootstrapConnections = convertBootstrapInfoCP0 <$> agentInfoBootstrapConnections info
       }
 
-convertBundleInfoCP :: BundleInfo c -> CP.BundleInfo c
-convertBundleInfoCP info =
-  CP.BundleInfo
-    { CP.bundleInfoEvolution = bundleInfoEvolution info
-    , CP.bundleInfoStartKESPeriod = bundleInfoStartKESPeriod info
-    , CP.bundleInfoOCertN = bundleInfoOCertN info
-    , CP.bundleInfoVK = bundleInfoVK info
-    , CP.bundleInfoSigma = bundleInfoSigma info
+convertBundleInfoCP0 :: BundleInfo c -> CP0.BundleInfo c
+convertBundleInfoCP0 info =
+  CP0.BundleInfo
+    { CP0.bundleInfoEvolution = bundleInfoEvolution info
+    , CP0.bundleInfoStartKESPeriod = bundleInfoStartKESPeriod info
+    , CP0.bundleInfoOCertN = bundleInfoOCertN info
+    , CP0.bundleInfoVK = bundleInfoVK info
+    , CP0.bundleInfoSigma = bundleInfoSigma info
     }
 
-convertKeyInfoCP :: KeyInfo c -> CP.KeyInfo c
-convertKeyInfoCP = coerce
+convertKeyInfoCP0 :: KeyInfo c -> CP0.KeyInfo c
+convertKeyInfoCP0 = coerce
 
-convertBootstrapInfoCP :: BootstrapInfo -> CP.BootstrapInfo
-convertBootstrapInfoCP info =
-  CP.BootstrapInfo
-    { CP.bootstrapInfoAddress = bootstrapInfoAddress info
-    , CP.bootstrapInfoStatus = convertConnectionStatus $ bootstrapInfoStatus info
+convertBootstrapInfoCP0 :: BootstrapInfo -> CP0.BootstrapInfo
+convertBootstrapInfoCP0 info =
+  CP0.BootstrapInfo
+    { CP0.bootstrapInfoAddress = bootstrapInfoAddress info
+    , CP0.bootstrapInfoStatus = convertConnectionStatus $ bootstrapInfoStatus info
     }
 
-convertConnectionStatus :: ConnectionStatus -> CP.ConnectionStatus
-convertConnectionStatus ConnectionUp = CP.ConnectionUp
-convertConnectionStatus ConnectionConnecting = CP.ConnectionConnecting
-convertConnectionStatus ConnectionDown = CP.ConnectionDown
+convertConnectionStatus :: ConnectionStatus -> CP0.ConnectionStatus
+convertConnectionStatus ConnectionUp = CP0.ConnectionUp
+convertConnectionStatus ConnectionConnecting = CP0.ConnectionConnecting
+convertConnectionStatus ConnectionDown = CP0.ConnectionDown
 
 getInfo :: ( Monad m
            , MonadSTM m
@@ -772,6 +776,40 @@ availableServiceDrivers =
     )
   ]
 
+class ControlCrypto c where
+  availableControlDrivers :: forall m fd addr
+                              . MonadKES m c
+                             => MonadTimer m
+                             => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+                             => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                             => NamedCrypto c
+                             => ContextDSIGN (DSIGN c) ~ ()
+                             => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                             => [ ( VersionIdentifier
+                                  , RawBearer m
+                                    -> Tracer m ControlDriverTrace
+                                    -> Agent c m fd addr
+                                    -> m ()
+                                  )
+                                ]
+
+instance ControlCrypto StandardCrypto where
+  availableControlDrivers =
+    [ ( versionIdentifier (Proxy @(CP0.ControlProtocol _ StandardCrypto))
+      , \bearer tracer agent ->
+            void $
+              runPeerWithDriver
+                (CP0.controlDriver bearer tracer)
+                (CP0.controlReceiver
+                  (genKey agent)
+                  (dropKey agent)
+                  (queryKey agent)
+                  (installKey agent)
+                  (convertAgentInfo <$> getInfo agent))
+                ()
+      )
+    ]
+
 
 runAgent :: forall c m fd addr
           . MonadKES m c
@@ -782,6 +820,7 @@ runAgent :: forall c m fd addr
          => HasInfo (DirectCodec m) (SignKeyKES (KES c))
          => Crypto c
          => NamedCrypto c
+         => ControlCrypto c
          => Show addr
          => Show fd
          => Agent c m fd addr
@@ -887,17 +926,17 @@ runAgent agent = do
           AgentControlClientDisconnected
           AgentControlSocketError
           AgentControlDriverTrace
-          (\bearer tracer' ->
-            void $
-              runPeerWithDriver
-                (CP.controlDriver bearer tracer')
-                (CP.controlReceiver
-                  (genKey agent)
-                  (dropKey agent)
-                  (queryKey agent)
-                  (installKey agent)
-                  (convertAgentInfo <$> getInfo agent))
-                ()
+          (\bearer tracer' -> do
+            (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
+                runPeerWithDriver
+                  (versionHandshakeDriver bearer (AgentVersionHandshakeDriverTrace >$< (agentTracer . agentOptions $ agent)))
+                  (versionHandshakeServer (map fst (availableControlDrivers @c @m)))
+                  ()
+            case protocolVersionMay >>= (`lookup` (availableControlDrivers @c @m)) of
+              Nothing ->
+                error "Protocol handshake failed"
+              Just run ->
+                run bearer tracer' agent
           )
 
   void $ runService

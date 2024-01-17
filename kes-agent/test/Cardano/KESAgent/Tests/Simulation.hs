@@ -406,8 +406,8 @@ runTestNetwork p mrb snocket genesisTimestamp
       withAddress $ \serviceAddress -> do
         agentSeedVar <- newMVar agentKESSeeds
 
-        let agentNextSeed :: m (MLockedSeed (SeedSizeKES (KES c)))
-            agentNextSeed = do
+        let agentV0Seed :: m (MLockedSeed (SeedSizeKES (KES c)))
+            agentV0Seed = do
               seeds <- takeMVar agentSeedVar
               (result, seeds') <- case seeds of
                 [] ->
@@ -435,7 +435,7 @@ runTestNetwork p mrb snocket genesisTimestamp
                               , agentBootstrapAddr = []
                               , agentTracer = tracer
                               , agentColdVerKey = coldVK
-                              , agentGenSeed = agentNextSeed
+                              , agentGenSeed = agentV0Seed
                               }
 
             -- Run the single agent.

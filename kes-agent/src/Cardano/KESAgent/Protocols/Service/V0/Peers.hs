@@ -4,13 +4,13 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Cardano.KESAgent.Protocols.Service.Next.Peers
+module Cardano.KESAgent.Protocols.Service.V0.Peers
   where
 
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.KES.Bundle
-import Cardano.KESAgent.Protocols.Service.Next.Protocol
+import Cardano.KESAgent.Protocols.Service.V0.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Util.RefCounting
 

@@ -17,14 +17,14 @@
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Cardano.KESAgent.Protocols.Service.Next.Driver
+module Cardano.KESAgent.Protocols.Service.V0.Driver
   where
 
 import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Protocols.RecvResult
-import Cardano.KESAgent.Protocols.Service.Next.Protocol
+import Cardano.KESAgent.Protocols.Service.V0.Protocol
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.RawUtil
 import Cardano.KESAgent.Serialization.DirectCodec

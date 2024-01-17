@@ -53,16 +53,16 @@ library
                    Cardano.KESAgent.Protocols.VersionHandshake.Peers
                    Cardano.KESAgent.Protocols.VersionHandshake.Protocol
 
-                   Cardano.KESAgent.Protocols.Service.Next.Driver
-                   Cardano.KESAgent.Protocols.Service.Next.Peers
-                   Cardano.KESAgent.Protocols.Service.Next.Protocol
+                   Cardano.KESAgent.Protocols.Service.V0.Driver
+                   Cardano.KESAgent.Protocols.Service.V0.Peers
+                   Cardano.KESAgent.Protocols.Service.V0.Protocol
                    Cardano.KESAgent.Protocols.Service.V1.Driver
                    Cardano.KESAgent.Protocols.Service.V1.Peers
                    Cardano.KESAgent.Protocols.Service.V1.Protocol
 
-                   Cardano.KESAgent.Protocols.Control.Next.Driver
-                   Cardano.KESAgent.Protocols.Control.Next.Peers
-                   Cardano.KESAgent.Protocols.Control.Next.Protocol
+                   Cardano.KESAgent.Protocols.Control.V0.Driver
+                   Cardano.KESAgent.Protocols.Control.V0.Peers
+                   Cardano.KESAgent.Protocols.Control.V0.Protocol
                    Cardano.KESAgent.Protocols.Control.V1.Driver
                    Cardano.KESAgent.Protocols.Control.V1.Peers
                    Cardano.KESAgent.Protocols.Control.V1.Protocol

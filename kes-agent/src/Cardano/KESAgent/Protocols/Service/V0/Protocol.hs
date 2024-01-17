@@ -13,7 +13,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Cardano.KESAgent.Protocols.Service.Next.Protocol
+module Cardano.KESAgent.Protocols.Service.V0.Protocol
   where
 
 import Cardano.KESAgent.KES.Crypto
