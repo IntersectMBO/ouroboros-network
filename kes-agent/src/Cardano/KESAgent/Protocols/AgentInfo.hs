@@ -2,7 +2,6 @@ module Cardano.KESAgent.Protocols.AgentInfo
 where
 
 import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
-import Cardano.KESAgent.KES.Classes ( MonadKES )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.Evolution
   ( getCurrentKESPeriodWith
@@ -16,11 +15,6 @@ import Cardano.KESAgent.KES.OCert
   , OCertSignable
   , validateOCert
   )
-import Cardano.KESAgent.Processes.ServiceClient
-  ( runServiceClientForever
-  , ServiceClientOptions (..)
-  , ServiceClientTrace (..)
-  )
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.StandardCrypto
 import qualified Cardano.KESAgent.Protocols.Control.V0.Driver as CP0
@@ -30,9 +24,12 @@ import qualified Cardano.KESAgent.Protocols.Control.V1.Driver as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V1.Peers as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V1.Protocol as CP1
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
-import Cardano.KESAgent.Protocols.Service.V0.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
-import Cardano.KESAgent.Protocols.Service.V0.Peers ( servicePusher )
-import Cardano.KESAgent.Protocols.Service.V0.Protocol ( ServiceProtocol )
+import qualified Cardano.KESAgent.Protocols.Service.V0.Driver as SP0
+import qualified Cardano.KESAgent.Protocols.Service.V0.Peers as SP0
+import qualified Cardano.KESAgent.Protocols.Service.V0.Protocol as SP0
+import qualified Cardano.KESAgent.Protocols.Service.V1.Driver as SP1
+import qualified Cardano.KESAgent.Protocols.Service.V1.Peers as SP1
+import qualified Cardano.KESAgent.Protocols.Service.V1.Protocol as SP1
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver ( VersionHandshakeDriverTrace (..), versionHandshakeDriver )
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers ( versionHandshakeServer )

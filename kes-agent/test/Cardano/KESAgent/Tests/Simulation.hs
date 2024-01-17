@@ -31,15 +31,14 @@ import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Processes.Agent
 import Cardano.KESAgent.Processes.ControlClient
 import Cardano.KESAgent.Processes.ServiceClient
-import Cardano.KESAgent.Protocols.Control.Peers
-import Cardano.KESAgent.Protocols.Control.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
-import Cardano.KESAgent.Protocols.Service.Protocol
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.AgentInfo
+import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.VersionedProtocol
+import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty
 import Cardano.KESAgent.Util.RefCounting
-import Cardano.KESAgent.Serialization.DirectCodec
 
 import Cardano.Binary ( FromCBOR )
 import Cardano.Crypto.DSIGN.Class
@@ -109,6 +108,8 @@ import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import Data.Primitive
 import Data.Proxy
+import Data.SerDoc.Class
+import Data.SerDoc.TH
 import Data.Text qualified as Text
 import Data.Text.Encoding ( decodeUtf8, encodeUtf8 )
 import Data.Time
@@ -152,8 +153,6 @@ import Test.QuickCheck ( Arbitrary (..), vectorOf )
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf ( printf )
-import Data.SerDoc.Class
-import Data.SerDoc.TH
 
 tests :: Lock IO
       -> (forall a. (Show a, Pretty a) => Tracer IO a)
@@ -188,8 +187,6 @@ mkLock = do
 
 testCrypto :: forall c kes
             . kes ~ KES c
-           => MonadKES IO c
-           => (forall s. MonadKES (IOSim s) c)
            => UnsoundKESAlgorithm kes
            => DSIGN.Signable (DSIGN c) (OCertSignable c)
            => ContextDSIGN (DSIGN c) ~ ()
@@ -245,7 +242,12 @@ mvarStringTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
 -- | The operations a control client can perform: sending keys, and waiting.
 data ControlClientHooks m c
   = ControlClientHooks
-      { controlClientExec :: forall a. ControlPeer c m a -> m a
+      { controlGenKey :: [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
+      , controlQueryKey :: [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
+      , controlDropKey :: [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
+      , controlInstallKey :: OCert c
+                          -> [(VersionIdentifier, ControlHandler m RecvResult)]
+      , controlGetInfo :: [(VersionIdentifier, ControlHandler m (AgentInfo c))]
       , controlClientWait :: Int -> m ()
       , controlClientReportProperty :: Property -> m ()
       }
@@ -364,12 +366,13 @@ instance Show (FD (IOSim s) (TestAddress Int)) where
 -- of "entropy" when generating KES keys. This makes it possible to compare KES
 -- keys received by the node against the expected keys.
 runTestNetwork :: forall c m fd addr
-                . MonadKES m c
+                . Monad m
                => Show addr
                => Show fd
                => MonadTimer m
                => DSIGN.Signable (DSIGN c) (OCertSignable c)
                => ContextDSIGN (DSIGN c) ~ ()
+               => ContextKES (KES c) ~ ()
                => Crypto c
                => NamedCrypto c
                => Show (SignKeyWithPeriodKES (KES c))
@@ -602,7 +605,7 @@ instance (KESAlgorithm (KES c)) => Arbitrary (OutOfOrderPushesSeeds c) where
     map OutOfOrderPushesSeeds $ filter ((>= 2) . length) (shrink xs)
 
 testOneKeyThroughChain :: forall c m fd addr
-                        . MonadKES m c
+                        . Monad m
                        => Show addr
                        => Show fd
                        => MonadTimer m

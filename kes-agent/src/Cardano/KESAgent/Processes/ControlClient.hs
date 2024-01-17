@@ -15,7 +15,6 @@
 module Cardano.KESAgent.Processes.ControlClient
   where
 
-import Cardano.KESAgent.KES.Classes ( MonadKES )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.OCert ( OCert (..) )
 import Cardano.KESAgent.Util.Pretty ( Pretty (..) )
@@ -50,9 +49,10 @@ import qualified Data.SerDoc.Info
 import Data.SerDoc.TH (deriveSerDoc)
 import Control.Monad ( forever, void )
 import Control.Monad.Extra ( whenJust )
-import Control.Monad.Class.MonadThrow ( MonadThrow, SomeException, bracket )
+import Control.Monad.Class.MonadThrow ( MonadThrow, MonadCatch, SomeException, bracket )
 import Control.Monad.Class.MonadST ( MonadST )
 import Control.Monad.Class.MonadSTM ( MonadSTM )
+import Control.Monad.Class.MonadTimer ( MonadDelay )
 import Control.Concurrent.Class.MonadMVar ( MonadMVar )
 import Control.Tracer ( Tracer, traceWith )
 import Data.Functor.Contravariant ( (>$<) )
@@ -94,13 +94,19 @@ type ControlHandler m a =
   RawBearer m -> Tracer m ControlClientTrace -> m a
 
 runControlClient1 :: forall c m fd addr a
-                   . MonadKES m c
+                   . Monad m
+                  => MonadThrow m
+                  => MonadCatch m
+                  => MonadDelay m
+                  => MonadST m
+                  => MonadSTM m
+                  => MonadMVar m
                   => Crypto c
                   => NamedCrypto c
                   => HasInfo (DirectCodec m) (VerKeyKES (KES c))
                   => Serializable (DirectCodec m) (VerKeyKES (KES c))
-                  => HasInfo (DirectCodec m) (AgentInfo c)
-                  => Serializable (DirectCodec m) (AgentInfo c)
+                  -- => HasInfo (DirectCodec m) (AgentInfo c)
+                  -- => Serializable (DirectCodec m) (AgentInfo c)
                   => [(VersionIdentifier, ControlHandler m a)]
                   -> Proxy c
                   -> MakeRawBearer m fd

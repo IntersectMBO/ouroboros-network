@@ -18,8 +18,9 @@ import Cardano.KESAgent.Util.RefCounting
 import Data.ByteString (ByteString)
 import Data.SerDoc.Class ( ViaEnum (..), Codec (..), HasInfo (..), Serializable (..), encodeEnum, decodeEnum, enumInfo )
 import Data.Proxy
+import Data.Word
 
--- | Logging messages that the Driver may send
+-- | Logging messages that the ControlDriver may send
 data ControlDriverTrace
   = ControlDriverSendingVersionID !VersionIdentifier
   | ControlDriverReceivingVersionID
@@ -73,4 +74,30 @@ instance
   ) => Serializable codec Command where
     encode codec = encodeEnum codec (Proxy @(DefEnumEncoding codec))
     decode codec = decodeEnum codec (Proxy @(DefEnumEncoding codec))
+
+-- | Logging messages that the ServiceDriver may send
+data ServiceDriverTrace
+  = ServiceDriverSendingVersionID !VersionIdentifier
+  | ServiceDriverReceivingVersionID
+  | ServiceDriverReceivedVersionID !VersionIdentifier
+  | ServiceDriverInvalidVersion !VersionIdentifier !VersionIdentifier
+  | ServiceDriverSendingKey !Word64
+  | ServiceDriverSentKey !Word64
+  | ServiceDriverReceivingKey
+  | ServiceDriverReceivedKey !Word64
+  | ServiceDriverConfirmingKey
+  | ServiceDriverConfirmedKey
+  | ServiceDriverDecliningKey !RecvResult
+  | ServiceDriverDeclinedKey
+  | ServiceDriverConnectionClosed
+  | ServiceDriverCRefEvent !CRefEvent
+  | ServiceDriverProtocolError !String
+  | ServiceDriverMisc String
+  | ServiceDriverPing
+  | ServiceDriverPong
+  deriving (Show)
+
+instance Pretty ServiceDriverTrace where
+  pretty (ServiceDriverMisc x) = x
+  pretty x = drop (strLength "ServiceDriver") (show x)
 

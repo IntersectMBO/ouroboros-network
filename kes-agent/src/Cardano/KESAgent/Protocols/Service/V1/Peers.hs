@@ -12,6 +12,7 @@ import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.Protocols.Service.V1.Protocol
 import Cardano.KESAgent.Protocols.RecvResult
+import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Util.RefCounting
 
 import Cardano.Crypto.KES.Class
@@ -22,18 +23,18 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer
 import Network.TypedProtocol.Core
 
-serviceReceiver :: forall (c :: *) (m :: * -> *)
-             . KESAlgorithm (KES c)
+serviceReceiver :: forall (m :: * -> *)
+             . KESAlgorithm (KES StandardCrypto)
             => Monad m
-            => (Bundle m c -> m RecvResult)
-            -> Peer (ServiceProtocol m c) AsClient InitialState m ()
+            => (Bundle m StandardCrypto -> m RecvResult)
+            -> Peer (ServiceProtocol m) AsClient InitialState m ()
 serviceReceiver receiveBundle =
     Await (ServerAgency TokInitial) $ \case
       VersionMessage -> go
       AbortMessage -> Done TokEnd ()
       ProtocolErrorMessage -> Done TokEnd ()
   where
-    go :: Peer (ServiceProtocol m c) AsClient IdleState m ()
+    go :: Peer (ServiceProtocol m) AsClient IdleState m ()
     go = Await (ServerAgency TokIdle) $ \case
           KeyMessage bundle ->
             Effect $ do
@@ -44,16 +45,15 @@ serviceReceiver receiveBundle =
           ServerDisconnectMessage ->
             Done TokEnd ()
 
-servicePusher :: forall (c :: *) (m :: (* -> *))
-           . KESAlgorithm (KES c)
-          => MonadSTM m
-          => MonadThrow m
-          => MonadAsync m
-          => MonadTimer m
-          => m (Bundle m c)
-          -> m (Bundle m c)
-          -> (RecvResult -> m ())
-          -> Peer (ServiceProtocol m c) AsServer InitialState m ()
+servicePusher :: forall (m :: (* -> *))
+               . MonadSTM m
+              => MonadThrow m
+              => MonadAsync m
+              => MonadTimer m
+              => m (Bundle m StandardCrypto)
+              -> m (Bundle m StandardCrypto)
+              -> (RecvResult -> m ())
+              -> Peer (ServiceProtocol m) AsServer InitialState m ()
 servicePusher currentKey nextKey handleResult =
   Yield (ServerAgency TokInitial) VersionMessage $
     Effect $ do
@@ -62,12 +62,12 @@ servicePusher currentKey nextKey handleResult =
         Yield (ServerAgency TokIdle) (KeyMessage bundle) $
           Await (ClientAgency TokWaitForConfirmation) $ \(RecvResultMessage result) -> goR result
   where
-    goR :: RecvResult -> Peer (ServiceProtocol m c) AsServer IdleState m ()
+    goR :: RecvResult -> Peer (ServiceProtocol m) AsServer IdleState m ()
     goR result = Effect $ do
       handleResult result
       go
 
-    go :: m (Peer (ServiceProtocol m c) AsServer IdleState m ())
+    go :: m (Peer (ServiceProtocol m) AsServer IdleState m ())
     go = do
       bundle <- nextKey
       return $

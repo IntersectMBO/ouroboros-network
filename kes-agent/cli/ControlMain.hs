@@ -15,6 +15,9 @@ import Cardano.KESAgent.KES.OCert
 import Cardano.KESAgent.Processes.ControlClient
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.Types
+import Cardano.KESAgent.Protocols.AgentInfo
+import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Serialization.CBOR
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.Serialization.DirectCodec
@@ -308,13 +311,13 @@ mkControlClientOptions opts ioManager = do
 
 runControlClientCommand :: CommonOptions
                         -> IOManager
-                        -> ControlPeer StandardCrypto IO a
+                        -> [(VersionIdentifier, ControlHandler IO a)]
                         -> IO a
-runControlClientCommand opts ioManager peer = do
+runControlClientCommand opts ioManager handlers = do
   controlClientOptions <- mkControlClientOptions opts ioManager
   let verbosity = fromMaybe 0 $ optVerbosity opts
   runControlClient1 @StandardCrypto @IO
-    peer
+    handlers
     (Proxy @StandardCrypto)
     makeSocketRawBearer
     controlClientOptions

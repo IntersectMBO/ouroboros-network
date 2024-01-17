@@ -32,7 +32,6 @@ module Cardano.KESAgent.Processes.Agent
   where
 
 import Cardano.KESAgent.KES.Bundle ( Bundle (..) )
-import Cardano.KESAgent.KES.Classes ( MonadKES )
 import Cardano.KESAgent.KES.Crypto ( Crypto (..) )
 import Cardano.KESAgent.KES.Evolution
   ( getCurrentKESPeriodWith
@@ -50,10 +49,12 @@ import Cardano.KESAgent.Processes.ServiceClient
   ( runServiceClientForever
   , ServiceClientOptions (..)
   , ServiceClientTrace (..)
+  , ServiceClientCrypto (..)
   )
 import Cardano.KESAgent.Protocols.Types
 import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.StandardCrypto
+import Cardano.KESAgent.Protocols.BearerUtil
 import qualified Cardano.KESAgent.Protocols.Control.V0.Driver as CP0
 import qualified Cardano.KESAgent.Protocols.Control.V0.Peers as CP0
 import qualified Cardano.KESAgent.Protocols.Control.V0.Protocol as CP0
@@ -61,9 +62,12 @@ import qualified Cardano.KESAgent.Protocols.Control.V1.Driver as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V1.Peers as CP1
 import qualified Cardano.KESAgent.Protocols.Control.V1.Protocol as CP1
 import Cardano.KESAgent.Protocols.RecvResult ( RecvResult (..) )
-import Cardano.KESAgent.Protocols.Service.V0.Driver ( ServiceDriverTrace (..), serviceDriver, withDuplexBearer, BearerConnectionClosed )
-import Cardano.KESAgent.Protocols.Service.V0.Peers ( servicePusher )
-import Cardano.KESAgent.Protocols.Service.V0.Protocol ( ServiceProtocol )
+import qualified Cardano.KESAgent.Protocols.Service.V0.Driver as SP0
+import qualified Cardano.KESAgent.Protocols.Service.V0.Peers as SP0
+import qualified Cardano.KESAgent.Protocols.Service.V0.Protocol as SP0
+import qualified Cardano.KESAgent.Protocols.Service.V1.Driver as SP1
+import qualified Cardano.KESAgent.Protocols.Service.V1.Peers as SP1
+import qualified Cardano.KESAgent.Protocols.Service.V1.Protocol as SP1
 import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver ( VersionHandshakeDriverTrace (..), versionHandshakeDriver )
 import Cardano.KESAgent.Protocols.VersionHandshake.Peers ( versionHandshakeServer )
@@ -303,7 +307,8 @@ data Agent c m fd addr =
     }
 
 newAgent :: forall c m fd addr
-          . MonadKES m c
+          . Monad m
+         => MonadSTM m
          => Show addr
          => Show fd
          => Proxy c
@@ -715,35 +720,58 @@ runListener
 
   (accept s fd >>= loop) `catch` logAndContinue
 
-availableServiceDrivers :: forall c m fd addr
-                            . MonadKES m c
-                           => MonadTimer m
-                           => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-                           => HasInfo (DirectCodec m) (VerKeyKES (KES c))
-                           => NamedCrypto c
-                           => [ ( VersionIdentifier
-                                , RawBearer m
-                                  -> Tracer m ServiceDriverTrace
-                                  -> m (Bundle m c)
-                                  -> m (Bundle m c)
-                                  -> (RecvResult -> m ())
-                                  -> m ()
-                                )
-                              ]
-availableServiceDrivers =
-  [ ( versionIdentifier (Proxy @(ServiceProtocol m c))
-    , \bearer tracer currentKey nextKey reportPushResult ->
-        void $
-          runPeerWithDriver
-            (serviceDriver bearer tracer)
-            (servicePusher currentKey nextKey reportPushResult)
-            ()
-    )
-  ]
+class ServiceCrypto c where
+  availableServiceDrivers :: forall m fd addr
+                              . Monad m
+                             => MonadAsync m
+                             => MonadFail m
+                             => MonadMVar m
+                             => MonadST m
+                             => MonadSTM m
+                             => MonadThrow m
+                             => MonadThrow m
+                             => MonadTimer m
+                             => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+                             => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                             => [ ( VersionIdentifier
+                                  , RawBearer m
+                                    -> Tracer m ServiceDriverTrace
+                                    -> m (Bundle m c)
+                                    -> m (Bundle m c)
+                                    -> (RecvResult -> m ())
+                                    -> m ()
+                                  )
+                                ]
+
+instance ServiceCrypto StandardCrypto where
+  availableServiceDrivers =
+    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ StandardCrypto))
+      , \bearer tracer currentKey nextKey reportPushResult ->
+          void $
+            runPeerWithDriver
+              (SP0.serviceDriver bearer tracer)
+              (SP0.servicePusher currentKey nextKey reportPushResult)
+              ()
+      )
+    , ( versionIdentifier (Proxy @(SP1.ServiceProtocol _))
+      , \bearer tracer currentKey nextKey reportPushResult ->
+          void $
+            runPeerWithDriver
+              (SP1.serviceDriver bearer tracer)
+              (SP1.servicePusher currentKey nextKey reportPushResult)
+              ()
+      )
+    ]
 
 class ControlCrypto c where
   availableControlDrivers :: forall m fd addr
-                              . MonadKES m c
+                              . Monad m
+                             => MonadAsync m
+                             => MonadFail m
+                             => MonadMVar m
+                             => MonadST m
+                             => MonadSTM m
+                             => MonadThrow m
                              => MonadTimer m
                              => HasInfo (DirectCodec m) (SignKeyKES (KES c))
                              => HasInfo (DirectCodec m) (VerKeyKES (KES c))
@@ -777,15 +805,26 @@ instance ControlCrypto StandardCrypto where
 
 
 runAgent :: forall c m fd addr
-          . MonadKES m c
+          . Monad m
+         => MonadAsync m
+         => MonadCatch m
+         => MonadFail m
+         => MonadMVar m
+         => MonadST m
          => MonadTimer m
          => ContextDSIGN (DSIGN c) ~ ()
+         => ContextKES (KES c) ~ ()
          => DSIGN.Signable (DSIGN c) (OCertSignable c)
          => HasInfo (DirectCodec m) (VerKeyKES (KES c))
          => HasInfo (DirectCodec m) (SignKeyKES (KES c))
+         => DirectSerialise (SignKeyKES (KES c))
+         => DirectDeserialise (SignKeyKES (KES c))
          => Crypto c
          => NamedCrypto c
          => ControlCrypto c
+         => ServiceCrypto c
+         => ServiceClientCrypto c
+         => Typeable c
          => Show addr
          => Show fd
          => Agent c m fd addr
