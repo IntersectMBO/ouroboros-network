@@ -110,6 +110,38 @@ instance ServiceClientCrypto StandardCrypto where
               (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
               ()
       )
+    , ( versionIdentifier (Proxy @(SP1.ServiceProtocol _))
+      , \bearer tracer handleKey ->
+          void $
+            runPeerWithDriver
+              (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+              (SP1.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+              ()
+      )
+    ]
+
+instance ServiceClientCrypto MockCrypto where
+  availableServiceClientDrivers =
+    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ MockCrypto))
+      , \bearer tracer handleKey ->
+          void $
+            runPeerWithDriver
+              (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+              (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+              ()
+      )
+    ]
+
+instance ServiceClientCrypto SingleCrypto where
+  availableServiceClientDrivers =
+    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ SingleCrypto))
+      , \bearer tracer handleKey ->
+          void $
+            runPeerWithDriver
+              (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+              (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+              ()
+      )
     ]
 
 -- | Run a Service Client indefinitely, restarting the connection once a

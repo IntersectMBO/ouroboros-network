@@ -192,66 +192,98 @@ toHandlerEntry :: forall proto m a.
                -> (VersionIdentifier, ControlHandler m a)
 toHandlerEntry peer = (versionIdentifier (Proxy @proto), toHandler peer)
 
-controlGenKey :: forall m.
-                 MonadThrow m
-              => MonadST m
-              => MonadSTM m
-              => MonadMVar m
-              => MonadFail m
-              => [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES StandardCrypto))))]
-controlGenKey =
-  [ toHandlerEntry (CP0.controlGenKey @StandardCrypto)
-  , toHandlerEntry (CP1.controlGenKey @m)
-  ]
-
-controlQueryKey :: forall m.
+class ControlClientCrypto c where
+  controlGenKey :: forall m.
                    MonadThrow m
                 => MonadST m
                 => MonadSTM m
                 => MonadMVar m
                 => MonadFail m
-                => [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES StandardCrypto))))]
-controlQueryKey =
-  [ toHandlerEntry (CP0.controlQueryKey @StandardCrypto)
-  , toHandlerEntry (CP1.controlQueryKey @m)
-  ]
+                => Proxy c
+                -> [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
+  controlQueryKey :: forall m.
+                     MonadThrow m
+                  => MonadST m
+                  => MonadSTM m
+                  => MonadMVar m
+                  => MonadFail m
+                  => Proxy c
+                  -> [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
+  controlDropKey :: forall m.
+                     MonadThrow m
+                  => MonadST m
+                  => MonadSTM m
+                  => MonadMVar m
+                  => MonadFail m
+                  => Proxy c
+                  -> [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
+  controlInstallKey :: forall m.
+                     MonadThrow m
+                  => MonadST m
+                  => MonadSTM m
+                  => MonadMVar m
+                  => MonadFail m
+                  => Proxy c
+                  -> OCert c
+                  -> [(VersionIdentifier, ControlHandler m RecvResult)]
+  controlGetInfo :: forall m.
+                     MonadThrow m
+                  => MonadST m
+                  => MonadSTM m
+                  => MonadMVar m
+                  => MonadFail m
+                  => Proxy c
+                  -> [(VersionIdentifier, ControlHandler m (AgentInfo c))]
 
-controlDropKey :: forall m.
-                   MonadThrow m
-                => MonadST m
-                => MonadSTM m
-                => MonadMVar m
-                => MonadFail m
-                => [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES StandardCrypto))))]
-controlDropKey =
-  [ toHandlerEntry (CP0.controlDropKey @StandardCrypto)
-  , toHandlerEntry (CP1.controlDropKey @m)
-  ]
+instance ControlClientCrypto StandardCrypto where
+  controlGenKey _ =
+    [ toHandlerEntry (CP0.controlGenKey @StandardCrypto)
+    , toHandlerEntry CP1.controlGenKey
+    ]
 
-controlInstallKey :: forall m.
-                   MonadThrow m
-                => MonadST m
-                => MonadSTM m
-                => MonadMVar m
-                => MonadFail m
-                => OCert StandardCrypto
-                -> [(VersionIdentifier, ControlHandler m RecvResult)]
-controlInstallKey oc =
-  [ toHandlerEntry (CP0.controlInstallKey @StandardCrypto oc)
-  , toHandlerEntry (CP1.controlInstallKey @m oc)
-  ]
+  controlQueryKey _ =
+    [ toHandlerEntry (CP0.controlQueryKey @StandardCrypto)
+    , toHandlerEntry CP1.controlQueryKey
+    ]
 
-controlGetInfo :: forall m.
-                   MonadThrow m
-                => MonadST m
-                => MonadSTM m
-                => MonadMVar m
-                => MonadFail m
-                => [(VersionIdentifier, ControlHandler m (AgentInfo StandardCrypto))]
-controlGetInfo =
-  [ toHandlerEntry (toAgentInfo <$> CP0.controlGetInfo @StandardCrypto)
-  , toHandlerEntry (toAgentInfo <$> CP1.controlGetInfo @m)
-  ]
+  controlDropKey _ =
+    [ toHandlerEntry (CP0.controlDropKey @StandardCrypto)
+    , toHandlerEntry CP1.controlDropKey
+    ]
+
+  controlInstallKey _ oc =
+    [ toHandlerEntry (CP0.controlInstallKey @StandardCrypto oc)
+    , toHandlerEntry (CP1.controlInstallKey oc)
+    ]
+
+  controlGetInfo _ =
+    [ toHandlerEntry (toAgentInfo <$> CP0.controlGetInfo @StandardCrypto)
+    , toHandlerEntry (toAgentInfo <$> CP1.controlGetInfo)
+    ]
+
+instance ControlClientCrypto MockCrypto where
+  controlGenKey _ =
+    [ toHandlerEntry (CP0.controlGenKey @MockCrypto) ]
+  controlQueryKey _ =
+    [ toHandlerEntry (CP0.controlQueryKey @MockCrypto) ]
+  controlDropKey _ =
+    [ toHandlerEntry (CP0.controlDropKey @MockCrypto) ]
+  controlInstallKey _ oc =
+    [ toHandlerEntry (CP0.controlInstallKey @MockCrypto oc) ]
+  controlGetInfo _ =
+    [ toHandlerEntry (toAgentInfo <$> CP0.controlGetInfo @MockCrypto) ]
+
+instance ControlClientCrypto SingleCrypto where
+  controlGenKey _ =
+    [ toHandlerEntry (CP0.controlGenKey @SingleCrypto) ]
+  controlQueryKey _ =
+    [ toHandlerEntry (CP0.controlQueryKey @SingleCrypto) ]
+  controlDropKey _ =
+    [ toHandlerEntry (CP0.controlDropKey @SingleCrypto) ]
+  controlInstallKey _ oc =
+    [ toHandlerEntry (CP0.controlInstallKey @SingleCrypto oc) ]
+  controlGetInfo _ =
+    [ toHandlerEntry (toAgentInfo <$> CP0.controlGetInfo @SingleCrypto) ]
 
 class ToAgentInfo c a where
   toAgentInfo :: a -> AgentInfo c

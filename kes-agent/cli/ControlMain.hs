@@ -332,7 +332,7 @@ runGenKey gko' = withIOManager $ \ioManager -> do
   vkKESMay <- runControlClientCommand
                 (gkoCommon gko)
                 ioManager
-                controlGenKey
+                (controlGenKey @StandardCrypto Proxy)
   case vkKESMay of
     Nothing -> do
       putStrLn "Key generation has failed. Please check KES agent log for details."
@@ -356,7 +356,7 @@ runQueryKey qko' = withIOManager $ \ioManager -> do
   vkKESMay <- runControlClientCommand
                 (qkoCommon qko)
                 ioManager
-                controlQueryKey
+                (controlQueryKey @StandardCrypto Proxy)
   case vkKESMay of
     Nothing -> do
       putStrLn "No key available."
@@ -376,7 +376,7 @@ runDropKey dko' = withIOManager $ \ioManager -> do
   vkKESMay <- runControlClientCommand
                 (dkoCommon dko)
                 ioManager
-                controlDropKey
+                (controlDropKey @StandardCrypto Proxy)
   case vkKESMay of
     Nothing -> do
       putStrLn "Staged key dropped."
@@ -399,7 +399,7 @@ runInstallKey iko' = withIOManager $ \ioManager -> do
       result <- runControlClientCommand
                     (ikoCommon iko)
                     ioManager
-                    (controlInstallKey oc)
+                    (controlInstallKey @StandardCrypto Proxy oc)
       if result == RecvOK then
         putStrLn "KES key installed."
       else do
@@ -410,7 +410,7 @@ runGetInfo :: CommonOptions -> IO ()
 runGetInfo opt' = withIOManager $ \ioManager -> do
   optEnv <- optFromEnv
   let opt = opt' <> optEnv <> defCommonOptions
-  info <- runControlClientCommand opt ioManager controlGetInfo
+  info <- runControlClientCommand opt ioManager (controlGetInfo @StandardCrypto Proxy)
   printf "Current time: %s\n" $ show (agentInfoCurrentTime info)
   printf "Current KES period: %u\n" (unKESPeriod $ agentInfoCurrentKESPeriod info)
   whenJust (agentInfoCurrentBundle info) $ \bundleInfo -> do

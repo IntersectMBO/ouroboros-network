@@ -192,12 +192,21 @@ testCrypto :: forall c kes
            => ContextDSIGN (DSIGN c) ~ ()
            => Crypto c
            => NamedCrypto c
+           => ControlClientCrypto c
            => Show (SignKeyWithPeriodKES (KES c))
-           => HasInfo (DirectCodec IO) (VerKeyKES (KES c))
-           => HasInfo (DirectCodec IO) (SignKeyKES (KES c))
+           => ContextDSIGN (DSIGN c) ~ ()
+           => ContextKES (KES c) ~ ()
+           => HasInfo (DirectCodec IO) (VerKeyKES kes)
+           => HasInfo (DirectCodec IO) (SignKeyKES kes)
            => (forall s. HasInfo (DirectCodec (IOSim s)) (VerKeyKES kes))
            => (forall s. HasInfo (DirectCodec (IOSim s)) (SignKeyKES kes))
-           => (forall s. HasInfo (DirectCodec (IOSim s)) (AgentInfo c))
+           => DirectSerialise (SignKeyKES kes)
+           => DirectDeserialise (SignKeyKES kes)
+           => ControlCrypto c
+           => ControlClientCrypto c
+           => ServiceCrypto c
+           => ServiceClientCrypto c
+           => Typeable c
            => Proxy c
            -> Lock IO
            -> (forall a. (Show a, Pretty a) => Tracer IO a)
@@ -242,12 +251,7 @@ mvarStringTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
 -- | The operations a control client can perform: sending keys, and waiting.
 data ControlClientHooks m c
   = ControlClientHooks
-      { controlGenKey :: [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
-      , controlQueryKey :: [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
-      , controlDropKey :: [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
-      , controlInstallKey :: OCert c
-                          -> [(VersionIdentifier, ControlHandler m RecvResult)]
-      , controlGetInfo :: [(VersionIdentifier, ControlHandler m (AgentInfo c))]
+      { controlClientExec :: forall a. [(VersionIdentifier, ControlHandler m a)] -> m a
       , controlClientWait :: Int -> m ()
       , controlClientReportProperty :: Property -> m ()
       }
@@ -370,6 +374,13 @@ runTestNetwork :: forall c m fd addr
                => Show addr
                => Show fd
                => MonadTimer m
+               => MonadMVar m
+               => MonadTime m
+               => MonadST m
+               => MonadThrow m
+               => MonadAsync m
+               => MonadCatch m
+               => MonadFail m
                => DSIGN.Signable (DSIGN c) (OCertSignable c)
                => ContextDSIGN (DSIGN c) ~ ()
                => ContextKES (KES c) ~ ()
@@ -378,8 +389,15 @@ runTestNetwork :: forall c m fd addr
                => Show (SignKeyWithPeriodKES (KES c))
                => HasInfo (DirectCodec m) (VerKeyKES (KES c))
                => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-               => HasInfo (DirectCodec m) (AgentInfo c)
-               => Serializable (DirectCodec m) (AgentInfo c)
+               => DirectSerialise (SignKeyKES (KES c))
+               => DirectDeserialise (SignKeyKES (KES c))
+               -- => HasInfo (DirectCodec m) (AgentInfo c)
+               -- => Serializable (DirectCodec m) (AgentInfo c)
+               => ControlCrypto c
+               => ControlClientCrypto c
+               => ServiceCrypto c
+               => ServiceClientCrypto c
+               => Typeable c
                => Proxy c
                -> MakeRawBearer m fd
                -> Snocket m fd addr
@@ -493,8 +511,8 @@ runTestNetwork p mrb snocket genesisTimestamp
             controlClient tracer (startupDelay, script) = do
               threadDelay startupDelay
               script $ ControlClientHooks
-                { controlClientExec = \peer -> do
-                    runControlClient1 peer
+                { controlClientExec = \handlers -> do
+                    runControlClient1 handlers
                       p mrb
                       ControlClientOptions
                         { controlClientSnocket = snocket
@@ -609,16 +627,30 @@ testOneKeyThroughChain :: forall c m fd addr
                        => Show addr
                        => Show fd
                        => MonadTimer m
+                       => MonadST m
+                       => MonadThrow m
+                       => MonadMVar m
+                       => MonadFail m
+                       => MonadTime m
+                       => MonadAsync m
+                       => MonadCatch m
                        => DSIGN.Signable (DSIGN c) (OCertSignable c)
                        => ContextDSIGN (DSIGN c) ~ ()
                        => Crypto c
                        => NamedCrypto c
                        => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
+                       => ContextDSIGN (DSIGN c) ~ ()
+                       => ContextKES (KES c) ~ ()
                        => HasInfo (DirectCodec m) (VerKeyKES (KES c))
                        => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-                       => HasInfo (DirectCodec m) (AgentInfo c)
-                       => Serializable (DirectCodec m) (AgentInfo c)
+                       => DirectSerialise (SignKeyKES (KES c))
+                       => DirectDeserialise (SignKeyKES (KES c))
+                       => ControlClientCrypto c
+                       => ControlCrypto c
+                       => ServiceClientCrypto c
+                       => ServiceCrypto c
+                       => Typeable c
                        => Proxy c
                        -> MakeRawBearer m fd
                        -> Snocket m fd addr
@@ -660,12 +692,12 @@ testOneKeyThroughChain
       expectedOC = makeOCert vkHot certN kesPeriod skCold
 
   let controlScript hooks = do
-        generatedVK <- controlClientExec hooks controlGenKey
+        generatedVK <- controlClientExec hooks (controlGenKey p)
         let generatedVKBS = rawSerialiseVerKeyKES <$> generatedVK
         controlClientReportProperty hooks $
           counterexample "Generated vs. expected VK:" $
           (PrettyBS <$> generatedVKBS) === Just (PrettyBS expectedVKBS)
-        controlClientExec hooks $ controlInstallKey expectedOC
+        controlClientExec hooks (controlInstallKey p expectedOC)
         return ()
 
   let nodeScript =

@@ -8,7 +8,8 @@ module Cardano.KESAgent.Tests.EndToEnd
 import Cardano.KESAgent.Serialization.TextEnvelope
 import Cardano.KESAgent.KES.Crypto
 import Cardano.KESAgent.KES.OCert
-import Cardano.KESAgent.Protocols.Service.Protocol
+import Cardano.KESAgent.Protocols.Types
+import Cardano.KESAgent.Protocols.AgentInfo
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Serialization.CBOR

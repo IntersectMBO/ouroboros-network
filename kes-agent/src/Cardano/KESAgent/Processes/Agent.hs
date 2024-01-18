@@ -21,6 +21,8 @@ module Cardano.KESAgent.Processes.Agent
   ( Agent
   , AgentOptions (..)
   , EvolutionConfig (..)
+  , ControlCrypto (..)
+  , ServiceCrypto (..)
   , defEvolutionConfig
   , AgentTrace (..)
   , ServiceClientTrace (..)
@@ -506,13 +508,49 @@ convertBootstrapInfoCP0 :: BootstrapInfo -> CP0.BootstrapInfo
 convertBootstrapInfoCP0 info =
   CP0.BootstrapInfo
     { CP0.bootstrapInfoAddress = bootstrapInfoAddress info
-    , CP0.bootstrapInfoStatus = convertConnectionStatus $ bootstrapInfoStatus info
+    , CP0.bootstrapInfoStatus = convertConnectionStatusCP0 $ bootstrapInfoStatus info
     }
 
-convertConnectionStatus :: ConnectionStatus -> CP0.ConnectionStatus
-convertConnectionStatus ConnectionUp = CP0.ConnectionUp
-convertConnectionStatus ConnectionConnecting = CP0.ConnectionConnecting
-convertConnectionStatus ConnectionDown = CP0.ConnectionDown
+convertConnectionStatusCP0 :: ConnectionStatus -> CP0.ConnectionStatus
+convertConnectionStatusCP0 ConnectionUp = CP0.ConnectionUp
+convertConnectionStatusCP0 ConnectionConnecting = CP0.ConnectionConnecting
+convertConnectionStatusCP0 ConnectionDown = CP0.ConnectionDown
+
+
+instance FromAgentInfo StandardCrypto CP1.AgentInfo where
+  fromAgentInfo info =
+    CP1.AgentInfo
+      { CP1.agentInfoCurrentBundle = convertBundleInfoCP1 <$> agentInfoCurrentBundle info
+      , CP1.agentInfoStagedKey = convertKeyInfoCP1 <$> agentInfoStagedKey info
+      , CP1.agentInfoCurrentTime = agentInfoCurrentTime info
+      , CP1.agentInfoCurrentKESPeriod = agentInfoCurrentKESPeriod info
+      , CP1.agentInfoBootstrapConnections = convertBootstrapInfoCP1 <$> agentInfoBootstrapConnections info
+      }
+
+convertBundleInfoCP1 :: BundleInfo StandardCrypto -> CP1.BundleInfo
+convertBundleInfoCP1 info =
+  CP1.BundleInfo
+    { CP1.bundleInfoEvolution = bundleInfoEvolution info
+    , CP1.bundleInfoStartKESPeriod = bundleInfoStartKESPeriod info
+    , CP1.bundleInfoOCertN = bundleInfoOCertN info
+    , CP1.bundleInfoVK = bundleInfoVK info
+    , CP1.bundleInfoSigma = bundleInfoSigma info
+    }
+
+convertKeyInfoCP1 :: KeyInfo StandardCrypto -> CP1.KeyInfo
+convertKeyInfoCP1 = coerce
+
+convertBootstrapInfoCP1 :: BootstrapInfo -> CP1.BootstrapInfo
+convertBootstrapInfoCP1 info =
+  CP1.BootstrapInfo
+    { CP1.bootstrapInfoAddress = bootstrapInfoAddress info
+    , CP1.bootstrapInfoStatus = convertConnectionStatusCP1 $ bootstrapInfoStatus info
+    }
+
+convertConnectionStatusCP1 :: ConnectionStatus -> CP1.ConnectionStatus
+convertConnectionStatusCP1 ConnectionUp = CP1.ConnectionUp
+convertConnectionStatusCP1 ConnectionConnecting = CP1.ConnectionConnecting
+convertConnectionStatusCP1 ConnectionDown = CP1.ConnectionDown
 
 getInfo :: ( Monad m
            , MonadSTM m
@@ -763,6 +801,30 @@ instance ServiceCrypto StandardCrypto where
       )
     ]
 
+instance ServiceCrypto MockCrypto where
+  availableServiceDrivers =
+    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ MockCrypto))
+      , \bearer tracer currentKey nextKey reportPushResult ->
+          void $
+            runPeerWithDriver
+              (SP0.serviceDriver bearer tracer)
+              (SP0.servicePusher currentKey nextKey reportPushResult)
+              ()
+      )
+    ]
+
+instance ServiceCrypto SingleCrypto where
+  availableServiceDrivers =
+    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ SingleCrypto))
+      , \bearer tracer currentKey nextKey reportPushResult ->
+          void $
+            runPeerWithDriver
+              (SP0.serviceDriver bearer tracer)
+              (SP0.servicePusher currentKey nextKey reportPushResult)
+              ()
+      )
+    ]
+
 class ControlCrypto c where
   availableControlDrivers :: forall m fd addr
                               . Monad m
@@ -789,6 +851,53 @@ class ControlCrypto c where
 instance ControlCrypto StandardCrypto where
   availableControlDrivers =
     [ ( versionIdentifier (Proxy @(CP0.ControlProtocol _ StandardCrypto))
+      , \bearer tracer agent ->
+            void $
+              runPeerWithDriver
+                (CP0.controlDriver bearer tracer)
+                (CP0.controlReceiver
+                  (genKey agent)
+                  (dropKey agent)
+                  (queryKey agent)
+                  (installKey agent)
+                  (fromAgentInfo <$> getInfo agent))
+                ()
+      )
+    , ( versionIdentifier (Proxy @(CP1.ControlProtocol _))
+      , \bearer tracer agent ->
+            void $
+              runPeerWithDriver
+                (CP1.controlDriver bearer tracer)
+                (CP1.controlReceiver
+                  (genKey agent)
+                  (dropKey agent)
+                  (queryKey agent)
+                  (installKey agent)
+                  (fromAgentInfo <$> getInfo agent))
+                ()
+      )
+    ]
+
+instance ControlCrypto MockCrypto where
+  availableControlDrivers =
+    [ ( versionIdentifier (Proxy @(CP0.ControlProtocol _ MockCrypto))
+      , \bearer tracer agent ->
+            void $
+              runPeerWithDriver
+                (CP0.controlDriver bearer tracer)
+                (CP0.controlReceiver
+                  (genKey agent)
+                  (dropKey agent)
+                  (queryKey agent)
+                  (installKey agent)
+                  (fromAgentInfo <$> getInfo agent))
+                ()
+      )
+    ]
+
+instance ControlCrypto SingleCrypto where
+  availableControlDrivers =
+    [ ( versionIdentifier (Proxy @(CP0.ControlProtocol _ SingleCrypto))
       , \bearer tracer agent ->
             void $
               runPeerWithDriver
