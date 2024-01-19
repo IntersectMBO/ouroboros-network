@@ -136,7 +136,7 @@ runControlClient1 handlers proxy mrb options tracer = do
       (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
           runPeerWithDriver
             (versionHandshakeDriver bearer (ControlClientVersionHandshakeDriverTrace >$< tracer))
-            (versionHandshakeServer (map fst handlers))
+            (versionHandshakeClient (map fst handlers))
             ()
       case protocolVersionMay >>= (`lookup` handlers) of
         Nothing ->
