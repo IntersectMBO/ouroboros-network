@@ -113,7 +113,7 @@ library
                        hashable,
                        iproute,
                        mtl,
-                       network           >=3.1.2 && <3.2,
+                       network          ^>=3.1.4,
                        nothunks,
                        psqueues          >=0.2.3 && <0.3,
                        random,
