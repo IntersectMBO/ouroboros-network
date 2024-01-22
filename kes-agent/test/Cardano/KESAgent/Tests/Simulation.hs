@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Cardano.KESAgent.Tests.Simulation
   ( Lock
@@ -185,28 +186,50 @@ mkLock = do
     , releaseLock = putMVar var
     }
 
+type MonadTestNetwork m =
+       ( Monad m
+       , MonadAsync m
+       , MonadCatch m
+       , MonadFail m
+       , MonadMVar m
+       , MonadST m
+       , MonadThrow m
+       , MonadTime m
+       , MonadTimer m
+       )
+
+type TestNetworkCrypto c =
+      ( DSIGN.Signable (DSIGN c) (OCertSignable c)
+      , ContextDSIGN (DSIGN c) ~ ()
+      , ContextKES (KES c) ~ ()
+      , Crypto c
+      , NamedCrypto c
+      , Show (SignKeyWithPeriodKES (KES c))
+      , DirectSerialise (SignKeyKES (KES c))
+      , DirectDeserialise (SignKeyKES (KES c))
+      , ControlCrypto c
+      , ControlClientCrypto c
+      , ServiceCrypto c
+      , ServiceClientCrypto c
+      , Typeable c
+      )
+
+type TestNetworkContext m c =
+      ( MonadTestNetwork m
+      , TestNetworkCrypto c
+      , HasInfo (DirectCodec m) (VerKeyKES (KES c))
+      , HasInfo (DirectCodec m) (SignKeyKES (KES c))
+      )
+
 testCrypto :: forall c kes
             . kes ~ KES c
            => UnsoundKESAlgorithm kes
-           => DSIGN.Signable (DSIGN c) (OCertSignable c)
-           => ContextDSIGN (DSIGN c) ~ ()
-           => Crypto c
-           => NamedCrypto c
-           => ControlClientCrypto c
+           => TestNetworkCrypto c
            => Show (SignKeyWithPeriodKES (KES c))
-           => ContextDSIGN (DSIGN c) ~ ()
-           => ContextKES (KES c) ~ ()
            => HasInfo (DirectCodec IO) (VerKeyKES kes)
            => HasInfo (DirectCodec IO) (SignKeyKES kes)
            => (forall s. HasInfo (DirectCodec (IOSim s)) (VerKeyKES kes))
            => (forall s. HasInfo (DirectCodec (IOSim s)) (SignKeyKES kes))
-           => DirectSerialise (SignKeyKES kes)
-           => DirectDeserialise (SignKeyKES kes)
-           => ControlCrypto c
-           => ControlClientCrypto c
-           => ServiceCrypto c
-           => ServiceClientCrypto c
-           => Typeable c
            => Proxy c
            -> Lock IO
            -> (forall a. (Show a, Pretty a) => Tracer IO a)
@@ -370,34 +393,9 @@ instance Show (FD (IOSim s) (TestAddress Int)) where
 -- of "entropy" when generating KES keys. This makes it possible to compare KES
 -- keys received by the node against the expected keys.
 runTestNetwork :: forall c m fd addr
-                . Monad m
+                . TestNetworkContext m c
                => Show addr
                => Show fd
-               => MonadTimer m
-               => MonadMVar m
-               => MonadTime m
-               => MonadST m
-               => MonadThrow m
-               => MonadAsync m
-               => MonadCatch m
-               => MonadFail m
-               => DSIGN.Signable (DSIGN c) (OCertSignable c)
-               => ContextDSIGN (DSIGN c) ~ ()
-               => ContextKES (KES c) ~ ()
-               => Crypto c
-               => NamedCrypto c
-               => Show (SignKeyWithPeriodKES (KES c))
-               => HasInfo (DirectCodec m) (VerKeyKES (KES c))
-               => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-               => DirectSerialise (SignKeyKES (KES c))
-               => DirectDeserialise (SignKeyKES (KES c))
-               -- => HasInfo (DirectCodec m) (AgentInfo c)
-               -- => Serializable (DirectCodec m) (AgentInfo c)
-               => ControlCrypto c
-               => ControlClientCrypto c
-               => ServiceCrypto c
-               => ServiceClientCrypto c
-               => Typeable c
                => Proxy c
                -> MakeRawBearer m fd
                -> Snocket m fd addr
@@ -623,34 +621,10 @@ instance (KESAlgorithm (KES c)) => Arbitrary (OutOfOrderPushesSeeds c) where
     map OutOfOrderPushesSeeds $ filter ((>= 2) . length) (shrink xs)
 
 testOneKeyThroughChain :: forall c m fd addr
-                        . Monad m
+                        . TestNetworkContext m c
                        => Show addr
                        => Show fd
-                       => MonadTimer m
-                       => MonadST m
-                       => MonadThrow m
-                       => MonadMVar m
-                       => MonadFail m
-                       => MonadTime m
-                       => MonadAsync m
-                       => MonadCatch m
-                       => DSIGN.Signable (DSIGN c) (OCertSignable c)
-                       => ContextDSIGN (DSIGN c) ~ ()
-                       => Crypto c
-                       => NamedCrypto c
-                       => Show (SignKeyWithPeriodKES (KES c))
                        => UnsoundKESAlgorithm (KES c)
-                       => ContextDSIGN (DSIGN c) ~ ()
-                       => ContextKES (KES c) ~ ()
-                       => HasInfo (DirectCodec m) (VerKeyKES (KES c))
-                       => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-                       => DirectSerialise (SignKeyKES (KES c))
-                       => DirectDeserialise (SignKeyKES (KES c))
-                       => ControlClientCrypto c
-                       => ControlCrypto c
-                       => ServiceClientCrypto c
-                       => ServiceCrypto c
-                       => Typeable c
                        => Proxy c
                        -> MakeRawBearer m fd
                        -> Snocket m fd addr

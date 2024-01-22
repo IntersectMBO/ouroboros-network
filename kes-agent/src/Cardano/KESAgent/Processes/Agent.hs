@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 -- | The main Agent program.
 -- The KES Agent opens two sockets:
@@ -420,7 +421,7 @@ formatKey ocert =
   let serialNumber = ocertN ocert
   in printf "%i" serialNumber
 
-genKey :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ())
+genKey :: AgentContext m c
        => Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
 genKey agent = do
   bracket
@@ -434,7 +435,7 @@ genKey agent = do
       vk <- deriveVerKeyKES sk
       return $ Just vk
 
-dropKey :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ())
+dropKey :: AgentContext m c
         => Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
 dropKey agent = do
   keyMay <- atomically $ takeTMVar (agentStagedKeyVar agent)
@@ -443,7 +444,7 @@ dropKey agent = do
   `finally` do
     atomically $ putTMVar (agentStagedKeyVar agent) Nothing
 
-queryKey :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ())
+queryKey :: AgentContext m c
          => Agent c m fd addr -> m (Maybe (VerKeyKES (KES c)))
 queryKey agent = do
   withStagedKey agent "queryKey" $ \keyMay -> do
@@ -453,19 +454,10 @@ queryKey agent = do
         vk <- deriveVerKeyKES (skWithoutPeriodKES skp)
         return $ Just vk
 
-installKey :: ( MonadThrow m
-              , MonadST m
-              , MonadSTM m
-              , MonadMVar m
-              , Crypto c
-              , NamedCrypto c
-              , ContextKES (KES c) ~ ()
-              , ContextDSIGN (DSIGN c) ~ ()
-              , DSIGN.Signable (DSIGN c) (OCertSignable c)
-              )
-         => Agent c m fd addr
-         -> OCert c
-         -> m RecvResult
+installKey :: AgentContext m c
+           => Agent c m fd addr
+           -> OCert c
+           -> m RecvResult
 installKey agent oc = do
   newKeyMay <- alterStagedKey agent "install staged key" $ \keyMay -> do
     case keyMay of
@@ -552,12 +544,7 @@ convertConnectionStatusCP1 ConnectionUp = CP1.ConnectionUp
 convertConnectionStatusCP1 ConnectionConnecting = CP1.ConnectionConnecting
 convertConnectionStatusCP1 ConnectionDown = CP1.ConnectionDown
 
-getInfo :: ( Monad m
-           , MonadSTM m
-           , MonadST m
-           , MonadThrow m
-           , KESAlgorithm (KES c)
-           )
+getInfo :: AgentContext m c
         => Agent c m fd addr -> m (AgentInfo c)
 getInfo agent = do
   bundleInfoMay <- do
@@ -597,7 +584,7 @@ getInfo agent = do
     , agentInfoBootstrapConnections = bootstrapStatuses
     }
 
-checkEvolution :: (MonadThrow m, MonadST m, MonadSTM m, MonadMVar m, KESAlgorithm (KES c), ContextKES (KES c) ~ ()) => Agent c m fd addr -> m ()
+checkEvolution :: AgentContext m c => Agent c m fd addr -> m ()
 checkEvolution agent = do
   p' <- getCurrentKESPeriodWith
           (agentGetCurrentTime $ agentOptions agent)
@@ -627,17 +614,7 @@ checkEvolution agent = do
           return (bundleMay, ())
 
 pushKey :: forall c m fd addr.
-           ( MonadMVar m
-           , MonadST m
-           , MonadSTM m
-           , Crypto c
-           , DSIGN.Signable (DSIGN c) (OCertSignable c)
-           , KESAlgorithm (KES c)
-           , ContextKES (KES c) ~ ()
-           , DSIGNAlgorithm (DSIGN c)
-           , ContextDSIGN (DSIGN c) ~ ()
-           , MonadThrow m
-           )
+           AgentContext m c
         => Agent c m fd addr
         -> Bundle m c
         -> m RecvResult
@@ -760,17 +737,7 @@ runListener
 
 class ServiceCrypto c where
   availableServiceDrivers :: forall m fd addr
-                              . Monad m
-                             => MonadAsync m
-                             => MonadFail m
-                             => MonadMVar m
-                             => MonadST m
-                             => MonadSTM m
-                             => MonadThrow m
-                             => MonadThrow m
-                             => MonadTimer m
-                             => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-                             => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                              . AgentContext m c
                              => [ ( VersionIdentifier
                                   , RawBearer m
                                     -> Tracer m ServiceDriverTrace
@@ -827,19 +794,7 @@ instance ServiceCrypto SingleCrypto where
 
 class ControlCrypto c where
   availableControlDrivers :: forall m fd addr
-                              . Monad m
-                             => MonadAsync m
-                             => MonadFail m
-                             => MonadMVar m
-                             => MonadST m
-                             => MonadSTM m
-                             => MonadThrow m
-                             => MonadTimer m
-                             => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-                             => HasInfo (DirectCodec m) (VerKeyKES (KES c))
-                             => NamedCrypto c
-                             => ContextDSIGN (DSIGN c) ~ ()
-                             => DSIGN.Signable (DSIGN c) (OCertSignable c)
+                              . AgentContext m c
                              => [ ( VersionIdentifier
                                   , RawBearer m
                                     -> Tracer m ControlDriverTrace
@@ -912,28 +867,39 @@ instance ControlCrypto SingleCrypto where
       )
     ]
 
+type MonadAgent m =
+      ( Monad m
+      , MonadAsync m
+      , MonadCatch m
+      , MonadFail m
+      , MonadMVar m
+      , MonadST m
+      , MonadTimer m
+      )
+
+type AgentCrypto c =
+      ( ContextDSIGN (DSIGN c) ~ ()
+      , ContextKES (KES c) ~ ()
+      , DSIGN.Signable (DSIGN c) (OCertSignable c)
+      , DirectSerialise (SignKeyKES (KES c))
+      , DirectDeserialise (SignKeyKES (KES c))
+      , Crypto c
+      , NamedCrypto c
+      , ControlCrypto c
+      , ServiceCrypto c
+      , ServiceClientCrypto c
+      , Typeable c
+      )
+
+type AgentContext m c =
+      ( MonadAgent m
+      , AgentCrypto c
+      , HasInfo (DirectCodec m) (VerKeyKES (KES c))
+      , HasInfo (DirectCodec m) (SignKeyKES (KES c))
+      )
 
 runAgent :: forall c m fd addr
-          . Monad m
-         => MonadAsync m
-         => MonadCatch m
-         => MonadFail m
-         => MonadMVar m
-         => MonadST m
-         => MonadTimer m
-         => ContextDSIGN (DSIGN c) ~ ()
-         => ContextKES (KES c) ~ ()
-         => DSIGN.Signable (DSIGN c) (OCertSignable c)
-         => HasInfo (DirectCodec m) (VerKeyKES (KES c))
-         => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-         => DirectSerialise (SignKeyKES (KES c))
-         => DirectDeserialise (SignKeyKES (KES c))
-         => Crypto c
-         => NamedCrypto c
-         => ControlCrypto c
-         => ServiceCrypto c
-         => ServiceClientCrypto c
-         => Typeable c
+          . AgentContext m c
          => Show addr
          => Show fd
          => Agent c m fd addr
@@ -976,7 +942,7 @@ runAgent agent = do
                   ()
             case protocolVersionMay >>= (`lookup` (availableServiceDrivers @c @m)) of
               Nothing ->
-                error "Protocol handshake failed"
+                error "Protocol handshake failed (service, agent)"
               Just run ->
                 withDuplexBearer bearer $ \bearer' ->
                   run bearer' tracer' currentKey nextKey reportPushResult
@@ -1047,7 +1013,7 @@ runAgent agent = do
                   ()
             case protocolVersionMay >>= (`lookup` (availableControlDrivers @c @m)) of
               Nothing ->
-                error "Protocol handshake failed"
+                error "Protocol handshake failed (control, agent)"
               Just run ->
                 run bearer tracer' agent
           )

@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.Processes.ServiceClient
@@ -80,18 +81,37 @@ instance Pretty ServiceClientTrace where
   pretty (ServiceClientConnected a) = "Service: Connected to " ++ a
   pretty x = "Service: " ++ drop (length "ServiceClient") (show x)
 
+type MonadServiceClient m =
+      ( Monad m
+      , MonadFail m
+      , MonadThrow m
+      , MonadCatch m
+      , MonadDelay m
+      , MonadST m
+      , MonadSTM m
+      , MonadMVar m
+      )
 
-class ServiceClientCrypto c where
+type ServiceClientCrypto c =
+      ( Crypto c
+      , NamedCrypto c
+      , Typeable c
+      , ServiceClientDrivers c
+      , DirectSerialise (SignKeyKES (KES c))
+      , DirectDeserialise (SignKeyKES (KES c))
+      )
+
+type ServiceClientContext m c =
+      ( MonadServiceClient m
+      , ServiceClientCrypto c
+      , HasInfo (DirectCodec m) (VerKeyKES (KES c))
+      , HasInfo (DirectCodec m) (SignKeyKES (KES c))
+      )
+
+
+class ServiceClientDrivers c where
   availableServiceClientDrivers :: forall m fd addr
-                              . Monad m
-                             => MonadThrow m
-                             => MonadST m
-                             => MonadSTM m
-                             => MonadMVar m
-                             => MonadCatch m
-                             => MonadFail m
-                             => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-                             => HasInfo (DirectCodec m) (VerKeyKES (KES c))
+                              . ServiceClientContext m c
                              => [ ( VersionIdentifier
                                   , RawBearer m
                                     -> Tracer m ServiceClientTrace
@@ -100,7 +120,7 @@ class ServiceClientCrypto c where
                                   )
                                 ]
 
-instance ServiceClientCrypto StandardCrypto where
+instance ServiceClientDrivers StandardCrypto where
   availableServiceClientDrivers =
     [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ StandardCrypto))
       , \bearer tracer handleKey ->
@@ -120,7 +140,7 @@ instance ServiceClientCrypto StandardCrypto where
       )
     ]
 
-instance ServiceClientCrypto MockCrypto where
+instance ServiceClientDrivers MockCrypto where
   availableServiceClientDrivers =
     [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ MockCrypto))
       , \bearer tracer handleKey ->
@@ -132,7 +152,7 @@ instance ServiceClientCrypto MockCrypto where
       )
     ]
 
-instance ServiceClientCrypto SingleCrypto where
+instance ServiceClientDrivers SingleCrypto where
   availableServiceClientDrivers =
     [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ SingleCrypto))
       , \bearer tracer handleKey ->
@@ -149,29 +169,14 @@ instance ServiceClientCrypto SingleCrypto where
 -- In case of an abnormal session termination (via an exception), the exception
 -- is logged via the provided 'Tracer', and another connection attempt is made.
 runServiceClientForever :: forall c m fd addr
-                         . Monad m
-                           => MonadThrow m
-                           => MonadST m
-                           => MonadSTM m
-                           => MonadMVar m
-                           => MonadCatch m
-                           => MonadFail m
-                           => MonadDelay m
-                           => DirectSerialise (SignKeyKES (KES c))
-                           => DirectDeserialise (SignKeyKES (KES c))
-                           => Show addr
-                           => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-                           => HasInfo (DirectCodec m) (VerKeyKES (KES c))
-                           => NamedCrypto c
-                           => ServiceClientCrypto c
-                           => Crypto c
-                           => Typeable c
-                           => Proxy c
-                           -> MakeRawBearer m fd
-                           -> ServiceClientOptions m fd addr
-                           -> (Bundle m c -> m RecvResult)
-                           -> Tracer m ServiceClientTrace
-                           -> m ()
+                         . ServiceClientContext m c
+                        => Show addr
+                        => Proxy c
+                        -> MakeRawBearer m fd
+                        -> ServiceClientOptions m fd addr
+                        -> (Bundle m c -> m RecvResult)
+                        -> Tracer m ServiceClientTrace
+                        -> m ()
 runServiceClientForever proxy mrb options handleKey tracer =
   forever $ do
     runServiceClient proxy mrb options handleKey tracer `catch` handle
@@ -185,22 +190,8 @@ runServiceClientForever proxy mrb options handleKey tracer =
 -- | Run a single Service Client session. Once the peer closes the connection,
 -- return.
 runServiceClient :: forall c m fd addr
-                  . MonadMVar m
-                 => MonadThrow m
-                 => MonadCatch m
-                 => MonadDelay m
-                 => MonadST m
-                 => MonadSTM m
-                 => MonadFail m
-                 => DirectSerialise (SignKeyKES (KES c))
-                 => DirectDeserialise (SignKeyKES (KES c))
+                  . ServiceClientContext m c
                  => Show addr
-                 => HasInfo (DirectCodec m) (SignKeyKES (KES c))
-                 => HasInfo (DirectCodec m) (VerKeyKES (KES c))
-                 => NamedCrypto c
-                 => Crypto c
-                 => ServiceClientCrypto c
-                 => Typeable c
                  => Proxy c
                  -> MakeRawBearer m fd
                  -> ServiceClientOptions m fd addr
@@ -247,7 +238,7 @@ runServiceClient proxy mrb options handleKey tracer = do
             ()
       case protocolVersionMay >>= (`lookup` (availableServiceClientDrivers @c @m)) of
         Nothing ->
-          error "Protocol handshake failed"
+          error "Protocol handshake failed (service)"
         Just run ->
           run bearer tracer handleKey'
     )

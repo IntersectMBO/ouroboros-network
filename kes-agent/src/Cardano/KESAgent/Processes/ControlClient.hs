@@ -10,6 +10,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.Processes.ControlClient
@@ -93,20 +94,29 @@ data ControlClientOptions m fd addr =
 type ControlHandler m a =
   RawBearer m -> Tracer m ControlClientTrace -> m a
 
+type MonadControlClient m =
+      ( Monad m
+      , MonadThrow m
+      , MonadCatch m
+      , MonadDelay m
+      , MonadST m
+      , MonadMVar m
+      )
+
+type ControlClientCrypto c =
+      ( Crypto c
+      , NamedCrypto c
+      )
+
+type ControlClientContext m c =
+      ( MonadControlClient m
+      , ControlClientCrypto c
+      , HasInfo (DirectCodec m) (VerKeyKES (KES c))
+      , Serializable (DirectCodec m) (VerKeyKES (KES c))
+      )
+
 runControlClient1 :: forall c m fd addr a
-                   . Monad m
-                  => MonadThrow m
-                  => MonadCatch m
-                  => MonadDelay m
-                  => MonadST m
-                  => MonadSTM m
-                  => MonadMVar m
-                  => Crypto c
-                  => NamedCrypto c
-                  => HasInfo (DirectCodec m) (VerKeyKES (KES c))
-                  => Serializable (DirectCodec m) (VerKeyKES (KES c))
-                  -- => HasInfo (DirectCodec m) (AgentInfo c)
-                  -- => Serializable (DirectCodec m) (AgentInfo c)
+                   . ControlClientContext m c
                   => [(VersionIdentifier, ControlHandler m a)]
                   -> Proxy c
                   -> MakeRawBearer m fd
@@ -140,7 +150,7 @@ runControlClient1 handlers proxy mrb options tracer = do
             ()
       case protocolVersionMay >>= (`lookup` handlers) of
         Nothing ->
-          error "Protocol handshake failed"
+          error "Protocol handshake failed (control)"
         Just handler ->
           handler bearer tracer
     )
@@ -149,12 +159,16 @@ class IsControlHandler proto (m :: Type -> Type) a where
   type InitialState proto :: proto
   toHandler :: Peer proto AsServer (InitialState proto) m a -> ControlHandler m a
 
+type MonadControlHandler m =
+      ( MonadThrow m
+      , MonadST m
+      , MonadSTM m
+      , MonadMVar m
+      , MonadFail m
+      )
+
 instance
-    ( MonadThrow m
-    , MonadST m
-    , MonadSTM m
-    , MonadMVar m
-    , MonadFail m
+    ( MonadControlHandler m
     , Crypto c
     , Typeable c
     , NamedCrypto c
@@ -171,12 +185,7 @@ instance
                 ()
 
 instance
-    ( MonadThrow m
-    , MonadST m
-    , MonadSTM m
-    , MonadMVar m
-    , MonadFail m
-    ) => IsControlHandler (CP1.ControlProtocol m) m a
+    MonadControlHandler m => IsControlHandler (CP1.ControlProtocol m) m a
   where
     type InitialState (CP1.ControlProtocol m) = CP1.InitialState
     toHandler peer bearer tracer = do
@@ -192,7 +201,7 @@ toHandlerEntry :: forall proto m a.
                -> (VersionIdentifier, ControlHandler m a)
 toHandlerEntry peer = (versionIdentifier (Proxy @proto), toHandler peer)
 
-class ControlClientCrypto c where
+class ControlClientMethods c where
   controlGenKey :: forall m.
                    MonadThrow m
                 => MonadST m
@@ -235,7 +244,7 @@ class ControlClientCrypto c where
                   => Proxy c
                   -> [(VersionIdentifier, ControlHandler m (AgentInfo c))]
 
-instance ControlClientCrypto StandardCrypto where
+instance ControlClientMethods StandardCrypto where
   controlGenKey _ =
     [ toHandlerEntry (CP0.controlGenKey @StandardCrypto)
     , toHandlerEntry CP1.controlGenKey
@@ -261,7 +270,7 @@ instance ControlClientCrypto StandardCrypto where
     , toHandlerEntry (toAgentInfo <$> CP1.controlGetInfo)
     ]
 
-instance ControlClientCrypto MockCrypto where
+instance ControlClientMethods MockCrypto where
   controlGenKey _ =
     [ toHandlerEntry (CP0.controlGenKey @MockCrypto) ]
   controlQueryKey _ =
@@ -273,7 +282,7 @@ instance ControlClientCrypto MockCrypto where
   controlGetInfo _ =
     [ toHandlerEntry (toAgentInfo <$> CP0.controlGetInfo @MockCrypto) ]
 
-instance ControlClientCrypto SingleCrypto where
+instance ControlClientMethods SingleCrypto where
   controlGenKey _ =
     [ toHandlerEntry (CP0.controlGenKey @SingleCrypto) ]
   controlQueryKey _ =
