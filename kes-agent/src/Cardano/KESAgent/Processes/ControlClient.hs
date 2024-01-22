@@ -106,6 +106,7 @@ type MonadControlClient m =
 type ControlClientCrypto c =
       ( Crypto c
       , NamedCrypto c
+      , ControlClientMethods c
       )
 
 type ControlClientContext m c =
