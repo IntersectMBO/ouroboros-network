@@ -205,7 +205,7 @@ test-suite test
                        ouroboros-network-api,
                        ouroboros-network-mock,
                        ouroboros-network-protocols:testlib,
-                       ouroboros-network-testing ^>= 0.4
+                       ouroboros-network-testing ^>= 0.5
 
   ghc-options:         -threaded
                        -Wall
