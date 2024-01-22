@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+## 0.1.1.1 -- 2024-01-22
+
+### Non-breaking changes
+
 * ghc-9.8 support.
 
 ## 0.1.1.0 -- 2023-11-02

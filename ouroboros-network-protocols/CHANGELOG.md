@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.7.0.0 -- 2024-01-22
+
+### Breaking changes
+
 * Pipeline depth type changed from `Word32` to `Word16`.
 
 * In LocalStateQuery, changed the argument of `MsgAcquire` and `MsgReAcquire`

@@ -1,7 +1,7 @@
 cabal-version: 3.0
 
 name:                   ntp-client
-version:                0.0.1.3
+version:                0.0.1.4
 synopsis:               NTP client
 description:            NTP client.
 license:                Apache-2.0

@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+## 0.3.1.0
+
+### Non-breaking changes
+
 * ghc-9.8 support.
 
 ## 0.3.0.2

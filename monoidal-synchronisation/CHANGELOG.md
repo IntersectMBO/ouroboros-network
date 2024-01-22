@@ -1,11 +1,22 @@
 # Revision history for monoidal-synchronisation
 
+## next version
+
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.1.0.5
+
+### Non-breaking changes
+
+* ghc-9.8 support.
+
 ## 0.1.0.4
 
 ### Non-breaking changes
 
 * Fixed cabal-fmt warnings.
-* ghc-9.8 support.
 
 ## 0.1.0.3
 

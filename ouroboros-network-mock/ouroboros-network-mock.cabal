@@ -1,7 +1,7 @@
 cabal-version:       3.0
 
 name:                   ouroboros-network-mock
-version:                0.1.1.0
+version:                0.1.1.1
 synopsis:               Ouroboros Network Chain for testing purposes
 description:            Ouroboros Network Chain for testing purposes.
 license:                Apache-2.0
