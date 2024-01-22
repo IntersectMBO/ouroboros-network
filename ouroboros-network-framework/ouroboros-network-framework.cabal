@@ -98,7 +98,7 @@ library
                      , monoidal-synchronisation
                                       ^>=0.1.0.5
                      , network        ^>=3.1.4
-                     , network-mux    ^>=0.4.4
+                     , network-mux    ^>=0.4.5
                      , ouroboros-network-api
                                       ^>=0.6.3
                      , ouroboros-network-testing
