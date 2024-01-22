@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.5.0.0 -- 2024-01-22
+
+### Breaking changes
+
 * Adds `eventually` and `eventsToListWithId` functions to Signal API
 
 ### Non-breaking changes

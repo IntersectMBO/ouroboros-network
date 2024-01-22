@@ -2,6 +2,12 @@
 
 ## next release
 
+### Breaking changes
+
+### Non-breaking changes
+
+## 0.6.3.0 -- 2024-01-22
+
 ### Non-breaking changes
 
 - CI requires me to add an entry here even though I merely updated a comment on
@@ -15,8 +21,6 @@
 * Refactored `NodeToNodeVersionData` decoder.
 
 ## 0.6.1.0 -- 2023-11-29
-
-### Breaking changes
 
 ### Non-breaking changes
 

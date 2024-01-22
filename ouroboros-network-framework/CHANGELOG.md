@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.11.0.0 -- 2024-01-22
+
+### Breaking changes
+
 * Moved `configureOutboundSocket` to `ouroboros-network` (it's not exported
   anymore).
 
