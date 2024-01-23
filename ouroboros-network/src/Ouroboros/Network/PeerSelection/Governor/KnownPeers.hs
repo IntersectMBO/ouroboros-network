@@ -120,13 +120,6 @@ belowTarget actions
           [jobPeerShare actions policy numPeersToReq (Set.toList selectedForPeerShare)]
       }
 
-    -- If we could peer share except that there are none currently available
-    -- then we return the next wakeup time (if any)
-  | numKnownPeers < targetNumberOfKnownPeers
-  , numPeerShareReqsPossible > 0
-  , Set.null availableForPeerShare
-  = GuardedSkip (EstablishedPeers.minPeerShareTime establishedPeers)
-
   | otherwise
   = GuardedSkip Nothing
   where
