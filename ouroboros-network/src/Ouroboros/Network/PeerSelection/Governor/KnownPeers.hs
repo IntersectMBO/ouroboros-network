@@ -106,7 +106,7 @@ belowTarget actions
         decisionTrace = [TracePeerShareRequests
                           targetNumberOfKnownPeers
                           numKnownPeers
-                          availableForPeerShare
+                          canAsk
                           selectedForPeerShare],
         decisionState = st {
                           inProgressPeerShareReqs = inProgressPeerShareReqs
@@ -190,7 +190,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                -- sharing results is welcome.
                newPeers    = [ p | Right (PeerSharingResult ps) <- totalResults
                                  , p <- ps
-                                 , not (Set.member p (PublicRootPeers.toAllLedgerPeerSet (publicRootPeers st))) ]
+                                 , not (KnownPeers.member p (knownPeers st)) ]
             in Decision { decisionTrace = [ TracePeerShareResults peerResults
                                           , TracePeerShareResultsFiltered newPeers
                                           ]
