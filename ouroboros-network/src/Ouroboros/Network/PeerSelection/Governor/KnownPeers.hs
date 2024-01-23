@@ -10,7 +10,6 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
   ) where
 
 import           Data.Maybe (fromMaybe)
-import           Data.Semigroup (Min (..))
 import qualified Data.Set as Set
 
 import           Control.Concurrent.JobPool (Job (..))
@@ -112,13 +111,6 @@ belowTarget actions
         decisionJobs  =
           [jobPeerShare actions policy numPeersToReq (Set.toList selectedForPeerShare)]
       }
-
-    -- If we could peer share except that there are none currently available
-    -- then we return the next wakeup time (if any)
-  | numKnownPeers < targetNumberOfKnownPeers
-  , numPeerShareReqsPossible > 0
-  , Set.null availableForPeerShare
-  = GuardedSkip (Min <$> EstablishedPeers.minPeerShareTime establishedPeers)
 
   | otherwise
   = GuardedSkip Nothing
