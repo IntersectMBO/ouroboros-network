@@ -461,7 +461,9 @@ data DebugPeerSelectionState peeraddr = DebugPeerSelectionState {
        dpssInProgressPromoteWarm       :: !(Set peeraddr),
        dpssInProgressDemoteWarm        :: !(Set peeraddr),
        dpssInProgressDemoteHot         :: !(Set peeraddr),
-       dpssInProgressDemoteToCold      :: !(Set peeraddr)
+       dpssInProgressDemoteToCold      :: !(Set peeraddr),
+       dpssUpstreamyness               :: !(Map peeraddr Int),
+       dpssFetchynessBlocks            :: !(Map peeraddr Int)
 } deriving Show
 
 
