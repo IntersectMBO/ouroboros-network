@@ -87,7 +87,7 @@ source-repository-package
 -- Not yet on CHaP or Hackage
 source-repository-package
   type: git
-  location: git@github.com:input-output-hk/serdoc
+  location: https://github.com/input-output-hk/serdoc
   tag: 2cd52c768c32c6c61ccc355bc8cfd8e67f25d8ca
   subdir:
     serdoc-core
