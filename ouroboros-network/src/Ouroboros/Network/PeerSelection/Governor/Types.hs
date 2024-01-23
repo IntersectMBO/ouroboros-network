@@ -117,6 +117,9 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyPeerShareRetryTime         :: !DiffTime,
        -- ^ Amount of time a node has to wait before issuing a new peer sharing
        -- request
+       policyPeerShareStickyTime        :: !DiffTime,
+       -- ^ Amount of time between changes to the salt used to pick peers to
+       -- gossip about.
        policyPeerShareBatchWaitTime     :: !DiffTime,
        -- ^ Amount of time a batch of peer sharing requests is allowed to take
        policyPeerShareOverallTimeout    :: !DiffTime,

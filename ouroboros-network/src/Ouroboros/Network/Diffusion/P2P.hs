@@ -1291,7 +1291,7 @@ computePeerSharingPeers readPublicState genVar reSaltAtVar PeerSelectionPolicy{.
     reSaltAt <- readTVar reSaltAtVar
     if reSaltAt <= now
        then do
-         writeTVar reSaltAtVar $ addTime policyPeerShareRetryTime now
+         writeTVar reSaltAtVar $ addTime policyPeerShareStickyTime now
          stateTVar genVar random
        else do
          gen <- readTVar genVar

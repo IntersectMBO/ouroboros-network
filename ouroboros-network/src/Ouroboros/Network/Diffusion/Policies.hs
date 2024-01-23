@@ -89,6 +89,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
       policyFindPublicRootTimeout      = 5,    -- seconds
       policyMaxInProgressPeerShareReqs = 2,
       policyPeerShareRetryTime         = 900,  -- seconds
+      policyPeerShareStickyTime        = 823,  -- seconds
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
       policyPeerShareActivationDelay   = 300,  -- seconds
