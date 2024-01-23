@@ -274,7 +274,7 @@ mvarStringTracer var = Tracer $ \x -> modifyMVar_ var $ \strs -> do
 -- | The operations a control client can perform: sending keys, and waiting.
 data ControlClientHooks m c
   = ControlClientHooks
-      { controlClientExec :: forall a. [(VersionIdentifier, ControlHandler m a)] -> m a
+      { controlClientExec :: forall a. (ControlClient m c -> ControlHandler m a) -> m a
       , controlClientWait :: Int -> m ()
       , controlClientReportProperty :: Property -> m ()
       }
@@ -509,8 +509,8 @@ runTestNetwork p mrb snocket genesisTimestamp
             controlClient tracer (startupDelay, script) = do
               threadDelay startupDelay
               script $ ControlClientHooks
-                { controlClientExec = \handlers -> do
-                    runControlClient1 handlers
+                { controlClientExec = \handler -> do
+                    runControlClient1 handler
                       p mrb
                       ControlClientOptions
                         { controlClientSnocket = snocket
@@ -663,15 +663,15 @@ testOneKeyThroughChain
   let kesPeriod = KESPeriod 0
   let skCold = genKeyDSIGN @(DSIGN c) seedDSIGNP
       vkCold = deriveVerKeyDSIGN skCold
-      expectedOC = makeOCert vkHot certN kesPeriod skCold
+      expectedOC = makeOCert @c vkHot certN kesPeriod skCold
 
   let controlScript hooks = do
-        generatedVK <- controlClientExec hooks (controlGenKey p)
+        generatedVK <- controlClientExec hooks controlGenKey
         let generatedVKBS = rawSerialiseVerKeyKES <$> generatedVK
         controlClientReportProperty hooks $
           counterexample "Generated vs. expected VK:" $
           (PrettyBS <$> generatedVKBS) === Just (PrettyBS expectedVKBS)
-        controlClientExec hooks (controlInstallKey p expectedOC)
+        controlClientExec hooks (\c -> controlInstallKey c expectedOC)
         return ()
 
   let nodeScript =

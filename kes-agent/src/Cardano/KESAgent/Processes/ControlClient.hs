@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- | Clients for the KES Agent.
 module Cardano.KESAgent.Processes.ControlClient
@@ -66,6 +67,7 @@ import Data.Typeable
 
 data ControlClientTrace
   = ControlClientVersionHandshakeDriverTrace VersionHandshakeDriverTrace
+  | ControlClientVersionHandshakeFailed
   | ControlClientDriverTrace ControlDriverTrace
   | ControlClientSocketClosed
   | ControlClientConnected -- (SocketAddress Unix)
@@ -100,13 +102,15 @@ type MonadControlClient m =
       , MonadCatch m
       , MonadDelay m
       , MonadST m
+      , MonadSTM m
+      , MonadFail m
       , MonadMVar m
       )
 
 type ControlClientCrypto c =
       ( Crypto c
       , NamedCrypto c
-      , ControlClientMethods c
+      , ControlClientDrivers c
       )
 
 type ControlClientContext m c =
@@ -114,17 +118,20 @@ type ControlClientContext m c =
       , ControlClientCrypto c
       , HasInfo (DirectCodec m) (VerKeyKES (KES c))
       , Serializable (DirectCodec m) (VerKeyKES (KES c))
+      , DirectSerialise (SignKeyKES (KES c))
+      , DirectDeserialise (SignKeyKES (KES c))
       )
 
 runControlClient1 :: forall c m fd addr a
                    . ControlClientContext m c
-                  => [(VersionIdentifier, ControlHandler m a)]
+                  => ControlClientDrivers c
+                  => (ControlClient m c -> ControlHandler m a)
                   -> Proxy c
                   -> MakeRawBearer m fd
                   -> ControlClientOptions m fd addr
                   -> Tracer m ControlClientTrace
                   -> m a
-runControlClient1 handlers proxy mrb options tracer = do
+runControlClient1 handler proxy mrb options tracer = do
   let s = controlClientSnocket options
   bracket
     (openToConnect s (controlClientAddress options))
@@ -144,16 +151,18 @@ runControlClient1 handlers proxy mrb options tracer = do
         (connect s fd (controlClientAddress options))
       traceWith tracer ControlClientConnected
       bearer <- getRawBearer mrb fd
+      let drivers = controlClientDrivers proxy
       (protocolVersionMay :: Maybe VersionIdentifier, ()) <-
           runPeerWithDriver
             (versionHandshakeDriver bearer (ControlClientVersionHandshakeDriverTrace >$< tracer))
-            (versionHandshakeClient (map fst handlers))
+            (versionHandshakeClient (map fst drivers))
             ()
-      case protocolVersionMay >>= (`lookup` handlers) of
+      case protocolVersionMay >>= (`lookup` drivers) of
         Nothing ->
           error "Protocol handshake failed (control)"
-        Just handler ->
-          handler bearer tracer
+          traceWith tracer ControlClientVersionHandshakeFailed
+        Just controlClient ->
+          handler controlClient bearer tracer
     )
 
 class IsControlHandler proto (m :: Type -> Type) a where
@@ -202,98 +211,59 @@ toHandlerEntry :: forall proto m a.
                -> (VersionIdentifier, ControlHandler m a)
 toHandlerEntry peer = (versionIdentifier (Proxy @proto), toHandler peer)
 
-class ControlClientMethods c where
-  controlGenKey :: forall m.
-                   MonadThrow m
-                => MonadST m
-                => MonadSTM m
-                => MonadMVar m
-                => MonadFail m
-                => Proxy c
-                -> [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
-  controlQueryKey :: forall m.
-                     MonadThrow m
-                  => MonadST m
-                  => MonadSTM m
-                  => MonadMVar m
-                  => MonadFail m
-                  => Proxy c
-                  -> [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
-  controlDropKey :: forall m.
-                     MonadThrow m
-                  => MonadST m
-                  => MonadSTM m
-                  => MonadMVar m
-                  => MonadFail m
-                  => Proxy c
-                  -> [(VersionIdentifier, ControlHandler m (Maybe (VerKeyKES (KES c))))]
-  controlInstallKey :: forall m.
-                     MonadThrow m
-                  => MonadST m
-                  => MonadSTM m
-                  => MonadMVar m
-                  => MonadFail m
-                  => Proxy c
-                  -> OCert c
-                  -> [(VersionIdentifier, ControlHandler m RecvResult)]
-  controlGetInfo :: forall m.
-                     MonadThrow m
-                  => MonadST m
-                  => MonadSTM m
-                  => MonadMVar m
-                  => MonadFail m
-                  => Proxy c
-                  -> [(VersionIdentifier, ControlHandler m (AgentInfo c))]
+data ControlClient m c =
+  ControlClient
+  { controlGenKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
+  , controlQueryKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
+  , controlDropKey :: ControlHandler m (Maybe (VerKeyKES (KES c)))
+  , controlInstallKey :: OCert c
+                      -> ControlHandler m RecvResult
+  , controlGetInfo :: ControlHandler m (AgentInfo c)
+  }
 
-instance ControlClientMethods StandardCrypto where
-  controlGenKey _ =
-    [ toHandlerEntry (CP0.controlGenKey @StandardCrypto)
-    , toHandlerEntry CP1.controlGenKey
-    ]
+class ControlClientDrivers c where
+  controlClientDrivers :: forall m. ControlClientContext m c
+                       => Proxy c -> [(VersionIdentifier, ControlClient m c)]
 
-  controlQueryKey _ =
-    [ toHandlerEntry (CP0.controlQueryKey @StandardCrypto)
-    , toHandlerEntry CP1.controlQueryKey
-    ]
+mkControlClientCP1 :: ControlClientContext m StandardCrypto
+                   => (VersionIdentifier, ControlClient m StandardCrypto)
+mkControlClientCP1 =
+  ( versionIdentifier (Proxy @(CP1.ControlProtocol _))
+  , ControlClient
+      (toHandler CP1.controlGenKey)
+      (toHandler CP1.controlQueryKey)
+      (toHandler CP1.controlDropKey)
+      (toHandler <$> CP1.controlInstallKey)
+      (fmap (fmap toAgentInfo) <$> toHandler CP1.controlGetInfo)
+  )
 
-  controlDropKey _ =
-    [ toHandlerEntry (CP0.controlDropKey @StandardCrypto)
-    , toHandlerEntry CP1.controlDropKey
-    ]
+mkControlClientCP0 :: forall m c
+                    . ControlClientContext m c
+                   => NamedCrypto c
+                   => Typeable c
+                   => (VersionIdentifier, ControlClient m c)
+mkControlClientCP0 =
+  ( versionIdentifier (Proxy @(CP0.ControlProtocol _ c))
+  , ControlClient
+      (toHandler (CP0.controlGenKey @c))
+      (toHandler (CP0.controlQueryKey @c))
+      (toHandler (CP0.controlDropKey @c))
+      (toHandler <$> CP0.controlInstallKey)
+      (fmap (fmap toAgentInfo) <$> toHandler (CP0.controlGetInfo @c))
+  )
 
-  controlInstallKey _ oc =
-    [ toHandlerEntry (CP0.controlInstallKey @StandardCrypto oc)
-    , toHandlerEntry (CP1.controlInstallKey oc)
-    ]
+instance ControlClientDrivers StandardCrypto where
+  controlClientDrivers _ =
+    [ mkControlClientCP1, mkControlClientCP0 ]
 
-  controlGetInfo _ =
-    [ toHandlerEntry (toAgentInfo <$> CP0.controlGetInfo @StandardCrypto)
-    , toHandlerEntry (toAgentInfo <$> CP1.controlGetInfo)
-    ]
+instance ControlClientDrivers SingleCrypto where
+  controlClientDrivers _ =
+    [ mkControlClientCP0 ]
 
-instance ControlClientMethods MockCrypto where
-  controlGenKey _ =
-    [ toHandlerEntry (CP0.controlGenKey @MockCrypto) ]
-  controlQueryKey _ =
-    [ toHandlerEntry (CP0.controlQueryKey @MockCrypto) ]
-  controlDropKey _ =
-    [ toHandlerEntry (CP0.controlDropKey @MockCrypto) ]
-  controlInstallKey _ oc =
-    [ toHandlerEntry (CP0.controlInstallKey @MockCrypto oc) ]
-  controlGetInfo _ =
-    [ toHandlerEntry (toAgentInfo <$> CP0.controlGetInfo @MockCrypto) ]
+instance ControlClientDrivers MockCrypto where
+  controlClientDrivers _ =
+    [ mkControlClientCP0 ]
 
-instance ControlClientMethods SingleCrypto where
-  controlGenKey _ =
-    [ toHandlerEntry (CP0.controlGenKey @SingleCrypto) ]
-  controlQueryKey _ =
-    [ toHandlerEntry (CP0.controlQueryKey @SingleCrypto) ]
-  controlDropKey _ =
-    [ toHandlerEntry (CP0.controlDropKey @SingleCrypto) ]
-  controlInstallKey _ oc =
-    [ toHandlerEntry (CP0.controlInstallKey @SingleCrypto oc) ]
-  controlGetInfo _ =
-    [ toHandlerEntry (toAgentInfo <$> CP0.controlGetInfo @SingleCrypto) ]
 
 class ToAgentInfo c a where
   toAgentInfo :: a -> AgentInfo c

@@ -187,6 +187,8 @@ data AgentTrace
   = AgentVersionHandshakeDriverTrace VersionHandshakeDriverTrace
   | AgentServiceDriverTrace ServiceDriverTrace
   | AgentControlDriverTrace ControlDriverTrace
+  | AgentServiceVersionHandshakeFailed
+  | AgentControlVersionHandshakeFailed
   | AgentBootstrapTrace ServiceClientTrace
   | AgentReplacingPreviousKey String String
   | AgentRejectingKey String
@@ -736,7 +738,7 @@ runListener
   (accept s fd >>= loop) `catch` logAndContinue
 
 class ServiceCrypto c where
-  availableServiceDrivers :: forall m fd addr
+  availableServiceDrivers :: forall m
                               . AgentContext m c
                              => [ ( VersionIdentifier
                                   , RawBearer m
@@ -748,49 +750,59 @@ class ServiceCrypto c where
                                   )
                                 ]
 
+mkServiceDriverSP0 :: forall m c
+                    . AgentContext m c
+                   => ( VersionIdentifier
+                      , RawBearer m
+                        -> Tracer m ServiceDriverTrace
+                        -> m (Bundle m c)
+                        -> m (Bundle m c)
+                        -> (RecvResult -> m ())
+                        -> m ()
+                      )
+mkServiceDriverSP0 =
+  ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ c))
+  , \bearer tracer currentKey nextKey reportPushResult ->
+      void $
+        runPeerWithDriver
+          (SP0.serviceDriver bearer tracer)
+          (SP0.servicePusher currentKey nextKey reportPushResult)
+          ()
+  )
+
+mkServiceDriverSP1 :: forall m
+                    . MonadAgent m
+                   => ( VersionIdentifier
+                      , RawBearer m
+                        -> Tracer m ServiceDriverTrace
+                        -> m (Bundle m StandardCrypto)
+                        -> m (Bundle m StandardCrypto)
+                        -> (RecvResult -> m ())
+                        -> m ()
+                      )
+mkServiceDriverSP1 =
+  ( versionIdentifier (Proxy @(SP1.ServiceProtocol _))
+  , \bearer tracer currentKey nextKey reportPushResult ->
+      void $
+        runPeerWithDriver
+          (SP1.serviceDriver bearer tracer)
+          (SP1.servicePusher currentKey nextKey reportPushResult)
+          ()
+  )
+
 instance ServiceCrypto StandardCrypto where
   availableServiceDrivers =
-    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ StandardCrypto))
-      , \bearer tracer currentKey nextKey reportPushResult ->
-          void $
-            runPeerWithDriver
-              (SP0.serviceDriver bearer tracer)
-              (SP0.servicePusher currentKey nextKey reportPushResult)
-              ()
-      )
-    , ( versionIdentifier (Proxy @(SP1.ServiceProtocol _))
-      , \bearer tracer currentKey nextKey reportPushResult ->
-          void $
-            runPeerWithDriver
-              (SP1.serviceDriver bearer tracer)
-              (SP1.servicePusher currentKey nextKey reportPushResult)
-              ()
-      )
+    [ mkServiceDriverSP1
+    , mkServiceDriverSP0
     ]
 
 instance ServiceCrypto MockCrypto where
   availableServiceDrivers =
-    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ MockCrypto))
-      , \bearer tracer currentKey nextKey reportPushResult ->
-          void $
-            runPeerWithDriver
-              (SP0.serviceDriver bearer tracer)
-              (SP0.servicePusher currentKey nextKey reportPushResult)
-              ()
-      )
-    ]
+    [ mkServiceDriverSP0 ]
 
 instance ServiceCrypto SingleCrypto where
   availableServiceDrivers =
-    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ SingleCrypto))
-      , \bearer tracer currentKey nextKey reportPushResult ->
-          void $
-            runPeerWithDriver
-              (SP0.serviceDriver bearer tracer)
-              (SP0.servicePusher currentKey nextKey reportPushResult)
-              ()
-      )
-    ]
+    [ mkServiceDriverSP0 ]
 
 class ControlCrypto c where
   availableControlDrivers :: forall m fd addr
@@ -803,69 +815,63 @@ class ControlCrypto c where
                                   )
                                 ]
 
+mkControlDriverCP0 :: forall m fd addr c
+                    . AgentContext m c
+                   => ( VersionIdentifier
+                      , RawBearer m
+                        -> Tracer m ControlDriverTrace
+                        -> Agent c m fd addr
+                        -> m ()
+                      )
+mkControlDriverCP0 =
+    ( versionIdentifier (Proxy @(CP0.ControlProtocol _ c))
+    , \bearer tracer agent ->
+          void $
+            runPeerWithDriver
+              (CP0.controlDriver bearer tracer)
+              (CP0.controlReceiver
+                (genKey agent)
+                (dropKey agent)
+                (queryKey agent)
+                (installKey agent)
+                (fromAgentInfo <$> getInfo agent))
+              ()
+    )
+
+mkControlDriverCP1 :: forall m fd addr
+                    . AgentContext m StandardCrypto
+                   => ( VersionIdentifier
+                      , RawBearer m
+                        -> Tracer m ControlDriverTrace
+                        -> Agent StandardCrypto m fd addr
+                        -> m ()
+                      )
+mkControlDriverCP1 =
+    ( versionIdentifier (Proxy @(CP1.ControlProtocol _))
+    , \bearer tracer agent ->
+          void $
+            runPeerWithDriver
+              (CP1.controlDriver bearer tracer)
+              (CP1.controlReceiver
+                (genKey agent)
+                (dropKey agent)
+                (queryKey agent)
+                (installKey agent)
+                (fromAgentInfo <$> getInfo agent))
+              ()
+    )
+
 instance ControlCrypto StandardCrypto where
   availableControlDrivers =
-    [ ( versionIdentifier (Proxy @(CP0.ControlProtocol _ StandardCrypto))
-      , \bearer tracer agent ->
-            void $
-              runPeerWithDriver
-                (CP0.controlDriver bearer tracer)
-                (CP0.controlReceiver
-                  (genKey agent)
-                  (dropKey agent)
-                  (queryKey agent)
-                  (installKey agent)
-                  (fromAgentInfo <$> getInfo agent))
-                ()
-      )
-    , ( versionIdentifier (Proxy @(CP1.ControlProtocol _))
-      , \bearer tracer agent ->
-            void $
-              runPeerWithDriver
-                (CP1.controlDriver bearer tracer)
-                (CP1.controlReceiver
-                  (genKey agent)
-                  (dropKey agent)
-                  (queryKey agent)
-                  (installKey agent)
-                  (fromAgentInfo <$> getInfo agent))
-                ()
-      )
-    ]
+    [ mkControlDriverCP1, mkControlDriverCP0 ]
 
 instance ControlCrypto MockCrypto where
   availableControlDrivers =
-    [ ( versionIdentifier (Proxy @(CP0.ControlProtocol _ MockCrypto))
-      , \bearer tracer agent ->
-            void $
-              runPeerWithDriver
-                (CP0.controlDriver bearer tracer)
-                (CP0.controlReceiver
-                  (genKey agent)
-                  (dropKey agent)
-                  (queryKey agent)
-                  (installKey agent)
-                  (fromAgentInfo <$> getInfo agent))
-                ()
-      )
-    ]
+    [ mkControlDriverCP0 ]
 
 instance ControlCrypto SingleCrypto where
   availableControlDrivers =
-    [ ( versionIdentifier (Proxy @(CP0.ControlProtocol _ SingleCrypto))
-      , \bearer tracer agent ->
-            void $
-              runPeerWithDriver
-                (CP0.controlDriver bearer tracer)
-                (CP0.controlReceiver
-                  (genKey agent)
-                  (dropKey agent)
-                  (queryKey agent)
-                  (installKey agent)
-                  (fromAgentInfo <$> getInfo agent))
-                ()
-      )
-    ]
+    [ mkControlDriverCP0 ]
 
 type MonadAgent m =
       ( Monad m
@@ -942,7 +948,7 @@ runAgent agent = do
                   ()
             case protocolVersionMay >>= (`lookup` (availableServiceDrivers @c @m)) of
               Nothing ->
-                error "Protocol handshake failed (service, agent)"
+                traceWith (agentTracer . agentOptions $ agent) AgentServiceVersionHandshakeFailed
               Just run ->
                 withDuplexBearer bearer $ \bearer' ->
                   run bearer' tracer' currentKey nextKey reportPushResult
@@ -1013,7 +1019,7 @@ runAgent agent = do
                   ()
             case protocolVersionMay >>= (`lookup` (availableControlDrivers @c @m)) of
               Nothing ->
-                error "Protocol handshake failed (control, agent)"
+                traceWith (agentTracer . agentOptions $ agent) AgentControlVersionHandshakeFailed
               Just run ->
                 run bearer tracer' agent
           )

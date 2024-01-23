@@ -374,9 +374,12 @@ getConfigPaths = do
 
 agentTracePrio :: AgentTrace -> Priority
 agentTracePrio AgentVersionHandshakeDriverTrace {} = Syslog.Debug
+agentTracePrio AgentServiceVersionHandshakeFailed {} = Syslog.Warning
+agentTracePrio AgentControlVersionHandshakeFailed {} = Syslog.Warning
 agentTracePrio AgentServiceDriverTrace {} = Syslog.Debug
 agentTracePrio AgentControlDriverTrace {} = Syslog.Debug
 agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeTrace {}) = Syslog.Debug
+agentTracePrio (AgentBootstrapTrace ServiceClientVersionHandshakeFailed {}) = Syslog.Error
 agentTracePrio (AgentBootstrapTrace ServiceClientDriverTrace {}) = Syslog.Debug
 agentTracePrio (AgentBootstrapTrace ServiceClientSocketClosed {}) = Syslog.Notice
 agentTracePrio (AgentBootstrapTrace ServiceClientConnected {}) = Syslog.Notice

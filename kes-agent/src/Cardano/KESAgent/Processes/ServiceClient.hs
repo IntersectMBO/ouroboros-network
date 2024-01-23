@@ -67,6 +67,7 @@ data ServiceClientOptions m fd addr =
 
 data ServiceClientTrace
   = ServiceClientVersionHandshakeTrace !VersionHandshakeDriverTrace
+  | ServiceClientVersionHandshakeFailed
   | ServiceClientDriverTrace !ServiceDriverTrace
   | ServiceClientSocketClosed
   | ServiceClientConnected !String
@@ -110,7 +111,7 @@ type ServiceClientContext m c =
 
 
 class ServiceClientDrivers c where
-  availableServiceClientDrivers :: forall m fd addr
+  availableServiceClientDrivers :: forall m
                               . ServiceClientContext m c
                              => [ ( VersionIdentifier
                                   , RawBearer m
@@ -120,49 +121,54 @@ class ServiceClientDrivers c where
                                   )
                                 ]
 
+mkServiceClientDriverSP0 :: forall m c
+                          . ServiceClientContext m c
+                         => ( VersionIdentifier
+                            , RawBearer m
+                              -> Tracer m ServiceClientTrace
+                              -> (Bundle m c -> m RecvResult)
+                              -> m ()
+                            )
+mkServiceClientDriverSP0 =
+    ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ StandardCrypto))
+    , \bearer tracer handleKey ->
+        void $
+          runPeerWithDriver
+            (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+            (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+            ()
+    )
+
+mkServiceClientDriverSP1 :: forall m
+                          . ServiceClientContext m StandardCrypto
+                         => ( VersionIdentifier
+                            , RawBearer m
+                              -> Tracer m ServiceClientTrace
+                              -> (Bundle m StandardCrypto -> m RecvResult)
+                              -> m ()
+                            )
+mkServiceClientDriverSP1 =
+    ( versionIdentifier (Proxy @(SP1.ServiceProtocol _))
+    , \bearer tracer handleKey ->
+        void $
+          runPeerWithDriver
+            (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
+            (SP1.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
+            ()
+    )
+
+
 instance ServiceClientDrivers StandardCrypto where
   availableServiceClientDrivers =
-    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ StandardCrypto))
-      , \bearer tracer handleKey ->
-          void $
-            runPeerWithDriver
-              (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-              (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
-              ()
-      )
-    , ( versionIdentifier (Proxy @(SP1.ServiceProtocol _))
-      , \bearer tracer handleKey ->
-          void $
-            runPeerWithDriver
-              (SP1.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-              (SP1.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
-              ()
-      )
-    ]
+    [ mkServiceClientDriverSP1, mkServiceClientDriverSP0 ]
 
 instance ServiceClientDrivers MockCrypto where
   availableServiceClientDrivers =
-    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ MockCrypto))
-      , \bearer tracer handleKey ->
-          void $
-            runPeerWithDriver
-              (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-              (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
-              ()
-      )
-    ]
+    [ mkServiceClientDriverSP0 ]
 
 instance ServiceClientDrivers SingleCrypto where
   availableServiceClientDrivers =
-    [ ( versionIdentifier (Proxy @(SP0.ServiceProtocol _ SingleCrypto))
-      , \bearer tracer handleKey ->
-          void $
-            runPeerWithDriver
-              (SP0.serviceDriver bearer $ ServiceClientDriverTrace >$< tracer)
-              (SP0.serviceReceiver $ \bundle -> handleKey bundle <* traceWith tracer ServiceClientReceivedKey)
-              ()
-      )
-    ]
+    [ mkServiceClientDriverSP0 ]
 
 -- | Run a Service Client indefinitely, restarting the connection once a
 -- session ends.
@@ -238,7 +244,7 @@ runServiceClient proxy mrb options handleKey tracer = do
             ()
       case protocolVersionMay >>= (`lookup` (availableServiceClientDrivers @c @m)) of
         Nothing ->
-          error "Protocol handshake failed (service)"
+          traceWith tracer ServiceClientVersionHandshakeFailed
         Just run ->
           run bearer tracer handleKey'
     )
