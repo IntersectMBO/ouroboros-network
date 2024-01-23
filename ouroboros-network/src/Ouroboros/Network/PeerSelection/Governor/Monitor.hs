@@ -158,6 +158,7 @@ inboundPeers PeerSelectionActions{
       (addr, ps) <- readNewInboundConnection
       return $ \_ ->
         let knownPeers' =
+              KnownPeers.setSuccessfulConnectionFlag addr $
               KnownPeers.alter
                 (\x -> case x of
                   Nothing ->
