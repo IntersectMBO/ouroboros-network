@@ -6,7 +6,7 @@
 
 ### Non-breaking changes
 
-## 0.4.4.0 -- 2024-01-22
+## 0.4.5.0 -- 2024-01-22
 
 ### Non-breaking changes
 

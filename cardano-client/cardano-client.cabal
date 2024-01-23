@@ -24,7 +24,7 @@ library
                        ouroboros-network-api        >= 0.5.2 && < 0.7,
                        ouroboros-network            >= 0.9 && < 0.12,
                        ouroboros-network-framework  >= 0.8 && < 0.12,
-                       network-mux                 ^>= 0.4.4,
+                       network-mux                 ^>= 0.4.5,
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
