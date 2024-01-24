@@ -17,10 +17,10 @@ import Cardano.KESAgent.KES.Bundle
 import Cardano.KESAgent.KES.Classes
 import Cardano.KESAgent.Protocols.VersionHandshake.Protocol
 import Cardano.KESAgent.Protocols.VersionHandshake.Driver
-import Cardano.KESAgent.Protocols.Control.Protocol
-import Cardano.KESAgent.Protocols.Control.Driver
-import Cardano.KESAgent.Protocols.Service.Protocol
-import Cardano.KESAgent.Protocols.Service.Driver
+import Cardano.KESAgent.Protocols.Control.V1.Protocol
+import Cardano.KESAgent.Protocols.Control.V1.Driver
+import Cardano.KESAgent.Protocols.Service.V1.Protocol
+import Cardano.KESAgent.Protocols.Service.V1.Driver
 import Cardano.KESAgent.Protocols.RecvResult
 import Cardano.KESAgent.Protocols.StandardCrypto
 import Cardano.KESAgent.Serialization.DirectCodec
@@ -38,8 +38,8 @@ import Network.TypedProtocol.Documentation
 
 allDocs =
   [ $(describeProtocol ''VersionHandshakeProtocol [] ''DirectCodec [''IO])
-  , $(describeProtocol ''ServiceProtocol [''IO, ''StandardCrypto] ''DirectCodec [''IO])
-  , $(describeProtocol ''ControlProtocol [''IO, ''StandardCrypto] ''DirectCodec [''IO])
+  , $(describeProtocol ''ServiceProtocol [''IO] ''DirectCodec [''IO])
+  , $(describeProtocol ''ControlProtocol [''IO] ''DirectCodec [''IO])
   ]
   
 main :: IO ()
