@@ -2,8 +2,8 @@
 ; NodeToNodeVersionData, v7 to v10
 ;
 
-nodeToNodeVersionData = [ networkMagic, initiatorAndResponderDiffusionMode ]
+nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode ]
 
 ; range between 0 and 0xffffffff
 networkMagic = 0..4294967295
-initiatorAndResponderDiffusionMode = bool
+initiatorOnlyDiffusionMode = bool

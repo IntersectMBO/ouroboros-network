@@ -15,11 +15,11 @@ versionTable = { * versionNumber => nodeToNodeVersionData }
 
 versionNumber = 7 / 8 / 9 / 10
 
-nodeToNodeVersionData = [ networkMagic, initiatorAndResponderDiffusionMode ]
+nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode ]
 
 ; range between 0 and 0xffffffff
 networkMagic = 0..4294967295
-initiatorAndResponderDiffusionMode = bool
+initiatorOnlyDiffusionMode = bool
 
 refuseReason
     = refuseReasonVersionMismatch
