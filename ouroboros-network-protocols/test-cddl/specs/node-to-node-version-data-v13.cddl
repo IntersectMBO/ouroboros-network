@@ -2,11 +2,11 @@
 ; NodeToNodeVersionData, v13
 ;
 
-nodeToNodeVersionData = [ networkMagic, initiatorAndResponderDiffusionMode, peerSharing, query ]
+nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query ]
 
 ; range between 0 and 0xffffffff
 networkMagic = 0..4294967295
-initiatorAndResponderDiffusionMode = bool
+initiatorOnlyDiffusionMode = bool
 ; range between 0 and 1
 peerSharing = 0..1
 query = bool
