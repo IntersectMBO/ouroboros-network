@@ -50,12 +50,13 @@ directStIdle queue@EmptyQ ServerStIdle {recvMsgRequestNext} (SendMsgRequestNext 
     directStNext (SendMsgRollBackward pIntersect tip (ChainSyncServer mStServerIdle)) ClientStNext {recvMsgRollBackward} =
       directStIdleM queue mStServerIdle (recvMsgRollBackward pIntersect tip)
 
-directStIdle queue (ServerStIdle {recvMsgRequestNext}) (SendMsgRequestNextPipelined stClientIdle) = do
+directStIdle queue (ServerStIdle {recvMsgRequestNext}) (SendMsgRequestNextPipelined stClientAwait stClientIdle) = do
     mStServerNext <- recvMsgRequestNext
     case mStServerNext of
       Left stServerNext    -> directStIdlePipelined stServerNext
       Right mStServerAwait -> do
         stServerNext' <- mStServerAwait
+        stClientAwait
         directStIdlePipelined stServerNext'
   where
     directStIdlePipelined (SendMsgRollForward header tip (ChainSyncServer mStServerIdle)) = do
