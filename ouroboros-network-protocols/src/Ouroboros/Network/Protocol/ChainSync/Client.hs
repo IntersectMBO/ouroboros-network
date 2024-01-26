@@ -63,8 +63,8 @@ data ClientStIdle header point tip m a where
   -- In the waiting case, the client gets the chance to take a local action.
   --
   SendMsgRequestNext
-    ::    ClientStNext header point tip m a
-    -> m (ClientStNext header point tip m a) -- after MsgAwaitReply
+    :: m ()   -- ^ promptly invoked when 'MsgAwaitReply' is received
+    -> ClientStNext header point tip m a
     -> ClientStIdle header point tip m a
 
   -- | Send the 'MsgFindIntersect', with handlers for the replies.
@@ -143,8 +143,8 @@ mapChainSyncClient fpoint fpoint' fheader ftip =
 
     goIdle :: ClientStIdle header  point  tip  m a
            -> ClientStIdle header' point' tip' m a
-    goIdle (SendMsgRequestNext stNext stAwait) =
-      SendMsgRequestNext (goNext stNext) (fmap goNext stAwait)
+    goIdle (SendMsgRequestNext stAwait stNext) =
+      SendMsgRequestNext stAwait (goNext stNext)
 
     goIdle (SendMsgFindIntersect points stIntersect) =
       SendMsgFindIntersect (map fpoint points) (goIntersect stIntersect)
@@ -189,7 +189,7 @@ chainSyncClientPeer (ChainSyncClient mclient) =
     chainSyncClientPeer_
       :: ClientStIdle header point tip m a
       -> Peer (ChainSync header point tip) AsClient StIdle m a
-    chainSyncClientPeer_ (SendMsgRequestNext stNext stAwait) =
+    chainSyncClientPeer_ (SendMsgRequestNext stAwait stNext) =
         Yield (ClientAgency TokIdle) MsgRequestNext $
         Await (ServerAgency (TokNext TokCanAwait)) $ \resp ->
         case resp of
@@ -207,13 +207,17 @@ chainSyncClientPeer (ChainSyncClient mclient) =
           -- to put both roll forward and back under a single constructor.
           MsgAwaitReply ->
             Effect $ do
-              ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
+              stAwait
               pure $ Await (ServerAgency (TokNext TokMustReply)) $ \resp' ->
                 case resp' of
                   MsgRollForward header tip ->
-                    chainSyncClientPeer (recvMsgRollForward header tip)
+                      chainSyncClientPeer (recvMsgRollForward header tip)
+                    where
+                      ClientStNext{recvMsgRollForward} = stNext
                   MsgRollBackward pRollback tip ->
-                    chainSyncClientPeer (recvMsgRollBackward pRollback tip)
+                      chainSyncClientPeer (recvMsgRollBackward pRollback tip)
+                    where
+                      ClientStNext{recvMsgRollBackward} = stNext
 
     chainSyncClientPeer_ (SendMsgFindIntersect points stIntersect) =
         Yield (ClientAgency TokIdle) (MsgFindIntersect points) $

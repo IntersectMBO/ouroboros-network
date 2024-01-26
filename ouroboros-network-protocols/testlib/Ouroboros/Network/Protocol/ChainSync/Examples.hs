@@ -104,10 +104,10 @@ chainSyncClientExample chainvar client = ChainSyncClient $
                 -> ClientStIdle header (Point block) tip m a
     requestNext client' =
       SendMsgRequestNext
+        -- We have the opportunity to do something when receiving
+        -- MsgAwaitReply. In this example we don't take up that opportunity.
+        (pure ())
         (handleNext client')
-        -- We received a wait message, and we have the opportunity to do
-        -- something. In this example we don't take up that opportunity.
-        (return (handleNext client'))
 
     handleNext :: Client header (Point block) tip m a
                -> ClientStNext header (Point block) tip m a
