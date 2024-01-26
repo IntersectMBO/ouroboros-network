@@ -96,6 +96,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
 
         (_, (Pipeline, mkPipelineDecision')) ->
           SendMsgRequestNextPipelined
+            (pure ())   -- ignore MsgAwaitReply
             (go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
 
         (Succ n', (CollectOrPipeline, mkPipelineDecision')) ->
@@ -104,7 +105,7 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
             -- do not directly loop here, but send something; otherwise we
             -- would just build a busy loop polling the driver's receiving
             -- queue.
-            (Just $ pure $ SendMsgRequestNextPipelined $ go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client)
+            (Just $ pure $ SendMsgRequestNextPipelined (pure ()) (go mkPipelineDecision' (Succ n) cliTipBlockNo srvTip client))
             ClientStNext {
                 recvMsgRollForward = \srvHeader srvTip' -> do
                   addBlock srvHeader
