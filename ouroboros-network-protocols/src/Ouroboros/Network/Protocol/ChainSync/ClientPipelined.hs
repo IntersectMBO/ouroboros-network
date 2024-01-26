@@ -222,18 +222,16 @@ chainSyncClientPeerSender n@Zero (SendMsgRequestNext stNext stAwait) =
                   ClientStNext {recvMsgRollBackward} = stNext
 
             MsgAwaitReply ->
-              SenderAwait
-                (ServerAgency (TokNext TokMustReply))
-                $ \case
-                  MsgRollForward header tip ->
-                    SenderEffect $ do
-                      ClientStNext {recvMsgRollForward} <- stAwait
+              SenderEffect $ do
+                ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
+                pure $ SenderAwait
+                  (ServerAgency (TokNext TokMustReply))
+                  $ \case
+                    MsgRollForward header tip ->
                       chainSyncClientPeerSender n
                         <$> recvMsgRollForward header tip
 
-                  MsgRollBackward pRollback tip ->
-                    SenderEffect $ do
-                      ClientStNext {recvMsgRollBackward} <- stAwait
+                    MsgRollBackward pRollback tip ->
                       chainSyncClientPeerSender n
                         <$> recvMsgRollBackward pRollback tip)
 
