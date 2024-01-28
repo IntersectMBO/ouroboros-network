@@ -32,8 +32,10 @@ import qualified Network.Socket as Socket
 import           Ouroboros.Network.Snocket (LocalAddress, LocalSnocket,
                      LocalSocket (..), SocketSnocket, localSocketFileDescriptor)
 import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Socket (configureSocket,
-                     configureSystemdSocket)
+import           Ouroboros.Network.Socket (NetworkMutableState,
+                     NetworkServerTracers (..), cleanNetworkMutableState,
+                     configureSocket, configureSystemdSocket,
+                     newNetworkMutableState)
 
 import           Ouroboros.Network.Context (ExpandedInitiatorContext (..),
                      IsBigLedgerPeer (..), MinimalInitiatorContext (..))
@@ -49,9 +51,6 @@ import           Ouroboros.Network.NodeToNode
                      (AcceptConnectionsPolicyTrace (..), DiffusionMode (..),
                      NodeToNodeVersion, NodeToNodeVersionData, RemoteAddress)
 import qualified Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.Socket (NetworkMutableState,
-                     NetworkServerTracers (..), cleanNetworkMutableState,
-                     newNetworkMutableState)
 import           Ouroboros.Network.Subscription.Dns
 import           Ouroboros.Network.Subscription.Ip
 import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
