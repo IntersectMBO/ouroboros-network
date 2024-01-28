@@ -125,7 +125,7 @@ codecBlockFetchId
      Monad m
   => Codec (BlockFetch block point) CodecFailure m
            (AnyMessage (BlockFetch block point))
-codecBlockFetchId = Codec encode decode
+codecBlockFetchId = Codec { encode, decode }
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

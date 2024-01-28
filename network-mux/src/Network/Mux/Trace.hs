@@ -1,11 +1,9 @@
 {-# LANGUAGE CPP                       #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE DerivingStrategies        #-}
 {-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE NamedFieldPuns            #-}
-{-# LANGUAGE StandaloneDeriving        #-}
 
 module Network.Mux.Trace
   ( MuxError (..)

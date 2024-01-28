@@ -88,7 +88,7 @@ codecLocalTxSubmissionId
             CodecFailure m
            (AnyMessage (LocalTxSubmission tx reject))
 codecLocalTxSubmissionId =
-    Codec encode decode
+    Codec { encode, decode }
   where
     encode :: forall (pr :: PeerRole) st st'.
               PeerHasAgency pr st

@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module Ouroboros.Network.Protocol.BlockFetch.Client where
 
 import           Network.TypedProtocol.Core

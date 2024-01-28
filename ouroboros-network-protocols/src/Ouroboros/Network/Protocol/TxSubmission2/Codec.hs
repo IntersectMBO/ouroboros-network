@@ -224,7 +224,7 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
 codecTxSubmission2Id
   :: forall txid tx m. Monad m
   => Codec (TxSubmission2 txid tx) CodecFailure m (AnyMessage (TxSubmission2 txid tx))
-codecTxSubmission2Id = Codec encode decode
+codecTxSubmission2Id = Codec { encode, decode }
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

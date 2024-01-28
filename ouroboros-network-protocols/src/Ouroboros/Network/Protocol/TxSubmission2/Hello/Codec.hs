@@ -18,7 +18,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import           Data.ByteString.Lazy (ByteString)
 
-import           Network.TypedProtocol.Codec.CBOR
+import           Network.TypedProtocol.Codec.CBOR hiding (decode, encode)
 
 import           Ouroboros.Network.Driver.Limits
 import           Ouroboros.Network.Protocol.Trans.Hello.Codec
