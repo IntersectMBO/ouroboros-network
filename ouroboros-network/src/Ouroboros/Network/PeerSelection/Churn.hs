@@ -16,7 +16,7 @@ import           System.Random
 
 import           Ouroboros.Network.BlockFetch (FetchMode (..))
 import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
-import           Ouroboros.Network.PeerSelection.Governor.Types
+import           Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import           Ouroboros.Network.PeerSelection.PeerMetric
 
 
