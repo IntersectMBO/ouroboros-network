@@ -7,36 +7,35 @@
 
 module Test.Ouroboros.Network.KeepAlive (tests) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad (void)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim
-import           Control.Tracer
-import qualified Data.ByteString.Lazy as BL
-import           Data.Typeable (Typeable)
-import           System.Random
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (void)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim
+import Control.Tracer
+import Data.ByteString.Lazy qualified as BL
+import Data.Typeable (Typeable)
+import System.Random
 
 
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
-import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.KeepAlive
-import           Ouroboros.Network.Protocol.KeepAlive.Client
-import           Ouroboros.Network.Protocol.KeepAlive.Codec
-import           Ouroboros.Network.Protocol.KeepAlive.Server
+import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.Channel
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
+import Ouroboros.Network.DeltaQ
+import Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.KeepAlive
+import Ouroboros.Network.Protocol.KeepAlive.Client
+import Ouroboros.Network.Protocol.KeepAlive.Codec
+import Ouroboros.Network.Protocol.KeepAlive.Server
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree

@@ -21,65 +21,63 @@
 --
 module Main (main) where
 
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (IOException)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI (MonadTime (..))
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.Fix (MonadFix)
-import           Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (IOException)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (MonadTime (..))
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Fix (MonadFix)
+import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Either (partitionEithers)
-import           Data.Functor (($>))
-import           Data.List.NonEmpty (NonEmpty (..))
-import           Data.Typeable (Typeable)
+import Data.ByteString.Lazy (ByteString)
+import Data.Either (partitionEithers)
+import Data.Functor (($>))
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Typeable (Typeable)
 
-import qualified Network.Mux as Mux
-import qualified Network.Mux.Bearer as Mux
-import qualified Network.Socket as Socket
-import           Network.TypedProtocol.Core
+import Network.Mux qualified as Mux
+import Network.Mux.Bearer qualified as Mux
+import Network.Socket qualified as Socket
+import Network.TypedProtocol.Core
 
-import           Options.Applicative
+import Options.Applicative
 
-import qualified System.Random as Random
-import           System.Random (RandomGen)
+import System.Random (RandomGen)
+import System.Random qualified as Random
 
-import           Network.TypedProtocol.ReqResp.Client
-import           Network.TypedProtocol.ReqResp.Codec.CBOR
-import           Network.TypedProtocol.ReqResp.Examples
-import           Network.TypedProtocol.ReqResp.Server
-import           Network.TypedProtocol.ReqResp.Type (ReqResp)
+import Network.TypedProtocol.ReqResp.Client
+import Network.TypedProtocol.ReqResp.Codec.CBOR
+import Network.TypedProtocol.ReqResp.Examples
+import Network.TypedProtocol.ReqResp.Server
+import Network.TypedProtocol.ReqResp.Type (ReqResp)
 
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.ConnectionManager.Core
-import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (newInformationChannel)
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec
-                     (timeLimitsHandshake)
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
-                     Queryable (..))
-import           Ouroboros.Network.RethrowPolicy
-import           Ouroboros.Network.Server.RateLimiting
-                     (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Server2 (ServerArguments (..))
-import qualified Ouroboros.Network.Server2 as Server
-import           Ouroboros.Network.Snocket (Snocket, socketSnocket)
-import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.InformationChannel
+           (newInformationChannel)
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Context
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Mux
+import Ouroboros.Network.MuxMode
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.Protocol.Handshake
+import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
+           Queryable (..))
+import Ouroboros.Network.RethrowPolicy
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server2 (ServerArguments (..))
+import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Snocket (Snocket, socketSnocket)
+import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Util.ShowProxy
 
 
 instance ShowProxy (ReqResp req resp) where

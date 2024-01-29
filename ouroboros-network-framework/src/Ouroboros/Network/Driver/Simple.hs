@@ -31,18 +31,18 @@ module Ouroboros.Network.Driver.Simple
   , runConnectedPeersPipelined
   ) where
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Driver
-import           Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Driver
+import Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.Channel
+import Ouroboros.Network.Channel
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Tracer (Tracer (..), contramap, traceWith)
 
 
 -- $intro

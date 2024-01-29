@@ -5,9 +5,9 @@ module Ouroboros.Network.TxSubmission.Mempool.Reader
   , mapTxSubmissionMempoolReader
   ) where
 
-import           Control.Monad.Class.MonadSTM (MonadSTM, STM)
+import Control.Monad.Class.MonadSTM (MonadSTM, STM)
 
-import           Ouroboros.Network.Protocol.TxSubmission2.Client (TxSizeInBytes)
+import Ouroboros.Network.Protocol.TxSubmission2.Client (TxSizeInBytes)
 
 -- | The consensus layer functionality that the inbound and outbound side of
 -- the tx submission logic requires.

@@ -24,50 +24,48 @@ module Ouroboros.Network.ConnectionManager.Core
   , abstractState
   ) where
 
-import           Control.Applicative (Alternative)
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (assert)
-import           Control.Monad (forM_, guard, when, (>=>))
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (throwTo)
-import           Control.Monad.Class.MonadThrow hiding (handle)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.Fix
-import           Control.Tracer (Tracer, contramap, traceWith)
-import           Data.Foldable (foldMap', traverse_)
-import           Data.Function (on)
-import           Data.Functor (void, ($>))
-import           Data.Maybe (maybeToList)
-import           Data.Proxy (Proxy (..))
-import           Data.Typeable (Typeable)
-import           GHC.Stack (CallStack, HasCallStack, callStack)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad (forM_, guard, when, (>=>))
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork (throwTo)
+import Control.Monad.Class.MonadThrow hiding (handle)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Fix
+import Control.Tracer (Tracer, contramap, traceWith)
+import Data.Foldable (foldMap', traverse_)
+import Data.Function (on)
+import Data.Functor (void, ($>))
+import Data.Maybe (maybeToList)
+import Data.Proxy (Proxy (..))
+import Data.Typeable (Typeable)
+import GHC.Stack (CallStack, HasCallStack, callStack)
 
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import qualified Data.Set as Set
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Set qualified as Set
 
-import           Data.Monoid.Synchronisation
-import           Data.Wedge
-import           Data.Word (Word32)
+import Data.Monoid.Synchronisation
+import Data.Wedge
+import Data.Word (Word32)
 
-import           Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
-import           Network.Mux.Types (MuxMode)
+import Network.Mux.Trace (MuxTrace, WithMuxBearer (..))
+import Network.Mux.Types (MuxMode)
 
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (InformationChannel)
-import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
-import           Ouroboros.Network.ConnectionManager.Types
-import qualified Ouroboros.Network.ConnectionManager.Types as CM
-import           Ouroboros.Network.InboundGovernor.Event
-                     (NewConnectionInfo (..))
-import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.Server.RateLimiting
-                     (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Snocket
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.InformationChannel
+           (InformationChannel)
+import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.ConnectionManager.Types qualified as CM
+import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
+import Ouroboros.Network.MuxMode
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Snocket
 
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.

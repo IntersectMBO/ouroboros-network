@@ -8,42 +8,39 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Test where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
-import           Control.Monad.IOSim (runSimOrThrow)
-import           Control.Monad.ST (runST)
-import           Control.Tracer (nullTracer)
-import qualified Data.ByteString.Lazy as BL
-import           Data.Foldable (foldl')
-import           Data.Word (Word8)
-import           Network.TypedProtocol.Codec (AnyMessage (..),
-                     AnyMessageAndAgency (..), Codec (..), PeerHasAgency (..),
-                     prop_codecM, prop_codec_splitsM)
-import           Network.TypedProtocol.Proofs (TerminalStates (..), connect)
-import           Ouroboros.Network.Channel (createConnectedChannels)
-import           Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..))
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
-import           Ouroboros.Network.Protocol.PeerSharing.Client
-                     (peerSharingClientPeer)
-import           Ouroboros.Network.Protocol.PeerSharing.Codec
-                     (byteLimitsPeerSharing, codecPeerSharing)
-import           Ouroboros.Network.Protocol.PeerSharing.Direct (direct)
-import           Ouroboros.Network.Protocol.PeerSharing.Examples
-                     (peerSharingClientCollect, peerSharingServerReplicate)
-import           Ouroboros.Network.Protocol.PeerSharing.Server
-                     (peerSharingServerPeer)
-import           Ouroboros.Network.Protocol.PeerSharing.Type
-                     (ClientHasAgency (..), Message (..), NobodyHasAgency (..),
-                     PeerSharing, PeerSharingAmount (..), ServerHasAgency (..))
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
-import           Test.QuickCheck.Function (Fun, applyFun)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (Arbitrary (..), Property, ioProperty,
-                     oneof, testProperty, withMaxSuccess, (===))
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Control.Monad.Class.MonadAsync (MonadAsync)
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.IOSim (runSimOrThrow)
+import Control.Monad.ST (runST)
+import Control.Tracer (nullTracer)
+import Data.ByteString.Lazy qualified as BL
+import Data.Foldable (foldl')
+import Data.Word (Word8)
+import Network.TypedProtocol.Codec (AnyMessage (..), AnyMessageAndAgency (..),
+           Codec (..), PeerHasAgency (..), prop_codecM, prop_codec_splitsM)
+import Network.TypedProtocol.Proofs (TerminalStates (..), connect)
+import Ouroboros.Network.Channel (createConnectedChannels)
+import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..))
+import Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import Ouroboros.Network.Protocol.PeerSharing.Client (peerSharingClientPeer)
+import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
+           codecPeerSharing)
+import Ouroboros.Network.Protocol.PeerSharing.Direct (direct)
+import Ouroboros.Network.Protocol.PeerSharing.Examples
+           (peerSharingClientCollect, peerSharingServerReplicate)
+import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
+import Ouroboros.Network.Protocol.PeerSharing.Type (ClientHasAgency (..),
+           Message (..), NobodyHasAgency (..), PeerSharing,
+           PeerSharingAmount (..), ServerHasAgency (..))
+import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+           prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.QuickCheck.Function (Fun, applyFun)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (Arbitrary (..), Property, ioProperty, oneof,
+           testProperty, withMaxSuccess, (===))
 
 tests :: TestTree
 tests =

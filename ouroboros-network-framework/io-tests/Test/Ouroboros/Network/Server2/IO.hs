@@ -20,22 +20,22 @@
 
 module Test.Ouroboros.Network.Server2.IO (tests) where
 
-import           Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadThrow
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck
 
-import qualified Network.Mux.Bearer as Mux
-import qualified Network.Socket as Socket
+import Network.Mux.Bearer qualified as Mux
+import Network.Socket qualified as Socket
 
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Snocket (socketSnocket)
-import           Ouroboros.Network.Socket (configureSocket)
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Snocket (socketSnocket)
+import Ouroboros.Network.Socket (configureSocket)
 
-import           Ouroboros.Network.ConnectionManager.Test.Experiments
-import           Ouroboros.Network.ConnectionManager.Test.Timeouts
-import           Ouroboros.Network.Test.Orphans ()
+import Ouroboros.Network.ConnectionManager.Test.Experiments
+import Ouroboros.Network.ConnectionManager.Test.Timeouts
+import Ouroboros.Network.Test.Orphans ()
 
 tests :: TestTree
 tests =

@@ -2,7 +2,7 @@
 
 module Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..)) where
 
-import           GHC.Generics (Generic)
+import GHC.Generics (Generic)
 
 -- | Is this Peer trustable as a bootstrap peer?
 --

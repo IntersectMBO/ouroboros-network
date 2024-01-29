@@ -16,25 +16,25 @@ module Network.Mux.Bearer.AttenuatedChannel
   , resourceVanishedIOError
   ) where
 
-import           Prelude hiding (read)
+import Prelude hiding (read)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, traceWith)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
 
-import           GHC.IO.Exception
+import GHC.IO.Exception
 
-import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int64)
+import Data.ByteString.Lazy qualified as BL
+import Data.Int (Int64)
 
-import           Network.Mux.Codec
-import           Network.Mux.Time
-import           Network.Mux.Timeout
-import           Network.Mux.Trace
-import           Network.Mux.Types
+import Network.Mux.Codec
+import Network.Mux.Time
+import Network.Mux.Timeout
+import Network.Mux.Trace
+import Network.Mux.Types
 
 
 -- | Message frames passed through the network.

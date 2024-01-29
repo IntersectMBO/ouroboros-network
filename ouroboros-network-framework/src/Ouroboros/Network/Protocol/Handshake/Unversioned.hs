@@ -14,23 +14,23 @@ module Ouroboros.Network.Protocol.Handshake.Unversioned
   , dataFlowProtocol
   ) where
 
-import           Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadST
 
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term qualified as CBOR
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Text (Text)
-import qualified Data.Text as T
+import Data.ByteString.Lazy (ByteString)
+import Data.Text (Text)
+import Data.Text qualified as T
 
-import           Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec
 
-import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version
 
 
 -- | Version negotiation for an unversioned protocol. We only use this for

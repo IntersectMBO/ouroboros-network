@@ -5,11 +5,11 @@ module Ouroboros.Network.PeerSelection.PeerSharing.Codec
   , decodeRemoteAddress
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
 
-import           Network.Socket (PortNumber, SockAddr (..))
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..))
+import Network.Socket (PortNumber, SockAddr (..))
+import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..))
 
 encodePortNumber :: PortNumber -> CBOR.Encoding
 encodePortNumber = CBOR.encodeWord16 . fromIntegral

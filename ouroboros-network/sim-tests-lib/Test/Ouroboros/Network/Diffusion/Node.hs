@@ -28,100 +28,89 @@ module Test.Ouroboros.Network.Diffusion.Node
   , config_REPROMOTE_DELAY
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadMVar (MonadMVar)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad ((>=>))
-import           Control.Monad.Class.MonadAsync
-                     (MonadAsync (Async, wait, withAsync))
-import           Control.Monad.Class.MonadFork (MonadFork)
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask,
-                     MonadThrow, SomeException)
-import           Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime)
-import           Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
-import           Control.Monad.Fix (MonadFix)
-import           Control.Tracer (Tracer (..), nullTracer)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadMVar (MonadMVar)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad ((>=>))
+import Control.Monad.Class.MonadAsync (MonadAsync (Async, wait, withAsync))
+import Control.Monad.Class.MonadFork (MonadFork)
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow (MonadEvaluate, MonadMask, MonadThrow,
+           SomeException)
+import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime)
+import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
+import Control.Monad.Fix (MonadFix)
+import Control.Tracer (Tracer (..), nullTracer)
 
-import           Data.Foldable (foldl')
-import           Data.IP (IP (..))
-import           Data.Map (Map)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Text (Text)
-import qualified Data.Text as Text
-import           Data.Void (Void)
-import           System.Random (StdGen, split)
+import Data.Foldable (foldl')
+import Data.IP (IP (..))
+import Data.Map (Map)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Void (Void)
+import System.Random (StdGen, split)
 
-import qualified Codec.CBOR.Term as CBOR
+import Codec.CBOR.Term qualified as CBOR
 
-import           Network.DNS (Domain, TTL)
+import Network.DNS (Domain, TTL)
 
-import           Ouroboros.Network.Mock.Chain (Chain, toAnchoredFragment,
-                     toOldestFirst)
-import           Ouroboros.Network.Mock.ConcreteBlock (Block (..),
-                     BlockHeader (..),
-                     convertSlotToTimeForTestsAssumingNoHardFork)
-import           Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
+import Ouroboros.Network.Mock.Chain (Chain, toAnchoredFragment, toOldestFirst)
+import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
+           convertSlotToTimeForTestsAssumingNoHardFork)
+import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (MaxSlotNo (..),
-                     maxSlotNoFromWithOrigin, pointSlot)
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
-import qualified Ouroboros.Network.Diffusion as Diff
-import qualified Ouroboros.Network.Diffusion.P2P as Diff.P2P
-import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import           Ouroboros.Network.PeerSelection.Governor
-                     (PeerSelectionTargets (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric
-                     (PeerMetricsConfiguration (..), newPeerMetric)
-import           Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import           Ouroboros.Network.Protocol.Handshake.Codec
-                     (VersionDataCodec (..), noTimeLimitsHandshake,
-                     timeLimitsHandshake)
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-                     (unversionedHandshakeCodec, unversionedProtocolDataCodec)
-import           Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
-import           Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
-                     ioErrorRethrowPolicy, mkRethrowPolicy,
-                     muxErrorRethrowPolicy)
-import           Ouroboros.Network.Server.RateLimiting
-                     (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Snocket (MakeBearer, Snocket,
-                     TestAddress (..), invalidFileDescriptor)
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
+           pointSlot)
+import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
+import Ouroboros.Network.Diffusion qualified as Diff
+import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
+import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.PeerMetric
+           (PeerMetricsConfiguration (..), newPeerMetric)
+import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
+import Ouroboros.Network.Protocol.Handshake.Codec (VersionDataCodec (..),
+           noTimeLimitsHandshake, timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+           (unversionedHandshakeCodec, unversionedProtocolDataCodec)
+import Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
+import Ouroboros.Network.RethrowPolicy (ErrorCommand (ShutdownNode),
+           ioErrorRethrowPolicy, mkRethrowPolicy, muxErrorRethrowPolicy)
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
+           invalidFileDescriptor)
 
-import           Ouroboros.Network.Testing.Data.Script (Script (..),
-                     stepScriptSTM')
+import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM')
 
-import           Simulation.Network.Snocket (AddressType (..), FD)
+import Simulation.Network.Snocket (AddressType (..), FD)
 
-import           Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (LedgerPeersConsensusInterface, UseLedgerPeers)
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-                     (DomainAccessPoint, RelayAccessPoint)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSLookupType)
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency, WarmValency)
-import           Ouroboros.Network.PeerSharing
-                     (PeerSharingRegistry (PeerSharingRegistry))
-import           Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
-                     getBlockPointSet)
-import qualified Test.Ouroboros.Network.Diffusion.Node.MiniProtocols as Node
-import qualified Test.Ouroboros.Network.Diffusion.Node.NodeKernel as Node
-import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
-                     (NodeKernel (..), NtCAddr, NtCVersion, NtCVersionData,
-                     NtNAddr, NtNVersion, NtNVersionData (..))
-import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-                     (DNSLookupDelay, DNSTimeout, mockDNSActions)
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerPeersConsensusInterface, UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
+           RelayAccessPoint)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
+           WarmValency)
+import Ouroboros.Network.PeerSharing (PeerSharingRegistry (PeerSharingRegistry))
+import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
+           getBlockPointSet)
+import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
+import Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NodeKernel (..),
+           NtCAddr, NtCVersion, NtCVersionData, NtNAddr, NtNVersion,
+           NtNVersionData (..))
+import Test.Ouroboros.Network.Diffusion.Node.NodeKernel qualified as Node
+import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
+           DNSTimeout, mockDNSActions)
 
 
 data Interfaces m = Interfaces

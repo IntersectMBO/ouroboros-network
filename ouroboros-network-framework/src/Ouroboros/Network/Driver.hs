@@ -11,6 +11,6 @@ module Ouroboros.Network.Driver
   , runPipelinedPeerWithLimits
   ) where
 
-import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.Driver.Simple
+import Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.Driver.Simple
 

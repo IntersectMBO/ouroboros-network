@@ -1,10 +1,10 @@
 module Main (main) where
 
-import           Main.Utf8 (withUtf8)
-import           Test.Tasty
+import Main.Utf8 (withUtf8)
+import Test.Tasty
 
-import qualified Test.Ouroboros.Network.Pipe (tests)
-import qualified Test.Ouroboros.Network.Socket (tests)
+import Test.Ouroboros.Network.Pipe qualified (tests)
+import Test.Ouroboros.Network.Socket qualified (tests)
 
 main :: IO ()
 main = withUtf8 $ defaultMain tests

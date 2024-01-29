@@ -31,113 +31,108 @@ module Ouroboros.Network.Diffusion.P2P
   ) where
 
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadMVar (MonadMVar)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (IOException)
-import           Control.Monad.Class.MonadAsync (Async, MonadAsync)
-import qualified Control.Monad.Class.MonadAsync as Async
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.Fix (MonadFix)
-import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Foldable (asum)
-import           Data.Hashable
-import           Data.IP (IP)
-import qualified Data.IP as IP
-import           Data.List (sortBy)
-import           Data.List.NonEmpty (NonEmpty (..))
-import           Data.Map (Map)
-import           Data.Maybe (catMaybes, maybeToList)
-import           Data.Set (elems)
-import           Data.Typeable (Typeable)
-import           Data.Void (Void)
-import           System.Exit (ExitCode)
-import           System.Random (StdGen, newStdGen, random, split)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadMVar (MonadMVar)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (IOException)
+import Control.Monad.Class.MonadAsync (Async, MonadAsync)
+import Control.Monad.Class.MonadAsync qualified as Async
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Fix (MonadFix)
+import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
+import Data.ByteString.Lazy (ByteString)
+import Data.Foldable (asum)
+import Data.Hashable
+import Data.IP (IP)
+import Data.IP qualified as IP
+import Data.List (sortBy)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Map (Map)
+import Data.Maybe (catMaybes, maybeToList)
+import Data.Set (elems)
+import Data.Typeable (Typeable)
+import Data.Void (Void)
+import System.Exit (ExitCode)
+import System.Random (StdGen, newStdGen, random, split)
 #ifdef POSIX
-import qualified System.Posix.Signals as Signals
+import System.Posix.Signals qualified as Signals
 #endif
 
-import           Network.Socket (Socket)
-import qualified Network.Socket as Socket
+import Network.Socket (Socket)
+import Network.Socket qualified as Socket
 
-import           Network.Mux as Mx (MakeBearer)
+import Network.Mux as Mx (MakeBearer)
 
-import           Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
-                     LocalSocket (..), Snocket, localSocketFileDescriptor,
-                     makeLocalBearer, makeSocketBearer)
-import qualified Ouroboros.Network.Snocket as Snocket
+import Ouroboros.Network.Snocket (FileDescriptor, LocalAddress,
+           LocalSocket (..), Snocket, localSocketFileDescriptor,
+           makeLocalBearer, makeSocketBearer)
+import Ouroboros.Network.Snocket qualified as Snocket
 
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.Context (ExpandedInitiatorContext,
-                     ResponderContext)
-import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Version
-import           Ouroboros.Network.Socket (configureSocket,
-                     configureSystemdSocket)
+import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.Context (ExpandedInitiatorContext, ResponderContext)
+import Ouroboros.Network.Protocol.Handshake
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.ConnectionManager.Core
-import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (InformationChannel (..), newInformationChannel)
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
-import qualified Ouroboros.Network.Diffusion.Policies as Diffusion.Policies
-import           Ouroboros.Network.Diffusion.Utils
-import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
-                     RemoteTransitionTrace)
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Mux hiding (MiniProtocol (..))
-import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
-                     NodeToClientVersionData)
-import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
-                     DiffusionMode (..), NodeToNodeVersion (..),
-                     NodeToNodeVersionData (..), RemoteAddress)
-import qualified Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
-import qualified Ouroboros.Network.PeerSelection.Governor as Governor
-import           Ouroboros.Network.PeerSelection.Governor.Types
-                     (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-                     PeerSelectionActions, PeerSelectionCounters (..),
-                     PeerSelectionPolicy (..), PeerStateActions,
-                     PublicPeerSelectionState (..), TracePeerSelection (..),
-                     emptyPublicPeerSelectionState)
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface, TraceLedgerPeers)
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (LedgerPeersConsensusInterface (..), UseLedgerPeers)
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
-import           Ouroboros.Network.PeerSelection.PeerSelectionActions
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.PeerSelection.PeerStateActions
-                     (PeerConnectionHandle, PeerSelectionActionsTrace (..),
-                     PeerStateActionsArguments (..), pchPeerSharing,
-                     withPeerStateActions)
-import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-                     (RelayAccessPoint)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSActions, DNSLookupType (..), ioDNSActions)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-                     (TraceLocalRootPeers)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-                     (TracePublicRootPeers)
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency, WarmValency)
-import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
-import           Ouroboros.Network.RethrowPolicy
-import           Ouroboros.Network.Server2 (ServerArguments (..),
-                     ServerTrace (..))
-import qualified Ouroboros.Network.Server2 as Server
+import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.InformationChannel
+           (InformationChannel (..), newInformationChannel)
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
+import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
+import Ouroboros.Network.Diffusion.Utils
+import Ouroboros.Network.ExitPolicy
+import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
+           RemoteTransitionTrace)
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Mux hiding (MiniProtocol (..))
+import Ouroboros.Network.MuxMode
+import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
+           NodeToClientVersionData)
+import Ouroboros.Network.NodeToClient qualified as NodeToClient
+import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
+           DiffusionMode (..), NodeToNodeVersion (..),
+           NodeToNodeVersionData (..), RemoteAddress)
+import Ouroboros.Network.NodeToNode qualified as NodeToNode
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
+           PeerSelectionActions, PeerSelectionCounters (..),
+           PeerSelectionPolicy (..), PeerStateActions,
+           PublicPeerSelectionState (..), TracePeerSelection (..),
+           emptyPublicPeerSelectionState)
+import Ouroboros.Network.PeerSelection.LedgerPeers
+           (LedgerPeersConsensusInterface, TraceLedgerPeers)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerPeersConsensusInterface (..), UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import Ouroboros.Network.PeerSelection.PeerSelectionActions
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
+           PeerSelectionActionsTrace (..), PeerStateActionsArguments (..),
+           pchPeerSharing, withPeerStateActions)
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions,
+           DNSLookupType (..), ioDNSActions)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+           (TraceLocalRootPeers)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+           (TracePublicRootPeers)
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
+           WarmValency)
+import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import Ouroboros.Network.RethrowPolicy
+import Ouroboros.Network.Server2 (ServerArguments (..), ServerTrace (..))
+import Ouroboros.Network.Server2 qualified as Server
 
 -- | P2P DiffusionTracers Extras
 --

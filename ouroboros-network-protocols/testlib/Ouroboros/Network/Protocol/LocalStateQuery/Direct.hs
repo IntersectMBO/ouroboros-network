@@ -2,8 +2,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.LocalStateQuery.Direct (direct) where
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Client
-import           Ouroboros.Network.Protocol.LocalStateQuery.Server
+import Ouroboros.Network.Protocol.LocalStateQuery.Client
+import Ouroboros.Network.Protocol.LocalStateQuery.Server
 
 direct
   :: forall block point query m a b.

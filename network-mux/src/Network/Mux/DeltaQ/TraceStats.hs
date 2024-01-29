@@ -6,14 +6,14 @@ module Network.Mux.DeltaQ.TraceStats
   , initialStatsA
   ) where
 
-import           Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IM
-import           Data.Word (Word32)
+import Data.IntMap.Strict (IntMap)
+import Data.IntMap.Strict qualified as IM
+import Data.Word (Word32)
 
-import           Control.Monad.Class.MonadTime.SI
-import           Network.Mux.DeltaQ.TraceStatsSupport
-import           Network.Mux.DeltaQ.TraceTypes
-import           Network.Mux.Types
+import Control.Monad.Class.MonadTime.SI
+import Network.Mux.DeltaQ.TraceStatsSupport
+import Network.Mux.DeltaQ.TraceTypes
+import Network.Mux.Types
 
 -- the per observation processing step
 step :: RemoteClockModel        -- ^ Remote clock timestamp

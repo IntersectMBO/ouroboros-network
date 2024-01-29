@@ -9,12 +9,12 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Examples
   , localTxMonitorServer
   ) where
 
-import           Data.List (find)
-import           Data.Maybe (isJust)
+import Data.List (find)
+import Data.Maybe (isJust)
 
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Client
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
+import Ouroboros.Network.Protocol.LocalTxMonitor.Client
+import Ouroboros.Network.Protocol.LocalTxMonitor.Server
+import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 -- | An example client which acquire a snapshot from the server and fetches all transactions
 -- from it, and check presence of each of these transactions.

@@ -2,10 +2,10 @@
 
 module Main (main) where
 
-import           Test.Tasty.Bench
+import Test.Tasty.Bench
 
-import           Test.Ouroboros.Network.PeerSelection.PeerMetric
-                     (microbenchmark1GenerateInput, microbenchmark1ProcessInput)
+import Test.Ouroboros.Network.PeerSelection.PeerMetric
+           (microbenchmark1GenerateInput, microbenchmark1ProcessInput)
 
 main :: IO ()
 main = do

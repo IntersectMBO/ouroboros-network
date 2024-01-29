@@ -10,25 +10,25 @@ module Ouroboros.Network.TxSubmission.Outbound
   , TxSubmissionProtocolError (..)
   ) where
 
-import           Data.Foldable (find)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Maybe (catMaybes, isNothing)
-import           Data.Sequence.Strict (StrictSeq)
-import qualified Data.Sequence.Strict as Seq
-import           Data.Word (Word16)
+import Data.Foldable (find)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Maybe (catMaybes, isNothing)
+import Data.Sequence.Strict (StrictSeq)
+import Data.Sequence.Strict qualified as Seq
+import Data.Word (Word16)
 
-import           Control.Exception (assert)
-import           Control.Monad (unless, when)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer, traceWith)
+import Control.Exception (assert)
+import Control.Monad (unless, when)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
+import Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.ControlMessage (ControlMessage,
-                     ControlMessageSTM, timeoutWithControlMessage)
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
-import           Ouroboros.Network.Protocol.TxSubmission2.Client
-import           Ouroboros.Network.TxSubmission.Mempool.Reader
-                     (MempoolSnapshot (..), TxSubmissionMempoolReader (..))
+import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
+           timeoutWithControlMessage)
+import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import Ouroboros.Network.Protocol.TxSubmission2.Client
+import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
+           TxSubmissionMempoolReader (..))
 
 
 data TraceTxSubmissionOutbound txid tx

@@ -16,32 +16,32 @@ module Ouroboros.Network.TxSubmission.Inbound
   , ProcessedTxCount (..)
   ) where
 
-import           Data.Foldable (foldl', toList)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Sequence.Strict (StrictSeq)
-import qualified Data.Sequence.Strict as Seq
-import qualified Data.Set as Set
-import           Data.Word (Word16)
-import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks (..), unsafeNoThunks)
+import Data.Foldable (foldl', toList)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Sequence.Strict (StrictSeq)
+import Data.Sequence.Strict qualified as Seq
+import Data.Set qualified as Set
+import Data.Word (Word16)
+import GHC.Generics (Generic)
+import NoThunks.Class (NoThunks (..), unsafeNoThunks)
 
-import           Cardano.Prelude (forceElemsToWHNF)
+import Cardano.Prelude (forceElemsToWHNF)
 
-import           Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked
-import           Control.Exception (assert)
-import           Control.Monad (unless)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer, traceWith)
+import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked
+import Control.Exception (assert)
+import Control.Monad (unless)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
+import Control.Tracer (Tracer, traceWith)
 
-import           Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
+import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
-import           Ouroboros.Network.Protocol.TxSubmission2.Server
-import           Ouroboros.Network.TxSubmission.Mempool.Reader
-                     (MempoolSnapshot (..), TxSubmissionMempoolReader (..))
+import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
+           TxSubmissionMempoolReader (..))
 
 -- | The consensus layer functionality that the inbound side of the tx
 -- submission logic requires.

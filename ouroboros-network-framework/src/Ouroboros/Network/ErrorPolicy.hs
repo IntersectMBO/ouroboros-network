@@ -27,22 +27,21 @@ module Ouroboros.Network.ErrorPolicy
   , SuspendDecision (..)
   ) where
 
-import           Control.Exception (Exception, IOException, SomeException (..))
-import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (mapMaybe)
-import           Data.Semigroup (sconcat)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Typeable (Proxy (..), cast, tyConName, typeRep,
-                     typeRepTyCon)
-import           Text.Printf
+import Control.Exception (Exception, IOException, SomeException (..))
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Map.Strict qualified as Map
+import Data.Maybe (mapMaybe)
+import Data.Semigroup (sconcat)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Typeable (Proxy (..), cast, tyConName, typeRep, typeRepTyCon)
+import Text.Printf
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
 
-import           Ouroboros.Network.Subscription.PeerState
+import Ouroboros.Network.Subscription.PeerState
 
 data ErrorPolicy where
      ErrorPolicy :: forall e.

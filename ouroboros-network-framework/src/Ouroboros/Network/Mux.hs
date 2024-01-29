@@ -61,31 +61,30 @@ module Ouroboros.Network.Mux
   , runMuxPeer
   ) where
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Tracer (Tracer)
 
-import qualified Data.ByteString.Lazy as LBS
-import           Data.Foldable (fold)
-import           Data.Void (Void)
+import Data.ByteString.Lazy qualified as LBS
+import Data.Foldable (fold)
+import Data.Void (Void)
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Pipelined
 
-import           Network.Mux (HasInitiator, HasResponder,
-                     MiniProtocolBundle (..), MiniProtocolInfo,
-                     MiniProtocolLimits (..), MiniProtocolNum, MuxError (..),
-                     MuxErrorType (..), MuxMode (..))
-import qualified Network.Mux.Channel as Mux
-import qualified Network.Mux.Compat as Mux.Compat
-import qualified Network.Mux.Types as Mux
+import Network.Mux (HasInitiator, HasResponder, MiniProtocolBundle (..),
+           MiniProtocolInfo, MiniProtocolLimits (..), MiniProtocolNum,
+           MuxError (..), MuxErrorType (..), MuxMode (..))
+import Network.Mux.Channel qualified as Mux
+import Network.Mux.Compat qualified as Mux.Compat
+import Network.Mux.Types qualified as Mux
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Context (ExpandedInitiatorContext,
-                     MinimalInitiatorContext, ResponderContext)
-import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy)
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Context (ExpandedInitiatorContext,
+           MinimalInitiatorContext, ResponderContext)
+import Ouroboros.Network.Driver
+import Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
 

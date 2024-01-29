@@ -6,30 +6,30 @@
 
 module Network.Mux.Bearer.Socket (socketAsMuxBearer) where
 
-import           Control.Monad (when)
-import           Control.Tracer
-import qualified Data.ByteString.Lazy as BL
-import           Data.Int
+import Control.Monad (when)
+import Control.Tracer
+import Data.ByteString.Lazy qualified as BL
+import Data.Int
 
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
-import qualified Network.Socket as Socket
+import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
-import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
+import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
 #else
-import qualified System.Win32.Async.Socket.ByteString.Lazy as Win32.Async
+import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 #endif
 
-import qualified Network.Mux.Codec as Mx
-import qualified Network.Mux.Time as Mx
-import qualified Network.Mux.Timeout as Mx
-import qualified Network.Mux.Trace as Mx
-import           Network.Mux.Types (MuxBearer)
-import qualified Network.Mux.Types as Mx
+import Network.Mux.Codec qualified as Mx
+import Network.Mux.Time qualified as Mx
+import Network.Mux.Timeout qualified as Mx
+import Network.Mux.Trace qualified as Mx
+import Network.Mux.Types (MuxBearer)
+import Network.Mux.Types qualified as Mx
 #if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
-import           Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
+import Network.Mux.TCPInfo (SocketOption (TCPInfoSocketOption))
 #endif
 
 -- |

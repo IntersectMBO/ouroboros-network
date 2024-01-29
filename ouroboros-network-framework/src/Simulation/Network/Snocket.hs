@@ -44,41 +44,40 @@ module Simulation.Network.Snocket
   , WithAddr (..)
   ) where
 
-import           Prelude hiding (read)
+import Prelude hiding (read)
 
-import           Control.Applicative (Alternative)
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, contramap, contramapM, traceWith)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, contramap, contramapM, traceWith)
 
-import           GHC.IO.Exception
+import GHC.IO.Exception
 
-import           Data.Bifoldable (bitraverse_)
-import           Data.Foldable (traverse_)
-import           Data.Functor (($>))
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Typeable (Typeable)
-import           Foreign.C.Error
-import           Numeric.Natural (Natural)
-import           Text.Printf (printf)
+import Data.Bifoldable (bitraverse_)
+import Data.Foldable (traverse_)
+import Data.Functor (($>))
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Typeable (Typeable)
+import Foreign.C.Error
+import Numeric.Natural (Natural)
+import Text.Printf (printf)
 
-import           Data.Monoid.Synchronisation (FirstToFinish (..))
-import           Data.Wedge
+import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.Wedge
 
-import           Network.Mux (SDUSize (..))
-import           Network.Mux.Bearer.AttenuatedChannel
+import Network.Mux (SDUSize (..))
+import Network.Mux.Bearer.AttenuatedChannel
 
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.ConnectionManager.Types (AddressType (..))
-import           Ouroboros.Network.Snocket
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.Types (AddressType (..))
+import Ouroboros.Network.Snocket
 
-import           Ouroboros.Network.Testing.Data.Script (Script (..),
-                     stepScriptSTM)
+import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM)
 
 data Connection m addr = Connection
     { -- | Attenuated channels of a connection.

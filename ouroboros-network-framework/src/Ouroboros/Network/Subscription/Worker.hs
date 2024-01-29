@@ -34,33 +34,33 @@ module Ouroboros.Network.Subscription.Worker
   , SubscriptionTrace (..)
   ) where
 
-import           Control.Applicative ((<|>))
-import qualified Control.Concurrent.STM as STM
-import           Control.Exception (SomeException (..))
-import           Control.Monad (forever, join, unless, when)
-import           Control.Monad.Fix (MonadFix)
-import           Data.Foldable (traverse_)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Void (Void)
-import           GHC.Stack
-import           Network.Socket (Family (AF_UNIX))
-import           Text.Printf
+import Control.Applicative ((<|>))
+import Control.Concurrent.STM qualified as STM
+import Control.Exception (SomeException (..))
+import Control.Monad (forever, join, unless, when)
+import Control.Monad.Fix (MonadFix)
+import Data.Foldable (traverse_)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Void (Void)
+import GHC.Stack
+import Network.Socket (Family (AF_UNIX))
+import Text.Printf
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer
 
-import           Ouroboros.Network.ErrorPolicy (CompleteApplication,
-                     CompleteApplicationResult (..), ErrorPolicyTrace,
-                     Result (..), WithAddr)
-import           Ouroboros.Network.Server.ConnectionTable
-import           Ouroboros.Network.Snocket (Snocket (..))
-import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Subscription.Subscriber
+import Ouroboros.Network.ErrorPolicy (CompleteApplication,
+           CompleteApplicationResult (..), ErrorPolicyTrace, Result (..),
+           WithAddr)
+import Ouroboros.Network.Server.ConnectionTable
+import Ouroboros.Network.Snocket (Snocket (..))
+import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Subscription.Subscriber
 
 -- | Time to wait between connection attempts when we don't have any DeltaQ
 -- info.

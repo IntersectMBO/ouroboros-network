@@ -15,25 +15,24 @@ module Test.AnchoredFragment
   , TestBlockAnchoredFragment (..)
   ) where
 
-import qualified Data.List as L
-import           Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
-import           Data.Word (Word64)
+import Data.List qualified as L
+import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe)
+import Data.Word (Word64)
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Show.Functions ()
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+import Text.Show.Functions ()
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
-                     AnchoredSeq (Empty), anchorPoint)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock
-import           Ouroboros.Network.Point (WithOrigin (..))
-import           Test.ChainGenerators (TestBlockChain (..),
-                     TestChainAndRange (..), addSlotGap, genChainAnchor,
-                     genNonNegative, genSlotGap)
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment,
+           AnchoredSeq (Empty), anchorPoint)
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.Point (WithOrigin (..))
+import Test.ChainGenerators (TestBlockChain (..), TestChainAndRange (..),
+           addSlotGap, genChainAnchor, genNonNegative, genSlotGap)
 
 
 --

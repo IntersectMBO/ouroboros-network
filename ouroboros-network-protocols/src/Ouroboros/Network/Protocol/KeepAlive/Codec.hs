@@ -12,23 +12,23 @@ module Ouroboros.Network.Protocol.KeepAlive.Codec
   , timeLimitsKeepAlive
   ) where
 
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime.SI (DiffTime)
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadTime.SI (DiffTime)
 
-import           Data.ByteString.Lazy (ByteString)
-import           Text.Printf
+import Data.ByteString.Lazy (ByteString)
+import Text.Printf
 
-import qualified Codec.CBOR.Decoding as CBOR (Decoder, decodeListLen,
-                     decodeWord, decodeWord16)
-import qualified Codec.CBOR.Encoding as CBOR (Encoding, encodeListLen,
-                     encodeWord, encodeWord16)
-import qualified Codec.CBOR.Read as CBOR
+import Codec.CBOR.Decoding qualified as CBOR (Decoder, decodeListLen,
+           decodeWord, decodeWord16)
+import Codec.CBOR.Encoding qualified as CBOR (Encoding, encodeListLen,
+           encodeWord, encodeWord16)
+import Codec.CBOR.Read qualified as CBOR
 
-import           Network.TypedProtocol.Codec.CBOR
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.KeepAlive.Type
-import           Ouroboros.Network.Protocol.Limits
+import Ouroboros.Network.Protocol.KeepAlive.Type
+import Ouroboros.Network.Protocol.Limits
 
 
 codecKeepAlive_v2

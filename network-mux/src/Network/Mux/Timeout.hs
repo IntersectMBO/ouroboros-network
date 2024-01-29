@@ -22,16 +22,16 @@ module Network.Mux.Timeout
   , withTimeoutSerialAlternative
   ) where
 
-import           Control.Concurrent.Class.MonadSTM
-import           Control.Exception (asyncExceptionFromException,
-                     asyncExceptionToException)
-import           Control.Monad
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI (MonadTimer, registerDelay)
-import qualified Control.Monad.Class.MonadTimer.SI as MonadTimer
+import Control.Concurrent.Class.MonadSTM
+import Control.Exception (asyncExceptionFromException,
+           asyncExceptionToException)
+import Control.Monad
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI (MonadTimer, registerDelay)
+import Control.Monad.Class.MonadTimer.SI qualified as MonadTimer
 
 
 -- | The type of the 'System.Timeout.timeout' function.

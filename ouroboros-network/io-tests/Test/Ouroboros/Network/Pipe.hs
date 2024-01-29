@@ -9,49 +9,49 @@
 
 module Test.Ouroboros.Network.Pipe (tests) where
 
-import           Codec.Serialise (Serialise (..))
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception
-import           Control.Monad
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadTimer.SI
-import qualified Data.ByteString.Lazy as BL
-import           Data.Void (Void)
-import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Codec.Serialise (Serialise (..))
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception
+import Control.Monad
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadTimer.SI
+import Data.ByteString.Lazy qualified as BL
+import Data.Void (Void)
+import Test.ChainGenerators (TestBlockChainAndUpdates (..))
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Tracer
+import Control.Tracer
 
-import qualified Network.Mux.Bearer as Mx
-import qualified Network.Mux.Bearer.Pipe as Mx
-import qualified Network.Mux.Compat as Mx (muxStart)
-import           Ouroboros.Network.Mux
+import Network.Mux.Bearer qualified as Mx
+import Network.Mux.Bearer.Pipe qualified as Mx
+import Network.Mux.Compat qualified as Mx (muxStart)
+import Ouroboros.Network.Mux
 
 #if defined(mingw32_HOST_OS)
-import           Data.Bits ((.|.))
+import Data.Bits ((.|.))
 
-import           System.IOManager
-import qualified System.Win32 as Win32
-import qualified System.Win32.Async as Win32.Async
-import qualified System.Win32.NamedPipes as Win32.NamedPipes
+import System.IOManager
+import System.Win32 qualified as Win32
+import System.Win32.Async qualified as Win32.Async
+import System.Win32.NamedPipes qualified as Win32.NamedPipes
 #else
-import           System.IO (hClose)
-import           System.Process (createPipe)
+import System.IO (hClose)
+import System.Process (createPipe)
 #endif
 
-import           Ouroboros.Network.Block (decodeTip, encodeTip)
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import qualified Ouroboros.Network.Mock.ProducerState as CPS
-import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
-import           Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
-import           Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
-import           Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Block (decodeTip, encodeTip)
+import Ouroboros.Network.Context
+import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ProducerState qualified as CPS
+import Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
+import Ouroboros.Network.Util.ShowProxy
 
 activeTracer :: Show a => Tracer IO a
 activeTracer = nullTracer

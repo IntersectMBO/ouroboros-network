@@ -2,7 +2,7 @@
 
 module Ouroboros.Network.ControlMessage where
 
-import           Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadSTM
 
 -- | Control signal sent to a mini-protocol. Expected to exit, on 'Continue' it
 -- should continue its operation

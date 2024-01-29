@@ -4,14 +4,14 @@
 {-# LANGUAGE ViewPatterns    #-}
 module Ouroboros.Network.InboundGovernor.Test.Utils where
 
-import           Test.QuickCheck
+import Test.QuickCheck
 
-import           Ouroboros.Network.ConnectionManager.Test.Timeouts
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
-                     RemoteSt (..))
-import qualified Ouroboros.Network.InboundGovernor as IG
-import           Ouroboros.Network.Server2 (RemoteTransition, ServerTrace (..))
+import Ouroboros.Network.ConnectionManager.Test.Timeouts
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
+           RemoteSt (..))
+import Ouroboros.Network.InboundGovernor qualified as IG
+import Ouroboros.Network.Server2 (RemoteTransition, ServerTrace (..))
 
 
 -- | Pattern synonym which matches either 'RemoteHotEst' or 'RemoteWarmSt'.

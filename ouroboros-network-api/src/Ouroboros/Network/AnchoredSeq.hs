@@ -55,22 +55,20 @@ module Ouroboros.Network.AnchoredSeq
   , filterWithStopSpec
   ) where
 
-import           Prelude hiding (filter, foldr, head, last, length, map, null,
-                     splitAt)
+import Prelude hiding (filter, foldr, head, last, length, map, null, splitAt)
 
-import           Data.Coerce (coerce)
-import           Data.FingerTree.Strict (Measured (measure), StrictFingerTree)
-import qualified Data.FingerTree.Strict as FT
-import qualified Data.Foldable as Foldable
-import qualified Data.List as L
-import           Data.Maybe (fromMaybe)
-import           Data.Proxy (Proxy (..))
-import           Data.Word (Word64)
-import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks)
-import           Prelude hiding (filter, foldr, head, last, length, map, null,
-                     splitAt)
-import qualified Prelude as Prelude
+import Data.Coerce (coerce)
+import Data.FingerTree.Strict (Measured (measure), StrictFingerTree)
+import Data.FingerTree.Strict qualified as FT
+import Data.Foldable qualified as Foldable
+import Data.List qualified as L
+import Data.Maybe (fromMaybe)
+import Data.Proxy (Proxy (..))
+import Data.Word (Word64)
+import GHC.Generics (Generic)
+import NoThunks.Class (NoThunks)
+import Prelude hiding (filter, foldr, head, last, length, map, null, splitAt)
+import Prelude qualified as Prelude
 
 {-------------------------------------------------------------------------------
   AnchoredSeq

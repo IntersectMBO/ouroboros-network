@@ -14,46 +14,41 @@ module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ) where
 
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadMVar (MonadMVar (..), takeMVar)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadMVar (MonadMVar (..), takeMVar)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer)
 
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Set (Set)
-import           Data.Void (Void)
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Set (Set)
+import Data.Void (Void)
 
-import qualified Network.DNS as DNS
-import qualified Network.Socket as Socket
+import Network.DNS qualified as DNS
+import Network.Socket qualified as Socket
 
-import           Data.Bifunctor (first)
-import           Ouroboros.Network.PeerSelection.Bootstrap
-                     (UseBootstrapPeers (..), requiresBootstrapPeers)
-import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers hiding
-                     (getLedgerPeers)
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import           Ouroboros.Network.PeerSelection.PublicRootPeers
-                     (PublicRootPeers)
-import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSActions)
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-import           Ouroboros.Network.PeerSharing (PeerSharingController (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Type
-                     (PeerSharingAmount (..))
-import           System.Random (StdGen)
+import Data.Bifunctor (first)
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+           requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers
+import Ouroboros.Network.PeerSharing (PeerSharingController (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
+import System.Random (StdGen)
 
 
 withPeerSelectionActions

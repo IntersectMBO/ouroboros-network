@@ -5,7 +5,7 @@
 
 module Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..)) where
 
-import           GHC.Generics (Generic)
+import GHC.Generics (Generic)
 
 -- | Is a peer willing to participate in Peer Sharing? If yes are others allowed
 -- to share this peer's address?

@@ -8,20 +8,19 @@
 
 module Test.Chain (tests) where
 
-import qualified Data.List as L
-import           Data.Maybe (listToMaybe)
+import Data.List qualified as L
+import Data.Maybe (listToMaybe)
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.Block (blockPrevHash, pattern GenesisPoint,
-                     pointHash)
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Testing.Serialise (prop_serialise)
+import Ouroboros.Network.Block (blockPrevHash, pattern GenesisPoint, pointHash)
+import Ouroboros.Network.Mock.Chain (Chain (..))
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Testing.Serialise (prop_serialise)
 
-import           Test.ChainGenerators hiding (tests)
+import Test.ChainGenerators hiding (tests)
 
 
 --

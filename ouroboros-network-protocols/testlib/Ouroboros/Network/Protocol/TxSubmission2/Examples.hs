@@ -13,23 +13,23 @@ module Ouroboros.Network.Protocol.TxSubmission2.Examples
   , TraceEventServer (..)
   ) where
 
-import           Data.Foldable as Foldable (foldl', toList)
-import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Sequence.Strict (StrictSeq)
-import qualified Data.Sequence.Strict as Seq
-import           Data.Word (Word16)
+import Data.Foldable as Foldable (foldl', toList)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Sequence.Strict (StrictSeq)
+import Data.Sequence.Strict qualified as Seq
+import Data.Word (Word16)
 
-import           Control.Exception (assert)
-import           Control.Monad (when)
-import           Control.Tracer (Tracer, traceWith)
+import Control.Exception (assert)
+import Control.Monad (when)
+import Control.Tracer (Tracer, traceWith)
 
-import           Network.TypedProtocol.Pipelined (N, Nat (..))
+import Network.TypedProtocol.Pipelined (N, Nat (..))
 
-import           Ouroboros.Network.Protocol.TxSubmission2.Client
-import           Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.Protocol.TxSubmission2.Client
+import Ouroboros.Network.Protocol.TxSubmission2.Server
 
 
 --

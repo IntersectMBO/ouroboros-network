@@ -7,10 +7,10 @@
 
 module Ouroboros.Network.Protocol.LocalTxMonitor.Direct (direct) where
 
-import           Control.Monad (join)
+import Control.Monad (join)
 
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Client
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
+import Ouroboros.Network.Protocol.LocalTxMonitor.Client
+import Ouroboros.Network.Protocol.LocalTxMonitor.Server
 
 direct :: forall m txid tx slot a b.
           ( Monad m

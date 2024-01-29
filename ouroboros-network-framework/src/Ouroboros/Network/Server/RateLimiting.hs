@@ -9,15 +9,15 @@ module Ouroboros.Network.Server.RateLimiting
   , AcceptConnectionsPolicyTrace (..)
   ) where
 
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, traceWith)
+import Control.Monad (when)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
 
-import           Data.Typeable (Typeable)
-import           Data.Word
-import           Text.Printf
+import Data.Typeable (Typeable)
+import Data.Word
+import Text.Printf
 
 
 -- | Policy which governs how to limit the number of accepted connections.

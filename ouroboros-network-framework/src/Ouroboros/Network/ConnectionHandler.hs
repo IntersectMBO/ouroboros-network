@@ -39,32 +39,32 @@ module Ouroboros.Network.ConnectionHandler
   , ConnectionHandlerTrace (..)
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (SomeAsyncException)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow hiding (handle)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, contramap, traceWith)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (SomeAsyncException)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow hiding (handle)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, contramap, traceWith)
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Map (Map)
-import           Data.Text (Text)
-import           Data.Typeable (Typeable)
+import Data.ByteString.Lazy (ByteString)
+import Data.Map (Map)
+import Data.Text (Text)
+import Data.Typeable (Typeable)
 
-import           Network.Mux hiding (miniProtocolNum)
+import Network.Mux hiding (miniProtocolNum)
 
-import           Ouroboros.Network.ConnectionId (ConnectionId (..))
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Context (ExpandedInitiatorContext,
-                     MinimalInitiatorContext, ResponderContext)
-import           Ouroboros.Network.ControlMessage (ControlMessage (..))
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.RethrowPolicy
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Context (ExpandedInitiatorContext,
+           MinimalInitiatorContext, ResponderContext)
+import Ouroboros.Network.ControlMessage (ControlMessage (..))
+import Ouroboros.Network.Mux
+import Ouroboros.Network.MuxMode
+import Ouroboros.Network.Protocol.Handshake
+import Ouroboros.Network.RethrowPolicy
 
 -- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
 -- There is no upper bound on the time we wait when waiting for a new SDU.

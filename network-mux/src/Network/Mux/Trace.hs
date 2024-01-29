@@ -15,20 +15,20 @@ module Network.Mux.Trace
   , TraceLabelPeer (..)
   ) where
 
-import           Prelude hiding (read)
+import Prelude hiding (read)
 
-import           Text.Printf
+import Text.Printf
 
-import           Control.Exception hiding (throwIO)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Data.Bifunctor (Bifunctor (..))
-import           Data.Word
-import           GHC.Generics (Generic (..))
-import           Quiet (Quiet (..))
+import Control.Exception hiding (throwIO)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Data.Bifunctor (Bifunctor (..))
+import Data.Word
+import GHC.Generics (Generic (..))
+import Quiet (Quiet (..))
 
-import           Network.Mux.TCPInfo
-import           Network.Mux.Types
+import Network.Mux.TCPInfo
+import Network.Mux.Types
 
 
 --

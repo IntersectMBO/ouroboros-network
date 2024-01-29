@@ -18,28 +18,28 @@ module Ouroboros.Network.Protocol.Handshake
   , handshake_QUERY_SHUTDOWN_DELAY
   ) where
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
 
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
-import           Control.Tracer (Tracer, contramap)
-import qualified Data.ByteString.Lazy as BL
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term qualified as CBOR
+import Control.Tracer (Tracer, contramap)
+import Data.ByteString.Lazy qualified as BL
 
-import           Network.Mux.Trace
-import           Network.Mux.Types
-import           Network.TypedProtocol.Codec
+import Network.Mux.Trace
+import Network.Mux.Types
+import Network.TypedProtocol.Codec
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver.Limits
 
-import           Ouroboros.Network.Protocol.Handshake.Client
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Server
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Protocol.Handshake.Client
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Server
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version
 
 
 -- | The handshake protocol number.

@@ -4,26 +4,26 @@
 
 module Network.Mux.Bearer.NamedPipe (namedPipeAsBearer) where
 
-import           Control.Monad (when)
-import qualified Data.ByteString.Lazy as BL
-import           Data.Foldable (traverse_)
-import           Data.Int (Int64)
+import Control.Monad (when)
+import Data.ByteString.Lazy qualified as BL
+import Data.Foldable (traverse_)
+import Data.Int (Int64)
 
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer
 
-import qualified Network.Mux.Codec as Mx
-import qualified Network.Mux.Time as Mx
-import qualified Network.Mux.Timeout as Mx
-import           Network.Mux.Trace (MuxTrace)
-import qualified Network.Mux.Trace as Mx
-import           Network.Mux.Types (MuxBearer)
-import qualified Network.Mux.Types as Mx
+import Network.Mux.Codec qualified as Mx
+import Network.Mux.Time qualified as Mx
+import Network.Mux.Timeout qualified as Mx
+import Network.Mux.Trace (MuxTrace)
+import Network.Mux.Trace qualified as Mx
+import Network.Mux.Types (MuxBearer)
+import Network.Mux.Types qualified as Mx
 
-import           System.Win32 (HANDLE)
-import qualified System.Win32.Async as Win32.Async
+import System.Win32 (HANDLE)
+import System.Win32.Async qualified as Win32.Async
 
 
 -- | Named pipe bearer.  The 'HANDLE' must be associated with IO completion port

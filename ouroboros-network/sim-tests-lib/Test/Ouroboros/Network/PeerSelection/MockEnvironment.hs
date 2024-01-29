@@ -29,71 +29,68 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , config_REPROMOTE_DELAY
   ) where
 
-import           Data.Bifunctor (first)
-import           Data.Dynamic (fromDynamic)
-import           Data.List (nub)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Proxy (Proxy (..))
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Typeable (Typeable)
-import           Data.Void (Void)
-import           System.Random (mkStdGen)
+import Data.Bifunctor (first)
+import Data.Dynamic (fromDynamic)
+import Data.List (nub)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Proxy (Proxy (..))
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Typeable (Typeable)
+import Data.Void (Void)
+import System.Random (mkStdGen)
 
-import           Control.Concurrent.Class.MonadSTM
-import qualified Control.Concurrent.Class.MonadSTM.Strict as StrictTVar
-import           Control.Exception (throw)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTest
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
-import qualified Control.Monad.Fail as Fail
-import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictTVar
+import Control.Exception (throw)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadTest
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Monad.Fail qualified as Fail
+import Control.Monad.IOSim
+import Control.Tracer (Tracer (..), contramap, traceWith)
 
-import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.PeerSelection.Governor hiding
-                     (PeerSelectionState (..))
-import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
+import Ouroboros.Network.ExitPolicy
+import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
-import           Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
-                     ScriptDelay (..), TimedScript, arbitraryPickScript,
-                     arbitraryScriptOf, initScript, initScript',
-                     interpretPickScript, playTimedScript, prop_shrink_Script,
-                     singletonScript, stepScript, stepScriptSTM, stepScriptSTM')
-import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
-                     arbitrarySubset, prop_shrink_nonequal, prop_shrink_valid)
+import Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
+           ScriptDelay (..), TimedScript, arbitraryPickScript,
+           arbitraryScriptOf, initScript, initScript', interpretPickScript,
+           playTimedScript, prop_shrink_Script, singletonScript, stepScript,
+           stepScriptSTM, stepScriptSTM')
+import Ouroboros.Network.Testing.Utils (ShrinkCarefully, arbitrarySubset,
+           prop_shrink_nonequal, prop_shrink_valid)
 
-import           Test.Ouroboros.Network.PeerSelection.Instances
-import           Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
-                     (tests)
-import           Test.Ouroboros.Network.PeerSelection.PeerGraph
+import Test.Ouroboros.Network.PeerSelection.Instances
+import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
+           (tests)
+import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
-import           Ouroboros.Network.PeerSelection.Bootstrap
-                     (UseBootstrapPeers (..), requiresBootstrapPeers)
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-                     LedgerPeersKind (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (LedgerStateJudgement (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.PeerSelection.PublicRootPeers
-                     (PublicRootPeers (..))
-import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
-import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
-                     PeerSharingResult (..))
-import           Ouroboros.Network.Testing.Utils (nightlyTest)
-import           Test.Ouroboros.Network.LedgerPeers
-                     (ArbitraryLedgerStateJudgement (..))
-import           Test.Ouroboros.Network.PeerSelection.PublicRootPeers ()
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, localOption, testGroup)
-import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+           requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
+           LedgerPeersKind (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerStateJudgement (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
+           PeerSharingResult (..))
+import Ouroboros.Network.Testing.Utils (nightlyTest)
+import Test.Ouroboros.Network.LedgerPeers (ArbitraryLedgerStateJudgement (..))
+import Test.Ouroboros.Network.PeerSelection.PublicRootPeers ()
+import Test.QuickCheck
+import Test.Tasty (TestTree, localOption, testGroup)
+import Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
 
 tests :: TestTree
 tests =

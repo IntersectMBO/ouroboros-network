@@ -17,10 +17,10 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Server
   , localStateQueryServerPeer
   ) where
 
-import           Data.Kind (Type)
-import           Network.TypedProtocol.Core
+import Data.Kind (Type)
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
 newtype LocalStateQueryServer block point (query :: Type -> Type) m a = LocalStateQueryServer {

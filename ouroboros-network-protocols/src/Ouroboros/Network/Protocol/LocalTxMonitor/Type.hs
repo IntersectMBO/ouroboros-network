@@ -45,11 +45,11 @@
 module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 
 
-import           Data.Word
-import           GHC.Generics (Generic)
+import Data.Word
+import GHC.Generics (Generic)
 
-import           Network.TypedProtocol.Core
-import           Ouroboros.Network.Util.ShowProxy
+import Network.TypedProtocol.Core
+import Ouroboros.Network.Util.ShowProxy
 
 
 -- | The kind of the local transaction monitoring protocol, and the types of

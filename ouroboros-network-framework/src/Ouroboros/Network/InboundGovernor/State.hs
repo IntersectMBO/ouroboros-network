@@ -25,22 +25,22 @@ module Ouroboros.Network.InboundGovernor.State
   , MiniProtocolData (..)
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (assert)
-import           Control.Monad.Class.MonadThrow hiding (handle)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad.Class.MonadThrow hiding (handle)
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Cache (Cache)
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import qualified System.Random as Rnd
-import           System.Random (StdGen)
+import Data.ByteString.Lazy (ByteString)
+import Data.Cache (Cache)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import System.Random (StdGen)
+import System.Random qualified as Rnd
 
-import qualified Network.Mux as Mux
+import Network.Mux qualified as Mux
 
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.Mux
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Context
+import Ouroboros.Network.Mux
 
 
 -- | Currently only 'StdGen', but in the future this will be extended to

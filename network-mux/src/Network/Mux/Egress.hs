@@ -13,16 +13,16 @@ module Network.Mux.Egress
   , Wanton (..)
   ) where
 
-import           Control.Monad
-import qualified Data.ByteString.Lazy as BL
+import Control.Monad
+import Data.ByteString.Lazy qualified as BL
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
-import           Network.Mux.Timeout
-import           Network.Mux.Types
+import Network.Mux.Timeout
+import Network.Mux.Types
 
 -- $servicingsSemantics
 -- = Desired Servicing Semantics

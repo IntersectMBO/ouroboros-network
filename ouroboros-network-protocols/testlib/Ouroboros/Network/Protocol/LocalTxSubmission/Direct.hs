@@ -6,8 +6,8 @@
 
 module Ouroboros.Network.Protocol.LocalTxSubmission.Direct (direct) where
 
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Client
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
+import Ouroboros.Network.Protocol.LocalTxSubmission.Client
+import Ouroboros.Network.Protocol.LocalTxSubmission.Server
 
 
 direct :: forall tx reject m a b.

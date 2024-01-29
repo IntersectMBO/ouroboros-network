@@ -3,23 +3,19 @@
 
 module Ouroboros.Network.PeerSharing where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadMVar (MVar, MonadMVar (putMVar))
-import           Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, STM,
-                     StrictTMVar, StrictTVar, atomically, modifyTVar,
-                     newEmptyTMVarIO, newTVarIO, retry, takeTMVar)
-import           Control.Monad.Class.MonadThrow (MonadThrow, bracket)
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Monoid.Synchronisation (FirstToFinish (..),
-                     runFirstToFinish)
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
-import           Ouroboros.Network.Protocol.PeerSharing.Client
-                     (PeerSharingClient (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Server
-                     (PeerSharingServer (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadMVar (MVar, MonadMVar (putMVar))
+import Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, STM, StrictTMVar,
+           StrictTVar, atomically, modifyTVar, newEmptyTMVarIO, newTVarIO,
+           retry, takeTMVar)
+import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Monoid.Synchronisation (FirstToFinish (..), runFirstToFinish)
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
+import Ouroboros.Network.Protocol.PeerSharing.Client (PeerSharingClient (..))
+import Ouroboros.Network.Protocol.PeerSharing.Server (PeerSharingServer (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 -- | Request and Result queue for the peer sharing client implementation.
 --

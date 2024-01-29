@@ -5,4 +5,4 @@
 --
 module Ouroboros.Network.IOManager (module X) where
 
-import           System.IOManager as X
+import System.IOManager as X

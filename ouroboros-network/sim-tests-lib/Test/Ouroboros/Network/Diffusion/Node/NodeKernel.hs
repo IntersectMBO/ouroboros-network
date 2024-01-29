@@ -30,65 +30,61 @@ module Test.Ouroboros.Network.Diffusion.Node.NodeKernel
   , NodeKernelError (..)
   ) where
 
-import           GHC.Generics (Generic)
+import GHC.Generics (Generic)
 
-import           Control.Applicative (Alternative)
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.DeepSeq (NFData (..))
-import           Control.Monad (replicateM, when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import qualified Data.ByteString.Char8 as BSC
-import           Data.Hashable (Hashable)
-import           Data.IP (IP (..), fromIPv4w, fromIPv6w, toIPv4, toIPv4w,
-                     toIPv6, toIPv6w)
-import qualified Data.IP as IP
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Typeable (Typeable)
-import           Data.Void (Void)
-import           Numeric.Natural (Natural)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData (..))
+import Control.Monad (replicateM, when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Data.ByteString.Char8 qualified as BSC
+import Data.Hashable (Hashable)
+import Data.IP (IP (..), fromIPv4w, fromIPv6w, toIPv4, toIPv4w, toIPv6, toIPv6w)
+import Data.IP qualified as IP
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Typeable (Typeable)
+import Data.Void (Void)
+import Numeric.Natural (Natural)
 
-import           System.Random (StdGen, randomR)
+import System.Random (StdGen, randomR)
 
-import           Data.Monoid.Synchronisation
+import Data.Monoid.Synchronisation
 
-import           Network.Socket (PortNumber)
+import Network.Socket (PortNumber)
 
-import           Ouroboros.Network.AnchoredFragment (Anchor (..))
-import           Ouroboros.Network.Block (HasFullHeader, SlotNo)
-import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Snocket (TestAddress (..))
+import Ouroboros.Network.AnchoredFragment (Anchor (..))
+import Ouroboros.Network.Block (HasFullHeader, SlotNo)
+import Ouroboros.Network.Block qualified as Block
+import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Snocket (TestAddress (..))
 
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock (Block)
-import qualified Ouroboros.Network.Mock.ConcreteBlock as ConcreteBlock
-import           Ouroboros.Network.Mock.ProducerState
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock (Block)
+import Ouroboros.Network.Mock.ConcreteBlock qualified as ConcreteBlock
+import Ouroboros.Network.Mock.ProducerState
 
-import           Simulation.Network.Snocket (AddressType (..),
-                     GlobalAddressScheme (..))
+import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
 
-import           Test.Ouroboros.Network.Orphans ()
+import Test.Ouroboros.Network.Orphans ()
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import           Ouroboros.Network.NodeToNode ()
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-                     (RelayAccessPoint (..))
-import           Ouroboros.Network.PeerSharing (PeerSharingRegistry (..),
-                     newPeerSharingRegistry)
-import qualified Test.Ouroboros.Network.Diffusion.Node.ChainDB as ChainDB
-import           Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
-import           Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency,
-                     oneof)
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Ouroboros.Network.Mock.Chain (Chain (..))
+import Ouroboros.Network.NodeToNode ()
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint (..))
+import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..),
+           newPeerSharingRegistry)
+import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
+import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
+import Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency, oneof)
 
 
 -- | Node-to-node address type.

@@ -1,20 +1,20 @@
 module Main (main) where
 
-import           Test.Tasty
+import Test.Tasty
 
-import qualified Ouroboros.Network.Protocol.BlockFetch.Test (tests)
-import qualified Ouroboros.Network.Protocol.ChainSync.Test (tests)
-import qualified Ouroboros.Network.Protocol.Handshake.Test (tests)
-import qualified Ouroboros.Network.Protocol.KeepAlive.Test (tests)
-import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test (tests)
-import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests)
-import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test (tests)
-import qualified Ouroboros.Network.Protocol.PeerSharing.Test (tests)
-import qualified Ouroboros.Network.Protocol.TxSubmission2.Test (tests)
-import qualified Test.AnchoredFragment (tests)
-import qualified Test.Chain (tests)
-import qualified Test.ChainGenerators (tests)
-import qualified Test.Data.CDDL (tests)
+import Ouroboros.Network.Protocol.BlockFetch.Test qualified (tests)
+import Ouroboros.Network.Protocol.ChainSync.Test qualified (tests)
+import Ouroboros.Network.Protocol.Handshake.Test qualified (tests)
+import Ouroboros.Network.Protocol.KeepAlive.Test qualified (tests)
+import Ouroboros.Network.Protocol.LocalStateQuery.Test qualified (tests)
+import Ouroboros.Network.Protocol.LocalTxMonitor.Test qualified (tests)
+import Ouroboros.Network.Protocol.LocalTxSubmission.Test qualified (tests)
+import Ouroboros.Network.Protocol.PeerSharing.Test qualified (tests)
+import Ouroboros.Network.Protocol.TxSubmission2.Test qualified (tests)
+import Test.AnchoredFragment qualified (tests)
+import Test.Chain qualified (tests)
+import Test.ChainGenerators qualified (tests)
+import Test.Data.CDDL qualified (tests)
 
 main :: IO ()
 main = defaultMain tests

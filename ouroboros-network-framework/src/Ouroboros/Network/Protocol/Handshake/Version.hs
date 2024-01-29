@@ -22,14 +22,13 @@ module Ouroboros.Network.Protocol.Handshake.Version
   , Queryable (..)
   ) where
 
-import           Data.Foldable (toList)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           GHC.Stack (HasCallStack)
+import Data.Foldable (toList)
+import Data.Map (Map)
+import Data.Map qualified as Map
+import GHC.Stack (HasCallStack)
 
-import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
-                     Acceptable (..))
-import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
+import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
+import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 
 
 -- | The version map supported by the local agent keyed on the version

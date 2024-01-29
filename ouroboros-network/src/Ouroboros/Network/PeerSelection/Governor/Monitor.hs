@@ -20,39 +20,36 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , waitForSystemToQuiesce
   ) where
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe, isJust)
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe, isJust)
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Concurrent.JobPool (JobPool)
-import qualified Control.Concurrent.JobPool as JobPool
-import           Control.Exception (assert)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           System.Random (randomR)
+import Control.Concurrent.JobPool (JobPool)
+import Control.Concurrent.JobPool qualified as JobPool
+import Control.Exception (assert)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import System.Random (randomR)
 
-import           Ouroboros.Network.ExitPolicy (RepromoteDelay)
-import qualified Ouroboros.Network.ExitPolicy as ExitPolicy
-import           Ouroboros.Network.PeerSelection.Bootstrap
-                     (isBootstrapPeersEnabled, isNodeAbleToMakeProgress,
-                     requiresBootstrapPeers)
-import           Ouroboros.Network.PeerSelection.Governor.ActivePeers
-                     (jobDemoteActivePeer)
-import           Ouroboros.Network.PeerSelection.Governor.Types hiding
-                     (PeerSelectionCounters (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (LedgerStateJudgement (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerTrustable
-                     (PeerTrustable (..))
-import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
-import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
-import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.Types
+import Ouroboros.Network.ExitPolicy (RepromoteDelay)
+import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
+import Ouroboros.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
+           isNodeAbleToMakeProgress, requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor.ActivePeers
+           (jobDemoteActivePeer)
+import Ouroboros.Network.PeerSelection.Governor.Types hiding
+           (PeerSelectionCounters (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerStateJudgement (..))
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types
 
 -- | Used to set 'bootstrapPeersTimeout' for crashing the node in a critical
 -- failure case

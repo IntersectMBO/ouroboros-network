@@ -6,7 +6,7 @@ module Ouroboros.Network.Util.ShowProxy
   , Proxy (..)
   ) where
 
-import           Data.Typeable
+import Data.Typeable
 
 class ShowProxy p where
     showProxy :: Proxy p -> String

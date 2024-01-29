@@ -4,14 +4,14 @@
 --
 module Test.Ouroboros.Network.Version (tests) where
 
-import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
-                     nodeToClientVersionCodec)
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
-                     nodeToNodeVersionCodec)
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.NodeToClient (NodeToClientVersion (..),
+           nodeToClientVersionCodec)
+import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..),
+           nodeToNodeVersionCodec)
 
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.HUnit
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit
 
 
 tests :: TestTree

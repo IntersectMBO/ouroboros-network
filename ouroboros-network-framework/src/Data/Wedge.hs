@@ -10,11 +10,11 @@
 --
 module Data.Wedge where
 
-import           Control.Monad (ap)
+import Control.Monad (ap)
 
-import           Data.Bifoldable
-import           Data.Bifunctor
-import           Data.Bitraversable
+import Data.Bifoldable
+import Data.Bifunctor
+import Data.Bitraversable
 
 -- | A wedge product
 -- <https://hackage.haskell.org/package/smash/docs/Data-Wedge.html#t:Wedge>

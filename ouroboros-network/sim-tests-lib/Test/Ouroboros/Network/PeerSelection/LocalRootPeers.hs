@@ -12,27 +12,27 @@ module Test.Ouroboros.Network.PeerSelection.LocalRootPeers
   , WarmValency (..)
   ) where
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency (..), LocalRootPeers (..), WarmValency (..))
-import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
+           LocalRootPeers (..), WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
-import           Ouroboros.Network.PeerSelection.Governor
+import Ouroboros.Network.PeerSelection.Governor
 
-import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
-                     prop_shrink_nonequal, prop_shrink_valid, renderRanges)
-import           Test.Ouroboros.Network.PeerSelection.Instances
+import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
+           prop_shrink_valid, renderRanges)
+import Test.Ouroboros.Network.PeerSelection.Instances
 
 
-import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree

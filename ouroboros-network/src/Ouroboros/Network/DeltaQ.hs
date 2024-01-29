@@ -33,10 +33,9 @@ module Ouroboros.Network.DeltaQ
   , fromSample
   ) where
 
-import           Control.Monad.Class.MonadTime.SI (DiffTime, Time (..),
-                     diffTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), diffTime)
 
-import           Ouroboros.Network.SizeInBytes (SizeInBytes (..))
+import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 
 --

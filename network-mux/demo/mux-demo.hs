@@ -10,35 +10,35 @@
 --
 module Main (main) where
 
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BSC
+import Data.ByteString (ByteString)
+import Data.ByteString.Char8 qualified as BSC
 
-import           Control.Concurrent (forkIO)
-import           Control.Concurrent.STM (atomically)
-import           Control.Exception (finally)
-import           Control.Monad
-import           Control.Tracer (Tracer (..), nullTracer, showTracing)
+import Control.Concurrent (forkIO)
+import Control.Concurrent.STM (atomically)
+import Control.Exception (finally)
+import Control.Monad
+import Control.Tracer (Tracer (..), nullTracer, showTracing)
 
-import           System.Environment
-import           System.Exit
-import           System.IO
+import System.Environment
+import System.Exit
+import System.IO
 
 #if defined(mingw32_HOST_OS)
-import           Data.Bits
-import           System.IOManager
-import           System.Win32
-import qualified System.Win32.Async as Win32.Async
-import           System.Win32.NamedPipes
+import Data.Bits
+import System.IOManager
+import System.Win32
+import System.Win32.Async qualified as Win32.Async
+import System.Win32.NamedPipes
 #else
-import           Network.Socket (Family (AF_UNIX), SockAddr (..))
-import qualified Network.Socket as Socket
-import           System.Directory
+import Network.Socket (Family (AF_UNIX), SockAddr (..))
+import Network.Socket qualified as Socket
+import System.Directory
 #endif
 
-import           Network.Mux
-import           Network.Mux.Bearer
+import Network.Mux
+import Network.Mux.Bearer
 
-import           Test.Mux.ReqResp
+import Test.Mux.ReqResp
 
 
 main :: IO ()

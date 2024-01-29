@@ -24,9 +24,9 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Client
   , localTxMonitorClientPeer
   ) where
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
+import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 -- | A tx monitor client, on top of some effect 'm'.
 --

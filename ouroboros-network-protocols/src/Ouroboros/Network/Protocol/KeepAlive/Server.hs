@@ -7,8 +7,8 @@ module Ouroboros.Network.Protocol.KeepAlive.Server
   , keepAliveServerPeer
   ) where
 
-import           Network.TypedProtocol.Core
-import           Ouroboros.Network.Protocol.KeepAlive.Type
+import Network.TypedProtocol.Core
+import Ouroboros.Network.Protocol.KeepAlive.Type
 
 
 data KeepAliveServer m a = KeepAliveServer {

@@ -17,14 +17,13 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , isLedgerPeersEnabled
   ) where
 
-import           Cardano.Slotting.Slot (SlotNo (..))
-import           Control.Concurrent.Class.MonadSTM
-import           Control.DeepSeq (NFData (..))
-import           Data.List.NonEmpty (NonEmpty)
-import           GHC.Generics
-import           NoThunks.Class
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-                     (RelayAccessPoint)
+import Cardano.Slotting.Slot (SlotNo (..))
+import Control.Concurrent.Class.MonadSTM
+import Control.DeepSeq (NFData (..))
+import Data.List.NonEmpty (NonEmpty)
+import GHC.Generics
+import NoThunks.Class
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
 -- | Only use the ledger after the given slot number.
 data UseLedgerPeers = DontUseLedgerPeers

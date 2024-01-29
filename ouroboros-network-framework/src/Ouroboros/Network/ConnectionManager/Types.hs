@@ -157,26 +157,26 @@ module Ouroboros.Network.ConnectionManager.Types
   , AbstractTransitionTrace
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad (unless)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI (DiffTime)
-import           Control.Tracer (Tracer)
-import           Data.Functor (void)
-import           Data.List (sortOn)
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Typeable (Typeable, cast)
-import           Data.Word (Word32)
-import           GHC.Stack (CallStack, prettyCallStack)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (unless)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (DiffTime)
+import Control.Tracer (Tracer)
+import Data.Functor (void)
+import Data.List (sortOn)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Typeable (Typeable, cast)
+import Data.Word (Word32)
+import GHC.Stack (CallStack, prettyCallStack)
 
-import           Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir,
-                     MuxBearer, MuxMode (..))
+import Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir,
+           MuxBearer, MuxMode (..))
 
-import           Ouroboros.Network.ConnectionId (ConnectionId)
-import           Ouroboros.Network.MuxMode
+import Ouroboros.Network.ConnectionId (ConnectionId)
+import Ouroboros.Network.MuxMode
 
 
 -- | Connection manager supports `IPv4` and `IPv6` addresses.

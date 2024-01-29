@@ -6,12 +6,12 @@ module Network.Mux.DeltaQ.TraceTransformer
   , initDeltaQTracer'
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Tracer
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Tracer
 
-import           Network.Mux.DeltaQ.TraceStats
-import           Network.Mux.Trace
-import           Network.Mux.Types
+import Network.Mux.DeltaQ.TraceStats
+import Network.Mux.Trace
+import Network.Mux.Types
 
 
 -- | Create a trace transformer that will emit

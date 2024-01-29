@@ -29,34 +29,34 @@ module Ouroboros.Network.Server2
   , RemoteTransitionTrace
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow hiding (handle)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, contramap, traceWith)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow hiding (handle)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, contramap, traceWith)
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.List (foldl1', intercalate)
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Void (Void)
-import           GHC.IO.Exception
+import Data.ByteString.Lazy (ByteString)
+import Data.List (foldl1', intercalate)
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Void (Void)
+import GHC.IO.Exception
 #if !defined(mingw32_HOST_OS)
-import           Foreign.C.Error
+import Foreign.C.Error
 #endif
 
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (InboundGovernorInfoChannel)
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Context (ResponderContext)
-import           Ouroboros.Network.InboundGovernor
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Server.RateLimiting
-import           Ouroboros.Network.Snocket
+import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionManager.InformationChannel
+           (InboundGovernorInfoChannel)
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Context (ResponderContext)
+import Ouroboros.Network.InboundGovernor
+import Ouroboros.Network.Mux
+import Ouroboros.Network.Server.RateLimiting
+import Ouroboros.Network.Snocket
 
 
 --

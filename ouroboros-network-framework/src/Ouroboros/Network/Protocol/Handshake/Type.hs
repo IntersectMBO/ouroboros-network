@@ -25,13 +25,13 @@ module Ouroboros.Network.Protocol.Handshake.Type
   ) where
 
 
-import           Control.Exception
-import           Data.Map (Map)
-import           Data.Text (Text)
-import           Data.Typeable (Typeable)
+import Control.Exception
+import Data.Map (Map)
+import Data.Text (Text)
+import Data.Typeable (Typeable)
 
-import           Network.TypedProtocol.Core
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import Network.TypedProtocol.Core
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- |
 -- The handshake mini-protocol is used initially to agree the version and

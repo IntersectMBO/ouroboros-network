@@ -19,32 +19,32 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   , DNSorIOError (..)
   ) where
 
-import           Data.Function (fix)
-import           Data.List.NonEmpty (NonEmpty (..))
+import Data.Function (fix)
+import Data.List.NonEmpty (NonEmpty (..))
 
-import           Control.Exception (IOException)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.Trans ()
+import Control.Exception (IOException)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.Trans ()
 
-import           Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.Class.MonadSTM.Strict
 
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 #if MIN_VERSION_mtl(2,3,0)
-import           Control.Monad.Except
+import Control.Monad.Except
 #else
-import           Control.Monad.Except hiding (fix)
+import Control.Monad.Except hiding (fix)
 #endif
-import           Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer (..), traceWith)
 
 #if !defined(mingw32_HOST_OS)
-import           System.Directory (getModificationTime)
+import System.Directory (getModificationTime)
 #endif
 
-import           Data.IP (IP (..))
-import           Network.DNS (DNSError)
-import qualified Network.DNS as DNS
+import Data.IP (IP (..))
+import Network.DNS (DNSError)
+import Network.DNS qualified as DNS
 
 
 data DNSLookupType = LookupReqAOnly

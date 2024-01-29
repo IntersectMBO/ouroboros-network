@@ -3,21 +3,21 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.BlockFetch.Examples where
 
-import           Control.Monad (unless)
-import           Data.Functor (($>))
-import           Data.Maybe (fromMaybe)
-import qualified Pipes
+import Control.Monad (unless)
+import Data.Functor (($>))
+import Data.Maybe (fromMaybe)
+import Pipes qualified
 
-import           Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.Class.MonadSTM.Strict
 
-import           Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Mock.Chain (Chain, HasHeader, Point)
-import qualified Ouroboros.Network.Mock.Chain as Chain
+import Ouroboros.Network.Mock.Chain (Chain, HasHeader, Point)
+import Ouroboros.Network.Mock.Chain qualified as Chain
 
-import           Ouroboros.Network.Protocol.BlockFetch.Client
-import           Ouroboros.Network.Protocol.BlockFetch.Server
-import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
+import Ouroboros.Network.Protocol.BlockFetch.Client
+import Ouroboros.Network.Protocol.BlockFetch.Server
+import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 constantBlockFetchReceiver
   :: Functor m

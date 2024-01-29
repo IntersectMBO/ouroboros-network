@@ -4,20 +4,19 @@
 
 module Ouroboros.Network.PeerSelection.Governor.RootPeers (belowTarget) where
 
-import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 
-import           Control.Concurrent.JobPool (Job (..))
-import           Control.Exception (SomeException, assert)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
+import Control.Concurrent.JobPool (Job (..))
+import Control.Exception (SomeException, assert)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
 
-import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersKind (..))
-import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
-import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
 
 --------------------------

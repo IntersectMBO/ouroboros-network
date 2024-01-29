@@ -8,15 +8,15 @@ module Ouroboros.Network.BlockFetch.ConsensusInterface
   , FromConsensus (..)
   ) where
 
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime (UTCTime)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime (UTCTime)
 
-import           Data.Map.Strict (Map)
-import           GHC.Stack (HasCallStack)
+import Data.Map.Strict (Map)
+import GHC.Stack (HasCallStack)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.SizeInBytes (SizeInBytes)
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import Ouroboros.Network.Block
+import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 
 data FetchMode =

@@ -18,55 +18,55 @@ module Test.Simulation.Network.Snocket
   , toBearerInfo
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (..), contramap, contramapM, nullTracer)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim
+import Control.Tracer (Tracer (..), contramap, contramapM, nullTracer)
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as Serialise
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.Serialise (Serialise)
+import Codec.Serialise qualified as Serialise
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Foldable (traverse_)
-import           Data.Functor (void)
-import qualified Data.Map as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Text.Printf
+import Data.ByteString.Lazy (ByteString)
+import Data.Foldable (traverse_)
+import Data.Functor (void)
+import Data.Map qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Text.Printf
 
-import           Foreign.C.Error
-import           GHC.IO.Exception
+import Foreign.C.Error
+import GHC.IO.Exception
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.Driver.Simple
-import           Ouroboros.Network.Snocket
-import           Simulation.Network.Snocket
+import Ouroboros.Network.Channel
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.Driver.Simple
+import Ouroboros.Network.Snocket
+import Simulation.Network.Snocket
 
-import           Network.Mux as Mx
-import           Network.TypedProtocol.Codec.CBOR
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.ReqResp.Client
-import           Network.TypedProtocol.ReqResp.Server
-import           Network.TypedProtocol.ReqResp.Type
+import Network.Mux as Mx
+import Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.ReqResp.Client
+import Network.TypedProtocol.ReqResp.Server
+import Network.TypedProtocol.ReqResp.Type
 
-import           Ouroboros.Network.Test.Orphans ()
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo
+import Ouroboros.Network.Test.Orphans ()
+import Ouroboros.Network.Testing.Data.AbsBearerInfo
 
-import           Test.QuickCheck hiding (Result (..))
-import           Test.QuickCheck.Instances.ByteString ()
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck hiding (Result (..))
+import Test.QuickCheck.Instances.ByteString ()
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =

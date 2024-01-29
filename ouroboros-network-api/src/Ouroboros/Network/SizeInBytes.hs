@@ -4,10 +4,10 @@
 
 module Ouroboros.Network.SizeInBytes (SizeInBytes (..)) where
 
-import           Control.DeepSeq (NFData (..))
-import           Data.Word (Word32)
+import Control.DeepSeq (NFData (..))
+import Data.Word (Word32)
 
-import           NoThunks.Class (NoThunks (..))
+import NoThunks.Class (NoThunks (..))
 
 newtype SizeInBytes = SizeInBytes { getSizeInBytes :: Word32 }
   deriving (Show, Eq, Ord)

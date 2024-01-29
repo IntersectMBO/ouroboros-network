@@ -8,32 +8,32 @@
 
 module Test.Ouroboros.Network.Diffusion.Policies where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.IOSim (runSimOrThrow)
-import qualified Data.IntPSQ as Pq
-import           Data.List (foldl')
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Word
-import           Network.Socket (SockAddr (..))
-import           System.Random
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.IOSim (runSimOrThrow)
+import Data.IntPSQ qualified as Pq
+import Data.List (foldl')
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Word
+import Network.Socket (SockAddr (..))
+import System.Random
 
-import           NoThunks.Class.Orphans ()
+import NoThunks.Class.Orphans ()
 
-import           Cardano.Slotting.Slot (SlotNo (..))
-import           Ouroboros.Network.Diffusion.Policies
-import           Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import           Ouroboros.Network.PeerSelection.Governor
-import           Ouroboros.Network.PeerSelection.PeerMetric
-import           Ouroboros.Network.PeerSelection.Types (PeerSource (..))
-import           Ouroboros.Network.SizeInBytes
+import Cardano.Slotting.Slot (SlotNo (..))
+import Ouroboros.Network.Diffusion.Policies
+import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
+import Ouroboros.Network.PeerSelection.Governor
+import Ouroboros.Network.PeerSelection.PeerMetric
+import Ouroboros.Network.PeerSelection.Types (PeerSource (..))
+import Ouroboros.Network.SizeInBytes
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Policies"

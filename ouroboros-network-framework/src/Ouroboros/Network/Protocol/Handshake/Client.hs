@@ -13,17 +13,17 @@ module Ouroboros.Network.Protocol.Handshake.Client
   , acceptOrRefuse
   ) where
 
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Text (Text)
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Text (Text)
 
-import qualified Codec.CBOR.Term as CBOR
+import Codec.CBOR.Term qualified as CBOR
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version
 
 
 -- | Handshake client which offers @'Versions' vNumber vData@ to the

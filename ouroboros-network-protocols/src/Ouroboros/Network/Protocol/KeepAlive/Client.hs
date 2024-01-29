@@ -8,9 +8,9 @@ module Ouroboros.Network.Protocol.KeepAlive.Client
   , keepAliveClientPeer
   ) where
 
-import           Control.Monad.Class.MonadThrow
-import           Network.TypedProtocol.Core
-import           Ouroboros.Network.Protocol.KeepAlive.Type
+import Control.Monad.Class.MonadThrow
+import Network.TypedProtocol.Core
+import Ouroboros.Network.Protocol.KeepAlive.Type
 
 
 newtype KeepAliveClient m a = KeepAliveClient (m (KeepAliveClientSt m a))

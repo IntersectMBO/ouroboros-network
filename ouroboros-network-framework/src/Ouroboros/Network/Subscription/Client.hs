@@ -8,20 +8,19 @@ module Ouroboros.Network.Subscription.Client
   , clientSubscriptionWorker
   ) where
 
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer
 
-import           Data.Functor.Identity (Identity (..))
-import           Data.Void (Void)
+import Data.Functor.Identity (Identity (..))
+import Data.Void (Void)
 
-import           Ouroboros.Network.ErrorPolicy (ErrorPolicies, ErrorPolicyTrace,
-                     WithAddr, completeApplicationTx)
-import           Ouroboros.Network.Snocket (LocalAddress, LocalSnocket,
-                     LocalSocket)
-import           Ouroboros.Network.Socket (NetworkMutableState (..))
-import           Ouroboros.Network.Subscription.Ip (mainTx, socketStateChangeTx)
-import           Ouroboros.Network.Subscription.Subscriber
-import           Ouroboros.Network.Subscription.Worker
+import Ouroboros.Network.ErrorPolicy (ErrorPolicies, ErrorPolicyTrace, WithAddr,
+           completeApplicationTx)
+import Ouroboros.Network.Snocket (LocalAddress, LocalSnocket, LocalSocket)
+import Ouroboros.Network.Socket (NetworkMutableState (..))
+import Ouroboros.Network.Subscription.Ip (mainTx, socketStateChangeTx)
+import Ouroboros.Network.Subscription.Subscriber
+import Ouroboros.Network.Subscription.Worker
 
 
 data ClientSubscriptionParams a = ClientSubscriptionParams

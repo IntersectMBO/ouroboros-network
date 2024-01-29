@@ -69,54 +69,53 @@ module Ouroboros.Network.Socket
   , sockAddrFamily
   ) where
 
-import           Control.Concurrent.Async
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (SomeException (..))
+import Control.Concurrent.Async
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (SomeException (..))
 -- TODO: remove this, it will not be needed when `orElse` PR will be merged.
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
-import           Control.Monad (unless, when)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import qualified Control.Monad.STM as STM
-import qualified Data.ByteString.Lazy as BL
-import           Data.Hashable
-import           Data.Typeable (Typeable)
-import           Data.Void
-import           Data.Word (Word16)
-import           GHC.IO.Exception
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term qualified as CBOR
+import Control.Monad (unless, when)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.STM qualified as STM
+import Data.ByteString.Lazy qualified as BL
+import Data.Hashable
+import Data.Typeable (Typeable)
+import Data.Void
+import Data.Word (Word16)
+import GHC.IO.Exception
 #if !defined(mingw32_HOST_OS)
-import           Foreign.C.Error
+import Foreign.C.Error
 #endif
 
-import           Network.Socket (SockAddr, Socket, StructLinger (..))
-import qualified Network.Socket as Socket
+import Network.Socket (SockAddr, Socket, StructLinger (..))
+import Network.Socket qualified as Socket
 
-import           Control.Tracer
+import Control.Tracer
 
-import qualified Network.Mux.Bearer as Mx
-import qualified Network.Mux.Compat as Mx
-import           Network.Mux.DeltaQ.TraceTransformer
-import           Network.TypedProtocol.Codec hiding (decode, encode)
+import Network.Mux.Bearer qualified as Mx
+import Network.Mux.Compat qualified as Mx
+import Network.Mux.DeltaQ.TraceTransformer
+import Network.TypedProtocol.Codec hiding (decode, encode)
 
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Handshake (HandshakeCallbacks (..))
-import           Ouroboros.Network.IOManager (IOManager)
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Server.ConnectionTable
-import           Ouroboros.Network.Server.Socket
-                     (AcceptConnectionsPolicyTrace (..),
-                     AcceptedConnectionsLimit (..))
-import qualified Ouroboros.Network.Server.Socket as Server
-import           Ouroboros.Network.Snocket (Snocket)
-import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Subscription.PeerState
+import Ouroboros.Network.Context
+import Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.Handshake (HandshakeCallbacks (..))
+import Ouroboros.Network.IOManager (IOManager)
+import Ouroboros.Network.Mux
+import Ouroboros.Network.Protocol.Handshake
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Server.ConnectionTable
+import Ouroboros.Network.Server.Socket (AcceptConnectionsPolicyTrace (..),
+           AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server.Socket qualified as Server
+import Ouroboros.Network.Snocket (Snocket)
+import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Subscription.PeerState
 
 
 -- | Tracer used by 'connectToNode' (and derivatives, like

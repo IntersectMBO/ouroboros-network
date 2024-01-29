@@ -6,21 +6,21 @@
 module Test.Ouroboros.Network.RateLimiting where
 
 
-import           Control.Concurrent.Class.MonadSTM
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (..), contramapM)
-import           Data.List (scanl')
+import Control.Concurrent.Class.MonadSTM
+import Control.Monad (when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim
+import Control.Tracer (Tracer (..), contramapM)
+import Data.List (scanl')
 
-import           Ouroboros.Network.Server.RateLimiting
+import Ouroboros.Network.Server.RateLimiting
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Show.Functions ()
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+import Text.Show.Functions ()
 
 
 --

@@ -43,31 +43,31 @@ module Network.Mux
   , WithMuxBearer (..)
   ) where
 
-import qualified Data.ByteString.Lazy as BL
-import           Data.Int (Int64)
-import           Data.Map (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (isNothing)
-import           Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.ByteString.Lazy qualified as BL
+import Data.Int (Int64)
+import Data.Map (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (isNothing)
+import Data.Monoid.Synchronisation (FirstToFinish (..))
 
-import           Control.Applicative
-import           Control.Concurrent.Class.MonadSTM.Strict
-import qualified Control.Concurrent.JobPool as JobPool
-import           Control.Exception (SomeAsyncException (..))
-import           Control.Monad
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
-import           Control.Tracer
+import Control.Applicative
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.JobPool qualified as JobPool
+import Control.Exception (SomeAsyncException (..))
+import Control.Monad
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Tracer
 
-import           Network.Mux.Bearer
-import           Network.Mux.Channel
-import           Network.Mux.Egress as Egress
-import           Network.Mux.Ingress as Ingress
-import           Network.Mux.Timeout
-import           Network.Mux.Trace
-import           Network.Mux.Types
+import Network.Mux.Bearer
+import Network.Mux.Channel
+import Network.Mux.Egress as Egress
+import Network.Mux.Ingress as Ingress
+import Network.Mux.Timeout
+import Network.Mux.Trace
+import Network.Mux.Types
 
 
 data Mux (mode :: MuxMode) m =

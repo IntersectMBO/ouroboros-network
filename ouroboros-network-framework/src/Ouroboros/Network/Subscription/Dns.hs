@@ -26,26 +26,26 @@ module Ouroboros.Network.Subscription.Dns
   , WithAddr (..)
   ) where
 
-import qualified Control.Concurrent.Class.MonadSTM as Lazy
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer
-import qualified Data.IP as IP
-import           Data.Maybe (isJust)
-import           Data.Void (Void)
-import qualified Network.DNS as DNS
-import qualified Network.Socket as Socket
-import           Text.Printf
+import Control.Concurrent.Class.MonadSTM qualified as Lazy
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer
+import Data.IP qualified as IP
+import Data.Maybe (isJust)
+import Data.Void (Void)
+import Network.DNS qualified as DNS
+import Network.Socket qualified as Socket
+import Text.Printf
 
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Snocket (Snocket)
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.Subscriber
-import           Ouroboros.Network.Subscription.Worker
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.Snocket (Snocket)
+import Ouroboros.Network.Socket
+import Ouroboros.Network.Subscription.Ip
+import Ouroboros.Network.Subscription.Subscriber
+import Ouroboros.Network.Subscription.Worker
 
 
 -- | Time to wait for an AAAA response after receiving an A response.

@@ -8,13 +8,13 @@ module Ouroboros.Network.Protocol.BlockFetch.Direct
   , directPipelined
   ) where
 
-import           Control.Monad (join)
+import Control.Monad (join)
 
-import           Network.TypedProtocol.Pipelined
-import           Network.TypedProtocol.Proofs
+import Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Proofs
 
-import           Ouroboros.Network.Protocol.BlockFetch.Client
-import           Ouroboros.Network.Protocol.BlockFetch.Server
+import Ouroboros.Network.Protocol.BlockFetch.Client
+import Ouroboros.Network.Protocol.BlockFetch.Server
 
 
 -- | Run @'BlockFetchClient'@ and @'BlockFetchServer'@ directly against each

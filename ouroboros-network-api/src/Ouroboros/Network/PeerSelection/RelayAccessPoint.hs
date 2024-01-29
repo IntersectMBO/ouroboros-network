@@ -12,17 +12,17 @@ module Ouroboros.Network.PeerSelection.RelayAccessPoint
   , Socket.PortNumber
   ) where
 
-import           Control.DeepSeq (NFData (..))
+import Control.DeepSeq (NFData (..))
 
-import           Data.Aeson
-import qualified Data.IP as IP
-import           Data.Text (Text)
-import qualified Data.Text as Text
-import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import           Text.Read (readMaybe)
+import Data.Aeson
+import Data.IP qualified as IP
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Text.Read (readMaybe)
 
-import qualified Network.DNS as DNS
-import qualified Network.Socket as Socket
+import Network.DNS qualified as DNS
+import Network.Socket qualified as Socket
 
 -- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
 -- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.

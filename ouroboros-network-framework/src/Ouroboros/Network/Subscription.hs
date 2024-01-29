@@ -23,6 +23,6 @@ module Ouroboros.Network.Subscription
   , WithDomainName (..)
   ) where
 
-import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.Worker
+import Ouroboros.Network.Subscription.Dns
+import Ouroboros.Network.Subscription.Ip
+import Ouroboros.Network.Subscription.Worker

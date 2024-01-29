@@ -87,19 +87,18 @@ module Ouroboros.Network.AnchoredFragment
   , filterWithStopSpec
   ) where
 
-import           Prelude hiding (filter, head, last, length, map, null, splitAt)
+import Prelude hiding (filter, head, last, length, map, null, splitAt)
 
-import           Data.Either (isRight)
-import qualified Data.List as L
-import           GHC.Generics (Generic)
-import           GHC.Stack
-import           NoThunks.Class (NoThunks)
+import Data.Either (isRight)
+import Data.List qualified as L
+import GHC.Generics (Generic)
+import GHC.Stack
+import NoThunks.Class (NoThunks)
 
-import           Ouroboros.Network.AnchoredSeq hiding (join, prettyPrint,
-                     rollback)
-import qualified Ouroboros.Network.AnchoredSeq as AS
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (WithOrigin (At, Origin), withOrigin)
+import Ouroboros.Network.AnchoredSeq hiding (join, prettyPrint, rollback)
+import Ouroboros.Network.AnchoredSeq qualified as AS
+import Ouroboros.Network.Block
+import Ouroboros.Network.Point (WithOrigin (At, Origin), withOrigin)
 
 {-------------------------------------------------------------------------------
   Anchor

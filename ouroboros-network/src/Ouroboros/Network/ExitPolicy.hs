@@ -11,8 +11,8 @@ module Ouroboros.Network.ExitPolicy
   , alwaysCleanReturnPolicy
   ) where
 
-import           Control.Monad.Class.MonadTime.SI
-import           Data.Semigroup (Max (..))
+import Control.Monad.Class.MonadTime.SI
+import Data.Semigroup (Max (..))
 
 -- | After demoting a peer to Warm or Cold, we use a delay to re-promote it
 -- back.

@@ -34,77 +34,74 @@ module Ouroboros.Network.ConnectionManager.Test.Experiments
   , oneshotNextRequests
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (AssertionFailed)
-import           Control.Monad (replicateM, (>=>))
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.Fix (MonadFix)
-import           Control.Tracer (Tracer (..), contramap, nullTracer)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (AssertionFailed)
+import Control.Monad (replicateM, (>=>))
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Fix (MonadFix)
+import Control.Tracer (Tracer (..), contramap, nullTracer)
 
-import           Codec.Serialise.Class (Serialise)
-import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as LBS
-import           Data.Functor (($>), (<&>))
-import           Data.List (mapAccumL)
-import           Data.List.NonEmpty (NonEmpty (..))
-import           Data.Typeable (Typeable)
-import           Data.Void (Void)
+import Codec.Serialise.Class (Serialise)
+import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as LBS
+import Data.Functor (($>), (<&>))
+import Data.List (mapAccumL)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Typeable (Typeable)
+import Data.Void (Void)
 
-import           Test.QuickCheck
+import Test.QuickCheck
 
-import           Codec.CBOR.Term (Term)
+import Codec.CBOR.Term (Term)
 
-import qualified Network.Mux as Mux
-import           Network.Mux.Types (MuxRuntimeError)
-import           Network.TypedProtocol.Core
+import Network.Mux qualified as Mux
+import Network.Mux.Types (MuxRuntimeError)
+import Network.TypedProtocol.Core
 
-import           Network.TypedProtocol.ReqResp.Client
-import           Network.TypedProtocol.ReqResp.Codec.CBOR
-import           Network.TypedProtocol.ReqResp.Examples
-import           Network.TypedProtocol.ReqResp.Server
-import           Network.TypedProtocol.ReqResp.Type
+import Network.TypedProtocol.ReqResp.Client
+import Network.TypedProtocol.ReqResp.Codec.CBOR
+import Network.TypedProtocol.ReqResp.Examples
+import Network.TypedProtocol.ReqResp.Server
+import Network.TypedProtocol.ReqResp.Type
 
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.ConnectionManager.Core
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.ControlMessage
-import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.Protocol.Handshake
-import           Ouroboros.Network.Protocol.Handshake.Codec
-                     (cborTermVersionDataCodec, noTimeLimitsHandshake,
-                     timeLimitsHandshake)
-import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
-                     Queryable (..))
-import           Ouroboros.Network.RethrowPolicy
-import           Ouroboros.Network.Server.RateLimiting
-                     (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Server2 (RemoteTransitionTrace,
-                     ServerArguments (..))
-import qualified Ouroboros.Network.Server2 as Server
-import           Ouroboros.Network.Snocket (Snocket)
-import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Testing.Utils (WithName (..))
+import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Context
+import Ouroboros.Network.ControlMessage
+import Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import Ouroboros.Network.Mux
+import Ouroboros.Network.MuxMode
+import Ouroboros.Network.Protocol.Handshake
+import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
+           noTimeLimitsHandshake, timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Type (Handshake)
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Protocol.Handshake.Version (Acceptable (..),
+           Queryable (..))
+import Ouroboros.Network.RethrowPolicy
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server2 (RemoteTransitionTrace, ServerArguments (..))
+import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.Snocket (Snocket)
+import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Testing.Utils (WithName (..))
 
-import           Ouroboros.Network.Test.Orphans ()
+import Ouroboros.Network.Test.Orphans ()
 -- import           Test.Simulation.Network.Snocket hiding (tests)
 
-import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (newInformationChannel)
-import           Ouroboros.Network.ConnectionManager.Test.Timeouts
+import Ouroboros.Network.ConnectionManager.InformationChannel
+           (newInformationChannel)
+import Ouroboros.Network.ConnectionManager.Test.Timeouts
 
 
 --

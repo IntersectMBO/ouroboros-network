@@ -13,39 +13,39 @@
 
 module Test.Ouroboros.Network.MockNode where
 
-import           Control.Monad (filterM, forM, forM_, replicateM, unless)
-import           Control.Monad.State (execStateT, lift, modify')
-import           Data.Array
-import           Data.Fixed (Micro)
-import           Data.Functor (void)
-import           Data.Graph
-import           Data.List (foldl')
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (isNothing, listToMaybe)
-import           Data.Tuple (swap)
+import Control.Monad (filterM, forM, forM_, replicateM, unless)
+import Control.Monad.State (execStateT, lift, modify')
+import Data.Array
+import Data.Fixed (Micro)
+import Data.Functor (void)
+import Data.Graph
+import Data.List (foldl')
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (isNothing, listToMaybe)
+import Data.Tuple (swap)
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import qualified Control.Monad.IOSim as Sim
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim qualified as Sim
 
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock as ConcreteBlock
-import           Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
+import Ouroboros.Network.Block
+import Ouroboros.Network.Mock.Chain (Chain (..))
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock as ConcreteBlock
+import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
-import           Ouroboros.Network.MockNode
+import Ouroboros.Network.MockNode
 
-import           Test.ChainGenerators (TestBlockChain (..))
+import Test.ChainGenerators (TestBlockChain (..))
 
 
 tests :: TestTree

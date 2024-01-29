@@ -17,89 +17,86 @@ module Test.Ouroboros.Network.Diffusion.Node.MiniProtocols
   , applications
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadMVar (MonadMVar)
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer (..), contramap, nullTracer)
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (($>))
-import           Data.Maybe (fromMaybe)
-import           Data.Void (Void)
-import           System.Random (StdGen)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadMVar (MonadMVar)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..), contramap, nullTracer)
+import Data.ByteString.Lazy (ByteString)
+import Data.Functor (($>))
+import Data.Maybe (fromMaybe)
+import Data.Void (Void)
+import System.Random (StdGen)
 
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.Serialise as Serialise
+import Codec.CBOR.Read qualified as CBOR
+import Codec.Serialise qualified as Serialise
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.PingPong.Client as PingPong
-import           Network.TypedProtocol.PingPong.Codec.CBOR
-import           Network.TypedProtocol.PingPong.Examples
-import           Network.TypedProtocol.PingPong.Server
-import           Network.TypedProtocol.PingPong.Type
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.Client
-import           Ouroboros.Network.Protocol.BlockFetch.Codec
-import           Ouroboros.Network.Protocol.BlockFetch.Examples
-import           Ouroboros.Network.Protocol.BlockFetch.Server
-import           Ouroboros.Network.Protocol.BlockFetch.Type
-import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec
-import           Ouroboros.Network.Protocol.ChainSync.Examples
-import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Protocol.ChainSync.Type
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Protocol.Handshake.Version
-                     (simpleSingletonVersions)
-import           Ouroboros.Network.Protocol.KeepAlive.Client
-import           Ouroboros.Network.Protocol.KeepAlive.Codec
-import           Ouroboros.Network.Protocol.KeepAlive.Server
-import           Ouroboros.Network.Protocol.KeepAlive.Type
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.PingPong.Client as PingPong
+import Network.TypedProtocol.PingPong.Codec.CBOR
+import Network.TypedProtocol.PingPong.Examples
+import Network.TypedProtocol.PingPong.Server
+import Network.TypedProtocol.PingPong.Type
+import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.Client
+import Ouroboros.Network.Protocol.BlockFetch.Codec
+import Ouroboros.Network.Protocol.BlockFetch.Examples
+import Ouroboros.Network.Protocol.BlockFetch.Server
+import Ouroboros.Network.Protocol.BlockFetch.Type
+import Ouroboros.Network.Protocol.ChainSync.Client
+import Ouroboros.Network.Protocol.ChainSync.Codec
+import Ouroboros.Network.Protocol.ChainSync.Examples
+import Ouroboros.Network.Protocol.ChainSync.Server
+import Ouroboros.Network.Protocol.ChainSync.Type
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
+import Ouroboros.Network.Protocol.KeepAlive.Client
+import Ouroboros.Network.Protocol.KeepAlive.Codec
+import Ouroboros.Network.Protocol.KeepAlive.Server
+import Ouroboros.Network.Protocol.KeepAlive.Type
 
-import           Data.Monoid.Synchronisation
+import Data.Monoid.Synchronisation
 
-import           Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
-import qualified Ouroboros.Network.Block as Block
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.ControlMessage (ControlMessage (..))
-import qualified Ouroboros.Network.Diffusion as Diff (Applications (..))
-import           Ouroboros.Network.Driver.Limits
-import           Ouroboros.Network.KeepAlive
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ProducerState
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Block (HasHeader, HeaderHash, Point)
+import Ouroboros.Network.Block qualified as Block
+import Ouroboros.Network.Context
+import Ouroboros.Network.ControlMessage (ControlMessage (..))
+import Ouroboros.Network.Diffusion qualified as Diff (Applications (..))
+import Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.KeepAlive
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ProducerState
+import Ouroboros.Network.Mux
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.Mock.ConcreteBlock
 
-import           Network.TypedProtocol
+import Network.TypedProtocol
 
-import qualified Pipes
+import Pipes qualified
 
-import           Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
-                     chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
-                     peerSharingMiniProtocolNum)
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-import qualified Ouroboros.Network.PeerSelection.PeerSharing as PSTypes
-import           Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
-                     peerSharingClient, peerSharingServer)
-import           Ouroboros.Network.Protocol.PeerSharing.Client
-                     (peerSharingClientPeer)
-import           Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
-import           Ouroboros.Network.Protocol.PeerSharing.Server
-                     (peerSharingServerPeer)
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing,
-                     PeerSharingAmount (..))
-import           Test.Ouroboros.Network.Diffusion.Node.NodeKernel
+import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
+           chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
+           peerSharingMiniProtocolNum)
+import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
+import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
+           peerSharingClient, peerSharingServer)
+import Ouroboros.Network.Protocol.PeerSharing.Client (peerSharingClientPeer)
+import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
+import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing,
+           PeerSharingAmount (..))
+import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 
 -- | Protocol codecs.

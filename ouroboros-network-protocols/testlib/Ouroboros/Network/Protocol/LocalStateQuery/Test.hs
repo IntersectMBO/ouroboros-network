@@ -15,48 +15,48 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Test
   , AnyMessageAndAgencyWithResult (..)
   ) where
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Data.ByteString.Lazy (ByteString)
+import Data.Map (Map)
+import Data.Map qualified as Map
 
-import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
-import           Control.Monad.IOSim
-import           Control.Monad.ST (runST)
-import           Control.Tracer (nullTracer)
+import Control.Monad.Class.MonadAsync (MonadAsync)
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.IOSim
+import Control.Monad.ST (runST)
+import Control.Tracer (nullTracer)
 
-import           Codec.Serialise (DeserialiseFailure)
-import qualified Codec.Serialise as Serialise (decode, encode)
-import qualified Codec.Serialise.Class as SerialiseClass
+import Codec.Serialise (DeserialiseFailure)
+import Codec.Serialise qualified as Serialise (decode, encode)
+import Codec.Serialise.Class qualified as SerialiseClass
 
-import           Network.TypedProtocol.Codec hiding (prop_codec)
-import           Network.TypedProtocol.Proofs
+import Network.TypedProtocol.Codec hiding (prop_codec)
+import Network.TypedProtocol.Proofs
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.Mock.Chain (Point)
-import           Ouroboros.Network.Mock.ConcreteBlock (Block)
+import Ouroboros.Network.Mock.Chain (Point)
+import Ouroboros.Network.Mock.ConcreteBlock (Block)
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Client
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec
-import           Ouroboros.Network.Protocol.LocalStateQuery.Direct
-import           Ouroboros.Network.Protocol.LocalStateQuery.Examples
-import           Ouroboros.Network.Protocol.LocalStateQuery.Server
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+import Ouroboros.Network.Protocol.LocalStateQuery.Client
+import Ouroboros.Network.Protocol.LocalStateQuery.Codec
+import Ouroboros.Network.Protocol.LocalStateQuery.Direct
+import Ouroboros.Network.Protocol.LocalStateQuery.Examples
+import Ouroboros.Network.Protocol.LocalStateQuery.Server
+import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
-import           Test.ChainGenerators ()
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.ChainGenerators ()
+import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+           prop_codec_valid_cbor_encoding, splits2, splits3)
 
-import           Test.QuickCheck as QC hiding (Result)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Show.Functions ()
+import Test.QuickCheck as QC hiding (Result)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+import Text.Show.Functions ()
 
 
 --

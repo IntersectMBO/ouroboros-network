@@ -18,13 +18,13 @@
 --
 module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 
-import           Data.Kind (Type)
-import           Data.Proxy (Proxy (..))
-import           GHC.Generics (Generic)
+import Data.Kind (Type)
+import Data.Proxy (Proxy (..))
+import GHC.Generics (Generic)
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | The kind of the local state query protocol, and the types of

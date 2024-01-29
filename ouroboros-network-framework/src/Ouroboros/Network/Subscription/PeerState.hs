@@ -36,20 +36,20 @@ module Ouroboros.Network.Subscription.PeerState
   , alterAndLookup
   ) where
 
-import           Control.Exception (Exception, SomeException (..), assert)
-import           Control.Monad.State
-import qualified Data.Map as Map
-import           Data.Map.Strict (Map)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Typeable (eqT, (:~:) (..))
+import Control.Exception (Exception, SomeException (..), assert)
+import Control.Monad.State
+import Data.Map qualified as Map
+import Data.Map.Strict (Map)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Typeable (eqT, (:~:) (..))
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 
-import           Data.Semigroup.Action
+import Data.Semigroup.Action
 
 -- | Semigroup of commands which acts on 'PeerState'.  The @t@ variable might
 -- be initiated to 'DiffTime' or @Time m@.

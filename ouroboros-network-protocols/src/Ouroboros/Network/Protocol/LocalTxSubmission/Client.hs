@@ -27,12 +27,12 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Client
   , mapLocalTxSubmissionClient
   ) where
 
-import           Control.Monad (forever)
-import           Control.Monad.Class.MonadTimer
+import Control.Monad (forever)
+import Control.Monad.Class.MonadTimer
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 
 newtype LocalTxSubmissionClient tx reject m a = LocalTxSubmissionClient {

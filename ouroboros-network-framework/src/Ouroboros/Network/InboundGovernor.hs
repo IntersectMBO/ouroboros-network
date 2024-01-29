@@ -32,37 +32,37 @@ module Ouroboros.Network.InboundGovernor
   , TransitionTrace' (..)
   ) where
 
-import           Control.Applicative (Alternative)
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (SomeAsyncException (..), assert)
-import           Control.Monad (foldM, when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, traceWith)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (SomeAsyncException (..), assert)
+import Control.Monad (foldM, when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Cache
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Monoid.Synchronisation
-import           Data.Void (Void)
+import Data.ByteString.Lazy (ByteString)
+import Data.Cache
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Monoid.Synchronisation
+import Data.Void (Void)
 
-import qualified Network.Mux as Mux
+import Network.Mux qualified as Mux
 
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (InboundGovernorInfoChannel)
-import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
-import           Ouroboros.Network.ConnectionManager.Types hiding
-                     (TrUnexpectedlyFalseAssertion)
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.InboundGovernor.Event
-import           Ouroboros.Network.InboundGovernor.State
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Server.RateLimiting
+import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionManager.InformationChannel
+           (InboundGovernorInfoChannel)
+import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
+import Ouroboros.Network.ConnectionManager.Types hiding
+           (TrUnexpectedlyFalseAssertion)
+import Ouroboros.Network.Context
+import Ouroboros.Network.InboundGovernor.Event
+import Ouroboros.Network.InboundGovernor.State
+import Ouroboros.Network.Mux
+import Ouroboros.Network.Server.RateLimiting
 
 -- | Run the server, which consists of the following components:
 --

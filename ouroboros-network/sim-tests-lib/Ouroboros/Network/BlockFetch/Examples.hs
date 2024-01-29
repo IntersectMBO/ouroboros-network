@@ -12,50 +12,49 @@ module Ouroboros.Network.BlockFetch.Examples
   , exampleFixedPeerGSVs
   ) where
 
-import           Codec.Serialise (Serialise (..))
-import qualified Data.ByteString.Lazy as LBS
-import           Data.List (foldl')
-import           Data.Map (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Typeable (Typeable)
+import Codec.Serialise (Serialise (..))
+import Data.ByteString.Lazy qualified as LBS
+import Data.List (foldl')
+import Data.Map (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (assert)
-import           Control.Monad (forever)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, contramap, nullTracer)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad (forever)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, contramap, nullTracer)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
-                     anchorPoint)
-import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
-import           Ouroboros.Network.Block
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment, anchorPoint)
+import Ouroboros.Network.AnchoredFragment qualified as AnchoredFragment
+import Ouroboros.Network.Block
 
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
+import Ouroboros.Network.ControlMessage (ControlMessageSTM)
 
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.Client
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.Driver
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
-import qualified Ouroboros.Network.NodeToNode.Version as NodeToNode
-import           Ouroboros.Network.Protocol.BlockFetch.Codec
-import           Ouroboros.Network.Protocol.BlockFetch.Server
-import           Ouroboros.Network.Protocol.BlockFetch.Type
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.Client
+import Ouroboros.Network.Channel
+import Ouroboros.Network.DeltaQ
+import Ouroboros.Network.Driver
+import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
+import Ouroboros.Network.NodeToNode.Version qualified as NodeToNode
+import Ouroboros.Network.Protocol.BlockFetch.Codec
+import Ouroboros.Network.Protocol.BlockFetch.Server
+import Ouroboros.Network.Protocol.BlockFetch.Type
+import Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.Mock.ConcreteBlock
 
 
 -- | Run a single block fetch protocol until the chain is downloaded.

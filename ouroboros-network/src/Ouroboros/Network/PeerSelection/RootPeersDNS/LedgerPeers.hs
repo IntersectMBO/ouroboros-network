@@ -6,30 +6,30 @@
 
 module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers (resolveLedgerPeers) where
 
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Tracer (Tracer, traceWith)
-import qualified Data.IP as IP
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import Control.Monad (when)
+import Control.Monad.Class.MonadAsync
+import Control.Tracer (Tracer, traceWith)
+import Data.IP qualified as IP
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 
-import           Data.Foldable (foldlM)
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Foldable (foldlM)
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadThrow
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadThrow
 
 
-import qualified Network.DNS as DNS
-import qualified Network.Socket as Socket
+import Network.DNS qualified as DNS
+import Network.Socket qualified as Socket
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Common
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSActions (..), DNSorIOError (..), Resource (..))
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-                     (DNSSemaphore, withDNSSemaphore)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Common
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions (..),
+           DNSorIOError (..), Resource (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
+           withDNSSemaphore)
 
 -- | Provides DNS resolution functionality.
 --

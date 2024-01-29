@@ -43,31 +43,31 @@ module Ouroboros.Network.Snocket
   , MakeBearer (..)
   ) where
 
-import           Control.DeepSeq (NFData (..))
-import           Control.Exception
-import           Data.Bifoldable (Bifoldable (..))
-import           Data.Bifunctor (Bifunctor (..))
-import           Data.Hashable
-import           Data.Typeable (Typeable)
-import           Data.Word
-import           GHC.Generics (Generic)
-import           Quiet (Quiet (..))
+import Control.DeepSeq (NFData (..))
+import Control.Exception
+import Data.Bifoldable (Bifoldable (..))
+import Data.Bifunctor (Bifunctor (..))
+import Data.Hashable
+import Data.Typeable (Typeable)
+import Data.Word
+import GHC.Generics (Generic)
+import Quiet (Quiet (..))
 #if defined(mingw32_HOST_OS)
-import           Data.Bits
-import           Foreign.Ptr (IntPtr (..), ptrToIntPtr)
-import qualified System.Win32 as Win32
-import qualified System.Win32.Async as Win32.Async
-import qualified System.Win32.NamedPipes as Win32
+import Data.Bits
+import Foreign.Ptr (IntPtr (..), ptrToIntPtr)
+import System.Win32 qualified as Win32
+import System.Win32.Async qualified as Win32.Async
+import System.Win32.NamedPipes qualified as Win32
 #endif
 
-import           NoThunks.Class
+import NoThunks.Class
 
-import           Network.Socket (SockAddr (..), Socket)
-import qualified Network.Socket as Socket
+import Network.Socket (SockAddr (..), Socket)
+import Network.Socket qualified as Socket
 
-import           Network.Mux.Bearer
+import Network.Mux.Bearer
 
-import           Ouroboros.Network.IOManager
+import Ouroboros.Network.IOManager
 
 
 -- | Named pipes and Berkeley sockets have different API when accepting

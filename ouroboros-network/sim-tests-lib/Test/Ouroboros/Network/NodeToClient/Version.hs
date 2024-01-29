@@ -3,13 +3,13 @@
 
 module Test.Ouroboros.Network.NodeToClient.Version (tests) where
 
-import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Magic
-import           Ouroboros.Network.NodeToClient.Version
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.Magic
+import Ouroboros.Network.NodeToClient.Version
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree

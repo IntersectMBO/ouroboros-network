@@ -11,20 +11,20 @@ module Network.Mux.Ingress
     demuxer
   ) where
 
-import           Data.Array
-import qualified Data.ByteString.Lazy as BL
-import           Data.List (nub)
-import           Text.Printf
+import Data.Array
+import Data.ByteString.Lazy qualified as BL
+import Data.List (nub)
+import Text.Printf
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
-import           Network.Mux.Timeout
-import           Network.Mux.Trace
-import           Network.Mux.Types
+import Network.Mux.Timeout
+import Network.Mux.Trace
+import Network.Mux.Types
 
 
 flipMiniProtocolDir :: MiniProtocolDir -> MiniProtocolDir

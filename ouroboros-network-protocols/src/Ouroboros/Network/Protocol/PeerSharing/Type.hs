@@ -11,11 +11,11 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Type where
 
-import           Codec.Serialise.Class (Serialise)
-import           Data.Word (Word8)
-import           GHC.Generics (Generic)
-import           Network.TypedProtocol.Core (Protocol (..))
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import Codec.Serialise.Class (Serialise)
+import Data.Word (Word8)
+import GHC.Generics (Generic)
+import Network.TypedProtocol.Core (Protocol (..))
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- | PeerSharing amount new type.
 --

@@ -24,23 +24,23 @@ module Ouroboros.Network.Server.Socket
   , ioSocket
   ) where
 
-import           Control.Concurrent.Async (Async)
-import qualified Control.Concurrent.Async as Async
-import           Control.Concurrent.STM (STM)
-import qualified Control.Concurrent.STM as STM
-import           Control.Exception (IOException, SomeException (..), finally,
-                     mask, mask_, onException, try)
-import           Control.Monad (forM_, join)
-import           Control.Monad.Class.MonadTime.SI (Time, getMonotonicTime)
-import           Control.Monad.Class.MonadTimer.SI (threadDelay)
-import           Control.Tracer (Tracer, traceWith)
-import           Data.Foldable (traverse_)
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Control.Concurrent.Async (Async)
+import Control.Concurrent.Async qualified as Async
+import Control.Concurrent.STM (STM)
+import Control.Concurrent.STM qualified as STM
+import Control.Exception (IOException, SomeException (..), finally, mask, mask_,
+           onException, try)
+import Control.Monad (forM_, join)
+import Control.Monad.Class.MonadTime.SI (Time, getMonotonicTime)
+import Control.Monad.Class.MonadTimer.SI (threadDelay)
+import Control.Tracer (Tracer, traceWith)
+import Data.Foldable (traverse_)
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..),
-                     ErrorPolicyTrace, WithAddr)
-import           Ouroboros.Network.Server.RateLimiting
+import Ouroboros.Network.ErrorPolicy (CompleteApplicationResult (..),
+           ErrorPolicyTrace, WithAddr)
+import Ouroboros.Network.Server.RateLimiting
 
 -- | Abstraction of something that can provide connections.
 -- A `Network.Socket` can be used to get a

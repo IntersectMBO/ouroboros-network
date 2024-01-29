@@ -8,32 +8,28 @@ module Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
   , aboveTarget
   ) where
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.JobPool (Job (..))
-import           Control.Exception (SomeException)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           System.Random (randomR)
+import Control.Applicative (Alternative)
+import Control.Concurrent.JobPool (Job (..))
+import Control.Exception (SomeException)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import System.Random (randomR)
 
-import           Ouroboros.Network.PeerSelection.Bootstrap
-                     (requiresBootstrapPeers)
-import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (IsBigLedgerPeer (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
-import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
-import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (WarmValency (..))
-import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
 
 ---------------------------------

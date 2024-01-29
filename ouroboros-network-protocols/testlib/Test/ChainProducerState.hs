@@ -11,23 +11,22 @@ module Test.ChainProducerState
   , tests
   ) where
 
-import           Data.List (unfoldr)
-import qualified Data.Map as Map
+import Data.List (unfoldr)
+import Data.Map qualified as Map
 
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
+import Test.QuickCheck
+import Test.Tasty
+import Test.Tasty.QuickCheck
 
-import           Ouroboros.Network.Block (HasHeader, genesisPoint, pointSlot)
-import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate (..),
-                     Point (..), headPoint, pointOnChain)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock (Block)
-import           Ouroboros.Network.Mock.ProducerState
+import Ouroboros.Network.Block (HasHeader, genesisPoint, pointSlot)
+import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate (..), Point (..),
+           headPoint, pointOnChain)
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock (Block)
+import Ouroboros.Network.Mock.ProducerState
 
-import           Test.ChainGenerators (TestBlockChain (..),
-                     TestBlockChainAndUpdates (..), TestChainFork (..),
-                     mkRollbackPoint)
+import Test.ChainGenerators (TestBlockChain (..), TestBlockChainAndUpdates (..),
+           TestChainFork (..), mkRollbackPoint)
 
 tests :: TestTree
 tests =

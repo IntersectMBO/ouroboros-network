@@ -33,32 +33,32 @@ module Ouroboros.Network.PeerSelection.Governor
   , ChurnMode (..)
   ) where
 
-import           Data.Cache
-import           Data.Foldable (traverse_)
-import           Data.Void (Void)
+import Data.Cache
+import Data.Foldable (traverse_)
+import Data.Void (Void)
 
-import           Control.Applicative (Alternative ((<|>)))
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Concurrent.JobPool (JobPool)
-import qualified Control.Concurrent.JobPool as JobPool
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer (..), traceWith)
-import           System.Random
+import Control.Applicative (Alternative ((<|>)))
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.JobPool (JobPool)
+import Control.Concurrent.JobPool qualified as JobPool
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..), traceWith)
+import System.Random
 
-import           Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
-import qualified Ouroboros.Network.PeerSelection.Governor.ActivePeers as ActivePeers
-import qualified Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers as BigLedgerPeers
-import qualified Ouroboros.Network.PeerSelection.Governor.EstablishedPeers as EstablishedPeers
-import qualified Ouroboros.Network.PeerSelection.Governor.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.Governor.Monitor as Monitor
-import qualified Ouroboros.Network.PeerSelection.Governor.RootPeers as RootPeers
-import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
-import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
+import Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
+import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
+import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
+import Ouroboros.Network.PeerSelection.Governor.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
+import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
+import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 
 {- $overview
 

@@ -2,9 +2,9 @@
 
 module Ouroboros.Network.Protocol.KeepAlive.Examples where
 
-import           Ouroboros.Network.Protocol.KeepAlive.Client
-import           Ouroboros.Network.Protocol.KeepAlive.Server
-import           Ouroboros.Network.Protocol.KeepAlive.Type
+import Ouroboros.Network.Protocol.KeepAlive.Client
+import Ouroboros.Network.Protocol.KeepAlive.Server
+import Ouroboros.Network.Protocol.KeepAlive.Type
 
 
 -- | A client which applies a function whenever it receives

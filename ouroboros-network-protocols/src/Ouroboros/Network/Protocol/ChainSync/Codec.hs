@@ -13,22 +13,22 @@ module Ouroboros.Network.Protocol.ChainSync.Codec
   , ChainSyncTimeout (..)
   ) where
 
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadTime.SI
 
-import           Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Protocol.ChainSync.Type
-import           Ouroboros.Network.Protocol.Limits
+import Ouroboros.Network.Protocol.ChainSync.Type
+import Ouroboros.Network.Protocol.Limits
 
-import qualified Data.ByteString.Lazy as LBS
+import Data.ByteString.Lazy qualified as LBS
 
-import           Codec.CBOR.Decoding (decodeListLen, decodeWord)
-import qualified Codec.CBOR.Decoding as CBOR
-import           Codec.CBOR.Encoding (encodeListLen, encodeWord)
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import           Text.Printf
+import Codec.CBOR.Decoding (decodeListLen, decodeWord)
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding (encodeListLen, encodeWord)
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Text.Printf
 
 
 -- | Byte Limits

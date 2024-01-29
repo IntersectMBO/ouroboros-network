@@ -13,13 +13,13 @@ module Ouroboros.Network.Protocol.ChainSync.PipelineDecision
   , pipelineDecisionLowHighMark
   ) where
 
-import           Control.Exception (assert)
-import           Data.Word (Word16)
+import Control.Exception (assert)
+import Data.Word (Word16)
 
-import           Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Block (BlockNo)
-import           Ouroboros.Network.Point (WithOrigin (..))
+import Ouroboros.Network.Block (BlockNo)
+import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | Pipeline decision: we can do either one of these:
 --

@@ -12,20 +12,20 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Codec
   , Some (..)
   ) where
 
-import           Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadST
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Kind (Type)
-import           Data.Type.Equality ((:~:) (..))
-import           Text.Printf
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Data.ByteString.Lazy (ByteString)
+import Data.Kind (Type)
+import Data.Type.Equality ((:~:) (..))
+import Text.Printf
 
-import           Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR
 
-import qualified Ouroboros.Network.NodeToClient.Version as V
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+import Ouroboros.Network.NodeToClient.Version qualified as V
+import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
 data Some (f :: k -> Type) where

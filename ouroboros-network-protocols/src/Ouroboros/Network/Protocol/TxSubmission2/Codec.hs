@@ -15,20 +15,20 @@ module Ouroboros.Network.Protocol.TxSubmission2.Codec
   , timeLimitsTxSubmission2
   ) where
 
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime.SI
-import qualified Data.List.NonEmpty as NonEmpty
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadTime.SI
+import Data.List.NonEmpty qualified as NonEmpty
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import           Data.ByteString.Lazy (ByteString)
-import           Text.Printf
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Data.ByteString.Lazy (ByteString)
+import Text.Printf
 
-import           Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Protocol.Limits
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Protocol.Limits
+import Ouroboros.Network.Protocol.TxSubmission2.Type
 
 -- | Byte Limits.
 byteLimitsTxSubmission2 :: forall bytes txid tx.

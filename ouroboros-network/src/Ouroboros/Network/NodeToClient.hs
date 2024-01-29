@@ -72,52 +72,51 @@ module Ouroboros.Network.NodeToClient
   , HandshakeTr
   ) where
 
-import           Cardano.Prelude (FatalError)
+import Cardano.Prelude (FatalError)
 
-import qualified Control.Concurrent.Async as Async
-import           Control.Exception (ErrorCall, IOException)
-import           Control.Monad (forever)
-import           Control.Monad.Class.MonadTimer.SI
+import Control.Concurrent.Async qualified as Async
+import Control.Exception (ErrorCall, IOException)
+import Control.Monad (forever)
+import Control.Monad.Class.MonadTimer.SI
 
-import qualified Codec.CBOR.Term as CBOR
-import qualified Data.ByteString.Lazy as BL
-import           Data.Functor.Contravariant (contramap)
-import           Data.Functor.Identity (Identity (..))
-import           Data.Kind (Type)
-import           Data.Void (Void)
+import Codec.CBOR.Term qualified as CBOR
+import Data.ByteString.Lazy qualified as BL
+import Data.Functor.Contravariant (contramap)
+import Data.Functor.Identity (Identity (..))
+import Data.Kind (Type)
+import Data.Void (Void)
 
-import           Network.Mux (WithMuxBearer (..))
-import           Network.Mux.Types (MuxRuntimeError (..))
-import           Network.TypedProtocol (Peer)
-import           Network.TypedProtocol.Codec
+import Network.Mux (WithMuxBearer (..))
+import Network.Mux.Types (MuxRuntimeError (..))
+import Network.TypedProtocol (Peer)
+import Network.TypedProtocol.Codec
 
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.Driver (TraceSendRecv (..))
-import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
-import           Ouroboros.Network.Driver.Simple (DecoderFailure)
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient.Version
-import           Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
-import           Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalStateQuery
-import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type as LocalStateQuery
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Client as LocalTxMonitor
-import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Type as LocalTxMonitor
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
-import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
-import           Ouroboros.Network.Snocket
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Client
-                     (ClientSubscriptionParams (..))
-import qualified Ouroboros.Network.Subscription.Client as Subscription
-import           Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
-import           Ouroboros.Network.Tracers
+import Ouroboros.Network.Context
+import Ouroboros.Network.Driver (TraceSendRecv (..))
+import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
+import Ouroboros.Network.Driver.Simple (DecoderFailure)
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Mux
+import Ouroboros.Network.NodeToClient.Version
+import Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Type qualified as ChainSync
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import Ouroboros.Network.Protocol.LocalStateQuery.Client as LocalStateQuery
+import Ouroboros.Network.Protocol.LocalStateQuery.Type qualified as LocalStateQuery
+import Ouroboros.Network.Protocol.LocalTxMonitor.Client as LocalTxMonitor
+import Ouroboros.Network.Protocol.LocalTxMonitor.Type qualified as LocalTxMonitor
+import Ouroboros.Network.Protocol.LocalTxSubmission.Client as LocalTxSubmission
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.Socket
+import Ouroboros.Network.Subscription.Client (ClientSubscriptionParams (..))
+import Ouroboros.Network.Subscription.Client qualified as Subscription
+import Ouroboros.Network.Subscription.Ip (SubscriptionTrace (..))
+import Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
+import Ouroboros.Network.Tracers
 
 -- The Handshake tracer types are simply terrible.
 type HandshakeTr ntcAddr ntcVersion =

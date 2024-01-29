@@ -21,60 +21,57 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   , DelayAndTimeoutScripts (..)
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Monad (forever, replicateM_)
-import           Data.ByteString.Char8 (pack)
-import           Data.Dynamic (Typeable, fromDynamic)
-import           Data.Either (rights)
-import           Data.Foldable (foldl')
-import           Data.Function (fix)
-import           Data.Functor (void)
-import           Data.IP (fromHostAddress, toIPv4w, toSockAddr)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (catMaybes)
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Time.Clock (picosecondsToDiffTime)
-import           Data.Void (Void)
-import           Network.DNS (DNSError (NameError, TimeoutExpired), Domain, TTL)
-import qualified Network.DNS.Resolver as DNSResolver
-import           Network.Socket (SockAddr (..))
+import Control.Applicative (Alternative)
+import Control.Monad (forever, replicateM_)
+import Data.ByteString.Char8 (pack)
+import Data.Dynamic (Typeable, fromDynamic)
+import Data.Either (rights)
+import Data.Foldable (foldl')
+import Data.Function (fix)
+import Data.Functor (void)
+import Data.IP (fromHostAddress, toIPv4w, toSockAddr)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (catMaybes)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Time.Clock (picosecondsToDiffTime)
+import Data.Void (Void)
+import Network.DNS (DNSError (NameError, TimeoutExpired), Domain, TTL)
+import Network.DNS.Resolver qualified as DNSResolver
+import Network.Socket (SockAddr (..))
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (throw)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSay (MonadSay (..))
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-                     (MonadMonotonicTime (getMonotonicTime), Time (..), addTime)
-import           Control.Monad.Class.MonadTimer.SI
-import qualified Control.Monad.Class.MonadTimer.SI as MonadTimer
-import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (Tracer), contramap, nullTracer,
-                     traceWith)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (throw)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadSay (MonadSay (..))
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime),
+           Time (..), addTime)
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadTimer.SI qualified as MonadTimer
+import Control.Monad.IOSim
+import Control.Tracer (Tracer (Tracer), contramap, nullTracer, traceWith)
 
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Data.List (intercalate)
-import           Data.List.NonEmpty (NonEmpty (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerTrustable
-                     (PeerTrustable (..))
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency (..), WarmValency (..))
-import           Ouroboros.Network.Testing.Data.Script (Script (Script),
-                     initScript', scriptHead, singletonScript, stepScript')
-import           Test.Ouroboros.Network.PeerSelection.Instances ()
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Data.List (intercalate)
+import Data.List.NonEmpty (NonEmpty (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
+           WarmValency (..))
+import Ouroboros.Network.Testing.Data.Script (Script (Script), initScript',
+           scriptHead, singletonScript, stepScript')
+import Test.Ouroboros.Network.PeerSelection.Instances ()
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =

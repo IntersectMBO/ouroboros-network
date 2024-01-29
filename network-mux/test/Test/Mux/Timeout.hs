@@ -11,21 +11,21 @@
 
 module Test.Mux.Timeout (tests) where
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI hiding (timeout)
-import           Control.Monad.IOSim
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Monad.IOSim
 
-import           Network.Mux.Time (microsecondsToDiffTime)
-import           Network.Mux.Timeout (TimeoutFn, withTimeoutSerialAlternative,
-                     withTimeoutSerialNative)
+import Network.Mux.Time (microsecondsToDiffTime)
+import Network.Mux.Timeout (TimeoutFn, withTimeoutSerialAlternative,
+           withTimeoutSerialNative)
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree

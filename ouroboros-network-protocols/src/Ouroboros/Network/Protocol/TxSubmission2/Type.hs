@@ -13,12 +13,12 @@
 --
 module Ouroboros.Network.Protocol.TxSubmission2.Type where
 
-import           Data.List.NonEmpty (NonEmpty)
-import           Data.Word (Word16, Word32)
+import Data.List.NonEmpty (NonEmpty)
+import Data.Word (Word16, Word32)
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Util.ShowProxy
 
 -- | Transactions are typically not big, but in principle in future we could
 -- have ones over 64k large.

@@ -4,15 +4,15 @@
 {-# LANGUAGE RankNTypes       #-}
 module Test.Ouroboros.Network.Testing.Utils where
 
-import qualified Codec.CBOR.FlatTerm as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
-import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as LBS
+import Codec.CBOR.FlatTerm qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term qualified as CBOR
+import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as LBS
 
-import           Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec
 
-import           Test.QuickCheck
+import Test.QuickCheck
 
 -- | Generate all 2-splits of a string.
 splits2 :: LBS.ByteString -> [[LBS.ByteString]]

@@ -8,16 +8,15 @@ module Ouroboros.Network.NodeToClient.Version
   , nodeToClientVersionCodec
   ) where
 
-import qualified Codec.CBOR.Term as CBOR
-import           Data.Bits (clearBit, setBit, testBit)
-import           Data.Text (Text)
-import qualified Data.Text as T
-import           Data.Typeable (Typeable)
-import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
-                     Acceptable (..))
-import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
-import           Ouroboros.Network.Magic
+import Codec.CBOR.Term qualified as CBOR
+import Data.Bits (clearBit, setBit, testBit)
+import Data.Text (Text)
+import Data.Text qualified as T
+import Data.Typeable (Typeable)
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
+import Ouroboros.Network.Handshake.Queryable (Queryable (..))
+import Ouroboros.Network.Magic
 
 
 -- | Enumeration of node to client protocol versions.

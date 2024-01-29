@@ -15,40 +15,40 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Test
   , Reject (..)
   ) where
 
-import           Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy (ByteString)
 
-import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
-import           Control.Monad.IOSim
-import           Control.Monad.ST (runST)
-import           Control.Tracer (nullTracer)
+import Control.Monad.Class.MonadAsync (MonadAsync)
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.IOSim
+import Control.Monad.ST (runST)
+import Control.Tracer (nullTracer)
 
-import           Codec.Serialise (DeserialiseFailure, Serialise)
-import qualified Codec.Serialise as Serialise (decode, encode)
+import Codec.Serialise (DeserialiseFailure, Serialise)
+import Codec.Serialise qualified as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Codec hiding (prop_codec)
-import           Network.TypedProtocol.Proofs
+import Network.TypedProtocol.Codec hiding (prop_codec)
+import Network.TypedProtocol.Proofs
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Client
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Direct
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Examples
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
+import Ouroboros.Network.Protocol.LocalTxSubmission.Client
+import Ouroboros.Network.Protocol.LocalTxSubmission.Codec
+import Ouroboros.Network.Protocol.LocalTxSubmission.Direct
+import Ouroboros.Network.Protocol.LocalTxSubmission.Examples
+import Ouroboros.Network.Protocol.LocalTxSubmission.Server
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
-import           Test.Data.CDDL (Any (..))
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.Data.CDDL (Any (..))
+import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+           prop_codec_valid_cbor_encoding, splits2, splits3)
 
-import           Test.QuickCheck as QC
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Show.Functions ()
+import Test.QuickCheck as QC
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+import Text.Show.Functions ()
 
 
 --

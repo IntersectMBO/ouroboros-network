@@ -17,8 +17,8 @@
 module Ouroboros.Network.Protocol.LocalTxSubmission.Type where
 
 
-import           Network.TypedProtocol.Core
-import           Ouroboros.Network.Util.ShowProxy
+import Network.TypedProtocol.Core
+import Ouroboros.Network.Util.ShowProxy
 
 
 -- | The kind of the local transaction-submission protocol, and the types of

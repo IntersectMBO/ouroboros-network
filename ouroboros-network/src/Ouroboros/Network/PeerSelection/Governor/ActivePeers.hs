@@ -8,31 +8,28 @@ module Ouroboros.Network.PeerSelection.Governor.ActivePeers
   , jobDemoteActivePeer
   ) where
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.JobPool (Job (..))
-import           Control.Exception (SomeException, assert)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           System.Random (randomR)
+import Control.Applicative (Alternative)
+import Control.Concurrent.JobPool (Job (..))
+import Control.Exception (SomeException, assert)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import System.Random (randomR)
 
-import           Ouroboros.Network.PeerSelection.Bootstrap
-                     (requiresBootstrapPeers)
-import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (IsBigLedgerPeer (..))
-import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
-import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
-import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency (..))
-import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
 
 ----------------------------

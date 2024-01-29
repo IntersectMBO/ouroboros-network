@@ -3,15 +3,15 @@
 {-# LANGUAGE RankNTypes     #-}
 module Ouroboros.Network.ConnectionManager.InformationChannel where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.Class.MonadSTM.Strict
 
-import           Data.Functor (($>))
-import           GHC.Natural (Natural)
-import           Ouroboros.Network.ConnectionHandler (Handle)
-import           Ouroboros.Network.Context (ResponderContext)
-import           Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo)
-import           Ouroboros.Network.Mux (MuxMode)
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Data.Functor (($>))
+import GHC.Natural (Natural)
+import Ouroboros.Network.ConnectionHandler (Handle)
+import Ouroboros.Network.Context (ResponderContext)
+import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo)
+import Ouroboros.Network.Mux (MuxMode)
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 
 -- | Information channel.
 --

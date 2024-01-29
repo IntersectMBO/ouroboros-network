@@ -33,20 +33,20 @@ module Ouroboros.Network.Subscription.Ip
  - RFC8305, https://tools.ietf.org/html/rfc8305 .
  -}
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer
-import           Data.Void (Void)
-import qualified Network.Socket as Socket
-import           Text.Printf
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer
+import Data.Void (Void)
+import Network.Socket qualified as Socket
+import Text.Printf
 
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Snocket (Snocket)
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.PeerState
-import           Ouroboros.Network.Subscription.Subscriber
-import           Ouroboros.Network.Subscription.Worker
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.Snocket (Snocket)
+import Ouroboros.Network.Socket
+import Ouroboros.Network.Subscription.PeerState
+import Ouroboros.Network.Subscription.Subscriber
+import Ouroboros.Network.Subscription.Worker
 
 
 data IPSubscriptionTarget = IPSubscriptionTarget {

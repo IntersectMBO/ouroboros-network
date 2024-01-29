@@ -16,10 +16,10 @@ module Ouroboros.Network.Point
   , withOriginFromMaybe
   ) where
 
-import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks)
+import GHC.Generics (Generic)
+import NoThunks.Class (NoThunks)
 
-import           Cardano.Slotting.Slot
+import Cardano.Slotting.Slot
 
 data Block slot hash = Block
   { blockPointSlot :: !slot

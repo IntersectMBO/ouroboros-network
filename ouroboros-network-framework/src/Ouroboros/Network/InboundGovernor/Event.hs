@@ -24,26 +24,25 @@ module Ouroboros.Network.InboundGovernor.Event
   , NewConnectionInfo (..)
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadThrow hiding (handle)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadThrow hiding (handle)
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (($>))
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Monoid.Synchronisation
-import qualified Data.Set as Set
+import Data.ByteString.Lazy (ByteString)
+import Data.Functor (($>))
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Monoid.Synchronisation
+import Data.Set qualified as Set
 
-import qualified Network.Mux as Mux
-import           Network.Mux.Types (MiniProtocolDir (..),
-                     MiniProtocolStatus (..))
+import Network.Mux qualified as Mux
+import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolStatus (..))
 
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.InboundGovernor.State
-import           Ouroboros.Network.Mux
+import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Context
+import Ouroboros.Network.InboundGovernor.State
+import Ouroboros.Network.Mux
 
 
 -- | Announcement message for a new connection.

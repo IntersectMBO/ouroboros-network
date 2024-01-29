@@ -28,13 +28,13 @@ module Ouroboros.Network.PeerSelection.PublicRootPeers
   , fromMapAndSet
   ) where
 
-import           Prelude hiding (null)
+import Prelude hiding (null)
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set, (\\))
-import qualified Data.Set as Set
-import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set (Set, (\\))
+import Data.Set qualified as Set
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 
 ---------------------------------------
 -- Public root peer set representation
