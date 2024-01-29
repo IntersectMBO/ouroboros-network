@@ -29,6 +29,7 @@ import           Test.Ouroboros.Network.PeerSelection.Instances
 
 
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Test.QuickCheck
 import           Test.Tasty (TestTree, testGroup)
 import           Test.Tasty.QuickCheck (testProperty)
@@ -43,6 +44,7 @@ tests =
     , testProperty "fromGroups"   prop_fromGroups
     , testProperty "shrink"       prop_shrink_LocalRootPeers
     , testProperty "clampToLimit" prop_clampToLimit
+    , testProperty "clampToTrustable" prop_clampToTrustable
     ]
   ]
 
@@ -64,6 +66,15 @@ prop_clampToLimit localRootPeers targets =
         LocalRootPeers.size localRootPeers'
           === min sizeLimit
                  (LocalRootPeers.size localRootPeers)
+
+prop_clampToTrustable :: LocalRootPeers PeerAddr -> Property
+prop_clampToTrustable localRootPeers =
+
+    let trustedPeers = LocalRootPeers.keysSet
+                     $ LocalRootPeers.clampToTrustable localRootPeers
+
+     in counterexample (show $ Map.restrictKeys (LocalRootPeers.toMap localRootPeers) trustedPeers)
+      $ all (`LocalRootPeers.isPeerTrustable` localRootPeers) trustedPeers
 
 
 arbitraryLocalRootPeers :: Ord peeraddr
@@ -142,7 +153,7 @@ prop_shrink_LocalRootPeers x =
       prop_shrink_valid LocalRootPeers.invariant x
  .&&. prop_shrink_nonequal x
 
-prop_fromGroups :: [(HotValency, WarmValency, Map PeerAddr PeerAdvertise)] -> Bool
+prop_fromGroups :: [(HotValency, WarmValency, Map PeerAddr (PeerAdvertise, PeerTrustable))] -> Bool
 prop_fromGroups = LocalRootPeers.invariant . LocalRootPeers.fromGroups
 
 prop_fromToGroups :: LocalRootPeers PeerAddr -> Bool

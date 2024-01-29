@@ -36,8 +36,6 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
     -- * Selecting peers to share
   , canSharePeers
   , getPeerSharingResponsePeers
-    -- ** Filtering ledger peers
-  , isKnownLedgerPeer
   ) where
 
 import qualified Data.List as List
@@ -47,13 +45,11 @@ import           Data.OrdPSQ (OrdPSQ)
 import qualified Data.OrdPSQ as PSQ
 import           Data.Set (Set)
 import qualified Data.Set as Set
---import           System.Random (RandomGen(..))
 
 import           Control.Exception (assert)
 import           Control.Monad.Class.MonadTime.SI
 
 import           Data.Maybe (fromMaybe)
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -128,14 +124,6 @@ data KnownPeerInfo = KnownPeerInfo {
        -- about this peer's address to others.
        knownPeerAdvertise        :: !PeerAdvertise,
 
-       -- | Indicates if peer came from ledger.
-       --
-       -- It is used so we can filter out the ledger Peers from a Peer Sharing
-       -- reply, since ledger peers are not particularly what one is looking for
-       -- in a Peer Sharing reply.
-       --
-       knownLedgerPeer           :: !IsLedgerPeer,
-
        -- | Indicates if the node managed to connect to the peer at some point
        -- in time.
        --
@@ -167,10 +155,10 @@ invariant KnownPeers{..} =
 --
 
 alterKnownPeerInfo
-  :: (Maybe PeerSharing, Maybe PeerAdvertise, Maybe IsLedgerPeer)
+  :: (Maybe PeerSharing, Maybe PeerAdvertise)
   -> Maybe KnownPeerInfo
   -> Maybe KnownPeerInfo
-alterKnownPeerInfo (peerSharing, peerAdvertise, ledgerPeers) peerLookupResult =
+alterKnownPeerInfo (peerSharing, peerAdvertise) peerLookupResult =
   case peerLookupResult of
     Nothing -> Just $
       KnownPeerInfo {
@@ -178,14 +166,12 @@ alterKnownPeerInfo (peerSharing, peerAdvertise, ledgerPeers) peerLookupResult =
       , knownPeerTepid     = False
       , knownPeerSharing   = fromMaybe PeerSharingDisabled peerSharing
       , knownPeerAdvertise = fromMaybe DoNotAdvertisePeer peerAdvertise
-      , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
       , knownSuccessfulConnection = False
       }
     Just kpi -> Just $
       kpi {
         knownPeerSharing   = fromMaybe (knownPeerSharing kpi) peerSharing
       , knownPeerAdvertise = fromMaybe (knownPeerAdvertise kpi) peerAdvertise
-      , knownLedgerPeer    = fromMaybe (knownLedgerPeer kpi) ledgerPeers
       }
 
 -------------------------------
@@ -226,7 +212,7 @@ member peeraddr KnownPeers {allPeers} =
 -- value is used.
 --
 insert :: Ord peeraddr
-       => Map peeraddr (Maybe PeerSharing, Maybe PeerAdvertise, Maybe IsLedgerPeer)
+       => Map peeraddr (Maybe PeerSharing, Maybe PeerAdvertise)
        -> KnownPeers peeraddr
        -> KnownPeers peeraddr
 insert peeraddrs
@@ -451,7 +437,7 @@ canPeerShareRequest pa KnownPeers { allPeers } =
     Just KnownPeerInfo
           { knownPeerSharing = PeerSharingEnabled
           } -> True
-    _     -> False
+    _       -> False
 
 -- Only share peers which are allowed to be advertised, i.e. have
 -- 'DoAdvertisePeer' 'PeerAdvertise' values.
@@ -463,7 +449,7 @@ canSharePeers pa KnownPeers { allPeers } =
           { knownPeerAdvertise        = DoAdvertisePeer
           , knownSuccessfulConnection = True
           } -> True
-    _     -> False
+    _       -> False
 
 -- | Filter peers available for Peer Sharing requests, according to their
 -- 'PeerSharing' information
@@ -493,19 +479,28 @@ getPeerSharingResponsePeers knownPeers =
 
 
 ---------------------------------
--- Filter ledger peers
+-- Selecting peers to advertise
 --
 
--- | Checks the KnownPeers Set for known ledger peers.
+-- | Select a random subset of the known peers that are available to publish.
 --
--- This is used in Peer Selection Governor to filter out the known-to-te ledger
--- peers from the share result set.
+-- The selection is done in such a way that when the same initial PRNG state is
+-- used, the selected set does not significantly vary with small perturbations
+-- in the set of published peers.
 --
-isKnownLedgerPeer :: Ord peeraddr => peeraddr -> KnownPeers peeraddr -> Bool
-isKnownLedgerPeer peeraddr KnownPeers { allPeers } =
-  case Map.lookup peeraddr allPeers of
-    Just KnownPeerInfo { knownLedgerPeer } ->
-      case knownLedgerPeer of
-        IsLedgerPeer    -> True
-        IsNotLedgerPeer -> False
-    Nothing             -> False
+-- The intention of this selection method is that the selection should give
+-- approximately the same replies to the same peers over the course of multiple
+-- requests from the same peer. This is to deliberately slow the rate at which
+-- peers can discover and map out the entire network.
+--
+{-
+sampleAdvertisedPeers :: RandomGen prng
+                      => KnownPeers peeraddr
+                      -> prng
+                      -> Int
+                      -> [peeraddr]
+sampleAdvertisedPeers _ _ _ = []
+-- idea is to generate a sequence of random numbers and map them to locations
+-- in a relatively stable way, that's mostly insensitive to additions or
+-- deletions
+-}

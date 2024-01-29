@@ -102,6 +102,7 @@ import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
                      DiffusionMode (..), NodeToNodeVersion (..),
                      NodeToNodeVersionData (..), RemoteAddress)
 import qualified Ouroboros.Network.NodeToNode as NodeToNode
+import           Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import qualified Ouroboros.Network.PeerSelection.Governor as Governor
 import           Ouroboros.Network.PeerSelection.Governor.Types
                      (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
@@ -110,8 +111,9 @@ import           Ouroboros.Network.PeerSelection.Governor.Types
                      PublicPeerSelectionState (..), TracePeerSelection (..),
                      emptyPublicPeerSelectionState)
 import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface, TraceLedgerPeers,
-                     UseLedgerAfter)
+                     (LedgerPeersConsensusInterface, TraceLedgerPeers)
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (LedgerPeersConsensusInterface (..), UseLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import           Ouroboros.Network.PeerSelection.PeerSelectionActions
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -119,6 +121,7 @@ import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerConnectionHandle, PeerSelectionActionsTrace (..),
                      PeerStateActionsArguments (..), pchPeerSharing,
                      withPeerStateActions)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (RelayAccessPoint)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
@@ -239,13 +242,15 @@ data ArgumentsExtra m = ArgumentsExtra {
       --
       daPeerSelectionTargets :: PeerSelectionTargets
 
-    , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
+    , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
     , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , daReadUseBootstrapPeers :: STM m UseBootstrapPeers
+
     -- | Peer's own PeerSharing value.
     --
     -- This value comes from the node's configuration file and is static.
     , daOwnPeerSharing      :: PeerSharing
-    , daReadUseLedgerAfter  :: STM m UseLedgerAfter
+    , daReadUseLedgerPeers  :: STM m UseLedgerPeers
 
       -- | Timeout which starts once all responder protocols are idle. If the
       -- responders stay idle for duration of the timeout, the connection will
@@ -615,8 +620,9 @@ runM Interfaces
        { daPeerSelectionTargets
        , daReadLocalRootPeers
        , daReadPublicRootPeers
+       , daReadUseBootstrapPeers
        , daOwnPeerSharing
-       , daReadUseLedgerAfter
+       , daReadUseLedgerPeers
        , daProtocolIdleTimeout
        , daTimeWaitTimeout
        , daDeadlineChurnInterval
@@ -626,7 +632,9 @@ runM Interfaces
        { daApplicationInitiatorMode
        , daApplicationInitiatorResponderMode
        , daLocalResponderApplication
-       , daLedgerPeersCtx
+       , daLedgerPeersCtx =
+          daLedgerPeersCtx@LedgerPeersConsensusInterface
+            { lpGetLedgerStateJudgement }
        }
      ApplicationsExtra
        { daRethrowPolicy
@@ -951,7 +959,7 @@ runM Interfaces
             -- ^ Random generator for picking ledger peers
             -> LedgerPeersConsensusInterface m
             -- ^ Get Ledger Peers comes from here
-            -> STM m UseLedgerAfter
+            -> STM m UseLedgerPeers
             -- ^ Get Use Ledger After value
             -> (   (Async m Void, Async m Void)
                 -> PeerSelectionActions
@@ -971,8 +979,10 @@ runM Interfaces
                   diNtnToPeerAddr
                   (diDnsActions lookupReqs)
                   (readTVar peerSelectionTargetsVar)
+                  lpGetLedgerStateJudgement
                   daReadLocalRootPeers
                   daReadPublicRootPeers
+                  daReadUseBootstrapPeers
                   daOwnPeerSharing
                   (pchPeerSharing diNtnPeerSharing)
                   (readTVar (getPeerSharingRegistry daPeerSharingRegistry))
@@ -1054,7 +1064,7 @@ runM Interfaces
               peerStateActions
               ledgerPeersRng
               daLedgerPeersCtx
-              daReadUseLedgerAfter
+              daReadUseLedgerPeers
                 $ \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
 
                Async.withAsync
@@ -1086,7 +1096,7 @@ runM Interfaces
                 peerStateActions
                 ledgerPeersRng
                 daLedgerPeersCtx
-                daReadUseLedgerAfter
+                daReadUseLedgerPeers
                   $ \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
               Async.withAsync
                 (peerSelectionGovernor'

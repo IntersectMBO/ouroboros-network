@@ -47,6 +47,7 @@ library
                        Ouroboros.Network.Tracers
                        Ouroboros.Network.PeerSelection.Types
                        Ouroboros.Network.PeerSelection.LedgerPeers
+                       Ouroboros.Network.PeerSelection.PublicRootPeers
                        Ouroboros.Network.PeerSelection.PeerMetric
                        Ouroboros.Network.PeerSelection.PeerSelectionActions
                        Ouroboros.Network.PeerSelection.PeerStateActions
@@ -225,6 +226,7 @@ library sim-tests-lib
                        Test.Ouroboros.Network.PeerSelection.PeerGraph
                        Test.Ouroboros.Network.PeerSelection.PeerMetric
                        Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+                       Test.Ouroboros.Network.PeerSelection.PublicRootPeers
                        Test.Ouroboros.Network.PeerState
                        Test.Ouroboros.Network.Testnet
                        Test.Ouroboros.Network.Testnet.Simulation.Node

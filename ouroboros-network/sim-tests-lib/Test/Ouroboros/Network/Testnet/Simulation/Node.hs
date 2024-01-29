@@ -80,6 +80,10 @@ import           Ouroboros.Network.PeerSelection.Governor
                      (DebugPeerSelection (..), PeerSelectionTargets (..),
                      TracePeerSelection)
 import qualified Ouroboros.Network.PeerSelection.Governor as PeerSelection
+import           Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
+                     LedgerPeersConsensusInterface (..),
+                     LedgerStateJudgement (..), TraceLedgerPeers,
+                     UseLedgerPeers (..), accPoolStake)
 import           Ouroboros.Network.PeerSelection.PeerStateActions
                      (PeerSelectionActionsTrace)
 import           Ouroboros.Network.Protocol.BlockFetch.Codec
@@ -119,12 +123,12 @@ import           Data.Function (on)
 import           Data.Typeable (Typeable)
 import           Ouroboros.Network.BlockFetch (TraceFetchClientState,
                      TraceLabelPeer (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface (..), TraceLedgerPeers,
-                     UseLedgerAfter (..), accPoolStake)
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (UseBootstrapPeers (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint (..), PortNumber, RelayAccessPoint (..))
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
@@ -194,13 +198,16 @@ data NodeArgs =
       -- ^ 'LimitsAndTimeouts' argument
     , naPublicRoots            :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
+    , naBootstrapPeers         :: Script UseBootstrapPeers
+      -- ^ 'Interfaces' relays auxiliary value
     , naAddr                   :: NtNAddr
       -- ^ 'Arguments' 'aIPAddress' value
     , naPeerSharing            :: PeerSharing
       -- ^ 'Arguments' 'aOwnPeerSharing' value
     , naLocalRootPeers         :: [( HotValency
                                    , WarmValency
-                                   , Map RelayAccessPoint PeerAdvertise
+                                   , Map RelayAccessPoint ( PeerAdvertise
+                                                          , PeerTrustable)
                                    )]
     , naLedgerPeers            :: Script LedgerPools
       -- ^ 'Arguments' 'LocalRootPeers' values
@@ -215,7 +222,7 @@ data NodeArgs =
     }
 
 instance Show NodeArgs where
-    show NodeArgs { naSeed, naDiffusionMode, naMbTime, naPublicRoots,
+    show NodeArgs { naSeed, naDiffusionMode, naMbTime, naBootstrapPeers, naPublicRoots,
                    naAddr, naPeerSharing, naLocalRootPeers, naLocalSelectionTargets,
                    naDNSTimeoutScript, naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
                    naChainSyncEarlyExit } =
@@ -224,6 +231,7 @@ instance Show NodeArgs where
               , show naDiffusionMode
               , "(" ++ show naMbTime ++ ")"
               , "(" ++ show naPublicRoots ++ ")"
+              , "(" ++ show naBootstrapPeers ++ ")"
               , "(" ++ show naAddr ++ ")"
               , show naPeerSharing
               , show naLocalRootPeers
@@ -239,7 +247,8 @@ data Command = JoinNetwork DiffTime
              | Reconfigure DiffTime
                            [( HotValency
                             , WarmValency
-                            , Map RelayAccessPoint PeerAdvertise
+                            , Map RelayAccessPoint ( PeerAdvertise
+                                                   , PeerTrustable)
                             )]
   deriving Eq
 
@@ -255,7 +264,7 @@ instance Show Command where
 
 genCommands :: [( HotValency
                 , WarmValency
-                , Map RelayAccessPoint PeerAdvertise
+                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                 )]
             -> Gen [Command]
 genCommands localRoots = sized $ \size -> do
@@ -269,15 +278,14 @@ genCommands localRoots = sized $ \size -> do
   where
     subLocalRootPeers :: Gen [( HotValency
                               , WarmValency
-                              , Map RelayAccessPoint PeerAdvertise
+                              , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                               )]
     subLocalRootPeers = do
       subLRP <- sublistOf localRoots
       mapM (\(h, w, g) -> (h, w,) <$> (fmap Map.fromList . sublistOf . Map.toList $ g)) subLRP
 
-    delay = frequency [ (3, genDelayWithPrecision 100)
-                      , (2, (* 10) <$> genDelayWithPrecision 100)
-                      , (1, (/ 10) <$> genDelayWithPrecision 100)
+    delay = frequency [ (3, genDelayWithPrecision 65)
+                      , (1, (/ 10) <$> genDelayWithPrecision 60)
                       ]
 
 fixupCommands :: [Command] -> [Command]
@@ -350,7 +358,7 @@ instance Arbitrary SmallPeerSelectionTargets where
 -- Simulation
 genNodeArgs :: [RelayAccessInfo]
             -> Int
-            -> [(HotValency, WarmValency, Map RelayAccessPoint PeerAdvertise)]
+            -> [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
             -> RelayAccessInfo
             -> Gen NodeArgs
 genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream $ do
@@ -416,6 +424,12 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
   firstLedgerPool <- arbitrary
   let ledgerPeerPoolsScript = Script (firstLedgerPool :| ledgerPeerPools)
 
+  firstBootstrapPeer <- maybe DontUseBootstrapPeers UseBootstrapPeers
+                      <$> arbitrary
+  bootstrapPeers <- listOf (maybe DontUseBootstrapPeers UseBootstrapPeers
+                           <$> arbitrary)
+  let bootstrapPeersDomain = Script (firstBootstrapPeer :| bootstrapPeers)
+
   return
    $ NodeArgs
       { naSeed                   = seed
@@ -424,6 +438,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
       , naPublicRoots            = publicRoots
         -- TODO: we haven't been using public root peers so far because we set
         -- `UseLedgerPeers 0`!
+      , naBootstrapPeers         = bootstrapPeersDomain
       , naAddr                   = makeNtNAddr relay
       , naLocalRootPeers         = localRootPeers
       , naLedgerPeers            = ledgerPeerPoolsScript
@@ -656,7 +671,7 @@ genDiffusionScript :: ([RelayAccessInfo]
                         -> RelayAccessInfo
                         -> Gen [( HotValency
                                 , WarmValency
-                                , Map RelayAccessPoint PeerAdvertise)])
+                                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))])
                    -> RelayAccessInfosWithDNS
                    -> Gen (SimArgs, DomainMapScript, [(NodeArgs, [Command])])
 genDiffusionScript genLocalRootPeers
@@ -699,7 +714,7 @@ genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
                       -> RelayAccessInfo
                       -> Gen [( HotValency
                               , WarmValency
-                              , Map RelayAccessPoint PeerAdvertise
+                              , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                               )]
     genLocalRootPeers relays _relay = flip suchThat hasUpstream $ do
       nrGroups <- chooseInt (1, 3)
@@ -732,7 +747,7 @@ genNonHotDiffusionScript = genDiffusionScript genLocalRootPeers
 
     hasUpstream :: [( HotValency
                     , WarmValency
-                    , Map RelayAccessPoint PeerAdvertise
+                    , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                     )]
                 -> Bool
     hasUpstream localRootPeers =
@@ -759,7 +774,7 @@ genHotDiffusionScript = genDiffusionScript genLocalRootPeers
                         -> RelayAccessInfo
                         -> Gen [( HotValency
                                 , WarmValency
-                                , Map RelayAccessPoint PeerAdvertise
+                                , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                                 )]
       genLocalRootPeers relays _relay = flip suchThat hasUpstream $ do
         let size = length relays
@@ -779,7 +794,7 @@ genHotDiffusionScript = genDiffusionScript genLocalRootPeers
 
       hasUpstream :: [( HotValency
                       , WarmValency
-                      , Map RelayAccessPoint PeerAdvertise
+                      , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                       )]
                   -> Bool
       hasUpstream localRootPeers =
@@ -968,7 +983,7 @@ diffusionSimulation
       :: Maybe ( Async m Void
                , StrictTVar m [( HotValency
                                , WarmValency
-                               , Map RelayAccessPoint PeerAdvertise
+                               , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                                )])
          -- ^ If the node is running and corresponding local root configuration
          -- TVar.
@@ -1026,7 +1041,7 @@ diffusionSimulation
             -> Snocket m (FD m NtCAddr) NtCAddr
             -> StrictTVar m [( HotValency
                              , WarmValency
-                             , Map RelayAccessPoint PeerAdvertise
+                             , Map RelayAccessPoint (PeerAdvertise, PeerTrustable)
                              )]
             -> StrictTVar m (Map Domain [(IP, TTL)])
             -> m Void
@@ -1038,6 +1053,7 @@ diffusionSimulation
             { naSeed                   = seed
             , naMbTime                 = mustReplyTimeout
             , naPublicRoots            = publicRoots
+            , naBootstrapPeers         = bootstrapPeers
             , naAddr                   = addr
             , naLedgerPeers            = ledgerPeers
             , naLocalSelectionTargets  = peerSelectionTargets
@@ -1059,7 +1075,7 @@ diffusionSimulation
           diffusionMode = InitiatorAndResponderDiffusionMode
           readLocalRootPeers  = readTVar lrpVar
           readPublicRootPeers = return publicRoots
-          readUseLedgerAfter  = return (UseLedgerAfter 0)
+          readUseLedgerPeers  = return (UseLedgerPeers (After 0))
 
           acceptVersion = \_ v -> Accept v
 
@@ -1123,15 +1139,17 @@ diffusionSimulation
               , NodeKernel.iNtcBearer         = makeFDBearer
               , NodeKernel.iRng               = rng
               , NodeKernel.iDomainMap         = dMapVar
-              , NodeKernel.iLedgerPeersConsensusInterface =
-                  LedgerPeersConsensusInterface $
-                    \_ -> do
-                      ledgerPools <- stepScriptSTM ledgerPeersVar
-                      return $ Just
-                             $ Map.elems
+              , NodeKernel.iLedgerPeersConsensusInterface
+                                        =
+                  LedgerPeersConsensusInterface
+                    (pure maxBound)
+                    (pure TooOld)
+                    (do
+                      ledgerPools <- stepScriptSTM' ledgerPeersVar
+                      return $ Map.elems
                              $ accPoolStake
                              $ getLedgerPools
-                             $ ledgerPools
+                             $ ledgerPools)
               }
 
           shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> BlockHeader -> m Bool
@@ -1162,8 +1180,9 @@ diffusionSimulation
               , NodeKernel.aChainSyncEarlyExit   = chainSyncEarlyExit
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
+              , NodeKernel.aReadUseBootstrapPeers = bootstrapPeers
               , NodeKernel.aOwnPeerSharing       = peerSharing
-              , NodeKernel.aReadUseLedgerAfter   = readUseLedgerAfter
+              , NodeKernel.aReadUseLedgerPeers   = readUseLedgerPeers
               , NodeKernel.aProtocolIdleTimeout  = 5
               , NodeKernel.aTimeWaitTimeout      = 30
               , NodeKernel.aDNSTimeoutScript     = dnsTimeout

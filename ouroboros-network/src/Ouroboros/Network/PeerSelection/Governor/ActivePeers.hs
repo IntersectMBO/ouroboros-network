@@ -21,9 +21,12 @@ import           Control.Monad.Class.MonadTime.SI
 import           Control.Monad.Class.MonadTimer.SI
 import           System.Random (randomR)
 
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (requiresBootstrapPeers)
 import           Ouroboros.Network.PeerSelection.Governor.Types
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
                      (IsBigLedgerPeer (..))
+import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
@@ -52,7 +55,12 @@ belowTarget = belowTargetBigLedgerPeers
            <> belowTargetLocal
            <> belowTargetOther
 
-
+-- | If we are below the target of /hot big ledger peers peers/ we promote some
+-- of the /warm peers/ according to 'policyPickWarmPeersToPromote' policy.
+--
+-- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
+-- state) then this monitoring action will be disabled.
+--
 belowTargetBigLedgerPeers :: forall peeraddr peerconn m.
                              (MonadDelay m, MonadSTM m, Ord peeraddr)
                           => PeerSelectionActions peeraddr peerconn m
@@ -62,7 +70,7 @@ belowTargetBigLedgerPeers actions
                             policyPickWarmPeersToPromote
                           }
                           st@PeerSelectionState {
-                            bigLedgerPeers,
+                            publicRootPeers,
                             establishedPeers,
                             activePeers,
                             inProgressPromoteWarm,
@@ -70,7 +78,9 @@ belowTargetBigLedgerPeers actions
                             inProgressDemoteToCold,
                             targets = PeerSelectionTargets {
                                         targetNumberOfActiveBigLedgerPeers
-                                      }
+                                      },
+                            ledgerStateJudgement,
+                            bootstrapPeersFlag
                           }
     -- Are we below the target for number of active peers?
   | numActiveBigLedgerPeers + numPromoteInProgressBigLedgerPeers
@@ -79,7 +89,7 @@ belowTargetBigLedgerPeers actions
     -- Are there any warm peers we could pick to promote?
   , let availableToPromote :: Set peeraddr
         availableToPromote = EstablishedPeers.readyPeers establishedPeers
-                               `Set.intersection` bigLedgerPeers
+                               `Set.intersection` bigLedgerPeersSet
                                Set.\\ activePeers
                                Set.\\ inProgressPromoteWarm
                                Set.\\ inProgressDemoteWarm
@@ -89,7 +99,8 @@ belowTargetBigLedgerPeers actions
                           - numPromoteInProgressBigLedgerPeers
   , not (Set.null availableToPromote)
   , numPeersToPromote > 0
-
+  -- Are we in a insensitive state, i.e. using bootstrap peers?
+  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
   = Guarded Nothing $ do
       selectedToPromote <- pickPeers st
                              policyPickWarmPeersToPromote
@@ -114,17 +125,18 @@ belowTargetBigLedgerPeers actions
     -- If we could promote except that there are no peers currently available
     -- then we return the next wakeup time (if any)
   | numActiveBigLedgerPeers + numPromoteInProgressBigLedgerPeers < targetNumberOfActiveBigLedgerPeers
-  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.member` bigLedgerPeers))
+  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.member` bigLedgerPeersSet))
 
   | otherwise
   = GuardedSkip Nothing
   where
+    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
     numActiveBigLedgerPeers
       = Set.size $ activePeers
-                   `Set.intersection` bigLedgerPeers
+                   `Set.intersection` bigLedgerPeersSet
     numPromoteInProgressBigLedgerPeers
       = Set.size $ inProgressPromoteWarm
-                   `Set.intersection` bigLedgerPeers
+                   `Set.intersection` bigLedgerPeersSet
 
 
 belowTargetLocal :: forall peeraddr peerconn m.
@@ -136,7 +148,7 @@ belowTargetLocal actions
                    policyPickWarmPeersToPromote
                  }
                  st@PeerSelectionState {
-                   bigLedgerPeers,
+                   publicRootPeers,
                    localRootPeers,
                    establishedPeers,
                    activePeers,
@@ -211,11 +223,12 @@ belowTargetLocal actions
              Set.\\ activePeers
              Set.\\ EstablishedPeers.readyPeers establishedPeers
   , not (Set.null potentialToPromote)
-  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeers))
+  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeersSet))
 
   | otherwise
   = GuardedSkip Nothing
   where
+    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
     groupsBelowTarget =
       [ (hotValency, members, membersActive)
       | (hotValency, _, members) <- LocalRootPeers.toGroupSets localRootPeers
@@ -232,7 +245,7 @@ belowTargetOther actions
                    policyPickWarmPeersToPromote
                  }
                  st@PeerSelectionState {
-                   bigLedgerPeers,
+                   publicRootPeers,
                    localRootPeers,
                    establishedPeers,
                    activePeers,
@@ -254,7 +267,7 @@ belowTargetOther actions
                                Set.\\ inProgressDemoteWarm
                                Set.\\ inProgressDemoteToCold
                                Set.\\ LocalRootPeers.keysSet localRootPeers
-                               Set.\\ bigLedgerPeers
+                               Set.\\ bigLedgerPeersSet
         numPeersToPromote = targetNumberOfActivePeers
                           - numActivePeers
                           - numPromoteInProgress
@@ -284,15 +297,16 @@ belowTargetOther actions
     -- If we could promote except that there are no peers currently available
     -- then we return the next wakeup time (if any)
   | numActivePeers + numPromoteInProgress < targetNumberOfActivePeers
-  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeers))
+  = GuardedSkip (EstablishedPeers.minActivateTime establishedPeers (`Set.notMember` bigLedgerPeersSet))
 
   | otherwise
   = GuardedSkip Nothing
   where
+    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
     numActivePeers       = Set.size $ activePeers
-                               Set.\\ bigLedgerPeers
+                               Set.\\ bigLedgerPeersSet
     numPromoteInProgress = Set.size $ inProgressPromoteWarm
-                               Set.\\ bigLedgerPeers
+                               Set.\\ bigLedgerPeersSet
 
 
 jobPromoteWarmPeer :: forall peeraddr peerconn m.
@@ -324,7 +338,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
       return $
         -- When promotion fails we set the peer as cold.
         Completion $ \st@PeerSelectionState {
-                                 bigLedgerPeers,
+                                 publicRootPeers,
                                  activePeers,
                                  establishedPeers,
                                  knownPeers,
@@ -337,117 +351,118 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                       now ->
           -- TODO: this is a temporary fix, which will by addressed by
           -- #3460
-          if peeraddr `Set.member` inProgressPromoteWarm st
-            then let establishedPeers' = EstablishedPeers.delete peeraddr
-                                           establishedPeers
-                     (fuzz, fuzzRng')  = randomR (-2, 2 :: Double) fuzzRng
-                     delay             = realToFrac fuzz + policyErrorDelay
-                     knownPeers'       = if peeraddr `KnownPeers.member` knownPeers
-                                            then KnownPeers.setConnectTimes
-                                                   (Map.singleton
-                                                     peeraddr
-                                                     (delay `addTime` now))
-                                                 $ snd $ KnownPeers.incrementFailCount
-                                                   peeraddr
+          let bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+           in if peeraddr `Set.member` inProgressPromoteWarm st
+                 then let establishedPeers' = EstablishedPeers.delete peeraddr
+                                                establishedPeers
+                          (fuzz, fuzzRng')  = randomR (-2, 2 :: Double) fuzzRng
+                          delay             = realToFrac fuzz + policyErrorDelay
+                          knownPeers'       = if peeraddr `KnownPeers.member` knownPeers
+                                                 then KnownPeers.setConnectTimes
+                                                        (Map.singleton
+                                                          peeraddr
+                                                          (delay `addTime` now))
+                                                      $ snd $ KnownPeers.incrementFailCount
+                                                        peeraddr
+                                                        knownPeers
+                                                 else
+                                                   -- Apparently the governor can remove
+                                                   -- the peer we failed to promote from the
+                                                   -- set of known peers before we can process
+                                                   -- the failure.
                                                    knownPeers
-                                            else
-                                              -- Apparently the governor can remove
-                                              -- the peer we failed to promote from the
-                                              -- set of known peers before we can process
-                                              -- the failure.
-                                              knownPeers in
-                 Decision {
-                   decisionTrace = if peeraddr `Set.member` bigLedgerPeers
-                                   then [TracePromoteWarmBigLedgerPeerFailed
-                                          targetNumberOfActiveBigLedgerPeers
-                                          (Set.size $ activePeers
-                                                      `Set.intersection`
-                                                      bigLedgerPeers)
-                                          peeraddr e]
-                                   else [TracePromoteWarmFailed
-                                          targetNumberOfActivePeers
-                                          (Set.size $ activePeers
-                                               Set.\\ bigLedgerPeers)
-                                          peeraddr e],
-                   decisionState = st {
-                                     inProgressPromoteWarm = Set.delete peeraddr
-                                                               (inProgressPromoteWarm st),
-                                     knownPeers            = knownPeers',
-                                     establishedPeers      = establishedPeers',
-                                     fuzzRng               = fuzzRng'
-                                   },
-                   decisionJobs  = []
-                 }
-            else Decision {
-                   decisionTrace = if peeraddr `Set.member` bigLedgerPeers
-                                   then [TracePromoteWarmBigLedgerPeerAborted
-                                          targetNumberOfActiveBigLedgerPeers
-                                          (Set.size $ activePeers
-                                                      `Set.intersection`
-                                                      bigLedgerPeers)
-                                          peeraddr]
-                                   else [TracePromoteWarmAborted
-                                          targetNumberOfActivePeers
-                                          (Set.size $ activePeers
-                                               Set.\\ bigLedgerPeers)
-                                          peeraddr],
-                   decisionState = st,
-                   decisionJobs  = []
-                 }
+                       in
+                      Decision {
+                        decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
+                                        then [TracePromoteWarmBigLedgerPeerFailed
+                                               targetNumberOfActiveBigLedgerPeers
+                                               (Set.size $ activePeers
+                                                           `Set.intersection`
+                                                           bigLedgerPeersSet)
+                                               peeraddr e]
+                                        else [TracePromoteWarmFailed
+                                               targetNumberOfActivePeers
+                                               (Set.size $ activePeers
+                                                    Set.\\ bigLedgerPeersSet)
+                                               peeraddr e],
+                        decisionState = st {
+                                          inProgressPromoteWarm = Set.delete peeraddr
+                                                                    (inProgressPromoteWarm st),
+                                          knownPeers            = knownPeers',
+                                          establishedPeers      = establishedPeers',
+                                          fuzzRng               = fuzzRng'
+                                        },
+                        decisionJobs  = []
+                      }
+                 else Decision {
+                        decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
+                                           then [TracePromoteWarmBigLedgerPeerAborted
+                                                  targetNumberOfActiveBigLedgerPeers
+                                                  (Set.size $ activePeers
+                                                              `Set.intersection`
+                                                              bigLedgerPeersSet)
+                                                  peeraddr]
+                                           else [TracePromoteWarmAborted
+                                                  targetNumberOfActivePeers
+                                                  (Set.size $ activePeers
+                                                       Set.\\ bigLedgerPeersSet)
+                                                  peeraddr],
+                        decisionState = st,
+                        decisionJobs  = []
+                      }
 
 
     job :: m (Completion m peeraddr peerconn)
     job = do
       activatePeerConnection isBigLedgerPeer peerconn
       return $ Completion $ \st@PeerSelectionState {
-                               bigLedgerPeers,
+                               publicRootPeers,
                                activePeers,
                                targets = PeerSelectionTargets {
                                            targetNumberOfActivePeers
                                          }
                              }
                            _now ->
-
-        if peeraddr `EstablishedPeers.member` establishedPeers st
-          then
-            let activePeers' = Set.insert peeraddr activePeers in
-            Decision {
-              decisionTrace = if peeraddr `Set.member` bigLedgerPeers
-                              then [TracePromoteWarmBigLedgerPeerDone
-                                     targetNumberOfActivePeers
-                                     (Set.size $ activePeers'
-                                                 `Set.intersection`
-                                                 bigLedgerPeers)
-                                     peeraddr]
-                              else [TracePromoteWarmDone
-                                     targetNumberOfActivePeers
-                                     (Set.size $ activePeers'
-                                          Set.\\ bigLedgerPeers)
-                                     peeraddr],
-              decisionState = st {
-                                activePeers           = activePeers',
-                                inProgressPromoteWarm = Set.delete peeraddr
-                                                          (inProgressPromoteWarm st)
-                              },
-              decisionJobs  = []
-            }
-          else
-            Decision {
-              decisionTrace = if peeraddr `Set.member` bigLedgerPeers
-                              then [TracePromoteWarmBigLedgerPeerAborted
-                                     targetNumberOfActivePeers
-                                     (Set.size $ activePeers
-                                                 `Set.intersection`
-                                                 bigLedgerPeers)
-                                     peeraddr]
-                              else [TracePromoteWarmAborted
-                                     targetNumberOfActivePeers
-                                     (Set.size $ activePeers
-                                          Set.\\ bigLedgerPeers)
-                                     peeraddr],
-              decisionState = st,
-              decisionJobs  = []
-            }
+        let bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+         in if peeraddr `EstablishedPeers.member` establishedPeers st
+               then let activePeers' = Set.insert peeraddr activePeers in
+                    Decision {
+                      decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
+                                      then [TracePromoteWarmBigLedgerPeerDone
+                                             targetNumberOfActivePeers
+                                             (Set.size $ activePeers'
+                                                         `Set.intersection`
+                                                         bigLedgerPeersSet)
+                                             peeraddr]
+                                      else [TracePromoteWarmDone
+                                             targetNumberOfActivePeers
+                                             (Set.size $ activePeers'
+                                                  Set.\\ bigLedgerPeersSet)
+                                             peeraddr],
+                      decisionState = st {
+                                        activePeers           = activePeers',
+                                        inProgressPromoteWarm = Set.delete peeraddr
+                                                                  (inProgressPromoteWarm st)
+                                      },
+                      decisionJobs  = []
+                    }
+               else
+                 Decision {
+                   decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
+                                   then [TracePromoteWarmBigLedgerPeerAborted
+                                          targetNumberOfActivePeers
+                                          (Set.size $ activePeers
+                                                      `Set.intersection`
+                                                      bigLedgerPeersSet)
+                                          peeraddr]
+                                   else [TracePromoteWarmAborted
+                                          targetNumberOfActivePeers
+                                          (Set.size $ activePeers
+                                               Set.\\ bigLedgerPeersSet)
+                                          peeraddr],
+                   decisionState = st,
+                   decisionJobs  = []
+                 }
 
 ----------------------------
 -- Active peers above target
@@ -476,11 +491,11 @@ aboveTargetBigLedgerPeers :: forall peeraddr peerconn m.
                           => PeerSelectionActions peeraddr peerconn m
                           -> MkGuardedDecision peeraddr peerconn m
 aboveTargetBigLedgerPeers actions
-                          policy@PeerSelectionPolicy {
+                          PeerSelectionPolicy {
                             policyPickHotPeersToDemote
                           }
                           st@PeerSelectionState {
-                            bigLedgerPeers,
+                            publicRootPeers,
                             localRootPeers,
                             establishedPeers,
                             activePeers,
@@ -505,7 +520,7 @@ aboveTargetBigLedgerPeers actions
     -- peers, e.g. for churn and improved selection, then we'll need an extra
     -- mechanism to avoid promotion/demotion loops for local peers.
   , let availableToDemote = activePeers
-                              `Set.intersection` bigLedgerPeers
+                              `Set.intersection` bigLedgerPeersSet
                               Set.\\ inProgressDemoteHot
                               Set.\\ inProgressDemoteToCold
                               Set.\\ LocalRootPeers.keysSet localRootPeers
@@ -528,21 +543,22 @@ aboveTargetBigLedgerPeers actions
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
                         },
-        decisionJobs  = [ jobDemoteActivePeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
   | otherwise
   = GuardedSkip Nothing
   where
+    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
     numActiveBigLedgerPeers
       = Set.size $ activePeers
                    `Set.intersection`
-                   bigLedgerPeers
+                   bigLedgerPeersSet
     numDemoteInProgressBigLedgerPeers
       = Set.size $ inProgressDemoteHot
                    `Set.intersection`
-                   bigLedgerPeers
+                   bigLedgerPeersSet
 
 
 aboveTargetLocal :: forall peeraddr peerconn m.
@@ -550,7 +566,7 @@ aboveTargetLocal :: forall peeraddr peerconn m.
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 aboveTargetLocal actions
-                 policy@PeerSelectionPolicy {
+                 PeerSelectionPolicy {
                    policyPickHotPeersToDemote
                  }
                  st@PeerSelectionState {
@@ -617,7 +633,7 @@ aboveTargetLocal actions
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
                         },
-        decisionJobs  = [ jobDemoteActivePeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
@@ -630,11 +646,11 @@ aboveTargetOther :: forall peeraddr peerconn m.
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 aboveTargetOther actions
-                 policy@PeerSelectionPolicy {
+                 PeerSelectionPolicy {
                    policyPickHotPeersToDemote
                  }
                  st@PeerSelectionState {
-                   bigLedgerPeers,
+                   publicRootPeers,
                    localRootPeers,
                    establishedPeers,
                    activePeers,
@@ -662,7 +678,7 @@ aboveTargetOther actions
   , let availableToDemote = activePeers
                               Set.\\ inProgressDemoteHot
                               Set.\\ LocalRootPeers.keysSet localRootPeers
-                              Set.\\ bigLedgerPeers
+                              Set.\\ bigLedgerPeersSet
                               Set.\\ inProgressDemoteToCold
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
@@ -683,91 +699,72 @@ aboveTargetOther actions
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
                         },
-        decisionJobs  = [ jobDemoteActivePeer actions policy peeraddr peerconn
+        decisionJobs  = [ jobDemoteActivePeer actions peeraddr peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
       }
 
   | otherwise
   = GuardedSkip Nothing
   where
+    bigLedgerPeersSet   = PublicRootPeers.getBigLedgerPeers publicRootPeers
     numActivePeers      = Set.size $ activePeers
-                              Set.\\ bigLedgerPeers
+                              Set.\\ bigLedgerPeersSet
     numDemoteInProgress = Set.size $ inProgressDemoteHot
-                              Set.\\ bigLedgerPeers
+                              Set.\\ bigLedgerPeersSet
 
 
 jobDemoteActivePeer :: forall peeraddr peerconn m.
                        (Monad m, Ord peeraddr)
                     => PeerSelectionActions peeraddr peerconn m
-                    -> PeerSelectionPolicy peeraddr m
                     -> peeraddr
                     -> peerconn
                     -> Job () m (Completion m peeraddr peerconn)
 jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection}}
-                    PeerSelectionPolicy { policyErrorDelay }
                     peeraddr peerconn =
     Job job handler () "demoteActivePeer"
   where
     handler :: SomeException -> m (Completion m peeraddr peerconn)
     handler e = return $
-      -- It's quite bad if demoting fails. The peer is cold so
-      -- remove if from the set of established and hot peers.
+      -- It's quite bad if demoting fails. The peer is cooling so
+      -- we can't remove it from the set of established and hot peers.
+      --
       Completion $ \st@PeerSelectionState {
-                      bigLedgerPeers,
+                      publicRootPeers,
                       activePeers,
-                      establishedPeers,
                       inProgressDemoteHot,
-                      knownPeers,
                       targets = PeerSelectionTargets {
                                   targetNumberOfActivePeers,
                                   targetNumberOfActiveBigLedgerPeers
-                                },
-                      fuzzRng
+                                }
                     }
-                    now ->
-        let (rFuzz, fuzzRng')     = randomR (-2, 2 :: Double) fuzzRng
-            peerSet               = Set.singleton peeraddr
-            activePeers'          = Set.delete peeraddr activePeers
+                    _ ->
+        let
             inProgressDemoteHot'  = Set.delete peeraddr inProgressDemoteHot
-            knownPeers'           = KnownPeers.setConnectTimes
-                                      (Map.singleton
-                                        peeraddr
-                                        ((realToFrac rFuzz + policyErrorDelay) `addTime` now))
-                                  . Set.foldr'
-                                      ((snd .) . KnownPeers.incrementFailCount)
-                                      knownPeers
-                                  $ peerSet
-            establishedPeers'     = EstablishedPeers.deletePeers
-                                     peerSet
-                                     establishedPeers in
-        Decision {
-        decisionTrace = if peeraddr `Set.member` bigLedgerPeers
-                        then [TraceDemoteHotBigLedgerPeerFailed
-                               targetNumberOfActiveBigLedgerPeers
-                               (Set.size $ activePeers
-                                           `Set.intersection`
-                                           bigLedgerPeers)
-                               peeraddr e]
-                        else [TraceDemoteHotFailed
-                               targetNumberOfActivePeers
-                               (Set.size $ activePeers
-                                    Set.\\ bigLedgerPeers)
-                               peeraddr e],
-        decisionState = st {
-                          inProgressDemoteHot = inProgressDemoteHot',
-                          fuzzRng = fuzzRng',
-                          activePeers = activePeers',
-                          knownPeers = knownPeers',
-                          establishedPeers = establishedPeers'
-                        },
-        decisionJobs  = []
-      }
+            bigLedgerPeersSet     = PublicRootPeers.getBigLedgerPeers publicRootPeers
+         in Decision {
+              decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
+                              then [TraceDemoteHotBigLedgerPeerFailed
+                                     targetNumberOfActiveBigLedgerPeers
+                                     (Set.size $ activePeers
+                                                 `Set.intersection`
+                                                 bigLedgerPeersSet)
+                                     peeraddr e]
+                              else [TraceDemoteHotFailed
+                                     targetNumberOfActivePeers
+                                     (Set.size $ activePeers
+                                          Set.\\ bigLedgerPeersSet)
+                                     peeraddr e],
+              decisionState = st {
+                                inProgressDemoteHot = inProgressDemoteHot'
+                              },
+              decisionJobs  = []
+            }
 
     job :: m (Completion m peeraddr peerconn)
     job = do
       deactivatePeerConnection peerconn
       return $ Completion $ \st@PeerSelectionState {
-                                bigLedgerPeers,
+                                publicRootPeers,
                                 activePeers,
                                 knownPeers,
                                 targets = PeerSelectionTargets {
@@ -778,25 +775,26 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                              _now ->
         assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
         let activePeers' = Set.delete peeraddr activePeers
-            knownPeers'  = setTepidFlag peeraddr knownPeers in
-        Decision {
-          decisionTrace = if peeraddr `Set.member` bigLedgerPeers
-                          then [TraceDemoteHotBigLedgerPeerDone
-                                 targetNumberOfActiveBigLedgerPeers
-                                 (Set.size $ activePeers'
-                                             `Set.intersection`
-                                             bigLedgerPeers)
-                                 peeraddr]
-                          else [TraceDemoteHotDone
-                                 targetNumberOfActivePeers
-                                 (Set.size $ activePeers'
-                                      Set.\\ bigLedgerPeers)
-                                 peeraddr],
-          decisionState = st {
-                            activePeers         = activePeers',
-                            knownPeers          = knownPeers',
-                            inProgressDemoteHot = Set.delete peeraddr
-                                                    (inProgressDemoteHot st)
-                          },
-          decisionJobs  = []
-        }
+            knownPeers'  = setTepidFlag peeraddr knownPeers
+            bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+         in Decision {
+              decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
+                              then [TraceDemoteHotBigLedgerPeerDone
+                                     targetNumberOfActiveBigLedgerPeers
+                                     (Set.size $ activePeers'
+                                                 `Set.intersection`
+                                                 bigLedgerPeersSet)
+                                     peeraddr]
+                              else [TraceDemoteHotDone
+                                     targetNumberOfActivePeers
+                                     (Set.size $ activePeers'
+                                          Set.\\ bigLedgerPeersSet)
+                                     peeraddr],
+              decisionState = st {
+                                activePeers         = activePeers',
+                                knownPeers          = knownPeers',
+                                inProgressDemoteHot = Set.delete peeraddr
+                                                        (inProgressDemoteHot st)
+                              },
+              decisionJobs  = []
+            }

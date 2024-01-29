@@ -451,7 +451,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> m Void
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar actions policy =
     JobPool.withJobPool $ \jobPool -> do
-      localPeers <- map (\_ -> (0, 0))
+      localPeers <- map (\(w, h, _) -> (w, h))
                 <$> atomically (readLocalRootPeers actions)
       peerSelectionGovernorLoop
         tracer
@@ -504,7 +504,7 @@ peerSelectionGovernorLoop tracer
                           policy
                           jobPool
                           pst = do
-    loop pst
+    loop pst `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
   where
     loop :: PeerSelectionState peeraddr peerconn
          -> m Void
@@ -512,7 +512,20 @@ peerSelectionGovernorLoop tracer
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar stateVar (toPublicState st)
+
       blockedAt <- getMonotonicTime
+
+      -- If by any chance the node takes more than 15 minutes to converge to a
+      -- clean state, we crash the node. This could happen in very rare
+      -- conditions such as a global network issue, DNS, or a bug in the code.
+      -- In any case crashing the node will force the node to be restarted,
+      -- starting in the correct state for it to make progress.
+      case bootstrapPeersTimeout st of
+        Nothing -> pure ()
+        Just t
+          | blockedAt >= t -> throwIO BootstrapPeersCriticalTimeoutError
+          | otherwise      -> pure ()
+
       let knownPeers'       = KnownPeers.setCurrentTime blockedAt (knownPeers st)
           establishedPeers' = EstablishedPeers.setCurrentTime blockedAt (establishedPeers st)
           st'               = st { knownPeers       = knownPeers',
@@ -564,10 +577,24 @@ peerSelectionGovernorLoop tracer
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
     guardedDecisions blockedAt peerSharing st =
       -- All the alternative potentially-blocking decisions.
-         Monitor.connections          actions st
+
+      -- The Governor needs to react to changes in the bootstrap peer flag,
+      -- since this influences the behavior of the other monitoring actions.
+         Monitor.monitorBootstrapPeersFlag   actions st
+      -- The Governor needs to react to ledger state changes as soon as possible.
+      -- Check the definition site for more details, but in short, when the
+      -- node changes to 'TooOld' state it will go through a purging phase which
+      -- the 'waitForTheSystemToQuiesce' monitoring action will wait for.
+      <> Monitor.monitorLedgerStateJudgement actions st
+      -- When the node transitions to 'TooOld' state the node will wait until
+      -- it reaches a clean (quiesced) state free of non-trusted peers, before
+      -- resuming making progress again connected to only trusted peers.
+      <> Monitor.waitForSystemToQuiesce              st
+
+      <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
       <> Monitor.targetPeers          actions st
-      <> Monitor.localRoots           actions policy st
+      <> Monitor.localRoots           actions st
 
       -- The non-blocking decisions regarding (known) big ledger peers
       <> BigLedgerPeers.belowTarget   actions blockedAt        st

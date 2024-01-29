@@ -7,19 +7,10 @@ import           Control.Monad.Class.MonadTime.SI
 import           Data.Word (Word16)
 import           Text.Printf
 
+import           Data.List.NonEmpty (NonEmpty)
 import qualified Network.DNS as DNS
-
-import           Cardano.Slotting.Slot (SlotNo)
-
 import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-
--- | Only use the ledger after the given slot number.
-data UseLedgerAfter = DontUseLedger | UseLedgerAfter SlotNo deriving (Eq, Show)
-
-isLedgerPeersEnabled :: UseLedgerAfter -> Bool
-isLedgerPeersEnabled DontUseLedger = False
-isLedgerPeersEnabled _             = True
 
 newtype NumberOfPeers = NumberOfPeers { getNumberOfPeers :: Word16 }
   deriving Show
@@ -28,6 +19,21 @@ newtype NumberOfPeers = NumberOfPeers { getNumberOfPeers :: Word16 }
 data IsLedgerPeer = IsLedgerPeer
                   -- ^ a ledger peer.
                   | IsNotLedgerPeer
+  deriving (Eq, Show)
+
+-- | Which ledger peers to pick.
+--
+data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
+  deriving Show
+
+-- | Ledger Peer request result
+--
+data LedgerPeers = LedgerPeers LedgerStateJudgement -- ^ Current ledger state
+                               [(PoolStake, NonEmpty RelayAccessPoint)]
+                               -- ^ Ledger peers
+                 | BeforeSlot -- ^ No result because the node is still
+                              -- before the configured UseLedgerAfter slot
+                              -- number
   deriving (Eq, Show)
 
 -- | Trace LedgerPeers events.
@@ -47,9 +53,9 @@ data TraceLedgerPeers =
     | TraceLedgerPeersResult  DNS.Domain [(IP, DNS.TTL)]
     | TraceLedgerPeersFailure DNS.Domain DNS.DNSError
     | DisabledLedgerPeers
-      -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedger.
-    | TraceUseLedgerAfter UseLedgerAfter
-      -- ^ Trace UseLedgerAfter value
+      -- ^ Trace for when getting peers from the ledger is disabled, that is DontUseLedgerPeers.
+    | TraceUseLedgerPeers UseLedgerPeers
+      -- ^ Trace UseLedgerPeers value
     | WaitingOnRequest
     | RequestForPeers NumberOfPeers
     | ReusingLedgerState Int DiffTime
@@ -80,9 +86,9 @@ instance Show TraceLedgerPeers where
     show (FetchingNewLedgerState cnt bigCnt) =
         printf "Fetching new ledgerstate, %d registered pools, %d registered big ledger pools"
             cnt bigCnt
-    show (TraceUseLedgerAfter ula) =
-        printf "UseLedgerAfter state %s"
-            (show ula)
+    show (TraceUseLedgerPeers ulp) =
+        printf "UseLedgerPeers state %s"
+            (show ulp)
     show WaitingOnRequest = "WaitingOnRequest"
     show (RequestForPeers (NumberOfPeers cnt)) = printf "RequestForPeers %d" cnt
     show (ReusingLedgerState cnt age) =
@@ -101,4 +107,3 @@ instance Show TraceLedgerPeers where
       "Resolution success " ++ show domain ++ " " ++ show l
     show (TraceLedgerPeersFailure domain err) =
       "Resolution failed " ++ show domain ++ " " ++ show err
-

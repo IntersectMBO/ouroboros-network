@@ -20,12 +20,16 @@ import           Data.Word (Word32)
 import           Ouroboros.Network.PeerSelection.Governor
 
 import qualified Data.IP as IP
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsLedgerPeer (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint (..), RelayAccessPoint (..))
+
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (UseBootstrapPeers (..))
+import           Ouroboros.Network.PeerSelection.PeerTrustable
+                     (PeerTrustable (..))
 import           Ouroboros.Network.Testing.Utils (ShrinkCarefully,
                      prop_shrink_nonequal, prop_shrink_valid)
 import           Test.QuickCheck
@@ -61,8 +65,16 @@ instance Arbitrary PeerSharing where
   shrink PeerSharingDisabled = []
   shrink PeerSharingEnabled  = [PeerSharingDisabled]
 
-instance Arbitrary IsLedgerPeer where
-  arbitrary = elements [ IsLedgerPeer, IsNotLedgerPeer ]
+instance Arbitrary UseBootstrapPeers where
+  arbitrary = frequency [ (1, pure DontUseBootstrapPeers)
+                        , (1, UseBootstrapPeers <$> arbitrary)
+                        ]
+
+  shrink DontUseBootstrapPeers = []
+  shrink (UseBootstrapPeers _) = [DontUseBootstrapPeers]
+
+instance Arbitrary PeerTrustable where
+  arbitrary = elements [ IsNotTrustable, IsTrustable ]
 
 instance Arbitrary PeerSelectionTargets where
   arbitrary = do

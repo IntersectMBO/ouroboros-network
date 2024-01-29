@@ -1,10 +1,9 @@
 
 module Test.Ouroboros.Network.PeerSelection.KnownPeers (tests) where
 import           Data.Map (Map)
-import           Ouroboros.Network.PeerSelection.LedgerPeers
+import           Ouroboros.Network.PeerSelection.LedgerPeers (RelayAccessPoint)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import           Test.Ouroboros.Network.PeerSelection.Instances ()
 import           Test.QuickCheck (Property, counterexample)
@@ -20,7 +19,7 @@ tests =
   ]
 
 prop_insert_idempotent
-  :: Map RelayAccessPoint (Maybe PeerSharing, Maybe PeerAdvertise, Maybe IsLedgerPeer)
+  :: Map RelayAccessPoint (Maybe PeerSharing, Maybe PeerAdvertise)
   -> Property
 prop_insert_idempotent m =
   let knownPeers = KnownPeers.insert m KnownPeers.empty

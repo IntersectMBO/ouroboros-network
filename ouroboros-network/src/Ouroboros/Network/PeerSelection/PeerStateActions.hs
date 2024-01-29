@@ -768,7 +768,9 @@ withPeerStateActions PeerStateActionsArguments {
                                         Just SomeAsyncException {} -> Nothing
                                         Nothing                    -> Just e)
                                      (\e -> do
-                                        atomically $ writeTVar peerStateVar PeerCold
+                                        atomically $ do
+                                          waitForOutboundDemotion spsConnectionManager remoteAddress
+                                          writeTVar peerStateVar PeerCold
                                         traceWith spsTracer (PeerMonitoringError connectionId e)
                                         throwIO e)
                                      (peerMonitoringLoop connHandle $> Nothing))
@@ -943,7 +945,7 @@ withPeerStateActions PeerStateActionsArguments {
       case res of
         Nothing -> do
           Mux.stopMux pchMux
-          atomically (writeTVar pchPeerStatus PeerCold)
+          atomically (writeTVar pchPeerStatus PeerCooling)
           traceWith spsTracer (PeerStatusChangeFailure
                                 (HotToCooling pchConnectionId)
                                 TimeoutError)
@@ -954,7 +956,7 @@ withPeerStateActions PeerStateActionsArguments {
           -- we don't need to notify the connection manager, we can instead
           -- relay on mux property: if any of the mini-protocols errors, mux
           -- throws an exception as well.
-          atomically (writeTVar pchPeerStatus PeerCold)
+          atomically (writeTVar pchPeerStatus PeerCooling)
           traceWith spsTracer (PeerStatusChangeFailure
                                 (HotToCooling pchConnectionId)
                                 (ApplicationFailure errs))

@@ -42,6 +42,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
     -- * Traces
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
+    -- * Error types
+  , BootstrapPeersCriticalTimeoutError (..)
   ) where
 
 import           Data.Cache (Cache (..))
@@ -55,23 +57,31 @@ import qualified Data.Set as Set
 
 import           Control.Applicative (Alternative)
 import           Control.Concurrent.JobPool (Job)
-import           Control.Exception (SomeException, assert)
+import           Control.Exception (Exception (..), SomeException, assert)
 import           Control.Monad.Class.MonadSTM
 import           Control.Monad.Class.MonadTime.SI
 import           System.Random (StdGen)
 
 import           Ouroboros.Network.ExitPolicy
+import           Ouroboros.Network.PeerSelection.Bootstrap
+                     (UseBootstrapPeers (..))
 import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-                     IsLedgerPeer)
+                     LedgerPeersKind)
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (LedgerStateJudgement (..))
 import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import           Ouroboros.Network.PeerSelection.PublicRootPeers
+                     (PublicRootPeers)
+import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 import           Ouroboros.Network.PeerSelection.State.EstablishedPeers
                      (EstablishedPeers)
 import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
 import           Ouroboros.Network.PeerSelection.State.KnownPeers (KnownPeers)
 import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
 import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency, LocalRootPeers, WarmValency)
+                     (HotValency (..), LocalRootPeers, WarmValency (..))
 import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
 import           Ouroboros.Network.PeerSelection.Types (PeerSource (..),
                      PeerStatus (PeerHot, PeerWarm))
@@ -260,7 +270,8 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        readLocalRootPeers       :: STM m [( HotValency
                                           , WarmValency
-                                          , Map peeraddr PeerAdvertise)],
+                                          , Map peeraddr ( PeerAdvertise
+                                                         , PeerTrustable))],
 
        readNewInboundConnection :: STM m (peeraddr, PeerSharing),
 
@@ -284,15 +295,14 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- It is intended to cover use cases including:
        --
        -- * federated relays from a DNS pool
+       -- * Official bootstrap peers from a trusted source
        -- * stake pool relays published in the blockchain
        -- * a pre-distributed snapshot of stake pool relays from the blockchain
        --
-       requestPublicRootPeers :: Int -> m (Map peeraddr (PeerAdvertise, IsLedgerPeer), DiffTime),
-
-
-       -- | Request a sample of big ledger peers.
+       -- It also makes a distinction between normal and big ledger peers to be
+       -- fetched.
        --
-       requestBigLedgerPeers  :: Int -> m (Set peeraddr, DiffTime),
+       requestPublicRootPeers   :: LedgerPeersKind -> Int -> m (PublicRootPeers peeraddr, DiffTime),
 
        -- | The action to contact a known peer and request a sample of its
        -- known peers.
@@ -301,7 +311,14 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 
        -- | Core actions run by the governor to change 'PeerStatus'.
        --
-       peerStateActions       :: PeerStateActions peeraddr peerconn m
+       peerStateActions       :: PeerStateActions peeraddr peerconn m,
+
+       -- | Read the current bootstrap peers flag
+       readUseBootstrapPeers :: STM m UseBootstrapPeers,
+
+       -- | Read the current ledger state judgement
+       --
+       readLedgerStateJudgement :: STM m LedgerStateJudgement
      }
 
 -- | Callbacks which are performed to change peer state.
@@ -362,11 +379,10 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        --
        localRootPeers              :: !(LocalRootPeers peeraddr),
 
-       publicRootPeers             :: !(Set peeraddr),
-
-       -- | Set of big ledger peers.
+       -- | This set holds the public root peers (i.e. Ledger (small and big),
+       -- Bootstrap peers and locally configured public root peers).
        --
-       bigLedgerPeers              :: !(Set peeraddr),
+       publicRootPeers             :: !(PublicRootPeers peeraddr),
 
        -- | Known peers.
        --
@@ -430,7 +446,23 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- | 'PeerSelectionCounters' counters cache. Allows to only trace
        -- values when necessary.
        --
-       countersCache               :: !(Cache PeerSelectionCounters)
+       countersCache               :: !(Cache PeerSelectionCounters),
+
+       -- | Current ledger state judgement
+       --
+       ledgerStateJudgement        :: !LedgerStateJudgement,
+
+       -- | Current value of 'UseBootstrapPeers'.
+       --
+       bootstrapPeersFlag          :: !UseBootstrapPeers,
+
+       -- | Has the governor fully reset its state
+       --
+       hasOnlyBootstrapPeers       :: !Bool,
+
+       -- | Has the governor fully reset its state
+       --
+       bootstrapPeersTimeout       :: !(Maybe Time)
 
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
@@ -493,11 +525,11 @@ data PeerSelectionCounters = PeerSelectionCounters {
       -- | Local root peers with one entry per group. First entry is the number
       -- of warm peers in that group the second is the number of hot peers in
       -- that group.
-      localRoots         :: ![(Int, Int)]
+      localRoots         :: ![(HotValency, WarmValency)]
     } deriving (Eq, Show)
 
 peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
-peerStateToCounters st@PeerSelectionState { activePeers, bigLedgerPeers, localRootPeers } =
+peerStateToCounters st@PeerSelectionState { activePeers, publicRootPeers, localRootPeers } =
     PeerSelectionCounters {
       coldPeers          = Set.size $ coldPeersSet Set.\\ bigLedgerPeers,
       warmPeers          = Set.size $ warmPeersSet Set.\\ bigLedgerPeers,
@@ -513,39 +545,41 @@ peerStateToCounters st@PeerSelectionState { activePeers, bigLedgerPeers, localRo
     coldPeersSet  = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet  = establishedPeersSet Set.\\ activePeers
     hotPeersSet   = activePeers
-    localRoots    =
-      [ (warm, hot)
-      | (_,_, members) <- LocalRootPeers.toGroupSets localRootPeers
-      , let warm   = Set.size $ members `Set.intersection` warmPeersSet
-            hot    = Set.size $ members `Set.intersection` hotPeersSet
+    localRoots =
+      [ (hot, warm)
+      | (hot, warm, _) <- LocalRootPeers.toGroupSets localRootPeers
       ]
+    bigLedgerPeers = PublicRootPeers.getBigLedgerPeers publicRootPeers
 
 emptyPeerSelectionState :: StdGen
-                        -> [(Int, Int)]
+                        -> [(HotValency, WarmValency)]
                         -> PeerSelectionState peeraddr peerconn
 emptyPeerSelectionState rng localRoots =
     PeerSelectionState {
-      targets                       = nullPeerSelectionTargets,
-      localRootPeers                = LocalRootPeers.empty,
-      publicRootPeers               = Set.empty,
-      bigLedgerPeers                = Set.empty,
-      knownPeers                    = KnownPeers.empty,
-      establishedPeers              = EstablishedPeers.empty,
-      activePeers                   = Set.empty,
-      publicRootBackoffs            = 0,
-      publicRootRetryTime           = Time 0,
-      inProgressPublicRootsReq      = False,
-      bigLedgerPeerBackoffs         = 0,
-      bigLedgerPeerRetryTime        = Time 0,
-      inProgressBigLedgerPeersReq   = False,
-      inProgressPeerShareReqs       = 0,
-      inProgressPromoteCold         = Set.empty,
-      inProgressPromoteWarm         = Set.empty,
-      inProgressDemoteWarm          = Set.empty,
-      inProgressDemoteHot           = Set.empty,
-      inProgressDemoteToCold        = Set.empty,
-      fuzzRng                       = rng,
-      countersCache                 = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots)
+      targets                     = nullPeerSelectionTargets,
+      localRootPeers              = LocalRootPeers.empty,
+      publicRootPeers             = PublicRootPeers.empty,
+      knownPeers                  = KnownPeers.empty,
+      establishedPeers            = EstablishedPeers.empty,
+      activePeers                 = Set.empty,
+      publicRootBackoffs          = 0,
+      publicRootRetryTime         = Time 0,
+      inProgressPublicRootsReq    = False,
+      bigLedgerPeerBackoffs       = 0,
+      bigLedgerPeerRetryTime      = Time 0,
+      inProgressBigLedgerPeersReq = False,
+      inProgressPeerShareReqs     = 0,
+      inProgressPromoteCold       = Set.empty,
+      inProgressPromoteWarm       = Set.empty,
+      inProgressDemoteWarm        = Set.empty,
+      inProgressDemoteHot         = Set.empty,
+      inProgressDemoteToCold      = Set.empty,
+      fuzzRng                     = rng,
+      countersCache               = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots),
+      ledgerStateJudgement        = TooOld,
+      bootstrapPeersFlag          = DontUseBootstrapPeers,
+      hasOnlyBootstrapPeers       = False,
+      bootstrapPeersTimeout       = Nothing
     }
 
 
@@ -556,6 +590,7 @@ assertPeerSelectionState PeerSelectionState{..} =
     assert (KnownPeers.invariant knownPeers)
   . assert (EstablishedPeers.invariant establishedPeers)
   . assert (LocalRootPeers.invariant localRootPeers)
+  . assert (PublicRootPeers.invariant publicRootPeers)
 
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
@@ -563,7 +598,7 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.isSubsetOf establishedPeersSet knownPeersSet)
 
    -- The localRootPeers and publicRootPeers must not overlap.
-  . assert (Set.null (Set.intersection localRootPeersSet publicRootPeers))
+  . assert (Set.null (Set.intersection localRootPeersSet publicRootPeersSet))
 
     -- The localRootPeers are a subset of the knownPeers,
     -- and with correct source info in the knownPeers (either
@@ -572,8 +607,7 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.isSubsetOf localRootPeersSet knownPeersSet)
 
     -- The publicRootPeers are a subset of the knownPeers,
-    -- and with correct source info in the knownPeers.
-  . assert (Set.isSubsetOf publicRootPeers knownPeersSet)
+  . assert (Set.isSubsetOf publicRootPeersSet knownPeersSet)
 
     -- The targets should respect the containment relationships of the root,
     -- known, established and active peers
@@ -608,6 +642,16 @@ assertPeerSelectionState PeerSelectionState{..} =
     -- the alternative is a record of failure, but these are not (yet) failed.
   . assert (Set.isSubsetOf establishedPeersSet (KnownPeers.availableToConnect knownPeers))
 
+    -- The following aren't hard invariants but rather eventually consistent
+    -- invariants that are checked via testing:
+
+    -- 1. If node is not in sensitive state then it can't have only BootstrapPeers
+    --
+    -- 2. If hasOnlyBootstrapPeers is true and bootstrap peers are enabled then known
+    -- peers set is a subset of the bootstrap peers + trusted local roots.
+    -- Unless the TargetKnownRootPeers is 0, in that case there can be a delay
+    -- where the node forgets the local roots.
+
     -- No constraint for publicRootBackoffs, publicRootRetryTime
     -- or inProgressPublicRootsReq
 
@@ -624,14 +668,15 @@ assertPeerSelectionState PeerSelectionState{..} =
   . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressDemoteHot))
   . assert (Set.null (Set.intersection inProgressDemoteToCold inProgressDemoteWarm))
 
-    -- `bigLedgerPeers` is a subset of known peers and disjoint from public and
-    -- local root peers.
+    -- `bigLedgerPeers` is a subset of known peers (and also public root peers)
+    -- and disjoint local root peers.
   . assert (Set.isSubsetOf bigLedgerPeers knownPeersSet)
-  . assert (Set.null (Set.intersection bigLedgerPeers publicRootPeers))
   . assert (Set.null (Set.intersection bigLedgerPeers localRootPeersSet))
   where
     knownPeersSet       = KnownPeers.toSet knownPeers
     localRootPeersSet   = LocalRootPeers.keysSet localRootPeers
+    publicRootPeersSet  = PublicRootPeers.toSet publicRootPeers
+    bigLedgerPeers      = PublicRootPeers.getBigLedgerPeers publicRootPeers
     establishedPeersSet = EstablishedPeers.toSet      establishedPeers
     establishedReadySet = EstablishedPeers.readyPeers establishedPeers
     activePeersSet      = activePeers
@@ -677,10 +722,10 @@ pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
     numClamped           = min num (Set.size available)
 
     peerSource p
-      | LocalRootPeers.member p localRootPeers = PeerSourceLocalRoot
-      | Set.member p publicRootPeers           = PeerSourcePublicRoot
-      | KnownPeers.member p knownPeers         = PeerSourcePeerShare
-      | otherwise                              = errorUnavailable
+      | LocalRootPeers.member p localRootPeers   = PeerSourceLocalRoot
+      | PublicRootPeers.member p publicRootPeers = PeerSourcePublicRoot
+      | KnownPeers.member p knownPeers           = PeerSourcePeerShare
+      | otherwise                                = errorUnavailable
 
     peerConnectFailCount p =
         fromMaybe errorUnavailable $
@@ -816,7 +861,7 @@ data TracePeerSelection peeraddr =
      --
 
      | TracePublicRootsRequest Int Int
-     | TracePublicRootsResults (Map peeraddr PeerAdvertise) Int DiffTime
+     | TracePublicRootsResults (PublicRootPeers peeraddr) Int DiffTime
      | TracePublicRootsFailure SomeException Int DiffTime
 
      -- | target known peers, actual known peers, selected peers
@@ -959,7 +1004,24 @@ data TracePeerSelection peeraddr =
 
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
+     | TraceLedgerStateJudgementChanged LedgerStateJudgement
+     | TraceOnlyBootstrapPeers
+     | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
+     | TraceUseBootstrapPeersChanged UseBootstrapPeers
+
+     --
+     -- Critical Failures
+     --
+     | TraceOutboundGovernorCriticalFailure SomeException
   deriving Show
+
+data BootstrapPeersCriticalTimeoutError =
+  BootstrapPeersCriticalTimeoutError
+  deriving (Eq, Show)
+
+instance Exception BootstrapPeersCriticalTimeoutError where
+   displayException BootstrapPeersCriticalTimeoutError =
+     "The peer selection did not converged to a clean state in 15 minutes. Something is wrong!"
 
 data DebugPeerSelection peeraddr where
   TraceGovernorState :: forall peeraddr peerconn.

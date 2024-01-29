@@ -4,6 +4,9 @@
 
 ### Breaking changes
 
+* Fixed Script strict API functions. Now functions with an apostrophe `'` are
+  properly strict variants of the non-apostrophe functions.
+
 ### Non-breaking changes
 
 ## 0.5.0.0 -- 2024-01-22

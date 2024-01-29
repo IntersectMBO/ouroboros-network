@@ -41,9 +41,11 @@ library
 
                        Ouroboros.Network.Protocol.Limits
 
+                       Ouroboros.Network.PeerSelection.Bootstrap
                        Ouroboros.Network.PeerSelection.LedgerPeers.Type
                        Ouroboros.Network.PeerSelection.PeerMetric.Type
                        Ouroboros.Network.PeerSelection.PeerAdvertise
+                       Ouroboros.Network.PeerSelection.PeerTrustable
                        Ouroboros.Network.PeerSelection.PeerSharing
                        Ouroboros.Network.PeerSelection.PeerSharing.Codec
                        Ouroboros.Network.PeerSelection.RelayAccessPoint

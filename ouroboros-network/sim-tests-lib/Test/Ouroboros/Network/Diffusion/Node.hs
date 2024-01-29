@@ -30,7 +30,6 @@ module Test.Ouroboros.Network.Diffusion.Node
 
 import           Control.Applicative (Alternative)
 import           Control.Concurrent.Class.MonadMVar (MonadMVar)
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad ((>=>))
 import           Control.Monad.Class.MonadAsync
@@ -94,15 +93,18 @@ import           Ouroboros.Network.Server.RateLimiting
 import           Ouroboros.Network.Snocket (MakeBearer, Snocket,
                      TestAddress (..), invalidFileDescriptor)
 
-import           Ouroboros.Network.Testing.Data.Script (Script (..))
+import           Ouroboros.Network.Testing.Data.Script (Script (..),
+                     stepScriptSTM')
 
 import           Simulation.Network.Snocket (AddressType (..), FD)
 
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-                     (LedgerPeersConsensusInterface, UseLedgerAfter)
+import           Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                     (LedgerPeersConsensusInterface, UseLedgerPeers)
 import           Ouroboros.Network.PeerSelection.PeerAdvertise
                      (PeerAdvertise (..))
 import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import           Ouroboros.Network.PeerSelection.RelayAccessPoint
                      (DomainAccessPoint, RelayAccessPoint)
 import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
@@ -150,10 +152,12 @@ data Arguments m = Arguments
     , aPeerSelectionTargets :: PeerSelectionTargets
     , aReadLocalRootPeers   :: STM m [( HotValency
                                       , WarmValency
-                                      , Map RelayAccessPoint PeerAdvertise)]
+                                      , Map RelayAccessPoint ( PeerAdvertise
+                                                             , PeerTrustable))]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , aReadUseBootstrapPeers :: Script UseBootstrapPeers
     , aOwnPeerSharing       :: PeerSharing
-    , aReadUseLedgerAfter   :: STM m UseLedgerAfter
+    , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
     , aTimeWaitTimeout      :: DiffTime
     , aDNSTimeoutScript     :: Script DNSTimeout
@@ -200,8 +204,9 @@ run :: forall resolver m.
 run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
     Node.withNodeKernelThread blockGeneratorArgs
       $ \ nodeKernel nodeKernelThread -> do
-        dnsTimeoutScriptVar <- LazySTM.newTVarIO (aDNSTimeoutScript na)
-        dnsLookupDelayScriptVar <- LazySTM.newTVarIO (aDNSLookupDelayScript na)
+        dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
+        dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
+        useBootstrapPeersScriptVar <- newTVarIO (aReadUseBootstrapPeers na)
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
         peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
@@ -278,7 +283,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
            (Diff.P2P.runM interfaces
                           Diff.nullTracers
                           tracersExtra
-                          args argsExtra apps appsExtra)
+                          args (argsExtra useBootstrapPeersScriptVar) apps appsExtra)
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  wait diffusionThread
@@ -389,13 +394,14 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Diff.daMode          = aDiffusionMode na
       }
 
-    argsExtra :: Diff.P2P.ArgumentsExtra m
-    argsExtra = Diff.P2P.ArgumentsExtra
+    argsExtra :: StrictTVar m (Script UseBootstrapPeers) -> Diff.P2P.ArgumentsExtra m
+    argsExtra ubpVar = Diff.P2P.ArgumentsExtra
       { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
+      , Diff.P2P.daReadUseBootstrapPeers = stepScriptSTM' ubpVar
       , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
-      , Diff.P2P.daReadUseLedgerAfter    = aReadUseLedgerAfter na
+      , Diff.P2P.daReadUseLedgerPeers    = aReadUseLedgerPeers na
       , Diff.P2P.daProtocolIdleTimeout   = aProtocolIdleTimeout na
       , Diff.P2P.daTimeWaitTimeout       = aTimeWaitTimeout na
       , Diff.P2P.daDeadlineChurnInterval = 3300
