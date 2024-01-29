@@ -1,6 +1,6 @@
 module Ouroboros.Network.CodecCBORTerm where
 
-import qualified Codec.CBOR.Term as CBOR
+import Codec.CBOR.Term qualified as CBOR
 
 
 -- | A pure codec which encodes to / decodes from 'CBOR.Term'.  This is useful

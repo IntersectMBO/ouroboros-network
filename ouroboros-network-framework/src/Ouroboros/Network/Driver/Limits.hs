@@ -26,25 +26,24 @@ module Ouroboros.Network.Driver.Limits
   , driverWithLimits
   ) where
 
-import           Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer (..), traceWith)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..), traceWith)
 
-import           Network.Mux.Timeout
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Driver
-import           Network.TypedProtocol.Pipelined
+import Network.Mux.Timeout
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Driver
+import Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (DecoderFailure (..),
-                     TraceSendRecv (..))
-import           Ouroboros.Network.Protocol.Limits
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver.Simple (DecoderFailure (..), TraceSendRecv (..))
+import Ouroboros.Network.Protocol.Limits
+import Ouroboros.Network.Util.ShowProxy
 
 
 driverWithLimits :: forall ps failure bytes m.

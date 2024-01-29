@@ -2,10 +2,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Ouroboros.Network.Protocol.LocalStateQuery.Examples where
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Client
-import           Ouroboros.Network.Protocol.LocalStateQuery.Server
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (AcquireFailure (..), Target)
+import Ouroboros.Network.Protocol.LocalStateQuery.Client
+import Ouroboros.Network.Protocol.LocalStateQuery.Server
+import Ouroboros.Network.Protocol.LocalStateQuery.Type (AcquireFailure (..),
+           Target)
 
 
 --

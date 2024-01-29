@@ -2,9 +2,9 @@
 
 module Ouroboros.Network.Protocol.Handshake.Direct (pureHandshake) where
 
-import qualified Data.Map as Map
+import Data.Map qualified as Map
 
-import           Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Protocol.Handshake.Version
 
 -- | Pure computation which serves as a reference implementation of the
 -- @'Handshake'@ protocol. Useful for testing

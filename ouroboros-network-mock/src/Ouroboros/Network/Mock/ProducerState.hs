@@ -5,17 +5,15 @@
 
 module Ouroboros.Network.Mock.ProducerState where
 
-import           Ouroboros.Network.Block (HasFullHeader, castPoint,
-                     genesisPoint)
-import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate (..),
-                     HasHeader, HeaderHash, Point (..), blockPoint,
-                     pointOnChain)
-import qualified Ouroboros.Network.Mock.Chain as Chain
+import Ouroboros.Network.Block (HasFullHeader, castPoint, genesisPoint)
+import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate (..), HasHeader,
+           HeaderHash, Point (..), blockPoint, pointOnChain)
+import Ouroboros.Network.Mock.Chain qualified as Chain
 
-import           Control.Exception (assert)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe)
+import Control.Exception (assert)
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Maybe (fromMaybe)
 
 
 

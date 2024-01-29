@@ -43,30 +43,27 @@ module Ouroboros.Network.Mock.ConcreteBlock
   , fixupAnchoredFragmentFrom
   ) where
 
-import           Data.ByteString (ByteString)
-import           Data.Function (fix)
-import           Data.Hashable
-import           Data.String (IsString)
-import           Data.Time.Calendar (fromGregorian)
-import           Data.Time.Clock (UTCTime (..), addUTCTime,
-                     secondsToNominalDiffTime)
-import           NoThunks.Class (NoThunks)
+import Data.ByteString (ByteString)
+import Data.Function (fix)
+import Data.Hashable
+import Data.String (IsString)
+import Data.Time.Calendar (fromGregorian)
+import Data.Time.Clock (UTCTime (..), addUTCTime, secondsToNominalDiffTime)
+import NoThunks.Class (NoThunks)
 
-import           Codec.CBOR.Decoding (decodeBytes, decodeInt, decodeListLenOf,
-                     decodeWord64)
-import           Codec.CBOR.Encoding (encodeBytes, encodeInt, encodeListLen,
-                     encodeWord64)
-import           Codec.Serialise (Serialise (..))
-import           GHC.Generics (Generic)
+import Codec.CBOR.Decoding (decodeBytes, decodeInt, decodeListLenOf,
+           decodeWord64)
+import Codec.CBOR.Encoding (encodeBytes, encodeInt, encodeListLen, encodeWord64)
+import Codec.Serialise (Serialise (..))
+import GHC.Generics (Generic)
 
-import           Ouroboros.Network.AnchoredFragment (Anchor (..),
-                     AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Mock.Chain (Chain)
-import qualified Ouroboros.Network.Mock.Chain as C
-import           Ouroboros.Network.Point (withOrigin)
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.AnchoredFragment (Anchor (..), AnchoredFragment)
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block
+import Ouroboros.Network.Mock.Chain (Chain)
+import Ouroboros.Network.Mock.Chain qualified as C
+import Ouroboros.Network.Point (withOrigin)
+import Ouroboros.Network.Util.ShowProxy
 
 {-------------------------------------------------------------------------------
   Concrete block shape used currently in the network layer

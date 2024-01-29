@@ -16,20 +16,17 @@ module Ouroboros.Network.Protocol.ChainSync.Examples
   , chainSyncServerExample
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.Class.MonadSTM.Strict
 
-import           Ouroboros.Network.Block (HasHeader (..), HeaderHash, Tip (..),
-                     castPoint, castTip, genesisPoint)
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
-import           Ouroboros.Network.Mock.Chain (Chain (..), ChainUpdate (..),
-                     Point (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ProducerState (ChainProducerState,
-                     FollowerId)
-import qualified Ouroboros.Network.Mock.ProducerState as ChainProducerState
-import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Server
+import Ouroboros.Network.Block (HasHeader (..), HeaderHash, Tip (..), castPoint,
+           castTip, genesisPoint)
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
+import Ouroboros.Network.Mock.Chain (Chain (..), ChainUpdate (..), Point (..))
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ProducerState (ChainProducerState, FollowerId)
+import Ouroboros.Network.Mock.ProducerState qualified as ChainProducerState
+import Ouroboros.Network.Protocol.ChainSync.Client
+import Ouroboros.Network.Protocol.ChainSync.Server
 
 data Client header point tip m t = Client
   { rollbackward :: point -> tip -> m (Either t (Client header point tip m t))

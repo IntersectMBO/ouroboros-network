@@ -22,113 +22,108 @@
 
 module Main (main) where
 
-import           Control.Monad (forM, forM_)
-import           Control.Monad.Except (ExceptT (..), runExceptT)
+import Control.Monad (forM, forM_)
+import Control.Monad.Except (ExceptT (..), runExceptT)
 
-import qualified Codec.CBOR.Read as CBOR
-import           Codec.CBOR.Term (Term (..))
-import qualified Codec.CBOR.Term as CBOR
-import qualified Codec.CBOR.Write as CBOR
-import           Codec.Serialise.Class (Serialise)
-import qualified Codec.Serialise.Class as Serialise
-import qualified Codec.Serialise.Decoding as CBOR
-import qualified Codec.Serialise.Encoding as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term (Term (..))
+import Codec.CBOR.Term qualified as CBOR
+import Codec.CBOR.Write qualified as CBOR
+import Codec.Serialise.Class (Serialise)
+import Codec.Serialise.Class qualified as Serialise
+import Codec.Serialise.Decoding qualified as CBOR
+import Codec.Serialise.Encoding qualified as CBOR
 
 
-import           Data.Bool (bool)
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as BL.Char8
-import           Data.List (sortOn)
-import qualified Data.Map as Map
-import           Data.Ord (Down (..))
-import qualified Data.Text as Text
-import           Data.Word (Word16)
+import Data.Bool (bool)
+import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Lazy.Char8 qualified as BL.Char8
+import Data.List (sortOn)
+import Data.Map qualified as Map
+import Data.Ord (Down (..))
+import Data.Text qualified as Text
+import Data.Word (Word16)
 
-import           System.Directory (doesDirectoryExist)
-import           System.Exit (ExitCode (..))
-import           System.FilePath
-import           System.IO (hClose)
-import           System.IO.Temp (withTempFile)
-import           System.Process.ByteString.Lazy
+import System.Directory (doesDirectoryExist)
+import System.Exit (ExitCode (..))
+import System.FilePath
+import System.IO (hClose)
+import System.IO.Temp (withTempFile)
+import System.Process.ByteString.Lazy
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Block (Point, SlotNo, Tip, decodeTip,
-                     encodeTip, unwrapCBORinCBOR, wrapCBORinCBOR)
-import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Magic
-import qualified Ouroboros.Network.Mock.ConcreteBlock as Concrete (Block)
+import Ouroboros.Network.Block (Point, SlotNo, Tip, decodeTip, encodeTip,
+           unwrapCBORinCBOR, wrapCBORinCBOR)
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.Magic
+import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete (Block)
 
-import           Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
-                     NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
-import           Ouroboros.Network.NodeToNode.Version (DiffusionMode (..),
-                     NodeToNodeVersion (..), NodeToNodeVersionData (..),
-                     nodeToNodeCodecCBORTerm)
+import Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
+           NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
+import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..),
+           NodeToNodeVersion (..), NodeToNodeVersionData (..),
+           nodeToNodeCodecCBORTerm)
 
-import qualified Ouroboros.Network.NodeToClient.Version as NtCVersion
-import qualified Ouroboros.Network.NodeToNode.Version as NtNVersion
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
-import           Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
-import           Ouroboros.Network.Protocol.BlockFetch.Test ()
-import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
-import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
-import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
-import           Ouroboros.Network.Protocol.ChainSync.Test ()
-import           Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
-import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
-import           Ouroboros.Network.Protocol.Handshake.Codec
-                     (nodeToClientHandshakeCodec, nodeToNodeHandshakeCodec)
-import           Ouroboros.Network.Protocol.Handshake.Test (VersionNumber,
-                     versionNumberHandshakeCodec)
-import           Ouroboros.Network.Protocol.Handshake.Type (Handshake)
-import qualified Ouroboros.Network.Protocol.Handshake.Type as Handshake
-import           Ouroboros.Network.Protocol.KeepAlive.Codec (codecKeepAlive_v2)
-import           Ouroboros.Network.Protocol.KeepAlive.Test ()
-import           Ouroboros.Network.Protocol.KeepAlive.Type (KeepAlive)
-import qualified Ouroboros.Network.Protocol.KeepAlive.Type as KeepAlive
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec
-                     (codecLocalStateQuery)
-import qualified Ouroboros.Network.Protocol.LocalStateQuery.Codec as LocalStateQuery
-import qualified Ouroboros.Network.Protocol.LocalStateQuery.Test as LocalStateQuery
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
-                     (LocalStateQuery)
-import qualified Ouroboros.Network.Protocol.LocalStateQuery.Type as LocalStateQuery
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Codec
-                     (codecLocalTxMonitor)
-import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Test as LocalTxMonitor
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type (LocalTxMonitor)
-import qualified Ouroboros.Network.Protocol.LocalTxMonitor.Type as LocalTxMonitor
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Codec
-                     (codecLocalTxSubmission)
-import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Test as LocalTxSubmission
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
-                     (LocalTxSubmission)
-import qualified Ouroboros.Network.Protocol.LocalTxSubmission.Type as LocalTxSubmission
-import           Ouroboros.Network.Protocol.TxSubmission2.Codec
-                     (codecTxSubmission2)
-import           Ouroboros.Network.Protocol.TxSubmission2.Test (Tx, TxId)
-import           Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
-import qualified Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
+import Ouroboros.Network.NodeToClient.Version qualified as NtCVersion
+import Ouroboros.Network.NodeToNode.Version qualified as NtNVersion
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
+import Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
+import Ouroboros.Network.Protocol.BlockFetch.Test ()
+import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
+import Ouroboros.Network.Protocol.BlockFetch.Type qualified as BlockFetch
+import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
+import Ouroboros.Network.Protocol.ChainSync.Test ()
+import Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
+import Ouroboros.Network.Protocol.ChainSync.Type qualified as ChainSync
+import Ouroboros.Network.Protocol.Handshake.Codec (nodeToClientHandshakeCodec,
+           nodeToNodeHandshakeCodec)
+import Ouroboros.Network.Protocol.Handshake.Test (VersionNumber,
+           versionNumberHandshakeCodec)
+import Ouroboros.Network.Protocol.Handshake.Type (Handshake)
+import Ouroboros.Network.Protocol.Handshake.Type qualified as Handshake
+import Ouroboros.Network.Protocol.KeepAlive.Codec (codecKeepAlive_v2)
+import Ouroboros.Network.Protocol.KeepAlive.Test ()
+import Ouroboros.Network.Protocol.KeepAlive.Type (KeepAlive)
+import Ouroboros.Network.Protocol.KeepAlive.Type qualified as KeepAlive
+import Ouroboros.Network.Protocol.LocalStateQuery.Codec (codecLocalStateQuery)
+import Ouroboros.Network.Protocol.LocalStateQuery.Codec qualified as LocalStateQuery
+import Ouroboros.Network.Protocol.LocalStateQuery.Test qualified as LocalStateQuery
+import Ouroboros.Network.Protocol.LocalStateQuery.Type (LocalStateQuery)
+import Ouroboros.Network.Protocol.LocalStateQuery.Type qualified as LocalStateQuery
+import Ouroboros.Network.Protocol.LocalTxMonitor.Codec (codecLocalTxMonitor)
+import Ouroboros.Network.Protocol.LocalTxMonitor.Test qualified as LocalTxMonitor
+import Ouroboros.Network.Protocol.LocalTxMonitor.Type (LocalTxMonitor)
+import Ouroboros.Network.Protocol.LocalTxMonitor.Type qualified as LocalTxMonitor
+import Ouroboros.Network.Protocol.LocalTxSubmission.Codec
+           (codecLocalTxSubmission)
+import Ouroboros.Network.Protocol.LocalTxSubmission.Test qualified as LocalTxSubmission
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type (LocalTxSubmission)
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
+import Ouroboros.Network.Protocol.TxSubmission2.Codec (codecTxSubmission2)
+import Ouroboros.Network.Protocol.TxSubmission2.Test (Tx, TxId)
+import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
+import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as TxSubmission2
 
-import           Network.Socket (SockAddr (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
-import           Ouroboros.Network.Protocol.PeerSharing.Test ()
-import           Ouroboros.Network.Protocol.PeerSharing.Type
-                     (ClientHasAgency (TokIdle), ServerHasAgency (..))
-import qualified Ouroboros.Network.Protocol.PeerSharing.Type as PeerSharing
+import Network.Socket (SockAddr (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
+import Ouroboros.Network.Protocol.PeerSharing.Test ()
+import Ouroboros.Network.Protocol.PeerSharing.Type (ClientHasAgency (TokIdle),
+           ServerHasAgency (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
 
-import           Test.ChainGenerators ()
-import           Test.Data.CDDL (Any (..))
+import Test.ChainGenerators ()
+import Test.Data.CDDL (Any (..))
 
-import           Ouroboros.Network.PeerSelection.PeerSharing.Codec
-                     (decodeRemoteAddress, encodeRemoteAddress)
-import           Test.QuickCheck hiding (Result (..))
-import           Test.QuickCheck.Instances.ByteString ()
-import           Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)
-import           Test.Tasty.HUnit
-import           Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
+import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
+           encodeRemoteAddress)
+import Test.QuickCheck hiding (Result (..))
+import Test.QuickCheck.Instances.ByteString ()
+import Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)
+import Test.Tasty.HUnit
+import Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
 
 -- | The main program, it requires both
 --

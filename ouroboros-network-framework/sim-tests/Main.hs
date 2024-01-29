@@ -1,12 +1,12 @@
 module Main (main) where
 
-import           Main.Utf8 (withUtf8)
-import           Test.Tasty
+import Main.Utf8 (withUtf8)
+import Test.Tasty
 
-import qualified Test.Ouroboros.Network.ConnectionManager as ConnectionManager
-import qualified Test.Ouroboros.Network.RateLimiting as RateLimiting
-import qualified Test.Ouroboros.Network.Server2.Sim as Server2
-import qualified Test.Simulation.Network.Snocket as Snocket
+import Test.Ouroboros.Network.ConnectionManager qualified as ConnectionManager
+import Test.Ouroboros.Network.RateLimiting qualified as RateLimiting
+import Test.Ouroboros.Network.Server2.Sim qualified as Server2
+import Test.Simulation.Network.Snocket qualified as Snocket
 
 main :: IO ()
 main = withUtf8 $ defaultMain tests

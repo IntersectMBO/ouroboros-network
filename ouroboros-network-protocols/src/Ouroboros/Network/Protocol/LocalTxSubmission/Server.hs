@@ -20,9 +20,9 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Server
   , localTxSubmissionServerPeer
   ) where
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Type
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type
 
 
 -- | The server side of the local transaction submission protocol.

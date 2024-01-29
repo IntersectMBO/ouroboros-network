@@ -101,27 +101,26 @@ module Ouroboros.Network.BlockFetch
   , WhetherReceivingTentativeBlocks (..)
   ) where
 
-import           Data.Hashable (Hashable)
-import           Data.Void
+import Data.Hashable (Hashable)
+import Data.Void
 
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer)
 
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.SizeInBytes (SizeInBytes)
+import Ouroboros.Network.Block
+import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
-import           Ouroboros.Network.BlockFetch.ClientRegistry
-                     (FetchClientPolicy (..), FetchClientRegistry,
-                     bracketFetchClient, bracketKeepAliveClient,
-                     bracketSyncWithFetchClient, newFetchClientRegistry,
-                     readFetchClientsStateVars, readFetchClientsStatus,
-                     readPeerGSVs, setFetchClientContext)
-import           Ouroboros.Network.BlockFetch.ConsensusInterface
-                     (BlockFetchConsensusInterface (..), FromConsensus (..),
-                     WhetherReceivingTentativeBlocks (..))
-import           Ouroboros.Network.BlockFetch.State
+import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
+           FetchClientRegistry, bracketFetchClient, bracketKeepAliveClient,
+           bracketSyncWithFetchClient, newFetchClientRegistry,
+           readFetchClientsStateVars, readFetchClientsStatus, readPeerGSVs,
+           setFetchClientContext)
+import Ouroboros.Network.BlockFetch.ConsensusInterface
+           (BlockFetchConsensusInterface (..), FromConsensus (..),
+           WhetherReceivingTentativeBlocks (..))
+import Ouroboros.Network.BlockFetch.State
 
 
 

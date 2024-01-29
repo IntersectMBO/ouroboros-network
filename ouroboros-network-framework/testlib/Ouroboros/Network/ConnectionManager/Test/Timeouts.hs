@@ -3,32 +3,30 @@
 
 module Ouroboros.Network.ConnectionManager.Test.Timeouts where
 
-import           Control.Monad.Class.MonadTime.SI (DiffTime, Time, diffTime)
-import           Control.Monad.IOSim
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time, diffTime)
+import Control.Monad.IOSim
 
-import           Data.Bifoldable (bifoldMap)
-import           Data.Bitraversable (bimapAccumL)
-import           Data.List (dropWhileEnd, find, intercalate)
-import qualified Data.List.Trace as Trace
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
-import           Data.Monoid (Sum (Sum))
+import Data.Bifoldable (bifoldMap)
+import Data.Bitraversable (bimapAccumL)
+import Data.List (dropWhileEnd, find, intercalate)
+import Data.List.Trace qualified as Trace
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
+import Data.Monoid (Sum (Sum))
 
-import           Text.Printf (printf)
+import Text.Printf (printf)
 
-import           Test.QuickCheck (Arbitrary (..), Property, choose,
-                     counterexample, cover, frequency, label, property, shrink,
-                     tabulate, (.&&.))
+import Test.QuickCheck (Arbitrary (..), Property, choose, counterexample, cover,
+           frequency, label, property, shrink, tabulate, (.&&.))
 
-import           Network.TypedProtocol.Core (PeerHasAgency (..))
+import Network.TypedProtocol.Core (PeerHasAgency (..))
 
-import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.Driver.Limits (ProtocolTimeLimits (..))
-import           Ouroboros.Network.Protocol.Handshake.Codec
-                     (timeLimitsHandshake)
-import           Ouroboros.Network.Protocol.Handshake.Type
-import qualified Ouroboros.Network.Snocket as Snocket
+import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Driver.Limits (ProtocolTimeLimits (..))
+import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Snocket qualified as Snocket
 
 
 verifyAllTimeouts :: Show addr

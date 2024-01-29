@@ -18,16 +18,16 @@ module Control.Concurrent.JobPool
   , cancelGroup
   ) where
 
-import           Data.Functor (($>))
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import Data.Functor (($>))
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 
-import           Control.Concurrent.Class.MonadSTM
-import           Control.Exception (SomeAsyncException (..))
-import           Control.Monad (void, when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadThread (..))
-import           Control.Monad.Class.MonadThrow
+import Control.Concurrent.Class.MonadSTM
+import Control.Exception (SomeAsyncException (..))
+import Control.Monad (void, when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork (MonadThread (..))
+import Control.Monad.Class.MonadThrow
 
 -- | JobPool allows to submit asynchronous jobs, wait for their completion or
 -- cancel.  Jobs are grouped, each group can be cancelled separately.

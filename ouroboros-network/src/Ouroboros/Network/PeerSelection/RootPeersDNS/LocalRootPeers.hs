@@ -11,33 +11,33 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
   , TraceLocalRootPeers (..)
   ) where
 
-import           Data.List.NonEmpty (NonEmpty (..))
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Void (Void, absurd)
-import           Data.Word (Word32)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Void (Void, absurd)
+import Data.Word (Word32)
 
-import           Control.Applicative (Alternative, (<|>))
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Applicative (Alternative, (<|>))
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..), contramap, traceWith)
 
-import qualified Network.DNS as DNS
-import qualified Network.Socket as Socket
+import Network.DNS qualified as DNS
+import Network.Socket qualified as Socket
 
-import           Data.Bifunctor (second)
-import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-                     (DNSSemaphore, newDNSLocalRootSemaphore, withDNSSemaphore)
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency, WarmValency)
+import Data.Bifunctor (second)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
+           newDNSLocalRootSemaphore, withDNSSemaphore)
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
+           WarmValency)
 
 data TraceLocalRootPeers peerAddr exception =
        TraceLocalRootDomains [( HotValency

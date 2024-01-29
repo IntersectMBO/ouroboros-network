@@ -1,6 +1,6 @@
 module Test.Data.PipeliningDepth (PipeliningDepth (..)) where
 
-import           Test.QuickCheck
+import Test.QuickCheck
 
 newtype PipeliningDepth = PipeliningDepth Int
   deriving Show

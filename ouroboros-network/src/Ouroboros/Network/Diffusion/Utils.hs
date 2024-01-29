@@ -12,16 +12,16 @@ module Ouroboros.Network.Diffusion.Utils
   ) where
 
 
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer, traceWith)
-import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Typeable (Typeable)
+import Control.Monad.Class.MonadThrow
+import Control.Tracer (Tracer, traceWith)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Typeable (Typeable)
 
-import           Ouroboros.Network.Snocket (FileDescriptor, Snocket)
-import qualified Ouroboros.Network.Snocket as Snocket
+import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
+import Ouroboros.Network.Snocket qualified as Snocket
 
-import           Ouroboros.Network.Diffusion.Common
+import Ouroboros.Network.Diffusion.Common
 
 --
 -- Socket utility functions

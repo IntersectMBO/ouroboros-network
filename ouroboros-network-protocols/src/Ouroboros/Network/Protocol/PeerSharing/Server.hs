@@ -4,11 +4,10 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Server where
 
-import           Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..),
-                     PeerRole (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Type
-                     (ClientHasAgency (..), Message (..), NobodyHasAgency (..),
-                     PeerSharing (..), PeerSharingAmount, ServerHasAgency (..))
+import Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..), PeerRole (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type (ClientHasAgency (..),
+           Message (..), NobodyHasAgency (..), PeerSharing (..),
+           PeerSharingAmount, ServerHasAgency (..))
 
 data PeerSharingServer peerAddress m = PeerSharingServer {
   -- | The client sent us a 'MsgShareRequest'. We have need to compute the

@@ -3,14 +3,14 @@
 --
 module Ouroboros.Network.PeerSelection.LedgerPeers.Common where
 
-import           Control.Monad.Class.MonadTime.SI
-import           Data.Word (Word16)
-import           Text.Printf
+import Control.Monad.Class.MonadTime.SI
+import Data.Word (Word16)
+import Text.Printf
 
-import           Data.List.NonEmpty (NonEmpty)
-import qualified Network.DNS as DNS
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Data.List.NonEmpty (NonEmpty)
+import Network.DNS qualified as DNS
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 newtype NumberOfPeers = NumberOfPeers { getNumberOfPeers :: Word16 }
   deriving Show

@@ -1,12 +1,12 @@
 module Main (main) where
 
-import           Main.Utf8 (withUtf8)
-import           Test.Tasty
+import Main.Utf8 (withUtf8)
+import Test.Tasty
 
-import qualified Test.Ouroboros.Network.Driver as Driver
-import qualified Test.Ouroboros.Network.Server2.IO as Server2
-import qualified Test.Ouroboros.Network.Socket as Socket
-import qualified Test.Ouroboros.Network.Subscription as Subscription
+import Test.Ouroboros.Network.Driver qualified as Driver
+import Test.Ouroboros.Network.Server2.IO qualified as Server2
+import Test.Ouroboros.Network.Socket qualified as Socket
+import Test.Ouroboros.Network.Subscription qualified as Subscription
 
 main :: IO ()
 main = withUtf8 $ defaultMain tests

@@ -19,7 +19,7 @@ module Ouroboros.Network.MuxMode
   , InResponderMode (..)
   ) where
 
-import           Network.Mux.Types
+import Network.Mux.Types
 
 
 -- | Singletons for matching the 'MuxMode' at term level.

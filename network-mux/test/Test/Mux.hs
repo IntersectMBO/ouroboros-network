@@ -17,63 +17,62 @@
 
 module Test.Mux (tests) where
 
-import           Codec.CBOR.Decoding as CBOR
-import           Codec.CBOR.Encoding as CBOR
-import           Codec.Serialise (Serialise (..))
-import           Control.Applicative
-import           Control.Arrow ((&&&))
-import           Control.Monad
-import qualified Data.Binary.Put as Bin
-import           Data.Bits
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as BL8 (pack)
-import           Data.List (dropWhileEnd, nub)
-import qualified Data.List as List
-import qualified Data.Map as M
-import           Data.Tuple (swap)
-import           Data.Word
-import qualified System.Random.SplitMix as SM
-import           Test.QuickCheck hiding ((.&.))
-import           Test.Tasty
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Printf
+import Codec.CBOR.Decoding as CBOR
+import Codec.CBOR.Encoding as CBOR
+import Codec.Serialise (Serialise (..))
+import Control.Applicative
+import Control.Arrow ((&&&))
+import Control.Monad
+import Data.Binary.Put qualified as Bin
+import Data.Bits
+import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
+import Data.List (dropWhileEnd, nub)
+import Data.List qualified as List
+import Data.Map qualified as M
+import Data.Tuple (swap)
+import Data.Word
+import System.Random.SplitMix qualified as SM
+import Test.QuickCheck hiding ((.&.))
+import Test.Tasty
+import Test.Tasty.QuickCheck (testProperty)
+import Text.Printf
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim
-import           Control.Tracer
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim
+import Control.Tracer
 
 #if defined(mingw32_HOST_OS)
-import qualified System.Win32.Async as Win32.Async
-import qualified System.Win32.File as Win32.File
-import qualified System.Win32.NamedPipes as Win32.NamedPipes
+import System.Win32.Async qualified as Win32.Async
+import System.Win32.File qualified as Win32.File
+import System.Win32.NamedPipes qualified as Win32.NamedPipes
 #else
-import           System.IO (hClose)
-import           System.Process (createPipe)
+import System.IO (hClose)
+import System.Process (createPipe)
 #endif
-import           System.IOManager
+import System.IOManager
 
-import           Test.Mux.ReqResp
+import Test.Mux.ReqResp
 
-import           Network.Mux
-import           Network.Mux.Bearer
-import           Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
-import           Network.Mux.Bearer.Pipe
-import           Network.Mux.Bearer.Queues
-import           Network.Mux.Channel
-import           Network.Mux.Codec
-import qualified Network.Mux.Compat as Compat
-import           Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..),
-                     MuxSDUHeader (..), RemoteClockModel (..),
-                     muxBearerAsChannel)
-import qualified Network.Socket as Socket
-import           Text.Show.Functions ()
+import Network.Mux
+import Network.Mux.Bearer
+import Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
+import Network.Mux.Bearer.Pipe
+import Network.Mux.Bearer.Queues
+import Network.Mux.Channel
+import Network.Mux.Codec
+import Network.Mux.Compat qualified as Compat
+import Network.Mux.Types (MiniProtocolDir (..), MuxSDU (..), MuxSDUHeader (..),
+           RemoteClockModel (..), muxBearerAsChannel)
+import Network.Socket qualified as Socket
+import Text.Show.Functions ()
 -- import qualified Debug.Trace as Debug
 
 tests :: TestTree

@@ -4,25 +4,24 @@
 -- Constants used in 'Ouroboros.Network.Diffusion'
 module Ouroboros.Network.Diffusion.Policies where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime.SI
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadTime.SI
 
-import           Data.List (sortOn, unfoldr)
-import qualified Data.Map.Merge.Strict as Map
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
-import           Data.Word (Word32)
-import qualified System.Random as Rnd
-import           System.Random
+import Data.List (sortOn, unfoldr)
+import Data.Map.Merge.Strict qualified as Map
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
+import Data.Word (Word32)
+import System.Random
+import System.Random qualified as Rnd
 
-import           Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
-                     Provenance (..), PrunePolicy)
-import           Ouroboros.Network.ExitPolicy as ExitPolicy
-import           Ouroboros.Network.InboundGovernor
-                     (InboundGovernorObservableState (..))
-import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.PeerMetric
+import Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
+           Provenance (..), PrunePolicy)
+import Ouroboros.Network.ExitPolicy as ExitPolicy
+import Ouroboros.Network.InboundGovernor (InboundGovernorObservableState (..))
+import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.PeerMetric
 
 
 -- | Timeout for 'spsDeactivateTimeout'.

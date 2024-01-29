@@ -12,9 +12,9 @@ module Ouroboros.Network.Context
   , IsBigLedgerPeer (..)
   ) where
 
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.ControlMessage
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ControlMessage
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 
 
 -- | Context passed to initiator mini-protocol execution.

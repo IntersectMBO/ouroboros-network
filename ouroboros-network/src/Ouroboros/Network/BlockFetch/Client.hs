@@ -20,37 +20,35 @@ module Ouroboros.Network.BlockFetch.Client
   , BlockFetchProtocolFailure
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (assert)
-import           Control.Monad (unless)
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad (unless)
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 
-import           Control.Tracer (traceWith)
+import Control.Tracer (traceWith)
 
-import           Ouroboros.Network.Block
+import Ouroboros.Network.Block
 
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
-import           Ouroboros.Network.ControlMessage (ControlMessageSTM)
-import           Ouroboros.Network.Protocol.BlockFetch.Type
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Pipelined
+import Ouroboros.Network.ControlMessage (ControlMessageSTM)
+import Ouroboros.Network.Protocol.BlockFetch.Type
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.BlockFetch.ClientState
-                     (FetchClientContext (..), FetchClientPolicy (..),
-                     FetchClientStateVars (fetchClientInFlightVar),
-                     FetchRequest (..), FromConsensus (..),
-                     PeerFetchInFlight (..), TraceFetchClientState (..),
-                     acknowledgeFetchRequest, completeBlockDownload,
-                     completeFetchBatch, fetchClientCtxStateVars,
-                     rejectedFetchBatch, startedFetchBatch)
-import           Ouroboros.Network.BlockFetch.DeltaQ
-                     (PeerFetchInFlightLimits (..), PeerGSV (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric.Type
-                     (FetchedMetricsTracer)
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.BlockFetch.ClientState (FetchClientContext (..),
+           FetchClientPolicy (..),
+           FetchClientStateVars (fetchClientInFlightVar), FetchRequest (..),
+           FromConsensus (..), PeerFetchInFlight (..),
+           TraceFetchClientState (..), acknowledgeFetchRequest,
+           completeBlockDownload, completeFetchBatch, fetchClientCtxStateVars,
+           rejectedFetchBatch, startedFetchBatch)
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
+           PeerGSV (..))
+import Ouroboros.Network.PeerSelection.PeerMetric.Type (FetchedMetricsTracer)
 
 
 data BlockFetchProtocolFailure =

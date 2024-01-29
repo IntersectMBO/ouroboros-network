@@ -22,14 +22,14 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Client
   , Some (..)
   ) where
 
-import           Control.Monad (forever)
-import           Control.Monad.Class.MonadTimer
-import           Data.Kind (Type)
+import Control.Monad (forever)
+import Control.Monad.Class.MonadTimer
+import Data.Kind (Type)
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
-import           Ouroboros.Network.Protocol.LocalStateQuery.Type
+import Ouroboros.Network.Protocol.LocalStateQuery.Codec (Some (..))
+import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 
 newtype LocalStateQueryClient block point (query :: Type -> Type) m a =

@@ -10,8 +10,8 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Examples
   , localTxSubmissionServer
   ) where
 
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Client
-import           Ouroboros.Network.Protocol.LocalTxSubmission.Server
+import Ouroboros.Network.Protocol.LocalTxSubmission.Client
+import Ouroboros.Network.Protocol.LocalTxSubmission.Server
 
 
 

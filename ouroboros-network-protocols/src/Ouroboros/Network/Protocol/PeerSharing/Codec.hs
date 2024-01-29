@@ -7,23 +7,22 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Codec where
 
-import           Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadST
 
-import           Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy (ByteString)
 
-import qualified Codec.CBOR.Read as CBOR
+import Codec.CBOR.Read qualified as CBOR
 
-import           Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.Serialise.Class as CBOR
-import           Ouroboros.Network.Protocol.PeerSharing.Type
-                     (ClientHasAgency (..), Message (..), PeerSharing,
-                     ServerHasAgency (..))
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.Serialise.Class qualified as CBOR
+import Ouroboros.Network.Protocol.PeerSharing.Type (ClientHasAgency (..),
+           Message (..), PeerSharing, ServerHasAgency (..))
 
-import           Control.Monad.Class.MonadTime.SI (DiffTime)
-import           Ouroboros.Network.Protocol.Limits
+import Control.Monad.Class.MonadTime.SI (DiffTime)
+import Ouroboros.Network.Protocol.Limits
 
 codecPeerSharing :: forall m peerAddress.
                     MonadST m

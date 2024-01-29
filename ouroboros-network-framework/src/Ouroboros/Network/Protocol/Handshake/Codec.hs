@@ -22,35 +22,35 @@ module Ouroboros.Network.Protocol.Handshake.Codec
   , nodeToClientHandshakeCodec
   ) where
 
-import           Control.Monad (replicateM, unless)
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime.SI
-import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as BL
-import           Data.Either (partitionEithers)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Maybe (mapMaybe)
-import           Data.Text (Text)
-import           Text.Printf
+import Control.Monad (replicateM, unless)
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadTime.SI
+import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BL
+import Data.Either (partitionEithers)
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Maybe (mapMaybe)
+import Data.Text (Text)
+import Text.Printf
 
-import           Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term qualified as CBOR
 
-import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.Driver.Limits
 
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Limits
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Limits
 
-import           Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
-                     nodeToClientVersionCodec)
-import           Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion,
-                     nodeToNodeVersionCodec)
+import Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
+           nodeToClientVersionCodec)
+import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion,
+           nodeToNodeVersionCodec)
 
 -- | Codec for version data ('vData' in code) exchanged by the handshake
 -- protocol.

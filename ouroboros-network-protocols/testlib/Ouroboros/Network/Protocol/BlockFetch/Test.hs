@@ -10,45 +10,45 @@
 
 module Ouroboros.Network.Protocol.BlockFetch.Test (tests) where
 
-import qualified Codec.Serialise as S
-import           Control.Monad.ST (runST)
-import           Data.ByteString.Lazy (ByteString)
+import Codec.Serialise qualified as S
+import Control.Monad.ST (runST)
+import Data.ByteString.Lazy (ByteString)
 
-import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadSTM (MonadSTM)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
-import           Control.Monad.IOSim (runSimOrThrow)
-import           Control.Tracer (nullTracer)
+import Control.Monad.Class.MonadAsync (MonadAsync)
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadSTM (MonadSTM)
+import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.IOSim (runSimOrThrow)
+import Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Proofs
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Proofs
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver.Simple (runConnectedPeers)
 
-import           Ouroboros.Network.Block (Serialised (..), genesisPoint,
-                     unwrapCBORinCBOR, wrapCBORinCBOR)
+import Ouroboros.Network.Block (Serialised (..), genesisPoint, unwrapCBORinCBOR,
+           wrapCBORinCBOR)
 
-import           Ouroboros.Network.Mock.Chain (Chain, Point)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock (Block)
+import Ouroboros.Network.Mock.Chain (Chain, Point)
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock (Block)
 
-import           Ouroboros.Network.Protocol.BlockFetch.Client
-import           Ouroboros.Network.Protocol.BlockFetch.Codec
-import           Ouroboros.Network.Protocol.BlockFetch.Direct
-import           Ouroboros.Network.Protocol.BlockFetch.Examples
-import           Ouroboros.Network.Protocol.BlockFetch.Server
-import           Ouroboros.Network.Protocol.BlockFetch.Type
-import           Test.Data.PipeliningDepth (PipeliningDepth (..))
+import Ouroboros.Network.Protocol.BlockFetch.Client
+import Ouroboros.Network.Protocol.BlockFetch.Codec
+import Ouroboros.Network.Protocol.BlockFetch.Direct
+import Ouroboros.Network.Protocol.BlockFetch.Examples
+import Ouroboros.Network.Protocol.BlockFetch.Server
+import Ouroboros.Network.Protocol.BlockFetch.Type
+import Test.Data.PipeliningDepth (PipeliningDepth (..))
 
-import           Test.ChainGenerators (TestChainAndPoints (..))
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.ChainGenerators (TestChainAndPoints (..))
+import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+           prop_codec_valid_cbor_encoding, splits2, splits3)
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree

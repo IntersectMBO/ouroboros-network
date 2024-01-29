@@ -7,12 +7,12 @@
 
 module Ouroboros.Network.Protocol.Type where
 
-import           Control.Exception
-import           Control.Monad.Class.MonadTime
+import Control.Exception
+import Control.Monad.Class.MonadTime
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Util.ShowProxy
 
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {

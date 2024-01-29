@@ -10,27 +10,27 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
   , TracePublicRootPeers (..)
   ) where
 
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Word (Word32)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Word (Word32)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer (Tracer (..), traceWith)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Tracer (..), traceWith)
 
 
-import qualified Network.DNS as DNS
-import qualified Network.Socket as Socket
+import Network.DNS qualified as DNS
+import Network.Socket qualified as Socket
 
-import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-                     (DNSActions (..), DNSorIOError (..), Resource (..))
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-                     (DNSSemaphore, withDNSSemaphore)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions (..),
+           DNSorIOError (..), Resource (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
+           withDNSSemaphore)
 
 ---------------------------------------------
 -- Public root peer set provider using DNS

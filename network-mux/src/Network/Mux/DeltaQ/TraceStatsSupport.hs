@@ -12,10 +12,10 @@ module Network.Mux.DeltaQ.TraceStatsSupport where
 --
 -- Definite space/time optimisation task here.
 
-import           Network.Mux.DeltaQ.TraceTypes
+import Network.Mux.DeltaQ.TraceTypes
 
-import qualified Data.Vector.Unboxed as V
-import           Statistics.LinearRegression
+import Data.Vector.Unboxed qualified as V
+import Statistics.LinearRegression
 
 estimateGS :: [(Int, SISec)] -> (Double, Double, Double)
 estimateGS xys

@@ -8,41 +8,41 @@
 
 module Test.Ouroboros.Network.LedgerPeers where
 
-import           Control.Exception (SomeException (..))
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim hiding (SimResult)
-import           Control.Tracer (Tracer (..), nullTracer, traceWith)
-import qualified Data.IP as IP
-import           Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Monoid (Sum (..))
-import           Data.Ord (Down (..))
-import           Data.Ratio
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Word
-import           System.Random
+import Control.Exception (SomeException (..))
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim hiding (SimResult)
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Data.IP qualified as IP
+import Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Monoid (Sum (..))
+import Data.Ord (Down (..))
+import Data.Ratio
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Word
+import System.Random
 
-import           Network.DNS (Domain)
+import Network.DNS (Domain)
 
-import           Cardano.Slotting.Slot (SlotNo)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Ouroboros.Network.PeerSelection.LedgerPeers
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import           Ouroboros.Network.Testing.Data.Script
-import           Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-import           Test.QuickCheck
-import           Test.Tasty
-import           Test.Tasty.QuickCheck
-import           Text.Printf
+import Cardano.Slotting.Slot (SlotNo)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+import Ouroboros.Network.Testing.Data.Script
+import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+import Test.QuickCheck
+import Test.Tasty
+import Test.Tasty.QuickCheck
+import Text.Printf
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"

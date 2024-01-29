@@ -1,9 +1,9 @@
 module Main (main) where
 
-import           Test.Tasty
+import Test.Tasty
 
-import qualified Test.Mux (tests)
-import qualified Test.Mux.Timeout (tests)
+import Test.Mux qualified (tests)
+import Test.Mux.Timeout qualified (tests)
 
 main :: IO ()
 main = defaultMain tests

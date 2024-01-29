@@ -5,14 +5,14 @@
 
 module NoThunks.Class.Orphans where
 
-import           Data.IntPSQ (IntPSQ)
-import qualified Data.IntPSQ as IntPSQ
-import           Data.OrdPSQ (OrdPSQ)
-import qualified Data.OrdPSQ as OrdPSQ
+import Data.IntPSQ (IntPSQ)
+import Data.IntPSQ qualified as IntPSQ
+import Data.OrdPSQ (OrdPSQ)
+import Data.OrdPSQ qualified as OrdPSQ
 
-import           Network.Socket (SockAddr)
+import Network.Socket (SockAddr)
 
-import           NoThunks.Class
+import NoThunks.Class
 
 noThunksInKeysPrioritiesAndValues
   :: (NoThunks k, NoThunks v, NoThunks p)

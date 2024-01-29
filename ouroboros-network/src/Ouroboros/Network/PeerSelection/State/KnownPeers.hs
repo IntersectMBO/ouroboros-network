@@ -38,21 +38,20 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
   , getPeerSharingResponsePeers
   ) where
 
-import qualified Data.List as List
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.OrdPSQ (OrdPSQ)
-import qualified Data.OrdPSQ as PSQ
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.List qualified as List
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.OrdPSQ (OrdPSQ)
+import Data.OrdPSQ qualified as PSQ
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Exception (assert)
-import           Control.Monad.Class.MonadTime.SI
+import Control.Exception (assert)
+import Control.Monad.Class.MonadTime.SI
 
-import           Data.Maybe (fromMaybe)
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Data.Maybe (fromMaybe)
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 -------------------------------

@@ -105,56 +105,53 @@ module Ouroboros.Network.NodeToNode
   , peerSharingMiniProtocolNum
   ) where
 
-import qualified Control.Concurrent.Async as Async
-import           Control.Exception (IOException)
-import           Control.Monad.Class.MonadTime.SI (DiffTime)
+import Control.Concurrent.Async qualified as Async
+import Control.Exception (IOException)
+import Control.Monad.Class.MonadTime.SI (DiffTime)
 
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
-import qualified Data.ByteString.Lazy as BL
-import           Data.Void (Void)
-import           Data.Word
-import           Network.Mux (WithMuxBearer (..))
-import           Network.Mux.Types (MuxRuntimeError (..))
-import           Network.Socket (Socket, StructLinger (..))
-import qualified Network.Socket as Socket
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term qualified as CBOR
+import Data.ByteString.Lazy qualified as BL
+import Data.Void (Void)
+import Data.Word
+import Network.Mux (WithMuxBearer (..))
+import Network.Mux.Types (MuxRuntimeError (..))
+import Network.Socket (Socket, StructLinger (..))
+import Network.Socket qualified as Socket
 
-import           Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
-import           Ouroboros.Network.ConnectionManager.Types
-                     (ExceptionInHandler (..))
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.ControlMessage (ControlMessage (..))
-import           Ouroboros.Network.Driver (TraceSendRecv (..))
-import           Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
-import           Ouroboros.Network.Driver.Simple (DecoderFailure)
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToNode.Version
-import           Ouroboros.Network.PeerSelection.Governor.Types
-                     (PeerSelectionTargets (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
-import           Ouroboros.Network.Snocket
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams,
-                     DnsSubscriptionTarget (..), DnsTrace (..),
-                     WithDomainName (..))
-import qualified Ouroboros.Network.Subscription.Dns as Subscription
-import           Ouroboros.Network.Subscription.Ip (IPSubscriptionParams,
-                     IPSubscriptionTarget (..), SubscriptionParams (..),
-                     SubscriptionTrace (..), WithIPList (..))
-import qualified Ouroboros.Network.Subscription.Ip as Subscription
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
-                     SubscriberError)
-import           Ouroboros.Network.Tracers
-import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
-import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
+import Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
+import Ouroboros.Network.ConnectionManager.Types (ExceptionInHandler (..))
+import Ouroboros.Network.Context
+import Ouroboros.Network.ControlMessage (ControlMessage (..))
+import Ouroboros.Network.Driver (TraceSendRecv (..))
+import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
+import Ouroboros.Network.Driver.Simple (DecoderFailure)
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Mux
+import Ouroboros.Network.NodeToNode.Version
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.Socket
+import Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams,
+           DnsSubscriptionTarget (..), DnsTrace (..), WithDomainName (..))
+import Ouroboros.Network.Subscription.Dns qualified as Subscription
+import Ouroboros.Network.Subscription.Ip (IPSubscriptionParams,
+           IPSubscriptionTarget (..), SubscriptionParams (..),
+           SubscriptionTrace (..), WithIPList (..))
+import Ouroboros.Network.Subscription.Ip qualified as Subscription
+import Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
+           SubscriberError)
+import Ouroboros.Network.Tracers
+import Ouroboros.Network.TxSubmission.Inbound qualified as TxInbound
+import Ouroboros.Network.TxSubmission.Outbound qualified as TxOutbound
+import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
 
 
 -- The Handshake tracer types are simply terrible.

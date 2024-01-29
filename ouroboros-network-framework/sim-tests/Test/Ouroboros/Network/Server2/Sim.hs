@@ -20,90 +20,87 @@
 
 module Test.Ouroboros.Network.Server2.Sim (tests) where
 
-import           Control.Applicative (Alternative ((<|>)))
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (SomeAsyncException (..), SomeException (..))
-import           Control.Monad (replicateM)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadTest
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.Fix (MonadFix)
-import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (..), nullTracer)
+import Control.Applicative (Alternative ((<|>)))
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (SomeAsyncException (..), SomeException (..))
+import Control.Monad (replicateM)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadTest
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.IOSim
+import Control.Tracer (Tracer (..), nullTracer)
 
-import           Codec.Serialise.Class (Serialise)
-import           Data.Bifoldable
-import           Data.Bifunctor (Bifunctor (first), bimap)
-import           Data.Bool (bool)
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Dynamic (fromDynamic)
-import           Data.Foldable (foldMap')
-import           Data.Functor (void, ($>), (<&>))
-import           Data.List (delete, foldl', intercalate, nub, (\\))
-import qualified Data.List.Trace as Trace
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
-import           Data.Monoid (Sum (..))
-import           Data.Monoid.Synchronisation (FirstToFinish (..))
-import qualified Data.Set as Set
-import           Data.Typeable (Typeable)
+import Codec.Serialise.Class (Serialise)
+import Data.Bifoldable
+import Data.Bifunctor (Bifunctor (first), bimap)
+import Data.Bool (bool)
+import Data.ByteString.Lazy (ByteString)
+import Data.Dynamic (fromDynamic)
+import Data.Foldable (foldMap')
+import Data.Functor (void, ($>), (<&>))
+import Data.List (delete, foldl', intercalate, nub, (\\))
+import Data.List.Trace qualified as Trace
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
+import Data.Monoid (Sum (..))
+import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 
-import           Text.Printf
+import Text.Printf
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck
 
-import           Control.Concurrent.JobPool
+import Control.Concurrent.JobPool
 
-import qualified Network.Mux as Mux
+import Network.Mux qualified as Mux
 
-import           Ouroboros.Network.ConnectionHandler
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.ConnectionManager.Types
-import qualified Ouroboros.Network.ConnectionManager.Types as CM
-import           Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
-import qualified Ouroboros.Network.InboundGovernor as IG
-import           Ouroboros.Network.InboundGovernor.State
-                     (InboundGovernorCounters (..))
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.Protocol.Handshake.Codec
-                     (noTimeLimitsHandshake, timeLimitsHandshake)
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Server.RateLimiting
-                     (AcceptedConnectionsLimit (..))
-import           Ouroboros.Network.Server2 (RemoteTransitionTrace)
-import           Ouroboros.Network.Snocket (Snocket, TestAddress (..))
-import qualified Ouroboros.Network.Snocket as Snocket
+import Ouroboros.Network.ConnectionHandler
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.ConnectionManager.Types qualified as CM
+import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import Ouroboros.Network.InboundGovernor qualified as IG
+import Ouroboros.Network.InboundGovernor.State (InboundGovernorCounters (..))
+import Ouroboros.Network.Mux
+import Ouroboros.Network.MuxMode
+import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
+           timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server2 (RemoteTransitionTrace)
+import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
+import Ouroboros.Network.Snocket qualified as Snocket
 
-import           Simulation.Network.Snocket
+import Simulation.Network.Snocket
 
-import           Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
-import           Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
-                     genDelayWithPrecision, nightlyTest, sayTracer,
-                     tracerWithTime)
+import Ouroboros.Network.Testing.Data.AbsBearerInfo hiding (delay)
+import Ouroboros.Network.Testing.Utils (WithName (..), WithTime (..),
+           genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
 
-import           Ouroboros.Network.Test.Orphans ()
-import           Test.Simulation.Network.Snocket hiding (tests)
+import Ouroboros.Network.Test.Orphans ()
+import Test.Simulation.Network.Snocket hiding (tests)
 
-import           Ouroboros.Network.ConnectionManager.Test.Experiments
-import           Ouroboros.Network.ConnectionManager.Test.Timeouts
-import           Ouroboros.Network.ConnectionManager.Test.Utils
-                     (abstractStateIsFinalTransition, allValidTransitionsNames,
-                     validTransitionMap, verifyAbstractTransition,
-                     verifyAbstractTransitionOrder)
-import           Ouroboros.Network.InboundGovernor.Test.Utils
-                     (allValidRemoteTransitionsNames,
-                     remoteStrIsFinalTransition, validRemoteTransitionMap,
-                     verifyRemoteTransition, verifyRemoteTransitionOrder)
+import Ouroboros.Network.ConnectionManager.Test.Experiments
+import Ouroboros.Network.ConnectionManager.Test.Timeouts
+import Ouroboros.Network.ConnectionManager.Test.Utils
+           (abstractStateIsFinalTransition, allValidTransitionsNames,
+           validTransitionMap, verifyAbstractTransition,
+           verifyAbstractTransitionOrder)
+import Ouroboros.Network.InboundGovernor.Test.Utils
+           (allValidRemoteTransitionsNames, remoteStrIsFinalTransition,
+           validRemoteTransitionMap, verifyRemoteTransition,
+           verifyRemoteTransitionOrder)
 
 tests :: TestTree
 tests =

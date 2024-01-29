@@ -8,11 +8,10 @@ module Ouroboros.Network.PeerSelection.Bootstrap
   , isNodeAbleToMakeProgress
   ) where
 
-import           GHC.Generics (Generic)
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (LedgerStateJudgement (..))
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-                     (RelayAccessPoint)
+import GHC.Generics (Generic)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerStateJudgement (..))
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
 data UseBootstrapPeers = DontUseBootstrapPeers
                        | UseBootstrapPeers [RelayAccessPoint]

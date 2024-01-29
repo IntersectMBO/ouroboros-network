@@ -16,27 +16,25 @@ module Cardano.Client.Subscription
   , ControlMessage (..)
   ) where
 
-import qualified Data.ByteString.Lazy as BSL
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Void (Void)
+import Data.ByteString.Lazy qualified as BSL
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Void (Void)
 
-import           Network.Mux.Trace (MuxTrace, WithMuxBearer)
+import Network.Mux.Trace (MuxTrace, WithMuxBearer)
 
-import           Ouroboros.Network.ControlMessage (ControlMessage (..))
-import           Ouroboros.Network.Magic (NetworkMagic)
-import           Ouroboros.Network.Mux (MiniProtocolCb (..), MuxMode (..),
-                     OuroborosApplicationWithMinimalCtx, RunMiniProtocol (..))
-import           Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
-                     ConnectionId, LocalAddress,
-                     NetworkClientSubcriptionTracers,
-                     NodeToClientProtocols (..), NodeToClientVersion,
-                     NodeToClientVersionData (NodeToClientVersionData),
-                     ncSubscriptionWorker, newNetworkMutableState,
-                     versionedNodeToClientProtocols)
-import           Ouroboros.Network.Protocol.Handshake.Version (Versions,
-                     foldMapVersions)
-import qualified Ouroboros.Network.Snocket as Snocket
+import Ouroboros.Network.ControlMessage (ControlMessage (..))
+import Ouroboros.Network.Magic (NetworkMagic)
+import Ouroboros.Network.Mux (MiniProtocolCb (..), MuxMode (..),
+           OuroborosApplicationWithMinimalCtx, RunMiniProtocol (..))
+import Ouroboros.Network.NodeToClient (ClientSubscriptionParams (..),
+           ConnectionId, LocalAddress, NetworkClientSubcriptionTracers,
+           NodeToClientProtocols (..), NodeToClientVersion,
+           NodeToClientVersionData (NodeToClientVersionData),
+           ncSubscriptionWorker, newNetworkMutableState,
+           versionedNodeToClientProtocols)
+import Ouroboros.Network.Protocol.Handshake.Version (Versions, foldMapVersions)
+import Ouroboros.Network.Snocket qualified as Snocket
 
 -- | Subscribe using `node-to-client` mini-protocol.
 --

@@ -1,28 +1,28 @@
 module Main (main) where
 
-import           Main.Utf8 (withUtf8)
-import           Test.Tasty
+import Main.Utf8 (withUtf8)
+import Test.Tasty
 
-import qualified Test.ChainProducerState (tests)
-import qualified Test.Ouroboros.Network.BlockFetch (tests)
-import qualified Test.Ouroboros.Network.Diffusion.Policies (tests)
-import qualified Test.Ouroboros.Network.KeepAlive (tests)
-import qualified Test.Ouroboros.Network.LedgerPeers (tests)
-import qualified Test.Ouroboros.Network.MockNode (tests)
-import qualified Test.Ouroboros.Network.NodeToClient.Version (tests)
-import qualified Test.Ouroboros.Network.NodeToNode.Version (tests)
-import qualified Test.Ouroboros.Network.PeerSelection (tests)
-import qualified Test.Ouroboros.Network.PeerSelection.Json (tests)
-import qualified Test.Ouroboros.Network.PeerSelection.KnownPeers
-import qualified Test.Ouroboros.Network.PeerSelection.LocalRootPeers
-import qualified Test.Ouroboros.Network.PeerSelection.MockEnvironment
-import qualified Test.Ouroboros.Network.PeerSelection.PeerMetric
-import qualified Test.Ouroboros.Network.PeerSelection.PublicRootPeers
-import qualified Test.Ouroboros.Network.PeerSelection.RootPeersDNS
-import qualified Test.Ouroboros.Network.PeerState (tests)
-import qualified Test.Ouroboros.Network.Testnet (tests)
-import qualified Test.Ouroboros.Network.TxSubmission (tests)
-import qualified Test.Ouroboros.Network.Version (tests)
+import Test.ChainProducerState qualified (tests)
+import Test.Ouroboros.Network.BlockFetch qualified (tests)
+import Test.Ouroboros.Network.Diffusion.Policies qualified (tests)
+import Test.Ouroboros.Network.KeepAlive qualified (tests)
+import Test.Ouroboros.Network.LedgerPeers qualified (tests)
+import Test.Ouroboros.Network.MockNode qualified (tests)
+import Test.Ouroboros.Network.NodeToClient.Version qualified (tests)
+import Test.Ouroboros.Network.NodeToNode.Version qualified (tests)
+import Test.Ouroboros.Network.PeerSelection qualified (tests)
+import Test.Ouroboros.Network.PeerSelection.Json qualified (tests)
+import Test.Ouroboros.Network.PeerSelection.KnownPeers qualified
+import Test.Ouroboros.Network.PeerSelection.LocalRootPeers qualified
+import Test.Ouroboros.Network.PeerSelection.MockEnvironment qualified
+import Test.Ouroboros.Network.PeerSelection.PeerMetric qualified
+import Test.Ouroboros.Network.PeerSelection.PublicRootPeers qualified
+import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified
+import Test.Ouroboros.Network.PeerState qualified (tests)
+import Test.Ouroboros.Network.Testnet qualified (tests)
+import Test.Ouroboros.Network.TxSubmission qualified (tests)
+import Test.Ouroboros.Network.Version qualified (tests)
 
 main :: IO ()
 main = withUtf8 $ defaultMain tests

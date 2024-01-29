@@ -12,32 +12,32 @@
 module Test.Ouroboros.Network.PeerState (tests) where
 
 
-import           Control.Exception (ArithException (..), AsyncException (..),
-                     NonTermination (..))
-import           Data.Functor (void)
-import qualified Data.Map.Strict as Map
-import           Data.Monoid (First (..))
-import qualified Data.Set as Set
-import           Text.Printf
+import Control.Exception (ArithException (..), AsyncException (..),
+           NonTermination (..))
+import Data.Functor (void)
+import Data.Map.Strict qualified as Map
+import Data.Monoid (First (..))
+import Data.Set qualified as Set
+import Text.Printf
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer
 
-import           Data.Semigroup.Action
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.Server.ConnectionTable
-import           Ouroboros.Network.Snocket
-import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.PeerState
-import           Ouroboros.Network.Subscription.Worker
+import Data.Semigroup.Action
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.Server.ConnectionTable
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.Subscription.Ip
+import Ouroboros.Network.Subscription.PeerState
+import Ouroboros.Network.Subscription.Worker
 
-import           Test.QuickCheck hiding (Result)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck hiding (Result)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Subscription.PeerState"

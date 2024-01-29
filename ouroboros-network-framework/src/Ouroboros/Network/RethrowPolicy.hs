@@ -43,10 +43,10 @@ module Ouroboros.Network.RethrowPolicy
   , ioErrorRethrowPolicy
   ) where
 
-import           Control.Exception
+import Control.Exception
 
-import           Network.Mux.Trace (MuxError)
-import           Network.Mux.Types (MuxRuntimeError (..))
+import Network.Mux.Trace (MuxError)
+import Network.Mux.Types (MuxRuntimeError (..))
 
 
 data ErrorCommand =

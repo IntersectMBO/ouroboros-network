@@ -15,23 +15,23 @@ module Ouroboros.Network.BlockFetch.ClientRegistry
   , readPeerGSVs
   ) where
 
-import           Data.Functor.Contravariant (contramap)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Functor.Contravariant (contramap)
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (assert)
-import           Control.Monad (unless)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork (MonadFork (throwTo),
-                     MonadThread (ThreadId, myThreadId))
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (Tracer)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad (unless)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork (MonadFork (throwTo),
+           MonadThread (ThreadId, myThreadId))
+import Control.Monad.Class.MonadThrow
+import Control.Tracer (Tracer)
 
-import           Ouroboros.Network.BlockFetch.ClientState
-import           Ouroboros.Network.DeltaQ
+import Ouroboros.Network.BlockFetch.ClientState
+import Ouroboros.Network.DeltaQ
 
 
 

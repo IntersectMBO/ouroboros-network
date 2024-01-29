@@ -8,10 +8,9 @@ module Network.Mux.Time
   , timestampMicrosecondsLow32Bits
   ) where
 
-import           Control.Monad.Class.MonadTime.SI (Time (..))
-import           Data.Time.Clock (DiffTime, diffTimeToPicoseconds,
-                     picosecondsToDiffTime)
-import           Data.Word (Word32)
+import Control.Monad.Class.MonadTime.SI (Time (..))
+import Data.Time.Clock (DiffTime, diffTimeToPicoseconds, picosecondsToDiffTime)
+import Data.Word (Word32)
 
 diffTimeToMicroseconds :: DiffTime -> Integer
 diffTimeToMicroseconds = (`div` 1000000) . diffTimeToPicoseconds

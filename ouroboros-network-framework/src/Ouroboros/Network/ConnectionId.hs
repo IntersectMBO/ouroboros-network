@@ -9,11 +9,11 @@
 
 module Ouroboros.Network.ConnectionId where
 
-import           NoThunks.Class (InspectHeap (..), NoThunks)
+import NoThunks.Class (InspectHeap (..), NoThunks)
 
-import           Data.Hashable
-import           GHC.Generics (Generic)
-import           Ouroboros.Network.Util.ShowProxy (Proxy (..), ShowProxy (..))
+import Data.Hashable
+import GHC.Generics (Generic)
+import Ouroboros.Network.Util.ShowProxy (Proxy (..), ShowProxy (..))
 
 
 -- | Connection is identified by local and remote address.

@@ -1,7 +1,7 @@
 
 module Ouroboros.Network.Handshake (HandshakeCallbacks (..)) where
 
-import           Ouroboros.Network.Handshake.Acceptable (Accept)
+import Ouroboros.Network.Handshake.Acceptable (Accept)
 
 -- | A record that holds handshake callbacks.
 --

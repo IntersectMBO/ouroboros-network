@@ -24,9 +24,9 @@ module Ouroboros.Network.Protocol.ChainSync.Server
   , chainSyncServerPeer
   ) where
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.ChainSync.Type
+import Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | A chain sync protocol server, on top of some effect 'm'.

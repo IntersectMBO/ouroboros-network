@@ -14,20 +14,20 @@ module Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
   , chainSyncClientPipelinedLowHigh
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Data.Word (Word16)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Data.Word (Word16)
 
-import           Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..),
-                     blockNo, getTipBlockNo)
-import           Ouroboros.Network.Mock.Chain (Chain (..), Point (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Point (WithOrigin (..))
+import Ouroboros.Network.Block (BlockNo, HasHeader (..), Tip (..), blockNo,
+           getTipBlockNo)
+import Ouroboros.Network.Mock.Chain (Chain (..), Point (..))
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Point (WithOrigin (..))
 
-import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
-import           Ouroboros.Network.Protocol.ChainSync.Examples (Client (..))
-import           Ouroboros.Network.Protocol.ChainSync.PipelineDecision
+import Ouroboros.Network.Protocol.ChainSync.ClientPipelined
+import Ouroboros.Network.Protocol.ChainSync.Examples (Client (..))
+import Ouroboros.Network.Protocol.ChainSync.PipelineDecision
 
 -- | Pipelined chain sync client which pipelines at most @omax@ requests according to 'MkPipelineDecision' policy.
 --

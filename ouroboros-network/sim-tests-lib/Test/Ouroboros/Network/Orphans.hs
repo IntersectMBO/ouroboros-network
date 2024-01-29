@@ -2,11 +2,11 @@
 module Test.Ouroboros.Network.Orphans () where
 
 
-import           Data.Hashable (Hashable (hashWithSalt), hashUsing)
-import qualified Data.IP as IP
-import           Data.Word (Word16)
+import Data.Hashable (Hashable (hashWithSalt), hashUsing)
+import Data.IP qualified as IP
+import Data.Word (Word16)
 
-import           Network.Socket (PortNumber)
+import Network.Socket (PortNumber)
 
 
 instance Hashable IP.IPv4

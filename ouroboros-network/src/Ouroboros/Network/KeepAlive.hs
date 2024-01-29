@@ -11,22 +11,21 @@ module Ouroboros.Network.KeepAlive
   , TraceKeepAliveClient (..)
   ) where
 
-import qualified Control.Concurrent.Class.MonadSTM as Lazy
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (assert)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, traceWith)
-import qualified Data.Map.Strict as M
-import           Data.Maybe (fromJust)
-import           System.Random (StdGen, random)
+import Control.Concurrent.Class.MonadSTM qualified as Lazy
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
+import Data.Map.Strict qualified as M
+import Data.Maybe (fromJust)
+import System.Random (StdGen, random)
 
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
-import           Ouroboros.Network.DeltaQ
-import           Ouroboros.Network.Protocol.KeepAlive.Client
-import           Ouroboros.Network.Protocol.KeepAlive.Server
-import           Ouroboros.Network.Protocol.KeepAlive.Type
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
+import Ouroboros.Network.DeltaQ
+import Ouroboros.Network.Protocol.KeepAlive.Client
+import Ouroboros.Network.Protocol.KeepAlive.Server
+import Ouroboros.Network.Protocol.KeepAlive.Type
 
 
 newtype KeepAliveInterval = KeepAliveInterval { keepAliveInterval :: DiffTime }

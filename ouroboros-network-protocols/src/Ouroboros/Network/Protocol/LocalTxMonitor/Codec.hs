@@ -13,18 +13,18 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Codec
   , codecLocalTxMonitorId
   ) where
 
-import           Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadST
 
-import           Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR
 
-import           Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy (ByteString)
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import           Text.Printf
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Text.Printf
 
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
+import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 codecLocalTxMonitor ::
      forall txid tx slot m ptcl.

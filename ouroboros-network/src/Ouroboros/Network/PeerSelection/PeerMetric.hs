@@ -32,30 +32,30 @@ module Ouroboros.Network.PeerSelection.PeerMetric
   , newPeerMetric'
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked
-import           Control.DeepSeq (NFData (..))
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer (Tracer (..), contramap, nullTracer)
-import           Data.Bifunctor (Bifunctor (..))
-import           Data.IntPSQ (IntPSQ)
-import qualified Data.IntPSQ as IntPSQ
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
-import           Data.Monoid (Sum (..))
-import           Data.OrdPSQ (OrdPSQ)
-import qualified Data.OrdPSQ as OrdPSQ
-import           GHC.Generics
+import Control.Concurrent.Class.MonadSTM.Strict.TVar.Checked
+import Control.DeepSeq (NFData (..))
+import Control.Monad (when)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Tracer (..), contramap, nullTracer)
+import Data.Bifunctor (Bifunctor (..))
+import Data.IntPSQ (IntPSQ)
+import Data.IntPSQ qualified as IntPSQ
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
+import Data.Monoid (Sum (..))
+import Data.OrdPSQ (OrdPSQ)
+import Data.OrdPSQ qualified as OrdPSQ
+import GHC.Generics
 
-import           NoThunks.Class
-import           NoThunks.Class.Orphans ()
+import NoThunks.Class
+import NoThunks.Class.Orphans ()
 
-import           Cardano.Slotting.Slot (SlotNo (..))
-import           Ouroboros.Network.DeltaQ (SizeInBytes)
-import           Ouroboros.Network.NodeToNode (ConnectionId (..))
-import           Ouroboros.Network.PeerSelection.PeerMetric.Type
+import Cardano.Slotting.Slot (SlotNo (..))
+import Ouroboros.Network.DeltaQ (SizeInBytes)
+import Ouroboros.Network.NodeToNode (ConnectionId (..))
+import Ouroboros.Network.PeerSelection.PeerMetric.Type
 
 
 newtype PeerMetricsConfiguration = PeerMetricsConfiguration {

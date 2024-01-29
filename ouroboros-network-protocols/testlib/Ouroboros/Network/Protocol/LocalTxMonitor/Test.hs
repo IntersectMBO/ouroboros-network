@@ -9,38 +9,38 @@
 
 module Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests) where
 
-import           Codec.Serialise (Serialise)
-import qualified Codec.Serialise as S
-import           Data.ByteString.Lazy (ByteString)
+import Codec.Serialise (Serialise)
+import Codec.Serialise qualified as S
+import Data.ByteString.Lazy (ByteString)
 
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.IOSim
-import qualified Control.Monad.ST as ST
-import           Control.Tracer (nullTracer)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.IOSim
+import Control.Monad.ST qualified as ST
+import Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Proofs
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Proofs
 
-import           Ouroboros.Network.Block (SlotNo)
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers)
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Block (SlotNo)
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Client
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Codec
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Direct
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Examples
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Server
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
+import Ouroboros.Network.Protocol.LocalTxMonitor.Client
+import Ouroboros.Network.Protocol.LocalTxMonitor.Codec
+import Ouroboros.Network.Protocol.LocalTxMonitor.Direct
+import Ouroboros.Network.Protocol.LocalTxMonitor.Examples
+import Ouroboros.Network.Protocol.LocalTxMonitor.Server
+import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
-import           Test.ChainGenerators ()
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
-import           Test.QuickCheck hiding (Result)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.ChainGenerators ()
+import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+           prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.QuickCheck hiding (Result)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Protocol"

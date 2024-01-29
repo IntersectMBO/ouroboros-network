@@ -16,13 +16,13 @@ module Ouroboros.Network.BlockFetch.DeltaQ
   , comparePeerGSV'
   ) where
 
-import           Control.Monad.Class.MonadTime.SI
-import           Data.Fixed as Fixed (Pico)
-import           Data.Hashable
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Control.Monad.Class.MonadTime.SI
+import Data.Fixed as Fixed (Pico)
+import Data.Hashable
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Ouroboros.Network.DeltaQ
+import Ouroboros.Network.DeltaQ
 
 
 data PeerFetchInFlightLimits = PeerFetchInFlightLimits {

@@ -8,19 +8,19 @@ module Network.Mux.Bearer.Queues
   , queueChannelAsMuxBearer
   ) where
 
-import qualified Data.ByteString.Lazy as BL
+import Data.ByteString.Lazy qualified as BL
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer
 
-import qualified Network.Mux.Codec as Mx
-import           Network.Mux.Time as Mx
-import qualified Network.Mux.Timeout as Mx
-import qualified Network.Mux.Trace as Mx
-import           Network.Mux.Types (MuxBearer)
-import qualified Network.Mux.Types as Mx
+import Network.Mux.Codec qualified as Mx
+import Network.Mux.Time as Mx
+import Network.Mux.Timeout qualified as Mx
+import Network.Mux.Trace qualified as Mx
+import Network.Mux.Types (MuxBearer)
+import Network.Mux.Types qualified as Mx
 
 data QueueChannel m = QueueChannel {
     readQueue  :: StrictTBQueue m BL.ByteString,

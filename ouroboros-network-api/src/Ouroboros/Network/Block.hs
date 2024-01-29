@@ -73,30 +73,30 @@ module Ouroboros.Network.Block
   , fromSerialised
   ) where
 
-import           Codec.CBOR.Decoding (Decoder)
-import qualified Codec.CBOR.Decoding as Dec
-import           Codec.CBOR.Encoding (Encoding)
-import qualified Codec.CBOR.Encoding as Enc
-import qualified Codec.CBOR.Read as Read
-import qualified Codec.CBOR.Write as Write
-import           Codec.Serialise (Serialise (..))
-import           Control.Monad (when)
-import qualified Data.ByteString.Base16.Lazy as B16
-import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.ByteString.Lazy.Char8 as BSC
-import           Data.Coerce (Coercible, coerce)
-import           Data.Kind (Type)
-import           Data.Typeable (Typeable)
-import           GHC.Generics (Generic)
-import           NoThunks.Class (NoThunks)
+import Codec.CBOR.Decoding (Decoder)
+import Codec.CBOR.Decoding qualified as Dec
+import Codec.CBOR.Encoding (Encoding)
+import Codec.CBOR.Encoding qualified as Enc
+import Codec.CBOR.Read qualified as Read
+import Codec.CBOR.Write qualified as Write
+import Codec.Serialise (Serialise (..))
+import Control.Monad (when)
+import Data.ByteString.Base16.Lazy qualified as B16
+import Data.ByteString.Lazy qualified as Lazy
+import Data.ByteString.Lazy.Char8 qualified as BSC
+import Data.Coerce (Coercible, coerce)
+import Data.Kind (Type)
+import Data.Typeable (Typeable)
+import GHC.Generics (Generic)
+import NoThunks.Class (NoThunks)
 
-import           Cardano.Slotting.Block
-import           Cardano.Slotting.Slot (SlotNo (..))
+import Cardano.Slotting.Block
+import Cardano.Slotting.Slot (SlotNo (..))
 
-import           Ouroboros.Network.Point (WithOrigin (..), block,
-                     fromWithOrigin, origin, withOriginToMaybe)
-import qualified Ouroboros.Network.Point as Point (Block (..))
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Point (WithOrigin (..), block, fromWithOrigin, origin,
+           withOriginToMaybe)
+import Ouroboros.Network.Point qualified as Point (Block (..))
+import Ouroboros.Network.Util.ShowProxy
 
 genesisPoint :: Point block
 genesisPoint = Point origin

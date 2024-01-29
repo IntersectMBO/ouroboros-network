@@ -10,56 +10,55 @@
 
 module Ouroboros.Network.Protocol.ChainSync.Test (tests) where
 
-import qualified Codec.Serialise as S
-import           Control.Monad (unless, void)
-import qualified Control.Monad.ST as ST
-import           Data.ByteString.Lazy (ByteString)
+import Codec.Serialise qualified as S
+import Control.Monad (unless, void)
+import Control.Monad.ST qualified as ST
+import Data.ByteString.Lazy (ByteString)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Tracer (nullTracer)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Tracer (nullTracer)
 
-import           Control.Monad.IOSim (runSimOrThrow)
+import Control.Monad.IOSim (runSimOrThrow)
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Proofs (connect, connectPipelined)
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Proofs (connect, connectPipelined)
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver
 
-import           Ouroboros.Network.Block (BlockNo, Serialised (..),
-                     StandardHash, Tip (..), decodeTip, encodeTip,
-                     pattern BlockPoint, pattern GenesisPoint, unwrapCBORinCBOR,
-                     wrapCBORinCBOR)
-import           Ouroboros.Network.Mock.Chain (Chain, Point)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock (Block, BlockHeader (..))
-import qualified Ouroboros.Network.Mock.ProducerState as ChainProducerState
+import Ouroboros.Network.Block (BlockNo, Serialised (..), StandardHash,
+           Tip (..), decodeTip, encodeTip, pattern BlockPoint,
+           pattern GenesisPoint, unwrapCBORinCBOR, wrapCBORinCBOR)
+import Ouroboros.Network.Mock.Chain (Chain, Point)
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock (Block, BlockHeader (..))
+import Ouroboros.Network.Mock.ProducerState qualified as ChainProducerState
 
-import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.ClientPipelined
-import           Ouroboros.Network.Protocol.ChainSync.Codec
-import           Ouroboros.Network.Protocol.ChainSync.Direct
-import           Ouroboros.Network.Protocol.ChainSync.DirectPipelined
-import           Ouroboros.Network.Protocol.ChainSync.Examples (Client)
-import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSyncExamples
-import qualified Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined as ChainSyncExamples
-import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Protocol.ChainSync.Type
-import           Test.Data.PipeliningDepth (PipeliningDepth (..))
+import Ouroboros.Network.Protocol.ChainSync.Client
+import Ouroboros.Network.Protocol.ChainSync.ClientPipelined
+import Ouroboros.Network.Protocol.ChainSync.Codec
+import Ouroboros.Network.Protocol.ChainSync.Direct
+import Ouroboros.Network.Protocol.ChainSync.DirectPipelined
+import Ouroboros.Network.Protocol.ChainSync.Examples (Client)
+import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSyncExamples
+import Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined qualified as ChainSyncExamples
+import Ouroboros.Network.Protocol.ChainSync.Server
+import Ouroboros.Network.Protocol.ChainSync.Type
+import Test.Data.PipeliningDepth (PipeliningDepth (..))
 
-import           Test.ChainGenerators ()
-import           Test.ChainProducerState (ChainProducerStateForkTest (..))
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.ChainGenerators ()
+import Test.ChainProducerState (ChainProducerStateForkTest (..))
+import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+           prop_codec_valid_cbor_encoding, splits2, splits3)
 
-import           Test.QuickCheck hiding (Result)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck hiding (Result)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.Protocol"

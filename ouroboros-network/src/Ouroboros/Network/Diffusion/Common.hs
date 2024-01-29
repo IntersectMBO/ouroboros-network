@@ -13,28 +13,28 @@ module Ouroboros.Network.Diffusion.Common
   , Applications (..)
   ) where
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.List.NonEmpty (NonEmpty)
-import           Data.Typeable (Typeable)
-import           Data.Void (Void)
+import Data.ByteString.Lazy (ByteString)
+import Data.List.NonEmpty (NonEmpty)
+import Data.Typeable (Typeable)
+import Data.Void (Void)
 
-import           Control.Exception (Exception, SomeException)
-import           Control.Tracer (Tracer, nullTracer)
+import Control.Exception (Exception, SomeException)
+import Control.Tracer (Tracer, nullTracer)
 
-import           Network.Mux (MuxMode (..), MuxTrace, WithMuxBearer)
+import Network.Mux (MuxMode (..), MuxTrace, WithMuxBearer)
 
-import           Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
-                     OuroborosBundleWithExpandedCtx)
-import           Ouroboros.Network.NodeToClient (Versions)
-import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit,
-                     ConnectionId, DiffusionMode)
-import qualified Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (LedgerPeersConsensusInterface)
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
-import           Ouroboros.Network.Snocket (FileDescriptor)
-import           Ouroboros.Network.Socket (SystemdSocketTracer)
+import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
+           OuroborosBundleWithExpandedCtx)
+import Ouroboros.Network.NodeToClient (Versions)
+import Ouroboros.Network.NodeToClient qualified as NodeToClient
+import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, ConnectionId,
+           DiffusionMode)
+import Ouroboros.Network.NodeToNode qualified as NodeToNode
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerPeersConsensusInterface)
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import Ouroboros.Network.Snocket (FileDescriptor)
+import Ouroboros.Network.Socket (SystemdSocketTracer)
 
 -- | The 'DiffusionTracer' logs
 --

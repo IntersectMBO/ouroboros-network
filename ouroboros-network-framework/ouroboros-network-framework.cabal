@@ -112,6 +112,7 @@ library
 
   hs-source-dirs:      src
   default-language:    Haskell2010
+  default-extensions:  ImportQualifiedPost
   ghc-options:         -Wall
                        -Wcompat
                        -Wincomplete-uni-patterns
@@ -155,6 +156,7 @@ library testlib
                    , ouroboros-network-testing
 
   default-language:  Haskell2010
+  default-extensions:ImportQualifiedPost
   ghc-options:       -Wall
                      -Wcompat
                      -Wincomplete-uni-patterns
@@ -217,6 +219,7 @@ test-suite sim-tests
     build-depends:     directory
 
   default-language:    Haskell2010
+  default-extensions:  ImportQualifiedPost
   ghc-options:         -rtsopts
                        -threaded
                        -Wall
@@ -273,6 +276,7 @@ test-suite io-tests
     build-depends:     directory
 
   default-language:    Haskell2010
+  default-extensions:  ImportQualifiedPost
   ghc-options:         -rtsopts
                        -threaded
                        -Wall
@@ -302,6 +306,7 @@ executable demo-ping-pong
                        typed-protocols-examples
 
   default-language:    Haskell2010
+  default-extensions:  ImportQualifiedPost
   ghc-options:         -Wall
                        -threaded
                        -Wcompat
@@ -334,6 +339,7 @@ executable demo-connection-manager
                        typed-protocols-examples
 
   default-language:    Haskell2010
+  default-extensions:  ImportQualifiedPost
   ghc-options:         -Wall
                        -threaded
                        -Wcompat

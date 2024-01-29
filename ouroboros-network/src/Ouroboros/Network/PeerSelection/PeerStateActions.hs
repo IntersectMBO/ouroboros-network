@@ -30,39 +30,38 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
   , FailureType (..)
   ) where
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (SomeAsyncException (..), assert)
-import           Control.Monad (when, (<=<))
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer.SI
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (SomeAsyncException (..), assert)
+import Control.Monad (when, (<=<))
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
 
-import           Control.Concurrent.JobPool (Job (..), JobPool)
-import qualified Control.Concurrent.JobPool as JobPool
-import           Control.Tracer (Tracer, traceWith)
+import Control.Concurrent.JobPool (Job (..), JobPool)
+import Control.Concurrent.JobPool qualified as JobPool
+import Control.Tracer (Tracer, traceWith)
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.Functor (void, ($>))
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Typeable (Typeable, cast)
+import Data.ByteString.Lazy (ByteString)
+import Data.Functor (void, ($>))
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Typeable (Typeable, cast)
 
-import qualified Network.Mux as Mux
+import Network.Mux qualified as Mux
 
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.ControlMessage (ControlMessage (..))
-import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.PeerSelection.Governor
-                     (PeerStateActions (..))
-import           Ouroboros.Network.Protocol.Handshake (HandshakeException)
+import Ouroboros.Network.Context
+import Ouroboros.Network.ControlMessage (ControlMessage (..))
+import Ouroboros.Network.ExitPolicy
+import Ouroboros.Network.Mux
+import Ouroboros.Network.PeerSelection.Governor (PeerStateActions (..))
+import Ouroboros.Network.Protocol.Handshake (HandshakeException)
 
-import           Ouroboros.Network.ConnectionHandler (Handle (..),
-                     HandleError (..), MuxConnectionManager)
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
+import Ouroboros.Network.ConnectionHandler (Handle (..), HandleError (..),
+           MuxConnectionManager)
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 
 -- $doc
 --

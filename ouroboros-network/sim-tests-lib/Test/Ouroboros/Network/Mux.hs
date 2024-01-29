@@ -10,43 +10,43 @@
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 module Test.Ouroboros.Network.Mux (tests) where
 
-import           Codec.Serialise (Serialise (..))
+import Codec.Serialise (Serialise (..))
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim
-import           Control.Tracer
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim
+import Control.Tracer
 
-import           Test.ChainGenerators (TestBlockChainAndUpdates (..))
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.ChainGenerators (TestBlockChainAndUpdates (..))
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Block (Tip (..), decodeTip, encodeTip)
-import           Ouroboros.Network.Context
-import           Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import qualified Ouroboros.Network.Mock.ProducerState as CPS
-import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Examples as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Block (Tip (..), decodeTip, encodeTip)
+import Ouroboros.Network.Context
+import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ProducerState qualified as CPS
+import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Server qualified as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Type qualified as ChainSync
+import Ouroboros.Network.Util.ShowProxy
 
-import qualified Network.Mux.Bearer as Mx
-import qualified Network.Mux.Bearer.Queues as Mx
-import qualified Network.Mux.Compat as Mx (muxStart)
-import           Ouroboros.Network.Mux as Mx
+import Network.Mux.Bearer qualified as Mx
+import Network.Mux.Bearer.Queues qualified as Mx
+import Network.Mux.Compat qualified as Mx (muxStart)
+import Ouroboros.Network.Mux as Mx
 
 
 tests :: TestTree

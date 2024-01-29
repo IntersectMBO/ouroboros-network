@@ -32,24 +32,24 @@ module Network.Mux.Compat
   , WithMuxBearer (..)
   ) where
 
-import qualified Data.ByteString.Lazy as BL
-import           Data.Void (Void)
+import Data.ByteString.Lazy qualified as BL
+import Data.Void (Void)
 
-import           Control.Applicative (Alternative (..), (<|>))
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer
+import Control.Applicative (Alternative (..), (<|>))
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer
 
-import           Network.Mux (StartOnDemandOrEagerly (..), newMux,
-                     runMiniProtocol, runMux, stopMux, traceMuxBearerState)
-import           Network.Mux.Bearer
-import           Network.Mux.Channel
-import           Network.Mux.Trace
-import           Network.Mux.Types hiding (MiniProtocolInfo (..))
-import qualified Network.Mux.Types as Types
+import Network.Mux (StartOnDemandOrEagerly (..), newMux, runMiniProtocol,
+           runMux, stopMux, traceMuxBearerState)
+import Network.Mux.Bearer
+import Network.Mux.Channel
+import Network.Mux.Trace
+import Network.Mux.Types hiding (MiniProtocolInfo (..))
+import Network.Mux.Types qualified as Types
 
 
 newtype MuxApplication (mode :: MuxMode) m a b =

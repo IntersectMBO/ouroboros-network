@@ -2,13 +2,13 @@
 
 module Ouroboros.Network.ConnectionManager.Test.Utils where
 
-import           Prelude hiding (read)
+import Prelude hiding (read)
 
-import           Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import           Ouroboros.Network.ConnectionManager.Test.Timeouts
-import           Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
+import Ouroboros.Network.ConnectionManager.Test.Timeouts
+import Ouroboros.Network.ConnectionManager.Types
 
-import           Test.QuickCheck (counterexample, property)
+import Test.QuickCheck (counterexample, property)
 
 
 verifyAbstractTransition :: AbstractTransition

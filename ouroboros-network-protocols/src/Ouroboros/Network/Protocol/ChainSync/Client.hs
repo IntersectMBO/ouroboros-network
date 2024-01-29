@@ -27,12 +27,12 @@ module Ouroboros.Network.Protocol.ChainSync.Client
   , mapChainSyncClient
   ) where
 
-import           Control.Monad (forever)
-import           Control.Monad.Class.MonadTimer
+import Control.Monad (forever)
+import Control.Monad.Class.MonadTimer
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.ChainSync.Type
+import Ouroboros.Network.Protocol.ChainSync.Type
 
 
 -- | A chain sync protocol client, on top of some effect 'm'.

@@ -12,44 +12,43 @@
 module Test.Ouroboros.Network.PeerSelection.PeerMetric where
 
 
-import qualified Control.Concurrent.Class.MonadSTM as LazySTM
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.DeepSeq (NFData (..))
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer (..), traceWith)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData (..))
+import Control.Monad (when)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..), traceWith)
 
-import           Data.Foldable (Foldable (foldl'), foldr')
-import           Data.List (sortOn)
-import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Map.Merge.Strict as Map
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
+import Data.Foldable (Foldable (foldl'), foldr')
+import Data.List (sortOn)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Merge.Strict qualified as Map
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 
-import           Network.Mux.Trace (TraceLabelPeer (..))
+import Network.Mux.Trace (TraceLabelPeer (..))
 
-import           Ouroboros.Network.ConnectionId
-import           Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
-                     PeerMetricsConfiguration (..), ReportPeerMetrics (..),
-                     fetchynessBlocks, fetchynessBytes, joinedPeerMetricAt,
-                     newPeerMetric, reportMetric, upstreamyness)
-import           Ouroboros.Network.SizeInBytes
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
+           PeerMetricsConfiguration (..), ReportPeerMetrics (..),
+           fetchynessBlocks, fetchynessBytes, joinedPeerMetricAt, newPeerMetric,
+           reportMetric, upstreamyness)
+import Ouroboros.Network.SizeInBytes
 
-import           Cardano.Slotting.Slot (SlotNo (..))
+import Cardano.Slotting.Slot (SlotNo (..))
 
-import           Control.Monad.IOSim
+import Control.Monad.IOSim
 
-import           NoThunks.Class
+import NoThunks.Class
 
-import           Ouroboros.Network.ConnectionManager.Test.Timeouts
-                     (AllProperty (..))
-import           Ouroboros.Network.Testing.Data.Script
+import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..))
+import Ouroboros.Network.Testing.Data.Script
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree

@@ -37,38 +37,38 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , resolveLedgerPeers
   ) where
 
-import           Control.Exception (assert)
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer (Tracer, traceWith)
-import           Data.Bifunctor (first)
-import qualified Data.IP as IP
-import           Data.List (foldl', sortOn)
-import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Ord (Down (..))
-import           Data.Ratio
-import           System.Random
+import Control.Exception (assert)
+import Control.Monad (when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Tracer, traceWith)
+import Data.Bifunctor (first)
+import Data.IP qualified as IP
+import Data.List (foldl', sortOn)
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Ord (Down (..))
+import Data.Ratio
+import System.Random
 
-import           Cardano.Slotting.Slot (SlotNo)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadThrow
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Void (Void)
-import           Data.Word (Word16, Word64)
-import qualified Network.DNS as DNS
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Common
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import           Ouroboros.Network.PeerSelection.RelayAccessPoint
-import qualified Ouroboros.Network.PeerSelection.RelayAccessPoint as Socket
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import           Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-                     (resolveLedgerPeers)
+import Cardano.Slotting.Slot (SlotNo)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadThrow
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Void (Void)
+import Data.Word (Word16, Word64)
+import Network.DNS qualified as DNS
+import Ouroboros.Network.PeerSelection.LedgerPeers.Common
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import Ouroboros.Network.PeerSelection.RelayAccessPoint
+import Ouroboros.Network.PeerSelection.RelayAccessPoint qualified as Socket
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
+           (resolveLedgerPeers)
 
 -- | Internal API to deal with 'UseLedgerAfter' configuration
 -- option

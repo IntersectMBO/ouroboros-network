@@ -1,10 +1,10 @@
 {-# OPTIONS_GHC -Wno-orphans     #-}
 module Ouroboros.Network.Test.Orphans () where
 
-import           Network.TypedProtocol.PingPong.Type (PingPong)
-import           Network.TypedProtocol.ReqResp.Type (ReqResp)
+import Network.TypedProtocol.PingPong.Type (PingPong)
+import Network.TypedProtocol.ReqResp.Type (ReqResp)
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 instance ShowProxy PingPong where

@@ -22,13 +22,13 @@ module Ouroboros.Network.Protocol.TxSubmission2.Server
   , txSubmissionServerPeerPipelined
   ) where
 
-import           Data.List.NonEmpty (NonEmpty)
-import           Data.Word (Word16)
+import Data.List.NonEmpty (NonEmpty)
+import Data.Word (Word16)
 
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Protocol.TxSubmission2.Type
 
 
 data TxSubmissionServerPipelined txid tx m a where

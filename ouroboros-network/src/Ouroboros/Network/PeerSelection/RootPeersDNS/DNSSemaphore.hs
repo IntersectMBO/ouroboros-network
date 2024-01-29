@@ -7,9 +7,9 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
   , withDNSSemaphore
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Concurrent.Class.MonadSTM.TSem
-import           Control.Monad.Class.MonadThrow
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.Class.MonadSTM.TSem
+import Control.Monad.Class.MonadThrow
 
 -- | Maximal concurrency when resolving DNS names of root and ledger peers.
 --

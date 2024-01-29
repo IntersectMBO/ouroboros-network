@@ -2,8 +2,8 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Direct where
 
-import           Ouroboros.Network.Protocol.PeerSharing.Client
-import           Ouroboros.Network.Protocol.PeerSharing.Server
+import Ouroboros.Network.Protocol.PeerSharing.Client
+import Ouroboros.Network.Protocol.PeerSharing.Server
 
 direct :: Monad m
        => PeerSharingServer peer m

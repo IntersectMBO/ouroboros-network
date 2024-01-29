@@ -9,27 +9,25 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
   , aboveTarget
   ) where
 
-import           Data.Maybe (fromMaybe)
-import qualified Data.Set as Set
+import Data.Maybe (fromMaybe)
+import Data.Set qualified as Set
 
-import           Control.Concurrent.JobPool (Job (..))
-import           Control.Exception (Exception (..), SomeException, assert)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
+import Control.Concurrent.JobPool (Job (..))
+import Control.Exception (Exception (..), SomeException, assert)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 
-import           Ouroboros.Network.PeerSelection.Bootstrap
-                     (requiresBootstrapPeers)
-import           Ouroboros.Network.PeerSelection.Governor.Types
-import           Ouroboros.Network.PeerSelection.PeerAdvertise
-                     (PeerAdvertise (..))
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
-import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
-import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
-import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 
 
 ---------------------------

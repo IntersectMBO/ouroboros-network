@@ -6,18 +6,18 @@
 --
 module Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor) where
 
-import           Data.Void (Void)
+import Data.Void (Void)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer (..), traceWith)
-import           System.Random
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..), traceWith)
+import System.Random
 
-import           Ouroboros.Network.BlockFetch (FetchMode (..))
-import           Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
-import           Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
-import           Ouroboros.Network.PeerSelection.PeerMetric
+import Ouroboros.Network.BlockFetch (FetchMode (..))
+import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
+import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
+import Ouroboros.Network.PeerSelection.PeerMetric
 
 
 -- | Churn governor.

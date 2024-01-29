@@ -13,11 +13,11 @@
 --
 module Ouroboros.Network.Protocol.ChainSync.Type where
 
-import           Data.Proxy (Proxy (..))
+import Data.Proxy (Proxy (..))
 
-import           Network.TypedProtocol.Core (Protocol (..))
+import Network.TypedProtocol.Core (Protocol (..))
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | A kind to identify our protocol, and the types of the states in the state

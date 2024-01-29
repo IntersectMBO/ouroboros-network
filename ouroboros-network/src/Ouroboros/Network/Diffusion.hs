@@ -21,19 +21,19 @@ module Ouroboros.Network.Diffusion
   , P2P.AbstractTransitionTrace
   ) where
 
-import           Control.Exception (IOException)
-import           Data.Functor (void)
+import Control.Exception (IOException)
+import Data.Functor (void)
 
-import           Network.Socket (Socket)
+import Network.Socket (Socket)
 
-import           Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
-                     NodeToClientVersion, NodeToClientVersionData)
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersion,
-                     NodeToNodeVersionData, RemoteAddress)
+import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
+           NodeToClientVersion, NodeToClientVersionData)
+import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
+           RemoteAddress)
 
-import           Ouroboros.Network.Diffusion.Common as Common
-import qualified Ouroboros.Network.Diffusion.NonP2P as NonP2P
-import qualified Ouroboros.Network.Diffusion.P2P as P2P
+import Ouroboros.Network.Diffusion.Common as Common
+import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
+import Ouroboros.Network.Diffusion.P2P qualified as P2P
 
 -- | Promoted data types.
 --

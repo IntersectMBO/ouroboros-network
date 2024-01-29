@@ -34,33 +34,31 @@ module Ouroboros.Network.BlockFetch.ClientState
   , WhetherReceivingTentativeBlocks (..)
   ) where
 
-import           Data.List (foldl')
-import           Data.Maybe (mapMaybe)
-import           Data.Semigroup (Last (..))
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.List (foldl')
+import Data.Maybe (mapMaybe)
+import Data.Semigroup (Last (..))
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (assert)
-import           Control.Monad (when)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer (Tracer, traceWith)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad (when)
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Tracer, traceWith)
 
-import           Network.Mux.Trace (TraceLabelPeer (..))
+import Network.Mux.Trace (TraceLabelPeer (..))
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block (HasHeader, MaxSlotNo (..), Point,
-                     blockPoint)
-import           Ouroboros.Network.BlockFetch.ConsensusInterface
-                     (FromConsensus (..), WhetherReceivingTentativeBlocks (..))
-import           Ouroboros.Network.BlockFetch.DeltaQ
-                     (PeerFetchInFlightLimits (..), PeerGSV, SizeInBytes,
-                     calculatePeerFetchInFlightLimits)
-import           Ouroboros.Network.ControlMessage (ControlMessageSTM,
-                     timeoutWithControlMessage)
-import           Ouroboros.Network.Point (withOriginToMaybe)
-import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block (HasHeader, MaxSlotNo (..), Point, blockPoint)
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FromConsensus (..),
+           WhetherReceivingTentativeBlocks (..))
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
+           PeerGSV, SizeInBytes, calculatePeerFetchInFlightLimits)
+import Ouroboros.Network.ControlMessage (ControlMessageSTM,
+           timeoutWithControlMessage)
+import Ouroboros.Network.Point (withOriginToMaybe)
+import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 -- | The context that is passed into the block fetch protocol client when it
 -- is started.

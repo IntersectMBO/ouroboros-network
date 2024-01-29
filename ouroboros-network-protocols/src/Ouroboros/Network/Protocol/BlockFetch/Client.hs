@@ -7,10 +7,10 @@
 
 module Ouroboros.Network.Protocol.BlockFetch.Client where
 
-import           Network.TypedProtocol.Core
-import           Network.TypedProtocol.Pipelined
+import Network.TypedProtocol.Core
+import Network.TypedProtocol.Pipelined
 
-import           Ouroboros.Network.Protocol.BlockFetch.Type
+import Ouroboros.Network.Protocol.BlockFetch.Type
 
 
 -- | Block fetch client type for requesting ranges of blocks and handling

@@ -20,56 +20,55 @@
 
 module Test.Ouroboros.Network.ConnectionManager (tests) where
 
-import           Prelude hiding (read)
+import Prelude hiding (read)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (assert)
-import           Control.Monad (forever, unless, when, (>=>))
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (..), contramap, nullTracer)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad (forever, unless, when, (>=>))
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim
+import Control.Tracer (Tracer (..), contramap, nullTracer)
 
-import           GHC.Generics
-import           GHC.IO.Exception
-import           GHC.Stack (HasCallStack)
+import GHC.Generics
+import GHC.IO.Exception
+import GHC.Stack (HasCallStack)
 
-import           Data.Foldable (forM_, traverse_)
-import           Data.Functor (void, ($>))
-import           Data.List (intercalate, sortOn)
-import           Data.Map (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Monoid (All (..))
-import qualified Data.Text.Lazy as Text
-import           Data.Void (Void)
-import           Quiet
-import           Text.Pretty.Simple (defaultOutputOptionsNoColor, pShowOpt)
+import Data.Foldable (forM_, traverse_)
+import Data.Functor (void, ($>))
+import Data.List (intercalate, sortOn)
+import Data.Map (Map)
+import Data.Map.Strict qualified as Map
+import Data.Monoid (All (..))
+import Data.Text.Lazy qualified as Text
+import Data.Void (Void)
+import Quiet
+import Text.Pretty.Simple (defaultOutputOptionsNoColor, pShowOpt)
 
-import           Network.Mux.Bearer
-import           Network.Mux.Types
+import Network.Mux.Bearer
+import Network.Mux.Types
 
-import           Test.QuickCheck hiding (shrinkMap)
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck hiding (shrinkMap)
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
-import           Ouroboros.Network.ConnectionId (ConnectionId (..))
-import           Ouroboros.Network.ConnectionManager.Core
-import           Ouroboros.Network.ConnectionManager.Test.Utils
-                     (verifyAbstractTransition)
-import           Ouroboros.Network.ConnectionManager.Types
-import           Ouroboros.Network.MuxMode
-import           Ouroboros.Network.Server.RateLimiting
-import           Ouroboros.Network.Snocket (Accept (..), Accepted (..),
-                     AddressFamily (TestFamily), Snocket (..), TestAddress (..))
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.ConnectionManager.Core
+import Ouroboros.Network.ConnectionManager.Test.Utils (verifyAbstractTransition)
+import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.MuxMode
+import Ouroboros.Network.Server.RateLimiting
+import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
+           AddressFamily (TestFamily), Snocket (..), TestAddress (..))
 
-import           Ouroboros.Network.ConnectionManager.InformationChannel
-                     (newInformationChannel)
-import qualified Ouroboros.Network.ConnectionManager.InformationChannel as InfoChannel
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.ConnectionManager.InformationChannel
+           (newInformationChannel)
+import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 

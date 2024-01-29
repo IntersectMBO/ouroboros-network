@@ -23,34 +23,31 @@ module Ouroboros.Network.BlockFetch.Decision
   , fetchRequestDecisions
   ) where
 
-import qualified Data.Set as Set
+import Data.Set qualified as Set
 
-import           Data.Function (on)
-import           Data.Hashable
-import           Data.List (foldl', groupBy, sortBy, transpose)
-import           Data.Maybe (mapMaybe)
-import           Data.Set (Set)
-import           GHC.Stack (HasCallStack)
+import Data.Function (on)
+import Data.Hashable
+import Data.List (foldl', groupBy, sortBy, transpose)
+import Data.Maybe (mapMaybe)
+import Data.Set (Set)
+import GHC.Stack (HasCallStack)
 
-import           Control.Exception (assert)
-import           Control.Monad (guard)
-import           Control.Monad.Class.MonadTime.SI (DiffTime)
+import Control.Exception (assert)
+import Control.Monad (guard)
+import Control.Monad.Class.MonadTime.SI (DiffTime)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment,
-                     AnchoredSeq (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (withOriginToMaybe)
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment, AnchoredSeq (..))
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block
+import Ouroboros.Network.Point (withOriginToMaybe)
 
-import           Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
-                     PeerFetchInFlight (..), PeerFetchStatus (..))
-import           Ouroboros.Network.BlockFetch.ConsensusInterface
-                     (FetchMode (..))
-import           Ouroboros.Network.BlockFetch.DeltaQ
-                     (PeerFetchInFlightLimits (..), PeerGSV (..), SizeInBytes,
-                     calculatePeerFetchInFlightLimits, comparePeerGSV,
-                     comparePeerGSV', estimateExpectedResponseDuration,
-                     estimateResponseDeadlineProbability)
+import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
+           PeerFetchInFlight (..), PeerFetchStatus (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
+           PeerGSV (..), SizeInBytes, calculatePeerFetchInFlightLimits,
+           comparePeerGSV, comparePeerGSV', estimateExpectedResponseDuration,
+           estimateResponseDeadlineProbability)
 
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {

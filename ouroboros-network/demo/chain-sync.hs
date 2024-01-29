@@ -12,71 +12,70 @@
 
 module Main where
 
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as LBS
-import           Data.Foldable (traverse_)
-import           Data.Functor (void)
-import           Data.List
-import           Data.List.Infinite (Infinite ((:<)))
-import qualified Data.List.Infinite as Inf
-import qualified Data.Map as Map
-import           Data.Proxy (Proxy (..))
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Void (Void)
+import Data.ByteString.Char8 qualified as BSC
+import Data.ByteString.Lazy qualified as LBS
+import Data.Foldable (traverse_)
+import Data.Functor (void)
+import Data.List
+import Data.List.Infinite (Infinite ((:<)))
+import Data.List.Infinite qualified as Inf
+import Data.Map qualified as Map
+import Data.Proxy (Proxy (..))
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Void (Void)
 
-import           Control.Applicative (many)
-import           Control.Concurrent (threadDelay)
-import           Control.Concurrent.Async
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception
-import           Control.Monad (when)
-import           Control.Tracer
+import Control.Applicative (many)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception
+import Control.Monad (when)
+import Control.Tracer
 
-import           System.Directory
-import           System.Exit
-import           System.IO
-import           System.Random
+import System.Directory
+import System.Exit
+import System.IO
+import System.Random
 
-import qualified Options.Applicative as Opts
+import Options.Applicative qualified as Opts
 
-import qualified Codec.Serialise as CBOR
+import Codec.Serialise qualified as CBOR
 
-import           Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec
 
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.ControlMessage (continueForever)
-import           Ouroboros.Network.IOManager
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient (LocalConnectionId)
-import           Ouroboros.Network.NodeToNode
-import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
-import           Ouroboros.Network.Point (WithOrigin (..))
-import           Ouroboros.Network.Snocket
-import           Ouroboros.Network.Socket
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block
+import Ouroboros.Network.ControlMessage (continueForever)
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.Mux
+import Ouroboros.Network.NodeToClient (LocalConnectionId)
+import Ouroboros.Network.NodeToNode
+import Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
+import Ouroboros.Network.Point (WithOrigin (..))
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.Socket
 
-import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Driver
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Protocol.Handshake.Version
 
-import qualified Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Server as ChainSync
-import qualified Ouroboros.Network.Protocol.ChainSync.Type as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Server qualified as ChainSync
+import Ouroboros.Network.Protocol.ChainSync.Type qualified as ChainSync
 
-import qualified Ouroboros.Network.Protocol.BlockFetch.Codec as BlockFetch
-import qualified Ouroboros.Network.Protocol.BlockFetch.Server as BlockFetch
-import qualified Ouroboros.Network.Protocol.BlockFetch.Type as BlockFetch
+import Ouroboros.Network.Protocol.BlockFetch.Codec qualified as BlockFetch
+import Ouroboros.Network.Protocol.BlockFetch.Server qualified as BlockFetch
+import Ouroboros.Network.Protocol.BlockFetch.Type qualified as BlockFetch
 
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.Client
-import           Ouroboros.Network.BlockFetch.ClientRegistry
-                     (FetchClientRegistry (..))
-import           Ouroboros.Network.DeltaQ (defaultGSV)
+import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.Client
+import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientRegistry (..))
+import Ouroboros.Network.DeltaQ (defaultGSV)
 
 
 data Options = Options {

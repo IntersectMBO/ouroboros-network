@@ -65,20 +65,20 @@ module Ouroboros.Network.Mock.Chain
   , prettyPrintChain
   ) where
 
-import           Prelude hiding (drop, head, length, null, takeWhile)
-import qualified Prelude
+import Prelude hiding (drop, head, length, null, takeWhile)
+import Prelude qualified
 
-import           Codec.CBOR.Decoding (decodeListLen)
-import           Codec.CBOR.Encoding (encodeListLen)
-import           Codec.Serialise (Serialise (..))
-import           Control.Exception (assert)
-import qualified Data.List as L
-import           GHC.Stack
+import Codec.CBOR.Decoding (decodeListLen)
+import Codec.CBOR.Encoding (encodeListLen)
+import Codec.Serialise (Serialise (..))
+import Control.Exception (assert)
+import Data.List qualified as L
+import GHC.Stack
 
-import           Ouroboros.Network.AnchoredFragment (Anchor (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Point (WithOrigin (..))
+import Ouroboros.Network.AnchoredFragment (Anchor (..))
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block
+import Ouroboros.Network.Point (WithOrigin (..))
 
 --
 -- Blockchain type

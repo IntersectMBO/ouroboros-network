@@ -16,43 +16,43 @@
 --
 module Ouroboros.Network.MockNode where
 
-import           Control.Exception (assert)
-import           Control.Monad
-import           Data.Hashable
-import qualified Data.List as List
-import           Data.Maybe (catMaybes)
-import           Data.Tuple (swap)
-import           GHC.Generics (Generic)
+import Control.Exception (assert)
+import Control.Monad
+import Data.Hashable
+import Data.List qualified as List
+import Data.Maybe (catMaybes)
+import Data.Tuple (swap)
+import GHC.Generics (Generic)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (nullTracer)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (nullTracer)
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Block
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver
+import Ouroboros.Network.Util.ShowProxy
 
 -- TODO Should this be imported here
-import           Ouroboros.Network.Point (WithOrigin (At))
-import           Ouroboros.Network.Protocol.ChainSync.Client
-import           Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
-import           Ouroboros.Network.Protocol.ChainSync.Examples
-import           Ouroboros.Network.Protocol.ChainSync.Server
-import           Ouroboros.Network.Protocol.ChainSync.Type
+import Ouroboros.Network.Point (WithOrigin (At))
+import Ouroboros.Network.Protocol.ChainSync.Client
+import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSyncId)
+import Ouroboros.Network.Protocol.ChainSync.Examples
+import Ouroboros.Network.Protocol.ChainSync.Server
+import Ouroboros.Network.Protocol.ChainSync.Type
 
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock hiding (fixupBlock)
-import qualified Ouroboros.Network.Mock.ConcreteBlock as Concrete
-import           Ouroboros.Network.Mock.ProducerState (ChainProducerState (..),
-                     initChainProducerState, producerChain, switchFork)
+import Ouroboros.Network.Mock.Chain (Chain (..))
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock hiding (fixupBlock)
+import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete
+import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..),
+           initChainProducerState, producerChain, switchFork)
 
 data NodeId = CoreId Int
             | RelayId Int

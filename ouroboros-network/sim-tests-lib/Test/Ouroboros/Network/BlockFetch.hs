@@ -8,51 +8,50 @@
 
 module Test.Ouroboros.Network.BlockFetch (tests) where
 
-import           Test.ChainGenerators (TestChainFork (..))
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.HUnit
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.ChainGenerators (TestChainFork (..))
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit
+import Test.Tasty.QuickCheck (testProperty)
 
-import qualified Data.List as List
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Maybe (mapMaybe)
-import           Data.Proxy (Proxy (..))
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Data.Typeable (Typeable)
+import Data.List qualified as List
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Maybe (mapMaybe)
+import Data.Proxy (Proxy (..))
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Exception (AssertionFailed (..), throw)
-import           Control.Monad (unless, void)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI (Time (..))
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim
-import           Control.Tracer (Tracer (Tracer), contramap, nullTracer)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (AssertionFailed (..), throw)
+import Control.Monad (unless, void)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time (..))
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim
+import Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     continueForever)
-import           Ouroboros.Network.DeltaQ
+import Ouroboros.Network.ControlMessage (ControlMessage (..), continueForever)
+import Ouroboros.Network.DeltaQ
 --TODO: could re-export some of the trace types from more convenient places:
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AnchoredFragment
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.BlockFetch
-import           Ouroboros.Network.BlockFetch.ClientRegistry
-import           Ouroboros.Network.BlockFetch.ClientState
-import           Ouroboros.Network.BlockFetch.DeltaQ
-import           Ouroboros.Network.BlockFetch.Examples
-import           Ouroboros.Network.Driver (TraceSendRecv)
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock
-import           Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
-import           Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import Ouroboros.Network.AnchoredFragment qualified as AnchoredFragment
+import Ouroboros.Network.Block
+import Ouroboros.Network.BlockFetch
+import Ouroboros.Network.BlockFetch.ClientRegistry
+import Ouroboros.Network.BlockFetch.ClientState
+import Ouroboros.Network.BlockFetch.DeltaQ
+import Ouroboros.Network.BlockFetch.Examples
+import Ouroboros.Network.Driver (TraceSendRecv)
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.NodeToNode.Version (isPipeliningEnabled)
+import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
-import           Ouroboros.Network.Testing.Utils
+import Ouroboros.Network.Testing.Utils
 
 
 --

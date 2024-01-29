@@ -10,20 +10,19 @@ module Ouroboros.Network.NodeToNode.Version
   , isPipeliningEnabled
   ) where
 
-import           Data.Text (Text)
-import qualified Data.Text as T
-import           Data.Typeable (Typeable)
+import Data.Text (Text)
+import Data.Text qualified as T
+import Data.Typeable (Typeable)
 
-import qualified Codec.CBOR.Term as CBOR
+import Codec.CBOR.Term qualified as CBOR
 
-import           Ouroboros.Network.BlockFetch.ConsensusInterface
-                     (WhetherReceivingTentativeBlocks (..))
-import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Handshake.Acceptable (Accept (..),
-                     Acceptable (..))
-import           Ouroboros.Network.Handshake.Queryable (Queryable (..))
-import           Ouroboros.Network.Magic
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface
+           (WhetherReceivingTentativeBlocks (..))
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
+import Ouroboros.Network.Handshake.Queryable (Queryable (..))
+import Ouroboros.Network.Magic
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 -- | Enumeration of node to node protocol versions.
 --

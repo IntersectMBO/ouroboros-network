@@ -9,61 +9,60 @@
 
 module Test.Ouroboros.Network.TxSubmission (tests) where
 
-import           Prelude hiding (seq)
+import Prelude hiding (seq)
 
-import           NoThunks.Class (NoThunks)
+import NoThunks.Class (NoThunks)
 
-import           Control.Concurrent.Class.MonadSTM
-import           Control.Exception (SomeException (..))
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim hiding (SimResult)
-import           Control.Tracer (Tracer (..), contramap, nullTracer,
-                     showTracing, traceWith)
+import Control.Concurrent.Class.MonadSTM
+import Control.Exception (SomeException (..))
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim hiding (SimResult)
+import Control.Tracer (Tracer (..), contramap, nullTracer, showTracing,
+           traceWith)
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
 
-import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as BSL
-import           Data.Foldable (find, foldl', toList)
-import           Data.Function (on)
-import           Data.List (intercalate, nubBy)
-import           Data.Maybe (fromMaybe, isJust)
-import           Data.Sequence (Seq)
-import qualified Data.Sequence as Seq
-import qualified Data.Set as Set
-import           Data.Word (Word16)
-import           GHC.Generics (Generic)
+import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BSL
+import Data.Foldable (find, foldl', toList)
+import Data.Function (on)
+import Data.List (intercalate, nubBy)
+import Data.Maybe (fromMaybe, isJust)
+import Data.Sequence (Seq)
+import Data.Sequence qualified as Seq
+import Data.Set qualified as Set
+import Data.Word (Word16)
+import GHC.Generics (Generic)
 
-import           Network.TypedProtocol.Codec
+import Network.TypedProtocol.Codec
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.ControlMessage (ControlMessage (..),
-                     ControlMessageSTM)
-import           Ouroboros.Network.Driver
-import           Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
-import           Ouroboros.Network.Protocol.TxSubmission2.Client
-import           Ouroboros.Network.Protocol.TxSubmission2.Codec
-import           Ouroboros.Network.Protocol.TxSubmission2.Server
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
-import           Ouroboros.Network.TxSubmission.Inbound
-import           Ouroboros.Network.TxSubmission.Mempool.Reader
-import           Ouroboros.Network.TxSubmission.Outbound
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Channel
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
+import Ouroboros.Network.Driver
+import Ouroboros.Network.NodeToNode (NodeToNodeVersion (..))
+import Ouroboros.Network.Protocol.TxSubmission2.Client
+import Ouroboros.Network.Protocol.TxSubmission2.Codec
+import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.TxSubmission.Inbound
+import Ouroboros.Network.TxSubmission.Mempool.Reader
+import Ouroboros.Network.TxSubmission.Outbound
+import Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.Testing.Utils
+import Ouroboros.Network.Testing.Utils
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Printf
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+import Text.Printf
 
 
 tests :: TestTree

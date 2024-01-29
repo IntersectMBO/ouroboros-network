@@ -10,18 +10,18 @@ module Test.Data.CDDL
   , tests
   ) where
 
-import qualified Codec.CBOR.Term as CBOR
-import           Codec.Serialise (Serialise (..), deserialise, serialise)
-import           Data.Bifunctor (bimap)
+import Codec.CBOR.Term qualified as CBOR
+import Codec.Serialise (Serialise (..), deserialise, serialise)
+import Data.Bifunctor (bimap)
 
-import           GHC.Generics (Generic (..))
+import GHC.Generics (Generic (..))
 
-import           Test.QuickCheck as QC
-import           Test.QuickCheck.Instances.ByteString ()
-import           Test.QuickCheck.Instances.Text ()
+import Test.QuickCheck as QC
+import Test.QuickCheck.Instances.ByteString ()
+import Test.QuickCheck.Instances.Text ()
 
-import           Test.Tasty
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.Tasty
+import Test.Tasty.QuickCheck (testProperty)
 
 newtype Any = Any { getAny :: CBOR.Term }
   deriving stock (Eq, Ord, Show, Generic)

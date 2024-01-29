@@ -3,11 +3,10 @@
 
 module Ouroboros.Network.Protocol.PeerSharing.Client where
 
-import           Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..),
-                     PeerRole (..))
-import           Ouroboros.Network.Protocol.PeerSharing.Type
-                     (ClientHasAgency (..), Message (..), NobodyHasAgency (..),
-                     PeerSharing (..), PeerSharingAmount, ServerHasAgency (..))
+import Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..), PeerRole (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type (ClientHasAgency (..),
+           Message (..), NobodyHasAgency (..), PeerSharing (..),
+           PeerSharingAmount, ServerHasAgency (..))
 
 data PeerSharingClient peerAddress m a where
   SendMsgShareRequest

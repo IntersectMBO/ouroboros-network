@@ -10,19 +10,19 @@
 --
 module Test.Mux.ReqResp where
 
-import           Codec.CBOR.Decoding (Decoder)
-import qualified Codec.CBOR.Decoding as CBOR hiding (Done, Fail)
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import           Codec.Serialise (Serialise (..), serialise)
-import           Control.Monad.ST
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
+import Codec.CBOR.Decoding (Decoder)
+import Codec.CBOR.Decoding qualified as CBOR hiding (Done, Fail)
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.Serialise (Serialise (..), serialise)
+import Control.Monad.ST
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 
-import           Control.Monad.Class.MonadST
-import           Control.Tracer (Tracer, traceWith)
+import Control.Monad.Class.MonadST
+import Control.Tracer (Tracer, traceWith)
 
-import           Network.Mux.Channel
+import Network.Mux.Channel
 
 -- | Protocol messages.
 --

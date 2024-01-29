@@ -26,9 +26,9 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Server
   , localTxMonitorServerPeer
   ) where
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.LocalTxMonitor.Type
+import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 -- | A local tx monitor protocol server, on top of some effect 'm'.
 --

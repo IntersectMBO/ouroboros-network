@@ -27,11 +27,11 @@ module Ouroboros.Network.Protocol.TxSubmission2.Client
   , txSubmissionClientPeer
   ) where
 
-import           Data.Word (Word16)
+import Data.Word (Word16)
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Protocol.TxSubmission2.Type
 
 
 -- | The client side of the transaction submission protocol.

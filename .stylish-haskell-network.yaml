@@ -191,6 +191,25 @@ steps:
       # Default: false
       space_surround: false
 
+      # Post qualify option moves any qualifies found in import declarations
+      # to the end of the declaration. This also adjust padding for any
+      # unqualified import declarations.
+      #
+      # - true: Qualified as <module name> is moved to the end of the
+      #   declaration.
+      #
+      #   > import Data.Bar
+      #   > import Data.Foo qualified as F
+      #
+      # - false: Qualified remains in the default location and unqualified
+      #   imports are padded to align with qualified imports.
+      #
+      #   > import           Data.Bar
+      #   > import qualified Data.Foo as F
+      #
+      # Default: false
+      post_qualify: true
+
   # Language pragmas
   - language_pragmas:
       # We can generate different styles of language pragma lists.

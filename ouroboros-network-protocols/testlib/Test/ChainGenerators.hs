@@ -36,25 +36,25 @@ module Test.ChainGenerators
   , tests
   ) where
 
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.List as L
-import           Data.Maybe (catMaybes, listToMaybe)
+import Data.ByteString.Char8 qualified as BSC
+import Data.List qualified as L
+import Data.Maybe (catMaybes, listToMaybe)
 
-import           Ouroboros.Network.AnchoredFragment (Anchor (..))
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
-import           Ouroboros.Network.Mock.Chain (Chain (..))
-import qualified Ouroboros.Network.Mock.Chain as Chain
-import           Ouroboros.Network.Mock.ConcreteBlock
-import           Ouroboros.Network.Point (WithOrigin (..), block,
-                     blockPointHash, blockPointSlot, fromWithOrigin, origin)
-import           Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
+import Ouroboros.Network.AnchoredFragment (Anchor (..))
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block
+import Ouroboros.Network.Mock.Chain (Chain (..))
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ConcreteBlock
+import Ouroboros.Network.Point (WithOrigin (..), block, blockPointHash,
+           blockPointSlot, fromWithOrigin, origin)
+import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
-import           Test.Cardano.Slotting.Arbitrary ()
-import           Test.QuickCheck
-import           Test.QuickCheck.Instances.ByteString ()
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.Cardano.Slotting.Arbitrary ()
+import Test.QuickCheck
+import Test.QuickCheck.Instances.ByteString ()
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 --

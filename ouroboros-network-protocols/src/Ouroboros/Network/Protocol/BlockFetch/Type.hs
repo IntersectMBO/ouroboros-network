@@ -10,12 +10,12 @@
 
 module Ouroboros.Network.Protocol.BlockFetch.Type where
 
-import           Data.Proxy (Proxy (..))
-import           Data.Void (Void)
+import Data.Proxy (Proxy (..))
+import Data.Void (Void)
 
-import           Network.TypedProtocol.Core (Protocol (..))
+import Network.TypedProtocol.Core (Protocol (..))
 
-import           Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | Range of blocks, defined by a lower and upper point, inclusive.

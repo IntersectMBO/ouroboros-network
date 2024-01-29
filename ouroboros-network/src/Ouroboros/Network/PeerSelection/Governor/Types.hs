@@ -46,47 +46,44 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , BootstrapPeersCriticalTimeoutError (..)
   ) where
 
-import           Data.Cache (Cache (..))
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe)
-import           Data.Monoid.Synchronisation (FirstToFinish (..))
-import           Data.Semigroup (Min (..))
-import           Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Cache (Cache (..))
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
+import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.Semigroup (Min (..))
+import Data.Set (Set)
+import Data.Set qualified as Set
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.JobPool (Job)
-import           Control.Exception (Exception (..), SomeException, assert)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           System.Random (StdGen)
+import Control.Applicative (Alternative)
+import Control.Concurrent.JobPool (Job)
+import Control.Exception (Exception (..), SomeException, assert)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import System.Random (StdGen)
 
-import           Ouroboros.Network.ExitPolicy
-import           Ouroboros.Network.PeerSelection.Bootstrap
-                     (UseBootstrapPeers (..))
-import           Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-                     LedgerPeersKind)
-import           Ouroboros.Network.PeerSelection.LedgerPeers.Type
-                     (LedgerStateJudgement (..))
-import           Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import           Ouroboros.Network.PeerSelection.PublicRootPeers
-                     (PublicRootPeers)
-import qualified Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
-import           Ouroboros.Network.PeerSelection.State.EstablishedPeers
-                     (EstablishedPeers)
-import qualified Ouroboros.Network.PeerSelection.State.EstablishedPeers as EstablishedPeers
-import           Ouroboros.Network.PeerSelection.State.KnownPeers (KnownPeers)
-import qualified Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
-import           Ouroboros.Network.PeerSelection.State.LocalRootPeers
-                     (HotValency (..), LocalRootPeers, WarmValency (..))
-import qualified Ouroboros.Network.PeerSelection.State.LocalRootPeers as LocalRootPeers
-import           Ouroboros.Network.PeerSelection.Types (PeerSource (..),
-                     PeerStatus (PeerHot, PeerWarm))
-import           Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
-                     PeerSharingResult (..))
+import Ouroboros.Network.ExitPolicy
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
+           LedgerPeersKind)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+           (LedgerStateJudgement (..))
+import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers (EstablishedPeers)
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers (KnownPeers)
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
+           LocalRootPeers, WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
+           PeerStatus (PeerHot, PeerWarm))
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
+           PeerSharingResult (..))
 
 
 -- | A peer pick policy is an action that picks a subset of elements from a

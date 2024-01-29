@@ -39,22 +39,22 @@ module Network.Mux.Types
   , MuxRuntimeError (..)
   ) where
 
-import           Prelude hiding (read)
+import Prelude hiding (read)
 
-import           Control.Exception (Exception)
-import qualified Data.ByteString.Lazy as BL
-import           Data.Functor (void)
-import           Data.Ix (Ix (..))
-import           Data.Word
-import           Quiet
+import Control.Exception (Exception)
+import Data.ByteString.Lazy qualified as BL
+import Data.Functor (void)
+import Data.Ix (Ix (..))
+import Data.Word
+import Quiet
 
-import           GHC.Generics (Generic)
+import GHC.Generics (Generic)
 
-import           Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
-import           Control.Monad.Class.MonadTime.SI
+import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
+import Control.Monad.Class.MonadTime.SI
 
-import           Network.Mux.Channel (Channel (..))
-import           Network.Mux.Timeout (TimeoutFn)
+import Network.Mux.Channel (Channel (..))
+import Network.Mux.Timeout (TimeoutFn)
 
 
 newtype RemoteClockModel

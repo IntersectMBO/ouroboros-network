@@ -24,14 +24,14 @@ module Ouroboros.Network.Server.ConnectionTable
   , readValencyCounter
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad (when)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
 --import           Control.Tracer XXX Not Yet
-import qualified Data.Map.Strict as M
-import           Data.Set (Set)
-import qualified Data.Set as S
-import qualified Network.Socket as Socket
-import           Text.Printf
+import Data.Map.Strict qualified as M
+import Data.Set (Set)
+import Data.Set qualified as S
+import Network.Socket qualified as Socket
+import Text.Printf
 
 -- A ConnectionTable represent a set of connections that is shared between
 -- servers and subscription workers. It's main purpose is to avoid the creation of duplicate

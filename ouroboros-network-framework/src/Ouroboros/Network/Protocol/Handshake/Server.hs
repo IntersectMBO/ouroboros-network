@@ -6,15 +6,15 @@
 
 module Ouroboros.Network.Protocol.Handshake.Server (handshakeServerPeer) where
 
-import qualified Codec.CBOR.Term as CBOR
+import Codec.CBOR.Term qualified as CBOR
 
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse,
-                     decodeQueryResult, encodeVersions)
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Protocol.Handshake.Client (acceptOrRefuse,
+           decodeQueryResult, encodeVersions)
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version
 
 
 -- | Server following the handshake protocol; it accepts highest version offered

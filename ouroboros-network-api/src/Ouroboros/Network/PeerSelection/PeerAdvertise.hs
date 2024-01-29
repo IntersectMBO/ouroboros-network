@@ -2,9 +2,9 @@
 
 module Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..)) where
 
-import           Data.Aeson
-import           Data.Bool (bool)
-import           GHC.Generics (Generic)
+import Data.Aeson
+import Data.Bool (bool)
+import GHC.Generics (Generic)
 
 -- | Should this peer be advertised to other peers asking for known peers?
 -- For certain peers specified by configuration it would be an appropriate

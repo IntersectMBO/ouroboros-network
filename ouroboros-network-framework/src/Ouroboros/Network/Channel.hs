@@ -21,19 +21,19 @@ module Ouroboros.Network.Channel
   , loggingChannel
   ) where
 
-import           Control.Monad ((>=>))
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTimer.SI
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
-import           Data.ByteString.Lazy.Internal (smallChunkSize)
-import           Numeric.Natural
+import Control.Monad ((>=>))
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadTimer.SI
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
+import Data.ByteString.Lazy.Internal (smallChunkSize)
+import Numeric.Natural
 
-import qualified System.IO as IO (Handle, hFlush, hIsEOF)
+import System.IO qualified as IO (Handle, hFlush, hIsEOF)
 
-import           Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM
 
-import qualified Network.Mux.Channel as Mx
+import Network.Mux.Channel qualified as Mx
 
 
 -- | One end of a duplex channel. It is a reliable, ordered channel of some

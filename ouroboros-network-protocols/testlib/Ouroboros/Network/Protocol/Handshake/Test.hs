@@ -14,65 +14,65 @@
 
 module Ouroboros.Network.Protocol.Handshake.Test where
 
-import           Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as BL
-import           Data.List (nub)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe)
-import           Data.Text (Text)
-import qualified Data.Text as T
-import           GHC.Generics
+import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BL
+import Data.List (nub)
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Maybe (fromMaybe)
+import Data.Text (Text)
+import Data.Text qualified as T
+import GHC.Generics
 
-import qualified Codec.CBOR.Read as CBOR
-import qualified Codec.CBOR.Term as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term qualified as CBOR
 
-import           Control.Applicative (Alternative)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadFork
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch, MonadMask,
-                     MonadThrow, bracket)
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim (runSimOrThrow)
-import           Control.Tracer (nullTracer)
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow (MonadCatch, MonadMask, MonadThrow,
+           bracket)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim (runSimOrThrow)
+import Control.Tracer (nullTracer)
 
-import qualified Network.Mux.Bearer as Mx
-import           Network.Mux.Types (MiniProtocolDir (..), MiniProtocolNum (..),
-                     muxBearerAsChannel)
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Proofs
+import Network.Mux.Bearer qualified as Mx
+import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolNum (..),
+           muxBearerAsChannel)
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Proofs
 
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+           prop_codec_valid_cbor_encoding, splits2, splits3)
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.CodecCBORTerm
-import           Ouroboros.Network.Driver.Simple (runConnectedPeers,
-                     runConnectedPeersAsymmetric, runPeer)
-import           Ouroboros.Network.Snocket (TestAddress (..))
-import qualified Ouroboros.Network.Snocket as Snocket
-import           Simulation.Network.Snocket
+import Ouroboros.Network.Channel
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.Driver.Simple (runConnectedPeers,
+           runConnectedPeersAsymmetric, runPeer)
+import Ouroboros.Network.Snocket (TestAddress (..))
+import Ouroboros.Network.Snocket qualified as Snocket
+import Simulation.Network.Snocket
 
-import           Ouroboros.Network.Protocol.Handshake.Client
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Direct
-import           Ouroboros.Network.Protocol.Handshake.Server
-import           Ouroboros.Network.Protocol.Handshake.Type
-import           Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Protocol.Handshake.Client
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Direct
+import Ouroboros.Network.Protocol.Handshake.Server
+import Ouroboros.Network.Protocol.Handshake.Type
+import Ouroboros.Network.Protocol.Handshake.Version
 
-import qualified Codec.CBOR.Write as CBOR
+import Codec.CBOR.Write qualified as CBOR
 
-import           Ouroboros.Network.Magic
-import           Ouroboros.Network.NodeToClient.Version as NTC
-import           Ouroboros.Network.NodeToNode.Version as NTN
+import Ouroboros.Network.Magic
+import Ouroboros.Network.NodeToClient.Version as NTC
+import Ouroboros.Network.NodeToNode.Version as NTN
 
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests =

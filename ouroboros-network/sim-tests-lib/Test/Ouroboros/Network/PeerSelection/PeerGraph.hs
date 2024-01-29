@@ -23,25 +23,25 @@ module Test.Ouroboros.Network.PeerSelection.PeerGraph
   , prop_shrink_nonequal_GovernorScripts
   ) where
 
-import           Data.Graph (Graph)
-import qualified Data.Graph as Graph
-import           Data.List.NonEmpty (NonEmpty (..))
-import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Map.Strict as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import qualified Data.Tree as Tree
+import Data.Graph (Graph)
+import Data.Graph qualified as Graph
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Tree qualified as Tree
 
-import           Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTime.SI
 
-import           Ouroboros.Network.Testing.Data.Script (Script (..),
-                     ScriptDelay (NoDelay), TimedScript, arbitraryScriptOf)
-import           Ouroboros.Network.Testing.Utils (ShrinkCarefully (..),
-                     prop_shrink_nonequal, prop_shrink_valid, renderRanges)
-import           Test.Ouroboros.Network.PeerSelection.Instances
+import Ouroboros.Network.Testing.Data.Script (Script (..),
+           ScriptDelay (NoDelay), TimedScript, arbitraryScriptOf)
+import Ouroboros.Network.Testing.Utils (ShrinkCarefully (..),
+           prop_shrink_nonequal, prop_shrink_valid, renderRanges)
+import Test.Ouroboros.Network.PeerSelection.Instances
 
-import           Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import           Test.QuickCheck
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Test.QuickCheck
 
 
 --

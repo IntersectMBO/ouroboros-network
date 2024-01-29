@@ -15,63 +15,63 @@
 
 module Test.Ouroboros.Network.Subscription (tests) where
 
-import           Control.Concurrent hiding (threadDelay)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad (replicateM, unless, when)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim (runSimStrictShutdown)
-import           Control.Tracer
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as BL
-import           Data.Functor (void)
-import qualified Data.IP as IP
-import qualified Data.List as L
-import qualified Data.Map as M
-import           Data.Void (Void)
-import           Data.Word
-import qualified Network.DNS as DNS
-import qualified Network.Socket as Socket
+import Control.Concurrent hiding (threadDelay)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (replicateM, unless, when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim (runSimStrictShutdown)
+import Control.Tracer
+import Data.ByteString.Char8 qualified as BSC
+import Data.ByteString.Lazy qualified as BL
+import Data.Functor (void)
+import Data.IP qualified as IP
+import Data.List qualified as L
+import Data.Map qualified as M
+import Data.Void (Void)
+import Data.Word
+import Network.DNS qualified as DNS
+import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
-import qualified Network.Socket.ByteString.Lazy as Socket (recv, sendAll)
+import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
 #endif
 
-import qualified Network.Mux.Bearer as Mx
+import Network.Mux.Bearer qualified as Mx
 --TODO: time utils should come from elsewhere
-import           Network.Mux.Time (microsecondsToDiffTime)
+import Network.Mux.Time (microsecondsToDiffTime)
 
-import qualified Network.TypedProtocol.ReqResp.Client as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Codec.CBOR as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Examples as ReqResp
-import qualified Network.TypedProtocol.ReqResp.Server as ReqResp
+import Network.TypedProtocol.ReqResp.Client qualified as ReqResp
+import Network.TypedProtocol.ReqResp.Codec.CBOR qualified as ReqResp
+import Network.TypedProtocol.ReqResp.Examples qualified as ReqResp
+import Network.TypedProtocol.ReqResp.Server qualified as ReqResp
 
-import           Ouroboros.Network.Protocol.Handshake.Codec
-import           Ouroboros.Network.Protocol.Handshake.Unversioned
-import           Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Protocol.Handshake.Codec
+import Ouroboros.Network.Protocol.Handshake.Unversioned
+import Ouroboros.Network.Protocol.Handshake.Version
 
-import           Ouroboros.Network.Driver
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.Snocket
-import           Ouroboros.Network.Socket
-import           Ouroboros.Network.Subscription
-import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.PeerState
-import           Ouroboros.Network.Subscription.Subscriber
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
-                     WorkerParams (..))
+import Ouroboros.Network.Driver
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Mux
+import Ouroboros.Network.Snocket
+import Ouroboros.Network.Socket
+import Ouroboros.Network.Subscription
+import Ouroboros.Network.Subscription.Dns
+import Ouroboros.Network.Subscription.Ip
+import Ouroboros.Network.Subscription.PeerState
+import Ouroboros.Network.Subscription.Subscriber
+import Ouroboros.Network.Subscription.Worker (LocalAddresses (..),
+           WorkerParams (..))
 
-import           Ouroboros.Network.Test.Orphans ()
+import Ouroboros.Network.Test.Orphans ()
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Printf
-import           Text.Show.Functions ()
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+import Text.Printf
+import Text.Show.Functions ()
 
 
 defaultMiniProtocolLimit :: Int

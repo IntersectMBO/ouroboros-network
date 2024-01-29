@@ -17,32 +17,31 @@ module Ouroboros.Network.BlockFetch.State
   , TraceFetchClientState (..)
   ) where
 
-import           Data.Functor.Contravariant (contramap)
-import           Data.Hashable (Hashable)
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
-import           Data.Void
+import Data.Functor.Contravariant (contramap)
+import Data.Hashable (Hashable)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
+import Data.Void
 
-import           Control.Exception (assert)
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Tracer (Tracer, traceWith)
+import Control.Exception (assert)
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
 
-import           Ouroboros.Network.AnchoredFragment (AnchoredFragment)
-import qualified Ouroboros.Network.AnchoredFragment as AF
-import           Ouroboros.Network.Block
+import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
+import Ouroboros.Network.AnchoredFragment qualified as AF
+import Ouroboros.Network.Block
 
-import           Ouroboros.Network.BlockFetch.ClientState
-                     (FetchClientStateVars (..), FetchRequest (..),
-                     PeerFetchInFlight (..), PeerFetchStatus (..),
-                     TraceFetchClientState (..), TraceLabelPeer (..),
-                     addNewFetchRequest, readFetchClientState)
-import           Ouroboros.Network.BlockFetch.Decision (FetchDecision,
-                     FetchDecisionPolicy (..), FetchDecline (..),
-                     FetchMode (..), PeerInfo, fetchDecisions)
-import           Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
+import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
+           FetchRequest (..), PeerFetchInFlight (..), PeerFetchStatus (..),
+           TraceFetchClientState (..), TraceLabelPeer (..), addNewFetchRequest,
+           readFetchClientState)
+import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
+           FetchDecisionPolicy (..), FetchDecline (..), FetchMode (..),
+           PeerInfo, fetchDecisions)
+import Ouroboros.Network.BlockFetch.DeltaQ (PeerGSV (..))
 
 
 fetchLogicIterations

@@ -14,20 +14,20 @@ module Ouroboros.Network.Protocol.BlockFetch.Codec
   , timeLimitsBlockFetch
   ) where
 
-import           Control.Monad.Class.MonadST
-import           Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadTime.SI
 
-import qualified Data.ByteString.Lazy as LBS
+import Data.ByteString.Lazy qualified as LBS
 
-import qualified Codec.CBOR.Decoding as CBOR
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Read as CBOR
-import           Text.Printf
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Text.Printf
 
-import           Network.TypedProtocol.Codec.CBOR
+import Network.TypedProtocol.Codec.CBOR
 
-import           Ouroboros.Network.Protocol.BlockFetch.Type
-import           Ouroboros.Network.Protocol.Limits
+import Ouroboros.Network.Protocol.BlockFetch.Type
+import Ouroboros.Network.Protocol.Limits
 
 -- | Byte Limit.
 byteLimitsBlockFetch :: forall bytes block point.

@@ -6,17 +6,17 @@ module Test.Ouroboros.Network.Diffusion.Node.ChainDB
   , getBlockPointSet
   ) where
 
-import           Control.Concurrent.Class.MonadSTM (MonadSTM (..))
-import           Data.Coerce (coerce)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Set (Set)
-import qualified Data.Set as Set
-import           Ouroboros.Network.AnchoredFragment (Point)
-import           Ouroboros.Network.Block (ChainHash (..), HasFullHeader,
-                     HasHeader, blockHash, blockPoint, blockPrevHash)
-import           Ouroboros.Network.Mock.Chain (Chain (..), selectChain)
-import qualified Ouroboros.Network.Mock.Chain as Chain
+import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
+import Data.Coerce (coerce)
+import Data.Map (Map)
+import Data.Map qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Ouroboros.Network.AnchoredFragment (Point)
+import Ouroboros.Network.Block (ChainHash (..), HasFullHeader, HasHeader,
+           blockHash, blockPoint, blockPrevHash)
+import Ouroboros.Network.Mock.Chain (Chain (..), selectChain)
+import Ouroboros.Network.Mock.Chain qualified as Chain
 
 -- | ChainDB is an in memory store of all fetched (downloaded) blocks.
 --

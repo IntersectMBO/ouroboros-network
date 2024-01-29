@@ -16,43 +16,43 @@ module Ouroboros.Network.Protocol.TxSubmission2.Test
   , TxId (..)
   ) where
 
-import           Data.ByteString.Lazy (ByteString)
-import           Data.List (nub)
-import qualified Data.List.NonEmpty as NonEmpty
-import           Data.Word (Word16)
+import Data.ByteString.Lazy (ByteString)
+import Data.List (nub)
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Word (Word16)
 
-import           Control.Monad.Class.MonadAsync (MonadAsync)
-import           Control.Monad.Class.MonadST (MonadST)
-import           Control.Monad.Class.MonadThrow (MonadCatch)
-import           Control.Monad.IOSim
-import           Control.Monad.ST (runST)
-import           Control.Tracer (Tracer (..), nullTracer)
+import Control.Monad.Class.MonadAsync (MonadAsync)
+import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.IOSim
+import Control.Monad.ST (runST)
+import Control.Tracer (Tracer (..), nullTracer)
 
-import           Codec.Serialise (DeserialiseFailure, Serialise)
-import qualified Codec.Serialise as Serialise (decode, encode)
+import Codec.Serialise (DeserialiseFailure, Serialise)
+import Codec.Serialise qualified as Serialise (decode, encode)
 
-import           Network.TypedProtocol.Codec hiding (prop_codec)
-import           Network.TypedProtocol.Proofs
+import Network.TypedProtocol.Codec hiding (prop_codec)
+import Network.TypedProtocol.Proofs
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
-import           Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver.Simple (runConnectedPeersPipelined)
+import Ouroboros.Network.Util.ShowProxy
 
-import           Ouroboros.Network.Protocol.TxSubmission2.Client
-import           Ouroboros.Network.Protocol.TxSubmission2.Codec
-import           Ouroboros.Network.Protocol.TxSubmission2.Direct
-import           Ouroboros.Network.Protocol.TxSubmission2.Examples
-import           Ouroboros.Network.Protocol.TxSubmission2.Server
-import           Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Protocol.TxSubmission2.Client
+import Ouroboros.Network.Protocol.TxSubmission2.Codec
+import Ouroboros.Network.Protocol.TxSubmission2.Direct
+import Ouroboros.Network.Protocol.TxSubmission2.Examples
+import Ouroboros.Network.Protocol.TxSubmission2.Server
+import Ouroboros.Network.Protocol.TxSubmission2.Type
 
-import           Test.Data.CDDL (Any (..))
-import           Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
-                     prop_codec_valid_cbor_encoding, splits2, splits3)
+import Test.Data.CDDL (Any (..))
+import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
+           prop_codec_valid_cbor_encoding, splits2, splits3)
 
-import           Test.QuickCheck as QC
-import           Test.QuickCheck.Instances.ByteString ()
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
+import Test.QuickCheck as QC
+import Test.QuickCheck.Instances.ByteString ()
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
 
 
 --

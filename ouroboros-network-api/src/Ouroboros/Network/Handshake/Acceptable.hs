@@ -4,7 +4,7 @@ module Ouroboros.Network.Handshake.Acceptable
   ) where
 
 
-import           Data.Text
+import Data.Text
 
 -- | A @'Maybe'@ like type which better explains its purpose.
 --

@@ -16,45 +16,44 @@ module Ouroboros.Network.Diffusion.NonP2P
   , run
   ) where
 
-import qualified Control.Concurrent.Async as Async
-import           Control.Exception
-import           Control.Tracer (Tracer, contramap, nullTracer, traceWith)
-import           Data.Foldable (asum)
-import           Data.Functor (void)
-import           Data.Maybe (maybeToList)
-import           Data.Proxy (Proxy (..))
-import           Data.Void (Void)
-import           System.Exit (ExitCode)
+import Control.Concurrent.Async qualified as Async
+import Control.Exception
+import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
+import Data.Foldable (asum)
+import Data.Functor (void)
+import Data.Maybe (maybeToList)
+import Data.Proxy (Proxy (..))
+import Data.Void (Void)
+import System.Exit (ExitCode)
 
-import           Network.Socket (SockAddr, Socket)
-import qualified Network.Socket as Socket
+import Network.Socket (SockAddr, Socket)
+import Network.Socket qualified as Socket
 
-import           Ouroboros.Network.Snocket (LocalAddress, LocalSnocket,
-                     LocalSocket (..), SocketSnocket, localSocketFileDescriptor)
-import qualified Ouroboros.Network.Snocket as Snocket
-import           Ouroboros.Network.Socket (NetworkMutableState,
-                     NetworkServerTracers (..), cleanNetworkMutableState,
-                     configureSocket, configureSystemdSocket,
-                     newNetworkMutableState)
+import Ouroboros.Network.Snocket (LocalAddress, LocalSnocket, LocalSocket (..),
+           SocketSnocket, localSocketFileDescriptor)
+import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Socket (NetworkMutableState, NetworkServerTracers (..),
+           cleanNetworkMutableState, configureSocket, configureSystemdSocket,
+           newNetworkMutableState)
 
-import           Ouroboros.Network.Context (ExpandedInitiatorContext (..),
-                     IsBigLedgerPeer (..), MinimalInitiatorContext (..))
-import           Ouroboros.Network.ControlMessage (continueForever)
-import           Ouroboros.Network.Diffusion.Common hiding (nullTracers)
-import           Ouroboros.Network.ErrorPolicy
-import           Ouroboros.Network.IOManager
-import           Ouroboros.Network.Mux
-import           Ouroboros.Network.NodeToClient (NodeToClientVersion,
-                     NodeToClientVersionData)
-import qualified Ouroboros.Network.NodeToClient as NodeToClient
-import           Ouroboros.Network.NodeToNode
-                     (AcceptConnectionsPolicyTrace (..), DiffusionMode (..),
-                     NodeToNodeVersion, NodeToNodeVersionData, RemoteAddress)
-import qualified Ouroboros.Network.NodeToNode as NodeToNode
-import           Ouroboros.Network.Subscription.Dns
-import           Ouroboros.Network.Subscription.Ip
-import           Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
-import           Ouroboros.Network.Tracers
+import Ouroboros.Network.Context (ExpandedInitiatorContext (..),
+           IsBigLedgerPeer (..), MinimalInitiatorContext (..))
+import Ouroboros.Network.ControlMessage (continueForever)
+import Ouroboros.Network.Diffusion.Common hiding (nullTracers)
+import Ouroboros.Network.ErrorPolicy
+import Ouroboros.Network.IOManager
+import Ouroboros.Network.Mux
+import Ouroboros.Network.NodeToClient (NodeToClientVersion,
+           NodeToClientVersionData)
+import Ouroboros.Network.NodeToClient qualified as NodeToClient
+import Ouroboros.Network.NodeToNode (AcceptConnectionsPolicyTrace (..),
+           DiffusionMode (..), NodeToNodeVersion, NodeToNodeVersionData,
+           RemoteAddress)
+import Ouroboros.Network.NodeToNode qualified as NodeToNode
+import Ouroboros.Network.Subscription.Dns
+import Ouroboros.Network.Subscription.Ip
+import Ouroboros.Network.Subscription.Worker (LocalAddresses (..))
+import Ouroboros.Network.Tracers
 
 -- | NonP2P DiffusionTracers Extras
 --

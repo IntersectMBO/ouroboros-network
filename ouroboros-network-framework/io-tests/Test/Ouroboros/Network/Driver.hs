@@ -12,34 +12,34 @@
 
 module Test.Ouroboros.Network.Driver (tests) where
 
-import           Network.TypedProtocol.Codec
-import           Network.TypedProtocol.Core
+import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Core
 
-import           Ouroboros.Network.Channel
-import           Ouroboros.Network.Driver
-import           Ouroboros.Network.Driver.Limits
+import Ouroboros.Network.Channel
+import Ouroboros.Network.Driver
+import Ouroboros.Network.Driver.Limits
 
-import           Network.TypedProtocol.ReqResp.Client
-import           Network.TypedProtocol.ReqResp.Codec
-import           Network.TypedProtocol.ReqResp.Examples
-import           Network.TypedProtocol.ReqResp.Server
-import           Network.TypedProtocol.ReqResp.Type
+import Network.TypedProtocol.ReqResp.Client
+import Network.TypedProtocol.ReqResp.Codec
+import Network.TypedProtocol.ReqResp.Examples
+import Network.TypedProtocol.ReqResp.Server
+import Network.TypedProtocol.ReqResp.Type
 
-import           Control.Monad (replicateM, void)
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadSTM
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Monad.Class.MonadTimer.SI
-import           Control.Monad.IOSim (runSimOrThrow)
-import           Control.Tracer
+import Control.Monad (replicateM, void)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.IOSim (runSimOrThrow)
+import Control.Tracer
 
-import           Ouroboros.Network.Test.Orphans ()
+import Ouroboros.Network.Test.Orphans ()
 
-import           Test.QuickCheck
-import           Test.Tasty (TestTree, testGroup)
-import           Test.Tasty.QuickCheck (testProperty)
-import           Text.Show.Functions ()
+import Test.QuickCheck
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.QuickCheck (testProperty)
+import Text.Show.Functions ()
 
 --
 -- The list of all properties

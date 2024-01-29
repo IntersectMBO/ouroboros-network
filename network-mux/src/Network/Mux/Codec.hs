@@ -2,14 +2,14 @@
 
 module Network.Mux.Codec where
 
-import qualified Data.Binary.Get as Bin
-import qualified Data.Binary.Put as Bin
-import           Data.Bits
-import qualified Data.ByteString.Lazy as BL
-import           Data.Word
+import Data.Binary.Get qualified as Bin
+import Data.Binary.Put qualified as Bin
+import Data.Bits
+import Data.ByteString.Lazy qualified as BL
+import Data.Word
 
-import           Network.Mux.Trace
-import           Network.Mux.Types
+import Network.Mux.Trace
+import Network.Mux.Types
 
 
 -- | Encode a 'MuxSDU' as a 'ByteString'.

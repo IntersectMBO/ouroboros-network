@@ -7,14 +7,14 @@ module Ouroboros.Network.PeerSelection.PeerMetric.Type
   , TraceLabelPeer (..)
   ) where
 
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer (Tracer)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Tracer)
 
-import           Cardano.Slotting.Slot (SlotNo (..))
-import           Ouroboros.Network.SizeInBytes (SizeInBytes)
+import Cardano.Slotting.Slot (SlotNo (..))
+import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
-import           Network.Mux.Trace (TraceLabelPeer (..))
+import Network.Mux.Trace (TraceLabelPeer (..))
 
 
 -- | Report arrival time of a header for a given slot.
