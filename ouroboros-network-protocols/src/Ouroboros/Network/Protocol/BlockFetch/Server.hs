@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 module Ouroboros.Network.Protocol.BlockFetch.Server where
 
 import           Network.TypedProtocol.Core (Peer (..), PeerHasAgency (..),

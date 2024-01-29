@@ -216,7 +216,7 @@ decodeList dec = do
 codecChainSyncId :: forall header point tip m. Monad m
                  => Codec (ChainSync header point tip)
                           CodecFailure m (AnyMessage (ChainSync header point tip))
-codecChainSyncId = Codec encode decode
+codecChainSyncId = Codec { encode, decode }
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

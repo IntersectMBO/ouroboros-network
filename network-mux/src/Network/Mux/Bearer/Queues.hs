@@ -47,7 +47,7 @@ queueChannelAsMuxBearer sduSize tracer QueueChannel { writeQueue, readQueue } = 
     where
       readMux :: Mx.TimeoutFn m -> m (Mx.MuxSDU, Time)
       readMux _ = do
-          traceWith tracer $ Mx.MuxTraceRecvHeaderStart
+          traceWith tracer Mx.MuxTraceRecvHeaderStart
           buf <- atomically $ readTBQueue readQueue
           let (hbuf, payload) = BL.splitAt 8 buf
           case Mx.decodeMuxSDU hbuf of
@@ -66,6 +66,6 @@ queueChannelAsMuxBearer sduSize tracer QueueChannel { writeQueue, readQueue } = 
               buf  = Mx.encodeMuxSDU sdu'
           traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
           atomically $ writeTBQueue writeQueue buf
-          traceWith tracer $ Mx.MuxTraceSendEnd
+          traceWith tracer Mx.MuxTraceSendEnd
           return ts
 

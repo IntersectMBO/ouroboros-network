@@ -35,4 +35,4 @@ peerSharingClientPeer (SendMsgShareRequest amount k) =
 peerSharingClientPeer (SendMsgDone result) =
     -- Perform some finishing action
     -- Perform a transition to the 'StDone' state
-    Effect $ (Yield (ClientAgency TokIdle) MsgDone . Done TokDone) <$> result
+    Effect $ Yield (ClientAgency TokIdle) MsgDone . Done TokDone <$> result

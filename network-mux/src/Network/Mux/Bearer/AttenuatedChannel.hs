@@ -267,7 +267,7 @@ attenuationChannelAsMuxBearer sduSize sduTimeout muxTracer chan =
   where
     readMux :: TimeoutFn m -> m (MuxSDU, Time)
     readMux timeoutFn = do
-      traceWith muxTracer $ MuxTraceRecvHeaderStart
+      traceWith muxTracer MuxTraceRecvHeaderStart
       mbuf <- timeoutFn sduTimeout $ acRead chan
       case mbuf of
         Nothing -> do
@@ -294,7 +294,7 @@ attenuationChannelAsMuxBearer sduSize sduTimeout muxTracer chan =
       traceWith muxTracer $ MuxTraceSendStart (msHeader sdu')
       acWrite chan buf
 
-      traceWith muxTracer $ MuxTraceSendEnd
+      traceWith muxTracer MuxTraceSendEnd
       return ts
 
 --

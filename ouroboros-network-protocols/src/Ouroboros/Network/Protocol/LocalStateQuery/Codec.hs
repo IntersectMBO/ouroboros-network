@@ -211,7 +211,7 @@ codecLocalStateQueryId
            CodecFailure m
            (AnyMessage (LocalStateQuery block point query))
 codecLocalStateQueryId eqQuery =
-  Codec encode decode
+  Codec { encode, decode }
  where
   encode :: forall (pr :: PeerRole) st st'.
             PeerHasAgency pr st

@@ -115,7 +115,7 @@
             }
             // lib.optionalAttrs (config.compiler-nix-name == defaultCompiler) {
               # tools that work only with default compiler
-              stylish-haskell = "0.14.5.0";
+              stylish-haskell = "0.14.6.0";
               haskell-language-server = "2.0.0.1";
             };
           # and from nixpkgs or other inputs

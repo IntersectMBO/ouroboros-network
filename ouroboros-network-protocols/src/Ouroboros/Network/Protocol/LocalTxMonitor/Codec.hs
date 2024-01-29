@@ -155,7 +155,7 @@ codecLocalTxMonitorId ::
      )
   => Codec ptcl CodecFailure m (AnyMessage ptcl)
 codecLocalTxMonitorId =
-    Codec encode decode
+    Codec { encode, decode }
   where
     encode ::
          forall (pr :: PeerRole) st st'. ()

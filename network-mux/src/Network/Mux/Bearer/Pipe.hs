@@ -82,7 +82,7 @@ pipeAsMuxBearer sduSize tracer channel =
     where
       readPipe :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
       readPipe _ = do
-          traceWith tracer $ Mx.MuxTraceRecvHeaderStart
+          traceWith tracer Mx.MuxTraceRecvHeaderStart
           hbuf <- recvLen' 8 []
           case Mx.decodeMuxSDU hbuf of
               Left e -> throwIO e
@@ -114,6 +114,6 @@ pipeAsMuxBearer sduSize tracer channel =
           traceWith tracer $ Mx.MuxTraceSendStart (Mx.msHeader sdu')
           writeHandle channel buf
             `catch` Mx.handleIOException "writeHandle errored"
-          traceWith tracer $ Mx.MuxTraceSendEnd
+          traceWith tracer Mx.MuxTraceSendEnd
           return ts
 

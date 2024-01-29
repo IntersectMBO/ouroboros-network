@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns              #-}
-{-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}

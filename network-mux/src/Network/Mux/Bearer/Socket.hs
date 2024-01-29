@@ -60,7 +60,7 @@ socketAsMuxBearer sduSize sduTimeout tracer sd =
 
       readSocket :: Mx.TimeoutFn IO -> IO (Mx.MuxSDU, Time)
       readSocket timeout = do
-          traceWith tracer $ Mx.MuxTraceRecvHeaderStart
+          traceWith tracer Mx.MuxTraceRecvHeaderStart
 
           -- Wait for the first part of the header without any timeout
           h0 <- recvAtMost True hdrLenght
@@ -69,7 +69,7 @@ socketAsMuxBearer sduSize sduTimeout tracer sd =
           r_m <- timeout sduTimeout $ recvRem h0
           case r_m of
                 Nothing -> do
-                    traceWith tracer $ Mx.MuxTraceSDUReadTimeoutException
+                    traceWith tracer Mx.MuxTraceSDUReadTimeoutException
                     throwIO $ Mx.MuxError Mx.MuxSDUReadTimeout "Mux SDU Timeout"
                 Just r -> return r
 
@@ -104,7 +104,7 @@ socketAsMuxBearer sduSize sduTimeout tracer sd =
                     `catch` Mx.handleIOException "recv errored"
           if BL.null buf
               then do
-                  when (waitingOnNxtHeader) $
+                  when waitingOnNxtHeader $
                       {- This may not be an error, but could be an orderly shutdown.
                        - We wait 1 seconds to give the mux protocols time to perform
                        - a clean up and exit.
@@ -133,10 +133,10 @@ socketAsMuxBearer sduSize sduTimeout tracer sd =
               `catch` Mx.handleIOException "sendAll errored"
           case r of
                Nothing -> do
-                    traceWith tracer $ Mx.MuxTraceSDUWriteTimeoutException
+                    traceWith tracer Mx.MuxTraceSDUWriteTimeoutException
                     throwIO $ Mx.MuxError Mx.MuxSDUWriteTimeout "Mux SDU Timeout"
                Just _ -> do
-                   traceWith tracer $ Mx.MuxTraceSendEnd
+                   traceWith tracer Mx.MuxTraceSendEnd
 #if defined(linux_HOST_OS) && defined(MUX_TRACE_TCPINFO)
                    -- If it was possible to detect if the MuxTraceTCPInfo was
                    -- enable we wouldn't have to hide the getSockOpt

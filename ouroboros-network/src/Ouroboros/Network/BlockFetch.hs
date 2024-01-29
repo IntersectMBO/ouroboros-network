@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}

@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE TupleSections    #-}
 
 module Ouroboros.Network.PeerSharing where
 
