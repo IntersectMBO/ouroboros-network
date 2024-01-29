@@ -3051,7 +3051,9 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains peerSharing = do
                 policyPeerShareRetryTime         = 0, -- seconds
                 policyPeerShareBatchWaitTime     = 0, -- seconds
                 policyPeerShareOverallTimeout    = 0, -- seconds
-                policyPeerShareActivationDelay   = 1, -- seconds
+                policyPeerShareActivationDelay   = 2, -- seconds
+                policyPeerShareStickyTime        = 1, --seconds
+                policyPeerShareMaxPeers          = 10,
                 policyErrorDelay              = 0  -- seconds
               }
     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
