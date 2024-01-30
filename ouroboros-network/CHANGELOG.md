@@ -43,6 +43,10 @@
 * Updated other monitoring tasks to consider a possible sensitive state that
   involves the bootstrap peers flag and the ledger state judgement value.
 
+* Improved tracing when peersharing
+* set knownSuccessfulConnection for incomming peers
+* Don't use minPeerShareTime with GuardedSkip
+
 ## 0.11.0.0 -- 2023-01-22
 
 ### Breaking changes

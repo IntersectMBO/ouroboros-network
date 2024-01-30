@@ -106,7 +106,7 @@ belowTarget actions
         decisionTrace = [TracePeerShareRequests
                           targetNumberOfKnownPeers
                           numKnownPeers
-                          availableForPeerShare
+                          canAsk
                           selectedForPeerShare],
         decisionState = st {
                           inProgressPeerShareReqs = inProgressPeerShareReqs
@@ -119,13 +119,6 @@ belowTarget actions
         decisionJobs  =
           [jobPeerShare actions policy numPeersToReq (Set.toList selectedForPeerShare)]
       }
-
-    -- If we could peer share except that there are none currently available
-    -- then we return the next wakeup time (if any)
-  | numKnownPeers < targetNumberOfKnownPeers
-  , numPeerShareReqsPossible > 0
-  , Set.null availableForPeerShare
-  = GuardedSkip (EstablishedPeers.minPeerShareTime establishedPeers)
 
   | otherwise
   = GuardedSkip Nothing
@@ -190,7 +183,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                -- sharing results is welcome.
                newPeers    = [ p | Right (PeerSharingResult ps) <- totalResults
                                  , p <- ps
-                                 , not (Set.member p (PublicRootPeers.toAllLedgerPeerSet (publicRootPeers st))) ]
+                                 , not (KnownPeers.member p (knownPeers st)) ]
             in Decision { decisionTrace = [ TracePeerShareResults peerResults
                                           , TracePeerShareResultsFiltered newPeers
                                           ]
