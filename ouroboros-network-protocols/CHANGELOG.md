@@ -4,6 +4,13 @@
 
 ### Breaking changes
 
+* Add side-effect argument to `SendMsgRequestNextPipelined` to be invoked
+  promptly upon `MsgAwaitReply`.
+
+* Change the arguments of both `SendMsgRequestNext` constructors to have the
+  same shape (and limited expressivity) as does `SendMsgRequestNextPipelined`
+  (since we never use the extra expressivity).
+
 ### Non-breaking changes
 
 ## 0.7.0.0 -- 2024-01-22
