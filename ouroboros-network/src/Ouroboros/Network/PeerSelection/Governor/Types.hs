@@ -24,6 +24,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , ChurnMode (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
+  , DebugPeerSelectionState (..)
+  , makeDebugPeerSelectionState
   , emptyPeerSelectionState
   , assertPeerSelectionState
   , establishedPeersStatus
@@ -469,6 +471,62 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 --     lastSuccessfulNetworkEvent :: Time
      }
   deriving Show
+
+-----------------------
+-- Debug copy of Peer Selection State
+--
+-- Used for dumping the peer selection state upon getting a USR1 signal.
+--
+data DebugPeerSelectionState peeraddr = DebugPeerSelectionState {
+       dpssTargets                     :: !PeerSelectionTargets,
+       dpssLocalRootPeers              :: !(LocalRootPeers peeraddr),
+       dpssPublicRootPeers             :: !(PublicRootPeers peeraddr),
+       dpssKnownPeers                  :: !(KnownPeers peeraddr),
+       dpssEstablishedPeers            :: !(Set peeraddr),
+       dpssActivePeers                 :: !(Set peeraddr),
+       dpssPublicRootBackoffs          :: !Int,
+       dpssPublicRootRetryTime         :: !Time,
+       dpssInProgressPublicRootsReq    :: !Bool,
+       dpssBigLedgerPeerBackoffs       :: !Int,
+       dpssBigLedgerPeerRetryTime      :: !Time,
+       dpssInProgressBigLedgerPeersReq :: !Bool,
+       dpssInProgressPeerShareReqs     :: !Int,
+       dpssInProgressPromoteCold       :: !(Set peeraddr),
+       dpssInProgressPromoteWarm       :: !(Set peeraddr),
+       dpssInProgressDemoteWarm        :: !(Set peeraddr),
+       dpssInProgressDemoteHot         :: !(Set peeraddr),
+       dpssInProgressDemoteToCold      :: !(Set peeraddr),
+       dpssUpstreamyness               :: !(Map peeraddr Int),
+       dpssFetchynessBlocks            :: !(Map peeraddr Int)
+} deriving Show
+
+makeDebugPeerSelectionState :: PeerSelectionState peeraddr peerconn
+                            -> Map peeraddr Int
+                            -> Map peeraddr Int
+                            -> DebugPeerSelectionState peeraddr
+makeDebugPeerSelectionState PeerSelectionState {..} up bp =
+  DebugPeerSelectionState {
+      dpssTargets                     = targets
+    , dpssLocalRootPeers              = localRootPeers
+    , dpssPublicRootPeers             = publicRootPeers
+    , dpssKnownPeers                  = knownPeers
+    , dpssEstablishedPeers            = EstablishedPeers.toSet establishedPeers
+    , dpssActivePeers                 = activePeers
+    , dpssPublicRootBackoffs          = publicRootBackoffs
+    , dpssPublicRootRetryTime         = publicRootRetryTime
+    , dpssInProgressPublicRootsReq    = inProgressPublicRootsReq
+    , dpssBigLedgerPeerBackoffs       = bigLedgerPeerBackoffs
+    , dpssBigLedgerPeerRetryTime      = bigLedgerPeerRetryTime
+    , dpssInProgressBigLedgerPeersReq = inProgressBigLedgerPeersReq
+    , dpssInProgressPeerShareReqs     = inProgressPeerShareReqs
+    , dpssInProgressPromoteCold       = inProgressPromoteCold
+    , dpssInProgressPromoteWarm       = inProgressPromoteWarm
+    , dpssInProgressDemoteWarm        = inProgressDemoteWarm
+    , dpssInProgressDemoteHot         = inProgressDemoteHot
+    , dpssInProgressDemoteToCold      = inProgressDemoteToCold
+    , dpssUpstreamyness               = up
+    , dpssFetchynessBlocks            = bp
+    }
 
 -- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
 -- mechanisms without any problem.
@@ -1010,6 +1068,12 @@ data TracePeerSelection peeraddr =
      -- Critical Failures
      --
      | TraceOutboundGovernorCriticalFailure SomeException
+
+     --
+     -- Debug Tracer
+     --
+
+     | TraceDebugState Time (DebugPeerSelectionState peeraddr)
   deriving Show
 
 data BootstrapPeersCriticalTimeoutError =

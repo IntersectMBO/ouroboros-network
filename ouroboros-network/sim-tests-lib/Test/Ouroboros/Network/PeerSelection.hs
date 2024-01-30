@@ -698,6 +698,7 @@ traceNum TraceOnlyBootstrapPeers{}                            = 50
 traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 51
 traceNum TraceUseBootstrapPeersChanged {}                     = 52
 traceNum TraceOutboundGovernorCriticalFailure {}              = 53
+traceNum TraceDebugState {}                                   = 54
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -756,6 +757,7 @@ allTraceNames =
    , (51, "TraceBootstrapPeersFlagChangedWhilstInSensitiveState")
    , (52, "TraceUseBootstrapPeersChanged")
    , (53, "TraceOutboundGovernorCriticalFailure")
+   , (54, "TraceDebugState")
    ]
 
 
@@ -3313,11 +3315,13 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
         publicStateVar <- newTVarIO (emptyPublicPeerSelectionState @SockAddr)
+        debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) []
         peerSelectionGovernor
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
           publicStateVar
+          debugVar
           actions
             { requestPublicRootPeers = \_ ->
                 transformPeerSelectionAction requestPublicRootPeers }
