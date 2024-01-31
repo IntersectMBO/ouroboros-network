@@ -23,13 +23,13 @@ direct_ :: Monad m
         -> ClientStIdle header point tip m b
         -> m (a, b)
 direct_  ServerStIdle{recvMsgRequestNext}
-        (Client.SendMsgRequestNext stNext stAwait) = do
+        (Client.SendMsgRequestNext stAwait stNext) = do
     mresp <- recvMsgRequestNext
     case mresp of
       Left  resp    -> directStNext resp stNext
       Right waiting -> do resp <- waiting
-                          stNext' <- stAwait
-                          directStNext resp stNext'
+                          stAwait
+                          directStNext resp stNext
   where
     directStNext (SendMsgRollForward header tip server')
                   ClientStNext{recvMsgRollForward} = do

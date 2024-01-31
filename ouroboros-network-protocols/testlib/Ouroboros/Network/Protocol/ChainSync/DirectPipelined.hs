@@ -34,14 +34,14 @@ directStIdle :: Monad m
              -> ServerStIdle            header point tip m a
              -> ClientPipelinedStIdle n header point tip m b
              -> m (a, b)
-directStIdle queue@EmptyQ ServerStIdle {recvMsgRequestNext} (SendMsgRequestNext stClientNext stClientAwait) = do
+directStIdle queue@EmptyQ ServerStIdle {recvMsgRequestNext} (SendMsgRequestNext stClientAwait stClientNext) = do
     mStServerNext <- recvMsgRequestNext
     case mStServerNext of
       Left stServerNext    -> directStNext stServerNext stClientNext
       Right mStServerAwait -> do
         stServerNext' <- mStServerAwait
-        stClientNext' <- stClientAwait
-        directStNext stServerNext' stClientNext'
+        stClientAwait
+        directStNext stServerNext' stClientNext
 
   where
     directStNext (SendMsgRollForward header tip (ChainSyncServer mStServerIdle)) ClientStNext {recvMsgRollForward} =

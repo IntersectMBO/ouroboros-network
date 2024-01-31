@@ -73,11 +73,10 @@ chainSyncClientPipelined mkPipelineDecision0 chainvar =
       case (n, runPipelineDecision mkPipelineDecision n cliTipBlockNo srvTipBlockNo) of
         (_Zero, (Request, mkPipelineDecision')) ->
           SendMsgRequestNext
+              -- We have the opportunity to do something when receiving
+              -- MsgAwaitReply. In this example we don't take up that opportunity.
+              (pure ())
               clientStNext
-              -- We received 'MsgAwaitReplay' and we get a chance to run
-              -- a monadic action, in this case we do not take up that
-              -- opportunity.
-              (pure clientStNext)
             where
               clientStNext = ClientStNext {
                   recvMsgRollForward = \srvHeader srvTip' -> do

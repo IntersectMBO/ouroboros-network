@@ -236,9 +236,9 @@ chainSyncClientPeerSender n@Zero (SendMsgRequestNext stAwait stNext) =
 
                     MsgRollBackward pRollback tip -> SenderEffect $
                         chainSyncClientPeerSender n
-                          <$> recvMsgRollBackward pRollback tip)
+                          <$> recvMsgRollBackward pRollback tip
                       where
-                        ClientStNext {recvMsgRollBackward} = stNext
+                        ClientStNext {recvMsgRollBackward} = stNext)
 
 
 chainSyncClientPeerSender n (SendMsgRequestNextPipelined await next) =
