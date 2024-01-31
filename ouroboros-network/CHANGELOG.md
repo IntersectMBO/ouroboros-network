@@ -47,6 +47,8 @@
 * set knownSuccessfulConnection for incomming peers
 * Don't use minPeerShareTime with GuardedSkip
 
+* `PeerSharingController` is now private and `requestPeers` is exported
+
 ## 0.11.0.0 -- 2023-01-22
 
 ### Breaking changes
