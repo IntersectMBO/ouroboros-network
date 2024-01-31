@@ -59,9 +59,8 @@ newtype ChainSyncClientPipelined header point tip m a =
 data ClientPipelinedStIdle n header point tip  m a where
 
     SendMsgRequestNext
-      ::    ClientStNext       Z header point tip m a
-      -> m (ClientStNext       Z header point tip m a)
-         -- ^ promptly invoked when 'MsgAwaitReply' is received
+      :: m ()   -- ^ promptly invoked when 'MsgAwaitReply' is received
+      -> ClientStNext       Z header point tip m a
       -> ClientPipelinedStIdle Z header point tip m a
 
     SendMsgRequestNextPipelined
@@ -144,7 +143,7 @@ mapChainSyncClientPipelined toPoint' toPoint toHeader toTip (ChainSyncClientPipe
     goIdle :: ClientPipelinedStIdle n header point tip  m a
            -> ClientPipelinedStIdle n header' point' tip'  m a
     goIdle client = case client of
-      SendMsgRequestNext next mNext -> SendMsgRequestNext (goNext next) (goNext <$> mNext)
+      SendMsgRequestNext stAwait stNext -> SendMsgRequestNext stAwait (goNext stNext)
       SendMsgRequestNextPipelined await idle -> SendMsgRequestNextPipelined await (goIdle idle)
       SendMsgFindIntersect points inter -> SendMsgFindIntersect (toPoint' <$> points) (goIntersect inter)
       CollectResponse idleMay next -> CollectResponse (fmap goIdle <$> idleMay) (goNext next)
@@ -201,7 +200,7 @@ chainSyncClientPeerSender
                   (ChainSyncInstruction header point tip)
                   m a
 
-chainSyncClientPeerSender n@Zero (SendMsgRequestNext stNext stAwait) =
+chainSyncClientPeerSender n@Zero (SendMsgRequestNext stAwait stNext) =
 
     SenderYield
       (ClientAgency TokIdle)
@@ -225,17 +224,21 @@ chainSyncClientPeerSender n@Zero (SendMsgRequestNext stNext stAwait) =
 
             MsgAwaitReply ->
               SenderEffect $ do
-                ClientStNext{recvMsgRollForward, recvMsgRollBackward} <- stAwait
+                stAwait
                 pure $ SenderAwait
                   (ServerAgency (TokNext TokMustReply))
                   $ \case
                     MsgRollForward header tip -> SenderEffect $
-                      chainSyncClientPeerSender n
-                        <$> recvMsgRollForward header tip
+                        chainSyncClientPeerSender n
+                          <$> recvMsgRollForward header tip
+                      where
+                        ClientStNext {recvMsgRollForward} = stNext
 
                     MsgRollBackward pRollback tip -> SenderEffect $
-                      chainSyncClientPeerSender n
-                        <$> recvMsgRollBackward pRollback tip)
+                        chainSyncClientPeerSender n
+                          <$> recvMsgRollBackward pRollback tip)
+                      where
+                        ClientStNext {recvMsgRollBackward} = stNext
 
 
 chainSyncClientPeerSender n (SendMsgRequestNextPipelined await next) =
