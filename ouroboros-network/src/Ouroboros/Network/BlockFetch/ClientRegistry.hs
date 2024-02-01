@@ -21,6 +21,7 @@ import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
+<<<<<<< HEAD
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (unless)
@@ -32,6 +33,21 @@ import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.DeltaQ
+=======
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (assert)
+import Control.Monad (unless)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork (MonadFork (throwTo),
+           MonadThread (ThreadId, myThreadId))
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer)
+
+import Ouroboros.Network.BlockFetch.ClientState
+import Ouroboros.Network.DeltaQ
+import Ouroboros.Network.Diffusion.Policies (deactivateTimeout)
+>>>>>>> 2fedf42616 (Fix hot demotion)
 
 
 
@@ -80,7 +96,8 @@ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
 -- It also manages synchronisation with the corresponding chain sync client.
 --
 bracketFetchClient :: forall m a peer header block version.
-                      (MonadSTM m, MonadFork m, MonadMask m, Ord peer)
+                      (MonadSTM m, MonadFork m, MonadMask m
+                      ,MonadTimer m, Ord peer)
                    => FetchClientRegistry peer header block m
                    -> version
                    -> (version -> WhetherReceivingTentativeBlocks)
@@ -164,24 +181,52 @@ bracketFetchClient (FetchClientRegistry ctxVar
                -> (ThreadId m, StrictTMVar m ())
                -> m ()
     unregister ksVar FetchClientContext { fetchClientCtxStateVars = stateVars }
-               (tid, doneVar)  = uninterruptibleMask_ $ do
-      -- Signal we are shutting down
-      atomically $
-        writeTVar (fetchClientStatusVar stateVars) PeerFetchStatusShutdown
-      -- Kill the sync client if it is still running
-      throwTo tid AsyncCancelled
-      -- Wait for the sync client to terminate and finally unregister ourselves
-      atomically $ do
-        -- Signal to keepAlive that we're going away
-        putTMVar ksVar ()
-        modifyTVar keepRegistry $ \m ->
-          assert (peer `Map.member` m) $
-          Map.delete peer m
+               (tid, doneVar)  = do
+      dead <- uninterruptibleMask_  $ do
+        -- Signal we are shutting down
+        dieFast <- atomically $ do
+          writeTVar (fetchClientStatusVar stateVars) PeerFetchStatusShutdown
 
-        readTMVar doneVar
-        modifyTVar fetchRegistry $ \m ->
-          assert (peer `Map.member` m) $
-          Map.delete peer m
+          dr <- readTVar dyingRegistry
+          return $ Set.member peer dr
+
+        -- If keepAlive is dying we don't need to let chainsync exit cleanly
+        if dieFast
+           then do
+             throwTo tid AsyncCancelled
+             atomically $ readTMVar doneVar >> cleanup
+             return True
+           else return False
+
+      if dead
+         then return ()
+         else do
+           -- Give the sync client a chance to exit cleanly before killing it.
+           res <- onException
+                   (timeout deactivateTimeout $ atomically $ readTMVar doneVar)
+                   (-- no time to wait, die die die!
+                    uninterruptibleMask_ $ do
+                    throwTo tid AsyncCancelled
+                    atomically $ readTMVar doneVar >> cleanup
+                   )
+           uninterruptibleMask_ $ do
+             case res of
+                  Nothing -> do
+                    throwTo tid AsyncCancelled
+                    atomically $ readTMVar doneVar >> cleanup
+                  Just _ -> atomically $ cleanup
+     where
+       cleanup = do
+         modifyTVar fetchRegistry $ \m ->
+           assert (peer `Map.member` m) $
+           Map.delete peer m
+
+         -- Signal to keepAlive that we're going away
+         putTMVar ksVar ()
+         modifyTVar keepRegistry $ \m ->
+           assert (peer `Map.member` m) $
+           Map.delete peer m
+
 
 
 -- | The block fetch and chain sync clients for each peer need to synchronise
