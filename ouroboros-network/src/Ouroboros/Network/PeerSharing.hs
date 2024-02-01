@@ -1,13 +1,22 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns   #-}
 
-module Ouroboros.Network.PeerSharing where
+module Ouroboros.Network.PeerSharing
+  ( PeerSharingController
+  , PeerSharingRegistry (..)
+  , newPeerSharingRegistry
+  , bracketPeerSharingClient
+  , peerSharingClient
+  , peerSharingServer
+  , requestPeers
+  ) where
 
 import Control.Applicative (Alternative)
-import Control.Concurrent.Class.MonadMVar (MVar, MonadMVar (putMVar))
+import Control.Concurrent.Class.MonadMVar (MVar, MonadMVar (putMVar),
+           newEmptyMVar, takeMVar)
 import Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, STM, StrictTMVar,
            StrictTVar, atomically, modifyTVar, newEmptyTMVarIO, newTVarIO,
-           retry, takeTMVar)
+           putTMVar, retry, takeTMVar)
 import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -35,6 +44,13 @@ newtype PeerSharingController peer m = PeerSharingController {
   -- | Depth 1 mailbox that contains a locally scoped result queue
     requestQueue :: StrictTMVar m (PeerSharingAmount, MVar m [peer])
   }
+
+requestPeers :: (MonadMVar m, MonadSTM m)
+             => PeerSharingController peer m -> PeerSharingAmount -> m [peer]
+requestPeers (PeerSharingController requestQueue) amount = do
+   res <- newEmptyMVar
+   atomically $ putTMVar requestQueue (amount, res)
+   takeMVar res
 
 -- | Peer Sharing Registry is a registry that stores a 'PeerSharingController'
 -- for every peer that we connect to.
