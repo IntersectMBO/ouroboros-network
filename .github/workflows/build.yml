@@ -75,6 +75,7 @@ jobs:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
         restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+        enableCrossOsArchive: true
 
     - uses: actions/cache@v4
       name: "Cache `dist-newstyle`"
@@ -93,6 +94,7 @@ jobs:
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+        enableCrossOsArchive: true
 
     - name: Build projects [build]
       run: cabal build all -j
