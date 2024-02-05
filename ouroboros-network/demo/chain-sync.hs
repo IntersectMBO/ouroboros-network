@@ -625,8 +625,8 @@ chainSyncClient' controlMessageSTM syncTracer _currentChainVar candidateChainVar
                      BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()
     requestNext =
       ChainSync.SendMsgRequestNext
+        (pure ())   -- on MsgAwaitReply; could trace
         handleNext
-        (return handleNext) -- wait case, could trace
 
     terminate :: ChainSync.ClientStIdle
                      BlockHeader (Point BlockHeader) (Point BlockHeader) IO ()

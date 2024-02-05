@@ -59,12 +59,13 @@ newtype ChainSyncClientPipelined header point tip m a =
 data ClientPipelinedStIdle n header point tip  m a where
 
     SendMsgRequestNext
-      ::    ClientStNext       Z header point tip m a
-      -> m (ClientStNext       Z header point tip m a)
+      :: m ()   -- ^ promptly invoked when 'MsgAwaitReply' is received
+      -> ClientStNext          Z header point tip m a
       -> ClientPipelinedStIdle Z header point tip m a
 
     SendMsgRequestNextPipelined
-      :: ClientPipelinedStIdle (S n) header point tip m a
+      :: m ()   -- ^ promptly invoked when 'MsgAwaitReply' is received
+      -> ClientPipelinedStIdle (S n) header point tip m a
       -> ClientPipelinedStIdle    n  header point tip m a
 
     SendMsgFindIntersect
@@ -142,8 +143,8 @@ mapChainSyncClientPipelined toPoint' toPoint toHeader toTip (ChainSyncClientPipe
     goIdle :: ClientPipelinedStIdle n header point tip  m a
            -> ClientPipelinedStIdle n header' point' tip'  m a
     goIdle client = case client of
-      SendMsgRequestNext next mNext -> SendMsgRequestNext (goNext next) (goNext <$> mNext)
-      SendMsgRequestNextPipelined idle -> SendMsgRequestNextPipelined (goIdle idle)
+      SendMsgRequestNext stAwait stNext -> SendMsgRequestNext stAwait (goNext stNext)
+      SendMsgRequestNextPipelined await idle -> SendMsgRequestNextPipelined await (goIdle idle)
       SendMsgFindIntersect points inter -> SendMsgFindIntersect (toPoint' <$> points) (goIntersect inter)
       CollectResponse idleMay next -> CollectResponse (fmap goIdle <$> idleMay) (goNext next)
       SendMsgDone a -> SendMsgDone a
@@ -199,7 +200,7 @@ chainSyncClientPeerSender
                   (ChainSyncInstruction header point tip)
                   m a
 
-chainSyncClientPeerSender n@Zero (SendMsgRequestNext stNext stAwait) =
+chainSyncClientPeerSender n@Zero (SendMsgRequestNext stAwait stNext) =
 
     SenderYield
       (ClientAgency TokIdle)
@@ -222,23 +223,25 @@ chainSyncClientPeerSender n@Zero (SendMsgRequestNext stNext stAwait) =
                   ClientStNext {recvMsgRollBackward} = stNext
 
             MsgAwaitReply ->
-              SenderAwait
-                (ServerAgency (TokNext TokMustReply))
-                $ \case
-                  MsgRollForward header tip ->
-                    SenderEffect $ do
-                      ClientStNext {recvMsgRollForward} <- stAwait
-                      chainSyncClientPeerSender n
-                        <$> recvMsgRollForward header tip
+              SenderEffect $ do
+                stAwait
+                pure $ SenderAwait
+                  (ServerAgency (TokNext TokMustReply))
+                  $ \case
+                    MsgRollForward header tip -> SenderEffect $
+                        chainSyncClientPeerSender n
+                          <$> recvMsgRollForward header tip
+                      where
+                        ClientStNext {recvMsgRollForward} = stNext
 
-                  MsgRollBackward pRollback tip ->
-                    SenderEffect $ do
-                      ClientStNext {recvMsgRollBackward} <- stAwait
-                      chainSyncClientPeerSender n
-                        <$> recvMsgRollBackward pRollback tip)
+                    MsgRollBackward pRollback tip -> SenderEffect $
+                        chainSyncClientPeerSender n
+                          <$> recvMsgRollBackward pRollback tip
+                      where
+                        ClientStNext {recvMsgRollBackward} = stNext)
 
 
-chainSyncClientPeerSender n (SendMsgRequestNextPipelined next) =
+chainSyncClientPeerSender n (SendMsgRequestNextPipelined await next) =
 
     -- pipeline 'MsgRequestNext', the receiver will await for an instruction.
     SenderPipeline
@@ -253,8 +256,9 @@ chainSyncClientPeerSender n (SendMsgRequestNextPipelined next) =
 
           -- we need to wait for the next message; this time it must come with
           -- an instruction
-          MsgAwaitReply -> ReceiverAwait (ServerAgency (TokNext TokMustReply))
-            $ \case
+          MsgAwaitReply -> ReceiverEffect $ do
+            await
+            pure $ ReceiverAwait (ServerAgency (TokNext TokMustReply)) $ \case
               MsgRollForward  header    tip -> ReceiverDone (RollForward header tip)
               MsgRollBackward pRollback tip -> ReceiverDone (RollBackward pRollback tip))
 
