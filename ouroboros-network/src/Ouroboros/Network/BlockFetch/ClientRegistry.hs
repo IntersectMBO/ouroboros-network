@@ -21,7 +21,6 @@ import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 
-<<<<<<< HEAD
 import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Exception (assert)
 import           Control.Monad (unless)
@@ -29,26 +28,12 @@ import           Control.Monad.Class.MonadAsync
 import           Control.Monad.Class.MonadFork (MonadFork (throwTo),
                      MonadThread (ThreadId, myThreadId))
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTimer.SI
 import           Control.Tracer (Tracer)
 
 import           Ouroboros.Network.BlockFetch.ClientState
 import           Ouroboros.Network.DeltaQ
-=======
-import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (assert)
-import Control.Monad (unless)
-import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadFork (MonadFork (throwTo),
-           MonadThread (ThreadId, myThreadId))
-import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer)
-
-import Ouroboros.Network.BlockFetch.ClientState
-import Ouroboros.Network.DeltaQ
-import Ouroboros.Network.Diffusion.Policies (deactivateTimeout)
->>>>>>> 2fedf42616 (Fix hot demotion)
-
+import           Ouroboros.Network.Diffusion.Policies (deactivateTimeout)
 
 
 -- | A registry for the threads that are executing the client side of the
@@ -96,8 +81,7 @@ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
 -- It also manages synchronisation with the corresponding chain sync client.
 --
 bracketFetchClient :: forall m a peer header block version.
-                      (MonadSTM m, MonadFork m, MonadMask m
-                      ,MonadTimer m, Ord peer)
+                      (MonadFork m, MonadMask m ,MonadTimer m, Ord peer)
                    => FetchClientRegistry peer header block m
                    -> version
                    -> (version -> WhetherReceivingTentativeBlocks)
