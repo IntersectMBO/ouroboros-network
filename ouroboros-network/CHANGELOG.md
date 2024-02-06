@@ -49,6 +49,9 @@
 
 * `PeerSharingController` is now private and `requestPeers` is exported
 
+* Fix hot demototion by having blockfetch give chainsync a chance to exit
+  cleanly before killing it.
+
 ## 0.11.0.0 -- 2023-01-22
 
 ### Breaking changes
