@@ -110,7 +110,7 @@ data KnownPeerInfo = KnownPeerInfo {
        -- It is also used as useful information for the Peer Selection Governor
        -- when deciding which peers to share when Peer Sharing.
        --
-       knownPeerTepid            :: !Bool,
+       knownPeerTepid            :: !Int,
 
        -- | Indicates current remote Peer Willingness information.
        --
@@ -177,7 +177,7 @@ alterKnownPeerInfo (peerSharing, peerAdvertise, ledgerPeers) peerLookupResult =
     Nothing -> Just $
       KnownPeerInfo {
         knownPeerFailCount = 0
-      , knownPeerTepid     = False
+      , knownPeerTepid     = 0
       , knownPeerSharing   = fromMaybe PeerSharingDisabled peerSharing
       , knownPeerAdvertise = fromMaybe DoNotAdvertisePeer peerAdvertise
       , knownLedgerPeer    = fromMaybe IsNotLedgerPeer ledgerPeers
@@ -363,7 +363,9 @@ lookupTepidFlag :: Ord peeraddr
                 -> KnownPeers peeraddr
                 -> Maybe Bool
 lookupTepidFlag peeraddr KnownPeers{allPeers} =
-    knownPeerTepid <$> Map.lookup peeraddr allPeers
+    case Map.lookup peeraddr allPeers of
+         Just p -> Just $ knownPeerTepid p > 0
+         Nothing -> Nothing
 
 setTepidFlag' :: Ord peeraddr
              => Bool
@@ -372,7 +374,12 @@ setTepidFlag' :: Ord peeraddr
              -> KnownPeers peeraddr
 setTepidFlag' val peeraddr knownPeers@KnownPeers{allPeers} =
     assert (peeraddr `Map.member` allPeers) $
-    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownPeerTepid = val })
+    knownPeers {
+      allPeers = Map.update
+                  (\kpi  -> Just kpi { knownPeerTepid =
+                                         if val then knownPeerTepid kpi + 1
+                                                else 0
+                                     })
                               peeraddr allPeers
                }
 
