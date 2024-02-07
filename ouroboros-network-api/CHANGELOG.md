@@ -6,7 +6,7 @@
 
 * Changed `LedgerConsensusInterface` type:
     `LedgerConsensusInterface` now has to fill 3 STM actions:
-        * `lpGetLatestSlot :: STM m SlotNo`
+        * `lpGetLatestSlot :: STM m (WithOrigin SlotNo)`
         * `lpGetLedgerStateJudgment :: STM m LedgerStateJudgement`
         * `lpGetLedgerPeers :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]`
 

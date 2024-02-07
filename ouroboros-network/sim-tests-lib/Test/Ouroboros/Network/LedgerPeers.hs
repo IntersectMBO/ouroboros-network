@@ -32,7 +32,7 @@ import System.Random
 
 import Network.DNS (Domain)
 
-import Cardano.Slotting.Slot (SlotNo)
+import Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
@@ -187,7 +187,7 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
           withLedgerPeers
                 rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
-                (pure (UseLedgerPeers (After 0)))
+                (pure (UseLedgerPeers Always))
                 interface
                 (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
                 (\request _ -> do
@@ -203,7 +203,7 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
           where
             interface =
               LedgerPeersConsensusInterface
-                (pure slot)
+                (pure $ At slot)
                 (pure lsj)
                 (pure (Map.elems accumulatedStakeMap))
 
@@ -260,7 +260,7 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
           where
             interface :: LedgerPeersConsensusInterface (IOSim s)
             interface = LedgerPeersConsensusInterface
-                          (pure slot)
+                          (pure $ At slot)
                           (pure lsj)
                           (pure lps)
 
@@ -336,21 +336,28 @@ prop_getLedgerPeers :: ArbitrarySlotNo
 prop_getLedgerPeers (ArbitrarySlotNo curSlot)
                     (ArbitraryLedgerStateJudgement lsj)
                     (LedgerPools lps)
-                    slot =
-  let sim :: IOSim m LedgerPeers
-      sim = atomically $ getLedgerPeers interface (getArbitrarySlotNo slot)
+                    (ArbitrarySlotNo slot) =
+  let afterSlot = if slot == 0
+                     then Always
+                     else After slot
+      sim :: IOSim m LedgerPeers
+      sim = atomically $ getLedgerPeers interface afterSlot
 
       result :: LedgerPeers
       result = runSimOrThrow sim
 
    in counterexample (show result) $
       case result of
-        LedgerPeers _ _ -> property (curSlot >= getArbitrarySlotNo slot)
-        BeforeSlot      -> property (curSlot < getArbitrarySlotNo slot)
+        LedgerPeers _ _ -> property (curSlot >= slot || afterSlot == Always)
+        BeforeSlot      -> property (curSlot < slot)
   where
+    curSlotWO = if curSlot == 0
+                  then Origin
+                  else At curSlot
+
     interface :: LedgerPeersConsensusInterface (IOSim s)
     interface = LedgerPeersConsensusInterface
-                  (pure curSlot)
+                  (pure $ curSlotWO)
                   (pure lsj)
                   (pure (Map.elems (accPoolStake lps)))
 

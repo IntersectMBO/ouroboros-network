@@ -88,7 +88,9 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
             )
       -- We simply ignore target updates that are not "sane".
 
-      let -- We have to enforce the invariant that the number of root peers is
+      let usingBootstrapPeers = requiresBootstrapPeers bootstrapPeersFlag
+                                                       ledgerStateJudgement
+          -- We have to enforce the invariant that the number of root peers is
           -- not more than the target number of known peers. It's unlikely in
           -- practice so it's ok to resolve it arbitrarily using clampToLimit.
           --
@@ -101,7 +103,9 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
           localRootPeers' =
               LocalRootPeers.clampToLimit
                               (targetNumberOfKnownPeers targets')
-            $ LocalRootPeers.clampToTrustable
+            $ (if usingBootstrapPeers
+                  then LocalRootPeers.clampToTrustable
+                  else id)
             $ localRootPeers
 
           -- We have to enforce that local and big ledger peers are disjoint.

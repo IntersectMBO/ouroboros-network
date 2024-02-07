@@ -17,7 +17,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , isLedgerPeersEnabled
   ) where
 
-import Cardano.Slotting.Slot (SlotNo (..))
+import Cardano.Slotting.Slot (SlotNo (..), WithOrigin)
 import Control.Concurrent.Class.MonadSTM
 import Control.DeepSeq (NFData (..))
 import Data.List.NonEmpty (NonEmpty)
@@ -75,7 +75,7 @@ data LedgerStateJudgement = YoungEnough | TooOld
 -- | Return ledger state information and ledger peers.
 --
 data LedgerPeersConsensusInterface m = LedgerPeersConsensusInterface {
-    lpGetLatestSlot           :: STM m SlotNo,
+    lpGetLatestSlot           :: STM m (WithOrigin SlotNo),
     lpGetLedgerStateJudgement :: STM m LedgerStateJudgement,
     lpGetLedgerPeers          :: STM m [(PoolStake, NonEmpty RelayAccessPoint)]
   }

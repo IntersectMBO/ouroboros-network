@@ -54,6 +54,9 @@
 
 * Disable mean reward for new peers
 
+* Fix `targetPeers` monitoring action to use the correct set of local peers
+  when in sensitive mode.
+
 ## 0.11.0.0 -- 2023-01-22
 
 ### Breaking changes
