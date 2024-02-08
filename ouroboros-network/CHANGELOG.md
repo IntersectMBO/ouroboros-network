@@ -52,6 +52,8 @@
 * Fix hot demototion by having blockfetch give chainsync a chance to exit
   cleanly before killing it.
 
+* Disable mean reward for new peers
+
 ## 0.11.0.0 -- 2023-01-22
 
 ### Breaking changes
