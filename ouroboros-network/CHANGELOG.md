@@ -15,6 +15,7 @@
 * Updated type of constructor in `TraceLocalRootPeers`
 * Added `TraceDebugState` message to `TracePeerSelection` for tracing
   peer selection upon getting a USR1 sig.
+* Changed withPeerSelectionActions and withLedgerPeers signatures
 
 ### Non-breaking changes
 

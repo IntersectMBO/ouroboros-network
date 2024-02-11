@@ -36,7 +36,7 @@ import Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
+import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.Testing.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
 import Test.QuickCheck
@@ -186,10 +186,13 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
           dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
 
           withLedgerPeers
-                rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
-                (pure (UseLedgerPeers Always))
-                interface
-                (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
+                PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
+                                 paDnsActions = (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar),
+                                 paDnsSemaphore = dnsSemaphore }
+                WithLedgerPeersArgs { wlpRng = rng,
+                                      wlpConsensusInterface = interface,
+                                      wlpTracer = verboseTracer,
+                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers 1) ledgerPeersKind
@@ -243,10 +246,13 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
           dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
 
           withLedgerPeers
-                rng dnsSemaphore (curry IP.toSockAddr) verboseTracer
-                (pure (UseLedgerPeers (After 0)))
-                interface
-                (mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar)
+                PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
+                                 paDnsActions = mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar,
+                                 paDnsSemaphore = dnsSemaphore }
+                WithLedgerPeersArgs { wlpRng = rng,
+                                      wlpConsensusInterface = interface,
+                                      wlpTracer = verboseTracer,
+                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers (After 0) }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers count) ledgerPeersKind

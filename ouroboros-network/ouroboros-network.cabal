@@ -55,6 +55,7 @@ library
                        Ouroboros.Network.PeerSelection.State.EstablishedPeers
                        Ouroboros.Network.PeerSelection.State.KnownPeers
                        Ouroboros.Network.PeerSelection.State.LocalRootPeers
+                       Ouroboros.Network.PeerSelection.RootPeersDNS
                        Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
                        Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
                        Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
