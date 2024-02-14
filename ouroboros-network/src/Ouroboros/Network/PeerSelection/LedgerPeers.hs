@@ -53,7 +53,7 @@ import Data.Ord (Down (..))
 import Data.Ratio
 import System.Random
 
-import Cardano.Slotting.Slot (SlotNo)
+import Cardano.Slotting.Slot (WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Data.Set (Set)
@@ -84,17 +84,22 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
 getLedgerPeers
   :: MonadSTM m
   => LedgerPeersConsensusInterface m
-  -> SlotNo
+  -> AfterSlot
   -> STM m LedgerPeers
 getLedgerPeers (LedgerPeersConsensusInterface lpGetLatestSlot
                                               lpGetLedgerStateJudgement
                                               lpGetLedgerPeers)
-               slot = do
-  curSlot <- lpGetLatestSlot
-  if curSlot < slot
-     then pure BeforeSlot
-     else LedgerPeers <$> lpGetLedgerStateJudgement
-                      <*> lpGetLedgerPeers
+               ulp = do
+  wOrigin <- lpGetLatestSlot
+  case (wOrigin, ulp) of
+    (_         , Always) -> ledgerPeers
+    (At curSlot, After slot)
+      | curSlot >= slot -> ledgerPeers
+    _ -> pure BeforeSlot
+  where
+    ledgerPeers = LedgerPeers
+              <$> lpGetLedgerStateJudgement
+              <*> lpGetLedgerPeers
 
 -- | Convert a list of pools with stake to a Map keyed on the accumulated stake.
 -- Consensus provides a list of pairs of relative stake and corresponding relays for all usable
@@ -306,14 +311,11 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
                  traceWith tracer DisabledLedgerPeers
                  return (Map.empty, Map.empty, now)
                UseLedgerPeers ula -> do
-                 let slotNumber = case ula of
-                      Always     -> 0
-                      After slot -> slot
                  peers <- (\case
                             BeforeSlot          -> []
                             LedgerPeers _ peers -> peers
                           )
-                      <$> atomically (getLedgerPeers ledgerPeersConsensusInterface slotNumber)
+                      <$> atomically (getLedgerPeers ledgerPeersConsensusInterface ula)
                  let peersStake   = accPoolStake peers
                      bigPeersStake = accBigPoolStake peers
                  traceWith tracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStake)

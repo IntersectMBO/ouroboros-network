@@ -370,8 +370,9 @@ mockPeerSelectionActions' tracer
         traceWith tracer TraceEnvPublicRootTTL
 
       -- Read the current ledger state judgement
-      isSensitive <- atomically $ requiresBootstrapPeers <$> readUseBootstrapPeers
-                                                         <*> readLedgerStateJudgement
+      usingBootstrapPeers <- atomically
+                           $ requiresBootstrapPeers <$> readUseBootstrapPeers
+                                                    <*> readLedgerStateJudgement
       -- If the ledger state is YoungEnough we should get ledger peers.
       -- Otherwise we should get bootstrap peers
       let publicConfigPeers = PublicRootPeers.getPublicConfigPeers publicRootPeers
@@ -379,7 +380,7 @@ mockPeerSelectionActions' tracer
           ledgerPeers       = PublicRootPeers.getLedgerPeers publicRootPeers
           bigLedgerPeers    = PublicRootPeers.getBigLedgerPeers publicRootPeers
           result =
-            if isSensitive
+            if usingBootstrapPeers
                then PublicRootPeers.fromBootstrapPeers bootstrapPeers
                else case ledgerPeersKind of
                  AllLedgerPeers

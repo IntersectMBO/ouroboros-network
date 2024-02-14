@@ -160,9 +160,10 @@ withPeerSelectionActions
       -> m (PublicRootPeers peeraddr, DiffTime)
     requestPublicRootPeers ledgerPeersKind n getLedgerPeers dnsSemaphore = do
       -- Check if the node is in a sensitive state
-      isSensitive <- atomically $ requiresBootstrapPeers <$> readUseBootstrapPeers
-                                                         <*> readLedgerStateJudgement
-      if isSensitive
+      usingBootstrapPeers <- atomically
+                           $ requiresBootstrapPeers <$> readUseBootstrapPeers
+                                                    <*> readLedgerStateJudgement
+      if usingBootstrapPeers
          then do
           -- If the ledger state is in sensitive state we should get trustable peers.
           (bootstrapPeers, dt) <- requestConfiguredBootstrapPeers dnsSemaphore n
