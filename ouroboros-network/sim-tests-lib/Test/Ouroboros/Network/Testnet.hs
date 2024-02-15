@@ -830,15 +830,19 @@ prop_track_coolingToCold_demotions defaultBearerInfo diffScript =
           decreasing [_] = True
           decreasing (x : y : t)
             | x > y     = decreasing (y : t)
+            -- This allows the set to increase its size from empty to non-empty
+            -- but only in the case when the node has removed all of its peers
+            -- from the inProgressDemoteToCold set
+            | x == 0    = decreasing (y : t)
             | otherwise = False
 
        in property
         . decreasing
-        . dropWhile (== 0)
-        . mapMaybe (fmap length . snd)
+        . mapMaybe snd
         . Signal.eventsToList
         . Signal.toChangeEvents
         $ Signal.stable
+        . fmap (fmap length)
         $ govInProgressDemoteToColdWhileAlive
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
