@@ -613,6 +613,7 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                   , targetNumberOfKnownBigLedgerPeers       = 0
                   , targetNumberOfEstablishedBigLedgerPeers = 0
                   , targetNumberOfActiveBigLedgerPeers      = 0
+                  , targetNumberOfBootstrapPeers            = 0
                   }
             -- We have to enforce the invariant that the number of root peers is
             -- not more than the target number of known peers. It's unlikely in

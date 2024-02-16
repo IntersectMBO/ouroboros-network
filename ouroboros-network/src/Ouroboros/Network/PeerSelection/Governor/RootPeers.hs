@@ -12,6 +12,7 @@ import Control.Exception (SomeException, assert)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
+import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -35,8 +36,11 @@ belowTarget actions
               publicRootPeers,
               publicRootRetryTime,
               inProgressPublicRootsReq,
+              ledgerStateJudgement,
+              bootstrapPeersFlag,
               targets = PeerSelectionTargets {
-                          targetNumberOfRootPeers
+                          targetNumberOfRootPeers,
+                          targetNumberOfBootstrapPeers
                         }
             }
     -- Are we under target for number of root peers?
@@ -50,7 +54,7 @@ belowTarget actions
   = Guarded Nothing $
       return $ \_now -> Decision {
         decisionTrace = [TracePublicRootsRequest
-                           targetNumberOfRootPeers
+                           target
                            numRootPeers],
         decisionState = st { inProgressPublicRootsReq = True },
         decisionJobs  = [jobReqPublicRootPeers actions maxExtraRootPeers]
@@ -67,7 +71,11 @@ belowTarget actions
   where
     numRootPeers      = LocalRootPeers.size localRootPeers
                       + PublicRootPeers.size publicRootPeers
-    maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
+    target | requiresBootstrapPeers
+               bootstrapPeersFlag
+               ledgerStateJudgement = targetNumberOfBootstrapPeers
+           | otherwise = targetNumberOfRootPeers
+    maxExtraRootPeers = target - numRootPeers
 
 
 jobReqPublicRootPeers :: forall m peeraddr peerconn.

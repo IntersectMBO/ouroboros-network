@@ -16,6 +16,9 @@
 * Added `TraceDebugState` message to `TracePeerSelection` for tracing
   peer selection upon getting a USR1 sig.
 
+* Added `targetNumberOfBootstrapPeers` to be used when the node is in fallback
+  state.
+
 ### Non-breaking changes
 
 * Limit the rate at which one can discover peers through peersharing.

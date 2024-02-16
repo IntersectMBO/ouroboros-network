@@ -709,7 +709,8 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
                targetNumberOfRootPeers = 2,
                targetNumberOfKnownPeers = 5,
                targetNumberOfEstablishedPeers = 1,
-               targetNumberOfActivePeers = 1
+               targetNumberOfActivePeers = 1,
+               targetNumberOfBootstrapPeers = 2
              }
              (Script (DNSTimeout {getDNSTimeout = 0.28}
                   :| [DNSTimeout {getDNSTimeout = 0.204},
@@ -1298,7 +1299,9 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
 
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
-                targetNumberOfActiveBigLedgerPeers = 0
+                targetNumberOfActiveBigLedgerPeers = 0,
+
+                targetNumberOfBootstrapPeers = 6
               }
             (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
                                                            , DNSTimeout {getDNSTimeout = 0.333}
@@ -2809,7 +2812,8 @@ prop_unit_4258 =
                  targetNumberOfRootPeers = 2,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 4,
-                 targetNumberOfActivePeers = 1
+                 targetNumberOfActivePeers = 1,
+                 targetNumberOfBootstrapPeers = 2
                }
              (Script (DNSTimeout {getDNSTimeout = 0.397}
                  :| [ DNSTimeout {getDNSTimeout = 0.382},
@@ -2845,7 +2849,9 @@ prop_unit_4258 =
 
                  targetNumberOfKnownBigLedgerPeers = 0,
                  targetNumberOfEstablishedBigLedgerPeers = 0,
-                 targetNumberOfActiveBigLedgerPeers = 0
+                 targetNumberOfActiveBigLedgerPeers = 0,
+
+                 targetNumberOfBootstrapPeers = 4
                }
              (Script (DNSTimeout {getDNSTimeout = 0.281}
                  :| [ DNSTimeout {getDNSTimeout = 0.177},
@@ -2917,7 +2923,9 @@ prop_unit_reconnect =
 
                 targetNumberOfKnownBigLedgerPeers = 0,
                 targetNumberOfEstablishedBigLedgerPeers = 0,
-                targetNumberOfActiveBigLedgerPeers = 0
+                targetNumberOfActiveBigLedgerPeers = 0,
+
+                targetNumberOfBootstrapPeers = 1
               }
               (Script (DNSTimeout {getDNSTimeout = 10} :| []))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
@@ -2943,7 +2951,9 @@ prop_unit_reconnect =
 
                  targetNumberOfKnownBigLedgerPeers = 0,
                  targetNumberOfEstablishedBigLedgerPeers = 0,
-                 targetNumberOfActiveBigLedgerPeers = 0
+                 targetNumberOfActiveBigLedgerPeers = 0,
+
+                 targetNumberOfBootstrapPeers = 1
                }
              (Script (DNSTimeout {getDNSTimeout = 10} :| [ ]))
              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))

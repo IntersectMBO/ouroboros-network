@@ -201,7 +201,16 @@ data PeerSelectionTargets = PeerSelectionTargets {
        -- number of active peers will be sum of the two targets and active local
        -- root peers.
        --
-       targetNumberOfActiveBigLedgerPeers      :: !Int
+       targetNumberOfActiveBigLedgerPeers      :: !Int,
+
+       -- | Target number of bootstrap peers.
+       --
+       -- This target is used when the node is in fallback state. And will
+       -- replace 'targetNumberOfRootPeers' whilst in this state.
+       --
+       -- This should be a number between 2 and 5, ideally 3.
+       --
+       targetNumberOfBootstrapPeers            :: !Int
 
        -- Expressed as intervals rather than frequencies
 --     targetChurnIntervalKnownPeers       :: !DiffTime,
@@ -219,7 +228,8 @@ nullPeerSelectionTargets =
        targetNumberOfActivePeers      = 0,
        targetNumberOfKnownBigLedgerPeers       = 0,
        targetNumberOfEstablishedBigLedgerPeers = 0,
-       targetNumberOfActiveBigLedgerPeers      = 0
+       targetNumberOfActiveBigLedgerPeers      = 0,
+       targetNumberOfBootstrapPeers = 0
 --     targetChurnIntervalKnownPeers       = 0,
 --     targetChurnIntervalEstablishedPeers = 0,
 --     targetChurnIntervalActivePeers      = 0
@@ -231,7 +241,9 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
  && targetNumberOfActivePeers      <= targetNumberOfEstablishedPeers
  && targetNumberOfEstablishedPeers <= targetNumberOfKnownPeers
  &&      targetNumberOfRootPeers   <= targetNumberOfKnownPeers
+ && targetNumberOfBootstrapPeers   <= targetNumberOfKnownPeers
  &&                              0 <= targetNumberOfRootPeers
+ &&                              0 <= targetNumberOfBootstrapPeers
 
  &&                                       0 <= targetNumberOfActiveBigLedgerPeers
  && targetNumberOfActiveBigLedgerPeers      <= targetNumberOfEstablishedBigLedgerPeers

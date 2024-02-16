@@ -326,6 +326,8 @@ instance Arbitrary SmallPeerSelectionTargets where
     targetNumberOfActiveBigLedgerPeers
       <- choose (0, targetNumberOfEstablishedBigLedgerPeers)
 
+    targetNumberOfBootstrapPeers <- choose (0, targetNumberOfKnownPeers)
+
     return $ SmallTargets $ PeerSelectionTargets {
       targetNumberOfRootPeers,
       targetNumberOfKnownPeers,
@@ -333,13 +335,14 @@ instance Arbitrary SmallPeerSelectionTargets where
       targetNumberOfActivePeers,
       targetNumberOfKnownBigLedgerPeers,
       targetNumberOfEstablishedBigLedgerPeers,
-      targetNumberOfActiveBigLedgerPeers
+      targetNumberOfActiveBigLedgerPeers,
+      targetNumberOfBootstrapPeers
     }
 
-  shrink (SmallTargets (PeerSelectionTargets r k e a kb eb ab)) =
+  shrink (SmallTargets (PeerSelectionTargets r k e a kb eb ab bp)) =
     [ SmallTargets targets'
-    | (r',k',e',a',kb',eb',ab') <- shrink (r,k,e,a,kb,eb,ab)
-    , let targets' = PeerSelectionTargets r' k' e' a' kb' eb' ab'
+    | (r',k',e',a',kb',eb',ab',bp') <- shrink (r,k,e,a,kb,eb,ab,bp)
+    , let targets' = PeerSelectionTargets r' k' e' a' kb' eb' ab' bp'
     , PeerSelection.sanePeerSelectionTargets targets'
     ]
 

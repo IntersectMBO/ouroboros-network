@@ -296,7 +296,9 @@ isEmptyEnv GovernorMockEnvironment {
     (LocalRootPeers.null localRootPeers
       || all (\(t,_) -> targetNumberOfKnownPeers t == 0) targets)
  && (PublicRootPeers.null publicRootPeers
-      || all (\(t,_) -> targetNumberOfRootPeers  t == 0) targets)
+      || all (\(t,_) -> targetNumberOfRootPeers  t == 0) targets
+      || all (\(t,_) -> targetNumberOfBootstrapPeers t == 0) targets
+    )
 
 
 -- | As a basic property we run the governor to explore its state space a bit
@@ -565,7 +567,6 @@ envEventCredits  TraceEnvPublicRootTTL          = 60
 envEventCredits  TraceEnvBigLedgerPeersTTL      = 60
 
 envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
-                   targetNumberOfRootPeers = _,
                    targetNumberOfKnownPeers,
                    targetNumberOfEstablishedPeers,
                    targetNumberOfActivePeers
@@ -3353,7 +3354,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     targets :: PeerSelectionTargets
     targets = nullPeerSelectionTargets {
                 targetNumberOfRootPeers  = targetNumberOfRootPeers,
-                targetNumberOfKnownPeers = targetNumberOfRootPeers
+                targetNumberOfKnownPeers = targetNumberOfRootPeers,
+                targetNumberOfBootstrapPeers = targetNumberOfRootPeers
               }
 
     policy :: PeerSelectionPolicy SockAddr IO
@@ -3402,7 +3404,8 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
            targetNumberOfRootPeers = 1,
            targetNumberOfKnownPeers = 4,
            targetNumberOfEstablishedPeers = 4,
-           targetNumberOfActivePeers = 3
+           targetNumberOfActivePeers = 3,
+           targetNumberOfBootstrapPeers = 1
          },NoDelay) :| []),
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
@@ -3518,7 +3521,8 @@ prop_issue_3233 = prop_governor_nolivelock $
         :| [(nullPeerSelectionTargets {
                targetNumberOfRootPeers = 1,
                targetNumberOfKnownPeers = 3,
-               targetNumberOfEstablishedPeers = 3
+               targetNumberOfEstablishedPeers = 3,
+               targetNumberOfBootstrapPeers = 1
              },LongDelay),
             (nullPeerSelectionTargets,NoDelay),
             (nullPeerSelectionTargets,NoDelay),
@@ -3526,7 +3530,8 @@ prop_issue_3233 = prop_governor_nolivelock $
                 targetNumberOfRootPeers = 1,
                 targetNumberOfKnownPeers = 3,
                 targetNumberOfEstablishedPeers = 3,
-                targetNumberOfActivePeers = 2
+                targetNumberOfActivePeers = 2,
+                targetNumberOfBootstrapPeers = 1
              },NoDelay)]),
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),

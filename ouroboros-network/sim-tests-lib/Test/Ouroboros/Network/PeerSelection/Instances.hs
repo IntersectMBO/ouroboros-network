@@ -79,6 +79,7 @@ instance Arbitrary PeerSelectionTargets where
     targetNumberOfRootPeers        <- choose (0, min 100  targetNumberOfKnownPeers)
     targetNumberOfEstablishedPeers <- choose (0, min 1000 targetNumberOfKnownPeers)
     targetNumberOfActivePeers      <- choose (0, min 100  targetNumberOfEstablishedPeers)
+    targetNumberOfBootstrapPeers   <- choose (0, min 5   targetNumberOfKnownPeers)
 
     targetNumberOfKnownBigLedgerPeers
       <- getNonNegative <$> resize 1000 arbitrary
@@ -94,13 +95,14 @@ instance Arbitrary PeerSelectionTargets where
       targetNumberOfActivePeers,
       targetNumberOfKnownBigLedgerPeers,
       targetNumberOfEstablishedBigLedgerPeers,
-      targetNumberOfActiveBigLedgerPeers
+      targetNumberOfActiveBigLedgerPeers,
+      targetNumberOfBootstrapPeers
     }
 
-  shrink (PeerSelectionTargets r k e a kb eb ab) =
+  shrink (PeerSelectionTargets r k e a kb eb ab bp) =
     [ targets'
-    | (r',k',e',a',kb',eb',ab') <- shrink (r,k,e,a,kb,eb,ab)
-    , let targets' = PeerSelectionTargets r' k' e' a' kb' eb' ab'
+    | (r',k',e',a',kb',eb',ab',bp') <- shrink (r,k,e,a,kb,eb,ab,bp)
+    , let targets' = PeerSelectionTargets r' k' e' a' kb' eb' ab' bp'
     , sanePeerSelectionTargets targets' ]
 
 instance Arbitrary DomainAccessPoint where

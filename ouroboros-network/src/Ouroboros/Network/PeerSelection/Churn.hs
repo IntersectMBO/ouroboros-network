@@ -169,6 +169,8 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
             decrease (targetNumberOfEstablishedBigLedgerPeers base -
                       targetNumberOfActiveBigLedgerPeers base)
             + targetNumberOfActiveBigLedgerPeers base
+        , targetNumberOfBootstrapPeers =
+            decrease (targetNumberOfBootstrapPeers base)
         })
 
       -- Give the governor time to properly demote them.
@@ -179,6 +181,7 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
           targetNumberOfRootPeers = targetNumberOfRootPeers base
         , targetNumberOfKnownPeers = targetNumberOfKnownPeers base
         , targetNumberOfKnownBigLedgerPeers = targetNumberOfKnownBigLedgerPeers base
+        , targetNumberOfBootstrapPeers = targetNumberOfBootstrapPeers base
         })
 
       -- Give the governor time to find some new peers
