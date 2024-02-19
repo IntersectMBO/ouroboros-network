@@ -1027,6 +1027,7 @@ runM Interfaces
                                  daBlockFetchMode
                                  daPeerSelectionTargets
                                  peerSelectionTargetsVar
+                                 daReadUseBootstrapPeers
 
       --
       -- Two functions only used in InitiatorAndResponder mode

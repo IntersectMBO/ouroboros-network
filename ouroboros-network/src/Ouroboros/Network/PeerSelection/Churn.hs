@@ -16,6 +16,7 @@ import System.Random
 
 import Ouroboros.Network.BlockFetch (FetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.PeerMetric
 
@@ -45,9 +46,11 @@ peerChurnGovernor :: forall m peeraddr.
                   -> STM m FetchMode
                   -> PeerSelectionTargets
                   -> StrictTVar m PeerSelectionTargets
+                  -> STM m UseBootstrapPeers
                   -> m Void
 peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeout
-                  _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
+                  _metrics churnModeVar inRng getFetchMode base peerSelectionVar
+                  getUseBootstrapPeers = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -55,8 +58,11 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
   -- The intention is to give local root peers give head start and avoid
   -- giving advantage to hostile and quick root peers.
   threadDelay 3
-  mode <- atomically updateChurnMode
-  atomically $ increaseActivePeers mode
+  (mode, ubp) <- atomically ((,) <$> updateChurnMode
+                                 <*> getUseBootstrapPeers)
+  atomically $ do
+    increaseActivePeers mode
+    increaseEstablishedPeers mode ubp
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= go
 
@@ -94,6 +100,26 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
                        min 1 (targetNumberOfActivePeers base - 1)
         })
 
+    increaseEstablishedPeers :: ChurnMode -> UseBootstrapPeers -> STM m ()
+    increaseEstablishedPeers mode ubp =  do
+        modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfEstablishedPeers =
+              case (mode, ubp) of
+                   (ChurnModeBulkSync, UseBootstrapPeers _) ->
+                       min (targetNumberOfActivePeers targets + 1) (targetNumberOfEstablishedPeers base)
+                   _  -> targetNumberOfEstablishedPeers base
+        })
+
+    decreaseEstablished :: ChurnMode -> UseBootstrapPeers -> STM m ()
+    decreaseEstablished mode ubp =  do
+        modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfEstablishedPeers =
+              case (mode, ubp) of
+                   (ChurnModeBulkSync, UseBootstrapPeers _) ->
+                       min (targetNumberOfActivePeers targets) (targetNumberOfEstablishedPeers base - 1)
+                   _ -> targetNumberOfEstablishedPeers base
+        })
+
     increaseActiveBigLedgerPeers :: ChurnMode -> STM m ()
     increaseActiveBigLedgerPeers mode =  do
         modifyTVar peerSelectionVar (\targets -> targets {
@@ -125,11 +151,15 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
     go !rng = do
       startTs <- getMonotonicTime
 
-      churnMode <- atomically updateChurnMode
+      (churnMode, ubp) <- atomically ((,) <$> updateChurnMode
+                                          <*> getUseBootstrapPeers)
       traceWith tracer $ TraceChurnMode churnMode
 
-      -- Purge the worst active peer(s).
-      atomically $ decreaseActivePeers churnMode
+      atomically $ do
+        -- Purge the worst established peer(s).
+        decreaseEstablished churnMode ubp
+        -- Purge the worst active peer(s).
+        decreaseActivePeers churnMode
 
       -- Short delay, we may have no active peers right now
       threadDelay 1
@@ -137,6 +167,9 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       atomically $ do
         -- Pick new active peer(s).
         increaseActivePeers churnMode
+
+        -- Pick new active peer(s).
+        increaseEstablishedPeers churnMode ubp
 
         -- Purge the worst active big ledger peer(s).
         decreaseActiveBigLedgerPeers churnMode
