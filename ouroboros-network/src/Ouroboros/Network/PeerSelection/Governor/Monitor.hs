@@ -557,9 +557,9 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 monitorBootstrapPeersFlag :: ( MonadSTM m
                              , Ord peeraddr
                              )
-                         => PeerSelectionActions peeraddr peerconn m
-                         -> PeerSelectionState peeraddr peerconn
-                         -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
+                          => PeerSelectionActions peeraddr peerconn m
+                          -> PeerSelectionState peeraddr peerconn
+                          -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
                           st@PeerSelectionState { bootstrapPeersFlag
                                                 , knownPeers
@@ -573,9 +573,9 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
     check (ubp /= bootstrapPeersFlag)
     let nonEstablishedBootstrapPeers =
           PublicRootPeers.getBootstrapPeers publicRootPeers
-          `Set.difference`
+          Set.\\
           EstablishedPeers.toSet establishedPeers
-          `Set.difference`
+          Set.\\
           (inProgressPromoteCold <> inProgressPromoteWarm)
     return $ \_now ->
       Decision {
@@ -654,9 +654,9 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
         YoungEnough -> do
           let nonEstablishedBootstrapPeers =
                 PublicRootPeers.getBootstrapPeers publicRootPeers
-                `Set.difference`
+                Set.\\
                 EstablishedPeers.toSet establishedPeers
-                `Set.difference`
+                Set.\\
                 (inProgressPromoteCold <> inProgressPromoteWarm)
           return (\_ -> st
             { ledgerStateJudgement  = lsj

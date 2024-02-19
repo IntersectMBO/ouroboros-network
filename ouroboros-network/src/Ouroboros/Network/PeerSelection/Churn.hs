@@ -16,6 +16,7 @@ import System.Random
 
 import Ouroboros.Network.BlockFetch (FetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.PeerMetric
 
@@ -45,9 +46,11 @@ peerChurnGovernor :: forall m peeraddr.
                   -> STM m FetchMode
                   -> PeerSelectionTargets
                   -> StrictTVar m PeerSelectionTargets
+                  -> STM m UseBootstrapPeers
                   -> m Void
 peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeout
-                  _metrics churnModeVar inRng getFetchMode base peerSelectionVar = do
+                  _metrics churnModeVar inRng getFetchMode base peerSelectionVar
+                  getUseBootstrapPeers = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -55,8 +58,11 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
   -- The intention is to give local root peers give head start and avoid
   -- giving advantage to hostile and quick root peers.
   threadDelay 3
-  mode <- atomically updateChurnMode
-  atomically $ increaseActivePeers mode
+  (mode, ubp) <- atomically ((,) <$> updateChurnMode
+                                 <*> getUseBootstrapPeers)
+  atomically $ do
+    increaseActivePeers mode
+    increaseEstablishedPeers mode ubp
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= go
 
@@ -73,7 +79,7 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
 
     -- TODO: #3396 revisit the policy for genesis
     increaseActivePeers :: ChurnMode -> STM m ()
-    increaseActivePeers mode =  do
+    increaseActivePeers mode =
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActivePeers =
               case mode of
@@ -84,7 +90,7 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
         })
 
     decreaseActivePeers :: ChurnMode -> STM m ()
-    decreaseActivePeers mode =  do
+    decreaseActivePeers mode =
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActivePeers =
               case mode of
@@ -94,8 +100,30 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
                        min 1 (targetNumberOfActivePeers base - 1)
         })
 
+    increaseEstablishedPeers :: ChurnMode -> UseBootstrapPeers -> STM m ()
+    increaseEstablishedPeers mode ubp =
+        modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfEstablishedPeers =
+              case (mode, ubp) of
+                   (ChurnModeBulkSync, UseBootstrapPeers _) ->
+                       min (targetNumberOfActivePeers targets + 1)
+                           (targetNumberOfEstablishedPeers base)
+                   _  -> targetNumberOfEstablishedPeers base
+        })
+
+    decreaseEstablished :: ChurnMode -> UseBootstrapPeers -> STM m ()
+    decreaseEstablished mode ubp =
+        modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfEstablishedPeers =
+              case (mode, ubp) of
+                   (ChurnModeBulkSync, UseBootstrapPeers _) ->
+                       min (targetNumberOfActivePeers targets) (targetNumberOfEstablishedPeers base - 1)
+                   _ -> decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
+                          + targetNumberOfActivePeers base
+        })
+
     increaseActiveBigLedgerPeers :: ChurnMode -> STM m ()
-    increaseActiveBigLedgerPeers mode =  do
+    increaseActiveBigLedgerPeers mode =
         modifyTVar peerSelectionVar (\targets -> targets {
           -- TODO: when chain-skipping will be implemented and chain-sync client
           -- will take into account big ledger peers, we don't need pattern
@@ -110,7 +138,7 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
         })
 
     decreaseActiveBigLedgerPeers :: ChurnMode -> STM m ()
-    decreaseActiveBigLedgerPeers mode =  do
+    decreaseActiveBigLedgerPeers mode =
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActiveBigLedgerPeers =
               case mode of
@@ -125,11 +153,13 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
     go !rng = do
       startTs <- getMonotonicTime
 
-      churnMode <- atomically updateChurnMode
+      (churnMode, ubp) <- atomically ((,) <$> updateChurnMode
+                                          <*> getUseBootstrapPeers)
       traceWith tracer $ TraceChurnMode churnMode
 
-      -- Purge the worst active peer(s).
-      atomically $ decreaseActivePeers churnMode
+      atomically $ do
+        -- Purge the worst active peer(s).
+        decreaseActivePeers churnMode
 
       -- Short delay, we may have no active peers right now
       threadDelay 1
@@ -151,25 +181,24 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       threadDelay 1
 
       -- Forget the worst performing non-active peers.
-      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfRootPeers =
-            decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
-            + targetNumberOfEstablishedPeers base
-        , targetNumberOfKnownPeers =
-            decrease (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
-            + targetNumberOfEstablishedPeers base
-        , targetNumberOfEstablishedPeers =
-            decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
-            + targetNumberOfActivePeers base
-        , targetNumberOfKnownBigLedgerPeers =
-            decrease (targetNumberOfKnownBigLedgerPeers base -
-                      targetNumberOfEstablishedBigLedgerPeers base)
-            + targetNumberOfEstablishedBigLedgerPeers base
-        , targetNumberOfEstablishedBigLedgerPeers =
-            decrease (targetNumberOfEstablishedBigLedgerPeers base -
-                      targetNumberOfActiveBigLedgerPeers base)
-            + targetNumberOfActiveBigLedgerPeers base
-        })
+      atomically $ do
+        decreaseEstablished churnMode ubp
+        modifyTVar peerSelectionVar (\targets -> targets {
+            targetNumberOfRootPeers =
+              decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
+              + targetNumberOfEstablishedPeers base
+          , targetNumberOfKnownPeers =
+              decrease (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
+              + targetNumberOfEstablishedPeers base
+          , targetNumberOfKnownBigLedgerPeers =
+              decrease (targetNumberOfKnownBigLedgerPeers base -
+                        targetNumberOfEstablishedBigLedgerPeers base)
+              + targetNumberOfEstablishedBigLedgerPeers base
+          , targetNumberOfEstablishedBigLedgerPeers =
+              decrease (targetNumberOfEstablishedBigLedgerPeers base -
+                        targetNumberOfActiveBigLedgerPeers base)
+              + targetNumberOfActiveBigLedgerPeers base
+          })
 
       -- Give the governor time to properly demote them.
       threadDelay $ 1 + closeConnectionTimeout
@@ -185,9 +214,10 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       threadDelay $ 1 + psOverallTimeout
 
       -- Pick new non-active peers
-      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfEstablishedPeers = targetNumberOfEstablishedPeers base
-        , targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base
+      atomically $ do
+        increaseEstablishedPeers churnMode ubp
+        modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base
         })
       endTs <- getMonotonicTime
 
