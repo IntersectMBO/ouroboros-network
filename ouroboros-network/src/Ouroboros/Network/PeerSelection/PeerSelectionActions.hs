@@ -57,7 +57,7 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psReadTargets               :: STM m PeerSelectionTargets,
   -- ^ peer selection governor know, established and active targets
   psJudgement                 :: STM m LedgerStateJudgement,
-  -- ^ are we there yet?
+  -- ^ Is consensus close to current slot?
   psReadLocalRootPeers        :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))],
   psReadPublicRootPeers       :: STM m (Map RelayAccessPoint PeerAdvertise),
   psReadUseBootstrapPeers     :: STM m UseBootstrapPeers,
