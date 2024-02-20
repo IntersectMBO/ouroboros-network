@@ -554,15 +554,29 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 --  peer connect to non-trusted peers, so just updating the boostrap peers
 --  flag will enable the previously disabled monitoring actions.
 --
-monitorBootstrapPeersFlag :: MonadSTM m
+monitorBootstrapPeersFlag :: ( MonadSTM m
+                             , Ord peeraddr
+                             )
                          => PeerSelectionActions peeraddr peerconn m
                          -> PeerSelectionState peeraddr peerconn
                          -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
-                          st@PeerSelectionState { bootstrapPeersFlag } =
+                          st@PeerSelectionState { bootstrapPeersFlag
+                                                , knownPeers
+                                                , establishedPeers
+                                                , publicRootPeers
+                                                , inProgressPromoteCold
+                                                , inProgressPromoteWarm
+                                                } =
   Guarded Nothing $ do
     ubp <- readUseBootstrapPeers
     check (ubp /= bootstrapPeersFlag)
+    let nonEstablishedBootstrapPeers =
+          PublicRootPeers.getBootstrapPeers publicRootPeers
+          `Set.difference`
+          EstablishedPeers.toSet establishedPeers
+          `Set.difference`
+          (inProgressPromoteCold <> inProgressPromoteWarm)
     return $ \_now ->
       Decision {
         decisionTrace = [TraceUseBootstrapPeersChanged ubp],
@@ -572,6 +586,14 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
              , ledgerStateJudgement  = YoungEnough
              , hasOnlyBootstrapPeers = False
              , bootstrapPeersTimeout = Nothing
+             , knownPeers =
+                 KnownPeers.delete
+                   nonEstablishedBootstrapPeers
+                   knownPeers
+             , publicRootPeers =
+                 PublicRootPeers.difference
+                   publicRootPeers
+                   nonEstablishedBootstrapPeers
              }
       }
 
@@ -589,13 +611,21 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
 -- It should also be noted that churning is ignored until the node converges
 -- to a clean state. I.e., it will disconnect from the targets source of truth.
 --
-monitorLedgerStateJudgement :: MonadSTM m
+monitorLedgerStateJudgement :: ( MonadSTM m
+                               , Ord peeraddr
+                               )
                             => PeerSelectionActions peeraddr peerconn m
                             -> PeerSelectionState peeraddr peerconn
                             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
 monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                             st@PeerSelectionState{ bootstrapPeersFlag,
-                                                   ledgerStateJudgement }
+                                                   publicRootPeers,
+                                                   knownPeers,
+                                                   establishedPeers,
+                                                   inProgressPromoteCold,
+                                                   inProgressPromoteWarm,
+                                                   ledgerStateJudgement
+                                                 }
   | isBootstrapPeersEnabled bootstrapPeersFlag =
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
@@ -622,10 +652,24 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
             , bootstrapPeersTimeout = Just (addTime governor_BOOTSTRAP_PEERS_TIMEOUT now)
             })
         YoungEnough -> do
+          let nonEstablishedBootstrapPeers =
+                PublicRootPeers.getBootstrapPeers publicRootPeers
+                `Set.difference`
+                EstablishedPeers.toSet establishedPeers
+                `Set.difference`
+                (inProgressPromoteCold <> inProgressPromoteWarm)
           return (\_ -> st
             { ledgerStateJudgement  = lsj
             , hasOnlyBootstrapPeers = False
             , bootstrapPeersTimeout = Nothing
+            , knownPeers =
+                KnownPeers.delete
+                  nonEstablishedBootstrapPeers
+                  knownPeers
+            , publicRootPeers =
+                PublicRootPeers.difference
+                  publicRootPeers
+                  nonEstablishedBootstrapPeers
             })
       return $ \now ->
         Decision {
