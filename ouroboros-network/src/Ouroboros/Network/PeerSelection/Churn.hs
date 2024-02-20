@@ -117,7 +117,8 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
               case (mode, ubp) of
                    (ChurnModeBulkSync, UseBootstrapPeers _) ->
                        min (targetNumberOfActivePeers targets) (targetNumberOfEstablishedPeers base - 1)
-                   _ -> targetNumberOfEstablishedPeers base
+                   _ -> decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
+                          + targetNumberOfActivePeers base
         })
 
     increaseActiveBigLedgerPeers :: ChurnMode -> STM m ()
@@ -156,8 +157,6 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       traceWith tracer $ TraceChurnMode churnMode
 
       atomically $ do
-        -- Purge the worst established peer(s).
-        decreaseEstablished churnMode ubp
         -- Purge the worst active peer(s).
         decreaseActivePeers churnMode
 
@@ -167,9 +166,6 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       atomically $ do
         -- Pick new active peer(s).
         increaseActivePeers churnMode
-
-        -- Pick new active peer(s).
-        increaseEstablishedPeers churnMode ubp
 
         -- Purge the worst active big ledger peer(s).
         decreaseActiveBigLedgerPeers churnMode
@@ -184,16 +180,15 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       threadDelay 1
 
       -- Forget the worst performing non-active peers.
-      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
+      atomically $ do
+        decreaseEstablished churnMode ubp
+        modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfRootPeers =
             decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
             + targetNumberOfEstablishedPeers base
         , targetNumberOfKnownPeers =
             decrease (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
             + targetNumberOfEstablishedPeers base
-        , targetNumberOfEstablishedPeers =
-            decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
-            + targetNumberOfActivePeers base
         , targetNumberOfKnownBigLedgerPeers =
             decrease (targetNumberOfKnownBigLedgerPeers base -
                       targetNumberOfEstablishedBigLedgerPeers base)
@@ -221,9 +216,10 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       threadDelay $ 1 + psOverallTimeout
 
       -- Pick new non-active peers
-      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfEstablishedPeers = targetNumberOfEstablishedPeers base
-        , targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base
+      atomically $ do
+        increaseEstablishedPeers churnMode ubp
+        modifyTVar peerSelectionVar (\targets -> targets {
+          targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base
         })
       endTs <- getMonotonicTime
 
