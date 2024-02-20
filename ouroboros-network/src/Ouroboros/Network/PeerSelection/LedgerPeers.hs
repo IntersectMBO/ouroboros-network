@@ -5,7 +5,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -29,6 +28,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , accBigPoolStake
   , bigLedgerPeerQuota
     -- * DNS based provider for ledger root peers
+  , WithLedgerPeersArgs (..)
   , withLedgerPeers
     -- Re-exports for testing purposes
   , module Ouroboros.Network.PeerSelection.LedgerPeers.Type
@@ -65,8 +65,8 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RelayAccessPoint qualified as Socket
+import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
            (resolveLedgerPeers)
 
@@ -394,6 +394,18 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
           addrs' = Set.insert addr addrs
        in (addrs', domains)
 
+-- | Argument record for withLedgerPeers
+--
+data WithLedgerPeersArgs m = WithLedgerPeersArgs {
+  wlpRng                :: StdGen,
+  -- ^ Random generator for picking ledger peers
+  wlpConsensusInterface :: LedgerPeersConsensusInterface m,
+  wlpTracer             :: Tracer m TraceLedgerPeers,
+  -- ^ Get Ledger Peers comes from here
+  wlpGetUseLedgerPeers  :: STM m UseLedgerPeers
+  -- ^ Get Use Ledger After value
+  }
+
 -- | For a LedgerPeers worker thread and submit request and receive responses.
 --
 withLedgerPeers :: forall peerAddr resolver exception m a.
@@ -403,18 +415,15 @@ withLedgerPeers :: forall peerAddr resolver exception m a.
                    , Exception exception
                    , Ord peerAddr
                    )
-                => StdGen
-                -> DNSSemaphore m
-                -> (IP.IP -> Socket.PortNumber -> peerAddr)
-                -> Tracer m TraceLedgerPeers
-                -> STM m UseLedgerPeers
-                -> LedgerPeersConsensusInterface m
-                -> DNSActions resolver exception m
-                -> ( (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime)))
+                => PeerActionsDNS peerAddr resolver exception m
+                -> WithLedgerPeersArgs m
+                -> ((NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime)))
                      -> Async m Void
                      -> m a )
                 -> m a
-withLedgerPeers inRng dnsSemaphore toPeerAddr tracer readUseLedgerPeers interface dnsActions k = do
+withLedgerPeers PeerActionsDNS { paToPeerAddr = toPeerAddr, paDnsActions = dnsActions, paDnsSemaphore = dnsSemaphore }
+                WithLedgerPeersArgs { wlpRng = inRng, wlpConsensusInterface = interface, wlpTracer = tracer, wlpGetUseLedgerPeers = readUseLedgerPeers }
+                k = do
     reqVar  <- newEmptyTMVarIO
     respVar <- newEmptyTMVarIO
     let getRequest  = takeTMVar reqVar
