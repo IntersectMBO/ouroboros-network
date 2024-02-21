@@ -58,6 +58,11 @@
 * Fix `targetPeers` monitoring action to use the correct set of local peers
   when in sensitive mode.
 
+* Forget non-established bootstrap peers when transitioning from
+  `TooOld` state to `YoungEnough`
+
+* Implemented Churn for bootstrap peers
+
 ## 0.11.0.0 -- 2023-01-22
 
 ### Breaking changes

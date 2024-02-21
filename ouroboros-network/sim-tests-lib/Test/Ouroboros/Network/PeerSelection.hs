@@ -1780,6 +1780,11 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
           selectGovState (PublicRootPeers.getBigLedgerPeers . Governor.publicRootPeers)
                          events
 
+        bootstrapPeersSig :: Signal (Set PeerAddr)
+        bootstrapPeersSig =
+          selectGovState (PublicRootPeers.getBootstrapPeers . Governor.publicRootPeers)
+                         events
+
         knownPeersShrinksSig :: Signal (Set PeerAddr)
         knownPeersShrinksSig =
             Signal.nub
@@ -1787,14 +1792,16 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
           . Signal.difference
               -- We subtract all big ledger peers.  This is because we might
               -- first satisfy the target of known peers, and then learn that
-              -- one of them was a big ledger peers.  This would be a fake
-              -- shrink of known non big ledger peers.
+              -- one of them was a big ledger peers. We also subtract
+              -- bootstrap peers. This would be a fake shrink of known non
+              -- big ledger peers.
               --
               -- By subtracting a sum of `y` and `y'` we also do not account
               -- forgetting big ledger peers.
-              (\(x,y) (x',y') -> x Set.\\ x' Set.\\ y Set.\\ y')
-          $ (,) <$> govKnownPeersSig
-                <*> bigLedgerPeersSig
+              (\(x,y,z) (x',y',z') -> x Set.\\ x' Set.\\ y Set.\\ y' Set.\\ z Set.\\ z')
+          $ (,,) <$> govKnownPeersSig
+                 <*> bigLedgerPeersSig
+                 <*> bootstrapPeersSig
 
         unexpectedShrink :: Signal Bool
         unexpectedShrink =
