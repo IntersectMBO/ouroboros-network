@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-Breaking changes
+
+## 0.7.0.0 -- 2024-02-21
+
+### Breaking changes
+
 * Changed `LedgerConsensusInterface` type:
     `LedgerConsensusInterface` now has to fill 3 STM actions:
         * `lpGetLatestSlot :: STM m (WithOrigin SlotNo)`

@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-Breaking changes
+
+## 0.12.0.0 -- 2023-02-21
+
+### Breaking changes
+
 * Moved `LedgerConsensusInterface` type to `ouroboros-network-api`.
 * Preserved `PeerAdvertise` information when connecting to peers.
 * Added `daReadUseBootstrapPeers` to `ArgumentsExtra`.
