@@ -37,6 +37,7 @@ library
                        Ouroboros.Network.BlockFetch.State
                        Ouroboros.Network.DeltaQ
                        Ouroboros.Network.Diffusion
+                       Ouroboros.Network.Diffusion.Configuration
                        Ouroboros.Network.Diffusion.P2P
                        Ouroboros.Network.Diffusion.NonP2P
                        Ouroboros.Network.Diffusion.Policies
