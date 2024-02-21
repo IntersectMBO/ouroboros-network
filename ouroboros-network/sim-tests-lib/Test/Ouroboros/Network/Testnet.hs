@@ -68,7 +68,7 @@ import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
 import Control.Exception (AssertionFailed (..), catch, evaluate)
-import Ouroboros.Network.BlockFetch (TraceFetchClientState (..))
+import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
 import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..),
            TestProperty (..), classifyActivityType, classifyEffectiveDataFlow,
            classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
@@ -690,6 +690,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
               Nothing
               False
+              (Script (FetchModeDeadline :| []))
           , [JoinNetwork 1.742857142857
             ,Reconfigure 6.33333333333 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65535,(DoAdvertisePeer, IsNotTrustable))]),
                                         (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoAdvertisePeer, IsNotTrustable))
@@ -721,6 +722,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
                      ]))
              Nothing
              False
+             (Script (FetchModeDeadline :| []))
           , [JoinNetwork 0.183783783783
             ,Reconfigure 4.533333333333 [(1,1,Map.fromList [])]
             ]
@@ -1328,6 +1330,7 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
                                                                    ]))
             Nothing
             False
+            (Script (FetchModeDeadline :| []))
             , [ JoinNetwork 6.710144927536
               , Kill 7.454545454545
               , JoinNetwork 10.763157894736
@@ -2338,7 +2341,8 @@ async_demotion_network_script =
                            = Nothing,
         naChainSyncEarlyExit
                            = False,
-        naPeerSharing      = PeerSharingDisabled
+        naPeerSharing      = PeerSharingDisabled,
+        naFetchModeScript  = singletonScript FetchModeDeadline
       }
 
 
@@ -2823,6 +2827,7 @@ prop_unit_4258 =
              (Script (DNSLookupDelay {getDNSLookupDelay = 0.065} :| []))
              Nothing
              False
+             (Script (FetchModeDeadline :| []))
          , [ JoinNetwork 4.166666666666,
              Kill 0.3,
              JoinNetwork 1.517857142857,
@@ -2862,6 +2867,7 @@ prop_unit_4258 =
                      ]))
              Nothing
              False
+             (Script (FetchModeDeadline :| []))
          , [ JoinNetwork 3.384615384615,
              Reconfigure 3.583333333333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,(DoNotAdvertisePeer, IsNotTrustable))])],
              Kill 15.55555555555,
@@ -2923,6 +2929,7 @@ prop_unit_reconnect =
               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
               Nothing
               False
+              (Script (FetchModeDeadline :| []))
           , [ JoinNetwork 0
             ])
           , (NodeArgs
@@ -2949,6 +2956,7 @@ prop_unit_reconnect =
              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
              Nothing
              False
+             (Script (FetchModeDeadline :| []))
          , [ JoinNetwork 10
            ])
          ]

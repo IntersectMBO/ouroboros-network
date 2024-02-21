@@ -114,9 +114,11 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
 
+import Data.Bool (bool)
 import Data.Function (on)
 import Data.Typeable (Typeable)
-import Ouroboros.Network.BlockFetch (TraceFetchClientState, TraceLabelPeer (..))
+import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
+           TraceLabelPeer (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -209,13 +211,14 @@ data NodeArgs =
       -- ^ 'Arguments' 'aDNSLookupDelayScript' value
     , naChainSyncExitOnBlockNo :: Maybe BlockNo
     , naChainSyncEarlyExit     :: Bool
+    , naFetchModeScript        :: Script FetchMode
     }
 
 instance Show NodeArgs where
     show NodeArgs { naSeed, naDiffusionMode, naMbTime, naBootstrapPeers, naPublicRoots,
                    naAddr, naPeerSharing, naLocalRootPeers, naLocalSelectionTargets,
                    naDNSTimeoutScript, naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
-                   naChainSyncEarlyExit } =
+                   naChainSyncEarlyExit, naFetchModeScript } =
       unwords [ "NodeArgs"
               , "(" ++ show naSeed ++ ")"
               , show naDiffusionMode
@@ -230,6 +233,7 @@ instance Show NodeArgs where
               , "(" ++ show naDNSLookupDelayScript ++ ")"
               , "(" ++ show naChainSyncExitOnBlockNo ++ ")"
               , show naChainSyncEarlyExit
+              , show naFetchModeScript
               ]
 
 data Command = JoinNetwork DiffTime
@@ -414,6 +418,8 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
   firstLedgerPool <- arbitrary
   let ledgerPeerPoolsScript = Script (firstLedgerPool :| ledgerPeerPools)
 
+  fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
+
   firstBootstrapPeer <- maybe DontUseBootstrapPeers UseBootstrapPeers
                       <$> arbitrary
   bootstrapPeers <- listOf (maybe DontUseBootstrapPeers UseBootstrapPeers
@@ -438,6 +444,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
       , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
       , naChainSyncEarlyExit     = chainSyncEarlyExit
       , naPeerSharing            = peerSharing
+      , naFetchModeScript        = fetchModeScript
       }
   where
     hasActive :: SmallPeerSelectionTargets -> Bool
