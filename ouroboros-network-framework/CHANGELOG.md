@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.11.1.0 -- 2024-02-21
+
+### Breaking changes
+
+### Non-breaking changes
+
 * Fixed correct transition tracing in the case of self connect
 
 ## 0.11.0.0 -- 2024-01-22

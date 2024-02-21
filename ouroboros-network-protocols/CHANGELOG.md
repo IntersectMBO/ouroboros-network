@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-Breaking changes
+
+## 0.8.0.0 -- 2024-02-21
+
+### Breaking changes
+
 * Add side-effect argument to `SendMsgRequestNextPipelined` to be invoked
   promptly upon `MsgAwaitReply`.
 
