@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.2.0.12
+
+### Non-breaking changes
+
+* Use `io-sim-1.4.1`
+
 ## 0.2.0.11
 
 ### Non-breaking changes
