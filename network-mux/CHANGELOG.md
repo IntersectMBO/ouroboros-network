@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.4.5.1 -- 2024-01-22
+
+### Non-breaking changes
+
+* Use io-sim-1.4.1.0
+
 ## 0.4.5.0 -- 2024-01-22
 
 ### Non-breaking changes

@@ -15,7 +15,7 @@ import Codec.CBOR.Decoding qualified as CBOR hiding (Done, Fail)
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise (Serialise (..), serialise)
-import Control.Monad.ST
+import Control.Monad.Primitive
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 
@@ -77,26 +77,25 @@ data TraceSendRecv msg
   deriving Show
 
 
-runDecoderWithChannel :: forall s m a.
+runDecoderWithChannel :: forall m a.
                          MonadST m
-                      => (forall b. ST s b -> m b)
-                      -> Channel m
+                      => Channel m
                       -> Maybe LBS.ByteString
-                      -> Decoder s a
+                      -> Decoder (PrimState m) a
                       -> m (Either CBOR.DeserialiseFailure (a, Maybe LBS.ByteString))
 
-runDecoderWithChannel liftST Channel{recv} trailing decoder =
-    liftST (CBOR.deserialiseIncremental decoder) >>= go (LBS.toStrict <$> trailing)
+runDecoderWithChannel Channel{recv} trailing decoder =
+    stToIO (CBOR.deserialiseIncremental decoder) >>= go (LBS.toStrict <$> trailing)
   where
 
     go :: Maybe BS.ByteString
-       -> CBOR.IDecode s a
+       -> CBOR.IDecode (PrimState m) a
        -> m (Either CBOR.DeserialiseFailure (a, Maybe LBS.ByteString))
 
     go Nothing (CBOR.Partial k) =
-      recv >>= liftST . k . fmap LBS.toStrict >>= go Nothing
+      recv >>= stToIO . k . fmap LBS.toStrict >>= go Nothing
     go (Just bs) (CBOR.Partial k)  =
-      liftST (k (Just bs)) >>= go Nothing
+      stToIO (k (Just bs)) >>= go Nothing
     go _ (CBOR.Done trailing' _ a) | BS.null trailing'
                                    = return (Right (a, Nothing))
                                    | otherwise
@@ -131,8 +130,7 @@ runClient tracer channel@Channel {send} =
       traceWith tracer (TraceSend msg)
       send $ serialise msg
 
-      res <- withLiftST $ \liftST -> runDecoderWithChannel
-                                        liftST channel trailing decode
+      res <- runDecoderWithChannel channel trailing decode
 
       case res of
         Left err -> do
@@ -190,8 +188,7 @@ runServer tracer channel@Channel {send} =
        -> ReqRespServer req resp m a
        -> m (a, Maybe LBS.ByteString)
     go trailing ReqRespServer {recvMsgReq, recvMsgDone} = do
-      res <- withLiftST $ \liftST -> runDecoderWithChannel
-                                        liftST channel trailing decode
+      res <- runDecoderWithChannel channel trailing decode
       case res of
         Left err -> do
           traceWith tracer (TraceFailure err)
