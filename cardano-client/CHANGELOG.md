@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.3.1.1
+
+### Non-breaking changes
+
+* Updated bounds
+
 ## 0.3.1.0
 
 ### Non-breaking changes
