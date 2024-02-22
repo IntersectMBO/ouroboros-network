@@ -10,7 +10,7 @@
 
 ### Non-breaking changes
 
-- Use io-sim-1.4.1.0
+* Use io-sim-1.4.1.0
 
 ## 0.4.5.0 -- 2024-01-22
 
