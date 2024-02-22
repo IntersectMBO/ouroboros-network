@@ -139,6 +139,7 @@ test-suite test
                        serialise,
                        tasty,
                        tasty-quickcheck,
+                       primitive,
 
   if os(windows)
     build-depends:     Win32           >= 2.5.4.1 && <3.0,
@@ -172,7 +173,8 @@ executable mux-demo
 
                        bytestring,
                        cborg,
-                       serialise
+                       serialise,
+                       primitive
   if os(windows)
     build-depends:     Win32,
                        Win32-network
