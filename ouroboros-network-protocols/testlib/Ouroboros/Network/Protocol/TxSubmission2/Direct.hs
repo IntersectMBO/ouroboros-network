@@ -54,7 +54,8 @@ directPipelined (TxSubmissionServerPipelined mserver)
       SendMsgReplyTxs txs client' <- recvMsgRequestTxs txids
       directSender (enqueue (CollectTxs txids txs) q) server' client'
 
-    directSender q (CollectPipelined (Just server') _) client =
+    directSender q (CollectPipelined (Just server) _) client = do
+      server' <- server
       directSender q server' client
 
     directSender (ConsQ c q) (CollectPipelined _ collect) client = do
