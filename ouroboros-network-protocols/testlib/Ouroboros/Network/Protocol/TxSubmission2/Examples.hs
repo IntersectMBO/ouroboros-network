@@ -272,7 +272,7 @@ txSubmissionServer tracer txId maxUnacked maxTxIdsToRequest maxTxToRequest =
         --
       | canRequestMoreTxs st
       = CollectPipelined
-          (Just (serverReqTxs accum (Succ n) st))
+          (Just (pure $ serverReqTxs accum (Succ n) st))
           (handleReply accum n st)
 
         -- In this case there is nothing else to do so we block until we
