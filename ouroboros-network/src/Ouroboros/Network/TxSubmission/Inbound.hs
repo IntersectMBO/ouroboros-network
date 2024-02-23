@@ -262,7 +262,7 @@ txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version
             --
             traceWith tracer (TraceTxInboundCanRequestMoreTxs (natToInt n))
             pure $ CollectPipelined
-              (Just (continueWithState (serverReqTxs (Succ n')) st))
+              (Just (pure $ continueWithState (serverReqTxs (Succ n')) st))
               (collectAndContinueWithState (handleReply n') st)
 
           else do
