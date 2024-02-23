@@ -18,6 +18,7 @@ import Prelude hiding (seq)
 
 import NoThunks.Class
 
+import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM
 import Control.Exception (SomeException (..), assert)
 import Control.Monad.Class.MonadAsync
@@ -265,6 +266,7 @@ txSubmissionSimulation
      , MonadDelay m
      , MonadFork  m
      , MonadMask  m
+     , MonadMVar  m
      , MonadSay   m
      , MonadST    m
      , MonadSTM   m
@@ -279,13 +281,14 @@ txSubmissionSimulation
 
      , txid ~ Int
      )
-  => NumTxIdsToAck
+  => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
+  -> NumTxIdsToAck
   -> [Tx txid]
   -> ControlMessageSTM m
   -> Maybe DiffTime
   -> Maybe DiffTime
   -> m ([Tx txid], [Tx txid])
-txSubmissionSimulation maxUnacked outboundTxs
+txSubmissionSimulation tracer maxUnacked outboundTxs
                        controlMessageSTM
                        inboundDelay outboundDelay = do
 
@@ -294,7 +297,7 @@ txSubmissionSimulation maxUnacked outboundTxs
     (outboundChannel, inboundChannel) <- createConnectedChannels
     outboundAsync <-
       async $ runPeerWithLimits
-                (("OUTBOUND",) `contramap` verboseTracer)
+                (("OUTBOUND",) `contramap` tracer)
                 txSubmissionCodec2
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                 timeLimitsTxSubmission2
@@ -361,6 +364,7 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
                     * realToFrac (length outboundTxs `div` 4))
                 atomically (writeTVar controlMessageVar Terminate)
             txSubmissionSimulation
+              verboseTracer
               (NumTxIdsToAck maxUnacked) outboundTxs
               (readTVar controlMessageVar)
               mbDelayTime mbDelayTime
