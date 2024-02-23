@@ -109,7 +109,7 @@ newMempool = fmap Mempool
            . Seq.fromList
 
 readMempool :: MonadSTM m => Mempool m txid -> m [Tx txid]
-readMempool (Mempool mempool) = toList <$> atomically (readTVar mempool)
+readMempool (Mempool mempool) = toList <$> readTVarIO mempool
 
 
 getMempoolReader :: forall txid m.
@@ -226,7 +226,7 @@ txSubmissionSimulation maxUnacked outboundTxs
                 txSubmissionCodec2
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                 timeLimitsTxSubmission2
-                (fromMaybe id (delayChannel <$> outboundDelay) outboundChannel)
+                (maybe id delayChannel outboundDelay outboundChannel)
                 (txSubmissionClientPeer (outboundPeer outboundMempool))
 
     inboundAsync <-
@@ -235,7 +235,7 @@ txSubmissionSimulation maxUnacked outboundTxs
                 txSubmissionCodec2
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                 timeLimitsTxSubmission2
-                (fromMaybe id (delayChannel <$> inboundDelay) inboundChannel)
+                (maybe id delayChannel inboundDelay inboundChannel)
                 (txSubmissionServerPeerPipelined (inboundPeer inboundMempool))
 
     _ <- waitAnyCancel [ outboundAsync, inboundAsync ]
