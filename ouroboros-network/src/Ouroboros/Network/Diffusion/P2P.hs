@@ -663,8 +663,7 @@ runM Interfaces
     (policyRng,      rng2) = split rng1
     (churnRng,       rng3) = split rng2
     (fuzzRng,        rng4) = split rng3
-    (ntnInbgovRng,   rng5) = split rng4
-    (ntcInbgovRng,   _)    = split rng5
+    (ntnInbgovRng, ntcInbgovRng)    = split rng4
 
     -- Only the 'IOManagerError's are fatal, all the other exceptions in the
     -- networking code will only shutdown the bearer (see 'ShutdownPeer' why

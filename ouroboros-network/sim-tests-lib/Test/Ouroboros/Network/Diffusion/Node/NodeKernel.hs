@@ -366,17 +366,18 @@ withNodeKernelThread
   -> m a
 withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bgaSeed }
                      k = do
-    let (_, psSeed) = split bgaSeed
     kernel <- newNodeKernel psSeed
     withSlotTime bgaSlotDuration $ \waitForSlot ->
       withAsync (blockProducerThread kernel waitForSlot) (k kernel)
   where
+    (bpSeed, psSeed) = split bgaSeed
+
     blockProducerThread :: NodeKernel header block seed m
                         -> (SlotNo -> STM m SlotNo)
                         -> m Void
     blockProducerThread NodeKernel { nkChainProducerState, nkChainDB }
                         waitForSlot
-                      = loop (Block.SlotNo 1) bgaSeed
+                      = loop (Block.SlotNo 1) bpSeed
       where
         loop :: SlotNo -> seed -> m Void
         loop nextSlot seed = do
