@@ -144,7 +144,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
                  Just (cTid, doneVar, startVar) -> do
                    putTMVar startVar ()
                    writeTVar (fetchClientStatusVar $ fetchClientCtxStateVars ctx)
-                             (PeerFetchStatusReady Set.empty IsIdle)
+                             (PeerFetchStatusReady Map.empty IsIdle)
                    return (ctx, (cTid, doneVar))
             )
 

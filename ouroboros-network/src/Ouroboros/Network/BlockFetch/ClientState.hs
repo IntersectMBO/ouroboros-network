@@ -35,10 +35,10 @@ module Ouroboros.Network.BlockFetch.ClientState
   ) where
 
 import Data.List (foldl')
+import Data.Map (Map)
+import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Semigroup (Last (..))
-import Data.Set (Set)
-import Data.Set qualified as Set
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
@@ -54,7 +54,8 @@ import Ouroboros.Network.Block (HasHeader, MaxSlotNo (..), Point, blockPoint)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FromConsensus (..),
            WhetherReceivingTentativeBlocks (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
-           PeerGSV, SizeInBytes, calculatePeerFetchInFlightLimits)
+           PeerGSV, SizeInBytes, calculatePeerFetchInFlightLimits,
+           estimateExpectedResponseDuration)
 import Ouroboros.Network.ControlMessage (ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.Point (withOriginToMaybe)
@@ -177,7 +178,7 @@ data PeerFetchStatus header =
        -- considered ready to accept new requests.
        --
        -- The 'Set' is the blocks in flight.
-     | PeerFetchStatusReady (Set (Point header)) IsIdle
+     | PeerFetchStatusReady (Map (Point header) Time) IsIdle
   deriving (Eq, Show)
 
 -- | Whether this mini protocol instance is in the @Idle@ State
@@ -219,7 +220,7 @@ data PeerFetchInFlight header = PeerFetchInFlight {
        -- fetch from which peers we take into account what blocks are already
        -- in-flight with peers.
        --
-       peerFetchBlocksInFlight :: Set (Point header),
+       peerFetchBlocksInFlight :: Map (Point header) Time,
 
        -- | The maximum slot of a block that /has ever been/ in flight for
        -- this peer.
@@ -236,7 +237,7 @@ initialPeerFetchInFlight =
     PeerFetchInFlight {
       peerFetchReqsInFlight   = 0,
       peerFetchBytesInFlight  = 0,
-      peerFetchBlocksInFlight = Set.empty,
+      peerFetchBlocksInFlight = Map.empty,
       peerFetchMaxSlotNo      = NoMaxSlotNo
     }
 
@@ -248,20 +249,25 @@ initialPeerFetchInFlight =
 --
 addHeadersInFlight :: HasHeader header
                    => (header -> SizeInBytes)
+                   -> Time
+                   -> PeerGSV
                    -> Maybe (FetchRequest header) -- ^ The old request (if any).
                    -> FetchRequest header         -- ^ The added request.
                    -> FetchRequest header         -- ^ The merged request.
                    -> PeerFetchInFlight header
                    -> PeerFetchInFlight header
-addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
+addHeadersInFlight blockFetchSize now gsv oldReq addedReq mergedReq inflight =
 
     -- This assertion checks the pre-condition 'addNewFetchRequest' that all
     -- requested blocks are new. This is true irrespective of fetch-request
     -- command merging.
-    assert (and [ blockPoint header `Set.notMember` peerFetchBlocksInFlight inflight
+    assert (and [ blockPoint header `Map.notMember` peerFetchBlocksInFlight inflight
                 | fragment <- fetchRequestFragments addedReq
                 , header   <- AF.toOldestFirst fragment ]) $
-
+    let sizes = scanl (+) (peerFetchBytesInFlight inflight)
+                  [ blockFetchSize header
+                  | fragment <- fetchRequestFragments addedReq
+                  , header   <- AF.toOldestFirst fragment] in
     PeerFetchInFlight {
 
       -- Fetch request merging makes the update of the number of in-flight
@@ -281,9 +287,12 @@ addHeadersInFlight blockFetchSize oldReq addedReq mergedReq inflight =
                                     , header   <- AF.toOldestFirst fragment ],
 
       peerFetchBlocksInFlight = peerFetchBlocksInFlight inflight
-                    `Set.union` Set.fromList
-                                  [ blockPoint header
+                    `Map.union` Map.fromList
+                                  [ (blockPoint header,
+                                    (estimateExpectedResponseDuration gsv size 0)
+                                      `addTime` now)
                                   | fragment <- fetchRequestFragments addedReq
+                                  , size <- sizes
                                   , header   <- AF.toOldestFirst fragment ],
 
       peerFetchMaxSlotNo      = peerFetchMaxSlotNo inflight
@@ -300,13 +309,13 @@ deleteHeaderInFlight :: HasHeader header
                      -> PeerFetchInFlight header
 deleteHeaderInFlight blockFetchSize header inflight =
     assert (peerFetchBytesInFlight inflight >= blockFetchSize header) $
-    assert (blockPoint header `Set.member` peerFetchBlocksInFlight inflight) $
+    assert (blockPoint header `Map.member` peerFetchBlocksInFlight inflight) $
     inflight {
       peerFetchBytesInFlight  = peerFetchBytesInFlight inflight
                               - blockFetchSize header,
 
       peerFetchBlocksInFlight = blockPoint header
-                   `Set.delete` peerFetchBlocksInFlight inflight
+                   `Map.delete` peerFetchBlocksInFlight inflight
     }
 
 deleteHeadersInFlight :: HasHeader header
@@ -441,7 +450,7 @@ data TraceFetchClientState header =
 -- only operation that grows the in-flight blocks, and is only used by the
 -- fetch decision logic thread.
 --
-addNewFetchRequest :: (MonadSTM m, HasHeader header)
+addNewFetchRequest :: (MonadSTM m, MonadMonotonicTime m, HasHeader header)
                    => Tracer m (TraceFetchClientState header)
                    -> (header -> SizeInBytes)
                    -> FetchRequest header
@@ -454,6 +463,7 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
                      fetchClientInFlightVar,
                      fetchClientStatusVar
                    } = do
+    now <- getMonotonicTime
     (inflight', currentStatus') <- atomically $ do
 
       -- Add a new fetch request, or extend or merge with the existing
@@ -471,7 +481,7 @@ addNewFetchRequest tracer blockFetchSize addedReq gsvs
 
       -- Update our in-flight stats
       inflight <- readTVar fetchClientInFlightVar
-      let !inflight' = addHeadersInFlight blockFetchSize
+      let !inflight' = addHeadersInFlight blockFetchSize now gsvs
                                           oldReq addedReq mergedReq
                                           inflight
       writeTVar fetchClientInFlightVar inflight'
@@ -592,7 +602,7 @@ completeFetchBatch tracer inflightlimits range
       let !inflight' =
             assert (if peerFetchReqsInFlight inflight == 1
                        then peerFetchBytesInFlight inflight == 0
-                         && Set.null (peerFetchBlocksInFlight inflight)
+                         && Map.null (peerFetchBlocksInFlight inflight)
                        else True)
             inflight {
               peerFetchReqsInFlight = peerFetchReqsInFlight inflight - 1
@@ -600,9 +610,9 @@ completeFetchBatch tracer inflightlimits range
       writeTVar fetchClientInFlightVar inflight'
       currentStatus' <- readTVar fetchClientStatusVar >>= \case
         PeerFetchStatusReady bs IsNotIdle
-          | Set.null bs
+          | Map.null bs
             && 0 == peerFetchReqsInFlight inflight'
-          -> let status = PeerFetchStatusReady Set.empty IsIdle
+          -> let status = PeerFetchStatusReady Map.empty IsIdle
              in status <$ writeTVar fetchClientStatusVar status
         currentStatus -> pure currentStatus
 

@@ -28,13 +28,14 @@ import Data.Set qualified as Set
 import Data.Function (on)
 import Data.Hashable
 import Data.List (foldl', groupBy, sortBy, transpose)
+import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import GHC.Stack (HasCallStack)
 
 import Control.Exception (assert)
 import Control.Monad (guard)
-import Control.Monad.Class.MonadTime.SI (DiffTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, AnchoredSeq (..))
 import Ouroboros.Network.AnchoredFragment qualified as AF
@@ -170,6 +171,12 @@ data FetchDecline =
      --
    | FetchDeclineInFlightOtherPeer
 
+     -- | Some blocks on this peer's candidate chain have not yet been fetched,
+     -- but all of those have already been requested from faster peers.
+     --
+   | FetchDeclineInFlightOtherFasterPeer
+
+
      -- | This peer's BlockFetch client is shutting down, see
      -- 'PeerFetchStatusShutdown'.
      --
@@ -254,6 +261,7 @@ fetchDecisions
       HeaderHash header ~ HeaderHash block)
   => FetchDecisionPolicy header
   -> FetchMode
+  -> Time
   -> AnchoredFragment header
   -> (Point block -> Bool)
   -> MaxSlotNo
@@ -266,6 +274,7 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
                  peerSalt
                }
                fetchMode
+               now
                currentChain
                fetchedBlocks
                fetchedMaxSlotNo =
@@ -279,6 +288,8 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
     -- Filter to keep blocks that are not already in-flight with other peers.
   . filterNotAlreadyInFlightWithOtherPeers
       fetchMode
+      now
+      blockFetchSize
   . map swizzleSI
 
     -- Reorder chains based on consensus policy and network timing data.
@@ -310,7 +321,7 @@ fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
     -- Data swizzling functions to get the right info into each stage.
     swizzleI   (c, p@(_,     inflight,_,_,      _)) = (c,         inflight,       p)
     swizzleIG  (c, p@(_,     inflight,gsvs,peer,_)) = (c,         inflight, gsvs, peer, p)
-    swizzleSI  (c, p@(status,inflight,_,_,      _)) = (c, status, inflight,       p)
+    swizzleSI  (c, p@(status,inflight,gsvs,_,      _)) = (c, status, inflight, gsvs, p)
     swizzleSIG (c, p@(status,inflight,gsvs,peer,_)) = (c, status, inflight, gsvs, peer, p)
 
 {-
@@ -616,7 +627,7 @@ filterNotAlreadyInFlightWithPeer chains =
     ]
   where
     notAlreadyInFlight inflight b =
-      blockPoint b `Set.notMember` peerFetchBlocksInFlight inflight
+      blockPoint b `Map.notMember` peerFetchBlocksInFlight inflight
 
 
 -- | A penultimate step of filtering, but this time across peers, rather than
@@ -630,19 +641,54 @@ filterNotAlreadyInFlightWithPeer chains =
 filterNotAlreadyInFlightWithOtherPeers
   :: HasHeader header
   => FetchMode
+  -> Time
+  -> (header -> SizeInBytes)
   -> [( FetchDecision [AnchoredFragment header]
       , PeerFetchStatus header
       , PeerFetchInFlight header
+      , PeerGSV
       , peerinfo )]
   -> [(FetchDecision [AnchoredFragment header], peerinfo)]
 
-filterNotAlreadyInFlightWithOtherPeers FetchModeDeadline chains =
-    [ (mchainfragments,       peer)
-    | (mchainfragments, _, _, peer) <- chains ]
+filterNotAlreadyInFlightWithOtherPeers FetchModeDeadline now blockFetchSize chains =
+    [ (mcandidatefragments',       peer)
+    | (mcandidatefragments, _, _, gsv, peer) <- chains
+    , let mcandidatefragments' = do
+            chainfragments <- mcandidatefragments
+            let fragments = concatMap (filterWithMaxSlotNo
+                                        (notAlreadyInFlightWithFaster gsv)
+                                        maxSlotNoInFlightWithOtherPeers)
+                                      chainfragments
+            guard (not (null fragments)) ?! FetchDeclineInFlightOtherFasterPeer
+            return fragments
+    ]
+  where
+    notAlreadyInFlightWithFaster gsv b =
+      case Map.lookup (blockPoint b) blocksInFlightWithOtherPeers of
+           Just t ->
+             let size = blockFetchSize b
+                 rspAt = (estimateExpectedResponseDuration gsv size 0) `addTime` now in
+             t < now || rspAt < t
+           Nothing -> True
 
-filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
+   -- All the blocks that are already in-flight with all peers
+    blocksInFlightWithOtherPeers =
+      Map.unionsWith min
+        [ case status of
+            PeerFetchStatusShutdown -> Map.empty
+            PeerFetchStatusStarting -> Map.empty
+            PeerFetchStatusAberrant -> Map.empty
+            _other                  -> peerFetchBlocksInFlight inflight
+        | (_, status, inflight, _, _) <- chains ]
+
+    -- The highest slot number that is or has been in flight for any peer.
+    maxSlotNoInFlightWithOtherPeers = foldl' max NoMaxSlotNo
+      [ peerFetchMaxSlotNo inflight | (_, _, inflight, _, _) <- chains ]
+
+
+filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync _ _ chains =
     [ (mcandidatefragments',      peer)
-    | (mcandidatefragments, _, _, peer) <- chains
+    | (mcandidatefragments, _, _, _, peer) <- chains
     , let mcandidatefragments' = do
             chainfragments <- mcandidatefragments
             let fragments = concatMap (filterWithMaxSlotNo
@@ -654,21 +700,21 @@ filterNotAlreadyInFlightWithOtherPeers FetchModeBulkSync chains =
     ]
   where
     notAlreadyInFlight b =
-      blockPoint b `Set.notMember` blocksInFlightWithOtherPeers
+      blockPoint b `Map.notMember` blocksInFlightWithOtherPeers
 
    -- All the blocks that are already in-flight with all peers
     blocksInFlightWithOtherPeers =
-      Set.unions
+      Map.unions
         [ case status of
-            PeerFetchStatusShutdown -> Set.empty
-            PeerFetchStatusStarting -> Set.empty
-            PeerFetchStatusAberrant -> Set.empty
+            PeerFetchStatusShutdown -> Map.empty
+            PeerFetchStatusStarting -> Map.empty
+            PeerFetchStatusAberrant -> Map.empty
             _other                  -> peerFetchBlocksInFlight inflight
-        | (_, status, inflight, _) <- chains ]
+        | (_, status, inflight, _, _) <- chains ]
 
     -- The highest slot number that is or has been in flight for any peer.
     maxSlotNoInFlightWithOtherPeers = foldl' max NoMaxSlotNo
-      [ peerFetchMaxSlotNo inflight | (_, _, inflight, _) <- chains ]
+      [ peerFetchMaxSlotNo inflight | (_, _, inflight, _, _) <- chains ]
 
 -- | Filter a fragment. This is an optimised variant that will behave the same
 -- as 'AnchoredFragment.filter' if the following precondition is satisfied:

@@ -97,7 +97,7 @@ iterateForever x0 m = go x0 where go x = m x >>= go
 -- * deciding for each peer if we will initiate a new fetch request
 --
 fetchLogicIteration
-  :: (Hashable peer, MonadSTM m, Ord peer,
+  :: (Hashable peer, MonadSTM m, MonadMonotonicTime m, Ord peer,
       HasHeader header, HasHeader block,
       HeaderHash header ~ HeaderHash block)
   => Tracer m [TraceLabelPeer peer (FetchDecision [Point header])]
@@ -127,10 +127,12 @@ fetchLogicIteration decisionTracer clientStateTracer
 
     -- TODO: log the difference in the fingerprint that caused us to wake up
 
+    now <- getMonotonicTime
     -- Make all the fetch decisions
     let decisions = fetchDecisionsForStateSnapshot
                       fetchDecisionPolicy
                       stateSnapshot
+                      now
 
     -- If we want to trace timings, we can do it here after forcing:
     -- _ <- evaluate (force decisions)
@@ -168,6 +170,7 @@ fetchDecisionsForStateSnapshot
       Hashable peer)
   => FetchDecisionPolicy header
   -> FetchStateSnapshot peer header block m
+  -> Time
   -> [( FetchDecision (FetchRequest header),
         PeerInfo header peer (FetchClientStateVars m header, peer)
       )]
@@ -182,7 +185,7 @@ fetchDecisionsForStateSnapshot
       fetchStateFetchedBlocks,
       fetchStateFetchedMaxSlotNo,
       fetchStateFetchMode
-    } =
+    } now =
     assert (                 Map.keysSet fetchStatePeerChains
             `Set.isSubsetOf` Map.keysSet fetchStatePeerStates) $
 
@@ -192,6 +195,7 @@ fetchDecisionsForStateSnapshot
     fetchDecisions
       fetchDecisionPolicy
       fetchStateFetchMode
+      now
       fetchStateCurrentChain
       fetchStateFetchedBlocks
       fetchStateFetchedMaxSlotNo
@@ -211,7 +215,7 @@ fetchDecisionsForStateSnapshot
 -- request variables that are shared with the threads running the block fetch
 -- protocol with each peer.
 --
-fetchLogicIterationAct :: (MonadSTM m, HasHeader header)
+fetchLogicIterationAct :: (MonadSTM m, MonadMonotonicTime m, HasHeader header)
                        => Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
                        -> FetchDecisionPolicy header
                        -> [(FetchDecision (FetchRequest header),

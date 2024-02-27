@@ -26,7 +26,7 @@ import Control.Monad (unless)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 
-import Data.Set qualified as Set
+import Data.Map qualified as Map
 
 import Control.Tracer (traceWith)
 
@@ -117,7 +117,7 @@ blockFetchClient _version controlMessageSTM reportFetched
       assert
         ( peerFetchReqsInFlight  == 0 &&
           peerFetchBytesInFlight == 0 &&
-          Set.null peerFetchBlocksInFlight )
+          Map.null peerFetchBlocksInFlight )
         $ pure (senderAwait Zero)
 
     senderAwait :: forall n.
