@@ -502,11 +502,12 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
                    (KnownPeers.toSet knownPeers'))
 
         $ Decision {
-            decisionTrace = [TraceLocalRootPeersChanged localRootPeers
-                                                        localRootPeers']
-                         ++ if not hasOnlyBootstrapPeers'
-                               then [TraceLedgerStateJudgementChanged YoungEnough]
-                               else [],
+            decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers'
+                          : [ TraceLedgerStateJudgementChanged YoungEnough
+                            |  isBootstrapPeersEnabled bootstrapPeersFlag
+                            && not hasOnlyBootstrapPeers'
+                            && ledgerStateJudgement /= ledgerStateJudgement'
+                            ],
             decisionState = st {
                               localRootPeers      = localRootPeers',
                               publicRootPeers     = publicRootPeers',
