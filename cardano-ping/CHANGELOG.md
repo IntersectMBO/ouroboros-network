@@ -6,6 +6,9 @@
 
 ### Non-breaking changes
 
+* Add support for decoding peersharing support
+* Add support for NodeToNodeVersionV13
+
 ## 0.2.0.12
 
 ### Non-breaking changes
