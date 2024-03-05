@@ -670,6 +670,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
         (singletonTimedScript Map.empty)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
               (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
+              False
               (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
               PeerSharingDisabled
@@ -701,6 +702,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
           )
         , ( NodeArgs (1) InitiatorAndResponderDiffusionMode (Just 135)
              (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65533, DoAdvertisePeer)])
+             False
               (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
              PeerSharingDisabled
@@ -1289,6 +1291,7 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
             InitiatorAndResponderDiffusionMode
             (Just 224)
             Map.empty
+            False
             (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
             (TestAddress (IPAddr (read "0.0.1.236") 65527))
             PeerSharingDisabled
@@ -2328,6 +2331,7 @@ async_demotion_network_script =
         naDiffusionMode    = InitiatorAndResponderDiffusionMode,
         naMbTime           = Just 1,
         naPublicRoots      = Map.empty,
+        naUseGenesis       = False,
         naBootstrapPeers   = (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| [])),
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
@@ -2808,6 +2812,7 @@ prop_unit_4258 =
         (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224)
              (Map.fromList [])
+             False
              (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
              (TestAddress (IPAddr (read "0.0.0.4") 9))
              PeerSharingDisabled
@@ -2841,6 +2846,7 @@ prop_unit_4258 =
          ),
          ( NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269)
              (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoAdvertisePeer)])
+             False
              (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
              (TestAddress (IPAddr (read "0.0.0.8") 65531))
              PeerSharingDisabled
@@ -2911,6 +2917,7 @@ prop_unit_reconnect =
               InitiatorAndResponderDiffusionMode
               (Just 224)
               Map.empty
+              False
               (Script (DontUseBootstrapPeers :| []))
               (TestAddress (IPAddr (read "0.0.0.0") 0))
               PeerSharingDisabled
@@ -2941,6 +2948,7 @@ prop_unit_reconnect =
                InitiatorAndResponderDiffusionMode
                (Just 2)
                Map.empty
+               False
                (Script (DontUseBootstrapPeers :| []))
                (TestAddress (IPAddr (read "0.0.0.1") 0))
                PeerSharingDisabled
@@ -3596,7 +3604,7 @@ selectDiffusionPeerSelectionState :: Eq a
 selectDiffusionPeerSelectionState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [])
+  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [] False)
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
@@ -3608,7 +3616,7 @@ selectDiffusionPeerSelectionState' :: Eq a
                                   -> Signal a
 selectDiffusionPeerSelectionState' f =
   -- TODO: #3182 Rng seed should come from quickcheck.
-    Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [])
+    Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) [] False)
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)

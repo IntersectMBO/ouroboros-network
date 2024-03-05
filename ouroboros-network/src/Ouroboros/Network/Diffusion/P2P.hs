@@ -245,6 +245,12 @@ data ArgumentsExtra m = ArgumentsExtra {
 
     , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
     , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
+    -- | When a node is in a sensitive state, ie. ledgerStateJudgement == TooOld,
+    -- when this is True we will maintain connection with many big ledger peers
+    -- to get a strong guarantee that when syncing up we will finish with a true
+    -- ledger state. When false, we will fall back on the previous algorithms
+    -- that leverage UseBootstrapPeers flag 
+    , daUseGenesisSyncForStaleChain :: Bool
     , daReadUseBootstrapPeers :: STM m UseBootstrapPeers
 
     -- | Peer's own PeerSharing value.
@@ -623,6 +629,7 @@ runM Interfaces
        { daPeerSelectionTargets
        , daReadLocalRootPeers
        , daReadPublicRootPeers
+       , daUseGenesisSyncForStaleChain
        , daReadUseBootstrapPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
@@ -995,6 +1002,7 @@ runM Interfaces
                 fuzzRng
                 publicStateVar
                 dbgVar
+                daUseGenesisSyncForStaleChain
                 peerSelectionActions
                 peerSelectionPolicy)
 
@@ -1050,11 +1058,10 @@ runM Interfaces
       -- Part (b): capturing the major control-flow of runM:
       --
       case diffusionMode of
-
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng []
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng [] daUseGenesisSyncForStaleChain
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -1082,7 +1089,7 @@ runM Interfaces
             inboundInfoChannel
             outboundInfoChannel
             observableStateVar $ \connectionManager-> do
-            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng []
+            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng [] daUseGenesisSyncForStaleChain
             diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
             withPeerStateActions' connectionManager $ \peerStateActions ->
               withPeerSelectionActions'

@@ -161,20 +161,18 @@ data PeerSelectionTargets = PeerSelectionTargets {
 
        targetNumberOfRootPeers                 :: !Int,
 
-       -- | The target number of all known peers.  This includes ledger,
-       -- big ledger peers.
+       -- | The target number of all known peers.  Doesn't include big ledger peers
+       -- |
        targetNumberOfKnownPeers                :: !Int,
        -- | The target number of established peers (does not include big ledger
        -- peers).
        --
-       -- The target includes root peers, local root peers, ledger peers and big
-       -- ledger peers.
+       -- The target includes root peers, local root peers, and ledger peers
        --
        targetNumberOfEstablishedPeers          :: !Int,
        -- | The target number of active peers (does not include big ledger
        -- peers).
        --
-       -- The
        targetNumberOfActivePeers               :: !Int,
 
        -- | Target number of known big ledger peers.
@@ -313,6 +311,11 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- | Read the current ledger state judgement
        --
        readLedgerStateJudgement :: STM m LedgerStateJudgement
+
+       -- | Genesis-era diffusion mode
+       -- Used to set numer of big ledger peers when LedgerStateJudgement is TooOld
+       -- to ensure that we finish with a true ledger when syncing up
+       -- p2pGenesisCatchUp :: Bool
      }
 
 -- | Callbacks which are performed to change peer state.
@@ -346,6 +349,7 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     --
     closePeerConnection      :: peerconn -> m ()
   }
+
 
 -----------------------
 -- Peer Selection State
@@ -445,6 +449,10 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- | Current ledger state judgement
        --
        ledgerStateJudgement        :: !LedgerStateJudgement,
+
+       -- | Flag whether to sync in genesis mode when ledgerStateJudgement == TooOld
+       --
+       useGenesisFlag              :: !Bool,
 
        -- | Current value of 'UseBootstrapPeers'.
        --
@@ -603,8 +611,9 @@ peerStateToCounters st@PeerSelectionState { activePeers, publicRootPeers, localR
 
 emptyPeerSelectionState :: StdGen
                         -> [(HotValency, WarmValency)]
+                        -> Bool
                         -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng localRoots =
+emptyPeerSelectionState rng localRoots useGenesisFlag =
     PeerSelectionState {
       targets                     = nullPeerSelectionTargets,
       localRootPeers              = LocalRootPeers.empty,
@@ -627,6 +636,7 @@ emptyPeerSelectionState rng localRoots =
       fuzzRng                     = rng,
       countersCache               = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots),
       ledgerStateJudgement        = TooOld,
+      useGenesisFlag,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
       bootstrapPeersTimeout       = Nothing

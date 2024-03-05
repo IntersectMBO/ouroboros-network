@@ -137,6 +137,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        pickColdPeersToForget      :: !(PickScript PeerAddr),
        peerSharing                :: !PeerSharing,
        useBootstrapPeers          :: !(TimedScript UseBootstrapPeers),
+       useGenesis                 :: !Bool,
        ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement)
      }
   deriving (Show, Eq)
@@ -205,12 +206,13 @@ runGovernorInMockEnvironment mockEnv =
 
 governorAction :: GovernorMockEnvironment -> IOSim s Void
 governorAction mockEnv = do
+    let genesisMode = useGenesis mockEnv
     publicStateVar <- StrictTVar.newTVarIO emptyPublicPeerSelectionState
     lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
                              (ledgerStateJudgement mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                              (useBootstrapPeers mockEnv)
-    debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) [])
+    debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) [] genesisMode)
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar usbVar) (readTVar lsjVar) policy
     exploreRaces      -- explore races within the governor
@@ -223,6 +225,7 @@ governorAction mockEnv = do
         (mkStdGen 42)
         publicStateVar
         debugVar
+        genesisMode
         actions
         policy
       atomically retry
@@ -735,7 +738,8 @@ instance Arbitrary GovernorMockEnvironment where
       pickWarmPeersToDemote   <- arbitraryPickScript arbitrarySubsetOfPeers
       pickColdPeersToForget   <- arbitraryPickScript arbitrarySubsetOfPeers
       peerSharing             <- arbitrary
-      useBootstrapPeers       <- arbitrary
+      useGenesis              <- arbitrary
+      useBootstrapPeers       <- if useGenesis then pure $ Script $ (DontUseBootstrapPeers, NoDelay) NonEmpty.:| [] else arbitrary
       ledgerStateJudgementList <- fmap getArbitraryLedgerStateJudgement <$> arbitrary
       ledgerStateJudgementDelays <- listOf1 (elements [NoDelay, ShortDelay])
       let ledgerStateJudgementWithDelay =
@@ -817,6 +821,7 @@ instance Arbitrary GovernorMockEnvironment where
            pickColdPeersToForget,
            peerSharing,
            useBootstrapPeers,
+           useGenesis,
            ledgerStateJudgement
          } =
       -- Special rule for shrinking the peerGraph because the localRootPeers
@@ -841,6 +846,7 @@ instance Arbitrary GovernorMockEnvironment where
           pickWarmPeersToDemote   = pickWarmPeersToDemote',
           pickColdPeersToForget   = pickColdPeersToForget',
           peerSharing,
+          useGenesis,
           useBootstrapPeers       = useBootstrapPeers',
           ledgerStateJudgement    = fmap (first getArbitraryLedgerStateJudgement)
                                          ledgerStateJudgement'

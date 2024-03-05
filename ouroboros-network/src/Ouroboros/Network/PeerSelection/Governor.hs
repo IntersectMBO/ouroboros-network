@@ -448,10 +448,11 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> StdGen
                       -> StrictTVar m (PublicPeerSelectionState peeraddr)
                       -> StrictTVar m (PeerSelectionState peeraddr peerconn)
+                      -> Bool
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugStateVar actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugStateVar useGenesis actions policy =
     JobPool.withJobPool $ \jobPool -> do
       localPeers <- map (\(w, h, _) -> (w, h))
                 <$> atomically (readLocalRootPeers actions)
@@ -464,7 +465,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugSt
         actions
         policy
         jobPool
-        (emptyPeerSelectionState fuzzRng localPeers)
+        (emptyPeerSelectionState fuzzRng localPeers useGenesis)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -589,14 +590,18 @@ peerSelectionGovernorLoop tracer
     guardedDecisions blockedAt peerSharing st =
       -- All the alternative potentially-blocking decisions.
 
-      -- The Governor needs to react to changes in the bootstrap peer flag,
-      -- since this influences the behavior of the other monitoring actions.
+      -- In non-Genesis mode, The Governor needs to react to changes in the bootstrap
+      -- peer flag, since this influences the behavior of the other monitoring actions.
          Monitor.monitorBootstrapPeersFlag   actions st
       -- The Governor needs to react to ledger state changes as soon as possible.
-      -- Check the definition site for more details, but in short, when the
-      -- node changes to 'TooOld' state it will go through a purging phase which
-      -- the 'waitForTheSystemToQuiesce' monitoring action will wait for.
+      -- 1. In non-Genesis mode:
+      --   Check the definition site for more details, but in short, when the
+      --   node changes to 'TooOld' state it will go through a purging phase which
+      --   the 'waitForTheSystemToQuiesce' monitoring action will wait for.
+      -- 2. Genesis mode:
+      --  To set appropriate targets in targetPeers
       <> Monitor.monitorLedgerStateJudgement actions st
+      -- In non-Genesis mode,
       -- When the node transitions to 'TooOld' state the node will wait until
       -- it reaches a clean (quiesced) state free of non-trusted peers, before
       -- resuming making progress again connected to only trusted peers.

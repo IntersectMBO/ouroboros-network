@@ -145,6 +145,7 @@ data Arguments m = Arguments
                                                              , PeerTrustable))]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
     , aReadUseBootstrapPeers :: Script UseBootstrapPeers
+    , aUseGenesis           :: Bool
     , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
@@ -388,6 +389,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
+      , Diff.P2P.daUseGenesisSyncForStaleChain = aUseGenesis na
       , Diff.P2P.daReadUseBootstrapPeers = stepScriptSTM' ubpVar
       , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
       , Diff.P2P.daReadUseLedgerPeers    = aReadUseLedgerPeers na

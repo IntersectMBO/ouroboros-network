@@ -190,6 +190,7 @@ data NodeArgs =
       -- ^ 'LimitsAndTimeouts' argument
     , naPublicRoots            :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
+    , naUseGenesis             :: Bool
     , naBootstrapPeers         :: Script UseBootstrapPeers
       -- ^ 'Interfaces' relays auxiliary value
     , naAddr                   :: NtNAddr
@@ -420,10 +421,11 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
 
   fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
 
+  naUseGenesis <- arbitrary
   firstBootstrapPeer <- maybe DontUseBootstrapPeers UseBootstrapPeers
-                      <$> arbitrary
+                      <$> if naUseGenesis then pure Nothing else arbitrary
   bootstrapPeers <- listOf (maybe DontUseBootstrapPeers UseBootstrapPeers
-                           <$> arbitrary)
+                           <$> if naUseGenesis then pure Nothing else arbitrary)
   let bootstrapPeersDomain = Script (firstBootstrapPeer :| bootstrapPeers)
 
   return
@@ -434,6 +436,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
       , naPublicRoots            = publicRoots
         -- TODO: we haven't been using public root peers so far because we set
         -- `UseLedgerPeers 0`!
+      , naUseGenesis
       , naBootstrapPeers         = bootstrapPeersDomain
       , naAddr                   = makeNtNAddr relay
       , naLocalRootPeers         = localRootPeers
@@ -1050,6 +1053,7 @@ diffusionSimulation
             { naSeed                   = seed
             , naMbTime                 = mustReplyTimeout
             , naPublicRoots            = publicRoots
+            , naUseGenesis             = useGenesis
             , naBootstrapPeers         = bootstrapPeers
             , naAddr                   = addr
             , naLedgerPeers            = ledgerPeers
@@ -1177,6 +1181,7 @@ diffusionSimulation
               , NodeKernel.aChainSyncEarlyExit   = chainSyncEarlyExit
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
+              , NodeKernel.aUseGenesis           = useGenesis
               , NodeKernel.aReadUseBootstrapPeers = bootstrapPeers
               , NodeKernel.aOwnPeerSharing       = peerSharing
               , NodeKernel.aReadUseLedgerPeers   = readUseLedgerPeers
