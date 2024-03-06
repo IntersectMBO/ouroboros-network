@@ -9,6 +9,7 @@
 * Refactored `computePeerSharingPeers` and moved it to
   `Ouroboros.Network.Peersharing`
 * Added `PeerSharingAPI` with all the things necessary to run peer sharing.
+* Fix 'any Cold async demotion' test
 
 ## 0.12.0.0 -- 2023-02-21
 
