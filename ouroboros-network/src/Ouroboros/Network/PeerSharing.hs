@@ -169,11 +169,12 @@ newPeerSharingAPI rng policyPeerShareStickyTime policyPeerShareMaxPeers = do
   genVar <- newTVarIO rng
   reSaltAtVar <- newTVarIO (Time 0)
   return $
-    PeerSharingAPI publicPeerSelectionStateVar
-                   genVar
-                   reSaltAtVar
-                   policyPeerShareStickyTime
-                   policyPeerShareMaxPeers
+    PeerSharingAPI { psPublicPeerSelectionStateVar = publicPeerSelectionStateVar,
+                     psGenVar                      = genVar,
+                     psReSaltAtVar                 = reSaltAtVar,
+                     psPolicyPeerShareStickyTime   = policyPeerShareStickyTime,
+                     psPolicyPeerShareMaxPeers     = policyPeerShareMaxPeers
+                   }
 
 -- | Select a random subset of the known peers that are available to publish through peersharing.
 -- The list of peers will change after `policyPeerShareStickyTime` seconds.
@@ -188,11 +189,11 @@ computePeerSharingPeers :: (  MonadSTM m
                         => PeerSharingAPI ntnAddr s m
                         -> PeerSharingAmount
                         -> m [ntnAddr]
-computePeerSharingPeers PeerSharingAPI{ psPublicPeerSelectionStateVar
-                                      , psPolicyPeerShareStickyTime
-                                      , psPolicyPeerShareMaxPeers
-                                      , psReSaltAtVar
-                                      , psGenVar
+computePeerSharingPeers PeerSharingAPI{ psPublicPeerSelectionStateVar,
+                                        psPolicyPeerShareStickyTime,
+                                        psPolicyPeerShareMaxPeers,
+                                        psReSaltAtVar,
+                                        psGenVar
                                       } amount = do
   now <- getMonotonicTime
   publicState <- readTVarIO psPublicPeerSelectionStateVar
