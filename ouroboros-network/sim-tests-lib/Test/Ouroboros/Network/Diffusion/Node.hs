@@ -279,7 +279,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
               <> wait blockFetchLogicThread
               <> wait nodeKernelThread
   where
-    blockFetch :: NodeKernel BlockHeader Block m
+    blockFetch :: NodeKernel BlockHeader Block s m
                -> m Void
     blockFetch nodeKernel = do
       blockFetchLogic
@@ -295,7 +295,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
           bfcSalt                   = 0
         })
 
-    blockFetchPolicy :: NodeKernel BlockHeader Block m
+    blockFetchPolicy :: NodeKernel BlockHeader Block s m
                      -> BlockFetchConsensusInterface NtNAddr BlockHeader Block m
     blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {

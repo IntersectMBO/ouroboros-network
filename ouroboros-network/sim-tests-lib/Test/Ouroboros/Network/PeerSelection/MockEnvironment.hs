@@ -575,11 +575,8 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
       policyPeerShareActivationDelay   = 300,  -- seconds
-      policyPeerShareStickyTime        = 257,  -- seconds
-      policyPeerShareMaxPeers          = 10,
-      policyErrorDelay              = 10    -- seconds
+      policyErrorDelay                 = 10    -- seconds
     }
-
 
 --
 -- Utils for properties
