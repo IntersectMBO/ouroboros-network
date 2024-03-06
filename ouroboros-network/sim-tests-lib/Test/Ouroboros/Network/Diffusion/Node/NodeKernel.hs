@@ -51,7 +51,7 @@ import Data.Typeable (Typeable)
 import Data.Void (Void)
 import Numeric.Natural (Natural)
 
-import System.Random (StdGen, randomR)
+import System.Random (RandomGen, StdGen, randomR, split)
 
 import Data.Monoid.Synchronisation
 
@@ -80,8 +80,9 @@ import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.NodeToNode ()
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint (..))
-import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..),
-           newPeerSharingRegistry)
+import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
+           newPeerSharingAPI, newPeerSharingRegistry,
+           ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
 import Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency, oneof)
@@ -248,7 +249,7 @@ randomBlockGenerationArgs bgaSlotDuration bgaSeed quota =
     , bgaSeed
     }
 
-data NodeKernel header block m = NodeKernel {
+data NodeKernel header block s m = NodeKernel {
       -- | upstream chains
       nkClientChains
         :: StrictTVar m (Map NtNAddr (StrictTVar m (Chain header))),
@@ -261,21 +262,28 @@ data NodeKernel header block m = NodeKernel {
 
       nkPeerSharingRegistry :: PeerSharingRegistry NtNAddr m,
 
-      nkChainDB :: ChainDB block m
+      nkChainDB :: ChainDB block m,
+
+      nkPeerSharingAPI :: PeerSharingAPI NtNAddr s m
     }
 
-newNodeKernel :: MonadSTM m => m (NodeKernel header block m)
-newNodeKernel = NodeKernel
+newNodeKernel :: ( MonadSTM m
+                 , RandomGen s
+                 )
+              => s -> m (NodeKernel header block s m)
+newNodeKernel rng = NodeKernel
             <$> newTVarIO Map.empty
             <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
             <*> newFetchClientRegistry
             <*> newPeerSharingRegistry
             <*> ChainDB.newChainDB
+            <*> newPeerSharingAPI rng ps_POLICY_PEER_SHARE_STICKY_TIME
+                                      ps_POLICY_PEER_SHARE_MAX_PEERS
 
 -- | Register a new upstream chain-sync client.
 --
 registerClientChains :: MonadSTM m
-                     => NodeKernel header block m
+                     => NodeKernel header block s m
                      -> NtNAddr
                      -> m (StrictTVar m (Chain header))
 registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
@@ -287,7 +295,7 @@ registerClientChains NodeKernel { nkClientChains } peerAddr = atomically $ do
 -- | Unregister an upstream chain-sync client.
 --
 unregisterClientChains :: MonadSTM m
-                       => NodeKernel header block m
+                       => NodeKernel header block s m
                        -> NtNAddr
                        -> m ()
 unregisterClientChains NodeKernel { nkClientChains } peerAddr = atomically $
@@ -349,19 +357,21 @@ withNodeKernelThread
      , MonadThrow         m
      , MonadThrow    (STM m)
      , HasFullHeader block
+     , RandomGen seed
      )
   => BlockGeneratorArgs block seed
-  -> (NodeKernel header block m -> Async m Void -> m a)
+  -> (NodeKernel header block seed m -> Async m Void -> m a)
   -- ^ The continuation which has a handle to the chain selection \/ block
   -- production thread.  The thread might throw an exception.
   -> m a
 withNodeKernelThread BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerator, bgaSeed }
                      k = do
-    kernel <- newNodeKernel
+    let (_, psSeed) = split bgaSeed
+    kernel <- newNodeKernel psSeed
     withSlotTime bgaSlotDuration $ \waitForSlot ->
       withAsync (blockProducerThread kernel waitForSlot) (k kernel)
   where
-    blockProducerThread :: NodeKernel header block m
+    blockProducerThread :: NodeKernel header block seed m
                         -> (SlotNo -> STM m SlotNo)
                         -> m Void
     blockProducerThread NodeKernel { nkChainProducerState, nkChainDB }

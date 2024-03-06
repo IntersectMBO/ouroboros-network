@@ -32,7 +32,6 @@ import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, ConnectionId,
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface)
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import Ouroboros.Network.Snocket (FileDescriptor)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 
@@ -164,8 +163,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
       --
     , daApplicationInitiatorResponderMode
            -- Peer Sharing result computation callback
-        :: (PeerSharingAmount -> m [ntnAddr])
-        -> Versions ntnVersion
+        :: Versions ntnVersion
                     ntnVersionData
                     (OuroborosBundleWithExpandedCtx
                       InitiatorResponderMode ntnAddr

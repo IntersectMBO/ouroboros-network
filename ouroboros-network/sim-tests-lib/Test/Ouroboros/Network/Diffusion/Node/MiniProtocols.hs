@@ -33,7 +33,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import Data.Void (Void)
-import System.Random (StdGen)
+import System.Random (RandomGen, StdGen)
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise qualified as Serialise
@@ -89,13 +89,12 @@ import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            peerSharingMiniProtocolNum)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
-import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
+import Ouroboros.Network.PeerSharing (PeerSharingAPI, bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
 import Ouroboros.Network.Protocol.PeerSharing.Client (peerSharingClientPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing,
-           PeerSharingAmount (..))
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
 import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 
 
@@ -211,7 +210,7 @@ data AppArgs header block m = AppArgs
 
 -- | Protocol handlers.
 --
-applications :: forall block header m.
+applications :: forall block header s m.
                 ( Alternative (STM m)
                 , MonadAsync m
                 , MonadFork  m
@@ -228,9 +227,10 @@ applications :: forall block header m.
                 , Show block
                 , ShowProxy block
                 , ShowProxy header
+                , RandomGen s
                 )
              => Tracer m String
-             -> NodeKernel header block m
+             -> NodeKernel header block s m
              -> Codecs NtNAddr header block m
              -> LimitsAndTimeouts header block
              -> AppArgs header block m
@@ -260,10 +260,10 @@ applications debugTracer nodeKernel
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData InitiatorOnlyDiffusionMode aaOwnPeerSharing)
                                   initiatorApp
-      , Diff.daApplicationInitiatorResponderMode = \computePeers ->
+      , Diff.daApplicationInitiatorResponderMode =
           simpleSingletonVersions UnversionedProtocol
                                   (NtNVersionData aaDiffusionMode aaOwnPeerSharing)
-                                  (initiatorAndResponderApp computePeers)
+                                  initiatorAndResponderApp
       , Diff.daLocalResponderApplication =
           simpleSingletonVersions UnversionedProtocol
                                   UnversionedProtocolData
@@ -275,7 +275,7 @@ applications debugTracer nodeKernel
     initiatorApp
       :: OuroborosBundleWithExpandedCtx InitiatorMode NtNAddr ByteString m () Void
     -- initiator mode will never run a peer sharing responder side
-    initiatorApp = fmap f <$> initiatorAndResponderApp (error "impossible happened!")
+    initiatorApp = fmap f <$> initiatorAndResponderApp
       where
         f :: MiniProtocolWithExpandedCtx InitiatorResponderMode NtNAddr ByteString m () ()
           -> MiniProtocolWithExpandedCtx InitiatorMode          NtNAddr ByteString m () Void
@@ -291,10 +291,8 @@ applications debugTracer nodeKernel
                        }
 
     initiatorAndResponderApp
-      :: (PeerSharingAmount -> m [NtNAddr])
-      -- ^ Peer Sharing result computation callback
-      -> OuroborosBundleWithExpandedCtx InitiatorResponderMode NtNAddr ByteString m () ()
-    initiatorAndResponderApp computePeers = TemperatureBundle
+      :: OuroborosBundleWithExpandedCtx InitiatorResponderMode NtNAddr ByteString m () ()
+    initiatorAndResponderApp = TemperatureBundle
       { withHot = WithHot
           [ MiniProtocol
               { miniProtocolNum    = chainSyncMiniProtocolNum
@@ -339,7 +337,7 @@ applications debugTracer nodeKernel
                           , miniProtocolRun    =
                               InitiatorAndResponderProtocol
                                 peerSharingInitiator
-                                (peerSharingResponder computePeers)
+                                (peerSharingResponder (nkPeerSharingAPI nodeKernel))
                           }
                        ]
                   else []
@@ -583,9 +581,9 @@ applications debugTracer nodeKernel
                    (peerSharingClientPeer psClient)
 
     peerSharingResponder
-      :: (PeerSharingAmount -> m [NtNAddr])
+      :: PeerSharingAPI NtNAddr s m
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    peerSharingResponder f = MiniProtocolCb $ \_ctx channel -> do
+    peerSharingResponder psAPI = MiniProtocolCb $ \_ctx channel -> do
       labelThisThread "PeerSharingServer"
       runPeerWithLimits
         nullTracer
@@ -594,7 +592,7 @@ applications debugTracer nodeKernel
         (peerSharingTimeLimits limits)
         channel
         $ peerSharingServerPeer
-        $ peerSharingServer f
+        $ peerSharingServer psAPI
 
 
 --

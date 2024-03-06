@@ -6,6 +6,10 @@
 
 ### Non-Breaking changes
 
+* Refactored `computePeerSharingPeers` and moved it to
+  `Ouroboros.Network.Peersharing`
+* Added `PeerSharingAPI` with all the things necessary to run peer sharing.
+
 ## 0.12.0.0 -- 2023-02-21
 
 ### Breaking changes
@@ -22,6 +26,9 @@
 * Added `TraceDebugState` message to `TracePeerSelection` for tracing
   peer selection upon getting a USR1 sig.
 * Changed withPeerSelectionActions and withLedgerPeers signatures
+
+* Removed `computePeers` callback in `daApplicationInitiatorAndResponderMode`.
+* Changed `peerSharingServer` to require `PeerSharingAPI`.
 
 ### Non-breaking changes
 
@@ -56,7 +63,7 @@
 
 * `PeerSharingController` is now private and `requestPeers` is exported
 
-* Fix hot demototion by having blockfetch give chainsync a chance to exit
+* Fix hot demotion by having blockfetch give chainsync a chance to exit
   cleanly before killing it.
 
 * Disable mean reward for new peers
