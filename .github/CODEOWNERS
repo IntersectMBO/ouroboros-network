@@ -1,34 +1,14 @@
 # Note: later rules override earlier rules.
 
 # Default
-#                                  Marcin Armando                       "Higher ups"
-*                                  @coot  @bolt12                       @intersectmbo/network-superowners
+*                  @intersectmbo/ouroboros-network-maintainers
 
-# Network Team
+# Docs
+docs               @bolt12 @njd42 @peterwthompson @intersectmbo/ouroboros-network-maintainers
 
-docs                               @coot @bolt12 @njd42 @peterwthompson @intersectmbo/network-superowners
-
-monoidal-synchronization           @coot                                @intersectmbo/network-superowners
-network-mux                        @coot                                @intersectmbo/network-superowners
-ntp-client                         @coot                                @intersectmbo/network-superowners
-
-ouroboros-network-api              @coot                                @intersectmbo/network-superowners
-ouroboros-network-framework        @coot                                @intersectmbo/network-superowners
-ouroboros-network-mock             @coot                                @intersectmbo/network-superowners
-ouroboros-network-protocols        @coot                                @intersectmbo/network-superowners
-ouroboros-network-testing          @coot                                @intersectmbo/network-superowners
-ouroboros-network                  @coot                                @intersectmbo/network-superowners
-ouroboros-network/wireshark-plugin @coot                                @intersectmbo/network-superowners
-
-cardano-client                     @coot                                @intersectmbo/network-superowners
-cardano-ping                       @coot                                @intersectmbo/network-superowners
-
-scripts/haddocs.sh                 @coot                                @intersectmbo/network-superowners
-scripts/install.ps1                @coot @karknu                        @intersectmbo/network-superowners
 
 # CICD
-
-nix/                                                                    @intersectmbo/cardano-tech-release @intersectmbo/network-superowners
-*.nix                                                                   @intersectmbo/cardano-tech-release @intersectmbo/network-superowners
-.github/workflows/                 @coot @newhoggy                      @intersectmbo/cardano-tech-release @intersectmbo/network-superowners
-scripts/ci                         @coot @newhoggy                      @intersectmbo/cardano-tech-release @intersectmbo/network-superowners
+nix/                         @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
+*.nix                        @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
+.github/workflows/ @newhoggy @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
+scripts/ci         @newhoggy @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers
