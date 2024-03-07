@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -64,8 +65,8 @@ main = defaultMain
                AnyMessageAndAgency tok (MsgAcceptVersion _ _) -> show tok ++ " MsgAcceptVersion"
                AnyMessageAndAgency tok (MsgRefuse _)          -> show tok ++ " MsgRefuse"
          in concat
-            [ myBenchCodec ("NodeToNode Handshake " ++ printMsg msg)
-                           (const nodeToNodeHandshakeCodec) maxBound msg
+            [ benchmarkCodec ("NodeToNode Handshake " ++ printMsg msg)
+                             (const nodeToNodeHandshakeCodec) maxBound msg
             | msg <- handshakeMessages
             ]
     , bgroup "NodeToClient Handshake Codec Encode" $
@@ -78,8 +79,8 @@ main = defaultMain
                AnyMessageAndAgency tok (MsgAcceptVersion _ _) -> show tok ++ " MsgAcceptVersion"
                AnyMessageAndAgency tok (MsgRefuse _)          -> show tok ++ " MsgRefuse"
          in concat
-            [ myBenchCodec ("NodeToClient Handshake " ++ printMsg msg)
-                           (const nodeToClientHandshakeCodec) maxBound msg
+            [ benchmarkCodec ("NodeToClient Handshake " ++ printMsg msg)
+                             (const nodeToClientHandshakeCodec) maxBound msg
             | msg <- handshakeMessages
             ]
     , bgroup "ChainSync Codec Encode" $
@@ -93,8 +94,8 @@ main = defaultMain
                AnyMessageAndAgency tok (MsgIntersectNotFound _) -> show tok ++ " MsgIntersectNotFound"
                AnyMessageAndAgency tok message                  -> show tok ++ " " ++ show message
          in concat
-            [ myBenchCodec ("ChainSync " ++ printMsg msg)
-                           (const chainSyncCodec) maxBound msg
+            [ benchmarkCodec ("ChainSync " ++ printMsg msg)
+                             (const chainSyncCodec) maxBound msg
             | msg <- chainSyncMessages
             ]
     , bgroup "BlockFetch Codec" $
@@ -104,8 +105,8 @@ main = defaultMain
                AnyMessageAndAgency tok (MsgBlock _)        -> show tok ++ " MsgBlock"
                AnyMessageAndAgency tok message             -> show tok ++ " " ++ show message
          in concat
-            [ myBenchCodec ("BlockFetch " ++ printMsg msg)
-                           (const blockFetchCodec) maxBound msg
+            [ benchmarkCodec ("BlockFetch " ++ printMsg msg)
+                             (const blockFetchCodec) maxBound msg
             | msg <- blockFetchMessages
             ]
     , bgroup "TxSumission2 Codec" $
@@ -116,8 +117,8 @@ main = defaultMain
                AnyMessageAndAgency tok (MsgReplyTxs _)   -> show tok ++ " MsgReplyTxs"
                AnyMessageAndAgency tok message           -> show tok ++ " " ++ show message
          in concat
-            [ myBenchCodec ("TxSumission2 " ++ printMsg msg)
-                           (const txSubmissionCodec2) maxBound msg
+            [ benchmarkCodec ("TxSumission2 " ++ printMsg msg)
+                             (const txSubmissionCodec2) maxBound msg
             | msg <- txSubmission2Messages
             ]
     , bgroup "KeepAlive Codec" $
@@ -125,8 +126,8 @@ main = defaultMain
             printMsg msg = case msg of
               AnyMessageAndAgency tok message -> show tok ++ " " ++ show message
          in concat
-            [ myBenchCodec ("KeepAlive " ++ printMsg msg)
-                           (const codecKeepAlive_v2) maxBound msg
+            [ benchmarkCodec ("KeepAlive " ++ printMsg msg)
+                             (const codecKeepAlive_v2) maxBound msg
             | msg <- keepAliveMessages
             ]
     , bgroup "LocalTxSubmission Codec" $
@@ -137,8 +138,8 @@ main = defaultMain
               AnyMessageAndAgency tok (MsgRejectTx _) -> show tok ++ " MsgRejectTx"
               AnyMessageAndAgency tok message         -> show tok ++ " " ++ show message
          in concat
-            [ myBenchCodec ("LocalTxSubmission " ++ printMsg msg)
-                           (const localTxSubmissionCodec) maxBound msg
+            [ benchmarkCodec ("LocalTxSubmission " ++ printMsg msg)
+                             (const localTxSubmissionCodec) maxBound msg
             | msg <- localTxSubmissionMessages
             ]
     , bgroup "LocalTxMonitor Codec" $
@@ -151,8 +152,8 @@ main = defaultMain
                AnyMessageAndAgency tok (LocalTxMonitor.MsgReplyGetSizes _) -> show tok ++ " MsgReplyGetSizes"
                AnyMessageAndAgency tok message                             -> show tok ++ " " ++ show message
          in concat
-            [ myBenchCodec ("LocalTxSubmission " ++ printMsg msg)
-                           (const localTxMonitorCodec) maxBound msg
+            [ benchmarkCodec ("LocalTxSubmission " ++ printMsg msg)
+                             (const localTxMonitorCodec) maxBound msg
             | msg <- localTxMonitorMessages
             ]
     , bgroup "LocalStateQuery Codec" $
@@ -166,8 +167,8 @@ main = defaultMain
                AnyMessageAndAgency tok (MsgReAcquire _)               -> show tok ++ " MsgReAcquire"
                AnyMessageAndAgency tok message                        -> show tok ++ " " ++ show message
          in concat
-              [ myBenchCodec ("LocalStateQuery " ++ printMsg msg)
-                             (const localStateQueryCodec) maxBound msg
+              [ benchmarkCodec ("LocalStateQuery " ++ printMsg msg)
+                               (const localStateQueryCodec) maxBound msg
               | msg <- getAnyMessageAndAgencyWithResult <$> localStateQueryMessages
               ]
     , bgroup "PeerSharing Codec" $
@@ -176,8 +177,8 @@ main = defaultMain
               AnyMessageAndAgency tok (MsgSharePeers _) -> show tok ++ " MsgSharePeers"
               AnyMessageAndAgency tok message           -> show tok ++ " " ++ show message
          in concat
-              [ myBenchCodec ("PeerSharing " ++ printMsg msg ++ " " ++ show ntnVersion)
-                             peerSharingCodec ntnVersion msg
+              [ benchmarkCodec ("PeerSharing " ++ printMsg msg ++ " " ++ show ntnVersion)
+                               peerSharingCodec ntnVersion msg
               | msg <- peerSharingMessages
               , ntnVersion <- [minBound .. maxBound]
               ]
@@ -379,17 +380,17 @@ peerSharingMessages =
                                        ])
   ]
 
-myBenchCodec :: ( forall (st :: ps) (st' :: ps). NFData (Message ps st st')
-                , forall (st :: ps) pr. NFData (PeerHasAgency pr st)
-                )
-             => String
-             -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
-             -> NodeToNodeVersion
-             -> AnyMessageAndAgency ps
-             -> [Benchmark]
-myBenchCodec title getCodec ntnVersion msg =
-  [ myBenchEncode (title ++ " " ++ "Encode") getCodec ntnVersion msg
-  , myBenchDecode (title ++ " " ++ "Decode") getCodec ntnVersion msg
+benchmarkCodec :: ( forall (st :: ps) (st' :: ps). NFData (Message ps st st')
+                  , forall (st :: ps) pr. NFData (PeerHasAgency pr st)
+                  )
+               => String
+               -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
+               -> NodeToNodeVersion
+               -> AnyMessageAndAgency ps
+               -> [Benchmark]
+benchmarkCodec title getCodec ntnVersion msg =
+  [ benchmarkEncode (title ++ " " ++ "Encode") getCodec ntnVersion msg
+  , benchmarkDecode (title ++ " " ++ "Decode") getCodec ntnVersion msg
   ]
 
 -- TODO: We don't force the agency along with the message because this leads
@@ -398,15 +399,15 @@ myBenchCodec title getCodec ntnVersion msg =
 --
 -- Only LocalStateQuery agency tokens carry the query information so it
 -- shouldn't be too problematic.
-myBenchEncode :: ( forall (st :: ps) (st' :: ps). NFData (Message ps st st')
-                 , forall (st :: ps) pr. NFData (PeerHasAgency pr st)
-                 )
-              => String
-              -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
-              -> NodeToNodeVersion
-              -> AnyMessageAndAgency ps
-              -> Benchmark
-myBenchEncode title getCodec ntnVersion (AnyMessageAndAgency a m) =
+benchmarkEncode :: ( forall (st :: ps) (st' :: ps). NFData (Message ps st st')
+                   , forall (st :: ps) pr. NFData (PeerHasAgency pr st)
+                   )
+                => String
+                -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
+                -> NodeToNodeVersion
+                -> AnyMessageAndAgency ps
+                -> Benchmark
+benchmarkEncode title getCodec ntnVersion (AnyMessageAndAgency a m) =
   let Codec { encode } = getCodec ntnVersion
    in env (pure (a, m)) $ \ ~(agency, message) ->
         bench title $ nf (encode agency) message
@@ -417,15 +418,15 @@ myBenchEncode title getCodec ntnVersion (AnyMessageAndAgency a m) =
 --
 -- Only LocalStateQuery agency tokens carry the query information so it
 -- shouldn't be too problematic.
-myBenchDecode :: ( forall (st :: ps) (st' :: ps). NFData (Message ps st st')
-                 , forall (st :: ps) pr. NFData (PeerHasAgency pr st)
-                 )
-              => String
-              -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
-              -> NodeToNodeVersion
-              -> AnyMessageAndAgency ps
-              -> Benchmark
-myBenchDecode title getCodec ntnVersion (AnyMessageAndAgency a m) =
+benchmarkDecode :: ( forall (st :: ps) (st' :: ps). NFData (Message ps st st')
+                   , forall (st :: ps) pr. NFData (PeerHasAgency pr st)
+                   )
+                => String
+                -> (NodeToNodeVersion -> Codec ps DeserialiseFailure IO ByteString)
+                -> NodeToNodeVersion
+                -> AnyMessageAndAgency ps
+                -> Benchmark
+benchmarkDecode title getCodec ntnVersion (AnyMessageAndAgency a m) =
   let Codec { encode
             , decode
             } = getCodec ntnVersion
@@ -435,5 +436,5 @@ myBenchDecode title getCodec ntnVersion (AnyMessageAndAgency a m) =
                               res <- runDecoder [encodedMessage] decoder
                               return $ case res of
                                 Left err -> Just err
-                                Right {} -> Nothing
+                                Right !_ -> Nothing
                            )

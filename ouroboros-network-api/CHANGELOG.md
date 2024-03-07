@@ -6,6 +6,9 @@
 
 ### Non-Breaking changes
 
+* Added `Generic` and `NFData` instance derivations for `NodeToClientVersion`
+  data type
+
 ## 0.7.0.0 -- 2024-02-21
 
 ### Breaking changes
@@ -22,9 +25,6 @@
 * Added `UseLedgerPeers` flag with an indirection layer to `UseLedgerAfter`
 
 ### Non-breaking changes
-
-- Added `Generic` and `NFData` instance derivations for `NodeToClientVersion`
-  data type
 
 ## 0.6.3.0 -- 2024-01-22
 
