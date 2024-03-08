@@ -1021,6 +1021,7 @@ runM Interfaces
                                  daPeerSelectionTargets
                                  peerSelectionTargetsVar
                                  daReadUseBootstrapPeers
+                                 daUseGenesisSyncForStaleChain
 
       --
       -- Two functions only used in InitiatorAndResponder mode

@@ -1101,5 +1101,5 @@ deriving instance (Ord peeraddr, Show peeraddr)
                => Show (DebugPeerSelection peeraddr)
 
 data ChurnMode = ChurnModeBulkSync
-               | ChurnModeNormal deriving Show
+               | ChurnModeNormal deriving (Eq, Show)
 
