@@ -45,18 +45,15 @@ import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (asum)
-import Data.Hashable
 import Data.IP (IP)
 import Data.IP qualified as IP
-import Data.List (sortBy)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Maybe (catMaybes, maybeToList)
-import Data.Set (elems)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 import System.Exit (ExitCode)
-import System.Random (StdGen, newStdGen, random, split)
+import System.Random (StdGen, newStdGen, split)
 #ifdef POSIX
 import System.Posix.Signals qualified as Signals
 #endif
@@ -106,8 +103,8 @@ import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters (..),
            PeerSelectionPolicy (..), PeerSelectionState,
-           PublicPeerSelectionState (..), TracePeerSelection (..),
-           emptyPeerSelectionState, emptyPublicPeerSelectionState)
+           TracePeerSelection (..), emptyPeerSelectionState,
+           emptyPublicPeerSelectionState)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makeDebugPeerSelectionState)
@@ -139,7 +136,6 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server2 (ServerArguments (..), ServerTrace (..))
 import Ouroboros.Network.Server2 qualified as Server
@@ -421,7 +417,7 @@ type NodeToNodePeerConnectionHandle (mode :: MuxMode) ntnAddr ntnVersionData m a
       m a b
 
 type NodeToNodePeerSelectionActions (mode :: MuxMode) ntnAddr ntnVersionData m a b =
-    Governor.PeerSelectionActions
+    PeerSelectionActions
       ntnAddr
       (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
       m
@@ -536,7 +532,6 @@ runM
        , MonadTime        m
        , MonadTimer       m
        , MonadMVar        m
-       , Hashable  ntnAddr
        , Typeable  ntnAddr
        , Ord       ntnAddr
        , Show      ntnAddr
@@ -668,8 +663,7 @@ runM Interfaces
     (policyRng,      rng2) = split rng1
     (churnRng,       rng3) = split rng2
     (fuzzRng,        rng4) = split rng3
-    (ntnInbgovRng,   rng5) = split rng4
-    (ntcInbgovRng,   peerSharingRng) = split rng5
+    (ntnInbgovRng, ntcInbgovRng) = split rng4
 
     -- Only the 'IOManagerError's are fatal, all the other exceptions in the
     -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
@@ -801,9 +795,6 @@ runM Interfaces
       -- demoting/promoting peers.
       policyRngVar <- newTVarIO policyRng
 
-      peerSharingRngVar <- newTVarIO peerSharingRng
-      reSaltAtVar       <- newTVarIO (Time 0)
-
       churnModeVar <- newTVarIO ChurnModeNormal
 
       peerSelectionTargetsVar <- newTVarIO $ daPeerSelectionTargets {
@@ -909,9 +900,7 @@ runM Interfaces
                    $ Diffusion.Policies.prunePolicy observableStateVar)
                 (makeConnectionHandler'
                    SingInitiatorResponderMode
-                   (daApplicationInitiatorResponderMode
-                      (computePeerSharingPeers (readTVar publicStateVar)
-                       peerSharingRngVar reSaltAtVar peerSelectionPolicy)))
+                   daApplicationInitiatorResponderMode)
                 classifyHandleError
                 (InResponderMode inbndInfoChannel)
                 (if daOwnPeerSharing /= PeerSharingDisabled
@@ -1228,48 +1217,6 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                  diDnsActions = ioDNSActions
                }
                tracers tracersExtra args argsExtra apps appsExtra
-
-
---
--- Utility Function
---
-
-
--- | Select a random subset of the known peers that are available to publish through peersharing.
--- The list of peers will change after `policyPeerShareStickyTime` seconds.
--- The list of peers shared does at most change by the number of peers added or removed.
--- That is a newly added or removed peer can at most lead to one new peer beeing shared.
---
-computePeerSharingPeers :: (  MonadSTM m
-                            , MonadMonotonicTime m
-                            , Hashable ntnAddr
-                           )
-                        => STM m (PublicPeerSelectionState ntnAddr)
-                        -> StrictTVar m StdGen
-                        -> StrictTVar m Time
-                        -> PeerSelectionPolicy ntnAddr m
-                        -> PeerSharingAmount
-                        -> m [ntnAddr]
-computePeerSharingPeers readPublicState genVar reSaltAtVar PeerSelectionPolicy{..} amount = do
-  now <- getMonotonicTime
-  publicState <- atomically readPublicState
-  salt <- atomically $ do
-    reSaltAt <- readTVar reSaltAtVar
-    if reSaltAt <= now
-       then do
-         writeTVar reSaltAtVar $ addTime policyPeerShareStickyTime now
-         stateTVar genVar random
-       else do
-         gen <- readTVar genVar
-         return $ fst $ random gen
-
-  let availableToShareSet = availableToShare publicState
-      randomList = take (fromIntegral policyPeerShareMaxPeers `min` fromIntegral amount)
-                 $ sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
-                 $ elems availableToShareSet
-  if null availableToShareSet
-     then return []
-     else return randomList
 
 
 --

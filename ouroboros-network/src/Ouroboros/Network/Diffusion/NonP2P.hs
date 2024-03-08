@@ -443,8 +443,7 @@ run Tracers
             -- [].
             (mkResponderApp
               <$> daApplicationInitiatorResponderMode
-                    applications
-                    (\_ -> pure []))
+                    applications)
             remoteErrorPolicy
         )
     runIpSubscriptionWorker :: SocketSnocket
