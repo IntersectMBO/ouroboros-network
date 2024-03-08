@@ -265,6 +265,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                 establishedRequestsVar))
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy))
+          PeerSharingEnabled
           (\_ -> HandshakeFailure)
           (InResponderMode inbgovInfoChannel)
           (InResponderMode $ Just outgovInfoChannel)

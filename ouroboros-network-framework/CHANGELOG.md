@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+- Let light peer sharing depend on the configured peer sharing flag
+
 ## 0.11.1.0 -- 2024-02-21
 
 ### Breaking changes

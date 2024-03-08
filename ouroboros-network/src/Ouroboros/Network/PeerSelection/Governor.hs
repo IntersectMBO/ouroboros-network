@@ -57,7 +57,6 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 
@@ -542,7 +541,7 @@ peerSelectionGovernorLoop tracer
           st'               = st { knownPeers       = knownPeers',
                                    establishedPeers = establishedPeers' }
 
-      timedDecision <- evalGuardedDecisions blockedAt (peerSharing actions) st'
+      timedDecision <- evalGuardedDecisions blockedAt st'
 
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
@@ -559,11 +558,10 @@ peerSelectionGovernorLoop tracer
       loop (decisionState { countersCache = Cache newCounters }) dbgUpdateAt'
 
     evalGuardedDecisions :: Time
-                         -> PeerSharing
                          -> PeerSelectionState peeraddr peerconn
                          -> m (TimedDecision m peeraddr peerconn)
-    evalGuardedDecisions blockedAt peerSharing st =
-      case guardedDecisions blockedAt peerSharing st of
+    evalGuardedDecisions blockedAt st =
+      case guardedDecisions blockedAt st of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
@@ -583,10 +581,9 @@ peerSelectionGovernorLoop tracer
           return timedDecision
 
     guardedDecisions :: Time
-                     -> PeerSharing
                      -> PeerSelectionState peeraddr peerconn
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions blockedAt peerSharing st =
+    guardedDecisions blockedAt st =
       -- All the alternative potentially-blocking decisions.
 
       -- The Governor needs to react to changes in the bootstrap peer flag,
@@ -613,7 +610,7 @@ peerSelectionGovernorLoop tracer
 
       -- All the alternative non-blocking internal decisions.
       <> RootPeers.belowTarget        actions blockedAt         st
-      <> KnownPeers.belowTarget       actions peerSharing policy st
+      <> KnownPeers.belowTarget       actions             policy st
       <> KnownPeers.aboveTarget                           policy st
       <> EstablishedPeers.belowTarget actions             policy st
       <> EstablishedPeers.aboveTarget actions             policy st

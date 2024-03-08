@@ -63,7 +63,7 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConnectionManager.Types qualified as CM
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
 
@@ -554,6 +554,8 @@ withConnectionManager
     => ConnectionManagerArguments handlerTrace socket peerAddr handle handleError version versionData m
     -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError (version, versionData) m
     -- ^ Callback which runs in a thread dedicated for a given connection.
+    -> PeerSharing
+    -- ^ Own PeerSharing value
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
     -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
@@ -587,6 +589,7 @@ withConnectionManager ConnectionManagerArguments {
                       ConnectionHandler {
                           connectionHandler
                         }
+                      ownPeerSharing
                       classifyHandleError
                       inboundGovernorInfoChannel
                       outboundGovernorInfoChannel
@@ -1263,6 +1266,7 @@ withConnectionManager ConnectionManagerArguments {
                             -- governor.
                     case outboundGovernorInfoChannel of
                       InResponderMode (Just infoChannel) | notifyOutboundGov
+                                                         , PeerSharingEnabled <- ownPeerSharing
                                                          ->
                         atomically $ InfoChannel.writeMessage
                                        infoChannel

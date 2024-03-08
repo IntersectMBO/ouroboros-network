@@ -731,6 +731,7 @@ runM Interfaces
         withConnectionManager
           localConnectionManagerArguments
           localConnectionHandler
+          daOwnPeerSharing
           classifyHandleError
           (InResponderMode localInbInfoChannel)
           (InResponderMode Nothing)
@@ -889,6 +890,7 @@ runM Interfaces
               (makeConnectionHandler'
                 SingInitiatorMode
                 daApplicationInitiatorMode)
+              daOwnPeerSharing
               classifyHandleError
               NotInResponderMode
               NotInResponderMode
@@ -901,6 +903,7 @@ runM Interfaces
                 (makeConnectionHandler'
                    SingInitiatorResponderMode
                    daApplicationInitiatorResponderMode)
+                daOwnPeerSharing
                 classifyHandleError
                 (InResponderMode inbndInfoChannel)
                 (if daOwnPeerSharing /= PeerSharingDisabled
