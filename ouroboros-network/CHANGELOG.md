@@ -77,6 +77,8 @@
 
 * Implemented Churn for bootstrap peers
 
+* Coalesced various diffusion configuration parameters in a new Configuration module which were scattered around previously
+
 ## 0.11.0.0 -- 2023-01-22
 
 ### Breaking changes
