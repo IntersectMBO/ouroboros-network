@@ -555,7 +555,7 @@ withConnectionManager
     -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError (version, versionData) m
     -- ^ Callback which runs in a thread dedicated for a given connection.
     -> PeerSharing
-    -- ^ Own PeerSharing value
+    -- ^ Configuration PeerSharing value.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
     -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
@@ -1256,9 +1256,9 @@ withConnectionManager ConnectionManagerArguments {
                     let -- True iff the connection can be used by the outbound
                         -- governor.
                         notifyOutboundGov =
-                          case provenance of
-                            Inbound  -> Duplex == dataFlow
-                            Outbound -> False
+                          case (provenance, ownPeerSharing) of
+                            (Inbound, PeerSharingEnabled) -> Duplex == dataFlow
+                            (_, _)                        -> False
                             -- The connection started as inbound but its
                             -- provenance was changed to outbound; this is only
                             -- possible if we are connecting to ourselves.  In
@@ -1266,7 +1266,6 @@ withConnectionManager ConnectionManagerArguments {
                             -- governor.
                     case outboundGovernorInfoChannel of
                       InResponderMode (Just infoChannel) | notifyOutboundGov
-                                                         , PeerSharingEnabled <- ownPeerSharing
                                                          ->
                         atomically $ InfoChannel.writeMessage
                                        infoChannel
