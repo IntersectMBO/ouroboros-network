@@ -2,7 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
-module Ouroboros.Network.Protocol.BlockFetch.Codecs where
+module Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL where
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise (Serialise)
@@ -30,5 +30,3 @@ blockFetchCodec =
       Serialise.decode
       Serialise.encode
       Serialise.decode
-
-

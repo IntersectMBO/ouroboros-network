@@ -1,4 +1,4 @@
-module Ouroboros.Network.Protocol.LocalTxMonitor.Codecs where
+module Ouroboros.Network.Protocol.LocalTxMonitor.Codec.CDDL where
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise.Class qualified as Serialise

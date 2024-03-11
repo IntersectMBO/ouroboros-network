@@ -20,10 +20,10 @@ import Network.TypedProtocol.Codec
 import Ouroboros.Network.Block (SlotNo)
 import Ouroboros.Network.NodeToClient.Version
 import Ouroboros.Network.NodeToNode.Version
-import Ouroboros.Network.Protocol.BlockFetch.Codecs
+import Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.BlockFetch.Type qualified as BlockFetch
-import Ouroboros.Network.Protocol.ChainSync.Codecs
+import Ouroboros.Network.Protocol.ChainSync.Codec.CDDL
 import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.ChainSync.Type qualified as ChainSync
 import Ouroboros.Network.Protocol.Handshake.Codec
@@ -31,21 +31,21 @@ import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.KeepAlive.Codec
 import Ouroboros.Network.Protocol.KeepAlive.Type
 import Ouroboros.Network.Protocol.KeepAlive.Type qualified as KeepAlive
-import Ouroboros.Network.Protocol.LocalStateQuery.Codecs
+import Ouroboros.Network.Protocol.LocalStateQuery.Codec.CDDL
 import Ouroboros.Network.Protocol.LocalStateQuery.Test
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 import Ouroboros.Network.Protocol.LocalStateQuery.Type qualified as LocalStateQuery
-import Ouroboros.Network.Protocol.LocalTxMonitor.Codecs
+import Ouroboros.Network.Protocol.LocalTxMonitor.Codec.CDDL
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type qualified as LocalTxMonitor
-import Ouroboros.Network.Protocol.LocalTxSubmission.Codecs
+import Ouroboros.Network.Protocol.LocalTxSubmission.Codec.CDDL
 import Ouroboros.Network.Protocol.LocalTxSubmission.Test qualified as LocalTxSubmission
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
-import Ouroboros.Network.Protocol.PeerSharing.Codecs
+import Ouroboros.Network.Protocol.PeerSharing.Codec.CDDL
 import Ouroboros.Network.Protocol.PeerSharing.Type
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
-import Ouroboros.Network.Protocol.TxSubmission2.Codecs
+import Ouroboros.Network.Protocol.TxSubmission2.Codec.CDDL
 import Ouroboros.Network.Protocol.TxSubmission2.Test
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as TxSubmission2

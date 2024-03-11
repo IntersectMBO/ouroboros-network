@@ -1,4 +1,4 @@
-module Ouroboros.Network.Protocol.PeerSharing.Codecs where
+module Ouroboros.Network.Protocol.PeerSharing.Codec.CDDL where
 
 import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy qualified as BL

@@ -2,7 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
-module Ouroboros.Network.Protocol.ChainSync.Codecs where
+module Ouroboros.Network.Protocol.ChainSync.Codec.CDDL where
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise (Serialise)

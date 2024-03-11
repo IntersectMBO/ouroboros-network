@@ -5,7 +5,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
-module Ouroboros.Network.Protocol.LocalStateQuery.Codecs where
+module Ouroboros.Network.Protocol.LocalStateQuery.Codec.CDDL where
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -16,7 +16,7 @@ import Control.DeepSeq (NFData (..))
 import Data.ByteString.Lazy qualified as BL
 import GHC.Generics (Generic)
 import Network.TypedProtocol.Codec
-import Ouroboros.Network.Protocol.BlockFetch.Codecs (Block, BlockPoint)
+import Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL (Block, BlockPoint)
 import Ouroboros.Network.Protocol.LocalStateQuery.Codec
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 import Test.Data.CDDL (Any)
