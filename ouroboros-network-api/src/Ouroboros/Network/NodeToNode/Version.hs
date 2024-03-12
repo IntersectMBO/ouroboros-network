@@ -57,9 +57,10 @@ data NodeToNodeVersion
     --   in Peer Sharing to newer versions.
     -- * Adds `query` to NodeToClientVersionData.
     | NodeToNodeV_12
-    -- ^ Changes:
+    -- ^ No changes.
     --
-    -- * Enable @CardanoNodeToNodeVersion7@, i.e., Conway
+    -- (In the past, this enabled Conway, but the negotiated 'NodeToNodeVersion'
+    -- no longer en-/disables eras.)
     | NodeToNodeV_13
     -- ^ Changes:
     --
