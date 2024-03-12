@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -30,6 +32,8 @@ import Data.Map (Map)
 import Data.Text (Text)
 import Data.Typeable (Typeable)
 
+import Control.DeepSeq
+import GHC.Generics
 import Network.TypedProtocol.Core
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
@@ -63,7 +67,7 @@ data RefuseReason vNumber
   -- | The server refused to run the proposed version parameters
   --
   | Refused vNumber Text
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NFData)
 
 instance (Typeable vNumber, Show vNumber) => Exception (RefuseReason vNumber)
 
@@ -127,6 +131,28 @@ instance Protocol (Handshake vNumber vParams) where
     exclusionLemma_ClientAndServerHaveAgency TokPropose tok = case tok of {}
     exclusionLemma_NobodyAndClientHaveAgency TokDone    tok = case tok of {}
     exclusionLemma_NobodyAndServerHaveAgency TokDone    tok = case tok of {}
+
+instance forall vNumber vParams (st :: Handshake vNumber vParams). NFData (ClientHasAgency st) where
+  rnf TokPropose = ()
+
+instance forall vNumber vParams (st :: Handshake vNumber vParams). NFData (ServerHasAgency st) where
+  rnf TokConfirm = ()
+
+instance forall vNumber vParams (st :: Handshake vNumber vParams). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance forall vNumber vParams (st :: Handshake vNumber vParams) pr. NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
+
+instance ( NFData vNumber
+         , NFData vParams
+         ) => NFData (Message (Handshake vNumber vParams) from to) where
+  rnf (MsgProposeVersions m)   = rnf m
+  rnf (MsgReplyVersions m)     = rnf m
+  rnf (MsgQueryReply m)        = rnf m
+  rnf (MsgAcceptVersion vn vp) = rnf vn `seq` rnf vp
+  rnf (MsgRefuse rf)           = rnf rf
 
 -- $simultanous-open
 --

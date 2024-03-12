@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE EmptyCase             #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -6,6 +8,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Protocol.BlockFetch.Type where
@@ -13,15 +16,17 @@ module Ouroboros.Network.Protocol.BlockFetch.Type where
 import Data.Proxy (Proxy (..))
 import Data.Void (Void)
 
-import Network.TypedProtocol.Core (Protocol (..))
+import Network.TypedProtocol.Core (PeerHasAgency (..), Protocol (..))
 
+import Control.DeepSeq
+import GHC.Generics
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
 -- | Range of blocks, defined by a lower and upper point, inclusive.
 --
 data ChainRange point = ChainRange !point !point
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic, NFData)
 
 data BlockFetch block point where
   BFIdle      :: BlockFetch block point
@@ -87,6 +92,30 @@ instance Protocol (BlockFetch block point) where
     -> ServerHasAgency st
     -> Void
   exclusionLemma_NobodyAndServerHaveAgency = \TokDone x -> case x of {}
+
+instance forall block point (st :: BlockFetch block point). NFData (ClientHasAgency st) where
+  rnf TokIdle = ()
+
+instance forall block point (st :: BlockFetch block point). NFData (ServerHasAgency st) where
+  rnf TokBusy      = ()
+  rnf TokStreaming = ()
+
+instance forall block point (st :: BlockFetch block point). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance forall block point (st :: BlockFetch block point) pr. NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
+
+instance ( NFData block
+         , NFData point
+         ) => NFData (Message (BlockFetch block point) from to) where
+  rnf (MsgRequestRange crp) = rnf crp
+  rnf MsgStartBatch         = ()
+  rnf MsgNoBlocks           = ()
+  rnf (MsgBlock b)          = rnf b
+  rnf MsgBatchDone          = ()
+  rnf MsgClientDone         = ()
 
 instance (Show block, Show point)
       => Show (Message (BlockFetch block point) from to) where

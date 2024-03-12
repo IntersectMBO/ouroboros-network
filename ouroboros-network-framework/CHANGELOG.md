@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+* Added `Generic` and `NFData` instance derivations for `NodeToNodeVersion`
+  data type
+* Added `NFData` for `Handshake` protocol related types
+
 ## 0.11.1.0 -- 2024-02-21
 
 ### Breaking changes

@@ -97,6 +97,7 @@ library
   build-depends:       base              >=4.14 && <4.20,
                        bytestring        >=0.10 && <0.13,
                        cborg             >=0.2.1 && <0.3,
+                       deepseq,
 
                        io-classes       ^>=1.4.1,
                        si-timers,
@@ -130,31 +131,38 @@ library testlib
                        Ouroboros.Network.Protocol.BlockFetch.Direct
                        Ouroboros.Network.Protocol.BlockFetch.Examples
                        Ouroboros.Network.Protocol.BlockFetch.Test
+                       Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL
                        Ouroboros.Network.Protocol.ChainSync.Direct
                        Ouroboros.Network.Protocol.ChainSync.DirectPipelined
                        Ouroboros.Network.Protocol.ChainSync.Examples
                        Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined
                        Ouroboros.Network.Protocol.ChainSync.Test
+                       Ouroboros.Network.Protocol.ChainSync.Codec.CDDL
                        Ouroboros.Network.Protocol.Handshake.Direct
                        Ouroboros.Network.Protocol.Handshake.Test
                        Ouroboros.Network.Protocol.LocalStateQuery.Direct
                        Ouroboros.Network.Protocol.LocalStateQuery.Examples
                        Ouroboros.Network.Protocol.LocalStateQuery.Test
+                       Ouroboros.Network.Protocol.LocalStateQuery.Codec.CDDL
                        Ouroboros.Network.Protocol.LocalTxSubmission.Direct
                        Ouroboros.Network.Protocol.LocalTxSubmission.Examples
                        Ouroboros.Network.Protocol.LocalTxSubmission.Test
+                       Ouroboros.Network.Protocol.LocalTxSubmission.Codec.CDDL
                        Ouroboros.Network.Protocol.LocalTxMonitor.Direct
                        Ouroboros.Network.Protocol.LocalTxMonitor.Examples
                        Ouroboros.Network.Protocol.LocalTxMonitor.Test
+                       Ouroboros.Network.Protocol.LocalTxMonitor.Codec.CDDL
                        Ouroboros.Network.Protocol.TxSubmission2.Direct
                        Ouroboros.Network.Protocol.TxSubmission2.Test
                        Ouroboros.Network.Protocol.TxSubmission2.Examples
+                       Ouroboros.Network.Protocol.TxSubmission2.Codec.CDDL
                        Ouroboros.Network.Protocol.KeepAlive.Direct
                        Ouroboros.Network.Protocol.KeepAlive.Examples
                        Ouroboros.Network.Protocol.KeepAlive.Test
                        Ouroboros.Network.Protocol.PeerSharing.Direct
                        Ouroboros.Network.Protocol.PeerSharing.Examples
                        Ouroboros.Network.Protocol.PeerSharing.Test
+                       Ouroboros.Network.Protocol.PeerSharing.Codec.CDDL
 
                        Test.Data.CDDL
                        Test.ChainGenerators
@@ -173,6 +181,8 @@ library testlib
                        tasty,
                        tasty-quickcheck,
                        text,
+                       network,
+                       deepseq,
 
                        contra-tracer,
 
@@ -258,3 +268,36 @@ test-suite cddl
                        -Wunused-packages
                        -rtsopts
                        -with-rtsopts=-M400m
+
+test-suite bench
+  type:                exitcode-stdio-1.0
+  default-extensions:  ImportQualifiedPost
+  hs-source-dirs:      bench-cddl
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  build-depends:       base >=4.14 && <4.19,
+                       bytestring,
+                       cborg,
+                       containers,
+                       deepseq,
+                       network,
+
+                       tasty-bench,
+
+                       typed-protocols,
+                       ouroboros-network-api,
+                       ouroboros-network-framework,
+                       ouroboros-network-protocols,
+                       ouroboros-network-protocols:testlib
+
+  ghc-options:         -Wall
+                       -Wno-unticked-promoted-constructors
+                       -Wcompat
+                       -Wunused-packages
+                       -rtsopts
+                       -with-rtsopts=-A32m
+                       -with-rtsopts=-T
+  -- Important for comparing benchmarks results against a baseline run.
+  -- Read: https://hackage.haskell.org/package/tasty-bench for details
+  if impl(ghc >= 8.6)
+    ghc-options: -fproc-alignment=64
