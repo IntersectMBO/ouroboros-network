@@ -589,7 +589,7 @@ withConnectionManager ConnectionManagerArguments {
                       ConnectionHandler {
                           connectionHandler
                         }
-                      ownPeerSharing
+                      peerSharing
                       classifyHandleError
                       inboundGovernorInfoChannel
                       outboundGovernorInfoChannel
@@ -1256,9 +1256,9 @@ withConnectionManager ConnectionManagerArguments {
                     let -- True iff the connection can be used by the outbound
                         -- governor.
                         notifyOutboundGov =
-                          case (provenance, ownPeerSharing) of
+                          case (provenance, peerSharing) of
                             (Inbound, PeerSharingEnabled) -> Duplex == dataFlow
-                            (_, _)                        -> False
+                            _                             -> False
                             -- The connection started as inbound but its
                             -- provenance was changed to outbound; this is only
                             -- possible if we are connecting to ourselves.  In
