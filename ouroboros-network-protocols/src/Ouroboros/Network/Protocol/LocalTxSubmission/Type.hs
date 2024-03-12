@@ -17,6 +17,7 @@
 module Ouroboros.Network.Protocol.LocalTxSubmission.Type where
 
 
+import Control.DeepSeq
 import Network.TypedProtocol.Core
 import Ouroboros.Network.Util.ShowProxy
 
@@ -123,6 +124,27 @@ instance Protocol (LocalTxSubmission tx reject) where
 
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
+
+instance forall tx reject (st :: LocalTxSubmission tx reject). NFData (ClientHasAgency st) where
+  rnf TokIdle = ()
+
+instance forall tx reject (st :: LocalTxSubmission tx reject). NFData (ServerHasAgency st) where
+  rnf TokBusy = ()
+
+instance forall tx reject (st :: LocalTxSubmission tx reject). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance forall tx reject (st :: LocalTxSubmission tx reject) pr. NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
+
+instance ( NFData tx
+         , NFData reject
+         ) => NFData (Message (LocalTxSubmission tx reject) from to) where
+  rnf (MsgSubmitTx tx)     = rnf tx
+  rnf MsgAcceptTx          = ()
+  rnf (MsgRejectTx reject) = rnf reject
+  rnf MsgDone              = ()
 
 deriving instance (Eq tx, Eq reject) =>
                    Eq (Message (LocalTxSubmission tx reject) from to)

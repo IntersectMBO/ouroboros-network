@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -48,6 +49,7 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Type where
 import Data.Word
 import GHC.Generics (Generic)
 
+import Control.DeepSeq
 import Network.TypedProtocol.Core
 import Ouroboros.Network.Util.ShowProxy
 
@@ -117,7 +119,7 @@ data MempoolSizeAndCapacity = MempoolSizeAndCapacity
     -- ^ The summed byte size of all the transactions in the mempool.
   , numberOfTxs     :: !Word32
     -- ^ The number of transactions in the mempool
-  } deriving (Generic, Eq, Show)
+  } deriving (Generic, Eq, Show, NFData)
 
 instance Protocol (LocalTxMonitor txid tx slot) where
 
@@ -228,10 +230,46 @@ instance Protocol (LocalTxMonitor txid tx slot) where
 
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
+instance forall txid tx slot (st :: LocalTxMonitor txid tx slot). NFData (ClientHasAgency st) where
+  rnf TokIdle     = ()
+  rnf TokAcquired = ()
+
+instance forall txid tx slot (st :: LocalTxMonitor txid tx slot). NFData (ServerHasAgency st) where
+  rnf TokAcquiring = ()
+  rnf (TokBusy k)  = rnf k
+
+instance forall txid tx slot (st :: LocalTxMonitor txid tx slot). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance forall txid tx slot (st :: LocalTxMonitor txid tx slot) pr. NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
+
+instance ( NFData txid
+         , NFData tx
+         , NFData slot
+         ) => NFData (Message (LocalTxMonitor txid tx slot) from to) where
+  rnf MsgAcquire             = ()
+  rnf (MsgAcquired slot)     = rnf slot
+  rnf MsgAwaitAcquire        = ()
+  rnf MsgNextTx              = ()
+  rnf (MsgReplyNextTx mbTx)  = rnf mbTx
+  rnf (MsgHasTx txid)        = rnf txid
+  rnf (MsgReplyHasTx b)      = rnf b
+  rnf MsgGetSizes            = ()
+  rnf (MsgReplyGetSizes msc) = rnf msc
+  rnf MsgRelease             = ()
+  rnf MsgDone                = ()
+
 data TokBusyKind (k :: StBusyKind) where
   TokNextTx   :: TokBusyKind NextTx
   TokHasTx    :: TokBusyKind HasTx
   TokGetSizes :: TokBusyKind GetSizes
+
+instance NFData (TokBusyKind k) where
+  rnf TokNextTx   = ()
+  rnf TokHasTx    = ()
+  rnf TokGetSizes = ()
 
 deriving instance (Show txid, Show tx, Show slot)
   => Show (Message (LocalTxMonitor txid tx slot) from to)

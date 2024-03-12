@@ -18,6 +18,7 @@ import Data.Word (Word16, Word32)
 
 import Network.TypedProtocol.Core
 
+import Control.DeepSeq
 import Ouroboros.Network.Util.ShowProxy
 
 -- | Transactions are typically not big, but in principle in future we could
@@ -247,6 +248,30 @@ instance Protocol (TxSubmission2 txid tx) where
 
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
+instance forall txid tx (st :: TxSubmission2 txid tx). NFData (ClientHasAgency st) where
+  rnf TokInit      = ()
+  rnf (TokTxIds t) = rnf t
+  rnf TokTxs       = ()
+
+instance forall txid tx (st :: TxSubmission2 txid tx). NFData (ServerHasAgency st) where
+  rnf TokIdle = ()
+
+instance forall txid tx (st :: TxSubmission2 txid tx). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance forall txid tx (st :: TxSubmission2 txid tx) pr. NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
+
+instance ( NFData txid
+         , NFData tx
+         ) => NFData (Message (TxSubmission2 txid tx) from to) where
+  rnf MsgInit                      = ()
+  rnf (MsgRequestTxIds tkbs w1 w2) = rnf tkbs `seq` rnf w1 `seq` rnf w2
+  rnf (MsgReplyTxIds brl)          = rnf brl
+  rnf (MsgRequestTxs txids)        = rnf txids
+  rnf (MsgReplyTxs txs)            = rnf txs
+  rnf MsgDone                      = ()
 
 -- | The value level equivalent of 'StBlockingStyle'.
 --
@@ -260,6 +285,10 @@ data TokBlockingStyle (k :: StBlockingStyle) where
 deriving instance Eq   (TokBlockingStyle b)
 deriving instance Show (TokBlockingStyle b)
 
+instance NFData (TokBlockingStyle b) where
+  rnf TokBlocking    = ()
+  rnf TokNonBlocking = ()
+
 -- | We have requests for lists of things. In the blocking case the
 -- corresponding reply must be non-empty, whereas in the non-blocking case
 -- and empty reply is fine.
@@ -270,6 +299,10 @@ data BlockingReplyList (blocking :: StBlockingStyle) a where
 
 deriving instance Eq   a => Eq   (BlockingReplyList blocking a)
 deriving instance Show a => Show (BlockingReplyList blocking a)
+
+instance NFData a => NFData (BlockingReplyList blocking a) where
+  rnf (BlockingReply as)    = rnf as
+  rnf (NonBlockingReply as) = rnf as
 
 deriving instance (Eq txid, Eq tx) =>
                   Eq (Message (TxSubmission2 txid tx) from to)

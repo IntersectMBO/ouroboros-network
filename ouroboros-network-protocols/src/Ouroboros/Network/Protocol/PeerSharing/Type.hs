@@ -12,9 +12,10 @@
 module Ouroboros.Network.Protocol.PeerSharing.Type where
 
 import Codec.Serialise.Class (Serialise)
+import Control.DeepSeq
 import Data.Word (Word8)
 import GHC.Generics (Generic)
-import Network.TypedProtocol.Core (Protocol (..))
+import Network.TypedProtocol.Core (PeerHasAgency (..), Protocol (..))
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- | PeerSharing amount new type.
@@ -73,6 +74,24 @@ instance Protocol (PeerSharing peerAddress) where
   exclusionLemma_ClientAndServerHaveAgency TokIdle tok = case tok of {}
   exclusionLemma_NobodyAndClientHaveAgency TokDone tok = case tok of {}
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
+
+instance forall peerAddress (st :: PeerSharing peerAddress). NFData (ClientHasAgency st) where
+  rnf TokIdle = ()
+
+instance forall peerAddress (st :: PeerSharing peerAddress). NFData (ServerHasAgency st) where
+  rnf TokBusy = ()
+
+instance forall peerAddress (st :: PeerSharing peerAddress). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance forall peerAddress (st :: PeerSharing peerAddress) pr. NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
+
+instance NFData peerAddress => NFData (Message (PeerSharing peerAddress) from to) where
+  rnf (MsgShareRequest (PeerSharingAmount m)) = rnf m
+  rnf (MsgSharePeers peers)                   = rnf peers
+  rnf MsgDone                                 = ()
 
 instance Show peer => Show (Message (PeerSharing peer) from to) where
     show (MsgShareRequest amount) = "MsgShareRequest " ++ show amount

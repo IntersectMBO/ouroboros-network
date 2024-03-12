@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE DeriveGeneric              #-}
 module Ouroboros.Network.Protocol.TxSubmission2.Test
   ( tests
   , Tx (..)
@@ -49,6 +50,8 @@ import Test.Data.CDDL (Any (..))
 import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 
+import Control.DeepSeq
+import GHC.Generics
 import Test.QuickCheck as QC
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty (TestTree, testGroup)
@@ -85,7 +88,7 @@ tests =
 --
 
 newtype Tx = Tx TxId
-  deriving (Eq, Show, Arbitrary, Serialise)
+  deriving (Eq, Show, Arbitrary, Serialise, Generic, NFData)
 
 instance ShowProxy Tx where
     showProxy _ = "Tx"
@@ -96,7 +99,7 @@ txId (Tx txid) = txid
 -- | We use any `CBOR.Term`.  This allows us to use `any` in cddl specs.
 --
 newtype TxId = TxId Any
-  deriving (Eq, Ord, Show, Arbitrary, Serialise)
+  deriving (Eq, Ord, Show, Arbitrary, Serialise, Generic, NFData)
 
 instance ShowProxy TxId where
     showProxy _ = "TxId"

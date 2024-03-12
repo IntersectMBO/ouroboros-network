@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE DeriveGeneric              #-}
 
 module Ouroboros.Network.Protocol.LocalTxSubmission.Test
   ( tests
@@ -45,6 +46,8 @@ import Test.Data.CDDL (Any (..))
 import Test.Ouroboros.Network.Testing.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 
+import Control.DeepSeq
+import GHC.Generics
 import Test.QuickCheck as QC
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -79,12 +82,12 @@ tests =
 --
 
 newtype Tx = Tx Any
-  deriving (Eq, Show, Arbitrary, CoArbitrary, Serialise)
+  deriving (Eq, Show, Arbitrary, CoArbitrary, Serialise, Generic, NFData)
 
 instance ShowProxy Tx where
 
 newtype Reject = Reject Int
-  deriving (Eq, Show, Arbitrary, Serialise)
+  deriving (Eq, Show, Arbitrary, Serialise, Generic, NFData)
 
 instance ShowProxy Reject where
 

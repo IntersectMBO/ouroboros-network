@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DeriveTraversable     #-}
 {-# LANGUAGE EmptyCase             #-}
@@ -20,10 +21,11 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Type where
 
 import Data.Kind (Type)
 import Data.Proxy (Proxy (..))
-import GHC.Generics (Generic)
 
 import Network.TypedProtocol.Core
 
+import Control.DeepSeq
+import GHC.Generics
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 
@@ -86,7 +88,7 @@ data Target point = -- | The tip of the volatile chain
                     --
                     -- Requires at least 'NodeToClientV_16'.
                   | ImmutableTip
-  deriving (Eq, Foldable, Functor, Generic, Ord, Show, Traversable)
+  deriving (Eq, Foldable, Functor, Generic, Ord, Show, Traversable, NFData)
 
 instance Protocol (LocalStateQuery block point query) where
 
@@ -173,10 +175,39 @@ instance Protocol (LocalStateQuery block point query) where
 
   exclusionLemma_NobodyAndServerHaveAgency TokDone tok = case tok of {}
 
+instance forall block point query (st :: LocalStateQuery block point query). NFData (ClientHasAgency st) where
+  rnf TokIdle     = ()
+  rnf TokAcquired = ()
+
+instance forall block point query (st :: LocalStateQuery block point query).
+         (forall result. NFData (query result)) => NFData (ServerHasAgency st) where
+  rnf TokAcquiring     = ()
+  rnf (TokQuerying qr) = rnf qr
+
+instance forall block point query (st :: LocalStateQuery block point query). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance forall block point query (st :: LocalStateQuery block point query) pr.
+         (forall result. NFData (query result)) => NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
+
+instance ( forall result. NFData (query result)
+         , NFData point
+         )
+         => NFData (Message (LocalStateQuery block point query) from to) where
+  rnf (MsgAcquire mbPoint)   = rnf mbPoint
+  rnf MsgAcquired            = ()
+  rnf (MsgFailure af)        = rnf af
+  rnf (MsgQuery qr)          = rnf qr
+  rnf (MsgResult qr r)       = rnf qr `seq` rwhnf r
+  rnf MsgRelease             = ()
+  rnf (MsgReAcquire mbPoint) = rnf mbPoint
+  rnf MsgDone                = ()
 
 data AcquireFailure = AcquireFailurePointTooOld
                     | AcquireFailurePointNotOnChain
-  deriving (Eq, Enum, Show)
+  deriving (Eq, Enum, Show, Generic, NFData)
 
 instance Show (ClientHasAgency (st :: LocalStateQuery block point query)) where
   show TokIdle     = "TokIdle"

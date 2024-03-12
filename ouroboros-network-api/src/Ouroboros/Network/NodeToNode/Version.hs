@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Ouroboros.Network.NodeToNode.Version
@@ -16,6 +18,8 @@ import Data.Typeable (Typeable)
 
 import Codec.CBOR.Term qualified as CBOR
 
+import Control.DeepSeq
+import GHC.Generics
 import Ouroboros.Network.BlockFetch.ConsensusInterface
            (WhetherReceivingTentativeBlocks (..))
 import Ouroboros.Network.CodecCBORTerm
@@ -63,7 +67,7 @@ data NodeToNodeVersion
     -- * Fixed Codec to disable PeerSharing with buggy versions 11 and 12.
     -- * Disable PeerSharing with InitiatorOnly nodes, since they do not run
     --   peer sharing server side and can not reply to requests.
-  deriving (Eq, Ord, Enum, Bounded, Show, Typeable)
+  deriving (Eq, Ord, Enum, Bounded, Show, Typeable, Generic, NFData)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
