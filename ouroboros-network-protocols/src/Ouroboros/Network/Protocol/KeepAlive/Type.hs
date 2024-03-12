@@ -1,9 +1,12 @@
-{-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE EmptyCase         #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
-{-# LANGUAGE PolyKinds         #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | The type of the keep alive protocol.
 --
@@ -23,13 +26,16 @@
 --
 module Ouroboros.Network.Protocol.KeepAlive.Type where
 
+import Control.DeepSeq
 import Control.Monad.Class.MonadThrow (Exception)
 import Data.Word (Word16)
+import GHC.Generics
 import Network.TypedProtocol.Core
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 -- | A 16bit value used to match responses to requests.
-newtype Cookie = Cookie {unCookie :: Word16 } deriving (Eq, Show)
+newtype Cookie = Cookie {unCookie :: Word16 }
+  deriving (Eq, Show, Generic, NFData)
 
 data KeepAliveProtocolFailure =
        KeepAliveCookieMissmatch Cookie Cookie deriving (Eq, Show)
@@ -93,6 +99,23 @@ instance Protocol KeepAlive where
     exclusionLemma_NobodyAndClientHaveAgency TokDone   tok = case tok of {}
     exclusionLemma_NobodyAndServerHaveAgency TokDone   tok = case tok of {}
 
+instance forall (st :: KeepAlive). NFData (ClientHasAgency st) where
+  rnf TokClient = ()
+
+instance forall (st :: KeepAlive). NFData (ServerHasAgency st) where
+  rnf TokServer = ()
+
+instance forall (st :: KeepAlive). NFData (NobodyHasAgency st) where
+  rnf TokDone = ()
+
+instance NFData (Message KeepAlive from to) where
+  rnf (MsgKeepAlive c)         = rnf c
+  rnf (MsgKeepAliveResponse c) = rnf c
+  rnf MsgDone                  = ()
+
+instance forall (st :: KeepAlive) pr. NFData (PeerHasAgency pr st) where
+  rnf (ClientAgency x) = rnf x
+  rnf (ServerAgency x) = rnf x
 
 instance Show (Message KeepAlive from to) where
     show (MsgKeepAlive cookie)         = "MsgKeepAlive " ++ show cookie
