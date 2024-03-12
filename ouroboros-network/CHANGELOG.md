@@ -6,6 +6,7 @@
 
 ### Non-Breaking changes
 
+* Fix `LedgerStateJudgement` redundant tracing
 * Refactored `computePeerSharingPeers` and moved it to
   `Ouroboros.Network.Peersharing`
 * Added `PeerSharingAPI` with all the things necessary to run peer sharing.
