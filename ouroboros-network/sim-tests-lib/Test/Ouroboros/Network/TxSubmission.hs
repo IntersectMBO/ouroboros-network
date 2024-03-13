@@ -131,6 +131,11 @@ tests = testGroup "Ouroboros.Network.TxSubmission"
     , testProperty "acknowledged"              prop_makeDecisions_acknowledged
     , testProperty "exhaustive"                prop_makeDecisions_exhaustive
     ]
+  , testGroup "Registry"
+    [ testGroup "filterActivePeers"
+      [ testProperty "not limiting decisions"  prop_filterActivePeers_not_limitting_decisions
+      ]
+    ]
   ]
 
 
@@ -1799,6 +1804,71 @@ prop_makeDecisions_exhaustive
    . counterexample ("decisions'': " ++ show decisions'')
    . counterexample ("state'':     " ++ show sharedTxState'')
    $ null decisions''
+
+
+-- | `filterActivePeers` should not change decisions made by `makeDecisions`
+--
+--
+-- This test checks the following properties:
+--
+-- In what follows, the set of active peers is defined as the keys of the map
+-- returned by `filterActivePeers`.
+--
+-- 1. The set of active peers is a superset of peers for which a decision was
+--    made;
+-- 2. The set of active peer which can acknowledge txids is a subset of peers
+--    for which a decision was made;
+-- 3. Decisions made from the results of `filterActivePeers` is the same as from
+--    the original set.
+--
+-- Ad 2. a stronger property is not possible. There can be a peer for which
+-- a decision was not taken but which is an active peer.
+--
+prop_filterActivePeers_not_limitting_decisions
+    :: ArbDecisionContexts TxId
+    -> Property
+prop_filterActivePeers_not_limitting_decisions
+    ArbDecisionContexts {
+        arbDecisionPolicy = policy,
+      arbSharedContext =
+        sharedCtx@SharedDecisionContext { sdcSharedTxState = st }
+    }
+    =
+    counterexample (unlines
+                   ["decisions:        " ++ show decisions
+                   ,"                  " ++ show decisionPeers
+                   ,"active decisions: " ++ show decisionsOfActivePeers
+                   ,"                  " ++ show activePeers]) $
+
+    counterexample ("found non-active peers for which decision can be made: "
+                     ++ show (decisionPeers  Set.\\ activePeers)
+                   )
+                   (decisionPeers  `Set.isSubsetOf` activePeers)
+    .&&.
+    counterexample ("found an active peer which can acknowledge txids "
+                     ++ "for which decision was not made: "
+                     ++ show (activePeersAck Set.\\ decisionPeers))
+                   (activePeersAck `Set.isSubsetOf` decisionPeers)
+    .&&.
+    counterexample "decisions from active peers are not equal to decisions from all peers"
+                   (decisions === decisionsOfActivePeers)
+  where
+    activePeersMap    = TXS.filterActivePeers policy st
+    activePeers       = Map.keysSet activePeersMap
+    -- peers which are active & can acknowledge txids
+    activePeersAck    = activePeers
+                        `Set.intersection`
+                        Map.keysSet (Map.filter (TXS.hasTxIdsToAcknowledge st) (peerTxStates st))
+    (_, decisionsOfActivePeers)
+                      = TXS.makeDecisions policy sharedCtx activePeersMap
+
+    (_, decisions)    = TXS.makeDecisions policy sharedCtx (peerTxStates st)
+    decisionPeers     = Map.keysSet decisions
+
+
+-- TODO: makeDecisions property: all peers which have txid's to ack are
+-- included, this would catch the other bug, and it's important for the system
+-- to run well.
 
 --
 -- Auxiliary functions
