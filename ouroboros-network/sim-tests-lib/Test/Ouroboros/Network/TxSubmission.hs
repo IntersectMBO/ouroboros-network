@@ -80,6 +80,7 @@ import Test.Ouroboros.Network.Utils
 
 import Test.QuickCheck
 import Test.QuickCheck.Function (apply)
+import Test.QuickCheck.Monoids
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 import Text.Pretty.Simple
@@ -128,6 +129,11 @@ tests = testGroup "Ouroboros.Network.TxSubmission"
     , testProperty "policy"                    prop_makeDecisions_policy
     , testProperty "acknowledged"              prop_makeDecisions_acknowledged
     , testProperty "exhaustive"                prop_makeDecisions_exhaustive
+    ]
+  , testGroup "Registry"
+    [ testGroup "filterActivePeers"
+      [ testProperty "not limiting decisions"  prop_filterActivePeers_not_limitting_decisions
+      ]
     ]
   ]
 
@@ -521,7 +527,7 @@ sharedTxStateInvariant SharedTxState {
 
          -- PeerTxState invariants
     .&&. counterexample "PeerTxState invariant violation"
-         (foldMap (\ps -> Every
+         (foldMap (\ps -> All
                         . counterexample (show ps)
                         . peerTxStateInvariant
                         $ ps
@@ -915,7 +921,7 @@ prop_SharedTxState_shrinker
   -> Property
 prop_SharedTxState_shrinker =
     property
-  . foldMap (\(ArbSharedTxState _ st) -> Every $ sharedTxStateInvariant st)
+  . foldMap (\(ArbSharedTxState _ st) -> All $ sharedTxStateInvariant st)
   . shrink
   . getFixed
 
@@ -1193,7 +1199,7 @@ prop_collectTxs_shrinker
   -> Property
 prop_collectTxs_shrinker (Fixed txs) =
     property $ foldMap (\a@(ArbCollectTxs _ _ _ _ _ st) ->
-                         Every . counterexample (show st) $
+                         All . counterexample (show st) $
                                  f a =/= f txs
                           .&&. sharedTxStateInvariant st
                        ) (shrink txs)
@@ -1505,11 +1511,11 @@ prop_ArbDecisionContexts_generator
 
 prop_ArbDecisionContexts_shrinker
   :: ArbDecisionContexts TxId
-  -> Every
+  -> All
 prop_ArbDecisionContexts_shrinker =
     foldMap
       ( \a ->
-        Every
+        All
       . counterexample (show a)
       . sharedTxStateInvariant
       . arbSharedState
@@ -1588,7 +1594,7 @@ prop_makeDecisions_inflight
             (Map.merge
               (Map.mapMaybeMissing
                 (\peer a ->
-                  Just ( Every
+                  Just ( All
                        . counterexample
                            ("missing peer in requestedTxsInflightSize: " ++ show peer)
                        $ (a === 0))))
@@ -1599,7 +1605,7 @@ prop_makeDecisions_inflight
                         case Map.lookup peer (peerTxStates sharedTxState) of
                           Nothing                                           -> 0
                           Just PeerTxState { requestedTxsInflightSize = a } -> a
-                  in Just ( Every
+                  in Just ( All
                           . counterexample (show peer)
                           $ original + delta
                             ===
@@ -1617,11 +1623,11 @@ prop_makeDecisions_inflight
          ( fold $
            Map.merge
              (Map.mapMissing (\peeraddr _ ->
-                               Every $
+                               All $
                                counterexample ("peer missing in peerTxStates " ++ show peeraddr)
                                False))
-             (Map.mapMissing (\_ _ -> Every True))
-             (Map.zipWithMatched (\peeraddr a b -> Every
+             (Map.mapMissing (\_ _ -> All True))
+             (Map.zipWithMatched (\peeraddr a b -> All
                                                  . counterexample (show peeraddr)
                                                  $ a `Set.isSubsetOf` b))
              -- map of requested txs
@@ -1667,7 +1673,7 @@ prop_makeDecisions_policy
            foldMap
              (\PeerTxState { availableTxIds, requestedTxsInflight } ->
                let inflight = fold (availableTxIds `Map.restrictKeys` requestedTxsInflight)
-               in Every $ counterexample (show (inflight, txsSizeInflightPerPeerEff)) $
+               in All $ counterexample (show (inflight, txsSizeInflightPerPeerEff)) $
                  inflight
                  <=
                  txsSizeInflightPerPeerEff
@@ -1680,8 +1686,9 @@ prop_makeDecisions_policy
          -- none of the multiplicities should go above the
          -- `txInflightMultiplicity`
          let inflight = inflightTxs sharedState'
-         in   property
-            . foldMap (Every . (<= txInflightMultiplicity))
+         in
+              counterexample ("multiplicities violation: " ++ show inflight)
+            . foldMap (All . (<= txInflightMultiplicity))
             $ inflight
          )
 
@@ -1716,11 +1723,14 @@ prop_makeDecisions_acknowledged
      . fold
      $ Map.merge
         -- it is an error if `ackFromDecisions` contains a result which is
-        (Map.mapMissing (\addr num -> Every $ counterexample ("missing " ++ show (addr, num)) False))
+        -- missing in `ackFromState`
+        (Map.mapMissing (\addr num -> All $ counterexample ("missing " ++ show (addr, num)) False))
         -- if `ackFromState` contains an enty which is missing in
         -- `ackFromDecisions` it must be `0`; `makeDecisions` might want to
-        (Map.mapMissing (\_ d -> Every (d === 0)))
-        (Map.zipWithMatched (\_ a b -> Every (a === b)))
+        -- download some `tx`s even if there's nothing to acknowledge
+        (Map.mapMissing (\_ d -> All (d === 0)))
+        -- if both entries exists they must be equal
+        (Map.zipWithMatched (\_ a b -> All (a === b)))
         ackFromDecisions
         ackFromState
 
@@ -1750,6 +1760,70 @@ prop_makeDecisions_exhaustive
    . counterexample ("decisions'': " ++ show decisions'')
    . counterexample ("state'':     " ++ show sharedTxState'')
    $ null decisions''
+
+
+-- | `filterActivePeers` should not change decisions made by `makeDecisions`
+--
+--
+-- This test checks the following properties:
+--
+-- In what follows, the set of active peers is defined as the keys of the map
+-- returned by `filterActivePeers`.
+--
+-- 1. The set of active peers is a superset of peers for which a decision was
+--    made;
+-- 2. The set of active peer which can acknowledge txids is a subset of peers
+--    for which a decision was made;
+-- 3. Decisions made from the results of `filterActivePeers` is the same as from
+--    the original set.
+--
+-- Ad 2. a stronger property is not possible. There can be a peer for which
+-- a decision was not taken but which is an active peer.
+--
+prop_filterActivePeers_not_limitting_decisions
+    :: ArbDecisionContexts TxId
+    -> Property
+prop_filterActivePeers_not_limitting_decisions
+    ArbDecisionContexts {
+        arbDecisionPolicy = policy,
+        arbSharedState    = st
+    }
+    =
+    counterexample (unlines
+                   ["decisions:        " ++ show decisions
+                   ,"                  " ++ show decisionPeers
+                   ,"active decisions: " ++ show decisionsOfActivePeers
+                   ,"                  " ++ show activePeers]) $
+
+    counterexample ("found non-active peers for which decision can be made: "
+                     ++ show (decisionPeers  Set.\\ activePeers)
+                   )
+                   (decisionPeers  `Set.isSubsetOf` activePeers)
+    .&&.
+    counterexample ("found an active peer which can acknowledge txids "
+                     ++ "for which decision was not made: "
+                     ++ show (activePeersAck Set.\\ decisionPeers))
+                   (activePeersAck `Set.isSubsetOf` decisionPeers)
+    .&&.
+    counterexample "decisions from active peers are not equal to decisions from all peers"
+                   (decisions === decisionsOfActivePeers)
+  where
+    activePeersMap    = TXS.filterActivePeers policy st
+    activePeers       = Map.keysSet activePeersMap
+    -- peers which are active & can acknowledge txids
+    activePeersAck    = activePeers
+                        `Set.intersection`
+                        Map.keysSet (Map.filter (TXS.hasTxIdsToAcknowledge st) (peerTxStates st))
+    (_, decisionsOfActivePeers)
+                      = TXS.makeDecisions policy st activePeersMap
+
+    (_, decisions)    = TXS.makeDecisions policy st (peerTxStates st)
+    decisionPeers     = Map.keysSet decisions
+
+
+-- TODO: makeDecisions property: all peers which have txid's to ack are
+-- included, this would catch the other bug, and it's important for the system
+-- to run well.
 
 --
 -- Auxiliary functions
