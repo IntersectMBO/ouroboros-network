@@ -148,6 +148,16 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
                        min 1 (targetNumberOfActiveBigLedgerPeers base)
         })
 
+    decreaseEstablishedBigLedgerPeers :: STM m ()
+    decreaseEstablishedBigLedgerPeers =
+        modifyTVar peerSelectionVar (\targets -> targets {
+            targetNumberOfEstablishedBigLedgerPeers =
+              decrease (targetNumberOfEstablishedBigLedgerPeers base -
+                        targetNumberOfActiveBigLedgerPeers base)
+              + targetNumberOfActiveBigLedgerPeers base
+        })
+
+
 
     go :: StdGen -> m Void
     go !rng = do
@@ -180,9 +190,16 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       -- Give the promotion process time to start
       threadDelay 1
 
-      -- Forget the worst performing non-active peers.
+      -- Forget the worst performing established peers.
       atomically $ do
         decreaseEstablished churnMode ubp
+        decreaseEstablishedBigLedgerPeers
+
+      -- Give the governor time to properly demote them.
+      threadDelay $ 1 + closeConnectionTimeout
+
+      -- Forget the worst performing known peers
+      atomically $
         modifyTVar peerSelectionVar (\targets -> targets {
             targetNumberOfRootPeers =
               decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
@@ -194,14 +211,10 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
               decrease (targetNumberOfKnownBigLedgerPeers base -
                         targetNumberOfEstablishedBigLedgerPeers base)
               + targetNumberOfEstablishedBigLedgerPeers base
-          , targetNumberOfEstablishedBigLedgerPeers =
-              decrease (targetNumberOfEstablishedBigLedgerPeers base -
-                        targetNumberOfActiveBigLedgerPeers base)
-              + targetNumberOfActiveBigLedgerPeers base
           })
 
-      -- Give the governor time to properly demote them.
-      threadDelay $ 1 + closeConnectionTimeout
+      -- Forgetting cold peers should be quick
+      threadDelay 1
 
       -- Pick new known peers
       atomically $ modifyTVar peerSelectionVar (\targets -> targets {

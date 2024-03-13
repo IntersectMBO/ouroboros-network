@@ -45,6 +45,7 @@ import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
 import Data.Foldable (asum)
+import Data.Hashable (Hashable)
 import Data.IP (IP)
 import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
@@ -535,6 +536,7 @@ runM
        , Typeable  ntnAddr
        , Ord       ntnAddr
        , Show      ntnAddr
+       , Hashable  ntnAddr
        , Typeable  ntnVersion
        , Ord       ntnVersion
        , Show      ntnVersion
