@@ -72,6 +72,7 @@ library
                        Ouroboros.Network.TxSubmission.Inbound.Decision
                        Ouroboros.Network.TxSubmission.Inbound.Policy
                        Ouroboros.Network.TxSubmission.Inbound.State
+                       Ouroboros.Network.TxSubmission.Inbound.Registry
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
   other-modules:       Ouroboros.Network.Diffusion.Common
@@ -142,6 +143,7 @@ library
                        io-classes-mtl   ^>=0.1,
                        network-mux,
                        si-timers,
+                       strict-mvar,
                        ouroboros-network-api       ^>=0.9.0,
                        ouroboros-network-framework ^>=0.13.2.2,
                        ouroboros-network-protocols ^>=0.10,
