@@ -98,6 +98,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound.Decision
     Ouroboros.Network.TxSubmission.Inbound.Policy
     Ouroboros.Network.TxSubmission.Inbound.State
+    Ouroboros.Network.TxSubmission.Inbound.Registry
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
 
@@ -152,7 +153,7 @@ library
     dlist,
     dns,
     hashable,
-    io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8.0.1,
+    io-classes:{io-classes, mtl, si-timers, strict-mvar, strict-stm} ^>=1.8.0.1,
     iproute,
     monoidal-synchronisation,
     mtl,
