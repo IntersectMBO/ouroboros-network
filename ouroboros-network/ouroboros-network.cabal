@@ -113,6 +113,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound.Decision
     Ouroboros.Network.TxSubmission.Inbound.Policy
     Ouroboros.Network.TxSubmission.Inbound.State
+    Ouroboros.Network.TxSubmission.Inbound.Registry
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
 
@@ -188,6 +189,7 @@ library
     random,
     si-timers,
     strict-checked-vars ^>=0.2,
+    strict-mvar,
     strict-stm,
     transformers,
     typed-protocols ^>=0.3,
