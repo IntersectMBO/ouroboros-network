@@ -92,6 +92,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound
     Ouroboros.Network.TxSubmission.Inbound.Decision
     Ouroboros.Network.TxSubmission.Inbound.Policy
+    Ouroboros.Network.TxSubmission.Inbound.Registry
     Ouroboros.Network.TxSubmission.Inbound.State
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Outbound
@@ -170,6 +171,7 @@ library
     psqueues >=0.2.3 && <0.3,
     random,
     si-timers,
+    strict-mvar,
     strict-checked-vars ^>=0.2,
     strict-stm,
     typed-protocols ^>=0.1.1,
