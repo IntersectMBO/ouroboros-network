@@ -1,5 +1,6 @@
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -19,6 +20,7 @@ import Data.Word (Word32)
 
 import Ouroboros.Network.PeerSelection.Governor
 
+import Data.Hashable
 import Data.IP qualified as IP
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -39,7 +41,7 @@ import Test.QuickCheck
 -- | Simple address representation for the tests
 --
 newtype PeerAddr = PeerAddr Int
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Hashable)
 
 -- | We mostly avoid using this instance since we need careful control over
 -- the peer addrs, e.g. to make graphs work, and sets overlap etc. But it's
