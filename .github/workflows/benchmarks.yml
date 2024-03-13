@@ -1,0 +1,111 @@
+name: Miniprotocol Codec Benchmarks
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+
+jobs:
+  run-benchmarks:
+    name: Run benchmarks
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ["8.10.7", "9.6.3"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    env:
+      # Modify this value to "invalidate" all cabal caches.
+      CABAL_CACHE_VERSION: "2022-12-30"
+      # Modify this value to "invalidate" the cabal store cache only.
+      CACHE_VERSION: "20220919"
+      # Modify this value to "invalidate" the dist-newstyle cache only.
+      DIST_CACHE_VERSION: "20221122"
+
+    steps:
+
+    - name: Install Haskell
+      uses: input-output-hk/setup-haskell@v1
+      id: setup-haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: "3.10.1.0"
+        pacman-packages: >
+          mingw-w64-x86_64-pkg-config
+          mingw-w64-x86_64-openssl
+          mingw-w64-x86_64-sed
+          base-devel
+          autoconf-wrapper
+          autoconf
+          automake
+          libtool
+          make
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+
+    - name: "Configure cabal.project.local"
+      run: |
+        cp scripts/ci/cabal.project.local.${{ runner.os }} cabal.project.local
+
+    - name: Update PATH
+      if: runner.os == 'Windows'
+      run: |
+        $env:PATH=("C:\msys64\mingw64\bin;{0}" -f $env:PATH)
+        echo "PATH=$env:PATH" >> $env:GITHUB_ENV
+
+    - name: Update Hackage and CHaP
+      run: cabal update
+
+    - name: Record dependencies
+      id: record-deps
+      run: |
+        cabal build all --dry-run
+        cat dist-newstyle/cache/plan.json | jq -L .github/workflows/jq-install-plan | sort | uniq > dependencies.txt
+
+    - uses: actions/cache@v3
+      name: "Restore cache: `cabal store`"
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+        restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+
+    - uses: actions/cache@v3
+      name: "Cache `dist-newstyle`"
+      with:
+        path: |
+          dist-newstyle
+          !dist-newstyle/**/.git
+        key: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project') }}
+        restore-keys: cache-dist-${{ env.CABAL_CACHE_VERSION }}-${{ env.DIST_CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
+
+    - name: Build dependencies
+      run: cabal build --only-dependencies all -j
+
+    - uses: actions/cache/save@v3
+      name: "Save cache: `cabal store`"
+      with:
+        path: ${{ steps.setup-haskell.outputs.cabal-store }}
+        key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
+
+    - name: Build projects [build]
+      run: cabal build all -j
+
+    # Run benchmarks
+    - name: Run benchmark script
+      run: runhaskell scripts/ci/run-miniprotocol-codec-benchmarks.hs ${{ runner.os }} ${{ matrix.ghc }}
+
+    # Commit and push baseline file if it was created or updated
+    - name: Commit baseline file
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git pull
+        git add benchmarks/baseline-${{ runner.os }}-${{ matrix.ghc }}.csv
+        git commit -m "Update benchmark baseline for GHC ${{ matrix.ghc }} on ${{ runner.os }}"
+        git push origin ${{ github.head_ref }}
