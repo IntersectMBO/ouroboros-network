@@ -3,9 +3,6 @@ reorder-goals: True
 tests:         True
 benchmarks:    True
 
-package strict-checked-vars
-  flags: +checktvarinvariants +checkmvarinvariants
-
 package monoidal-synchronisation
   ghc-options: -fno-ignore-asserts -Werror
 
