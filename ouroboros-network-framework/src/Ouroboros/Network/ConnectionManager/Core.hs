@@ -63,7 +63,7 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConnectionManager.Types qualified as CM
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
 
@@ -554,6 +554,8 @@ withConnectionManager
     => ConnectionManagerArguments handlerTrace socket peerAddr handle handleError version versionData m
     -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError (version, versionData) m
     -- ^ Callback which runs in a thread dedicated for a given connection.
+    -> PeerSharing
+    -- ^ Configuration PeerSharing value.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
     -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
@@ -587,6 +589,7 @@ withConnectionManager ConnectionManagerArguments {
                       ConnectionHandler {
                           connectionHandler
                         }
+                      peerSharing
                       classifyHandleError
                       inboundGovernorInfoChannel
                       outboundGovernorInfoChannel
@@ -1253,9 +1256,9 @@ withConnectionManager ConnectionManagerArguments {
                     let -- True iff the connection can be used by the outbound
                         -- governor.
                         notifyOutboundGov =
-                          case provenance of
-                            Inbound  -> Duplex == dataFlow
-                            Outbound -> False
+                          case (provenance, peerSharing) of
+                            (Inbound, PeerSharingEnabled) -> Duplex == dataFlow
+                            _                             -> False
                             -- The connection started as inbound but its
                             -- provenance was changed to outbound; this is only
                             -- possible if we are connecting to ourselves.  In

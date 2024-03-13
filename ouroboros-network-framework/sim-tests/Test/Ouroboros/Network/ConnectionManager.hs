@@ -775,6 +775,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
               cmGetPeerSharing = \_ -> PeerSharingDisabled
             }
             connectionHandler
+            PeerSharingEnabled
             (\_ -> HandshakeFailure)
             (InResponderMode inbgovInfoChannel)
             (InResponderMode $ Just outgovInfoChannel)

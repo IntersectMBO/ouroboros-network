@@ -102,6 +102,7 @@ import Ouroboros.Network.Test.Orphans ()
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.Test.Timeouts
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 --
@@ -312,6 +313,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
                     <> assertRethrowPolicy))
+      PeerSharingEnabled
       (\_ -> HandshakeFailure)
       NotInResponderMode
       NotInResponderMode
@@ -500,9 +502,10 @@ withBidirectionalConnectionManager name timeouts
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
                         <> assertRethrowPolicy))
-          (\_ -> HandshakeFailure)
-          (InResponderMode inbgovInfoChannel)
-          (InResponderMode $ Just outgovInfoChannel)
+        PeerSharingEnabled
+        (\_ -> HandshakeFailure)
+        (InResponderMode inbgovInfoChannel)
+        (InResponderMode $ Just outgovInfoChannel)
       $ \connectionManager ->
           do
             serverAddr <- Snocket.getLocalAddr snocket socket

@@ -6,6 +6,7 @@
 
 ### Non-breaking changes
 
+* Let light peer sharing depend on the configured peer sharing flag
 * Added `Generic` and `NFData` instance derivations for `NodeToNodeVersion`
   data type
 * Added `NFData` for `Handshake` protocol related types

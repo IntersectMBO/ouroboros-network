@@ -43,10 +43,8 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 --
 belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
-            -> PeerSharing
             -> MkGuardedDecision peeraddr peerconn m
 belowTarget actions
-            peerSharing
             policy@PeerSelectionPolicy {
               policyMaxInProgressPeerShareReqs,
               policyPickKnownPeersForPeerShare,
@@ -65,7 +63,7 @@ belowTarget actions
               bootstrapPeersFlag
             }
     -- Only start Peer Sharing request if PeerSharing was enabled
-  | PeerSharingEnabled <- peerSharing
+  | PeerSharingEnabled <- peerSharing actions
     -- Are we under target for number of known peers?
   , numKnownPeers < targetNumberOfKnownPeers
 
