@@ -6,6 +6,10 @@
 
 ### Non-Breaking changes
 
+* Added `AllProperty` to `Ouroboros.Network.Testing.Utils`; It is more general
+  than the previous version version of `AllProperty` which lived in
+  `ouroboros-network-framework`.
+
 ## 0.6.0.0 -- 2024-02-21
 
 ### Breaking changes

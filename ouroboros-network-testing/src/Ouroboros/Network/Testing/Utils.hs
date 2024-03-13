@@ -1,9 +1,13 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE ViewPatterns               #-}
 
 module Ouroboros.Network.Testing.Utils
   ( -- * Arbitrary Delays
@@ -11,7 +15,7 @@ module Ouroboros.Network.Testing.Utils
   , genDelayWithPrecision
   , SmallDelay (..)
     -- * QuickCheck Utils
-  , AllProperty (..)
+  , AllProperty (AllProperty, AllProperty_, getAllProperty)
   , arbitrarySubset
   , shrinkVector
   , ShrinkCarefully (..)
@@ -57,14 +61,28 @@ import           Test.Tasty (TestTree)
 import           Test.Tasty.ExpectedFailure (ignoreTest)
 import           Debug.Trace (traceShowM)
 
-newtype AllProperty = AllProperty { getAllProperty :: Property }
+
+data AllProperty where
+   AllProperty :: forall t. Testable t => t -> AllProperty
+
+-- | This pattern is provided to simplify imports, e.g.
+-- 
+-- >>> import Ouroboros.Network.Testing.Utils (AllProperty (..))
+--
+-- Will provide `getAllProperty`.
+--
+pattern AllProperty_ :: Property -> AllProperty
+pattern AllProperty_ { getAllProperty } <- AllProperty (property -> getAllProperty)
+  where
+    AllProperty_ p = AllProperty p
+
+{-# COMPLETE AllProperty_ #-}
 
 instance Semigroup AllProperty where
     AllProperty a <> AllProperty b = AllProperty (a .&&. b)
 
 instance Monoid AllProperty where
-    mempty = AllProperty (property True)
-
+    mempty = AllProperty True
 
 
 newtype Delay = Delay { getDelay :: DiffTime }
