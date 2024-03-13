@@ -36,6 +36,7 @@ module Ouroboros.Network.PeerSelection.Governor
 
 import Data.Cache
 import Data.Foldable (traverse_)
+import Data.Hashable
 import Data.Void (Void)
 
 import Control.Applicative (Alternative ((<|>)))
@@ -440,6 +441,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                          , MonadTimer m
                          , Ord peeraddr
                          , Show peerconn
+                         , Hashable peeraddr
                          )
                       => Tracer m (TracePeerSelection peeraddr)
                       -> Tracer m (DebugPeerSelection peeraddr)
@@ -488,6 +490,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                              , MonadTimer m
                              , Ord peeraddr
                              , Show peerconn
+                             , Hashable peeraddr
                              )
                           => Tracer m (TracePeerSelection peeraddr)
                           -> Tracer m (DebugPeerSelection peeraddr)
