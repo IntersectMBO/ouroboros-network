@@ -65,6 +65,7 @@ library
                        Ouroboros.Network.PeerSharing
                        Ouroboros.Network.TxSubmission.Inbound
                        Ouroboros.Network.TxSubmission.Inbound.Decision
+                       Ouroboros.Network.TxSubmission.Inbound.Registry
                        Ouroboros.Network.TxSubmission.Inbound.State
                        Ouroboros.Network.TxSubmission.Mempool.Reader
                        Ouroboros.Network.TxSubmission.Outbound
