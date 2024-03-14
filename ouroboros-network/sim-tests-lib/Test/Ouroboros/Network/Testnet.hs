@@ -826,24 +826,28 @@ prop_track_coolingToCold_demotions defaultBearerInfo diffScript =
             ) <$> trIsNodeAlive
               <*> govInProgressDemoteToCold
 
-          decreasing []  = True
-          decreasing [_] = True
-          decreasing (x : y : t)
-            | x > y     = decreasing (y : t)
-            -- This allows the set to increase its size from empty to non-empty
-            -- but only in the case when the node has removed all of its peers
-            -- from the inProgressDemoteToCold set
-            | x == 0    = decreasing (y : t)
-            | otherwise = False
+          allInProgressDemoteToCold :: [NtNAddr]
+          allInProgressDemoteToCold = Set.toList
+                                    . Set.unions
+                                    . mapMaybe snd
+                                    . Signal.eventsToList
+                                    . Signal.toChangeEvents
+                                    $ govInProgressDemoteToColdWhileAlive
 
-       in property
-        . decreasing
-        . mapMaybe snd
-        . Signal.eventsToList
-        . Signal.toChangeEvents
-        $ Signal.stable
-        . fmap (fmap length)
-        $ govInProgressDemoteToColdWhileAlive
+          notInProgressDemoteToColdForTooLong =
+            map (\addr ->
+                  Signal.keyedTimeoutTruncated
+                    60
+                    (\case
+                        Just s | Set.member addr s -> Set.singleton addr
+                        _                          -> Set.empty
+                    )
+                    govInProgressDemoteToColdWhileAlive
+                )
+                allInProgressDemoteToCold
+
+       in conjoin
+        $ map (signalProperty 20 show Set.null) notInProgressDemoteToColdForTooLong
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
 --
