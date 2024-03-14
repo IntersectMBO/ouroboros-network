@@ -6,6 +6,12 @@
 
 ### Non-Breaking changes
 
+## 0.12.1.0 -- 2023-03-14
+
+### Breaking changes
+
+### Non-Breaking changes
+
 * Fix `LedgerStateJudgement` redundant tracing
 * Refactored `computePeerSharingPeers` and moved it to
   `Ouroboros.Network.Peersharing`

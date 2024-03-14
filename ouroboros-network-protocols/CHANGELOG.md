@@ -6,6 +6,12 @@
 
 ### Non-Breaking changes
 
+## 0.8.1.0 -- 2024-03-14
+
+### Breaking changes
+
+### Non-Breaking changes
+
 * Refactored CBOR mini-protocols codecs to a more modular structure
 * Added `deepseq` dependency and implemented `NFData` for `testlib` types.
 * Added miniprotocols codec benchmarks
