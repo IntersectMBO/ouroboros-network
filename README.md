@@ -110,6 +110,10 @@ The API consists of three layers:
 
 • versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use [`simpleSingletonVersion`] if your application does not depend on negotiated version data.  However, [`Ouroboros.Network.NodeToNode`] and [`Ouroboros.Network.NodeToClient`] expose API which hides versioning from the caller.
 
+Configuration
+* Sensible default configuration values for starting diffusion are defined in Ouroboros.Network.Diffusion.Configuration
+* For upstream development, the module Ouroboros.Network.Diffusion.Governor should be imported qualified as PeerSelection by convention to aid comprehension
+
 
 ## Demo applications
 

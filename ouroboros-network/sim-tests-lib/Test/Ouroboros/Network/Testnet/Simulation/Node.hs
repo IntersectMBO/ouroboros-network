@@ -77,7 +77,7 @@ import Ouroboros.Network.InboundGovernor (InboundGovernorTrace,
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
-           PeerSelectionTargets (..), TracePeerSelection)
+           PeerSelectionTargets (..), TargetsSelector, TracePeerSelection)
 import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
 import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
            LedgerPeersConsensusInterface (..), LedgerStateJudgement (..),
@@ -190,6 +190,7 @@ data NodeArgs =
       -- ^ 'LimitsAndTimeouts' argument
     , naPublicRoots            :: Map RelayAccessPoint PeerAdvertise
       -- ^ 'Interfaces' relays auxiliary value
+    , naUseGenesis             :: Bool
     , naBootstrapPeers         :: Script UseBootstrapPeers
       -- ^ 'Interfaces' relays auxiliary value
     , naAddr                   :: NtNAddr
@@ -203,7 +204,7 @@ data NodeArgs =
                                    )]
     , naLedgerPeers            :: Script LedgerPools
       -- ^ 'Arguments' 'LocalRootPeers' values
-    , naLocalSelectionTargets  :: PeerSelectionTargets
+    , naLocalSelectionTargets  :: TargetsSelector
       -- ^ 'Arguments' 'aLocalSelectionTargets' value
     , naDNSTimeoutScript       :: Script DNSTimeout
       -- ^ 'Arguments' 'aDNSTimeoutScript' value
@@ -420,10 +421,11 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
 
   fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
 
+  naUseGenesis <- arbitrary
   firstBootstrapPeer <- maybe DontUseBootstrapPeers UseBootstrapPeers
-                      <$> arbitrary
+                      <$> if naUseGenesis then pure Nothing else arbitrary
   bootstrapPeers <- listOf (maybe DontUseBootstrapPeers UseBootstrapPeers
-                           <$> arbitrary)
+                           <$> if naUseGenesis then pure Nothing else arbitrary)
   let bootstrapPeersDomain = Script (firstBootstrapPeer :| bootstrapPeers)
 
   return
@@ -434,11 +436,12 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
       , naPublicRoots            = publicRoots
         -- TODO: we haven't been using public root peers so far because we set
         -- `UseLedgerPeers 0`!
+      , naUseGenesis
       , naBootstrapPeers         = bootstrapPeersDomain
       , naAddr                   = makeNtNAddr relay
       , naLocalRootPeers         = localRootPeers
       , naLedgerPeers            = ledgerPeerPoolsScript
-      , naLocalSelectionTargets  = peerSelectionTargets
+      , naLocalSelectionTargets  = peerTargetsSelector
       , naDNSTimeoutScript       = dnsTimeout
       , naDNSLookupDelayScript   = dnsLookupDelay
       , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
@@ -1050,10 +1053,11 @@ diffusionSimulation
             { naSeed                   = seed
             , naMbTime                 = mustReplyTimeout
             , naPublicRoots            = publicRoots
+            , naUseGenesis             = useGenesis
             , naBootstrapPeers         = bootstrapPeers
             , naAddr                   = addr
             , naLedgerPeers            = ledgerPeers
-            , naLocalSelectionTargets  = peerSelectionTargets
+            , naLocalSelectionTargets  = peerTargetsSelector
             , naDNSTimeoutScript       = dnsTimeout
             , naDNSLookupDelayScript   = dnsLookupDelay
             , naChainSyncExitOnBlockNo = chainSyncExitOnBlockNo
@@ -1172,11 +1176,12 @@ diffusionSimulation
               , NodeKernel.aDiffusionMode        = diffusionMode
               , NodeKernel.aKeepAliveInterval    = 10
               , NodeKernel.aPingPongInterval     = 10
-              , NodeKernel.aPeerSelectionTargets = peerSelectionTargets
+              , NodeKernel.aPeerTargetsSelector  = peerTargetsSelector
               , NodeKernel.aShouldChainSyncExit  = shouldChainSyncExit chainSyncExitVar
               , NodeKernel.aChainSyncEarlyExit   = chainSyncEarlyExit
               , NodeKernel.aReadLocalRootPeers   = readLocalRootPeers
               , NodeKernel.aReadPublicRootPeers  = readPublicRootPeers
+              , NodeKernel.aUseGenesis           = useGenesis
               , NodeKernel.aReadUseBootstrapPeers = bootstrapPeers
               , NodeKernel.aOwnPeerSharing       = peerSharing
               , NodeKernel.aReadUseLedgerPeers   = readUseLedgerPeers

@@ -22,10 +22,11 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Set (Set)
 import Data.Set qualified as Set
 
+import Control.Concurrent.Class.MonadSTM.Strict.TMVar (swapTMVar, tryReadTMVar)
 import Control.Concurrent.JobPool (JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (assert)
@@ -52,6 +53,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types
 
+
 -- | Used to set 'bootstrapPeersTimeout' for crashing the node in a critical
 -- failure case
 --
@@ -70,27 +72,44 @@ targetPeers :: (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions peeraddr peerconn m
             -> PeerSelectionState peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-targetPeers PeerSelectionActions{readPeerSelectionTargets}
+targetPeers PeerSelectionActions{ readPeerSelectionTargets = readTargets,
+                                  currentTargets,
+                                  churnMutex }
             st@PeerSelectionState{
               publicRootPeers,
               localRootPeers,
               targets,
-              ledgerStateJudgement,
+              ledgerStateJudgement = lsj,
               bootstrapPeersFlag,
-              hasOnlyBootstrapPeers
+              hasOnlyBootstrapPeers,
+              useGenesisFlag
             } =
     Guarded Nothing $ do
-      targets' <- readPeerSelectionTargets
-      check ( isNodeAbleToMakeProgress bootstrapPeersFlag
-                                       ledgerStateJudgement
-                                       hasOnlyBootstrapPeers
-            && targets' /= targets
-            && sanePeerSelectionTargets targets'
-            )
+      -- Possible values:
+      -- Nothing: churn governor is active
+      -- Just lsj: Previous ledger state judgement in Genesis mode, or
+      -- Just TooOld when not using Genesis
+      -- we can't use readTMVar because we will block when churn is
+      -- on thus making it useless.
+      mode <- tryReadTMVar churnMutex
+      targets' <- if useGenesisFlag && not (churning mode)
+                  then do
+                    swapTMVar churnMutex lsj
+                    return $ currentTargets lsj useGenesisFlag
+                  else do
+                    check (isNodeAbleToMakeProgress bootstrapPeersFlag
+                                                    lsj
+                                                    hasOnlyBootstrapPeers)
+                    readTargets
+
       -- We simply ignore target updates that are not "sane".
+      -- todo: when not churning, and when we don't detect a change
+      -- in ledger state judgement, we can save work by not comparing
+      -- targets since no change is possible
+      check ( targets' /= targets && sanePeerSelectionTargets targets' )
 
       let usingBootstrapPeers = requiresBootstrapPeers bootstrapPeersFlag
-                                                       ledgerStateJudgement
+                                                       lsj
           -- We have to enforce the invariant that the number of root peers is
           -- not more than the target number of known peers. It's unlikely in
           -- practice so it's ok to resolve it arbitrarily using clampToLimit.
@@ -121,8 +140,9 @@ targetPeers PeerSelectionActions{readPeerSelectionTargets}
                           targets        = targets',
                           localRootPeers = localRootPeers',
                           publicRootPeers = publicRootPeers'
-                        }
-      }
+                        } }
+    where
+      churning = isNothing
 
 
 -- | Await for the first result from 'JobPool' and return its 'Decision'.
@@ -477,9 +497,10 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
           -- doesn't really matter.
           --
           ledgerStateJudgement' =
-            if not hasOnlyBootstrapPeers'
-               then YoungEnough
-               else ledgerStateJudgement
+            if    requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement
+               && not hasOnlyBootstrapPeers'
+            then YoungEnough
+            else ledgerStateJudgement
 
           -- If we are removing local roots and we have active connections to
           -- them then things are a little more complicated. We would typically
@@ -573,7 +594,10 @@ monitorBootstrapPeersFlag PeerSelectionActions { readUseBootstrapPeers }
                                                 , publicRootPeers
                                                 , inProgressPromoteCold
                                                 , inProgressPromoteWarm
-                                                } =
+                                                , useGenesisFlag
+                                                }
+  | useGenesisFlag = GuardedSkip Nothing
+  | otherwise =
   Guarded Nothing $ do
     ubp <- readUseBootstrapPeers
     check (ubp /= bootstrapPeersFlag)
@@ -630,60 +654,62 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                                                    establishedPeers,
                                                    inProgressPromoteCold,
                                                    inProgressPromoteWarm,
-                                                   ledgerStateJudgement
-                                                 }
+                                                   ledgerStateJudgement,
+                                                   useGenesisFlag }
+  | useGenesisFlag =
+    Guarded Nothing $ do
+      lsj <- readLedgerStateJudgement
+      check (lsj /= ledgerStateJudgement)
+      let st' _now = st { ledgerStateJudgement = lsj }
+      return $ decision st' lsj
+
   | isBootstrapPeersEnabled bootstrapPeersFlag =
     Guarded Nothing $ do
       lsj <- readLedgerStateJudgement
       check (lsj /= ledgerStateJudgement)
-      st' <- case lsj of
-        TooOld      -> do
-          return (\now -> st
-            { ledgerStateJudgement = lsj
-            , targets =
-                PeerSelectionTargets
-                  { targetNumberOfRootPeers                 = 0
-                  , targetNumberOfKnownPeers                = 0
-                  , targetNumberOfEstablishedPeers          = 0
-                  , targetNumberOfActivePeers               = 0
-                  , targetNumberOfKnownBigLedgerPeers       = 0
-                  , targetNumberOfEstablishedBigLedgerPeers = 0
-                  , targetNumberOfActiveBigLedgerPeers      = 0
-                  }
-            -- We have to enforce the invariant that the number of root peers is
-            -- not more than the target number of known peers. It's unlikely in
-            -- practice so it's ok to resolve it arbitrarily using clampToLimit.
-            , localRootPeers = LocalRootPeers.empty
-            , hasOnlyBootstrapPeers = False
-            , bootstrapPeersTimeout = Just (addTime governor_BOOTSTRAP_PEERS_TIMEOUT now)
-            })
-        YoungEnough -> do
-          let nonEstablishedBootstrapPeers =
-                PublicRootPeers.getBootstrapPeers publicRootPeers
-                Set.\\
-                EstablishedPeers.toSet establishedPeers
-                Set.\\
-                (inProgressPromoteCold <> inProgressPromoteWarm)
-          return (\_ -> st
-            { ledgerStateJudgement  = lsj
-            , hasOnlyBootstrapPeers = False
-            , bootstrapPeersTimeout = Nothing
-            , knownPeers =
-                KnownPeers.delete
-                  nonEstablishedBootstrapPeers
-                  knownPeers
-            , publicRootPeers =
-                PublicRootPeers.difference
-                  publicRootPeers
-                  nonEstablishedBootstrapPeers
-            })
-      return $ \now ->
-        Decision {
-          decisionTrace = [TraceLedgerStateJudgementChanged lsj],
-          decisionJobs  = [],
-          decisionState = st' now
-        }
+      let st' =
+            case lsj of
+              YoungEnough ->
+                let bootstrapPeers = PublicRootPeers.getBootstrapPeers publicRootPeers
+                    nonEstablishedBootstrapPeers =
+                      bootstrapPeers
+                      Set.\\
+                      EstablishedPeers.toSet establishedPeers
+                      Set.\\
+                      (inProgressPromoteCold <> inProgressPromoteWarm)
+                  in \_now -> st { ledgerStateJudgement = lsj,
+                                   knownPeers = KnownPeers.delete
+                                                  nonEstablishedBootstrapPeers
+                                                  knownPeers,
+                                   publicRootPeers = PublicRootPeers.difference
+                                                       publicRootPeers
+                                                       nonEstablishedBootstrapPeers }
+              TooOld ->
+                \now ->
+                  st { ledgerStateJudgement = lsj,
+                       targets = PeerSelectionTargets {
+                         targetNumberOfRootPeers                 = 0,
+                         targetNumberOfKnownPeers                = 0,
+                         targetNumberOfEstablishedPeers          = 0,
+                         targetNumberOfActivePeers               = 0,
+                         targetNumberOfKnownBigLedgerPeers       = 0,
+                         targetNumberOfEstablishedBigLedgerPeers = 0,
+                         targetNumberOfActiveBigLedgerPeers      = 0 },
+                       -- We have to enforce the invariant that the number of root peers is
+                       -- not more than the target number of known peers. It's unlikely in
+                       -- practice so it's ok to resolve it arbitrarily using clampToLimit.
+                       localRootPeers = LocalRootPeers.empty,
+                       bootstrapPeersTimeout = Just (addTime governor_BOOTSTRAP_PEERS_TIMEOUT now),
+                       hasOnlyBootstrapPeers = False }
+
+      return $ decision st' lsj
+
   | otherwise = GuardedSkip Nothing
+  where
+    decision st' lsj now = Decision {
+      decisionTrace = [TraceLedgerStateJudgementChanged lsj],
+        decisionJobs  = [],
+        decisionState = st' now }
 
 -- | If the node just got in the TooOld state, the node just had its targets
 -- adjusted to get rid of all peers. This jobs monitors the node state and when
