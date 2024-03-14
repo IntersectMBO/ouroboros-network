@@ -1277,13 +1277,13 @@ prop_governor_target_known_1_valid_subset (MaxTime maxTime) env =
           . Signal.fromChangeEvents Set.empty
           . Signal.selectEvents
               (\case
-                  TraceEnvSetLocalRoots  x       -> Just (LocalRootPeers.keysSet x)
-                  TraceEnvRootsResult    x       -> Just (Set.fromList x)
-                  TraceEnvBigLedgerPeersResult x -> Just x
-                  TraceEnvPeerShareResult _ x    -> Just (Set.fromList x)
-                  _                              -> Nothing
+                  TraceLocalRootPeersChanged _ x   -> Just (LocalRootPeers.keysSet x)
+                  TracePublicRootsResults x _ _    -> Just (PublicRootPeers.toSet x)
+                  TraceBigLedgerPeersResults x _ _ -> Just x
+                  TracePeerShareResultsFiltered x  -> Just (Set.fromList x)
+                  _                                -> Nothing
               )
-          . selectEnvEvents
+          . selectGovEvents
           $ events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
@@ -1706,9 +1706,9 @@ prop_governor_target_known_4_results_used (MaxTime maxTime) env =
             fmap (maybe Set.empty Set.fromList)
           . Signal.fromEvents
           . Signal.selectEvents
-              (\case TraceEnvPeerShareResult _ addrs -> Just addrs
-                     _                               -> Nothing)
-          . selectEnvEvents
+              (\case TracePeerShareResultsFiltered addrs -> Just addrs
+                     _                                   -> Nothing)
+          . selectGovEvents
           $ events
 
         peerShareResultsUntilKnown :: Signal (Set PeerAddr)
