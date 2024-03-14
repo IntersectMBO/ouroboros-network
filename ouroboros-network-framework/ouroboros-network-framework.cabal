@@ -91,6 +91,7 @@ library
                      , si-timers
                      , strict-stm
 
+                     , nothunks       ^>=0.2
                      , psqueues
                      -- ^ only to derive nothunk instances
 
