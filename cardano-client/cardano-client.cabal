@@ -23,7 +23,7 @@ library
                        bytestring        >=0.10 && <0.13,
                        containers,
                        ouroboros-network-api        >= 0.5.2 && < 0.8,
-                       ouroboros-network            >= 0.9 && < 0.13,
+                       ouroboros-network            >= 0.9 && < 0.14,
                        ouroboros-network-framework  >= 0.8 && < 0.12,
                        network-mux                 ^>= 0.4.5,
 
