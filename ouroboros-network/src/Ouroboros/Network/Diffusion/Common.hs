@@ -5,7 +5,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 
 module Ouroboros.Network.Diffusion.Common
-  ( DiffusionTracer (..)
+  ( P2P (..)
+  , DiffusionTracer (..)
   , Failure (..)
   , Tracers (..)
   , nullTracers
@@ -36,6 +37,12 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface)
 import Ouroboros.Network.Snocket (FileDescriptor)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
+
+
+-- | Promoted data types.
+--
+data P2P = P2P | NonP2P
+
 
 -- | The 'DiffusionTracer' logs
 --

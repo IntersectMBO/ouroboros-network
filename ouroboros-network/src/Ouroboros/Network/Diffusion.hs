@@ -5,8 +5,7 @@
 
 module Ouroboros.Network.Diffusion
   ( -- * Common API
-    P2P (..)
-  , DiffusionTracer (..)
+    DiffusionTracer (..)
   , Tracers (..)
   , nullTracers
   , ExtraTracers (..)
@@ -19,6 +18,7 @@ module Ouroboros.Network.Diffusion
   , run
     -- * Re-exports
   , P2P.AbstractTransitionTrace
+  , Common.P2P
   ) where
 
 import Control.Exception (IOException)
@@ -34,10 +34,6 @@ import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
 import Ouroboros.Network.Diffusion.Common as Common
 import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
 import Ouroboros.Network.Diffusion.P2P qualified as P2P
-
--- | Promoted data types.
---
-data P2P = P2P | NonP2P
 
 
 -- | Tracers which depend on p2p mode.

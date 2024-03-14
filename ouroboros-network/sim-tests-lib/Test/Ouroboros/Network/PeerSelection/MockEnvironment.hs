@@ -13,6 +13,7 @@
 module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   ( PeerGraph (..)
   , GovernorMockEnvironment (..)
+  , GovernorPreGenesisMockEnvironment (..)
   , GovernorMockEnvironmentWithoutAsyncDemotion (..)
   , runGovernorInMockEnvironment
   , exploreGovernorInMockEnvironment
@@ -64,8 +65,8 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
            ScriptDelay (..), TimedScript, arbitraryPickScript,
            arbitraryScriptOf, initScript, initScript', interpretPickScript,
-           playTimedScript, prop_shrink_Script, singletonScript, stepScript,
-           stepScriptSTM, stepScriptSTM')
+           playTimedScript, prop_shrink_Script, singletonScript,
+           singletonTimedScript, stepScript, stepScriptSTM, stepScriptSTM')
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, arbitrarySubset,
            prop_shrink_nonequal, prop_shrink_valid)
 
@@ -139,9 +140,16 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        pickColdPeersToForget      :: !(PickScript PeerAddr),
        peerSharing                :: !PeerSharing,
        useBootstrapPeers          :: !(TimedScript UseBootstrapPeers),
+       useGenesis                 :: !Bool,
        ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement)
      }
   deriving (Show, Eq)
+
+-- | This instance is used to generate test cases for properties
+-- which rely on peer selection prior to introduction of Genesis
+--
+newtype GovernorPreGenesisMockEnvironment = GovernorPreGenesisMockEnvironment { getPreGenesisMockEnv :: GovernorMockEnvironment }
+  deriving (Eq, Show)
 
 data PeerConn m = PeerConn !PeerAddr !PeerSharing !(TVar m PeerStatus)
 
@@ -207,12 +215,13 @@ runGovernorInMockEnvironment mockEnv =
 
 governorAction :: GovernorMockEnvironment -> IOSim s Void
 governorAction mockEnv = do
+    let genesisMode = useGenesis mockEnv
     publicStateVar <- StrictTVar.newTVarIO emptyPublicPeerSelectionState
     lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
                              (ledgerStateJudgement mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                              (useBootstrapPeers mockEnv)
-    debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) [])
+    debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) [] genesisMode)
     countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters [])
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar usbVar) (readTVar lsjVar) policy
@@ -227,6 +236,7 @@ governorAction mockEnv = do
         countersVar
         publicStateVar
         debugVar
+        genesisMode
         actions
         policy
       atomically retry
@@ -729,6 +739,15 @@ selectGovernorEvents trace = [ (t, e) | (t, GovernorEvent e) <- trace ]
 -- QuickCheck instances
 --
 
+instance Arbitrary GovernorPreGenesisMockEnvironment where
+  arbitrary = do
+    mockEnv <- arbitrary
+    bootstrapScript <- arbitrary
+    return $ GovernorPreGenesisMockEnvironment mockEnv {
+      useGenesis = False,
+      useBootstrapPeers = bootstrapScript }
+  shrink env = GovernorPreGenesisMockEnvironment <$> shrink (getPreGenesisMockEnv env)
+
 instance Arbitrary GovernorMockEnvironment where
   arbitrary = do
       -- Dependency of the root set on the graph
@@ -748,7 +767,8 @@ instance Arbitrary GovernorMockEnvironment where
       pickWarmPeersToDemote   <- arbitraryPickScript arbitrarySubsetOfPeers
       pickColdPeersToForget   <- arbitraryPickScript arbitrarySubsetOfPeers
       peerSharing             <- arbitrary
-      useBootstrapPeers       <- arbitrary
+      useGenesis              <- arbitrary
+      useBootstrapPeers       <- if useGenesis then pure $ singletonTimedScript DontUseBootstrapPeers else arbitrary
       ledgerStateJudgementList <- fmap getArbitraryLedgerStateJudgement <$> arbitrary
       ledgerStateJudgementDelays <- listOf1 (elements [NoDelay, ShortDelay])
       let ledgerStateJudgementWithDelay =
@@ -830,6 +850,7 @@ instance Arbitrary GovernorMockEnvironment where
            pickColdPeersToForget,
            peerSharing,
            useBootstrapPeers,
+           useGenesis,
            ledgerStateJudgement
          } =
       -- Special rule for shrinking the peerGraph because the localRootPeers
@@ -854,6 +875,7 @@ instance Arbitrary GovernorMockEnvironment where
           pickWarmPeersToDemote   = pickWarmPeersToDemote',
           pickColdPeersToForget   = pickColdPeersToForget',
           peerSharing,
+          useGenesis,
           useBootstrapPeers       = useBootstrapPeers',
           ledgerStateJudgement    = fmap (first getArbitraryLedgerStateJudgement)
                                          ledgerStateJudgement'
