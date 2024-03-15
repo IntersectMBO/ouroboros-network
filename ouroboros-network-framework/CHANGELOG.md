@@ -6,13 +6,14 @@
 
 ### Non-breaking changes
 
-## 0.11.2.0 -- 2024-03-14
+## 0.12.0.0 -- 2024-03-15
 
 ### Breaking changes
 
+* Let light peer sharing depend on the configured peer sharing flag
+
 ### Non-breaking changes
 
-* Let light peer sharing depend on the configured peer sharing flag
 * Added `Generic` and `NFData` instance derivations for `NodeToNodeVersion`
   data type
 * Added `NFData` for `Handshake` protocol related types

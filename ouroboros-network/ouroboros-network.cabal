@@ -134,7 +134,7 @@ library
                        network-mux,
                        si-timers,
                        ouroboros-network-api       ^>=0.7.1,
-                       ouroboros-network-framework ^>=0.11.2,
+                       ouroboros-network-framework ^>=0.12,
                        ouroboros-network-protocols ^>=0.8,
                        strict-stm,
                        typed-protocols  ^>=0.1.1,
