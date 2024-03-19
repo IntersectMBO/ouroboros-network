@@ -53,6 +53,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.OrdPSQ qualified as PSQ
 import Data.Semigroup (Min (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -727,6 +728,11 @@ assertPeerSelectionState PeerSelectionState{..} =
     -- and disjoint local root peers.
   . assert (Set.isSubsetOf bigLedgerPeers knownPeersSet)
   . assert (Set.null (Set.intersection bigLedgerPeers localRootPeersSet))
+
+    -- Only peer which has support peersharing should be possible to issue
+    -- peersharing requests to.
+  . assert (Set.isSubsetOf establishedShareSet
+      (KnownPeers.getPeerSharingRequestPeers knownPeersSet knownPeers))
   where
     knownPeersSet       = KnownPeers.toSet knownPeers
     localRootPeersSet   = LocalRootPeers.keysSet localRootPeers
@@ -734,6 +740,9 @@ assertPeerSelectionState PeerSelectionState{..} =
     bigLedgerPeers      = PublicRootPeers.getBigLedgerPeers publicRootPeers
     establishedPeersSet = EstablishedPeers.toSet      establishedPeers
     establishedReadySet = EstablishedPeers.readyPeers establishedPeers
+    establishedShareSet = EstablishedPeers.availableForPeerShare establishedPeers <>
+                            Set.fromList (PSQ.keys (EstablishedPeers.nextPeerShareTimes
+                                                    establishedPeers))
     activePeersSet      = activePeers
     coldPeersSet        = knownPeersSet Set.\\ establishedPeersSet
     warmPeersSet        = establishedPeersSet Set.\\ activePeersSet

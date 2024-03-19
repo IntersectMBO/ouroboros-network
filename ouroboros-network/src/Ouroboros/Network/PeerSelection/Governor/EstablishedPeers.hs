@@ -431,9 +431,10 @@ jobPromoteColdPeer PeerSelectionActions {
                                          }
                              }
                              now ->
-        let establishedPeers' = EstablishedPeers.insert peeraddr peerconn
-                                                        (addTime policyPeerShareActivationDelay now)
-                                                        establishedPeers
+        let psTime = case peerSharing of
+                          PeerSharingEnabled  -> Just (addTime policyPeerShareActivationDelay now)
+                          PeerSharingDisabled -> Nothing
+            establishedPeers' = EstablishedPeers.insert peeraddr peerconn psTime establishedPeers
             advertise = case peerSharing of
                           PeerSharingEnabled  -> DoAdvertisePeer
                           PeerSharingDisabled -> DoNotAdvertisePeer
