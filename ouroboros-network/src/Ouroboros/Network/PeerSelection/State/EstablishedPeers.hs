@@ -27,6 +27,7 @@ module Ouroboros.Network.PeerSelection.State.EstablishedPeers
   , minPeerShareTime
   , setPeerShareTime
   , availableForPeerShare
+  , nextPeerShareTimes
   , invariant
   ) where
 
@@ -97,10 +98,11 @@ invariant :: Ord peeraddr
           => EstablishedPeers peeraddr peerconn
           -> Bool
 invariant EstablishedPeers {..} =
-       -- The combo of the peer share set + psq = the whole set of peers
-       availableForPeerShare
+       -- The combo of the peer share set + psq = a subset of all peers
+ (  availableForPeerShare
     <> Set.fromList (PSQ.keys nextPeerShareTimes)
-    == Map.keysSet allPeers
+ )
+    `Set.isSubsetOf` Map.keysSet allPeers
        -- The peer share set and psq do not overlap
  && Set.null
       (Set.intersection
@@ -162,13 +164,16 @@ member peeraddr = Map.member peeraddr . allPeers
 insert :: Ord peeraddr
        => peeraddr
        -> peerconn
-       -> Time
+       -> Maybe Time -- ^ When to first peershare with peer, Nothing means never
        -> EstablishedPeers peeraddr peerconn
        -> EstablishedPeers peeraddr peerconn
-insert peeraddr peerconn peerShareAt ep@EstablishedPeers { allPeers } =
+insert peeraddr peerconn peerShareAt_m ep@EstablishedPeers { allPeers } =
    -- Ask newly established peers for its peers after the specified delay.
-   setPeerShareTime (Set.singleton peeraddr) peerShareAt $
-     ep { allPeers = Map.insert peeraddr peerconn allPeers }
+   let ep' = ep { allPeers = Map.insert peeraddr peerconn allPeers } in
+   case peerShareAt_m of
+        Nothing          -> ep'
+        Just peerShareAt ->
+          setPeerShareTime (Set.singleton peeraddr) peerShareAt $ ep'
 
 delete :: Ord peeraddr
        => peeraddr

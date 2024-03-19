@@ -5,6 +5,7 @@
 ### Breaking changes
 
 ### Non-Breaking changes
+* Honour policyPeerShareActivationDelay timeout when peersharing
 
 ## 0.13.0.0 -- 2023-03-14
 

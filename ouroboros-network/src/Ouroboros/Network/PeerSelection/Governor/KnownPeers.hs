@@ -78,10 +78,6 @@ belowTarget actions
     -- We can only ask ones where we have not asked them within a certain time.
   , not (Set.null availableForPeerShare)
 
-    -- Are there any peers from the availableForPeerShare set we can really ask
-    -- (i.e. have correct PeerSharing permissions)?
-  , not (Set.null canAsk)
-
     -- No peer share requests should be issued when the node is in a sensitive
     -- state
   , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
@@ -89,7 +85,7 @@ belowTarget actions
       -- Max selected should be <= numPeerShareReqsPossible
       selectedForPeerShare <- pickPeers st
                               policyPickKnownPeersForPeerShare
-                              canAsk
+                              availableForPeerShare
                               numPeerShareReqsPossible
 
       let -- Should be <= numPeerShareReqsPossible
@@ -109,7 +105,7 @@ belowTarget actions
         decisionTrace = [TracePeerShareRequests
                           targetNumberOfKnownPeers
                           numKnownPeers
-                          canAsk
+                          availableForPeerShare
                           selectedForPeerShare],
         decisionState = st {
                           inProgressPeerShareReqs = inProgressPeerShareReqs
@@ -125,6 +121,13 @@ belowTarget actions
              (Set.toList selectedForPeerShare)]
       }
 
+    -- If we could peer share except that there are none currently available
+    -- then we return the next wakeup time (if any)
+  | numKnownPeers < targetNumberOfKnownPeers
+  , numPeerShareReqsPossible > 0
+  , Set.null availableForPeerShare
+  = GuardedSkip $ EstablishedPeers.minPeerShareTime establishedPeers
+
   | otherwise
   = GuardedSkip Nothing
   where
@@ -132,11 +135,9 @@ belowTarget actions
                                    Set.\\ PublicRootPeers.getBigLedgerPeers publicRootPeers
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
                              - inProgressPeerShareReqs
+    -- Only peer which permit peersharing are available
     availableForPeerShare    = EstablishedPeers.availableForPeerShare establishedPeers
                              Set.\\ inProgressDemoteToCold
-    -- Only ask peers which have the correct willingness permission flags
-    canAsk                   =
-      KnownPeers.getPeerSharingRequestPeers availableForPeerShare knownPeers
 
 ---------------------------
 -- Peer sharing job
