@@ -580,12 +580,22 @@ envEventCredits (TraceEnvPeersDemote ToCooling _) = 30
 envEventCredits (TraceEnvPeersDemote ToCold _)    = 30
 
 envEventCredits  TraceEnvPeersStatus{}          = 0
+
+-- These events can return emty results which will actually result in the governor
+-- to issue more since it wasn't able to make progress towards the target.
+-- However, the governor won't be making infinite requests, and ending up on a
+-- livelock. Given this, in the case it doesn't manage to make
+-- progress we give it a little bit of credits in order to account for the
+-- next request.
+--
+envEventCredits  TraceEnvPeerShareResult{}      = 10
+envEventCredits  TraceEnvRootsResult{}          = 10
+envEventCredits  TraceEnvBigLedgerPeersResult{} = 10
+
 -- These events are visible in the environment but are the result of actions
 -- initiated by the governor, hence they get no credit.
-envEventCredits  TraceEnvRootsResult{}          = 0
-envEventCredits  TraceEnvBigLedgerPeersResult{} = 0
 envEventCredits  TraceEnvPeerShareRequest{}     = 0
-envEventCredits  TraceEnvPeerShareResult{}      = 0
+
 envEventCredits  TraceEnvPeerShareTTL   {}      = 0
 
 envEventCredits  TraceEnvEstablishConn {}       = 0
