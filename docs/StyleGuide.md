@@ -816,35 +816,20 @@ the rules below, it is good practice to update the code's style to match them.
 
     ```haskell
     -- Prelude
-    import           Prelude hiding (..)
+    import Prelude hiding (..)
 
     -- base + third-party non-Cardano packages
-    import           Control.Monad (mplus)
-    import           Data.Text (Text)
-    import qualified Data.Text as Text
-    import           NoThunks.Class (NoThunks)
+    import Control.Monad (mplus)
+    import Data.Text (Text)
+    import Data.Text qualified as Text
+    import NoThunks.Class (NoThunks)
 
     -- cardano-prelude
-    import           Cardano.Prelude (forceElemsToWHNF)
+    import Cardano.Prelude (forceElemsToWHNF)
 
     -- ouroboros-network and other network packages,
     -- each namespace in a separate group
-    import           Ouroboros.Network.Block (Serialised)
-
-    -- ouroboros-consensus
-    import           Ouroboros.Consensus.Block
-
-    -- Storage layer
-    import           Ouroboros.Consensus.Storage.ChainDB (ChainDB)
-
-    -- cardano-ledger-specs
-    import qualified Cardano.Ledger.Shelley.API as SL
-
-    -- ouroboros-consensus-shelley (or mock or byron)
-    import           Ouroboros.Consensus.Shelley.Ledger (ShelleyBlock)
-
-    -- ouroboros-consensus-cardano
-    import           Ouroboros.Consensus.Cardano.Block
+    import Ouroboros.Network.Block (Serialised)
     ```
 
     Each group is of course optional and must *not* be preceded by the comment

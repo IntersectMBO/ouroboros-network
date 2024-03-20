@@ -249,21 +249,15 @@ We maintain changelogs for all our packages.
 
 Maintainers of each package are listed in the corresponding `*.cabal` file.
 
-We maintain a [CODEOWNERS file][CODEOWNERS] which provides information on who should
-review your code if it touches given projects.  Note that you need to get
-approvals from all code owners (even though GitHub doesn't give a way to
+We maintain a [CODEOWNERS file][CODEOWNERS] which provides information on who
+should review your code if it touches given projects.  Note that you need to
+get approvals from all code owners (even though GitHub doesn't give a way to
 enforce it).
 
 For a general architectural overview of the network code contact either:
 @coot or @dcoutts.
 
-For a general architectural overview of the consensus code contact either:
-@dnadales or @nfrisby.
-
-## CI
-
-The networking code is tested both using GitHub actions on Windows and
-[Hydra][hydra] on Linux & MacOS.
+## Supported Platforms
 
 We officially support:
 
@@ -273,6 +267,12 @@ We officially support:
 
 On 32-bit platforms, you might expect some issues (currently memory requirement
 for `cardano-node` on 32 architecture are too high).
+
+The networking code is tested using a mixture of GitHub actions on Windows and
+[Hydra][hydra] on Linux & MacOS.  All supported platforms are tested on our CI,
+although only subset of tests are run natively on Windows, only `IO` tests
+which require native network stack; simulation tests (which are pure) run on
+Linux, MacOS, and cross compiled to Windows using `wine` (on Linux).
 
 ## Releasing packages to CHaP
 
@@ -292,6 +292,13 @@ New versions of packages are published on [CHaP].  To release packages to
   state published in `CHaP`.  One must resolve all compilation issues before
   merging the `CHaP` branch.  On a successful run, the script will add a comment
   on the `CHaP` PR.
+* After the versions were published to `CHaP`, push the tags created by
+  `./script/release-to-chap.sh` to `origin`.  Usually this command will push
+  all the tags:
+  ```
+  git push origin $(git tag --points-at=HEAD)
+  ```
+* Update the [release board].
 
 ## Release Branches
 
@@ -390,3 +397,4 @@ of the content. There are two relatively straightforward ways to do this:
 [Hackage]: https://hackage.haskell.org
 [hydra]: https://github.com/NixOS/hydra
 [nix-setup]: https://github.com/intersectmbo/cardano-node-wiki/blob/main/docs/getting-started/building-the-node-using-nix.md
+[release board]: https://github.com/orgs/IntersectMBO/projects/5/views/18
