@@ -2,9 +2,12 @@
 
 ## next version
 
+## 0.13.1.0 -- 2023-03-20
+
 ### Breaking changes
 
 ### Non-Breaking changes
+
 * Honour policyPeerShareActivationDelay timeout when peersharing
 * Increase timeout to 120s for 'any Cold async demotion' test
 
