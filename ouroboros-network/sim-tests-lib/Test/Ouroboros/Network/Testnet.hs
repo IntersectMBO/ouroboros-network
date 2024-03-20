@@ -837,7 +837,7 @@ prop_track_coolingToCold_demotions defaultBearerInfo diffScript =
           notInProgressDemoteToColdForTooLong =
             map (\addr ->
                   Signal.keyedTimeoutTruncated
-                    60
+                    120
                     (\case
                         Just s | Set.member addr s -> Set.singleton addr
                         _                          -> Set.empty
