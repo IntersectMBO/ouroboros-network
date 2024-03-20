@@ -16,6 +16,11 @@
 ### Breaking changes
 
 * Added `PeerSharingAPI` with all the things necessary to run peer sharing.
+* Diffusion run function in P2P mode has new paramaters:
+    * daPeerTargetsSelector - replaces daPeerSelectionTargets. Configuration
+        module provides an API.
+    * daUseGenesis - flag indicating whether diffusion should run in Genesis
+        mode
 
 ### Non-Breaking changes
 
@@ -27,6 +32,9 @@
 * Split churning of non-active peers into an established step and a known step.
 * When peer sharing ask for more peers than needed, but only add as many unique
   peers as desired.
+* Implemented configurable peer selection targets when syncing up in various
+  modes, ie. upcoming Genesis, legacy bootstrap & non-bootstrap with corresponding
+  churning support.
 
 ## 0.12.0.0 -- 2023-02-21
 
@@ -47,7 +55,7 @@
 
 * Removed `computePeers` callback in `daApplicationInitiatorAndResponderMode`.
 * Changed `peerSharingServer` to require `PeerSharingAPI`.
-
+                     
 ### Non-breaking changes
 
 * Limit the rate at which one can discover peers through peersharing.

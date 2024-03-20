@@ -65,8 +65,10 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   -- ^ peer sharing configured value
   psPeerConnToPeerSharing     :: peerconn -> PeerSharing,
   -- ^ Extract peer sharing information from peerconn
-  psReadPeerSharingController :: STM m (Map peeraddr (PeerSharingController peeraddr m))
+  psReadPeerSharingController :: STM m (Map peeraddr (PeerSharingController peeraddr m)),
   -- ^ peer sharing registry
+  psChurnMutexPeerSelection   :: StrictTMVar m LedgerStateJudgement
+  -- ^ this is used to coordinate the actions of peer selection and churn governor
   }
 
 -- | Record of remaining parameters for withPeerSelectionActions

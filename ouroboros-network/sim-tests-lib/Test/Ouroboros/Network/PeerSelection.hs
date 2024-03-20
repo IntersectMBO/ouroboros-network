@@ -174,15 +174,15 @@ tests =
       ]
     , testGroup "bootstrap peers"
       [ testProperty "progress towards only bootstrap peers after changing to fallback state"
-                     prop_governor_only_bootstrap_peers_in_fallback_state
+                     $ prop_governor_only_bootstrap_peers_in_fallback_state . getPreGenesisMockEnv
       , testProperty "node does not learn about non trustable peers when in fallback state"
-                     prop_governor_no_non_trustable_peers_before_caught_up_state
+                     $ prop_governor_no_non_trustable_peers_before_caught_up_state . getPreGenesisMockEnv
       , testProperty "node only use bootstrap peers if in sensitive state"
-                     prop_governor_stops_using_bootstrap_peers
+                     $ prop_governor_stops_using_bootstrap_peers . getPreGenesisMockEnv
       , testProperty "node never uses non-trustable peers after clean state"
-                     prop_governor_only_bootstrap_peers_after_clean_state
+                     $ prop_governor_only_bootstrap_peers_after_clean_state . getPreGenesisMockEnv
       , testProperty "node uses ledger peers in non-sensitive mode"
-                     prop_governor_uses_ledger_peers
+                     $ prop_governor_uses_ledger_peers . getPreGenesisMockEnv
       ]
     ]
   , testGroup "issues"
@@ -1397,7 +1397,7 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
 
         govUseBootstrapPeersSig :: Signal UseBootstrapPeers
         govUseBootstrapPeersSig =
-          selectGovState Governor.bootstrapPeersFlag events
+          selectGovStateGenesis Governor.bootstrapPeersFlag (useGenesis env) events
 
         -- We define the governor's peer sharing opportunities at any point in time
         -- to be the governor's set of established peers, less the ones we can see
@@ -3006,6 +3006,7 @@ prop_governor_target_active_local_above (MaxTime maxTime) env =
 
 -- | When in 'TooOld' state make sure we don't stay connected to non trustable
 -- peers for too long
+
 prop_governor_only_bootstrap_peers_in_fallback_state :: GovernorMockEnvironment -> Property
 prop_governor_only_bootstrap_peers_in_fallback_state env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -3019,7 +3020,7 @@ prop_governor_only_bootstrap_peers_in_fallback_state env =
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState Governor.ledgerStateJudgement events
 
         govKnownPeers :: Signal (Set PeerAddr)
         govKnownPeers =
@@ -3067,7 +3068,7 @@ prop_governor_no_non_trustable_peers_before_caught_up_state env =
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState Governor.ledgerStateJudgement events
 
         govKnownPeers :: Signal (Set PeerAddr)
         govKnownPeers =
@@ -3105,6 +3106,7 @@ prop_governor_no_non_trustable_peers_before_caught_up_state env =
           Set.null
           keepNonTrustablePeersTooLong
 
+
 prop_governor_only_bootstrap_peers_after_clean_state :: GovernorMockEnvironment -> Property
 prop_governor_only_bootstrap_peers_after_clean_state env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
@@ -3118,7 +3120,7 @@ prop_governor_only_bootstrap_peers_after_clean_state env =
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState Governor.ledgerStateJudgement events
 
         govKnownPeers :: Signal (Set PeerAddr)
         govKnownPeers =
@@ -3235,7 +3237,7 @@ prop_governor_uses_ledger_peers env =
 
         govLedgerStateJudgement :: Signal LedgerStateJudgement
         govLedgerStateJudgement =
-          selectGovState (Governor.ledgerStateJudgement) events
+          selectGovState Governor.ledgerStateJudgement events
 
         govPublicRootPeersResultsSig :: Signal (PublicRootPeers PeerAddr)
         govPublicRootPeersResultsSig =
@@ -3288,7 +3290,20 @@ selectGovState :: Eq a
 selectGovState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) [])
+  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) [] False)
+  . Signal.selectEvents
+      (\case GovernorDebug (TraceGovernorState _ _ st) -> Just $! f st
+             _                                         -> Nothing)
+
+selectGovStateGenesis :: Eq a
+                      => (forall peerconn. Governor.PeerSelectionState PeerAddr peerconn -> a)
+                      -> Bool
+                      -> Events TestTraceEvent
+                      -> Signal a
+selectGovStateGenesis f useGenesisFlag =
+    Signal.nub
+  -- TODO: #3182 Rng seed should come from quickcheck.
+  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) [] useGenesisFlag)
   . Signal.selectEvents
       (\case GovernorDebug (TraceGovernorState _ _ st) -> Just $! f st
              _                                         -> Nothing)
@@ -3321,8 +3336,9 @@ _governorFindingPublicRoots :: Int
                             -> STM IO UseBootstrapPeers
                             -> STM IO LedgerStateJudgement
                             -> PeerSharing
+                            -> Bool
                             -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing = do
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing useGenesisFlag = do
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     publicRootPeersProvider
       tracer
@@ -3332,13 +3348,14 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
         publicStateVar <- newTVarIO (emptyPublicPeerSelectionState @SockAddr)
-        debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) []
+        debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) [] useGenesisFlag
         peerSelectionGovernor
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
           publicStateVar
           debugVar
+          useGenesisFlag
           actions
             { requestPublicRootPeers = \_ ->
                 transformPeerSelectionAction requestPublicRootPeers }
@@ -3426,6 +3443,7 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
+      useGenesis = False,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3462,6 +3480,7 @@ prop_issue_3515 = prop_governor_nolivelock $
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
+      useGenesis = False,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3498,6 +3517,7 @@ prop_issue_3494 = prop_governor_nofail $
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
+      useGenesis = False,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3550,6 +3570,7 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
+      useGenesis = False,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }

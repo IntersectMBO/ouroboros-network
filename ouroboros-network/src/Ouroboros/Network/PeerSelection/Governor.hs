@@ -13,11 +13,14 @@ module Ouroboros.Network.PeerSelection.Governor
     -- $peer-selection-governor
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
+  , ConfigurationTargets (..)
+  , TargetsSelector
   , PeerSelectionActions (..)
   , PeerStateActions (..)
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
   , DebugPeerSelectionState (..)
+  , targetsSelector
   , peerSelectionGovernor
     -- * Peer churn governor
   , peerChurnGovernor
@@ -449,12 +452,13 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> StdGen
                       -> StrictTVar m (PublicPeerSelectionState peeraddr)
                       -> StrictTVar m (PeerSelectionState peeraddr peerconn)
+                      -> Bool
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugStateVar actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugStateVar useGenesis actions policy =
     JobPool.withJobPool $ \jobPool -> do
-      localPeers <- map (\(w, h, _) -> (w, h))
+      localPeers <- map (\(h, w, _) -> (h, w))
                 <$> atomically (readLocalRootPeers actions)
       peerSelectionGovernorLoop
         tracer
@@ -465,7 +469,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugSt
         actions
         policy
         jobPool
-        (emptyPeerSelectionState fuzzRng localPeers)
+        (emptyPeerSelectionState fuzzRng localPeers useGenesis)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -589,14 +593,16 @@ peerSelectionGovernorLoop tracer
     guardedDecisions blockedAt st =
       -- All the alternative potentially-blocking decisions.
 
-      -- The Governor needs to react to changes in the bootstrap peer flag,
-      -- since this influences the behavior of the other monitoring actions.
+      -- In non-Genesis mode, The Governor needs to react to changes in the bootstrap
+      -- peer flag, since this influences the behavior of the other monitoring actions.
          Monitor.monitorBootstrapPeersFlag   actions st
       -- The Governor needs to react to ledger state changes as soon as possible.
-      -- Check the definition site for more details, but in short, when the
-      -- node changes to 'TooOld' state it will go through a purging phase which
-      -- the 'waitForTheSystemToQuiesce' monitoring action will wait for.
+      -- in pre-Genesis (or when Genesis is explicitly disabled by the node):
+      --   Check the definition site for more details, but in short, when the
+      --   node changes to 'TooOld' state it will go through a purging phase which
+      --   the 'waitForTheSystemToQuiesce' monitoring action will wait for.
       <> Monitor.monitorLedgerStateJudgement actions st
+      -- In non-Genesis mode,
       -- When the node transitions to 'TooOld' state the node will wait until
       -- it reaches a clean (quiesced) state free of non-trusted peers, before
       -- resuming making progress again connected to only trusted peers.
@@ -604,6 +610,11 @@ peerSelectionGovernorLoop tracer
 
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
+      -- In Genesis mode, this is responsible for settings targets on the basis
+      -- of the ledger state judgement. It takes into account whether
+      -- the churn governor is running via a tmvar such that targets are set
+      -- in a consistent manner. For non-Genesis, it follows the simpler
+      -- legacy protocol.
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions st
 

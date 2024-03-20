@@ -13,6 +13,9 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
+  , ConfigurationTargets (..)
+  , TargetsSelector
+  , targetsSelector
   , nullPeerSelectionTargets
   , sanePeerSelectionTargets
   , PickPolicy
@@ -59,6 +62,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict.TMVar
 import Control.Concurrent.JobPool (Job)
 import Control.Exception (Exception (..), SomeException, assert)
 import Control.Monad.Class.MonadSTM
@@ -162,20 +166,18 @@ data PeerSelectionTargets = PeerSelectionTargets {
 
        targetNumberOfRootPeers                 :: !Int,
 
-       -- | The target number of all known peers.  This includes ledger,
-       -- big ledger peers.
+       -- | The target number of all known peers.  Doesn't include big ledger peers
+       -- |
        targetNumberOfKnownPeers                :: !Int,
        -- | The target number of established peers (does not include big ledger
        -- peers).
        --
-       -- The target includes root peers, local root peers, ledger peers and big
-       -- ledger peers.
+       -- The target includes root peers, local root peers, and ledger peers
        --
        targetNumberOfEstablishedPeers          :: !Int,
        -- | The target number of active peers (does not include big ledger
        -- peers).
        --
-       -- The
        targetNumberOfActivePeers               :: !Int,
 
        -- | Target number of known big ledger peers.
@@ -206,6 +208,25 @@ data PeerSelectionTargets = PeerSelectionTargets {
      }
   deriving (Eq, Show)
 
+-- | Provides alternate peer selection targets
+-- for various syncing modes.
+--
+data ConfigurationTargets = ConfigurationTargets {
+  confDefaultPeerTargets     :: !PeerSelectionTargets,
+  confGenesisSyncPeerTargets :: !PeerSelectionTargets }
+
+-- | LedgerStateJudgement -> Bool -> PeerSelectionTargets
+-- Given a ledger state judgement and use genesis flag from node's configuration
+-- returns the effective peer targets.
+--
+type TargetsSelector = LedgerStateJudgement -> Bool -> PeerSelectionTargets
+
+targetsSelector :: ConfigurationTargets -> TargetsSelector
+targetsSelector conf lsj useGenesis
+  | useGenesis, lsj == TooOld =
+      confGenesisSyncPeerTargets conf
+  | otherwise = confDefaultPeerTargets conf
+
 nullPeerSelectionTargets :: PeerSelectionTargets
 nullPeerSelectionTargets =
     PeerSelectionTargets {
@@ -216,9 +237,6 @@ nullPeerSelectionTargets =
        targetNumberOfKnownBigLedgerPeers       = 0,
        targetNumberOfEstablishedBigLedgerPeers = 0,
        targetNumberOfActiveBigLedgerPeers      = 0
---     targetChurnIntervalKnownPeers       = 0,
---     targetChurnIntervalEstablishedPeers = 0,
---     targetChurnIntervalActivePeers      = 0
     }
 
 sanePeerSelectionTargets :: PeerSelectionTargets -> Bool
@@ -252,6 +270,15 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
 data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 
        readPeerSelectionTargets :: STM m PeerSelectionTargets,
+
+       -- | Retrieve peer targets for Genesis & non-Genesis modes
+       -- from node's configuration for the current state
+       --
+       currentTargets :: TargetsSelector,
+
+       -- | Mutex to avoid interleaved updates between peer sel. & churn govnrs
+       -- which could result in mixed target values
+       churnMutex :: StrictTMVar m LedgerStateJudgement,
 
        -- | Read the current set of locally or privately known root peers.
        --
@@ -447,6 +474,11 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        --
        ledgerStateJudgement        :: !LedgerStateJudgement,
 
+       -- | Flag whether to sync in genesis mode when ledgerStateJudgement == TooOld
+       -- this comes from node configuration and should be treated as read-only
+       --
+       useGenesisFlag              :: !Bool,
+
        -- | Current value of 'UseBootstrapPeers'.
        --
        bootstrapPeersFlag          :: !UseBootstrapPeers,
@@ -604,8 +636,9 @@ peerStateToCounters st@PeerSelectionState { activePeers, publicRootPeers, localR
 
 emptyPeerSelectionState :: StdGen
                         -> [(HotValency, WarmValency)]
+                        -> Bool
                         -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng localRoots =
+emptyPeerSelectionState rng localRoots useGenesisFlag =
     PeerSelectionState {
       targets                     = nullPeerSelectionTargets,
       localRootPeers              = LocalRootPeers.empty,
@@ -628,6 +661,7 @@ emptyPeerSelectionState rng localRoots =
       fuzzRng                     = rng,
       countersCache               = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots),
       ledgerStateJudgement        = TooOld,
+      useGenesisFlag,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
       bootstrapPeersTimeout       = Nothing
@@ -1100,5 +1134,5 @@ deriving instance (Ord peeraddr, Show peeraddr)
                => Show (DebugPeerSelection peeraddr)
 
 data ChurnMode = ChurnModeBulkSync
-               | ChurnModeNormal deriving Show
+               | ChurnModeNormal deriving (Eq, Show)
 

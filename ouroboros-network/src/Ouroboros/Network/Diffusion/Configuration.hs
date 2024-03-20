@@ -3,16 +3,25 @@
 module Ouroboros.Network.Diffusion.Configuration
   ( DefaultNumBootstrapPeers (..)
   , defaultNumBootstrapPeers
-  , defaultPeerSelectionTargets
+  , defaultPeerTargets
+  , defaultGenesisSyncPeerTargets
   , defaultAcceptedConnectionsLimit
   , defaultDiffusionMode
   , defaultPeerSharing
   , defaultBlockFetchConfiguration
   , defaultChainSyncTimeout
+  , defaultGenesisPeerTargetConfiguration
+  , defaultLegacyPeerTargetConfiguration
+  , defaultPeerSelectionTargetsBuilder
+  , governor_GENESIS_ACTIVE_PEERS
+  , governor_GENESIS_KNOWN_BIG_LEDGER_PEERS
+  , governor_GENESIS_ESTABLISHED_BIG_LEDGER_PEERS
+  , governor_GENESIS_ACTIVE_BIG_LEDGER_PEERS
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
   , ChainSyncTimeout (..)
+  , ConfigurationTargets (..)
   , MiniProtocolParameters (..)
   , P2P (..)
   , PeerSelectionTargets (..)
@@ -34,13 +43,15 @@ import System.Random (randomRIO)
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
-import Ouroboros.Network.Diffusion (P2P (..))
+import Ouroboros.Network.Diffusion.Common (P2P (..))
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, peerMetricsConfiguration)
 import Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
            defaultMiniProtocolParameters)
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionTargets (..))
+           (ConfigurationTargets (..), PeerSelectionTargets (..),
+           targetsSelector)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerStateJudgement)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
@@ -49,7 +60,8 @@ import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 
-
+-- | Default number of bootstrap peers
+--
 newtype DefaultNumBootstrapPeers = DefaultNumBootstrapPeers { getDefaultNumBootstrapPeers :: Int }
   deriving (Eq, Show)
 
@@ -57,9 +69,13 @@ defaultNumBootstrapPeers :: DefaultNumBootstrapPeers
 defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 
 -- |Outbound governor targets
+-- Targets may vary depending on whether a node is operating in
+-- Genesis mode.
+
+-- | Default peer targets when Genesis mode is disabled
 --
-defaultPeerSelectionTargets :: PeerSelectionTargets
-defaultPeerSelectionTargets =
+defaultPeerTargets :: PeerSelectionTargets
+defaultPeerTargets =
   PeerSelectionTargets {
     targetNumberOfRootPeers                 = 85,
     targetNumberOfKnownPeers                = 85,
@@ -68,6 +84,57 @@ defaultPeerSelectionTargets =
     targetNumberOfKnownBigLedgerPeers       = 15,
     targetNumberOfEstablishedBigLedgerPeers = 10,
     targetNumberOfActiveBigLedgerPeers      = 5 }
+
+-- | These targets are established when Genesis mode is enabled
+-- and consensus determines that we are 'far' from the tip
+-- of the best chain
+--
+defaultGenesisSyncPeerTargets :: PeerSelectionTargets
+defaultGenesisSyncPeerTargets =
+  defaultPeerTargets {
+    targetNumberOfActivePeers               = governor_GENESIS_ACTIVE_PEERS,
+    targetNumberOfKnownBigLedgerPeers       = governor_GENESIS_KNOWN_BIG_LEDGER_PEERS,
+    targetNumberOfEstablishedBigLedgerPeers = governor_GENESIS_ESTABLISHED_BIG_LEDGER_PEERS,
+    targetNumberOfActiveBigLedgerPeers      = governor_GENESIS_ACTIVE_BIG_LEDGER_PEERS }
+
+defaultGenesisPeerTargetConfiguration :: ConfigurationTargets
+defaultGenesisPeerTargetConfiguration =
+  ConfigurationTargets {
+    confDefaultPeerTargets     = defaultPeerTargets,
+    confGenesisSyncPeerTargets = defaultGenesisSyncPeerTargets }
+
+defaultLegacyPeerTargetConfiguration :: ConfigurationTargets
+defaultLegacyPeerTargetConfiguration =
+  ConfigurationTargets {
+    confDefaultPeerTargets     = defaultPeerTargets,
+    confGenesisSyncPeerTargets = defaultPeerTargets }
+
+-- | Peer targets selector for currentTargets field in 'PeerSelectionActions'
+-- that uses defaults defined here. This accounts for different targets depending
+-- on whether the node is configured to use Genesis or not.
+--
+defaultPeerSelectionTargetsBuilder :: LedgerStateJudgement -> Bool -> PeerSelectionTargets
+defaultPeerSelectionTargetsBuilder = targetsSelector defaultGenesisPeerTargetConfiguration
+
+-- | Target number of known big ledger peers in Genesis bulk-sync mode
+--
+governor_GENESIS_ACTIVE_PEERS :: Int
+governor_GENESIS_ACTIVE_PEERS = 0
+
+-- | Target number of known big ledger peers in Genesis bulk-sync mode
+--
+governor_GENESIS_KNOWN_BIG_LEDGER_PEERS :: Int
+governor_GENESIS_KNOWN_BIG_LEDGER_PEERS = 100
+
+-- | Target number of established big ledger peers in Genesis bulk-sync mode
+--
+governor_GENESIS_ESTABLISHED_BIG_LEDGER_PEERS :: Int
+governor_GENESIS_ESTABLISHED_BIG_LEDGER_PEERS = 50
+
+-- | Target number of active big ledger peers in Genesis bulk-sync mode
+--
+governor_GENESIS_ACTIVE_BIG_LEDGER_PEERS :: Int
+governor_GENESIS_ACTIVE_BIG_LEDGER_PEERS = 30
 
 -- |Inbound governor targets
 --
@@ -79,14 +146,17 @@ defaultAcceptedConnectionsLimit =
     acceptedConnectionsDelay     = 5 }
 
 -- |Principal mode of network operation
+--
 defaultDiffusionMode :: P2P
 defaultDiffusionMode = NonP2P
 
 -- |Node's peer sharing participation flag
+--
 defaultPeerSharing :: PeerSharing
 defaultPeerSharing = PeerSharingDisabled
 
 -- | Configuration for FetchDecisionPolicy.
+--
 defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
 defaultBlockFetchConfiguration bfcSalt =
   BlockFetchConfiguration {

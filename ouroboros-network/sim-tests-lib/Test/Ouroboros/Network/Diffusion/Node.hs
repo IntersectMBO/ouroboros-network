@@ -71,7 +71,8 @@ import Ouroboros.Network.Diffusion qualified as Diff
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..),
+           TargetsSelector)
 import Ouroboros.Network.PeerSelection.PeerMetric
            (PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -138,13 +139,14 @@ data Arguments m = Arguments
     , aShouldChainSyncExit  :: BlockHeader -> m Bool
     , aChainSyncEarlyExit   :: Bool
 
-    , aPeerSelectionTargets :: PeerSelectionTargets
+    , aPeerTargetsSelector  :: TargetsSelector
     , aReadLocalRootPeers   :: STM m [( HotValency
                                       , WarmValency
                                       , Map RelayAccessPoint ( PeerAdvertise
                                                              , PeerTrustable))]
     , aReadPublicRootPeers  :: STM m (Map RelayAccessPoint PeerAdvertise)
     , aReadUseBootstrapPeers :: Script UseBootstrapPeers
+    , aUseGenesis           :: Bool
     , aOwnPeerSharing       :: PeerSharing
     , aReadUseLedgerPeers   :: STM m UseLedgerPeers
     , aProtocolIdleTimeout  :: DiffTime
@@ -385,9 +387,10 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
 
     argsExtra :: StrictTVar m (Script UseBootstrapPeers) -> Diff.P2P.ArgumentsExtra m
     argsExtra ubpVar = Diff.P2P.ArgumentsExtra
-      { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
+      { Diff.P2P.daPeerTargetsSelector   = aPeerTargetsSelector na
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
+      , Diff.P2P.daUseGenesis            = aUseGenesis na
       , Diff.P2P.daReadUseBootstrapPeers = stepScriptSTM' ubpVar
       , Diff.P2P.daOwnPeerSharing        = aOwnPeerSharing na
       , Diff.P2P.daReadUseLedgerPeers    = aReadUseLedgerPeers na
