@@ -657,6 +657,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceUseBootstrapPeersChanged !_)                   = GovernorEvent a
     f a@(TraceOutboundGovernorCriticalFailure !_)            = GovernorEvent a
     f a@(TraceDebugState !_ !_)                              = GovernorEvent a
+    f a@TraceChurnTimeoutFired                               = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent

@@ -709,6 +709,7 @@ traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 51
 traceNum TraceUseBootstrapPeersChanged {}                     = 52
 traceNum TraceOutboundGovernorCriticalFailure {}              = 53
 traceNum TraceDebugState {}                                   = 54
+traceNum TraceChurnTimeoutFired {}                            = 55
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -768,6 +769,7 @@ allTraceNames =
    , (52, "TraceUseBootstrapPeersChanged")
    , (53, "TraceOutboundGovernorCriticalFailure")
    , (54, "TraceDebugState")
+   , (55, "TraceChurnTimeoutFired")
    ]
 
 

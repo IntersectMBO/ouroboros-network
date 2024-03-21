@@ -102,8 +102,7 @@ import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-           PeerSelectionActions, PeerSelectionCounters (..),
-           PeerSelectionPolicy (..), PeerSelectionState,
+           PeerSelectionActions, PeerSelectionCounters (..), PeerSelectionState,
            TracePeerSelection (..), emptyPeerSelectionCounters,
            emptyPeerSelectionState, emptyPublicPeerSelectionState)
 #ifdef POSIX
@@ -1012,13 +1011,13 @@ runM Interfaces
                                  dtTracePeerSelectionTracer
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
-                                 (policyPeerShareOverallTimeout peerSelectionPolicy)
                                  daPeerMetrics
                                  churnModeVar
                                  churnRng
                                  daBlockFetchMode
                                  daPeerSelectionTargets
                                  peerSelectionTargetsVar
+                                 countersVar
                                  daReadUseBootstrapPeers
 
       --
