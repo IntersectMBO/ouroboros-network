@@ -3,7 +3,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
@@ -26,6 +25,7 @@ import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerStateJudgement (..))
 import Ouroboros.Network.PeerSelection.PeerMetric
+import Ouroboros.Network.ConsensusMode
 
 -- | Tag indicating churning approach
 -- There are three syncing methods that networking layer supports, the legacy
@@ -38,7 +38,7 @@ import Ouroboros.Network.PeerSelection.PeerMetric
 --  peers.ActivityType
 -- ChurnBootstrapSync - same as above but with bootstrap peers
 --
-data ChurnRegime = Default | ChurnLegacySync | ChurnBootstrapSync deriving (Eq, Ord)
+data ChurnRegime = ChurnDefault | ChurnPraosSync | ChurnBootstrapPraosSync deriving (Eq, Ord)
 
 -- | Churn governor.
 --
@@ -66,14 +66,14 @@ peerChurnGovernor :: forall m peeraddr.
                   -> StrictTVar m PeerSelectionTargets
                   -> StrictTVar m PeerSelectionCounters
                   -> STM m UseBootstrapPeers
-                  -> StrictTMVar m LedgerStateJudgement
+                  -> StrictTMVar m ()
                   -- ^ Peer selection govnr chooses the ledger state that churn
                   -- govnr should use for setting targets to keep everything in sync
-                  -> Bool
+                  -> ConsensusMode
                   -> m Void
 peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
-                  _metrics churnModeVar inRng getFetchMode targetsSelector peerSelectionVar
-                  countersVar getUseBootstrapPeers mutexPeerSelection useGenesis = do
+                  _metrics churnModeVar inRng getFetchMode staticTargetsSelector peerSelectionVar
+                  countersVar getUseBootstrapPeers churnMutex consensusMode = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
   startTs0 <- getMonotonicTime
@@ -83,20 +83,20 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
   threadDelay 3
   (_, regime) <- atomically $ pickChurnRegime <$> updateChurnMode
                                               <*> getUseBootstrapPeers
-  -- peer selection governor starts in TooOld state, and unless bootstrap peers
-  -- are enabled, waits for initial peer targets set here, therefore to keep
-  -- things consistent, TooOld is used here to ensure that the right targets
-  -- are selected from the configuration.
-  let base = targetsSelector TooOld useGenesis
+  -- peer selection governor starts in TooOld state,
+  -- so consistency aside, it also probably
+  -- doesn't hurt to assume that at initial startup the node
+  -- is behind
+  let base = staticTargetsSelector TooOld consensusMode
   -- TODO: verify if #3396 is resolved
   atomically $ do
     increaseActivePeers regime base
     increaseEstablishedPeers regime base
 
-  -- Put back TooOld tag in the mutex to indicate to peer selection that we are done.
-  -- only the peer selection governor is responsible for switching this flag
-  -- on the basis of ledger state judgement to keep things organized.
-  atomically $ putTMVar mutexPeerSelection TooOld
+  -- This mutex was created empty in the caller. Here we want to
+  -- indicate to peer selection governor that it can now respond
+  -- to changes in ledger state judgement to set correct targets
+  atomically $ putTMVar churnMutex ()
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= go
 
@@ -104,10 +104,25 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
 
     pickChurnRegime :: ChurnMode -> UseBootstrapPeers -> (ChurnMode, ChurnRegime)
     pickChurnRegime mode ubp =
-      (mode,) if | useGenesis -> Default
-                 | mode == ChurnModeBulkSync, UseBootstrapPeers _ <- ubp -> ChurnBootstrapSync
-                 | mode == ChurnModeBulkSync -> ChurnLegacySync
-                 | otherwise -> Default
+      let regime =
+            case (mode, ubp, consensusMode) of
+              (_, _, GenesisMode) -> ChurnDefault
+              (ChurnModeBulkSync, UseBootstrapPeers _, _) -> ChurnBootstrapPraosSync
+              (ChurnModeBulkSync, _, _) -> ChurnPraosSync
+              otherwise -> ChurnDefault
+      in (mode, regime)
+
+    -- this is used by staticTargetsSelector and
+    -- we only have to distinguish the top case, the other
+    -- alternatives should use the non-genesis target set
+    -- and so it is NOT a true ledger state judgement
+    -- for general use
+    -- cf ouroboros-consensus 7509fdb for the relationship
+    -- between FetchMode, ChurnMode and LedgerStateJudgement
+    -- of why this works
+    pseudoLedgerStateJudgement :: ConsensusMode -> ChurnMode -> LedgerStateJudgement
+    pseudoLedgerStateJudgement GenesisMode ChurnModeBulkSync = TooOld
+    pseudoLedgerStateJudgement _ _ = YoungEnough
 
     updateChurnMode :: STM m ChurnMode
     updateChurnMode = do
@@ -119,53 +134,53 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
         return mode
 
     increaseActivePeers :: ChurnRegime -> PeerSelectionTargets -> STM m ()
-    increaseActivePeers mode base =
+    increaseActivePeers regime base =
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActivePeers =
-              if mode == Default
+              if regime == ChurnDefault
               then targetNumberOfActivePeers base
               else min 2 (targetNumberOfActivePeers base) })
 
     decreaseActivePeers :: ChurnRegime -> PeerSelectionTargets -> STM m ()
-    decreaseActivePeers mode base =
+    decreaseActivePeers regime base =
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActivePeers =
-              if mode == Default
+              if regime == ChurnDefault
               then decrease $ targetNumberOfActivePeers base
               else min 1 (targetNumberOfActivePeers base - 1) })
 
     increaseEstablishedPeers :: ChurnRegime -> PeerSelectionTargets -> STM m ()
-    increaseEstablishedPeers mode base =
+    increaseEstablishedPeers regime base =
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfEstablishedPeers =
-              if mode == ChurnBootstrapSync
+              if regime == ChurnBootstrapPraosSync
               then min (targetNumberOfActivePeers targets + 1)
                        (targetNumberOfEstablishedPeers base)
               else targetNumberOfEstablishedPeers base })
 
     decreaseEstablished :: ChurnRegime -> PeerSelectionTargets -> STM m ()
-    decreaseEstablished mode base =
+    decreaseEstablished regime base =
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfEstablishedPeers =
-              if mode == ChurnBootstrapSync
+              if regime == ChurnBootstrapPraosSync
               then min (targetNumberOfActivePeers targets)
                        (targetNumberOfEstablishedPeers base - 1)
               else decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
                    + targetNumberOfActivePeers base })
 
     increaseActiveBigLedgerPeers :: ChurnRegime -> PeerSelectionTargets -> STM m ()
-    increaseActiveBigLedgerPeers mode base =
+    increaseActiveBigLedgerPeers regime base =
       modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActiveBigLedgerPeers =
-              if mode >= ChurnLegacySync
+              if regime >= ChurnPraosSync
               then min 1 (targetNumberOfActiveBigLedgerPeers base)
               else targetNumberOfActiveBigLedgerPeers base })
 
     decreaseActiveBigLedgerPeers :: ChurnRegime -> PeerSelectionTargets -> STM m ()
-    decreaseActiveBigLedgerPeers mode base =
+    decreaseActiveBigLedgerPeers regime base =
         modifyTVar peerSelectionVar (\targets -> targets {
           targetNumberOfActiveBigLedgerPeers =
-              if mode >= ChurnLegacySync
+              if regime >= ChurnPraosSync
               then min 1 (targetNumberOfActiveBigLedgerPeers base)
               else decrease $ targetNumberOfActiveBigLedgerPeers base })
 
@@ -212,17 +227,16 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
     go !rng = do
       startTs <- getMonotonicTime
 
-      lsj <- atomically $ do
-        lsj <- takeTMVar mutexPeerSelection
-        -- this is critical to keep targets in sync with peer selection
-        -- in case the ledger state judgement has changed in the period
-        -- since last churn cycle
-        writeTVar peerSelectionVar (targetsSelector lsj useGenesis)
-        return lsj
+      (lsj, churnMode, regime) <- atomically $ do
+        takeTMVar churnMutex
+        (churnMode, regime) <- pickChurnRegime <$> updateChurnMode
+                                               <*> getUseBootstrapPeers
+        
+        let lsj = pseudoLedgerStateJudgement consensusMode churnMode
+        return (lsj, churnMode, regime)
 
-      let base = targetsSelector lsj useGenesis
-      (churnMode, regime) <- atomically (pickChurnRegime <$> updateChurnMode
-                                                         <*> getUseBootstrapPeers)
+      let base = staticTargetsSelector lsj consensusMode
+
       traceWith tracer $ TraceChurnMode churnMode
 
       -- Purge the worst active peer(s).
@@ -361,6 +375,7 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
           (\(ck, ckbl) (tk, tkbl) -> ck >= tk && ckbl >= tkbl)
           (targetKnown, targetKnownBigLedger)
 
+      atomically $ putTMVar churnMutex () 
       endTs <- getMonotonicTime
 
       fuzzyDelay rng (endTs `diffTime` startTs) >>= go
@@ -370,9 +385,10 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval
     fuzzyDelay rng execTime = do
       mode <- atomically getFetchMode
       -- todo: is this right?
-      if useGenesis || mode == FetchModeDeadline
-      then longDelay rng execTime
-      else shortDelay rng execTime
+      case (mode, consensusMode) of
+        (FetchModeDeadline, _) -> longDelay rng execTime
+        (_, GenesisMode) -> longDelay rng execTime
+        otherwise -> shortDelay rng execTime
 
     fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
     fuzzyDelay' baseDelay maxFuzz rng execTime = do

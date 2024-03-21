@@ -69,7 +69,7 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   -- ^ peer sharing registry
   psUpdateOnlyLocalOutboundConnections :: OnlyLocalOutboundConnections -> STM m (),
   -- ^ Consensus call back
-  psChurnMutexPeerSelection   :: StrictTMVar m LedgerStateJudgement
+  psChurnMutex                :: StrictTMVar m ()
   -- ^ this is used to coordinate the actions of peer selection and churn governor
   }
 
@@ -116,7 +116,8 @@ withPeerSelectionActions
     psPeerSharing = sharing,
     psPeerConnToPeerSharing = peerConnToPeerSharing,
     psReadPeerSharingController = sharingController,
-    psUpdateOnlyLocalOutboundConnections = updateOnlyLocalConnections }
+    psUpdateOnlyLocalOutboundConnections = updateOnlyLocalConnections,
+    psChurnMutex }
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psNewInboundConnections = readNewInboundConnections, psPeerStateActions = peerStateActions }
   k = do
@@ -137,7 +138,8 @@ withPeerSelectionActions
                                        peerStateActions,
                                        readUseBootstrapPeers = useBootstrapped,
                                        readLedgerStateJudgement = judgement,
-                                       updateOnlyLocalConnections }
+                                       updateOnlyLocalConnections,
+                                       churnMutex = psChurnMutex }
           withAsync
             (localRootPeersProvider
               localTracer

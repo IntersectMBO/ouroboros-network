@@ -15,7 +15,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerSelectionTargets (..)
   , ConfigurationTargets (..)
   , TargetsSelector
-  , targetsSelector
+  , mkTargetsSelector
   , nullPeerSelectionTargets
   , sanePeerSelectionTargets
   , PickPolicy
@@ -93,6 +93,7 @@ import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
            PeerStatus (PeerHot, PeerWarm))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
+import Ouroboros.Network.ConsensusMode
 
 
 -- | A peer pick policy is an action that picks a subset of elements from a
@@ -221,13 +222,11 @@ data ConfigurationTargets = ConfigurationTargets {
 -- Given a ledger state judgement and use genesis flag from node's configuration
 -- returns the effective peer targets.
 --
-type TargetsSelector = LedgerStateJudgement -> Bool -> PeerSelectionTargets
+type TargetsSelector = LedgerStateJudgement -> ConsensusMode -> PeerSelectionTargets
 
-targetsSelector :: ConfigurationTargets -> TargetsSelector
-targetsSelector conf lsj useGenesis
-  | useGenesis, lsj == TooOld =
-      confGenesisSyncPeerTargets conf
-  | otherwise = confDefaultPeerTargets conf
+mkTargetsSelector :: ConfigurationTargets -> TargetsSelector
+mkTargetsSelector conf TooOld GenesisMode = confGenesisSyncPeerTargets conf
+mkTargetsSelector conf _ _                = confDefaultPeerTargets conf
 
 nullPeerSelectionTargets :: PeerSelectionTargets
 nullPeerSelectionTargets =
@@ -276,11 +275,11 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- | Retrieve peer targets for Genesis & non-Genesis modes
        -- from node's configuration for the current state
        --
-       currentTargets :: TargetsSelector,
+       staticTargetsSelector :: TargetsSelector,
 
        -- | Mutex to avoid interleaved updates between peer sel. & churn govnrs
        -- which could result in mixed target values
-       churnMutex :: StrictTMVar m LedgerStateJudgement,
+       churnMutex     :: StrictTMVar m (),
 
        -- | Read the current set of locally or privately known root peers.
        --
@@ -489,7 +488,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- | Flag whether to sync in genesis mode when ledgerStateJudgement == TooOld
        -- this comes from node configuration and should be treated as read-only
        --
-       useGenesisFlag              :: !Bool,
+       consensusMode              :: !ConsensusMode,
 
        -- | Current value of 'UseBootstrapPeers'.
        --
@@ -677,9 +676,9 @@ emptyPeerSelectionCounters localRoots =
 
 emptyPeerSelectionState :: StdGen
                         -> [(HotValency, WarmValency)]
-                        -> Bool
+                        -> ConsensusMode
                         -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng localRoots useGenesisFlag =
+emptyPeerSelectionState rng localRoots consensusMode =
     PeerSelectionState {
       targets                     = nullPeerSelectionTargets,
       localRootPeers              = LocalRootPeers.empty,
@@ -702,7 +701,7 @@ emptyPeerSelectionState rng localRoots useGenesisFlag =
       fuzzRng                     = rng,
       countersCache               = Cache (emptyPeerSelectionCounters localRoots),
       ledgerStateJudgement        = TooOld,
-      useGenesisFlag,
+      consensusMode,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
       bootstrapPeersTimeout       = Nothing
@@ -1177,5 +1176,5 @@ deriving instance (Ord peeraddr, Show peeraddr)
                => Show (DebugPeerSelection peeraddr)
 
 data ChurnMode = ChurnModeBulkSync
-               | ChurnModeNormal deriving (Eq, Show)
+               | ChurnModeNormal deriving Show
 

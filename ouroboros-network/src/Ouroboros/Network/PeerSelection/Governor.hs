@@ -20,7 +20,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , TracePeerSelection (..)
   , DebugPeerSelection (..)
   , DebugPeerSelectionState (..)
-  , targetsSelector
+  , mkTargetsSelector
   , peerSelectionGovernor
     -- * Peer churn governor
   , peerChurnGovernor
@@ -66,6 +66,7 @@ import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.ConsensusMode
 
 {- $overview
 
@@ -456,11 +457,11 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> StrictTVar m PeerSelectionCounters
                       -> StrictTVar m (PublicPeerSelectionState peeraddr)
                       -> StrictTVar m (PeerSelectionState peeraddr peerconn)
-                      -> Bool
+                      -> ConsensusMode
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng countersVar stateVar debugStateVar useGenesis actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng countersVar stateVar debugStateVar consensusMode actions policy =
     JobPool.withJobPool $ \jobPool -> do
       localPeers <- map (\(h, w, _) -> (h, w))
                 <$> atomically (readLocalRootPeers actions)
@@ -474,7 +475,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng countersVar stat
         actions
         policy
         jobPool
-        (emptyPeerSelectionState fuzzRng localPeers useGenesis)
+        (emptyPeerSelectionState fuzzRng localPeers consensusMode)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --

@@ -138,6 +138,7 @@ import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server2 (ServerArguments (..), ServerTrace (..))
 import Ouroboros.Network.Server2 qualified as Server
+import Ouroboros.Network.ConsensusMode
 
 -- | P2P DiffusionTracers Extras
 --
@@ -249,7 +250,7 @@ data ArgumentsExtra m = ArgumentsExtra {
     -- to get a strong guarantee that when syncing up we will finish with a true
     -- ledger state. When false, we will fall back on the previous algorithms
     -- that leverage UseBootstrapPeers flag
-    , daUseGenesis :: Bool
+    , daConsensusMode :: ConsensusMode
     , daReadUseBootstrapPeers :: STM m UseBootstrapPeers
 
     -- | Peer's own PeerSharing value.
@@ -629,7 +630,7 @@ runM Interfaces
        { daPeerTargetsSelector
        , daReadLocalRootPeers
        , daReadPublicRootPeers
-       , daUseGenesis
+       , daConsensusMode
        , daReadUseBootstrapPeers
        , daOwnPeerSharing
        , daReadUseLedgerPeers
@@ -809,11 +810,11 @@ runM Interfaces
       -- ensure that peer selection governor does not change targets
       -- in the initial starting phase when churn governor should be
       -- in control. See comment directly below.
-      churnMutexPeerSelection <- newEmptyTMVarIO
+      churnMutex <- newEmptyTMVarIO
 
       peerSelectionTargetsVar <- newTVarIO $
         -- because peer selection governor starts up in TooOld state
-        let base = daPeerTargetsSelector TooOld daUseGenesis
+        let base = daPeerTargetsSelector TooOld daConsensusMode
         in base {
           -- Start with a smaller number of active peers, the churn governor
           -- will increase it to the configured value after a delay. This policy
@@ -994,7 +995,7 @@ runM Interfaces
                                          psPeerConnToPeerSharing = pchPeerSharing diNtnPeerSharing,
                                          psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry),
                                          psUpdateOnlyLocalOutboundConnections = daUpdateOnlyLocalConnections,
-                                         psChurnMutexPeerSelection = churnMutexPeerSelection }
+                                         psChurnMutex = churnMutex }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,
@@ -1018,7 +1019,7 @@ runM Interfaces
                 countersVar
                 publicStateVar
                 dbgVar
-                daUseGenesis
+                daConsensusMode
                 peerSelectionActions
                 peerSelectionPolicy)
 
@@ -1037,8 +1038,8 @@ runM Interfaces
                                  peerSelectionTargetsVar
                                  countersVar
                                  daReadUseBootstrapPeers
-                                 churnMutexPeerSelection
-                                 daUseGenesis
+                                 churnMutex
+                                 daConsensusMode
 
       --
       -- Two functions only used in InitiatorAndResponder mode
@@ -1080,7 +1081,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng [] daUseGenesis
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng [] daConsensusMode
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -1108,7 +1109,7 @@ runM Interfaces
             inboundInfoChannel
             outboundInfoChannel
             observableStateVar $ \connectionManager-> do
-            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng [] daUseGenesis
+            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng [] daConsensusMode
             diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
             withPeerStateActions' connectionManager $ \peerStateActions ->
               withPeerSelectionActions'

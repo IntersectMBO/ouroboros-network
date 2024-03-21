@@ -13,10 +13,6 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultGenesisPeerTargetConfiguration
   , defaultLegacyPeerTargetConfiguration
   , defaultPeerSelectionTargetsBuilder
-  , governor_GENESIS_ACTIVE_PEERS
-  , governor_GENESIS_KNOWN_BIG_LEDGER_PEERS
-  , governor_GENESIS_ESTABLISHED_BIG_LEDGER_PEERS
-  , governor_GENESIS_ACTIVE_BIG_LEDGER_PEERS
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
@@ -50,7 +46,7 @@ import Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
            defaultMiniProtocolParameters)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ConfigurationTargets (..), PeerSelectionTargets (..),
-           targetsSelector)
+           mkTargetsSelector, PeerSelectionState (activePeers))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerStateJudgement)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
@@ -59,6 +55,7 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..))
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.ConsensusMode
 
 -- | Default number of bootstrap peers
 --
@@ -113,25 +110,25 @@ defaultLegacyPeerTargetConfiguration =
 -- that uses defaults defined here. This accounts for different targets depending
 -- on whether the node is configured to use Genesis or not.
 --
-defaultPeerSelectionTargetsBuilder :: LedgerStateJudgement -> Bool -> PeerSelectionTargets
-defaultPeerSelectionTargetsBuilder = targetsSelector defaultGenesisPeerTargetConfiguration
+defaultPeerSelectionTargetsBuilder :: LedgerStateJudgement -> ConsensusMode -> PeerSelectionTargets
+defaultPeerSelectionTargetsBuilder = mkTargetsSelector defaultGenesisPeerTargetConfiguration
 
--- | Target number of known big ledger peers in Genesis bulk-sync mode
+-- | Target number of active peers in Genesis sync mode
 --
 governor_GENESIS_ACTIVE_PEERS :: Int
 governor_GENESIS_ACTIVE_PEERS = 0
 
--- | Target number of known big ledger peers in Genesis bulk-sync mode
+-- | Target number of known big ledger peers in Genesis sync mode
 --
 governor_GENESIS_KNOWN_BIG_LEDGER_PEERS :: Int
 governor_GENESIS_KNOWN_BIG_LEDGER_PEERS = 100
 
--- | Target number of established big ledger peers in Genesis bulk-sync mode
+-- | Target number of established big ledger peers in Genesis sync mode
 --
 governor_GENESIS_ESTABLISHED_BIG_LEDGER_PEERS :: Int
 governor_GENESIS_ESTABLISHED_BIG_LEDGER_PEERS = 50
 
--- | Target number of active big ledger peers in Genesis bulk-sync mode
+-- | Target number of active big ledger peers in Genesis sync mode
 --
 governor_GENESIS_ACTIVE_BIG_LEDGER_PEERS :: Int
 governor_GENESIS_ACTIVE_BIG_LEDGER_PEERS = 30
