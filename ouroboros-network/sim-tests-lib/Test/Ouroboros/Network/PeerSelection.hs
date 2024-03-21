@@ -3333,10 +3333,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
         publicStateVar <- newTVarIO (emptyPublicPeerSelectionState @SockAddr)
         debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) []
+        countersVar <- newTVarIO $ emptyPeerSelectionCounters []
         peerSelectionGovernor
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
+          countersVar
           publicStateVar
           debugVar
           actions

@@ -104,8 +104,8 @@ import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters (..),
            PeerSelectionPolicy (..), PeerSelectionState,
-           TracePeerSelection (..), emptyPeerSelectionState,
-           emptyPublicPeerSelectionState)
+           TracePeerSelection (..), emptyPeerSelectionCounters,
+           emptyPeerSelectionState, emptyPublicPeerSelectionState)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makeDebugPeerSelectionState)
@@ -808,6 +808,7 @@ runM Interfaces
         }
 
       publicStateVar <- newTVarIO emptyPublicPeerSelectionState
+      countersVar <- newTVarIO (emptyPeerSelectionCounters [])
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -998,6 +999,7 @@ runM Interfaces
                 peerSelectionTracer
                 dtTracePeerSelectionCounters
                 fuzzRng
+                countersVar
                 publicStateVar
                 dbgVar
                 peerSelectionActions
