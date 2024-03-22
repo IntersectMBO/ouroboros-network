@@ -1,11 +1,15 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE EmptyCase           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | The type of the transaction submission protocol.
 --
@@ -20,6 +24,8 @@ module Ouroboros.Network.Protocol.TxSubmission2.Type
   , TokBlockingStyle (..)
   , StBlockingStyle (..)
   , BlockingReplyList (..)
+  , NumTxIdsToAck (..)
+  , NumTxIdsToReq (..)
     -- re-exports
   , SizeInBytes (..)
     -- deprecated API
@@ -28,7 +34,12 @@ module Ouroboros.Network.Protocol.TxSubmission2.Type
 
 import Control.DeepSeq
 import Data.List.NonEmpty (NonEmpty)
+import Data.Monoid (Sum (..))
 import Data.Word (Word16)
+import GHC.Generics
+import NoThunks.Class (NoThunks (..))
+
+import Quiet (Quiet (..))
 
 import Network.TypedProtocol.Core
 
@@ -111,6 +122,21 @@ data StBlockingStyle where
   StNonBlocking :: StBlockingStyle
 
 
+newtype NumTxIdsToAck = NumTxIdsToAck { getNumTxIdsToAck :: Word16 }
+  deriving (Eq, Ord, NFData, Generic)
+  deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
+  deriving Semigroup via (Sum Word16)
+  deriving Monoid via (Sum Word16)
+  deriving Show via (Quiet NumTxIdsToAck)
+
+newtype NumTxIdsToReq = NumTxIdsToReq { getNumTxIdsToReq :: Word16 }
+  deriving (Eq, Ord, NFData, Generic)
+  deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
+  deriving Semigroup via (Sum Word16)
+  deriving Monoid via (Sum Word16)
+  deriving Show via (Quiet NumTxIdsToReq)
+
+
 -- | There are some constraints of the protocol that are not captured in the
 -- types of the messages, but are documented with the messages. Violation
 -- of these constraints is also a protocol error. The constraints are intended
@@ -184,8 +210,8 @@ instance Protocol (TxSubmission2 txid tx) where
     --
     MsgRequestTxIds
       :: TokBlockingStyle blocking
-      -> Word16 -- ^ Acknowledge this number of outstanding txids
-      -> Word16 -- ^ Request up to this number of txids.
+      -> NumTxIdsToAck -- ^ Acknowledge this number of outstanding txids
+      -> NumTxIdsToReq -- ^ Request up to this number of txids.
       -> Message (TxSubmission2 txid tx) StIdle (StTxIds blocking)
 
     -- | Reply with a list of transaction identifiers for available
