@@ -74,6 +74,7 @@ module Ouroboros.Network.NodeToNode
   , RemoteAddress
   , RemoteConnectionId
   , IsBigLedgerPeer (..)
+  , NumTxIdsToAck (..)
   , ProtocolLimitFailure
   , Handshake
   , LocalAddresses (..)
@@ -137,6 +138,7 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Subscription.Dns (DnsSubscriptionParams,
@@ -207,7 +209,7 @@ data MiniProtocolParameters = MiniProtocolParameters {
       blockFetchPipeliningMax     :: !Word16,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
-      txSubmissionMaxUnacked      :: !Word16
+      txSubmissionMaxUnacked      :: !NumTxIdsToAck
       -- ^ maximal number of unacked tx (pipelining is bounded by twice this
       -- number)
     }
