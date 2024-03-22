@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -239,6 +241,10 @@ prop_channel_IO params =
 prop_pipe_IO :: TxSubmissionTestParams -> Property
 prop_pipe_IO params =
     ioProperty (prop_channel createPipeConnectedChannels params)
+
+
+deriving newtype instance Arbitrary NumTxIdsToAck
+deriving newtype instance Arbitrary NumTxIdsToReq
 
 
 instance Arbitrary (AnyMessageAndAgency (TxSubmission2 TxId Tx)) where

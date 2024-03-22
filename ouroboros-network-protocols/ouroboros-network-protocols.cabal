@@ -98,8 +98,10 @@ library
                        bytestring        >=0.10 && <0.13,
                        cborg             >=0.2.1 && <0.3,
                        deepseq,
+                       quiet,
 
                        io-classes       ^>=1.5.0,
+                       nothunks,
                        si-timers,
 
                        ouroboros-network-api

@@ -102,7 +102,10 @@ encodeTxSubmission2 encodeTxId encodeTx = encode
     encode (ClientAgency TokInit)  MsgInit =
         CBOR.encodeListLen 1
      <> CBOR.encodeWord 6
-    encode (ServerAgency TokIdle) (MsgRequestTxIds blocking ackNo reqNo) =
+    encode (ServerAgency TokIdle) (MsgRequestTxIds
+                                     blocking
+                                     (NumTxIdsToAck ackNo)
+                                     (NumTxIdsToReq reqNo)) =
         CBOR.encodeListLen 4
      <> CBOR.encodeWord 0
      <> CBOR.encodeBool (case blocking of
@@ -167,8 +170,8 @@ decodeTxSubmission2 decodeTxId decodeTx = decode
           return (SomeMessage MsgInit)
         (ServerAgency TokIdle,       4, 0) -> do
           blocking <- CBOR.decodeBool
-          ackNo    <- CBOR.decodeWord16
-          reqNo    <- CBOR.decodeWord16
+          ackNo    <- NumTxIdsToAck <$> CBOR.decodeWord16
+          reqNo    <- NumTxIdsToReq <$> CBOR.decodeWord16
           return $!
             if blocking
             then SomeMessage (MsgRequestTxIds TokBlocking    ackNo reqNo)

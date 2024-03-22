@@ -40,7 +40,7 @@ import Network.TypedProtocol.Pipelined (N, Nat (..), natToInt)
 
 import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
-import Ouroboros.Network.SizeInBytes (SizeInBytes)
+import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -178,12 +178,12 @@ txSubmissionInbound
      , MonadThrow m
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
-  -> Word16         -- ^ Maximum number of unacknowledged txids allowed
+  -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
   -> NodeToNodeVersion
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
+txSubmissionInbound tracer (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
     TxSubmissionServerPipelined $
       continueWithStateM (serverIdle Zero) initialServerState
   where
@@ -225,15 +225,15 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
                   && Map.null (bufferedTxs st)) $
               pure $
               SendMsgRequestTxIdsBlocking
-                (numTxsToAcknowledge st)
-                numTxIdsToRequest
+                (NumTxIdsToAck (numTxsToAcknowledge st))
+                (NumTxIdsToReq numTxIdsToRequest)
                 -- Our result if the client terminates the protocol
                 (traceWith tracer TraceTxInboundTerminated)
                 ( collectAndContinueWithState (handleReply Zero) st {
                     numTxsToAcknowledge    = 0,
                     requestedTxIdsInFlight = numTxIdsToRequest
                   }
-                . CollectTxIds numTxIdsToRequest
+                . CollectTxIds (NumTxIdsToReq numTxIdsToRequest)
                 . NonEmpty.toList)
 
         Succ n' -> if canRequestMoreTxs st
@@ -271,7 +271,7 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
                    Nat n
                 -> StatefulCollect (ServerState txid tx) n txid tx m
     handleReply n = StatefulCollect $ \st collect -> case collect of
-      CollectTxIds reqNo txids -> do
+      CollectTxIds (NumTxIdsToReq reqNo) txids -> do
         -- Check they didn't send more than we asked for. We don't need to
         -- check for a minimum: the blocking case checks for non-zero
         -- elsewhere, and for the non-blocking case it is quite normal for
@@ -474,8 +474,8 @@ txSubmissionInbound tracer maxUnacked mpReader mpWriter _version =
 
       if numTxIdsToRequest > 0
         then pure $ SendMsgRequestTxIdsPipelined
-          (numTxsToAcknowledge st)
-          numTxIdsToRequest
+          (NumTxIdsToAck (numTxsToAcknowledge st))
+          (NumTxIdsToReq numTxIdsToRequest)
           (continueWithStateM (serverIdle (Succ n)) st {
                 requestedTxIdsInFlight = requestedTxIdsInFlight st
                                        + numTxIdsToRequest,
