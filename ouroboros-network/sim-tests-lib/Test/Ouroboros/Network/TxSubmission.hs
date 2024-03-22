@@ -217,7 +217,7 @@ txSubmissionSimulation
 
      , txid ~ Int
      )
-  => Word16
+  => NumTxIdsToAck
   -> [Tx txid]
   -> ControlMessageSTM m
   -> Maybe DiffTime
@@ -299,7 +299,7 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
                     * realToFrac (length outboundTxs `div` 4))
                 atomically (writeTVar controlMessageVar Terminate)
             txSubmissionSimulation
-              maxUnacked outboundTxs
+              (NumTxIdsToAck maxUnacked) outboundTxs
               (readTVar controlMessageVar)
               mbDelayTime mbDelayTime
             ) in
