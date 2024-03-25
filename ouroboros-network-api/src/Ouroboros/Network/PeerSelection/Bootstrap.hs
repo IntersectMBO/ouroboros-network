@@ -6,6 +6,7 @@ module Ouroboros.Network.PeerSelection.Bootstrap
   , isBootstrapPeersEnabled
   , requiresBootstrapPeers
   , isNodeAbleToMakeProgress
+  , OnlyLocalOutboundConnections (..)
   ) where
 
 import GHC.Generics (Generic)
@@ -41,3 +42,7 @@ requiresBootstrapPeers ubp lsj =
 isNodeAbleToMakeProgress :: UseBootstrapPeers -> LedgerStateJudgement -> Bool -> Bool
 isNodeAbleToMakeProgress ubp lsj hasOnlyBootstrapPeers =
     not (requiresBootstrapPeers ubp lsj) || hasOnlyBootstrapPeers
+
+data OnlyLocalOutboundConnections = ConnectedToExternalOutboundPeers
+                                  | ConnectedToOnlyLocalOutboundPeers
+  deriving (Eq, Show)

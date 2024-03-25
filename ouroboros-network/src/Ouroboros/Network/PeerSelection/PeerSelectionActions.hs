@@ -33,8 +33,8 @@ import Data.Void (Void)
 import Network.DNS qualified as DNS
 
 import Data.Bifunctor (first)
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Bootstrap (OnlyLocalOutboundConnections,
+           UseBootstrapPeers (..), requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -65,8 +65,10 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   -- ^ peer sharing configured value
   psPeerConnToPeerSharing     :: peerconn -> PeerSharing,
   -- ^ Extract peer sharing information from peerconn
-  psReadPeerSharingController :: STM m (Map peeraddr (PeerSharingController peeraddr m))
+  psReadPeerSharingController :: STM m (Map peeraddr (PeerSharingController peeraddr m)),
   -- ^ peer sharing registry
+  psUpdateOnlyLocalOutboundConnections :: OnlyLocalOutboundConnections -> STM m ()
+  -- ^ Consensus call back
   }
 
 -- | Record of remaining parameters for withPeerSelectionActions
@@ -111,7 +113,8 @@ withPeerSelectionActions
     psReadUseBootstrapPeers = useBootstrapped,
     psPeerSharing = sharing,
     psPeerConnToPeerSharing = peerConnToPeerSharing,
-    psReadPeerSharingController = sharingController }
+    psReadPeerSharingController = sharingController,
+    psUpdateOnlyLocalOutboundConnections = updateOnlyLocalConnections }
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psNewInboundConnections = readNewInboundConnections, psPeerStateActions = peerStateActions }
   k = do
@@ -131,7 +134,8 @@ withPeerSelectionActions
                                        requestPeerShare,
                                        peerStateActions,
                                        readUseBootstrapPeers = useBootstrapped,
-                                       readLedgerStateJudgement = judgement }
+                                       readLedgerStateJudgement = judgement,
+                                       updateOnlyLocalConnections }
           withAsync
             (localRootPeersProvider
               localTracer

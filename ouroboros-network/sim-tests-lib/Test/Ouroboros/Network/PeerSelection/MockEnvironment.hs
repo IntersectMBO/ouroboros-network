@@ -45,6 +45,7 @@ import System.Random (mkStdGen)
 import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictTVar
 import Control.Exception (throw)
+import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -73,7 +74,8 @@ import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hid
            (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+import Ouroboros.Network.PeerSelection.Bootstrap
+           (OnlyLocalOutboundConnections (..), UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
            LedgerPeersKind (..))
@@ -211,6 +213,7 @@ governorAction mockEnv = do
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                              (useBootstrapPeers mockEnv)
     debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) [])
+    countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters [])
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar usbVar) (readTVar lsjVar) policy
     exploreRaces      -- explore races within the governor
@@ -221,6 +224,7 @@ governorAction mockEnv = do
         tracerDebugPeerSelection
         tracerTracePeerSelectionCounters
         (mkStdGen 42)
+        countersVar
         publicStateVar
         debugVar
         actions
@@ -298,12 +302,14 @@ mockPeerSelectionActions tracer
                 v (\_ a -> TraceDynamic . TraceEnvPeersStatus
                        <$> snapshotPeersStatus proxy a)
       return v
+
+    onlyLocalOutboundConnsVar <- newTVarIO ConnectedToOnlyLocalOutboundPeers
     traceWith tracer (TraceEnvAddPeers peerGraph)
     traceWith tracer (TraceEnvSetLocalRoots localRootPeers)   --TODO: make dynamic
     traceWith tracer (TraceEnvSetPublicRoots publicRootPeers) --TODO: make dynamic
     return $ mockPeerSelectionActions'
                tracer env policy
-               scripts targetsVar readUseBootstrapPeers getLedgerStateJudgement peerConns
+               scripts targetsVar readUseBootstrapPeers getLedgerStateJudgement peerConns onlyLocalOutboundConnsVar
   where
     proxy :: Proxy m
     proxy = Proxy
@@ -328,6 +334,7 @@ mockPeerSelectionActions' :: forall m.
                           -> STM m UseBootstrapPeers
                           -> STM m LedgerStateJudgement
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
+                          -> TVar m OnlyLocalOutboundConnections
                           -> PeerSelectionActions PeerAddr (PeerConn m) m
 mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
@@ -340,7 +347,8 @@ mockPeerSelectionActions' tracer
                           targetsVar
                           readUseBootstrapPeers
                           readLedgerStateJudgement
-                          connsVar =
+                          connsVar
+                          onlyLocalOutboundConnsVar =
     PeerSelectionActions {
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       peerSharing              = peerSharing,
@@ -357,7 +365,11 @@ mockPeerSelectionActions' tracer
           closePeerConnection
         },
       readUseBootstrapPeers,
-      readLedgerStateJudgement
+      readLedgerStateJudgement,
+      updateOnlyLocalConnections = \a -> do
+        a' <- readTVar onlyLocalOutboundConnsVar
+        when (a /= a') $
+          writeTVar onlyLocalOutboundConnsVar a
     }
   where
     -- TODO: make this dynamic
@@ -655,6 +667,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceUseBootstrapPeersChanged !_)                   = GovernorEvent a
     f a@(TraceOutboundGovernorCriticalFailure !_)            = GovernorEvent a
     f a@(TraceDebugState !_ !_)                              = GovernorEvent a
+    f a@TraceChurnTimeoutFired                               = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent

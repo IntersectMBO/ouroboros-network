@@ -38,6 +38,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , MkGuardedDecision
   , Completion (..)
   , PeerSelectionCounters (..)
+  , emptyPeerSelectionCounters
   , peerStateToCounters
     -- * Peer Sharing Auxiliary data type
   , PeerSharingResult (..)
@@ -66,7 +67,8 @@ import Control.Monad.Class.MonadTime.SI
 import System.Random (StdGen)
 
 import Ouroboros.Network.ExitPolicy
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.PeerSelection.Bootstrap (OnlyLocalOutboundConnections,
+           UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
            LedgerPeersKind)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
@@ -313,7 +315,17 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 
        -- | Read the current ledger state judgement
        --
-       readLedgerStateJudgement :: STM m LedgerStateJudgement
+       readLedgerStateJudgement :: STM m LedgerStateJudgement,
+
+       -- | Callback provided by consensus to inform it if the node is
+       -- connected to only local roots or also some external peers.
+       --
+       -- This is useful in order for the Bootstrap State Machine to
+       -- simply refuse to transition from TooOld to YoungEnough while
+       -- it only has local peers.
+       --
+       updateOnlyLocalConnections :: OnlyLocalOutboundConnections -> STM m ()
+
      }
 
 -- | Callbacks which are performed to change peer state.
@@ -567,12 +579,28 @@ data PeerSelectionCounters = PeerSelectionCounters {
       -- | All hot peers including ledger peers, root peers, big ledger peers,
       -- local root peers and peers discovered through peer sharing.
       hotPeers           :: !Int,
+
       -- | Cold big ledger peers.
       coldBigLedgerPeers :: !Int,
       -- | Warm big ledger peers.
       warmBigLedgerPeers :: !Int,
       -- | Hot big ledger peers.
       hotBigLedgerPeers  :: !Int,
+
+      -- | Cold local root peers.
+      coldLocalRootPeers :: !Int,
+      -- | Warm local root peers.
+      warmLocalRootPeers :: !Int,
+      -- | Hot local root peers.
+      hotLocalRootPeers  :: !Int,
+
+      -- | Cold bootstrap peers.
+      coldBootstrapPeers :: !Int,
+      -- | Warm bootstrap peers.
+      warmBootstrapPeers :: !Int,
+      -- | Hot bootstrap peers.
+      hotBootstrapPeers  :: !Int,
+
       -- | Local root peers with one entry per group. First entry is the number
       -- of warm peers in that group the second is the number of hot peers in
       -- that group.
@@ -588,6 +616,12 @@ peerStateToCounters st@PeerSelectionState { activePeers, publicRootPeers, localR
       coldBigLedgerPeers = Set.size $ coldPeersSet `Set.intersection` bigLedgerPeers,
       warmBigLedgerPeers = Set.size $ warmPeersSet `Set.intersection` bigLedgerPeers,
       hotBigLedgerPeers  = Set.size $ hotPeersSet  `Set.intersection` bigLedgerPeers,
+      coldLocalRootPeers = Set.size $ coldPeersSet `Set.intersection` localRootPeersSet,
+      warmLocalRootPeers = Set.size $ warmPeersSet `Set.intersection` localRootPeersSet,
+      hotLocalRootPeers  = Set.size $ hotPeersSet  `Set.intersection` localRootPeersSet,
+      coldBootstrapPeers = Set.size $ coldPeersSet `Set.intersection` bootstrapPeers,
+      warmBootstrapPeers = Set.size $ warmPeersSet `Set.intersection` bootstrapPeers,
+      hotBootstrapPeers  = Set.size $ hotPeersSet  `Set.intersection` bootstrapPeers,
       localRoots
     }
   where
@@ -601,6 +635,13 @@ peerStateToCounters st@PeerSelectionState { activePeers, publicRootPeers, localR
       | (hot, warm, _) <- LocalRootPeers.toGroupSets localRootPeers
       ]
     bigLedgerPeers = PublicRootPeers.getBigLedgerPeers publicRootPeers
+    bootstrapPeers = PublicRootPeers.getBootstrapPeers publicRootPeers
+    localRootPeersSet = LocalRootPeers.keysSet localRootPeers
+
+emptyPeerSelectionCounters :: [(HotValency, WarmValency)]
+                           -> PeerSelectionCounters
+emptyPeerSelectionCounters localRoots =
+  PeerSelectionCounters 0 0 0 0 0 0 0 0 0 0 0 0 localRoots
 
 emptyPeerSelectionState :: StdGen
                         -> [(HotValency, WarmValency)]
@@ -626,7 +667,7 @@ emptyPeerSelectionState rng localRoots =
       inProgressDemoteHot         = Set.empty,
       inProgressDemoteToCold      = Set.empty,
       fuzzRng                     = rng,
-      countersCache               = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots),
+      countersCache               = Cache (emptyPeerSelectionCounters localRoots),
       ledgerStateJudgement        = TooOld,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
@@ -1063,6 +1104,8 @@ data TracePeerSelection peeraddr =
 
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
+     | TraceChurnTimeoutFired
+
      | TraceLedgerStateJudgementChanged LedgerStateJudgement
      | TraceOnlyBootstrapPeers
      | TraceBootstrapPeersFlagChangedWhilstInSensitiveState

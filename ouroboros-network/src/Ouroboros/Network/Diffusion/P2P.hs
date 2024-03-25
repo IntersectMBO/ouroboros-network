@@ -102,10 +102,9 @@ import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-           PeerSelectionActions, PeerSelectionCounters (..),
-           PeerSelectionPolicy (..), PeerSelectionState,
-           TracePeerSelection (..), emptyPeerSelectionState,
-           emptyPublicPeerSelectionState)
+           PeerSelectionActions, PeerSelectionCounters (..), PeerSelectionState,
+           TracePeerSelection (..), emptyPeerSelectionCounters,
+           emptyPeerSelectionState, emptyPublicPeerSelectionState)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makeDebugPeerSelectionState)
@@ -640,6 +639,7 @@ runM Interfaces
        , daLedgerPeersCtx =
           daLedgerPeersCtx@LedgerPeersConsensusInterface
             { lpGetLedgerStateJudgement }
+       , daUpdateOnlyLocalConnections
        }
      ApplicationsExtra
        { daRethrowPolicy
@@ -808,6 +808,7 @@ runM Interfaces
         }
 
       publicStateVar <- newTVarIO emptyPublicPeerSelectionState
+      countersVar <- newTVarIO (emptyPeerSelectionCounters [])
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -977,7 +978,8 @@ runM Interfaces
                                          psReadUseBootstrapPeers = daReadUseBootstrapPeers,
                                          psPeerSharing = daOwnPeerSharing,
                                          psPeerConnToPeerSharing = pchPeerSharing diNtnPeerSharing,
-                                         psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry) }
+                                         psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry),
+                                         psUpdateOnlyLocalOutboundConnections = daUpdateOnlyLocalConnections }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,
@@ -998,6 +1000,7 @@ runM Interfaces
                 peerSelectionTracer
                 dtTracePeerSelectionCounters
                 fuzzRng
+                countersVar
                 publicStateVar
                 dbgVar
                 peerSelectionActions
@@ -1010,13 +1013,13 @@ runM Interfaces
                                  dtTracePeerSelectionTracer
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
-                                 (policyPeerShareOverallTimeout peerSelectionPolicy)
                                  daPeerMetrics
                                  churnModeVar
                                  churnRng
                                  daBlockFetchMode
                                  daPeerSelectionTargets
                                  peerSelectionTargetsVar
+                                 countersVar
                                  daReadUseBootstrapPeers
 
       --
