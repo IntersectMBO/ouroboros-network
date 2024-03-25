@@ -2,6 +2,18 @@
 
 ## next version
 
+### Breaking changes
+
+* Added `daUpdateOnlyLocalConnections :: OnlyLocalOutboundConnections -> STM m ()`
+  to `Diffusion.Common.Applications`. This callback is to be provided by
+  consensus and is propagated all the way to the peer selection governor.
+
+### Non-Breaking changes
+
+* Extended and exposed `PeerSelectionCounters` to the Churn governor.
+* Improved Churn governor by synchronizing according to the counters instead
+  of relying on `threadDelay`.
+
 ## 0.13.1.0 -- 2023-03-20
 
 ### Breaking changes
