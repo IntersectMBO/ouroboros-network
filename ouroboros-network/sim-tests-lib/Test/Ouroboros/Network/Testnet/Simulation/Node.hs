@@ -34,7 +34,7 @@ module Test.Ouroboros.Network.Testnet.Simulation.Node
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (forM)
+import Control.Monad (forM, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -119,7 +119,8 @@ import Data.Function (on)
 import Data.Typeable (Typeable)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState,
            TraceLabelPeer (..))
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.PeerSelection.Bootstrap
+           (OnlyLocalOutboundConnections (..), UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
@@ -1066,6 +1067,7 @@ diffusionSimulation
             dMapVar = do
       chainSyncExitVar <- newTVarIO chainSyncExitOnBlockNo
       ledgerPeersVar <- initScript' ledgerPeers
+      onlyLocalOutboundConnectionsVar <- newTVarIO ConnectedToOnlyLocalOutboundPeers
       let (bgaRng, rng) = Random.split $ mkStdGen seed
           acceptedConnectionsLimit =
             AcceptedConnectionsLimit maxBound maxBound 0
@@ -1147,6 +1149,11 @@ diffusionSimulation
                              $ accPoolStake
                              $ getLedgerPools
                              $ ledgerPools)
+              , NodeKernel.iUpdateOnlyLocalOutboundConnections =
+                  \a -> do
+                    a' <- readTVar onlyLocalOutboundConnectionsVar
+                    when (a /= a') $
+                      writeTVar onlyLocalOutboundConnectionsVar a
               }
 
           shouldChainSyncExit :: StrictTVar m (Maybe BlockNo) -> BlockHeader -> m Bool

@@ -639,6 +639,7 @@ runM Interfaces
        , daLedgerPeersCtx =
           daLedgerPeersCtx@LedgerPeersConsensusInterface
             { lpGetLedgerStateJudgement }
+       , daUpdateOnlyLocalConnections
        }
      ApplicationsExtra
        { daRethrowPolicy
@@ -977,7 +978,8 @@ runM Interfaces
                                          psReadUseBootstrapPeers = daReadUseBootstrapPeers,
                                          psPeerSharing = daOwnPeerSharing,
                                          psPeerConnToPeerSharing = pchPeerSharing diNtnPeerSharing,
-                                         psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry) }
+                                         psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry),
+                                         psUpdateOnlyLocalOutboundConnections = daUpdateOnlyLocalConnections }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,

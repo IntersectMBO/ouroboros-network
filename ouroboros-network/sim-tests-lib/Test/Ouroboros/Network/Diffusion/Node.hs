@@ -90,7 +90,8 @@ import Ouroboros.Network.Testing.Data.Script (Script (..), stepScriptSTM')
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Bootstrap (OnlyLocalOutboundConnections,
+           UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -124,6 +125,8 @@ data Interfaces m = Interfaces
     , iDomainMap         :: StrictTVar m (Map Domain [(IP, TTL)])
     , iLedgerPeersConsensusInterface
                          :: LedgerPeersConsensusInterface m
+    , iUpdateOnlyLocalOutboundConnections
+                         :: OnlyLocalOutboundConnections -> STM m ()
     }
 
 type NtNFD m = FD m NtNAddr
@@ -408,6 +411,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Node.aaShouldChainSyncExit      = aShouldChainSyncExit na
       , Node.aaChainSyncEarlyExit       = aChainSyncEarlyExit na
       , Node.aaOwnPeerSharing           = aOwnPeerSharing na
+      , Node.aaUpdateOnlyLocalOutboundConnections =
+          iUpdateOnlyLocalOutboundConnections ni
       }
 
 --- Utils

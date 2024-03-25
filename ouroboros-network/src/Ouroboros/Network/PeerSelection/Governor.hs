@@ -51,6 +51,8 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
+import Ouroboros.Network.PeerSelection.Bootstrap
+           (OnlyLocalOutboundConnections (..))
 import Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
@@ -557,11 +559,20 @@ peerSelectionGovernorLoop tracer
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
           !newCounters = peerStateToCounters decisionState
+          connectedToOnlyLocalPeers =
+            case compare (hotLocalRootPeers newCounters) (hotPeers newCounters) of
+              EQ -> ConnectedToOnlyLocalOutboundPeers
+              _  -> ConnectedToExternalOutboundPeers
 
-      -- Update Counters TVar
-      withCacheA (countersCache decisionState)
-                 newCounters
-                 (atomically . writeTVar countersVar)
+      atomically $ do
+        -- Update Counters TVar
+        withCacheA (countersCache decisionState)
+                   newCounters
+                   (writeTVar countersVar)
+
+        -- Update consensus callback
+        updateOnlyLocalConnections actions connectedToOnlyLocalPeers
+
       -- Trace Counters
       traceWithCache countersTracer
                      (countersCache decisionState)

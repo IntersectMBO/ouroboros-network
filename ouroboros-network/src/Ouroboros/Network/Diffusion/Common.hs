@@ -23,6 +23,7 @@ import Control.Tracer (Tracer, nullTracer)
 
 import Network.Mux (MuxMode (..), MuxTrace, WithMuxBearer)
 
+import Control.Concurrent.Class.MonadSTM
 import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
            OuroborosBundleWithExpandedCtx)
 import Ouroboros.Network.NodeToClient (Versions)
@@ -30,6 +31,7 @@ import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, ConnectionId,
            DiffusionMode)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
+import Ouroboros.Network.PeerSelection.Bootstrap (OnlyLocalOutboundConnections)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface)
 import Ouroboros.Network.Snocket (FileDescriptor)
@@ -184,4 +186,13 @@ data Applications ntnAddr ntnVersion ntnVersionData
       --
       -- TODO: it should be in 'InterfaceExtra'
     , daLedgerPeersCtx :: LedgerPeersConsensusInterface m
+
+      -- | Callback provided by consensus to inform it if the node is
+      -- connected to only local roots or also some external peers.
+      --
+      -- This is useful in order for the Bootstrap State Machine to
+      -- simply refuse to transition from TooOld to YoungEnough while
+      -- it only has local peers.
+      --
+    , daUpdateOnlyLocalConnections :: OnlyLocalOutboundConnections -> STM m ()
   }

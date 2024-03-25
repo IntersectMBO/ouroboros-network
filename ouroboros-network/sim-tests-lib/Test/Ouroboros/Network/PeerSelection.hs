@@ -72,12 +72,14 @@ import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
-import Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
+import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar, newTVarIO,
+           readTVar, writeTVar)
+import Control.Monad (when)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Bootstrap (OnlyLocalOutboundConnections,
+           UseBootstrapPeers (..), requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -3323,8 +3325,9 @@ _governorFindingPublicRoots :: Int
                             -> STM IO UseBootstrapPeers
                             -> STM IO LedgerStateJudgement
                             -> PeerSharing
+                            -> StrictTVar IO OnlyLocalOutboundConnections
                             -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing = do
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar = do
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     publicRootPeersProvider
       tracer
@@ -3368,8 +3371,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   closePeerConnection      = error "closePeerConnection"
                 },
                 readUseBootstrapPeers,
-                readLedgerStateJudgement
-              }
+                readLedgerStateJudgement,
+                updateOnlyLocalConnections = \a -> do
+                  a' <- readTVar olocVar
+                  when (a /= a') $
+                    writeTVar olocVar a
+                              }
 
     targets :: PeerSelectionTargets
     targets = nullPeerSelectionTargets {

@@ -87,6 +87,7 @@ import Pipes qualified
 import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum)
+import Ouroboros.Network.PeerSelection.Bootstrap (OnlyLocalOutboundConnections)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, bracketPeerSharingClient,
@@ -205,6 +206,8 @@ data AppArgs header block m = AppArgs
   , aaChainSyncEarlyExit  :: Bool
   , aaOwnPeerSharing
      :: PSTypes.PeerSharing
+  , aaUpdateOnlyLocalOutboundConnections
+     :: OnlyLocalOutboundConnections -> STM m ()
   }
 
 
@@ -253,6 +256,7 @@ applications debugTracer nodeKernel
                , aaShouldChainSyncExit
                , aaChainSyncEarlyExit
                , aaOwnPeerSharing
+               , aaUpdateOnlyLocalOutboundConnections
                }
              toHeader =
     Diff.Applications
@@ -270,6 +274,8 @@ applications debugTracer nodeKernel
                                   localResponderApp
       , Diff.daLedgerPeersCtx =
           aaLedgerPeersConsensusInterface
+      , Diff.daUpdateOnlyLocalConnections =
+          aaUpdateOnlyLocalOutboundConnections
       }
   where
     initiatorApp
