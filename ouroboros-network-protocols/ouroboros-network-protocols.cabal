@@ -176,7 +176,7 @@ library testlib
                        QuickCheck,
                        quickcheck-instances,
                        serialise,
-                       cardano-slotting:{testlib} ^>=0.1.2,
+                       cardano-slotting:{testlib} ^>=0.2.0,
                        cardano-strict-containers,
                        tasty,
                        tasty-quickcheck,
