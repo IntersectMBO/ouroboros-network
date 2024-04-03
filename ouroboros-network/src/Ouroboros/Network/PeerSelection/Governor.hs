@@ -27,10 +27,10 @@ module Ouroboros.Network.PeerSelection.Governor
   , establishedPeersStatus
   , PeerSelectionState (..)
   , PublicPeerSelectionState (..)
+  , makePublicPeerSelectionStateVar
   , PeerSelectionCounters (..)
   , nullPeerSelectionTargets
   , emptyPeerSelectionState
-  , emptyPublicPeerSelectionState
   , ChurnMode (..)
   ) where
 

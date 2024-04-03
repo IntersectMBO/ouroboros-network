@@ -71,7 +71,8 @@ import Ouroboros.Network.Diffusion qualified as Diff
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..))
+import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..),
+           PublicPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.PeerMetric
            (PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -272,7 +273,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
            (Diff.P2P.runM interfaces
                           Diff.nullTracers
                           tracersExtra
-                          args (argsExtra useBootstrapPeersScriptVar) apps appsExtra)
+                          (mkArgs (nkPublicPeerSelectionVar nodeKernel))
+                          (mkArgsExtra useBootstrapPeersScriptVar) apps appsExtra)
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  wait diffusionThread
@@ -373,18 +375,21 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
         decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> (toPeerSharing a)
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
-    args :: Diff.Arguments (NtNFD m) NtNAddr (NtCFD m) NtCAddr
-    args = Diff.Arguments
+    mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)
+           -> Diff.Arguments m (NtNFD m) NtNAddr (NtCFD m) NtCAddr
+    mkArgs daPublicPeerSelectionVar = Diff.Arguments
       { Diff.daIPv4Address   = Right <$> (ntnToIPv4 . aIPAddress) na
       , Diff.daIPv6Address   = Right <$> (ntnToIPv6 . aIPAddress) na
       , Diff.daLocalAddress  = Nothing
       , Diff.daAcceptedConnectionsLimit
                              = aAcceptedLimits na
       , Diff.daMode          = aDiffusionMode na
+      , Diff.daPublicPeerSelectionVar
       }
 
-    argsExtra :: StrictTVar m (Script UseBootstrapPeers) -> Diff.P2P.ArgumentsExtra m
-    argsExtra ubpVar = Diff.P2P.ArgumentsExtra
+    mkArgsExtra :: StrictTVar m (Script UseBootstrapPeers)
+                -> Diff.P2P.ArgumentsExtra m
+    mkArgsExtra ubpVar = Diff.P2P.ArgumentsExtra
       { Diff.P2P.daPeerSelectionTargets  = aPeerSelectionTargets na
       , Diff.P2P.daReadLocalRootPeers    = aReadLocalRootPeers na
       , Diff.P2P.daReadPublicRootPeers   = aReadPublicRootPeers na
