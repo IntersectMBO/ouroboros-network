@@ -78,6 +78,8 @@ import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.NodeToNode ()
+import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
+           makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
@@ -264,21 +266,27 @@ data NodeKernel header block s m = NodeKernel {
 
       nkChainDB :: ChainDB block m,
 
-      nkPeerSharingAPI :: PeerSharingAPI NtNAddr s m
+      nkPeerSharingAPI :: PeerSharingAPI NtNAddr s m,
+
+      nkPublicPeerSelectionVar :: StrictTVar m (PublicPeerSelectionState NtNAddr)
     }
 
 newNodeKernel :: ( MonadSTM m
                  , RandomGen s
                  )
               => s -> m (NodeKernel header block s m)
-newNodeKernel rng = NodeKernel
-            <$> newTVarIO Map.empty
-            <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
-            <*> newFetchClientRegistry
-            <*> newPeerSharingRegistry
-            <*> ChainDB.newChainDB
-            <*> newPeerSharingAPI rng ps_POLICY_PEER_SHARE_STICKY_TIME
-                                      ps_POLICY_PEER_SHARE_MAX_PEERS
+newNodeKernel rng = do
+    publicStateVar <- makePublicPeerSelectionStateVar
+    NodeKernel
+      <$> newTVarIO Map.empty
+      <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
+      <*> newFetchClientRegistry
+      <*> newPeerSharingRegistry
+      <*> ChainDB.newChainDB
+      <*> newPeerSharingAPI publicStateVar rng
+                            ps_POLICY_PEER_SHARE_STICKY_TIME
+                            ps_POLICY_PEER_SHARE_MAX_PEERS
+      <*> pure publicStateVar
 
 -- | Register a new upstream chain-sync client.
 --

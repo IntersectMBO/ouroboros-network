@@ -205,7 +205,7 @@ runGovernorInMockEnvironment mockEnv =
 
 governorAction :: GovernorMockEnvironment -> IOSim s Void
 governorAction mockEnv = do
-    publicStateVar <- StrictTVar.newTVarIO emptyPublicPeerSelectionState
+    publicStateVar <- makePublicPeerSelectionStateVar
     lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
                              (ledgerStateJudgement mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)

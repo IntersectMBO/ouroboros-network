@@ -5,7 +5,6 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 
@@ -26,6 +25,7 @@ module Ouroboros.Network.Diffusion.P2P
   , Interfaces (..)
   , runM
   , NodeToNodePeerConnectionHandle
+    -- * Re-exports
   , AbstractTransitionTrace
   , RemoteTransitionTrace
   ) where
@@ -104,8 +104,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters (..),
            PeerSelectionPolicy (..), PeerSelectionState,
-           TracePeerSelection (..), emptyPeerSelectionState,
-           emptyPublicPeerSelectionState)
+           TracePeerSelection (..), emptyPeerSelectionState)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makeDebugPeerSelectionState)
@@ -561,8 +560,8 @@ runM
                     ntcAddr ntcVersion ntcVersionData
                     resolverError m
     -> -- | configuration
-       Arguments ntnFd ntnAddr
-                 ntcFd ntcAddr
+       Arguments m ntnFd ntnAddr
+                   ntcFd ntcAddr
     -> -- | p2p configuration
        ArgumentsExtra m
 
@@ -620,6 +619,7 @@ runM Interfaces
        , daLocalAddress
        , daAcceptedConnectionsLimit
        , daMode = diffusionMode
+       , daPublicPeerSelectionVar
        }
      ArgumentsExtra
        { daPeerSelectionTargets
@@ -806,8 +806,6 @@ runM Interfaces
           targetNumberOfActivePeers =
             min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
         }
-
-      publicStateVar <- newTVarIO emptyPublicPeerSelectionState
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -998,7 +996,7 @@ runM Interfaces
                 peerSelectionTracer
                 dtTracePeerSelectionCounters
                 fuzzRng
-                publicStateVar
+                daPublicPeerSelectionVar
                 dbgVar
                 peerSelectionActions
                 peerSelectionPolicy)
@@ -1123,7 +1121,8 @@ run
     -> TracersExtra RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                     LocalAddress  NodeToClientVersion NodeToClientVersionData
                     IOException IO
-    -> Arguments Socket      RemoteAddress
+    -> Arguments IO
+                 Socket      RemoteAddress
                  LocalSocket LocalAddress
     -> ArgumentsExtra IO
     -> Applications

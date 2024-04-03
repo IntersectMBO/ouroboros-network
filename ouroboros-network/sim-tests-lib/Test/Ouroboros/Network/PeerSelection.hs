@@ -3331,7 +3331,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       DNS.defaultResolvConf
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
-        publicStateVar <- newTVarIO (emptyPublicPeerSelectionState @SockAddr)
+        publicStateVar <- makePublicPeerSelectionStateVar
         debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) []
         peerSelectionGovernor
           tracer tracer tracer

@@ -24,13 +24,13 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , ChurnMode (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
+  , emptyPeerSelectionState
   , DebugPeerSelectionState (..)
   , makeDebugPeerSelectionState
-  , emptyPeerSelectionState
   , assertPeerSelectionState
   , establishedPeersStatus
   , PublicPeerSelectionState (..)
-  , emptyPublicPeerSelectionState
+  , makePublicPeerSelectionStateVar
   , toPublicState
   , Guarded (GuardedSkip, Guarded)
   , Decision (..)
@@ -65,6 +65,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import System.Random (StdGen)
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
@@ -541,6 +542,12 @@ emptyPublicPeerSelectionState =
   PublicPeerSelectionState {
     availableToShare = mempty
   }
+
+makePublicPeerSelectionStateVar
+ :: (MonadSTM m, Ord peeraddr)
+ => m (StrictTVar m (PublicPeerSelectionState peeraddr))
+makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
+
 
 -- | Convert a 'PeerSelectionState' into a public record accessible by the
 -- Peer Sharing mechanisms so we can know about which peers are available and

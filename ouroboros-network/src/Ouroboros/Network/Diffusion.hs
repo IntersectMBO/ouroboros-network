@@ -19,6 +19,8 @@ module Ouroboros.Network.Diffusion
   , run
     -- * Re-exports
   , P2P.AbstractTransitionTrace
+  , PublicPeerSelectionState
+  , makePublicPeerSelectionStateVar
   ) where
 
 import Control.Exception (IOException)
@@ -30,6 +32,7 @@ import Ouroboros.Network.NodeToClient (LocalAddress, LocalSocket,
            NodeToClientVersion, NodeToClientVersionData)
 import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            RemoteAddress)
+import Ouroboros.Network.PeerSelection.Governor.Types
 
 import Ouroboros.Network.Diffusion.Common as Common
 import Ouroboros.Network.Diffusion.NonP2P qualified as NonP2P
@@ -38,7 +41,6 @@ import Ouroboros.Network.Diffusion.P2P qualified as P2P
 -- | Promoted data types.
 --
 data P2P = P2P | NonP2P
-
 
 -- | Tracers which depend on p2p mode.
 --
@@ -88,6 +90,7 @@ run :: forall (p2p :: P2P) a.
          IO
     -> ExtraTracers p2p
     -> Arguments
+         IO
          Socket      RemoteAddress
          LocalSocket LocalAddress
     -> ExtraArguments p2p IO
