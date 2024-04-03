@@ -14,6 +14,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , LedgerPeersConsensusInterface (..)
   , UseLedgerPeers (..)
   , AfterSlot (..)
+  , LedgerPeersKind (..)
   , isLedgerPeersEnabled
   ) where
 
@@ -24,6 +25,12 @@ import Data.List.NonEmpty (NonEmpty)
 import GHC.Generics
 import NoThunks.Class
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
+import Cardano.Binary (ToCBOR, FromCBOR)
+
+-- | Which ledger peers to pick.
+--
+data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
+  deriving Show
 
 -- | Only use the ledger after the given slot number.
 data UseLedgerPeers = DontUseLedgerPeers
@@ -44,8 +51,8 @@ isLedgerPeersEnabled UseLedgerPeers {}  = True
 -- A value in the [0, 1] range.
 --
 newtype PoolStake = PoolStake { unPoolStake :: Rational }
-  deriving (Eq, Ord, Show)
-  deriving newtype (Fractional, Num, NFData)
+  deriving (Eq, Ord, Show, Generic)
+  deriving newtype (Fractional, Num, NFData, ToCBOR, FromCBOR)
 
 -- | The accumulated relative stake of a stake pool, like PoolStake but it also includes the
 -- relative stake of all preceding pools. A value in the range [0, 1].

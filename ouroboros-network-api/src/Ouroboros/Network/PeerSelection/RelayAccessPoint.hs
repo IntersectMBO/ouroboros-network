@@ -1,8 +1,13 @@
-{-# LANGUAGE BangPatterns      #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms   #-}
-{-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE PatternSynonyms    #-}
+{-# LANGUAGE ViewPatterns       #-}
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE InstanceSigs       #-}
+{-# LANGUAGE MultiWayIf         #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE TypeApplications   #-}
 
 module Ouroboros.Network.PeerSelection.RelayAccessPoint
   ( DomainAccessPoint (..)
@@ -21,8 +26,11 @@ import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Text.Read (readMaybe)
 
+import Codec.CBOR.Encoding
+import Codec.CBOR.Decoding
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
+import Cardano.Binary
 
 -- | A product of a 'DNS.Domain' and 'Socket.PortNumber'.  After resolving the
 -- domain we will use the 'Socket.PortNumber' to form 'Socket.SockAddr'.
@@ -52,6 +60,37 @@ instance ToJSON DomainAccessPoint where
 data RelayAccessPoint = RelayAccessDomain  !DNS.Domain !Socket.PortNumber
                       | RelayAccessAddress !IP.IP      !Socket.PortNumber
   deriving (Eq, Ord)
+
+-- | Used by eg. ledger peer snapshot functionality of Genesis
+instance ToCBOR RelayAccessPoint where
+  toCBOR = mconcat . \case
+    RelayAccessDomain domain port ->
+      [encodeWord8 0, serialize' port, toCBOR domain]
+    RelayAccessAddress (IP.IPv4 ip4) port ->
+      [encodeWord8 1, serialize' port, toCBOR (IP.fromIPv4 ip4)]
+    RelayAccessAddress (IP.IPv6 ip6) port ->
+      [encodeWord8 2, serialize' port, toCBOR (IP.fromIPv6 ip6)]
+    where
+      serialize' = toCBOR . toInteger
+
+instance FromCBOR RelayAccessPoint where
+  fromCBOR = do
+    mode <- decodeWord8
+    port <- fromInteger <$> fromCBOR @Integer
+    if | mode == 0 ->  do
+         domain <- fromCBOR
+         return $ RelayAccessDomain domain port
+       | mode == 1 -> do
+         ip4 <- IP.IPv4 . IP.toIPv4 <$> fromCBOR
+         return $ RelayAccessAddress ip4 port
+       | mode == 2 -> do
+         ip6 <- IP.IPv6 . IP.toIPv6 <$> fromCBOR
+         return $ RelayAccessAddress ip6 port
+         
+    
+
+-- PortNumber instance Serialise Socket.PortNumber
+-- deriving instance Serialise RelayAccessPoint
 
 instance Show RelayAccessPoint where
     show (RelayAccessDomain domain port) =

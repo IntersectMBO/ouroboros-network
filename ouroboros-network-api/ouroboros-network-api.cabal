@@ -44,6 +44,7 @@ library
 
                        Ouroboros.Network.PeerSelection.Bootstrap
                        Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                       Ouroboros.Network.PeerSelection.LedgerPeers.Util
                        Ouroboros.Network.PeerSelection.PeerMetric.Type
                        Ouroboros.Network.PeerSelection.PeerAdvertise
                        Ouroboros.Network.PeerSelection.PeerTrustable
@@ -66,6 +67,7 @@ library
                        serialise         >=0.2   && <0.3,
                        text              >=1.2 && <2.2,
 
+                       cardano-binary,
                        cardano-slotting,
                        cardano-strict-containers,
                        contra-tracer,
@@ -75,6 +77,7 @@ library
                        strict-stm,
                        si-timers,
                        typed-protocols  ^>=0.1.1,
+                       
 
   ghc-options:         -Wall
                        -Wno-unticked-promoted-constructors
