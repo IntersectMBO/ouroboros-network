@@ -452,7 +452,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugStateVar actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng publicStateVar debugStateVar actions policy =
     JobPool.withJobPool $ \jobPool -> do
       localPeers <- map (\(w, h, _) -> (w, h))
                 <$> atomically (readLocalRootPeers actions)
@@ -460,7 +460,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng stateVar debugSt
         tracer
         debugTracer
         countersTracer
-        stateVar
+        publicStateVar
         debugStateVar
         actions
         policy
@@ -505,7 +505,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
 peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
-                          stateVar
+                          publicStateVar
                           debugStateVar
                           actions
                           policy
@@ -519,7 +519,7 @@ peerSelectionGovernorLoop tracer
     loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
-      atomically $ writeTVar stateVar (toPublicState st)
+      atomically $ writeTVar publicStateVar (toPublicState st)
 
       blockedAt <- getMonotonicTime
 
