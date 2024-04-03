@@ -2624,10 +2624,10 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           signalProperty 20 show
             (\(_,_,_,_,toolong) -> Set.null toolong)
             ((,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
-                   <*> govActivePeersSig
-                   <*> trIsNodeAlive
-                   <*> demotionOpportunities
-                   <*> demotionOpportunitiesIgnoredTooLong)
+                    <*> govActivePeersSig
+                    <*> trIsNodeAlive
+                    <*> demotionOpportunities
+                    <*> demotionOpportunitiesIgnoredTooLong)
 
 
 -- | A variant of ouroboros-network-framework

@@ -991,15 +991,15 @@ runM Interfaces
             -> NodeToNodePeerSelectionActions muxMode ntnAddr ntnVersionData m a b
             -> m Void
           peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
-              (Governor.peerSelectionGovernor
-                dtTracePeerSelectionTracer
-                peerSelectionTracer
-                dtTracePeerSelectionCounters
-                fuzzRng
-                daPublicPeerSelectionVar
-                dbgVar
-                peerSelectionActions
-                peerSelectionPolicy)
+            Governor.peerSelectionGovernor
+              dtTracePeerSelectionTracer
+              peerSelectionTracer
+              dtTracePeerSelectionCounters
+              fuzzRng
+              daPublicPeerSelectionVar
+              dbgVar
+              peerSelectionActions
+              peerSelectionPolicy
 
       --
       -- The peer churn governor:
