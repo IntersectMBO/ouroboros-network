@@ -944,9 +944,9 @@ data TracePeerSelection peeraddr =
      -- Peer Sharing
      --
 
-     -- | target known peers, actual known peers, peers available for
-     -- peer sharing, peers selected for peer sharing
-     | TracePeerShareRequests     Int Int (Set peeraddr) (Set peeraddr)
+     -- | target known peers, actual known peers, number of peers to request,
+     -- peers available for peer sharing, peers selected for peer sharing
+     | TracePeerShareRequests     Int Int PeerSharingAmount (Set peeraddr) (Set peeraddr)
      | TracePeerShareResults         [(peeraddr, Either SomeException (PeerSharingResult peeraddr))] --TODO: classify failures
      | TracePeerShareResultsFiltered [peeraddr]
      | TraceKnownInboundConnection peeraddr PeerSharing
