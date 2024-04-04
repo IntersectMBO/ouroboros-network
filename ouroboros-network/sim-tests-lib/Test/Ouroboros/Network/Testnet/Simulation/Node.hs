@@ -6,12 +6,12 @@
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module Test.Ouroboros.Network.Testnet.Simulation.Node
   ( SimArgs (..)
+  , mainnetSimArgs
   , NodeArgs (..)
   , ServiceDomainName (..)
   , DiffusionScript (..)
@@ -1184,7 +1184,8 @@ diffusionSimulation
               , NodeKernel.aTimeWaitTimeout      = 30
               , NodeKernel.aDNSTimeoutScript     = dnsTimeout
               , NodeKernel.aDNSLookupDelayScript = dnsLookupDelay
-              , NodeKernel.aDebugTracer          = nullTracer
+              , NodeKernel.aDebugTracer          = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionDebugTrace s)))
+                                                   `contramap` nodeTracer
               }
 
       NodeKernel.run blockGeneratorArgs

@@ -102,7 +102,6 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint,
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSLookupType)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
-import Ouroboros.Network.PeerSharing (PeerSharingRegistry (PeerSharingRegistry))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
            getBlockPointSet)
 import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
@@ -199,8 +198,6 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
         useBootstrapPeersScriptVar <- newTVarIO (aReadUseBootstrapPeers na)
         peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
-        peerSharingRegistry <- PeerSharingRegistry <$> newTVarIO mempty
-
         let -- diffusion interfaces
             interfaces :: Diff.P2P.Interfaces (NtNFD m) NtNAddr NtNVersion NtNVersionData
                                               (NtCFD m) NtCAddr NtCVersion NtCVersionData
@@ -264,7 +261,7 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
                 -- fetch mode is not used (no block-fetch mini-protocol)
               , Diff.P2P.daBlockFetchMode         = pure FetchModeDeadline
               , Diff.P2P.daReturnPolicy           = \_ -> config_REPROMOTE_DELAY
-              , Diff.P2P.daPeerSharingRegistry    = peerSharingRegistry
+              , Diff.P2P.daPeerSharingRegistry    = nkPeerSharingRegistry nodeKernel
               }
 
         let apps = Node.applications (aDebugTracer na) nodeKernel Node.cborCodecs limits appArgs blockHeader

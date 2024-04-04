@@ -14,6 +14,8 @@ module Ouroboros.Network.PeerSharing
     -- * Constants
   , ps_POLICY_PEER_SHARE_STICKY_TIME
   , ps_POLICY_PEER_SHARE_MAX_PEERS
+    -- * Re-exports
+  , PeerSharingResult (..)
   ) where
 
 import Control.Applicative (Alternative)
@@ -33,7 +35,8 @@ import Ouroboros.Network.PeerSelection.Governor.Types (PublicPeerSelectionState,
            availableToShare)
 import Ouroboros.Network.Protocol.PeerSharing.Client (PeerSharingClient (..))
 import Ouroboros.Network.Protocol.PeerSharing.Server (PeerSharingServer (..))
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
+           PeerSharingResult (..))
 import System.Random
 
 -- | Request and Result queue for the peer sharing client implementation.

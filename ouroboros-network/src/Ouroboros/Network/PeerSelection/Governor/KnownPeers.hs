@@ -105,6 +105,7 @@ belowTarget actions
         decisionTrace = [TracePeerShareRequests
                           targetNumberOfKnownPeers
                           numKnownPeers
+                          numPeersToReq
                           availableForPeerShare
                           selectedForPeerShare],
         decisionState = st {
