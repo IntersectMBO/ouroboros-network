@@ -105,7 +105,6 @@ tests =
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
     ]
-#if !defined(mingw32_HOST_OS)
   , testProperty "no failure"
                  prop_diffusion_nofail
   , testProperty "no livelock"
@@ -159,8 +158,6 @@ tests =
                  prop_only_bootstrap_peers_in_fallback_state
   , testProperty "no non trustable peers before caught up state"
                  prop_no_non_trustable_peers_before_caught_up_state
-#endif
-#if !defined(mingw32_HOST_OS)
   , testGroup "coverage"
     [ testProperty "server trace coverage"
                    prop_server_trace_coverage
@@ -187,7 +184,6 @@ tests =
     , testProperty "target active root"
                    prop_hot_diffusion_target_active_root
     ]
-#endif
   ]
 
 traceFromList :: [a] -> Trace (SimResult ()) a
