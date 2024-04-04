@@ -2,6 +2,13 @@
 
 ## next version
 
+### Breaking changes
+
+* `newPeerSharingAPI` requires `PublicPeerSelectionState` variable to be passed to it.
+* `Diffusion.Arguments` requires `PublicPeerSelectionState`; the integration
+  code should make sure both `newPeerSharingAPI` and diffusion receives the
+  same mutable variable.
+
 ## 0.13.1.0 -- 2023-03-20
 
 ### Breaking changes
