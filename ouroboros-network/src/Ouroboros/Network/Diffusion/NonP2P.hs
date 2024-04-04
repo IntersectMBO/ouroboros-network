@@ -149,6 +149,7 @@ run
          IO
     -> TracersExtra
     -> Arguments
+         IO
          Socket      RemoteAddress
          LocalSocket LocalAddress
     -> ArgumentsExtra

@@ -205,7 +205,7 @@ runGovernorInMockEnvironment mockEnv =
 
 governorAction :: GovernorMockEnvironment -> IOSim s Void
 governorAction mockEnv = do
-    publicStateVar <- StrictTVar.newTVarIO emptyPublicPeerSelectionState
+    publicStateVar <- makePublicPeerSelectionStateVar
     lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
                              (ledgerStateJudgement mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
@@ -610,7 +610,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceBigLedgerPeersResults !_ !_ !_)                = GovernorEvent a
     f a@(TraceBigLedgerPeersFailure !_ !_ !_)                = GovernorEvent a
     f a@(TraceForgetBigLedgerPeers !_ !_ !_)                 = GovernorEvent a
-    f a@(TracePeerShareRequests !_ !_ !_ !_)                 = GovernorEvent a
+    f a@(TracePeerShareRequests !_ !_ !_ !_ !_)              = GovernorEvent a
     f a@(TracePeerShareResults !_)                           = GovernorEvent a
     f a@(TracePeerShareResultsFiltered !_)                   = GovernorEvent a
     f a@(TraceKnownInboundConnection !_ !_)                  = GovernorEvent a

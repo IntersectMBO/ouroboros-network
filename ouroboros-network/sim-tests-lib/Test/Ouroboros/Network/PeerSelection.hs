@@ -1527,7 +1527,7 @@ recentPeerShareActivity d =
     -- schedule it to be removed again at time d+t. We arrange for the change in
     -- the recent set to happen after the peer sharing event.
     go !recentSet !recentPSQ
-        (E (TS t i) (GovernorEvent (TracePeerShareRequests _ _ _ addrs)) : txs) =
+        (E (TS t i) (GovernorEvent (TracePeerShareRequests _ _ _ _ addrs)) : txs) =
       let recentSet' = recentSet <> addrs
           recentPSQ' = foldl' (\q a -> PSQ.insert a t' () q) recentPSQ addrs
           t'         = d `addTime` t
@@ -3331,7 +3331,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       DNS.defaultResolvConf
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
-        publicStateVar <- newTVarIO (emptyPublicPeerSelectionState @SockAddr)
+        publicStateVar <- makePublicPeerSelectionStateVar
         debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) []
         peerSelectionGovernor
           tracer tracer tracer

@@ -564,7 +564,7 @@ applications debugTracer nodeKernel
     peerSharingInitiator  =
       MiniProtocolCb $
        \  ExpandedInitiatorContext {
-            eicConnectionId   = ConnectionId { remoteAddress = them },
+            eicConnectionId   = connId@ConnectionId { remoteAddress = them },
             eicControlMessage = controlMessageSTM
           }
           channel
@@ -573,7 +573,7 @@ applications debugTracer nodeKernel
                $ \controller -> do
                  psClient <- peerSharingClient controlMessageSTM controller
                  runPeerWithLimits
-                   nullTracer
+                   ((show . (connId,)) `contramap` debugTracer)
                    peerSharingCodec
                    (peerSharingSizeLimits limits)
                    (peerSharingTimeLimits limits)
@@ -583,10 +583,10 @@ applications debugTracer nodeKernel
     peerSharingResponder
       :: PeerSharingAPI NtNAddr s m
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    peerSharingResponder psAPI = MiniProtocolCb $ \_ctx channel -> do
+    peerSharingResponder psAPI = MiniProtocolCb $ \ResponderContext { rcConnectionId = connId } channel -> do
       labelThisThread "PeerSharingServer"
       runPeerWithLimits
-        nullTracer
+        ((show . (connId,)) `contramap` debugTracer)
         peerSharingCodec
         (peerSharingSizeLimits limits)
         (peerSharingTimeLimits limits)

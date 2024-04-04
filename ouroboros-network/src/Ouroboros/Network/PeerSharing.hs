@@ -14,6 +14,8 @@ module Ouroboros.Network.PeerSharing
     -- * Constants
   , ps_POLICY_PEER_SHARE_STICKY_TIME
   , ps_POLICY_PEER_SHARE_MAX_PEERS
+    -- * Re-exports
+  , PeerSharingResult (..)
   ) where
 
 import Control.Applicative (Alternative)
@@ -30,10 +32,11 @@ import Data.Monoid.Synchronisation (FirstToFinish (..), runFirstToFinish)
 import Data.Set qualified as Set
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.PeerSelection.Governor.Types (PublicPeerSelectionState,
-           availableToShare, emptyPublicPeerSelectionState)
+           availableToShare)
 import Ouroboros.Network.Protocol.PeerSharing.Client (PeerSharingClient (..))
 import Ouroboros.Network.Protocol.PeerSharing.Server (PeerSharingServer (..))
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
+           PeerSharingResult (..))
 import System.Random
 
 -- | Request and Result queue for the peer sharing client implementation.
@@ -157,15 +160,16 @@ ps_POLICY_PEER_SHARE_MAX_PEERS = 10
 
 -- | Create a new PeerSharingAPI
 --
-newPeerSharingAPI :: ( MonadSTM m
-                     , Ord addr
-                     )
-                  => s
+newPeerSharingAPI :: MonadSTM m
+                  => StrictTVar m (PublicPeerSelectionState addr)
+                  -> s
                   -> DiffTime
                   -> PeerSharingAmount
                   -> m (PeerSharingAPI addr s m)
-newPeerSharingAPI rng policyPeerShareStickyTime policyPeerShareMaxPeers = do
-  publicPeerSelectionStateVar <- newTVarIO emptyPublicPeerSelectionState
+newPeerSharingAPI publicPeerSelectionStateVar
+                  rng
+                  policyPeerShareStickyTime
+                  policyPeerShareMaxPeers = do
   genVar <- newTVarIO rng
   reSaltAtVar <- newTVarIO (Time 0)
   return $

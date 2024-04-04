@@ -18,6 +18,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (Exception, SomeException)
 import Control.Tracer (Tracer, nullTracer)
 
@@ -30,6 +31,7 @@ import Ouroboros.Network.NodeToClient qualified as NodeToClient
 import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit, ConnectionId,
            DiffusionMode)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
+import Ouroboros.Network.PeerSelection.Governor.Types (PublicPeerSelectionState)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface)
 import Ouroboros.Network.Snocket (FileDescriptor)
@@ -117,7 +119,7 @@ nullTracers = Tracers {
 
 -- | Common DiffusionArguments interface between P2P and NonP2P
 --
-data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
+data Arguments m ntnFd ntnAddr ntcFd ntcAddr = Arguments {
       -- | an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
       --
       daIPv4Address              :: Maybe (Either ntnFd ntnAddr)
@@ -137,6 +139,13 @@ data Arguments ntnFd ntnAddr ntcFd ntcAddr = Arguments {
       -- | run in initiator only mode
       --
     , daMode                     :: DiffusionMode
+
+      -- | public peer selection state
+      --
+      -- It is created outside of diffusion, since it is needed to create some
+      -- apps (e.g. peer sharing).
+      --
+    , daPublicPeerSelectionVar   :: StrictTVar m (PublicPeerSelectionState ntnAddr)
   }
 
 

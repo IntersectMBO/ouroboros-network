@@ -21,6 +21,8 @@ import Control.Monad.Class.MonadTime.SI (DiffTime, Time (Time), addTime,
 import Control.Monad.IOSim
 import Data.Bifoldable (bifoldMap)
 
+import Data.Foldable (fold)
+import Data.IP qualified as IP
 import Data.List (find, foldl', intercalate, tails)
 import Data.List.Trace qualified as Trace
 import Data.Map (Map)
@@ -91,6 +93,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            WarmValency (..))
+import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
 import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
@@ -105,7 +108,6 @@ tests =
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
     ]
-#if !defined(mingw32_HOST_OS)
   , testProperty "no failure"
                  prop_diffusion_nofail
   , testProperty "no livelock"
@@ -159,8 +161,10 @@ tests =
                  prop_only_bootstrap_peers_in_fallback_state
   , testProperty "no non trustable peers before caught up state"
                  prop_no_non_trustable_peers_before_caught_up_state
-#endif
-#if !defined(mingw32_HOST_OS)
+  , testGroup "Peer Sharing"
+    [ testProperty "share a peer"
+                   unit_peer_sharing
+    ]
   , testGroup "coverage"
     [ testProperty "server trace coverage"
                    prop_server_trace_coverage
@@ -187,7 +191,6 @@ tests =
     , testProperty "target active root"
                    prop_hot_diffusion_target_active_root
     ]
-#endif
   ]
 
 traceFromList :: [a] -> Trace (SimResult ()) a
@@ -2624,10 +2627,10 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
           signalProperty 20 show
             (\(_,_,_,_,toolong) -> Set.null toolong)
             ((,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
-                   <*> govActivePeersSig
-                   <*> trIsNodeAlive
-                   <*> demotionOpportunities
-                   <*> demotionOpportunitiesIgnoredTooLong)
+                    <*> govActivePeersSig
+                    <*> trIsNodeAlive
+                    <*> demotionOpportunities
+                    <*> demotionOpportunitiesIgnoredTooLong)
 
 
 -- | A variant of ouroboros-network-framework
@@ -3282,6 +3285,145 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
     getConnId (HotToCooling connId)  = Just connId
     getConnId (ColdToWarm (Just localAddress) remoteAddress) = Just ConnectionId { localAddress, remoteAddress }
     getConnId _ = Nothing
+
+
+unit_peer_sharing :: Property
+unit_peer_sharing =
+    let sim :: forall s. IOSim s Void
+        sim = diffusionSimulation (toBearerInfo absNoAttenuation)
+                                  script
+                                  iosimTracer
+        trace = take 125000
+              . traceEvents
+              $ runSimTrace sim
+
+        events :: Map NtNAddr [TracePeerSelection NtNAddr]
+        events = Map.fromList
+               . map (\as -> case as of
+                        [] -> -- this should be a test failure!
+                              error "invariant violation: no traces for one of the nodes"
+                        WithName { wnName } : _ -> (wnName, mapMaybe (\a -> case a of
+                                                                              DiffusionPeerSelectionTrace b -> Just b
+                                                                              _ -> Nothing)
+                                                          . map (wtEvent . wnEvent)
+                                                          $ as))
+               $ events'
+
+        events' =
+                 Trace.toList
+               . splitWithNameTrace
+               . Trace.fromList ()
+               . fmap snd
+               . Trace.toList
+               . fmap (\(WithTime t (WithName name b))
+                       -> (t, WithName name (WithTime t b)))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . traceFromList
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               $ trace
+
+        verify :: NtNAddr
+               -> [TracePeerSelection NtNAddr]
+               -> AllProperty
+        verify addr as | addr == ip_2 =
+          let receivedPeers :: Set NtNAddr
+              receivedPeers =
+                  fold
+                . mapMaybe (\case
+                              TracePeerShareResults as' -> Just $ fold [ Set.fromList addrs
+                                                                       | (_, Right (PeerSharingResult addrs)) <- as'
+                                                                       ]
+                              _ -> Nothing)
+                $          as
+          in AllProperty $
+             counterexample (concat [ show ip_0
+                                    , " is not a member of received peers "
+                                    , show receivedPeers
+                                    ]) $
+             ip_0 `Set.member` receivedPeers
+        verify _ _ = AllProperty (property True)
+
+    in
+      -- counterexample (ppEvents trace) $
+      counterexample (Map.foldrWithKey (\addr evs s -> concat [ "\n\n===== "
+                                                              , show addr
+                                                              , " =====\n\n"
+                                                              ]
+                                                          ++ intercalate "\n" (map show evs)
+                                                          ++ s) "" events) $
+      getAllProperty $ Map.foldMapWithKey verify events
+  where
+    -- initial topology
+    -- ip_0  -> ip_1 <- ip_2
+    -- target topology
+    -- ip_0 <-> ip_1 <- ip_2 -> ip_0
+    -- e.g.
+    -- * ip_1 should learn about ip_0 by noticing an inbound connection (light
+    --   peer sharing), and thus it should be marked as `DoAdvertisePeer`
+    -- * ip_2 should learn about ip_0 from ip_1 by peer sharing
+
+    ip_0 = TestAddress $ IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3000
+    -- ra_0 = RelayAccessAddress (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3000
+
+    ip_1 = TestAddress $ IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3001
+    ra_1 = RelayAccessAddress (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3001
+
+    ip_2 = TestAddress $ IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3002
+    -- ra_2 = RelayAccessAddress (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3002
+
+    targets x = PeerSelectionTargets {
+        targetNumberOfRootPeers = x,
+        targetNumberOfKnownPeers = x,
+        targetNumberOfEstablishedPeers = x,
+        targetNumberOfActivePeers = x,
+        targetNumberOfKnownBigLedgerPeers = 0,
+        targetNumberOfEstablishedBigLedgerPeers = 0,
+        targetNumberOfActiveBigLedgerPeers = 0
+      }
+
+    defaultNodeArgs = NodeArgs {
+        naSeed = 0,
+        naDiffusionMode = InitiatorAndResponderDiffusionMode,
+        naMbTime = Nothing,
+        naPublicRoots = mempty,
+        naBootstrapPeers = singletonScript DontUseBootstrapPeers,
+        naAddr = undefined,
+        naPeerSharing = PeerSharingEnabled,
+        naLocalRootPeers = undefined,
+        naLedgerPeers = singletonScript (LedgerPools []),
+        naLocalSelectionTargets = undefined,
+        naDNSTimeoutScript = singletonScript (DNSTimeout 300),
+        naDNSLookupDelayScript = singletonScript (DNSLookupDelay 0.01),
+        naChainSyncEarlyExit = False,
+        naChainSyncExitOnBlockNo = Nothing,
+        naFetchModeScript = singletonScript FetchModeDeadline
+      }
+
+    script = DiffusionScript
+               (mainnetSimArgs 3)
+               (singletonScript (mempty, ShortDelay))
+               [ ( defaultNodeArgs { naAddr = ip_0,
+                                     naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, (DoNotAdvertisePeer, IsNotTrustable))])],
+                                     naLocalSelectionTargets = targets 1
+                                   }
+                 , [JoinNetwork 0]
+                 )
+               , ( defaultNodeArgs { naAddr = ip_1,
+                                     naLocalRootPeers = [],
+                                     naLocalSelectionTargets = targets 2
+                                   }
+                 , [JoinNetwork 0]
+                 )
+               , ( defaultNodeArgs { naAddr = ip_2,
+                                     naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, (DoNotAdvertisePeer, IsNotTrustable))])],
+                                     naLocalSelectionTargets = targets 2
+                                   }
+                 , [JoinNetwork 0]
+                 )
+               ]
+
 
 
 -- | Like `(takeWhile f as, dropWhile f as)`
