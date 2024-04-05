@@ -4,22 +4,26 @@
 
 ### Breaking changes
 
+### Non-Breaking changes
+
+## 0.14.0.0 -- 2024-04-04
+
+### Breaking changes
+
 * `newPeerSharingAPI` requires `PublicPeerSelectionState` variable to be passed to it.
 * `Diffusion.Arguments` requires `PublicPeerSelectionState`; the integration
   code should make sure both `newPeerSharingAPI` and diffusion receives the
   same mutable variable.
 * `TracePeerShareRequest` also includes the number of requests peers.
 
-## 0.13.1.0 -- 2023-03-20
-
-### Breaking changes
+## 0.13.1.0 -- 2024-03-20
 
 ### Non-Breaking changes
 
 * Honour policyPeerShareActivationDelay timeout when peersharing
 * Increase timeout to 120s for 'any Cold async demotion' test
 
-## 0.13.0.0 -- 2023-03-14
+## 0.13.0.0 -- 2024-03-14
 
 ### Breaking changes
 
@@ -36,7 +40,7 @@
 * When peer sharing ask for more peers than needed, but only add as many unique
   peers as desired.
 
-## 0.12.0.0 -- 2023-02-21
+## 0.12.0.0 -- 2024-02-21
 
 ### Breaking changes
 
@@ -104,7 +108,7 @@
 
 * Coalesced various diffusion configuration parameters in a new Configuration module which were scattered around previously
 
-## 0.11.0.0 -- 2023-01-22
+## 0.11.0.0 -- 2024-01-22
 
 ### Breaking changes
 
