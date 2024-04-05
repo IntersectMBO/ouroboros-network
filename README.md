@@ -3,7 +3,7 @@
 [![Haskell CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?branch=master&label=Build&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
 [![Nightly CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/nightly.yml?branch=master&label=Nightly&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/nightly.yml)
 [![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/github-page.yml)
-[![handbook](https://img.shields.io/badge/policy-Cardano%20Engineering%20Handbook-informational?style=for-the-badge)](https://input-output-hk.github.io/cardano-engineering-handbook)
+[![Matrix](https://img.shields.io/matrix/ouroboros-network%3Amatrix.org?style=for-the-badge)](https://matrix.to/#/#ouroboros-network:matrix.org)
 
 This repository contains the core components of the network code for the Cardano
 node. It is a dependency when building the node from the cardano-node
