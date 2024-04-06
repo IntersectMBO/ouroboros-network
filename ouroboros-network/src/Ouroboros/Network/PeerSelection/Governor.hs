@@ -1,8 +1,14 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
+#if __GLASGOW_HASKELL__ < 904
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+#endif
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
@@ -14,10 +20,13 @@ module Ouroboros.Network.PeerSelection.Governor
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
   , PeerSelectionActions (..)
+  , PeerSelectionInterfaces (..)
   , PeerStateActions (..)
   , TracePeerSelection (..)
   , ChurnAction (..)
   , DebugPeerSelection (..)
+  , AssociationMode (..)
+  , readAssociationMode
   , DebugPeerSelectionState (..)
   , peerSelectionGovernor
     -- * Peer churn governor
@@ -43,6 +52,7 @@ module Ouroboros.Network.PeerSelection.Governor
 
 import Data.Foldable (traverse_)
 import Data.Hashable
+import Data.Set qualified as Set
 import Data.Void (Void)
 
 import Control.Applicative (Alternative ((<|>)))
@@ -56,6 +66,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
            peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
@@ -65,8 +76,13 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers (..))
+import Ouroboros.Network.PeerSelection.LocalRootPeers
+           (OutboundConnectionsState (..))
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
 {- $overview
 
@@ -459,8 +475,11 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> StrictTVar m (PeerSelectionState peeraddr peerconn)
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
+                      -> PeerSelectionInterfaces m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng countersVar publicStateVar debugStateVar actions policy =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng
+                      countersVar publicStateVar debugStateVar
+                      actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
@@ -471,6 +490,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng countersVar publ
         debugStateVar
         actions
         policy
+        interfaces
         jobPool
         (emptyPeerSelectionState fuzzRng)
 
@@ -507,6 +527,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           -> StrictTVar m (PeerSelectionState peeraddr peerconn)
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
+                          -> PeerSelectionInterfaces m
                           -> JobPool () m (Completion m peeraddr peerconn)
                           -> PeerSelectionState peeraddr peerconn
                           -> m Void
@@ -518,6 +539,7 @@ peerSelectionGovernorLoop tracer
                           debugStateVar
                           actions
                           policy
+                          interfaces
                           jobPool
                           pst = do
     loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
@@ -558,13 +580,23 @@ peerSelectionGovernorLoop tracer
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
       now <- getMonotonicTime
-      let Decision { decisionTrace, decisionJobs, decisionState } =
+
+      let Decision { decisionTrace, decisionJobs, decisionState = st'' } =
             timedDecision now
 
       mbCounters <- atomically $ do
+        -- Update outbound connections state
+        let peerSelectionView = peerSelectionStateToView st''
+        associationMode <- readAssociationMode (readUseLedgerPeers interfaces)
+                                               (peerSharing actions)
+                                               (bootstrapPeersFlag st'')
+        updateOutboundConnectionsState
+          actions
+          (outboundConnectionsState associationMode peerSelectionView st'')
+
         -- Update counters
         counters <- readTVar countersVar
-        let !counters' = peerSelectionStateToCounters decisionState
+        let !counters' = snd <$> peerSelectionView
         if counters' /= counters
           then writeTVar countersVar counters'
             >> return (Just counters')
@@ -572,11 +604,11 @@ peerSelectionGovernorLoop tracer
 
       -- Trace counters
       traverse_ (traceWith countersTracer) mbCounters
-
+      -- Trace peer selection
       traverse_ (traceWith tracer) decisionTrace
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop decisionState dbgUpdateAt'
+      loop st'' dbgUpdateAt'
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
@@ -667,3 +699,88 @@ wakeupDecision st _now =
     decisionState = st,
     decisionJobs  = []
   }
+
+
+-- | Classify if a node is in promiscuous mode.
+--
+-- A node is not in promiscuous mode only if: it doesn't use ledger peers, peer
+-- sharing, the set of bootstrap peers is empty.
+--
+readAssociationMode
+  :: MonadSTM m
+  => STM m UseLedgerPeers
+  -> PeerSharing
+  -> UseBootstrapPeers
+  -> STM m AssociationMode
+readAssociationMode
+  readUseLedgerPeers
+  peerSharing
+  useBootstrapPeers
+  =
+  do useLedgerPeers <- readUseLedgerPeers
+     pure $
+       case (useLedgerPeers, peerSharing, useBootstrapPeers) of
+         (DontUseLedgerPeers, PeerSharingDisabled, DontUseBootstrapPeers)
+           -> LocalRootsOnly
+         (DontUseLedgerPeers, PeerSharingDisabled, UseBootstrapPeers config)
+           |  null config
+           -> LocalRootsOnly
+         _ -> Unrestricted
+
+
+outboundConnectionsState
+    :: Ord peeraddr
+    => AssociationMode
+    -> PeerSelectionSetsWithSizes peeraddr
+    -> PeerSelectionState peeraddr peerconn
+    -> OutboundConnectionsState
+outboundConnectionsState
+    associationMode
+    PeerSelectionView {
+      viewEstablishedPeers          = (viewEstablishedPeers, _),
+      viewEstablishedBootstrapPeers = (viewEstablishedBootstrapPeers, _),
+      viewActiveBootstrapPeers      = (viewActiveBootstrapPeers, _)
+    }
+    PeerSelectionState {
+      localRootPeers,
+      bootstrapPeersFlag
+    }
+    =
+    case (associationMode, bootstrapPeersFlag) of
+      {-
+       -- genesis mode
+       -- TODO: issue #4846
+      (LocalRootsOnly, _)
+        |  numberOfActiveBigLedgerPeers >= targetNumberOfActiveBigLedgerPeers
+        -> TrustedStateWithExternalPeers
+
+        |  otherwise
+        -> UntrustedState
+      -}
+
+      (LocalRootsOnly, _)
+        |  -- we are only connected to trusted local root
+           -- peers
+           viewEstablishedPeers `Set.isSubsetOf` trustableLocalRootSet
+        -> TrustedStateWithExternalPeers
+
+        |  otherwise
+        -> UntrustedState
+
+       -- bootstrap mode
+      (Unrestricted, UseBootstrapPeers {})
+        |  -- we are only connected to trusted local root
+           -- peers or bootstrap peers
+           viewEstablishedPeers `Set.isSubsetOf` (viewEstablishedBootstrapPeers <> trustableLocalRootSet)
+           -- there's at least one active bootstrap peer
+        ,  not (Set.null viewActiveBootstrapPeers)
+        -> TrustedStateWithExternalPeers
+
+        |  otherwise
+        -> UntrustedState
+
+       -- praos mode with public roots
+      (Unrestricted, DontUseBootstrapPeers)
+        -> UntrustedState
+  where
+    trustableLocalRootSet = LocalRootPeers.trustableKeysSet localRootPeers

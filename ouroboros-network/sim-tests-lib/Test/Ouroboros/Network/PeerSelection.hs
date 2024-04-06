@@ -31,6 +31,7 @@ module Test.Ouroboros.Network.PeerSelection
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (AssertionFailed (..), catch, evaluate)
+import Control.Monad (when)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..))
@@ -62,6 +63,7 @@ import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
            peerSharing)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerAdvertise
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
@@ -3482,9 +3484,13 @@ _governorFindingPublicRoots :: Int
                             -> STM IO UseBootstrapPeers
                             -> STM IO LedgerStateJudgement
                             -> PeerSharing
+                            -> StrictTVar IO OutboundConnectionsState
                             -> IO Void
-_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing = do
+_governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar = do
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+    let interfaces = PeerSelectionInterfaces {
+            readUseLedgerPeers = return DontUseLedgerPeers
+          }
     publicRootPeersProvider
       tracer
       (curry IP.toSockAddr)
@@ -3506,6 +3512,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
             { requestPublicRootPeers = \_ ->
                 transformPeerSelectionAction requestPublicRootPeers }
           policy
+          interfaces
   where
     tracer :: Show a => Tracer IO a
     tracer  = Tracer (BS.putStrLn . BS.pack . show)
@@ -3527,8 +3534,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   closePeerConnection      = error "closePeerConnection"
                 },
                 readUseBootstrapPeers,
-                readLedgerStateJudgement
-              }
+                readLedgerStateJudgement,
+                updateOutboundConnectionsState = \a -> do
+                  a' <- readTVar olocVar
+                  when (a /= a') $
+                    writeTVar olocVar a
+                              }
 
     targets :: PeerSelectionTargets
     targets = nullPeerSelectionTargets {

@@ -23,6 +23,7 @@ module Ouroboros.Network.PeerSelection.State.LocalRootPeers
   , toGroupSets
   , toMap
   , keysSet
+  , trustableKeysSet
     -- * Special operations
   , clampToLimit
   , clampToTrustable
@@ -251,3 +252,12 @@ isPeerTrustable peeraddr lrp =
   case Map.lookup peeraddr (toMap lrp) of
     Just (_, IsTrustable) -> True
     _                     -> False
+
+trustableKeysSet :: LocalRootPeers peeraddr
+                 -> Set peeraddr
+trustableKeysSet (LocalRootPeers m _) =
+    Map.keysSet
+  . Map.filter (\(_, trustable) -> case trustable of
+                    IsTrustable    -> True
+                    IsNotTrustable -> False)
+  $ m

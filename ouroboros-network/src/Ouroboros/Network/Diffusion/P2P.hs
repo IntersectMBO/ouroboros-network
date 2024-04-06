@@ -103,9 +103,9 @@ import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
            PeerSelectionActions, PeerSelectionCounters,
-           PeerSelectionPolicy (..), PeerSelectionState,
-           TracePeerSelection (..), emptyPeerSelectionCounters,
-           emptyPeerSelectionState)
+           PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
+           PeerSelectionState, TracePeerSelection (..),
+           emptyPeerSelectionCounters, emptyPeerSelectionState)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makeDebugPeerSelectionState)
@@ -646,6 +646,7 @@ runM Interfaces
        , daLedgerPeersCtx =
           daLedgerPeersCtx@LedgerPeersConsensusInterface
             { lpGetLedgerStateJudgement }
+       , daUpdateOutboundConnectionsState
        }
      ApplicationsExtra
        { daRethrowPolicy
@@ -983,7 +984,8 @@ runM Interfaces
                                          psReadUseBootstrapPeers = daReadUseBootstrapPeers,
                                          psPeerSharing = daOwnPeerSharing,
                                          psPeerConnToPeerSharing = pchPeerSharing diNtnPeerSharing,
-                                         psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry) }
+                                         psReadPeerSharingController = readTVar (getPeerSharingRegistry daPeerSharingRegistry),
+                                         psUpdateOutboundConnectionsState = daUpdateOutboundConnectionsState }
                                        WithLedgerPeersArgs {
                                          wlpRng = ledgerPeersRng,
                                          wlpConsensusInterface = daLedgerPeersCtx,
@@ -1009,6 +1011,10 @@ runM Interfaces
               dbgVar
               peerSelectionActions
               peerSelectionPolicy
+              PeerSelectionInterfaces {
+                readUseLedgerPeers = daReadUseLedgerPeers
+              }
+
 
       --
       -- The peer churn governor:
@@ -1194,9 +1200,15 @@ run tracers tracersExtra args argsExtra apps appsExtra = do
                                      (TrState state)
                            ps <- readTVarIO dbgStateVar
                            now <- getMonotonicTime
-                           (up, bp) <- atomically $ (,) <$> upstreamyness metrics
+                           (up, bp, lsj, am) <- atomically $
+                                                  (,,,) <$> upstreamyness metrics
                                                         <*> fetchynessBlocks metrics
-                           let dbgState = makeDebugPeerSelectionState ps up bp
+                                                        <*> lpGetLedgerStateJudgement (daLedgerPeersCtx apps)
+                                                        <*> Governor.readAssociationMode
+                                                              (daReadUseLedgerPeers argsExtra)
+                                                              (daOwnPeerSharing argsExtra)
+                                                              (Governor.bootstrapPeersFlag ps)
+                           let dbgState = makeDebugPeerSelectionState ps up bp lsj am
                            traceWith (dtTracePeerSelectionTracer tracersExtra)
                                      (TraceDebugState now dbgState)
                        )

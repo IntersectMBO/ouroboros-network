@@ -46,6 +46,7 @@ import System.Random (mkStdGen)
 import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictTVar
 import Control.Exception (throw)
+import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -76,10 +77,9 @@ import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
-           LedgerPeersKind (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerStateJudgement (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.LocalRootPeers
+           (OutboundConnectionsState (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -215,6 +215,11 @@ governorAction mockEnv = do
     countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar usbVar) (readTVar lsjVar) policy
+    let interfaces = PeerSelectionInterfaces {
+            -- peer selection tests are not relying on `UseLedgerPeers`
+            readUseLedgerPeers = return DontUseLedgerPeers
+          }
+
     exploreRaces      -- explore races within the governor
     _ <- forkIO $ do  -- races with the governor should be explored
       labelThisThread "outbound-governor"
@@ -228,6 +233,7 @@ governorAction mockEnv = do
         debugVar
         actions
         policy
+        interfaces
       atomically retry
     atomically retry  -- block to allow the governor to run
 
@@ -301,12 +307,14 @@ mockPeerSelectionActions tracer
                 v (\_ a -> TraceDynamic . TraceEnvPeersStatus
                        <$> snapshotPeersStatus proxy a)
       return v
+
+    onlyLocalOutboundConnsVar <- newTVarIO UntrustedState
     traceWith tracer (TraceEnvAddPeers peerGraph)
     traceWith tracer (TraceEnvSetLocalRoots localRootPeers)   --TODO: make dynamic
     traceWith tracer (TraceEnvSetPublicRoots publicRootPeers) --TODO: make dynamic
     return $ mockPeerSelectionActions'
                tracer env policy
-               scripts targetsVar readUseBootstrapPeers getLedgerStateJudgement peerConns
+               scripts targetsVar readUseBootstrapPeers getLedgerStateJudgement peerConns onlyLocalOutboundConnsVar
   where
     proxy :: Proxy m
     proxy = Proxy
@@ -331,6 +339,7 @@ mockPeerSelectionActions' :: forall m.
                           -> STM m UseBootstrapPeers
                           -> STM m LedgerStateJudgement
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
+                          -> TVar m OutboundConnectionsState
                           -> PeerSelectionActions PeerAddr (PeerConn m) m
 mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
@@ -343,7 +352,8 @@ mockPeerSelectionActions' tracer
                           targetsVar
                           readUseBootstrapPeers
                           readLedgerStateJudgement
-                          connsVar =
+                          connsVar
+                          outboundConnectionsStateVar =
     PeerSelectionActions {
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       peerSharing              = peerSharingFlag,
@@ -360,7 +370,11 @@ mockPeerSelectionActions' tracer
           closePeerConnection
         },
       readUseBootstrapPeers,
-      readLedgerStateJudgement
+      readLedgerStateJudgement,
+      updateOutboundConnectionsState = \a -> do
+        a' <- readTVar outboundConnectionsStateVar
+        when (a /= a') $
+          writeTVar outboundConnectionsStateVar a
     }
   where
     -- TODO: make this dynamic

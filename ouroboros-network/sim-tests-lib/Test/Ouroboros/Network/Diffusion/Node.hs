@@ -94,6 +94,7 @@ import Simulation.Network.Snocket (AddressType (..), FD)
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface, UseLedgerPeers)
+import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
@@ -124,6 +125,8 @@ data Interfaces m = Interfaces
     , iDomainMap         :: StrictTVar m (Map Domain [(IP, TTL)])
     , iLedgerPeersConsensusInterface
                          :: LedgerPeersConsensusInterface m
+    , iUpdateOutboundConnectionsState
+                         :: OutboundConnectionsState -> STM m ()
     }
 
 type NtNFD m = FD m NtNAddr
@@ -410,6 +413,8 @@ run blockGeneratorArgs limits ni na tracersExtra tracerBlockFetch =
       , Node.aaShouldChainSyncExit      = aShouldChainSyncExit na
       , Node.aaChainSyncEarlyExit       = aChainSyncEarlyExit na
       , Node.aaOwnPeerSharing           = aOwnPeerSharing na
+      , Node.aaUpdateOutboundConnectionsState =
+          iUpdateOutboundConnectionsState ni
       }
 
 --- Utils

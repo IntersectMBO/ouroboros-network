@@ -1,0 +1,21 @@
+{-# LANGUAGE DeriveGeneric #-}
+
+module Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState (..)) where
+
+import GHC.Generics
+import NoThunks.Class
+
+data OutboundConnectionsState =
+    TrustedStateWithExternalPeers
+    -- ^
+    -- * /in the Praos mode/: connected only to trusted local
+    --   peers and at least one bootstrap peer or public root;
+    -- * /in the Genesis mode/: meeting target of active big ledger peers;
+    -- * or it is in `Unrestricted` mode
+    --   (see `Ouroboros.Network.PeerSelection.Governor.AssociationMode`).
+
+  | UntrustedState
+    -- ^ catch all other cases
+  deriving (Eq, Show, Generic)
+
+instance NoThunks OutboundConnectionsState
