@@ -29,55 +29,38 @@ module Test.Ouroboros.Network.PeerSelection
   , dropBigLedgerPeers
   ) where
 
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (AssertionFailed (..), catch, evaluate)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..))
+
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Char8 qualified as BS
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IP qualified as IP
 import Data.List (foldl', groupBy, intercalate)
+import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isNothing, listToMaybe)
+import Data.OrdPSQ qualified as PSQ
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Void (Void)
-
-import Data.List.Trace qualified as Trace
-import Data.OrdPSQ qualified as PSQ
 import System.Random (mkStdGen)
-
-import Control.Exception (AssertionFailed (..), catch, evaluate)
-import Control.Monad.Class.MonadSTM (STM, retry)
-import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..))
 
 import Network.DNS qualified as DNS (defaultResolvConf)
 import Network.Socket (SockAddr)
 
-import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
-           peerSharing)
-import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
-import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-
 import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..))
-import Ouroboros.Network.Testing.Data.Script
-import Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal, TS (TS),
-           signalProperty)
-import Ouroboros.Network.Testing.Data.Signal qualified as Signal
-import Ouroboros.Network.Testing.Utils (nightlyTest)
-
-import Test.Ouroboros.Network.PeerSelection.Instances
-import Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
-import Test.Ouroboros.Network.PeerSelection.PeerGraph
-
-import Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
-import Control.Monad.Class.MonadTime.SI
-import Control.Monad.IOSim
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
+           peerSharing)
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -87,12 +70,29 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPe
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
+           LocalRootPeers (..), WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingResult (..))
+
+import Ouroboros.Network.Testing.Data.Script
+import Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal, TS (TS),
+           signalProperty)
+import Ouroboros.Network.Testing.Data.Signal qualified as Signal
+import Ouroboros.Network.Testing.Utils (nightlyTest)
+import Test.Ouroboros.Network.PeerSelection.Instances
+import Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
+import Test.Ouroboros.Network.PeerSelection.PeerGraph
+
+import Control.Monad.IOSim
+
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
+
 
 -- Exactly as named.
 unfHydra :: Int
