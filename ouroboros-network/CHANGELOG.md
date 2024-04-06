@@ -9,6 +9,10 @@
 * Adapted to changes in `ouroboros-network-framework`, in particular the
   outbound governor is using `PublicInboundGovernorState` to implemented light
   peer sharing.
+* Changed `PeerSelectionCounters` which provides sizes of active / established
+  / known sets, and added `PeerSelectionCountersHWC` which provides sizes of
+  hot / warm / cold sets.  The counters cover more groups including: all peers,
+  big ledger peers, bootstrap peers, local roots and shared peers.
 
 ### Non-Breaking changes
 
