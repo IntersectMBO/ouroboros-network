@@ -39,6 +39,7 @@ module Ouroboros.Network.PeerSelection.Governor
 import Data.Cache
 import Data.Foldable (traverse_)
 import Data.Hashable
+import Data.Set qualified as Set
 import Data.Void (Void)
 
 import Control.Applicative (Alternative ((<|>)))
@@ -60,8 +61,11 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
+import Ouroboros.Network.PeerSelection.LocalRootPeers
+           (OutboundConnectionsState (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
 {- $overview
 
@@ -555,11 +559,22 @@ peerSelectionGovernorLoop tracer
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
       now <- getMonotonicTime
+
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
           !newCounters = peerStateToCounters decisionState
 
+          !outboundConnectionsState =
+            if activePeers st
+               `Set.isSubsetOf`
+               LocalRootPeers.keysSet (localRootPeers st)
+            then ConnectedToOnlyLocalOutboundPeers
+            else ConnectedToExternalOutboundPeers
+
       atomically $ do
+        -- Update outbound connections state
+        updateOutboundConnectionsState actions outboundConnectionsState
+
         -- Update counters
         withCacheA (countersCache decisionState)
                    newCounters

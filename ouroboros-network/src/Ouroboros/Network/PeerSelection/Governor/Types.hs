@@ -74,6 +74,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
            LedgerPeersKind)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerStateJudgement (..))
+import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
@@ -316,7 +317,17 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 
        -- | Read the current ledger state judgement
        --
-       readLedgerStateJudgement :: STM m LedgerStateJudgement
+       readLedgerStateJudgement :: STM m LedgerStateJudgement,
+
+       -- | Callback provided by consensus to inform it if the node is
+       -- connected to only local roots or also some external peers.
+       --
+       -- This is useful in order for the Bootstrap State Machine to
+       -- simply refuse to transition from TooOld to YoungEnough while
+       -- it only has local peers.
+       --
+       updateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
+
      }
 
 -- | Callbacks which are performed to change peer state.
@@ -557,8 +568,7 @@ makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
 --
 toPublicState :: PeerSelectionState peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
-toPublicState PeerSelectionState { knownPeers
-                                 } =
+toPublicState PeerSelectionState { knownPeers } =
    PublicPeerSelectionState {
      availableToShare =
        KnownPeers.getPeerSharingResponsePeers knownPeers

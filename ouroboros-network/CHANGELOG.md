@@ -8,6 +8,9 @@
   / known sets, and added `PeerSelectionCountersHWC` which provides sizes of
   hot / warm / cold sets.  The counters cover more groups including: all peers,
   big ledger peers, bootstrap peers, local roots and shared peers.
+* Added `daUpdateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()`
+  to `Diffusion.Common.Applications`. This callback is to be provided by
+  consensus and is propagated all the way to the peer selection governor.
 
 ### Non-Breaking changes
 
