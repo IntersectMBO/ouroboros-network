@@ -4,6 +4,11 @@
 
 ### Breaking changes
 
+* Changed `PeerSelectionCounters` which provides sizes of active / established
+  / known sets, and added `PeerSelectionCountersHWC` which provides sizes of
+  hot / warm / cold sets.  The counters cover more groups including: all peers,
+  big ledger peers, bootstrap peers, local roots and shared peers.
+
 ### Non-Breaking changes
 
 ## 0.14.0.0 -- 2024-04-04
