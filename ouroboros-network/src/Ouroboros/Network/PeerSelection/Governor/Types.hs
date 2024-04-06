@@ -37,7 +37,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , TimedDecision
   , MkGuardedDecision
   , Completion (..)
-  , PeerSelectionCounters (..)
+  , PeerSelectionCounters (.., PeerSelectionCountersHWC, numberOfColdPeers, numberOfWarmPeers, numberOfHotPeers, numberOfColdBigLedgerPeers, numberOfWarmBigLedgerPeers, numberOfHotBigLedgerPeers, numberOfColdLocalRootPeers, numberOfWarmLocalRootPeers, numberOfHotLocalRootPeers, localRootsHWC)
+  , emptyPeerSelectionCounters
   , peerStateToCounters
     -- * Peer Sharing Auxiliary data type
   , PeerSharingResult (..)
@@ -565,49 +566,341 @@ toPublicState PeerSelectionState { knownPeers
 -- Peer selection counters.
 --
 data PeerSelectionCounters = PeerSelectionCounters {
-      -- | All cold peers including ledger peers, root peers, big ledger peers
-      -- and peers discovered through peer sharing.
-      coldPeers          :: !Int,
-      -- | All warm peers including ledger peers, root peers, big ledger peers,
-      -- local root peers and peers discovered through peer sharing.
-      warmPeers          :: !Int,
-      -- | All hot peers including ledger peers, root peers, big ledger peers,
-      -- local root peers and peers discovered through peer sharing.
-      hotPeers           :: !Int,
-      -- | Cold big ledger peers.
-      coldBigLedgerPeers :: !Int,
-      -- | Warm big ledger peers.
-      warmBigLedgerPeers :: !Int,
-      -- | Hot big ledger peers.
-      hotBigLedgerPeers  :: !Int,
+      numberOfRootPeers                     :: Int,
+
+      --
+      -- Non Big Ledger Peers
+      --
+
+      numberOfKnownPeers                    :: Int,
+      -- ^ number of known peers excluding big ledger peers
+      numberOfColdPeersPromotions           :: Int,
+      -- ^ number of known peers (excluding big ledger peers) being promoted to
+      -- warm
+      numberOfEstablishedPeers              :: Int,
+      -- ^ number of established peers excluding big ledger peers
+      numberOfWarmPeersDemotions            :: Int,
+      -- ^ number of warm peers (excluding big ledger peers) being demoted to
+      -- cold
+      numberOfWarmPeersPromotions           :: Int,
+      -- ^ number of warm peers (excluding big ledger peers) being promote to
+      -- hot
+      numberOfActivePeers                   :: Int,
+      -- ^ number of active peers excluding big ledger peers
+      numberOfActivePeersDemotions          :: Int,
+      -- ^ number of active peers (excluding big ledger peers) being demoted to
+      -- warm
+
+      --
+      -- Big Ledger Peers
+      --
+
+      numberOfKnownBigLedgerPeers           :: Int,
+      -- ^ number of known big ledger peers
+      numberOfColdBigLedgerPeersPromotions  :: Int,
+      -- ^ number of cold big ledger peers being promoted to warm
+      numberOfEstablishedBigLedgerPeers     :: Int,
+      -- ^ number of established big ledger peers
+      numberOfWarmBigLedgerPeersDemotions   :: Int,
+      -- ^ number of warm big ledger peers being demoted to cold
+      numberOfWarmBigLedgerPeersPromotions  :: Int,
+      -- ^ number of warm big ledger peers being promote to hot
+      numberOfActiveBigLedgerPeers          :: Int,
+      -- ^ number of active big ledger peers
+      numberOfActiveBigLedgerPeersDemotions :: Int,
+      -- ^ number of active big ledger peers being demoted to warm
+
+      --
+      -- Local Roots
+      --
+
+      numberOfKnownLocalRootPeers           :: Int,
+      -- ^ number of known local root peers should always be equal to the sum
+      -- of established & active local roots.
+      numberOfEstablishedLocalRootPeers     :: Int,
+      numberOfWarmLocalRootPeersPromotions  :: Int,
+      numberOfActiveLocalRootPeers          :: Int,
+      numberOfActiveLocalRootPeersDemotions :: Int,
+
       -- | Local root peers with one entry per group. First entry is the number
       -- of warm peers in that group the second is the number of hot peers in
       -- that group.
-      localRoots         :: ![(HotValency, WarmValency)]
+      localRoots                            :: ![(HotValency, WarmValency)],
+
+      --
+      -- Share Peers
+      -- (peers received through peer sharing)
+      --
+
+      numberOfKnownSharedPeers              :: Int,
+      numberOfColdSharedPeersPromotions     :: Int,
+      numberOfEstablishedSharedPeers        :: Int,
+      numberOfWarmSharedPeersDemotions      :: Int,
+      numberOfWarmSharedPeersPromotions     :: Int,
+      numberOfActiveSharedPeers             :: Int,
+      numberOfActiveSharedPeersDemotions    :: Int,
+
+      --
+      -- Bootstrap Peers
+      --
+
+      numberOfKnownBootstrapPeers           :: Int,
+      numberOfColdBootstrapPeersPromotions  :: Int,
+      numberOfEstablishedBootstrapPeers     :: Int,
+      numberOfWarmBootstrapPeersDemotions   :: Int,
+      numberOfWarmBootstrapPeersPromotions  :: Int,
+      numberOfActiveBootstrapPeers          :: Int,
+      numberOfActiveBootstrapPeersDemotions :: Int
     } deriving (Eq, Show)
 
-peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
-peerStateToCounters st@PeerSelectionState { activePeers, publicRootPeers, localRootPeers } =
+
+-- | A Pattern synonym which computes `hot`, `warm`, `cold` counters from
+-- `PeerSelectionCounters`.
+--
+pattern PeerSelectionCountersHWC :: Int -> Int -> Int -- peers
+                                 -> Int -> Int -> Int -- big ledger peers
+                                 -> Int -> Int -> Int -- local roots
+                                 -> [(HotValency, WarmValency)]
+                                 -> PeerSelectionCounters
+pattern PeerSelectionCountersHWC { numberOfColdPeers,
+                                   numberOfWarmPeers,
+                                   numberOfHotPeers,
+
+                                   numberOfColdBigLedgerPeers,
+                                   numberOfWarmBigLedgerPeers,
+                                   numberOfHotBigLedgerPeers,
+
+                                   numberOfColdLocalRootPeers,
+                                   numberOfWarmLocalRootPeers,
+                                   numberOfHotLocalRootPeers,
+                                   localRootsHWC }
+
+        <- (peerSelectionCountersHWC ->
+             PeerSelectionCounters { numberOfKnownPeers                = numberOfColdPeers,
+                                     numberOfEstablishedPeers          = numberOfWarmPeers,
+                                     numberOfActivePeers               = numberOfHotPeers,
+
+                                     numberOfKnownBigLedgerPeers       = numberOfColdBigLedgerPeers,
+                                     numberOfEstablishedBigLedgerPeers = numberOfWarmBigLedgerPeers,
+                                     numberOfActiveBigLedgerPeers      = numberOfHotBigLedgerPeers,
+
+                                     numberOfKnownLocalRootPeers       = numberOfColdLocalRootPeers,
+                                     numberOfEstablishedLocalRootPeers = numberOfWarmLocalRootPeers,
+                                     numberOfActiveLocalRootPeers      = numberOfHotLocalRootPeers,
+                                     localRoots                        = localRootsHWC })
+
+{-# COMPLETE PeerSelectionCountersHWC #-}
+
+-- | Internal function, used to pattern match with `PeerSelectionCountersHWC`
+peerSelectionCountersHWC :: PeerSelectionCounters -> PeerSelectionCounters
+peerSelectionCountersHWC PeerSelectionCounters {..} =
     PeerSelectionCounters {
-      coldPeers          = Set.size $ coldPeersSet Set.\\ bigLedgerPeers,
-      warmPeers          = Set.size $ warmPeersSet Set.\\ bigLedgerPeers,
-      hotPeers           = Set.size $ hotPeersSet  Set.\\ bigLedgerPeers,
-      coldBigLedgerPeers = Set.size $ coldPeersSet `Set.intersection` bigLedgerPeers,
-      warmBigLedgerPeers = Set.size $ warmPeersSet `Set.intersection` bigLedgerPeers,
-      hotBigLedgerPeers  = Set.size $ hotPeersSet  `Set.intersection` bigLedgerPeers,
-      localRoots
+      numberOfRootPeers,
+
+      numberOfKnownPeers                         = numberOfKnownPeers
+                                                 - numberOfEstablishedPeers,
+      numberOfColdPeersPromotions,
+      numberOfEstablishedPeers                   = numberOfEstablishedPeers
+                                                 - numberOfActivePeers,
+      numberOfWarmPeersDemotions,
+      numberOfWarmPeersPromotions,
+      numberOfActivePeers,
+      numberOfActivePeersDemotions,
+
+      numberOfKnownBigLedgerPeers                = numberOfKnownBigLedgerPeers
+                                                 - numberOfEstablishedBigLedgerPeers,
+      numberOfColdBigLedgerPeersPromotions,
+      numberOfEstablishedBigLedgerPeers          = numberOfEstablishedBigLedgerPeers
+                                                 - numberOfActiveBigLedgerPeers,
+      numberOfWarmBigLedgerPeersDemotions,
+      numberOfWarmBigLedgerPeersPromotions,
+      numberOfActiveBigLedgerPeers,
+      numberOfActiveBigLedgerPeersDemotions,
+
+      numberOfKnownLocalRootPeers                = numberOfKnownLocalRootPeers
+                                                 - numberOfEstablishedLocalRootPeers,
+      numberOfEstablishedLocalRootPeers          = numberOfEstablishedLocalRootPeers
+                                                 - numberOfActiveLocalRootPeers,
+      numberOfWarmLocalRootPeersPromotions,
+      numberOfActiveLocalRootPeers,
+      numberOfActiveLocalRootPeersDemotions,
+
+      localRoots,
+
+      numberOfKnownSharedPeers                   = numberOfKnownSharedPeers
+                                                 - numberOfEstablishedSharedPeers,
+      numberOfColdSharedPeersPromotions,
+      numberOfEstablishedSharedPeers             = numberOfEstablishedSharedPeers
+                                                 - numberOfActiveSharedPeers,
+      numberOfWarmSharedPeersDemotions,
+      numberOfWarmSharedPeersPromotions,
+      numberOfActiveSharedPeers,
+      numberOfActiveSharedPeersDemotions,
+
+      numberOfKnownBootstrapPeers                = numberOfKnownBootstrapPeers
+                                                 - numberOfEstablishedBootstrapPeers,
+      numberOfColdBootstrapPeersPromotions,
+      numberOfEstablishedBootstrapPeers          = numberOfEstablishedBootstrapPeers
+                                                 - numberOfActiveBootstrapPeers,
+      numberOfWarmBootstrapPeersDemotions,
+      numberOfWarmBootstrapPeersPromotions,
+      numberOfActiveBootstrapPeers,
+      numberOfActiveBootstrapPeersDemotions
+    }
+
+
+peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
+peerStateToCounters PeerSelectionState { knownPeers,
+                                         establishedPeers,
+                                         activePeers,
+                                         publicRootPeers,
+                                         localRootPeers,
+                                         inProgressPromoteCold,
+                                         inProgressPromoteWarm,
+                                         inProgressDemoteWarm,
+                                         inProgressDemoteHot } =
+    PeerSelectionCounters {
+      numberOfRootPeers                          = LocalRootPeers.size localRootPeers
+                                                 + PublicRootPeers.size publicRootPeers,
+
+      numberOfKnownPeers                         = Set.size   knownPeersSet,
+      numberOfColdPeersPromotions                = Set.size $ knownPeersSet `Set.intersection` inProgressPromoteCold,
+      numberOfEstablishedPeers                   = Set.size   establishedPeersSet,
+      numberOfWarmPeersDemotions                 = Set.size $ establishedPeersSet `Set.intersection` inProgressDemoteWarm,
+      numberOfWarmPeersPromotions                = Set.size $ establishedPeersSet `Set.intersection` inProgressPromoteWarm,
+      numberOfActivePeers                        = Set.size   activePeersSet,
+      numberOfActivePeersDemotions               = Set.size $ activePeersSet `Set.intersection` inProgressDemoteHot,
+
+      numberOfKnownBigLedgerPeers                = Set.size   knownBigLedgerPeersSet,
+      numberOfColdBigLedgerPeersPromotions       = Set.size $ knownBigLedgerPeersSet `Set.intersection` inProgressPromoteCold,
+      numberOfEstablishedBigLedgerPeers          = Set.size   establishedBigLedgerPeersSet,
+      numberOfWarmBigLedgerPeersDemotions        = Set.size $ establishedBigLedgerPeersSet `Set.intersection` inProgressDemoteWarm,
+      numberOfWarmBigLedgerPeersPromotions       = Set.size $ establishedBigLedgerPeersSet `Set.intersection` inProgressPromoteWarm,
+      numberOfActiveBigLedgerPeers               = Set.size   activeBigLedgerPeersSet,
+      numberOfActiveBigLedgerPeersDemotions      = Set.size $ activeBigLedgerPeersSet `Set.intersection` inProgressDemoteHot,
+
+
+      numberOfKnownBootstrapPeers                = Set.size   knownBootstrapPeersSet,
+      numberOfColdBootstrapPeersPromotions       = Set.size $ knownBootstrapPeersSet `Set.intersection` inProgressPromoteCold,
+      numberOfEstablishedBootstrapPeers          = Set.size   establishedBootstrapPeersSet,
+      numberOfWarmBootstrapPeersDemotions        = Set.size $ establishedBootstrapPeersSet `Set.intersection` inProgressDemoteWarm,
+      numberOfWarmBootstrapPeersPromotions       = Set.size $ establishedBootstrapPeersSet `Set.intersection` inProgressPromoteWarm,
+      numberOfActiveBootstrapPeers               = Set.size   activeBootstrapPeersSet,
+      numberOfActiveBootstrapPeersDemotions      = Set.size $ activeBootstrapPeersSet `Set.intersection` inProgressDemoteHot,
+
+      numberOfKnownLocalRootPeers                = Set.size   knownLocalRootPeersSet,
+      numberOfEstablishedLocalRootPeers          = Set.size $ establishedLocalRootsPeersSet,
+      numberOfWarmLocalRootPeersPromotions       = Set.size $ establishedLocalRootsPeersSet `Set.intersection` inProgressPromoteWarm,
+      numberOfActiveLocalRootPeers               = Set.size   activeLocalRootsPeersSet,
+      numberOfActiveLocalRootPeersDemotions      = Set.size $ activeLocalRootsPeersSet `Set.intersection` inProgressDemoteHot,
+
+      localRoots,
+
+      numberOfKnownSharedPeers                   = Set.size   knownSharedPeersSet,
+      numberOfColdSharedPeersPromotions          = Set.size $ knownSharedPeersSet `Set.intersection` inProgressPromoteCold,
+      numberOfEstablishedSharedPeers             = Set.size   establishedSharedPeersSet,
+      numberOfWarmSharedPeersDemotions           = Set.size $ establishedSharedPeersSet `Set.intersection` inProgressDemoteWarm,
+      numberOfWarmSharedPeersPromotions          = Set.size $ establishedSharedPeersSet `Set.intersection` inProgressPromoteWarm,
+      numberOfActiveSharedPeers                  = Set.size   activeSharedPeersSet,
+      numberOfActiveSharedPeersDemotions         = Set.size $ activeSharedPeersSet `Set.intersection` inProgressDemoteHot
     }
   where
-    knownPeersSet = KnownPeers.toSet (knownPeers st)
-    establishedPeersSet = EstablishedPeers.toSet (establishedPeers st)
-    coldPeersSet  = knownPeersSet Set.\\ establishedPeersSet
-    warmPeersSet  = establishedPeersSet Set.\\ activePeers
-    hotPeersSet   = activePeers
+    -- convention: only `{known,established,active}.*PeersSet` and
+    -- `inProgress{Promote,Demote}{Cold,Warm,Hot}` identifiers are used in the
+    -- calculations above ↑
+
+    -- common sets
+    knownSet       = KnownPeers.toSet knownPeers
+    establishedSet = EstablishedPeers.toSet establishedPeers
+    bigLedgerSet   = PublicRootPeers.getBigLedgerPeers publicRootPeers
+
+    -- non big ledger peers
+    knownPeersSet       = knownSet Set.\\ bigLedgerSet
+    establishedPeersSet = establishedSet Set.\\ bigLedgerSet
+    activePeersSet      = activePeers Set.\\ bigLedgerSet
+
+    -- big ledger peers
+    knownBigLedgerPeersSet       = knownSet `Set.intersection` bigLedgerSet
+    establishedBigLedgerPeersSet = establishedSet `Set.intersection` bigLedgerSet
+    activeBigLedgerPeersSet      = activePeers `Set.intersection` bigLedgerSet
+
+    -- local roots
     localRoots =
       [ (hot, warm)
       | (hot, warm, _) <- LocalRootPeers.toGroupSets localRootPeers
       ]
-    bigLedgerPeers = PublicRootPeers.getBigLedgerPeers publicRootPeers
+    localRootSet                  = LocalRootPeers.keysSet localRootPeers
+    -- local roots and big ledger peers are disjoin, hence we can use
+    -- `knownPeersSet`, `establishedPeersSet` and `activePeersSet` below.
+    knownLocalRootPeersSet        = knownPeersSet `Set.intersection` localRootSet
+    establishedLocalRootsPeersSet = establishedPeersSet `Set.intersection` localRootSet
+    activeLocalRootsPeersSet      = activePeersSet `Set.intersection` localRootSet
+
+    -- bootstrap peers
+    bootstrapSet                 = PublicRootPeers.getBootstrapPeers publicRootPeers
+    -- boostrap peers and big ledger peers are disjoin, hence we can use
+    -- `knownPeersSet`, `establishedPeersSet` and `activePeersSet` below.
+    knownBootstrapPeersSet       = knownPeersSet `Set.intersection` bootstrapSet
+    establishedBootstrapPeersSet = establishedPeersSet `Set.intersection` bootstrapSet
+    activeBootstrapPeersSet      = activePeersSet `Set.intersection` bootstrapSet
+
+    -- shared peers
+    rootSet                    = PublicRootPeers.toSet publicRootPeers
+                              <> localRootSet
+    -- shared peers are not big ledger peers, hence we can use `knownPeersSet`,
+    -- `establishedPeersSet` and `activePeersSet` below.
+    knownSharedPeersSet        = knownPeersSet Set.\\ rootSet
+    establishedSharedPeersSet  = establishedPeersSet Set.\\ rootSet
+    activeSharedPeersSet       = activePeersSet Set.\\ rootSet
+
+
+
+emptyPeerSelectionCounters :: [(HotValency, WarmValency)]
+                           -> PeerSelectionCounters
+emptyPeerSelectionCounters localRoots =
+  PeerSelectionCounters {
+    numberOfRootPeers                     = 0,
+
+    numberOfKnownPeers                    = 0,
+    numberOfColdPeersPromotions           = 0,
+    numberOfEstablishedPeers              = 0,
+    numberOfWarmPeersDemotions            = 0,
+    numberOfWarmPeersPromotions           = 0,
+    numberOfActivePeers                   = 0,
+    numberOfActivePeersDemotions          = 0,
+
+    numberOfKnownBigLedgerPeers           = 0,
+    numberOfColdBigLedgerPeersPromotions  = 0,
+    numberOfEstablishedBigLedgerPeers     = 0,
+    numberOfWarmBigLedgerPeersDemotions   = 0,
+    numberOfWarmBigLedgerPeersPromotions  = 0,
+    numberOfActiveBigLedgerPeers          = 0,
+    numberOfActiveBigLedgerPeersDemotions = 0,
+
+    numberOfKnownBootstrapPeers           = 0,
+    numberOfColdBootstrapPeersPromotions  = 0,
+    numberOfEstablishedBootstrapPeers     = 0,
+    numberOfWarmBootstrapPeersDemotions   = 0,
+    numberOfWarmBootstrapPeersPromotions  = 0,
+    numberOfActiveBootstrapPeers          = 0,
+    numberOfActiveBootstrapPeersDemotions = 0,
+
+    numberOfKnownLocalRootPeers           = 0,
+    numberOfEstablishedLocalRootPeers     = 0,
+    numberOfWarmLocalRootPeersPromotions  = 0,
+    numberOfActiveLocalRootPeers          = 0,
+    numberOfActiveLocalRootPeersDemotions = 0,
+
+    localRoots,
+
+    numberOfKnownSharedPeers              = 0,
+    numberOfColdSharedPeersPromotions     = 0,
+    numberOfEstablishedSharedPeers        = 0,
+    numberOfWarmSharedPeersDemotions      = 0,
+    numberOfWarmSharedPeersPromotions     = 0,
+    numberOfActiveSharedPeers             = 0,
+    numberOfActiveSharedPeersDemotions    = 0
+  }
 
 emptyPeerSelectionState :: StdGen
                         -> [(HotValency, WarmValency)]
@@ -633,7 +926,7 @@ emptyPeerSelectionState rng localRoots =
       inProgressDemoteHot         = Set.empty,
       inProgressDemoteToCold      = Set.empty,
       fuzzRng                     = rng,
-      countersCache               = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots),
+      countersCache               = Cache (emptyPeerSelectionCounters localRoots),
       ledgerStateJudgement        = TooOld,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
