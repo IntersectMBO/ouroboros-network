@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -15,8 +16,10 @@ module Test.Ouroboros.Network.PeerSelection.Instances
   , prop_shrink_PeerSelectionTargets
   ) where
 
+import Control.DeepSeq (NFData (..))
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word32)
+import NoThunks.Class
 
 import Ouroboros.Network.PeerSelection.Governor
 
@@ -41,7 +44,8 @@ import Test.QuickCheck
 -- | Simple address representation for the tests
 --
 newtype PeerAddr = PeerAddr Int
-  deriving (Eq, Ord, Show, Hashable)
+  deriving (Eq, Ord, Show, Hashable,  NFData)
+  deriving newtype NoThunks
 
 -- | We mostly avoid using this instance since we need careful control over
 -- the peer addrs, e.g. to make graphs work, and sets overlap etc. But it's

@@ -654,63 +654,85 @@ collectTraces trace =
     Set.fromList [ traceNum e | (_, GovernorEvent e) <- trace ]
 
 traceNum :: TracePeerSelection peeraddr -> Int
-traceNum TraceLocalRootPeersChanged{}                         = 00
-traceNum TraceTargetsChanged{}                                = 01
-traceNum TracePublicRootsRequest{}                            = 02
-traceNum TracePublicRootsResults{}                            = 03
-traceNum TracePublicRootsFailure{}                            = 04
-traceNum TracePeerShareRequests{}                             = 05
-traceNum TracePeerShareResults{}                              = 06
-traceNum TracePeerShareResultsFiltered{}                      = 07
-traceNum TraceForgetColdPeers{}                               = 08
-traceNum TracePromoteColdPeers{}                              = 09
-traceNum TracePromoteColdLocalPeers{}                         = 10
-traceNum TracePromoteColdFailed{}                             = 11
-traceNum TracePromoteColdDone{}                               = 12
-traceNum TracePromoteWarmPeers{}                              = 13
-traceNum TracePromoteWarmLocalPeers{}                         = 14
-traceNum TracePromoteWarmFailed{}                             = 15
-traceNum TracePromoteWarmDone{}                               = 16
-traceNum TraceDemoteWarmPeers{}                               = 17
-traceNum TraceDemoteWarmFailed{}                              = 18
-traceNum TraceDemoteWarmDone{}                                = 19
-traceNum TraceDemoteHotPeers{}                                = 20
-traceNum TraceDemoteLocalHotPeers{}                           = 21
-traceNum TraceDemoteHotFailed{}                               = 22
-traceNum TraceDemoteHotDone{}                                 = 23
-traceNum TraceDemoteAsynchronous{}                            = 24
-traceNum TraceGovernorWakeup{}                                = 25
-traceNum TraceChurnWait{}                                     = 26
-traceNum TraceChurnMode{}                                     = 27
-traceNum TracePromoteWarmAborted{}                            = 28
-traceNum TraceDemoteLocalAsynchronous{}                       = 29
-traceNum TraceBigLedgerPeersRequest{}                         = 30
-traceNum TraceBigLedgerPeersResults{}                         = 31
-traceNum TraceBigLedgerPeersFailure{}                         = 32
-traceNum TraceForgetBigLedgerPeers{}                          = 33
-traceNum TracePromoteColdBigLedgerPeers{}                     = 34
-traceNum TracePromoteColdBigLedgerPeerFailed{}                = 35
-traceNum TracePromoteColdBigLedgerPeerDone{}                  = 36
-traceNum TracePromoteWarmBigLedgerPeers{}                     = 37
-traceNum TracePromoteWarmBigLedgerPeerFailed{}                = 38
-traceNum TracePromoteWarmBigLedgerPeerDone{}                  = 39
-traceNum TracePromoteWarmBigLedgerPeerAborted{}               = 40
-traceNum TraceDemoteWarmBigLedgerPeers{}                      = 41
-traceNum TraceDemoteWarmBigLedgerPeerFailed{}                 = 42
-traceNum TraceDemoteWarmBigLedgerPeerDone{}                   = 43
-traceNum TraceDemoteHotBigLedgerPeers{}                       = 44
-traceNum TraceDemoteHotBigLedgerPeerFailed{}                  = 45
-traceNum TraceDemoteHotBigLedgerPeerDone{}                    = 46
-traceNum TraceKnownInboundConnection{}                        = 47
-traceNum TraceDemoteBigLedgerPeersAsynchronous{}              = 48
-traceNum TraceLedgerStateJudgementChanged{}                   = 49
-traceNum TraceOnlyBootstrapPeers{}                            = 50
-traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 51
-traceNum TraceUseBootstrapPeersChanged {}                     = 52
-traceNum TraceOutboundGovernorCriticalFailure {}              = 53
-traceNum TraceDebugState {}                                   = 54
-traceNum TraceChurnAction {}                                  = 55
-traceNum TraceChurnTimeout {}                                 = 56
+traceNum TraceLocalRootPeersChanged{}                           = 00
+traceNum TraceTargetsChanged{}                                  = 01
+traceNum TracePublicRootsRequest{}                              = 02
+traceNum TracePublicRootsResults{}                              = 03
+traceNum TracePublicRootsFailure{}                              = 04
+traceNum TracePeerShareRequests{}                               = 05
+traceNum TracePeerShareResults{}                                = 06
+traceNum TracePeerShareResultsFiltered{}                        = 07
+traceNum TraceForgetColdPeers{}                                 = 08
+traceNum TracePromoteColdPeers{}                                = 09
+traceNum TracePromoteColdLocalPeers{}                           = 10
+traceNum TracePromoteColdFailed{}                               = 11
+traceNum TracePromoteColdDone{}                                 = 12
+traceNum TracePromoteWarmPeers{}                                = 13
+traceNum TracePromoteWarmLocalPeers{}                           = 14
+traceNum TracePromoteWarmFailed{}                               = 15
+traceNum TracePromoteWarmDone{}                                 = 16
+traceNum TraceDemoteWarmPeers{}                                 = 17
+traceNum TraceDemoteWarmFailed{}                                = 18
+traceNum TraceDemoteWarmDone{}                                  = 19
+traceNum TraceDemoteHotPeers{}                                  = 20
+traceNum TraceDemoteLocalHotPeers{}                             = 21
+traceNum TraceDemoteHotFailed{}                                 = 22
+traceNum TraceDemoteHotDone{}                                   = 23
+traceNum TraceDemoteAsynchronous{}                              = 24
+traceNum TraceGovernorWakeup{}                                  = 25
+traceNum TraceChurnWait{}                                       = 26
+traceNum TraceChurnMode{}                                       = 27
+traceNum TracePromoteWarmAborted{}                              = 28
+traceNum TraceDemoteLocalAsynchronous{}                         = 29
+traceNum TraceBigLedgerPeersRequest{}                           = 30
+traceNum TraceBigLedgerPeersResults{}                           = 31
+traceNum TraceBigLedgerPeersFailure{}                           = 32
+traceNum TraceForgetBigLedgerPeers{}                            = 33
+traceNum TracePromoteColdBigLedgerPeers{}                       = 34
+traceNum TracePromoteColdBigLedgerPeerFailed{}                  = 35
+traceNum TracePromoteColdBigLedgerPeerDone{}                    = 36
+traceNum TracePromoteWarmBigLedgerPeers{}                       = 37
+traceNum TracePromoteWarmBigLedgerPeerFailed{}                  = 38
+traceNum TracePromoteWarmBigLedgerPeerDone{}                    = 39
+traceNum TracePromoteWarmBigLedgerPeerAborted{}                 = 40
+traceNum TraceDemoteWarmBigLedgerPeers{}                        = 41
+traceNum TraceDemoteWarmBigLedgerPeerFailed{}                   = 42
+traceNum TraceDemoteWarmBigLedgerPeerDone{}                     = 43
+traceNum TraceDemoteHotBigLedgerPeers{}                         = 44
+traceNum TraceDemoteHotBigLedgerPeerFailed{}                    = 45
+traceNum TraceDemoteHotBigLedgerPeerDone{}                      = 46
+traceNum TraceKnownInboundConnection{}                          = 47
+traceNum TraceDemoteBigLedgerPeersAsynchronous{}                = 48
+traceNum TraceLedgerStateJudgementChanged{}                     = 49
+traceNum TraceOnlyBootstrapPeers{}                              = 50
+traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState   = 51
+traceNum TraceUseBootstrapPeersChanged {}                       = 52
+traceNum TraceOutboundGovernorCriticalFailure {}                = 53
+traceNum TraceDebugState {}                                     = 54
+traceNum (TraceChurnAction DecreasedActivePeers)                = 55
+traceNum (TraceChurnAction IncreasedActivePeers)                = 56
+traceNum (TraceChurnAction DecreasedActiveBigLedgerPeers)       = 57
+traceNum (TraceChurnAction IncreasedActiveBigLedgerPeers)       = 58
+traceNum (TraceChurnAction DecreasedEstablishedPeers)           = 59
+traceNum (TraceChurnAction IncreasedEstablishedPeers)           = 60
+traceNum (TraceChurnAction IncreasedEstablishedBigLedgerPeers)  = 61
+traceNum (TraceChurnAction DecreasedEstablishedBigLedgerPeers)  = 62
+traceNum (TraceChurnAction DecreasedKnownPeers)                 = 63
+traceNum (TraceChurnAction IncreasedKnownPeers)                 = 64
+traceNum (TraceChurnAction DecreasedKnownBigLedgerPeers)        = 65
+traceNum (TraceChurnAction IncreasedKnownBigLedgerPeers)        = 66
+traceNum (TraceChurnTimeout DecreasedActivePeers)               = 67
+traceNum (TraceChurnTimeout IncreasedActivePeers)               = 68
+traceNum (TraceChurnTimeout DecreasedActiveBigLedgerPeers)      = 69
+traceNum (TraceChurnTimeout IncreasedActiveBigLedgerPeers)      = 70
+traceNum (TraceChurnTimeout DecreasedEstablishedPeers)          = 71
+traceNum (TraceChurnTimeout IncreasedEstablishedPeers)          = 72
+traceNum (TraceChurnTimeout IncreasedEstablishedBigLedgerPeers) = 73
+traceNum (TraceChurnTimeout DecreasedEstablishedBigLedgerPeers) = 74
+traceNum (TraceChurnTimeout DecreasedKnownPeers)                = 75
+traceNum (TraceChurnTimeout IncreasedKnownPeers)                = 76
+traceNum (TraceChurnTimeout DecreasedKnownBigLedgerPeers)       = 77
+traceNum (TraceChurnTimeout IncreasedKnownBigLedgerPeers)       = 78
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -770,8 +792,30 @@ allTraceNames =
    , (52, "TraceUseBootstrapPeersChanged")
    , (53, "TraceOutboundGovernorCriticalFailure")
    , (54, "TraceDebugState")
-   , (55, "TraceChurnAction")
-   , (55, "TraceChurnTimeout")
+   , (55, "TraceChurnAction DecreasedActivePeers")
+   , (56, "TraceChurnAction IncreasedActivePeers")
+   , (57, "TraceChurnAction DecreasedActiveBigLedgerPeers")
+   , (58, "TraceChurnAction IncreasedActiveBigLedgerPeers")
+   , (59, "TraceChurnAction DecreasedEstablishedPeers")
+   , (60, "TraceChurnAction IncreasedEstablishedPeers")
+   , (61, "TraceChurnAction IncreasedEstablishedBigLedgerPeers")
+   , (62, "TraceChurnAction DecreasedEstablishedBigLedgerPeers")
+   , (63, "TraceChurnAction DecreasedKnownPeers")
+   , (64, "TraceChurnAction IncreasedKnownPeers")
+   , (65, "TraceChurnAction DecreasedKnownBigLedgerPeers")
+   , (66, "TraceChurnAction IncreasedKnownBigLedgerPeers")
+   , (67, "TraceChurnTimeout DecreasedActivePeers")
+   , (68, "TraceChurnTimeout IncreasedActivePeers")
+   , (69, "TraceChurnTimeout DecreasedActiveBigLedgerPeers")
+   , (70, "TraceChurnTimeout IncreasedActiveBigLedgerPeers")
+   , (71, "TraceChurnTimeout DecreasedEstablishedPeers")
+   , (72, "TraceChurnTimeout IncreasedEstablishedPeers")
+   , (73, "TraceChurnTimeout IncreasedEstablishedBigLedgerPeers")
+   , (74, "TraceChurnTimeout DecreasedEstablishedBigLedgerPeers")
+   , (75, "TraceChurnTimeout DecreasedKnownPeers")
+   , (76, "TraceChurnTimeout IncreasedKnownPeers")
+   , (77, "TraceChurnTimeout DecreasedKnownBigLedgerPeers")
+   , (78, "TraceChurnTimeout IncreasedKnownBigLedgerPeers")
    ]
 
 
@@ -3433,7 +3477,8 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      stdGen = mkStdGen 42
     }
 
 -- | issue #3515
@@ -3469,7 +3514,8 @@ prop_issue_3515 = prop_governor_nolivelock $
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      stdGen = mkStdGen 42
     }
 
 -- | issue #3494
@@ -3505,7 +3551,8 @@ prop_issue_3494 = prop_governor_nofail $
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      stdGen = mkStdGen 42
     }
 
 -- | issue #3233
@@ -3557,7 +3604,8 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickColdPeersToForget = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
-      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
+      ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| []),
+      stdGen = mkStdGen 42
     }
 
 
