@@ -19,6 +19,9 @@
 * Added `TraceChurnAction` and `TraceChurnTimeout` trace points of `TracePeerSelection`.
 * Added `HasCallStack` to functions which call `pickPeers`.
 
+* Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
+  and use of previously created records for shunting related values around.
+
 ## 0.14.0.0 -- 2024-04-04
 
 ### Breaking changes
