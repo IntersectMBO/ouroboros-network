@@ -292,16 +292,16 @@ ledgerPeersThread PeerActionsDNS {
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> m Void
     go rng oldTs peerMap bigPeerMap = do
-        useLedgerPeers <- atomically wlpGetUseLedgerPeers
+        traceWith wlpTracer WaitingOnRequest
+        -- wait until next request of ledger peers
+        ((numRequested, ledgerPeersKind), useLedgerPeers) <- atomically $
+          (,) <$> getReq <*> wlpGetUseLedgerPeers
         traceWith wlpTracer (TraceUseLedgerPeers useLedgerPeers)
 
         let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerPeers
                                   then short_PEER_LIST_LIFE_TIME
                                   else long_PEER_LIST_LIFE_TIME
 
-        traceWith wlpTracer WaitingOnRequest
-        -- wait until next request of ledger peers
-        (numRequested, ledgerPeersKind) <- atomically getReq
         traceWith wlpTracer $ RequestForPeers numRequested
         !now <- getMonotonicTime
         let age = diffTime now oldTs
