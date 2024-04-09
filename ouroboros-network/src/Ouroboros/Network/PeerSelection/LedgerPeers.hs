@@ -64,9 +64,7 @@ import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
-import Ouroboros.Network.PeerSelection.RelayAccessPoint qualified as Socket
 import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
            (resolveLedgerPeers)
 
@@ -268,22 +266,25 @@ ledgerPeersThread :: forall m peerAddr resolver exception.
                      , Exception exception
                      , Ord peerAddr
                      )
-                  => StdGen
-                  -> DNSSemaphore m
-                  -> (IP.IP -> Socket.PortNumber -> peerAddr)
-                  -> Tracer m TraceLedgerPeers
-                  -> STM m UseLedgerPeers
-                  -> LedgerPeersConsensusInterface m
-                  -> DNSActions resolver exception m
+                  => PeerActionsDNS peerAddr resolver exception m
+                  -> WithLedgerPeersArgs m
+                  -- blocking request for ledger peers
                   -> STM m (NumberOfPeers, LedgerPeersKind)
-                  -- ^ a blocking action which receives next request for more
-                  -- ledger peers
+                  -- response with ledger peers
                   -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                   -> m Void
-ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
-                  ledgerPeersConsensusInterface dnsActions
-                  getReq putRsp = do
-    go inRng (Time 0) Map.empty Map.empty
+ledgerPeersThread PeerActionsDNS {
+                    paToPeerAddr,
+                    paDnsActions,
+                    paDnsSemaphore }
+                  WithLedgerPeersArgs {
+                    wlpRng,
+                    wlpConsensusInterface,
+                    wlpTracer,
+                    wlpGetUseLedgerPeers }
+                  getReq
+                  putResp = do
+    go wlpRng (Time 0) Map.empty Map.empty
   where
     go :: StdGen
        -> Time
@@ -291,62 +292,62 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> m Void
     go rng oldTs peerMap bigPeerMap = do
-        useLedgerPeers <- atomically readUseLedgerAfter
-        traceWith tracer (TraceUseLedgerPeers useLedgerPeers)
+        useLedgerPeers <- atomically wlpGetUseLedgerPeers
+        traceWith wlpTracer (TraceUseLedgerPeers useLedgerPeers)
 
         let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerPeers
                                   then short_PEER_LIST_LIFE_TIME
                                   else long_PEER_LIST_LIFE_TIME
 
-        traceWith tracer WaitingOnRequest
+        traceWith wlpTracer WaitingOnRequest
         -- wait until next request of ledger peers
         (numRequested, ledgerPeersKind) <- atomically getReq
-        traceWith tracer $ RequestForPeers numRequested
+        traceWith wlpTracer $ RequestForPeers numRequested
         !now <- getMonotonicTime
         let age = diffTime now oldTs
         (peerMap', bigPeerMap', ts) <-
           if age > peerListLifeTime
              then case useLedgerPeers of
                DontUseLedgerPeers -> do
-                 traceWith tracer DisabledLedgerPeers
+                 traceWith wlpTracer DisabledLedgerPeers
                  return (Map.empty, Map.empty, now)
                UseLedgerPeers ula -> do
                  peers <- (\case
                             BeforeSlot          -> []
                             LedgerPeers _ peers -> peers
                           )
-                      <$> atomically (getLedgerPeers ledgerPeersConsensusInterface ula)
+                      <$> atomically (getLedgerPeers wlpConsensusInterface ula)
                  let peersStake   = accPoolStake peers
                      bigPeersStake = accBigPoolStake peers
-                 traceWith tracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStake)
+                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStake)
                  return (peersStake, bigPeersStake, now)
              else do
-               traceWith tracer $ ReusingLedgerState (Map.size peerMap) age
+               traceWith wlpTracer $ ReusingLedgerState (Map.size peerMap) age
                return (peerMap, bigPeerMap, oldTs)
 
         if Map.null peerMap'
            then do
                when (isLedgerPeersEnabled useLedgerPeers) $
-                   traceWith tracer FallingBackToPublicRootPeers
-               atomically $ putRsp Nothing
+                   traceWith wlpTracer FallingBackToPublicRootPeers
+               atomically $ putResp Nothing
                go rng ts peerMap' bigPeerMap'
            else do
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
-               (rng', !pickedPeers) <- pickPeers rng tracer peerMap' bigPeerMap' numRequested ledgerPeersKind
+               (rng', !pickedPeers) <- pickPeers rng wlpTracer peerMap' bigPeerMap' numRequested ledgerPeersKind
                case ledgerPeersKind of
                  BigLedgerPeers -> do
                    let numBigLedgerPeers = Map.size bigPeerMap'
                    when (getNumberOfPeers numRequested
                            > fromIntegral numBigLedgerPeers) $
-                     traceWith tracer (NotEnoughBigLedgerPeers numRequested numBigLedgerPeers)
-                   traceWith tracer (PickedBigLedgerPeers numRequested pickedPeers)
+                     traceWith wlpTracer (NotEnoughBigLedgerPeers numRequested numBigLedgerPeers)
+                   traceWith wlpTracer (PickedBigLedgerPeers numRequested pickedPeers)
                  AllLedgerPeers -> do
                    let numLedgerPeers = Map.size peerMap'
                    when (getNumberOfPeers numRequested
                            > fromIntegral numLedgerPeers) $
-                     traceWith tracer (NotEnoughLedgerPeers numRequested numLedgerPeers)
-                   traceWith tracer (PickedLedgerPeers numRequested pickedPeers)
+                     traceWith wlpTracer (NotEnoughLedgerPeers numRequested numLedgerPeers)
+                   traceWith wlpTracer (PickedLedgerPeers numRequested pickedPeers)
 
 
                let (plainAddrs, domains) =
@@ -354,11 +355,11 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
 
                -- NOTE: we don't set `resolveConcurrent` because
                -- of https://github.com/kazu-yamamoto/dns/issues/174
-               domainAddrs <- resolveLedgerPeers tracer
-                                                 toPeerAddr
-                                                 dnsSemaphore
+               domainAddrs <- resolveLedgerPeers wlpTracer
+                                                 paToPeerAddr
+                                                 paDnsSemaphore
                                                  DNS.defaultResolvConf
-                                                 dnsActions
+                                                 paDnsActions
                                                  domains
 
                let (rng'', rngDomain) = split rng'
@@ -367,7 +368,7 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
                                   (rngDomain, plainAddrs)
                                   domainAddrs
 
-               atomically $ putRsp $ Just (pickedAddrs, ttl)
+               atomically $ putResp $ Just (pickedAddrs, ttl)
                go rng'' ts peerMap' bigPeerMap'
 
     -- Randomly pick one of the addresses returned in the DNS result.
@@ -390,7 +391,7 @@ ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerAfter
     partitionPeer (addrs, domains) (RelayDomainAccessPoint domain) =
       (addrs, domain : domains)
     partitionPeer (!addrs, domains) (RelayAccessAddress ip port) =
-      let !addr  = toPeerAddr ip port
+      let !addr  = paToPeerAddr ip port
           addrs' = Set.insert addr addrs
        in (addrs', domains)
 
@@ -421,8 +422,8 @@ withLedgerPeers :: forall peerAddr resolver exception m a.
                      -> Async m Void
                      -> m a )
                 -> m a
-withLedgerPeers PeerActionsDNS { paToPeerAddr = toPeerAddr, paDnsActions = dnsActions, paDnsSemaphore = dnsSemaphore }
-                WithLedgerPeersArgs { wlpRng = inRng, wlpConsensusInterface = interface, wlpTracer = tracer, wlpGetUseLedgerPeers = readUseLedgerPeers }
+withLedgerPeers peerActionsDNS
+                ledgerPeerArgs
                 k = do
     reqVar  <- newEmptyTMVarIO
     respVar <- newEmptyTMVarIO
@@ -433,6 +434,5 @@ withLedgerPeers PeerActionsDNS { paToPeerAddr = toPeerAddr, paDnsActions = dnsAc
           atomically $ putTMVar reqVar (numberOfPeers, ledgerPeersKind)
           atomically $ takeTMVar respVar
     withAsync
-      ( ledgerPeersThread inRng dnsSemaphore toPeerAddr tracer readUseLedgerPeers
-                          interface dnsActions getRequest putResponse )
+      (ledgerPeersThread peerActionsDNS ledgerPeerArgs getRequest putResponse)
       $ \ thread -> k request thread
