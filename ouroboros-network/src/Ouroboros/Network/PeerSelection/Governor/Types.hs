@@ -39,7 +39,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , Completion (..)
   , PeerSelectionCounters (.., PeerSelectionCountersHWC, numberOfColdPeers, numberOfWarmPeers, numberOfHotPeers, numberOfColdBigLedgerPeers, numberOfWarmBigLedgerPeers, numberOfHotBigLedgerPeers, numberOfColdLocalRootPeers, numberOfWarmLocalRootPeers, numberOfHotLocalRootPeers, localRootsHWC)
   , emptyPeerSelectionCounters
-  , peerStateToCounters
+  , peerSelectionStateToCounters
     -- * Peer Sharing Auxiliary data type
   , PeerSharingResult (..)
     -- * Traces
@@ -760,16 +760,20 @@ peerSelectionCountersHWC PeerSelectionCounters {..} =
     }
 
 
-peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
-peerStateToCounters PeerSelectionState { knownPeers,
-                                         establishedPeers,
-                                         activePeers,
-                                         publicRootPeers,
-                                         localRootPeers,
-                                         inProgressPromoteCold,
-                                         inProgressPromoteWarm,
-                                         inProgressDemoteWarm,
-                                         inProgressDemoteHot } =
+peerSelectionStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
+peerSelectionStateToCounters
+    PeerSelectionState {
+        knownPeers,
+        establishedPeers,
+        activePeers,
+        publicRootPeers,
+        localRootPeers,
+        inProgressPromoteCold,
+        inProgressPromoteWarm,
+        inProgressDemoteWarm,
+        inProgressDemoteHot
+      }
+    =
     PeerSelectionCounters {
       numberOfRootPeers                          = LocalRootPeers.size localRootPeers
                                                  + PublicRootPeers.size publicRootPeers,

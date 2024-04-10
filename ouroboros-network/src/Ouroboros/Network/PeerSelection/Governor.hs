@@ -562,7 +562,7 @@ peerSelectionGovernorLoop tracer
 
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
-          !newCounters = peerStateToCounters decisionState
+          !newCounters = peerSelectionStateToCounters decisionState
 
           !outboundConnectionsState =
             if activePeers st
