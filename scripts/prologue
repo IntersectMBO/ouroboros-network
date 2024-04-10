@@ -7,6 +7,8 @@ This site contains Haskell documentation of __Ouroboros-Network__
 
 == Packages
 
+![Network packages dependencies](packages-network.svg)
+
 * __ouroboros-network-api__ - API shared by __ouroboros-network__ packages and
     __ouroboros-consensus__, e.g. common types, APIs that are provided by the
     consensus layar. Among others, it includes:
