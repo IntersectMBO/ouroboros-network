@@ -30,6 +30,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , PublicPeerSelectionState (..)
   , makePublicPeerSelectionStateVar
   , PeerSelectionCounters (..)
+  , peerSelectionStateToCounters
   , emptyPeerSelectionCounters
   , nullPeerSelectionTargets
   , emptyPeerSelectionState
@@ -557,7 +558,7 @@ peerSelectionGovernorLoop tracer
       now <- getMonotonicTime
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
-          !newCounters = peerStateToCounters decisionState
+          !newCounters = peerSelectionStateToCounters decisionState
 
       atomically $ do
         -- Update counters
