@@ -1065,6 +1065,10 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceOutboundGovernorCriticalFailure"
       peerSelectionTraceMap TraceDebugState {}                       =
         "TraceDebugState"
+      peerSelectionTraceMap TraceChurnAction {}                      =
+        "TraceChurnTimeout"
+      peerSelectionTraceMap TraceChurnTimeout {}                     =
+        "TraceChurnTimeout"
 
       eventsSeenNames = map peerSelectionTraceMap events
 
