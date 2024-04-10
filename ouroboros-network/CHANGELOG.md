@@ -11,6 +11,9 @@
 
 ### Non-Breaking changes
 
+* Improved Churn governor by synchronizing according to the counters instead
+  of relying on `threadDelay`.
+
 ## 0.14.0.0 -- 2024-04-04
 
 ### Breaking changes

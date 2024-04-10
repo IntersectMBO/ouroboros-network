@@ -62,7 +62,7 @@ defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 defaultPeerSelectionTargets :: PeerSelectionTargets
 defaultPeerSelectionTargets =
   PeerSelectionTargets {
-    targetNumberOfRootPeers                 = 85,
+    targetNumberOfRootPeers                 = 60,
     targetNumberOfKnownPeers                = 85,
     targetNumberOfEstablishedPeers          = 40,
     targetNumberOfActivePeers               = 15,

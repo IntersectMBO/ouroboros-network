@@ -44,6 +44,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerSharingResult (..)
     -- * Traces
   , TracePeerSelection (..)
+  , ChurnAction (..)
   , DebugPeerSelection (..)
     -- * Error types
   , BootstrapPeersCriticalTimeoutError (..)
@@ -762,8 +763,7 @@ peerStateToCounters PeerSelectionState { knownPeers,
                                          inProgressDemoteWarm,
                                          inProgressDemoteHot } =
     PeerSelectionCounters {
-      numberOfRootPeers                          = LocalRootPeers.size localRootPeers
-                                                 + PublicRootPeers.size publicRootPeers,
+      numberOfRootPeers                          = Set.size rootPeersSet,
 
       numberOfKnownPeers                         = Set.size   knownPeersSet,
       numberOfColdPeersPromotions                = Set.size $ inProgressPromoteCold Set.\\ bigLedgerSet,
@@ -816,6 +816,10 @@ peerStateToCounters PeerSelectionState { knownPeers,
     establishedSet = EstablishedPeers.toSet establishedPeers
     bigLedgerSet   = PublicRootPeers.getBigLedgerPeers publicRootPeers
 
+    -- root peers
+    rootPeersSet   = PublicRootPeers.toSet publicRootPeers
+                  <> localRootSet
+
     -- non big ledger peers
     knownPeersSet       = knownSet Set.\\ bigLedgerSet
     establishedPeersSet = establishedSet Set.\\ bigLedgerSet
@@ -846,13 +850,11 @@ peerStateToCounters PeerSelectionState { knownPeers,
     activeBootstrapPeersSet      = activePeersSet `Set.intersection` bootstrapSet
 
     -- shared peers
-    rootSet                    = PublicRootPeers.toSet publicRootPeers
-                              <> localRootSet
     -- shared peers are not big ledger peers, hence we can use `knownPeersSet`,
     -- `establishedPeersSet` and `activePeersSet` below.
-    knownSharedPeersSet        = knownPeersSet Set.\\ rootSet
-    establishedSharedPeersSet  = establishedPeersSet Set.\\ rootSet
-    activeSharedPeersSet       = activePeersSet Set.\\ rootSet
+    knownSharedPeersSet        = knownPeersSet Set.\\ rootPeersSet
+    establishedSharedPeersSet  = establishedPeersSet Set.\\ rootPeersSet
+    activeSharedPeersSet       = activePeersSet Set.\\ rootPeersSet
 
 
 
@@ -1364,6 +1366,9 @@ data TracePeerSelection peeraddr =
 
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
+     | TraceChurnAction  DiffTime ChurnAction
+     | TraceChurnTimeout DiffTime ChurnAction
+
      | TraceLedgerStateJudgementChanged LedgerStateJudgement
      | TraceOnlyBootstrapPeers
      | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
@@ -1380,6 +1385,22 @@ data TracePeerSelection peeraddr =
 
      | TraceDebugState Time (DebugPeerSelectionState peeraddr)
   deriving Show
+
+
+data ChurnAction = DecreasedActivePeers
+                 | IncreasedActivePeers
+                 | DecreasedActiveBigLedgerPeers
+                 | IncreasedActiveBigLedgerPeers
+                 | DecreasedEstablishedPeers
+                 | IncreasedEstablishedPeers
+                 | IncreasedEstablishedBigLedgerPeers
+                 | DecreasedEstablishedBigLedgerPeers
+                 | DecreasedKnownPeers
+                 | IncreasedKnownPeers
+                 | DecreasedKnownBigLedgerPeers
+                 | IncreasedKnownBigLedgerPeers
+  deriving (Eq, Show)
+
 
 data BootstrapPeersCriticalTimeoutError =
   BootstrapPeersCriticalTimeoutError

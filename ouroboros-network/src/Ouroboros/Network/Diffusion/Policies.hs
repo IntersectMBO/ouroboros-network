@@ -54,6 +54,14 @@ minChainSyncTimeout = 135
 maxChainSyncTimeout :: DiffTime
 maxChainSyncTimeout = 269
 
+-- | Churn timeouts after 60s trying to establish a connection.
+--
+-- This doesn't mean the connection is terminated after it, just churns moves
+-- on.
+--
+churnEstablishConnectionTimeout :: DiffTime
+churnEstablishConnectionTimeout = 60
+
 
 -- | Number of events tracked by 'PeerMetrics'.  This corresponds to one hour of
 -- blocks on mainnet.
