@@ -44,6 +44,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , PeerSharingResult (..)
     -- * Traces
   , TracePeerSelection (..)
+  , ChurnAction (..)
   , DebugPeerSelection (..)
     -- * Error types
   , BootstrapPeersCriticalTimeoutError (..)
@@ -1363,6 +1364,9 @@ data TracePeerSelection peeraddr =
 
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
+     | TraceChurnAction  ChurnAction
+     | TraceChurnTimeout ChurnAction
+
      | TraceLedgerStateJudgementChanged LedgerStateJudgement
      | TraceOnlyBootstrapPeers
      | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
@@ -1379,6 +1383,22 @@ data TracePeerSelection peeraddr =
 
      | TraceDebugState Time (DebugPeerSelectionState peeraddr)
   deriving Show
+
+
+data ChurnAction = DecreasedActivePeers
+                 | IncreasedActivePeers
+                 | DecreasedActiveBigLedgerPeers
+                 | IncreasedActiveBigLedgerPeers
+                 | DecreasedEstablishedPeers
+                 | IncreasedEstablishedPeers
+                 | IncreasedEstablishedBigLedgerPeers
+                 | DecreasedEstablishedBigLedgerPeers
+                 | DecreasedKnownPeers
+                 | IncreasedKnownPeers
+                 | DecreasedKnownBigLedgerPeers
+                 | IncreasedKnownBigLedgerPeers
+  deriving (Eq, Show)
+
 
 data BootstrapPeersCriticalTimeoutError =
   BootstrapPeersCriticalTimeoutError
