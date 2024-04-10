@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
@@ -9,17 +11,25 @@ module Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor) where
 import Data.Void (Void)
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
+import Control.Applicative (Alternative)
+import Data.Functor (($>))
+import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..))
-import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout)
+import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
+           closeConnectionTimeout, deactivateTimeout)
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.PeerMetric
 
+
+type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
+type CheckPeerSelectionCounters = PeerSelectionCounters -> PeerSelectionTargets -> Bool
 
 -- | Churn governor.
 --
@@ -30,8 +40,10 @@ import Ouroboros.Network.PeerSelection.PeerMetric
 -- root peers.
 --
 peerChurnGovernor :: forall m peeraddr.
-                     ( MonadSTM m
-                     , MonadDelay m
+                     ( MonadDelay m
+                     , Alternative (STM m)
+                     , MonadTimer m
+                     , MonadCatch m
                      )
                   => Tracer m (TracePeerSelection peeraddr)
                   -> DiffTime
@@ -39,17 +51,22 @@ peerChurnGovernor :: forall m peeraddr.
                   -> DiffTime
                   -- ^ the base for churn interval in the bulk sync mode.
                   -> DiffTime
-                  -- ^ the max peersharing timeout
+                  -- ^ the timeout for outbound governor to find new (thus
+                  -- cold) peers through peer sharing mechanism.
                   -> PeerMetrics m peeraddr
                   -> StrictTVar m ChurnMode
                   -> StdGen
                   -> STM m FetchMode
                   -> PeerSelectionTargets
+                  -- ^ base targets; set in a configuration file
                   -> StrictTVar m PeerSelectionTargets
+                  -> STM m PeerSelectionCounters
                   -> STM m UseBootstrapPeers
                   -> m Void
-peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeout
-                  _metrics churnModeVar inRng getFetchMode base peerSelectionVar
+peerChurnGovernor tracer
+                  deadlineChurnInterval bulkChurnInterval requestPeersTimeout
+                  _metrics churnModeVar inRng getFetchMode base
+                  peerSelectionVar readCounters
                   getUseBootstrapPeers = do
   -- Wait a while so that not only the closest peers have had the time
   -- to become warm.
@@ -61,10 +78,10 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
   (mode, ubp) <- atomically ((,) <$> updateChurnMode
                                  <*> getUseBootstrapPeers)
   atomically $ do
-    increaseActivePeers mode
-    increaseEstablishedPeers mode ubp
+    modifyTVar peerSelectionVar ( increaseActivePeers mode
+                                . increaseEstablishedPeers mode ubp )
   endTs0 <- getMonotonicTime
-  fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= go
+  fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= churnLoop
 
   where
 
@@ -72,169 +89,398 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
     updateChurnMode = do
         fm <- getFetchMode
         let mode = case fm of
-                        FetchModeDeadline -> ChurnModeNormal
-                        FetchModeBulkSync -> ChurnModeBulkSync
+                     FetchModeDeadline -> ChurnModeNormal
+                     FetchModeBulkSync -> ChurnModeBulkSync
         writeTVar churnModeVar mode
         return mode
 
+    -- | Update the targets to a given value, and block until they are reached.
+    -- The time we are blocked is limited by a timeout.
+    --
+    updateTargets
+      :: ChurnAction
+      -- ^ churn actions for tracing
+      -> DiffTime
+      -- ^ timeout
+      -> ModifyPeerSelectionTargets
+      -- ^ update counters function
+      -> CheckPeerSelectionCounters
+      -- ^ check counters
+      -> m ()
+    updateTargets churnAction timeoutDelay modifyTargets checkCounters = do
+      -- update targets, and return the new targets
+      startTime <- getMonotonicTime
+      targets <- atomically $ stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets)
+
+      -- create timeout and block on counters
+      bracketOnError (registerDelayCancellable timeoutDelay)
+                     (\(_readTimeout, cancelTimeout) -> cancelTimeout)
+                     (\( readTimeout, cancelTimeout) -> do
+                         -- block until counters reached the targets, or the timeout fires
+                         a <- atomically $ runFirstToFinish $
+                                FirstToFinish ((readCounters>>= check . flip checkCounters targets) $> True)
+                                <>
+                                FirstToFinish (readTimeout >>= \case TimeoutPending -> retry
+                                                                     _              -> pure False)
+                         if a
+                           then do
+                             cancelTimeout
+                             endTime <- getMonotonicTime
+                             traceWith tracer (TraceChurnAction (endTime `diffTime` startTime) churnAction)
+                           else do
+                             endTime <- getMonotonicTime
+                             traceWith tracer (TraceChurnTimeout (endTime `diffTime` startTime) churnAction)
+                     )
+
+    --
+    -- Functions to modify `PeerSelectionTargets` and check
+    -- `PeerSelectionCounters`.
+    --
+
     -- TODO: #3396 revisit the policy for genesis
-    increaseActivePeers :: ChurnMode -> STM m ()
-    increaseActivePeers mode =
-        modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfActivePeers =
-              case mode of
-                   ChurnModeNormal  ->
-                       targetNumberOfActivePeers base
-                   ChurnModeBulkSync ->
-                       min 2 (targetNumberOfActivePeers base)
-        })
+    increaseActivePeers :: ChurnMode
+                        -> ModifyPeerSelectionTargets
+    increaseActivePeers
+      mode targets
+      =
+      targets {
+        targetNumberOfActivePeers =
+          case mode of
+            ChurnModeNormal  ->
+              targetNumberOfActivePeers base
+            ChurnModeBulkSync ->
+              min 2 (targetNumberOfActivePeers base)
+      }
 
-    decreaseActivePeers :: ChurnMode -> STM m ()
-    decreaseActivePeers mode =
-        modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfActivePeers =
-              case mode of
-                   ChurnModeNormal ->
-                       decrease $ targetNumberOfActivePeers base
-                   ChurnModeBulkSync ->
-                       min 1 (targetNumberOfActivePeers base - 1)
-        })
-
-    increaseEstablishedPeers :: ChurnMode -> UseBootstrapPeers -> STM m ()
-    increaseEstablishedPeers mode ubp =
-        modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfEstablishedPeers =
-              case (mode, ubp) of
-                   (ChurnModeBulkSync, UseBootstrapPeers _) ->
-                       min (targetNumberOfActivePeers targets + 1)
-                           (targetNumberOfEstablishedPeers base)
-                   _  -> targetNumberOfEstablishedPeers base
-        })
-
-    decreaseEstablished :: ChurnMode -> UseBootstrapPeers -> STM m ()
-    decreaseEstablished mode ubp =
-        modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfEstablishedPeers =
-              case (mode, ubp) of
-                   (ChurnModeBulkSync, UseBootstrapPeers _) ->
-                       min (targetNumberOfActivePeers targets) (targetNumberOfEstablishedPeers base - 1)
-                   _ -> decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
-                          + targetNumberOfActivePeers base
-        })
-
-    increaseActiveBigLedgerPeers :: ChurnMode -> STM m ()
-    increaseActiveBigLedgerPeers mode =
-        modifyTVar peerSelectionVar (\targets -> targets {
-          -- TODO: when chain-skipping will be implemented and chain-sync client
-          -- will take into account big ledger peers, we don't need pattern
-          -- match on the churn mode, but use
-          -- `targetNumberOfActiveBigLedgerPeers` (issue #4609).
-          targetNumberOfActiveBigLedgerPeers =
-              case mode of
-                   ChurnModeNormal ->
-                      targetNumberOfActiveBigLedgerPeers base
-                   ChurnModeBulkSync ->
-                      min 1 (targetNumberOfActiveBigLedgerPeers base)
-        })
-
-    decreaseActiveBigLedgerPeers :: ChurnMode -> STM m ()
-    decreaseActiveBigLedgerPeers mode =
-        modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfActiveBigLedgerPeers =
-              case mode of
-                   ChurnModeNormal ->
-                       decrease $ targetNumberOfActiveBigLedgerPeers base
-                   ChurnModeBulkSync ->
-                       min 1 (targetNumberOfActiveBigLedgerPeers base)
-        })
-
-    decreaseEstablishedBigLedgerPeers :: STM m ()
-    decreaseEstablishedBigLedgerPeers =
-        modifyTVar peerSelectionVar (\targets -> targets {
-            targetNumberOfEstablishedBigLedgerPeers =
-              decrease (targetNumberOfEstablishedBigLedgerPeers base -
-                        targetNumberOfActiveBigLedgerPeers base)
-              + targetNumberOfActiveBigLedgerPeers base
-        })
+    checkActivePeersIncreased :: CheckPeerSelectionCounters
+    checkActivePeersIncreased
+      PeerSelectionCounters { numberOfActivePeers }
+      PeerSelectionTargets { targetNumberOfActivePeers }
+      =
+      numberOfActivePeers >= targetNumberOfActivePeers
 
 
+    decreaseActivePeers :: ChurnMode -> ModifyPeerSelectionTargets
+    decreaseActivePeers mode targets =
+      targets {
+        targetNumberOfActivePeers =
+          case mode of
+            ChurnModeNormal ->
+              decrease $ targetNumberOfActivePeers base
+            ChurnModeBulkSync ->
+              min 1 (targetNumberOfActivePeers base - 1)
+      }
 
-    go :: StdGen -> m Void
-    go !rng = do
+    checkActivePeersDecreased :: CheckPeerSelectionCounters
+    checkActivePeersDecreased
+      PeerSelectionCounters { numberOfActivePeers }
+      PeerSelectionTargets { targetNumberOfActivePeers }
+      =
+         numberOfActivePeers
+      <= targetNumberOfActivePeers
+
+
+    increaseEstablishedPeers
+      :: ChurnMode -> UseBootstrapPeers
+      -> ModifyPeerSelectionTargets
+    increaseEstablishedPeers
+      mode ubp targets
+      =
+      targets {
+        targetNumberOfEstablishedPeers =
+          case (mode, ubp) of
+            (ChurnModeBulkSync, UseBootstrapPeers _) ->
+              min (targetNumberOfActivePeers targets + 1)
+                  (targetNumberOfEstablishedPeers base)
+            _  -> targetNumberOfEstablishedPeers base
+      }
+
+    checkEstablishedPeersIncreased :: CheckPeerSelectionCounters
+    checkEstablishedPeersIncreased
+      PeerSelectionCounters { numberOfEstablishedPeers }
+      PeerSelectionTargets { targetNumberOfEstablishedPeers }
+      =
+         numberOfEstablishedPeers
+      >= targetNumberOfEstablishedPeers
+
+
+    increaseEstablishedBigLedgerPeers
+      :: ModifyPeerSelectionTargets
+    increaseEstablishedBigLedgerPeers
+      targets
+      =
+      targets { targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base }
+
+    checkEstablishedBigLedgerPeersIncreased
+      :: CheckPeerSelectionCounters
+    checkEstablishedBigLedgerPeersIncreased
+      PeerSelectionCounters { numberOfEstablishedBigLedgerPeers }
+      PeerSelectionTargets { targetNumberOfEstablishedBigLedgerPeers }
+      =
+      numberOfEstablishedBigLedgerPeers >= targetNumberOfEstablishedBigLedgerPeers
+
+
+    decreaseEstablishedPeers
+      :: ChurnMode -> UseBootstrapPeers
+      -> ModifyPeerSelectionTargets
+    decreaseEstablishedPeers mode ubp targets =
+      targets {
+        targetNumberOfEstablishedPeers =
+          case (mode, ubp) of
+             (ChurnModeBulkSync, UseBootstrapPeers _) ->
+                 min (targetNumberOfActivePeers targets)
+                     (targetNumberOfEstablishedPeers base - 1)
+             _ -> decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
+                    + targetNumberOfActivePeers base
+      }
+
+    checkEstablishedPeersDecreased
+      :: CheckPeerSelectionCounters
+    checkEstablishedPeersDecreased
+      PeerSelectionCounters { numberOfEstablishedPeers }
+      PeerSelectionTargets { targetNumberOfEstablishedPeers }
+      =
+         numberOfEstablishedPeers
+      <= targetNumberOfEstablishedPeers
+
+
+    increaseActiveBigLedgerPeers
+      :: ChurnMode -> ModifyPeerSelectionTargets
+    increaseActiveBigLedgerPeers mode targets =
+      targets {
+        -- TODO: when chain-skipping will be implemented and chain-sync client
+        -- will take into account big ledger peers, we don't need pattern
+        -- match on the churn mode, but use
+        -- `targetNumberOfActiveBigLedgerPeers` (issue #4609).
+        targetNumberOfActiveBigLedgerPeers =
+          case mode of
+            ChurnModeNormal ->
+              targetNumberOfActiveBigLedgerPeers base
+            ChurnModeBulkSync ->
+              min 1 (targetNumberOfActiveBigLedgerPeers base)
+      }
+
+    checkActiveBigLedgerPeersIncreased
+      :: CheckPeerSelectionCounters
+    checkActiveBigLedgerPeersIncreased
+      PeerSelectionCounters { numberOfActiveBigLedgerPeers }
+      PeerSelectionTargets { targetNumberOfActiveBigLedgerPeers }
+      =
+      numberOfActiveBigLedgerPeers >= targetNumberOfActiveBigLedgerPeers
+
+
+    decreaseActiveBigLedgerPeers
+      :: ChurnMode
+      -> ModifyPeerSelectionTargets
+    decreaseActiveBigLedgerPeers mode targets =
+      targets {
+        targetNumberOfActiveBigLedgerPeers =
+          case mode of
+            ChurnModeNormal ->
+              decrease $ targetNumberOfActiveBigLedgerPeers base
+            ChurnModeBulkSync ->
+              min 1 (targetNumberOfActiveBigLedgerPeers base)
+      }
+
+    checkActiveBigLedgerPeersDecreased
+      :: CheckPeerSelectionCounters
+    checkActiveBigLedgerPeersDecreased
+      PeerSelectionCounters { numberOfActiveBigLedgerPeers }
+      PeerSelectionTargets { targetNumberOfActiveBigLedgerPeers }
+      =
+         numberOfActiveBigLedgerPeers
+      <= targetNumberOfActiveBigLedgerPeers
+
+
+    decreaseEstablishedBigLedgerPeers
+      :: ModifyPeerSelectionTargets
+    decreaseEstablishedBigLedgerPeers targets =
+      targets {
+        targetNumberOfEstablishedBigLedgerPeers =
+          decrease (targetNumberOfEstablishedBigLedgerPeers base -
+                    targetNumberOfActiveBigLedgerPeers base)
+          + targetNumberOfActiveBigLedgerPeers base
+      }
+
+    checkEstablishedBigLedgerPeersDecreased
+      :: CheckPeerSelectionCounters
+    checkEstablishedBigLedgerPeersDecreased
+      PeerSelectionCounters { numberOfEstablishedBigLedgerPeers }
+      PeerSelectionTargets { targetNumberOfEstablishedBigLedgerPeers }
+      =
+         numberOfEstablishedBigLedgerPeers
+      <= targetNumberOfEstablishedBigLedgerPeers
+
+
+    decreaseKnownPeers
+      :: ModifyPeerSelectionTargets
+    decreaseKnownPeers targets =
+      targets {
+          targetNumberOfRootPeers =
+            decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
+            + targetNumberOfEstablishedPeers base
+        , targetNumberOfKnownPeers =
+            decrease (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
+            + targetNumberOfEstablishedPeers base
+        }
+
+    checkKnownPeersDecreased
+      :: PeerSelectionCounters -> PeerSelectionTargets -> Bool
+    checkKnownPeersDecreased
+      PeerSelectionCounters { numberOfKnownPeers }
+      PeerSelectionTargets { targetNumberOfKnownPeers }
+      =
+        -- note: we are not checking target root peers, since it is a one-sided
+        -- target
+         numberOfKnownPeers <= targetNumberOfKnownPeers
+
+    decreaseKnownBigLedgerPeers
+      :: ModifyPeerSelectionTargets
+    decreaseKnownBigLedgerPeers targets =
+      targets {
+          targetNumberOfKnownBigLedgerPeers =
+            decrease (targetNumberOfKnownBigLedgerPeers base -
+                      targetNumberOfEstablishedBigLedgerPeers base)
+            + targetNumberOfEstablishedBigLedgerPeers base
+        }
+
+    checkKnownBigLedgerPeersDecreased
+      :: PeerSelectionCounters -> PeerSelectionTargets -> Bool
+    checkKnownBigLedgerPeersDecreased
+      PeerSelectionCounters { numberOfKnownBigLedgerPeers }
+      PeerSelectionTargets { targetNumberOfKnownBigLedgerPeers }
+      = numberOfKnownBigLedgerPeers <= targetNumberOfKnownBigLedgerPeers
+
+
+    increaseKnownPeers
+      :: ModifyPeerSelectionTargets
+    increaseKnownPeers targets =
+      targets {
+          targetNumberOfRootPeers = targetNumberOfRootPeers base
+        , targetNumberOfKnownPeers = targetNumberOfKnownPeers base
+        }
+
+    checkKnownPeersIncreased
+      :: CheckPeerSelectionCounters
+    checkKnownPeersIncreased
+      PeerSelectionCounters { numberOfRootPeers,
+                              numberOfKnownPeers }
+      PeerSelectionTargets { targetNumberOfRootPeers,
+                             targetNumberOfKnownPeers }
+      =
+         numberOfRootPeers >= targetNumberOfRootPeers
+      && numberOfKnownPeers >= targetNumberOfKnownPeers
+
+
+    increaseKnownBigLedgerPeers
+      :: ModifyPeerSelectionTargets
+    increaseKnownBigLedgerPeers targets =
+      targets {
+          targetNumberOfKnownBigLedgerPeers = targetNumberOfKnownBigLedgerPeers base
+        }
+
+    checkKnownBigLedgerPeersIncreased
+      :: CheckPeerSelectionCounters
+    checkKnownBigLedgerPeersIncreased
+      PeerSelectionCounters { numberOfKnownBigLedgerPeers }
+      PeerSelectionTargets { targetNumberOfKnownBigLedgerPeers }
+      =
+      numberOfKnownBigLedgerPeers >= targetNumberOfKnownBigLedgerPeers
+
+
+    --
+    -- Main loop
+    --
+
+    churnLoop :: StdGen -> m Void
+    churnLoop !rng = do
       startTs <- getMonotonicTime
 
       (churnMode, ubp) <- atomically ((,) <$> updateChurnMode
                                           <*> getUseBootstrapPeers)
       traceWith tracer $ TraceChurnMode churnMode
 
-      atomically $ do
-        -- Purge the worst active peer(s).
-        decreaseActivePeers churnMode
+      -- Purge the worst active peers.
+      updateTargets DecreasedActivePeers
+                    deactivateTimeout -- chainsync might timeout after 5mins
+                    (decreaseActivePeers churnMode)
+                    checkActivePeersDecreased
 
-      -- Short delay, we may have no active peers right now
-      threadDelay 1
+      -- Pick new active peers.
+      updateTargets IncreasedActivePeers
+                    shortTimeout
+                    (increaseActivePeers churnMode)
+                    checkActivePeersIncreased
 
-      atomically $ do
-        -- Pick new active peer(s).
-        increaseActivePeers churnMode
+      -- Purge the worst active big ledger peers.
+      updateTargets DecreasedActiveBigLedgerPeers
+                    deactivateTimeout -- chainsync might timeout after 5mins
+                    (decreaseActiveBigLedgerPeers churnMode)
+                    (checkActiveBigLedgerPeersDecreased)
 
-        -- Purge the worst active big ledger peer(s).
-        decreaseActiveBigLedgerPeers churnMode
-
-      -- Short delay, we may have no active big ledger peers right now
-      threadDelay 1
-
-      -- Pick new active peer(s).
-      atomically $ increaseActiveBigLedgerPeers churnMode
-
-      -- Give the promotion process time to start
-      threadDelay 1
+      -- Pick new active big ledger peers.
+      updateTargets IncreasedActiveBigLedgerPeers
+                    shortTimeout
+                    (increaseActiveBigLedgerPeers churnMode)
+                    checkActiveBigLedgerPeersIncreased
 
       -- Forget the worst performing established peers.
-      atomically $ do
-        decreaseEstablished churnMode ubp
-        decreaseEstablishedBigLedgerPeers
+      updateTargets DecreasedEstablishedPeers
+                    (1 + closeConnectionTimeout)
+                    (decreaseEstablishedPeers churnMode ubp)
+                    (checkEstablishedPeersDecreased)
 
-      -- Give the governor time to properly demote them.
-      threadDelay $ 1 + closeConnectionTimeout
+      -- Forget the worst performing established big ledger peers.
+      updateTargets DecreasedEstablishedBigLedgerPeers
+                    (1 + closeConnectionTimeout)
+                    decreaseEstablishedBigLedgerPeers
+                    checkEstablishedBigLedgerPeersDecreased
 
-      -- Forget the worst performing known peers
-      atomically $
-        modifyTVar peerSelectionVar (\targets -> targets {
-            targetNumberOfRootPeers =
-              decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
-              + targetNumberOfEstablishedPeers base
-          , targetNumberOfKnownPeers =
-              decrease (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
-              + targetNumberOfEstablishedPeers base
-          , targetNumberOfKnownBigLedgerPeers =
-              decrease (targetNumberOfKnownBigLedgerPeers base -
-                        targetNumberOfEstablishedBigLedgerPeers base)
-              + targetNumberOfEstablishedBigLedgerPeers base
-          })
-
-      -- Forgetting cold peers should be quick
-      threadDelay 1
+      -- Forget the worst performing known peers (root peers, ledger peers)
+      updateTargets DecreasedKnownPeers
+                    shortTimeout
+                    decreaseKnownPeers
+                    checkKnownPeersDecreased
 
       -- Pick new known peers
-      atomically $ modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfRootPeers = targetNumberOfRootPeers base
-        , targetNumberOfKnownPeers = targetNumberOfKnownPeers base
-        , targetNumberOfKnownBigLedgerPeers = targetNumberOfKnownBigLedgerPeers base
-        })
+      updateTargets IncreasedKnownPeers
+                    (2 * requestPeersTimeout + shortTimeout)
+                    increaseKnownPeers
+                    checkKnownPeersIncreased
 
-      -- Give the governor time to find some new peers
-      threadDelay $ 1 + psOverallTimeout
+      -- Forget the worst performing known big ledger peers.
+      updateTargets DecreasedKnownBigLedgerPeers
+                    shortTimeout
+                    decreaseKnownBigLedgerPeers
+                    checkKnownBigLedgerPeersDecreased
+
+      -- Pick new known big ledger peers
+      updateTargets IncreasedKnownBigLedgerPeers
+                    (2 * requestPeersTimeout + shortTimeout)
+                    increaseKnownBigLedgerPeers
+                    checkKnownBigLedgerPeersIncreased
 
       -- Pick new non-active peers
-      atomically $ do
-        increaseEstablishedPeers churnMode ubp
-        modifyTVar peerSelectionVar (\targets -> targets {
-          targetNumberOfEstablishedBigLedgerPeers = targetNumberOfEstablishedBigLedgerPeers base
-        })
+      updateTargets IncreasedEstablishedPeers
+                    churnEstablishConnectionTimeout
+                    (increaseEstablishedPeers churnMode ubp)
+                    checkEstablishedPeersIncreased
+
+      -- Pick new non-active big ledger peers
+      updateTargets IncreasedEstablishedBigLedgerPeers
+                    churnEstablishConnectionTimeout
+                    increaseEstablishedBigLedgerPeers
+                    checkEstablishedBigLedgerPeersIncreased
+
       endTs <- getMonotonicTime
 
-      fuzzyDelay rng (endTs `diffTime` startTs) >>= go
+      fuzzyDelay rng (endTs `diffTime` startTs) >>= churnLoop
+
+
+    --
+    -- Auxiliary functions and constants
+    --
+
 
     -- Randomly delay between churnInterval and churnInterval + maxFuzz seconds.
     fuzzyDelay :: StdGen -> DiffTime -> m StdGen
@@ -243,6 +489,7 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
       case mode of
            FetchModeDeadline -> longDelay rng execTime
            FetchModeBulkSync -> shortDelay rng execTime
+
 
     fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen
     fuzzyDelay' baseDelay maxFuzz rng execTime = do
@@ -260,9 +507,9 @@ peerChurnGovernor tracer deadlineChurnInterval bulkChurnInterval psOverallTimeou
     shortDelay :: StdGen -> DiffTime -> m StdGen
     shortDelay = fuzzyDelay' bulkChurnInterval 60
 
+    shortTimeout :: DiffTime
+    shortTimeout = 1
+
     -- Replace 20% or at least one peer every churnInterval.
     decrease :: Int -> Int
     decrease v = max 0 $ v  - max 1 (v `div` 5)
-
-
-

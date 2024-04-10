@@ -23,6 +23,8 @@
 * Reduce public root retry timer.
 * Don't classify a config file with publicRoot/bootstrapPeers IP addresss only
   as a DNS error. 
+* Improved Churn governor by synchronizing according to the counters instead
+  of relying on `threadDelay`.
 
 ## 0.14.0.0 -- 2024-04-04
 

@@ -212,6 +212,7 @@ governorAction mockEnv = do
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                              (useBootstrapPeers mockEnv)
     debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) [])
+    countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters [])
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar usbVar) (readTVar lsjVar) policy
     exploreRaces      -- explore races within the governor
@@ -222,6 +223,7 @@ governorAction mockEnv = do
         tracerDebugPeerSelection
         tracerTracePeerSelectionCounters
         (mkStdGen 42)
+        countersVar
         publicStateVar
         debugVar
         actions
@@ -659,6 +661,8 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceUseBootstrapPeersChanged !_)                   = GovernorEvent a
     f a@(TraceOutboundGovernorCriticalFailure !_)            = GovernorEvent a
     f a@(TraceDebugState !_ !_)                              = GovernorEvent a
+    f a@(TraceChurnAction !_ !_)                             = GovernorEvent a
+    f a@(TraceChurnTimeout !_ !_)                            = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent
