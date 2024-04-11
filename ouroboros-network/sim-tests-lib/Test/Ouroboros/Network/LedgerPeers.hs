@@ -175,7 +175,7 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
 
         accumulatedStakeMap = case ledgerPeersKind of
           AllLedgerPeers -> accPoolStake sps
-          BigLedgerPeers -> accBigPoolStake sps
+          BigLedgerPeers -> accBigPoolStakeMap sps
 
         sim :: IOSim s [RelayAccessPoint]
         sim = do
@@ -334,7 +334,7 @@ prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
          in counterexample ("initial sublist vaiolation: " ++ show (elems, lps'))
           $ elems `isPrefixOf` lps'
   where
-    accumulatedStakeMap = accBigPoolStake lps
+    accumulatedStakeMap = accBigPoolStakeMap lps
 
 prop_getLedgerPeers :: ArbitrarySlotNo
                     -> ArbitraryLedgerStateJudgement

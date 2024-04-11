@@ -21,11 +21,6 @@ data IsLedgerPeer = IsLedgerPeer
                   | IsNotLedgerPeer
   deriving (Eq, Show)
 
--- | Which ledger peers to pick.
---
-data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
-  deriving Show
-
 -- | Ledger Peer request result
 --
 data LedgerPeers = LedgerPeers LedgerStateJudgement -- ^ Current ledger state

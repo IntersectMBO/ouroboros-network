@@ -6,6 +6,10 @@
 
 ### Non-Breaking changes
 
+* Transplanted `accBigPoolStake` and `reRelativeStake` from ouroboros-network
+  `LedgerPeers` module to expose functionality that facilitates serializing
+  of big ledger peers via LocalStateQuery miniprotocol.
+
 ## 0.7.3.0 -- 2024-06-07
 
 ### Breaking changes
