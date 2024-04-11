@@ -46,6 +46,7 @@ peerChurnGovernor :: forall m peeraddr.
                      , MonadCatch m
                      )
                   => Tracer m (TracePeerSelection peeraddr)
+                  -> Tracer m PeerSelectionCounters
                   -> DiffTime
                   -- ^ the base for churn interval in the deadline mode.
                   -> DiffTime
@@ -63,6 +64,7 @@ peerChurnGovernor :: forall m peeraddr.
                   -> STM m UseBootstrapPeers
                   -> m Void
 peerChurnGovernor tracer
+                  countersTracer
                   deadlineChurnInterval bulkChurnInterval requestPeersTimeout
                   _metrics churnModeVar inRng getFetchMode base
                   peerSelectionVar countersVar
@@ -108,22 +110,31 @@ peerChurnGovernor tracer
       -> m ()
     updateTargets churnActions timeoutDelay modifyTargets checkCounters = do
       -- update targets, and return the new targets
-      targets <- atomically $ stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets)
+      (counters0,targets) <- atomically $
+        (,) <$> readTVar countersVar
+            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets)
+      traceWith countersTracer counters0
 
       -- create timeout and block on counters
       bracketOnError (registerDelayCancellable timeoutDelay)
                      (\(_readTimeout, cancelTimeout) -> cancelTimeout)
                      (\( readTimeout, cancelTimeout) -> do
                          -- block until counters reached the targets, or the timeout fires
-                         a <- atomically $ runFirstToFinish $
-                                FirstToFinish ((readTVar countersVar >>= check . flip checkCounters targets) $> True)
-                                <>
-                                FirstToFinish (readTimeout >>= \case TimeoutPending -> retry
-                                                                     _              -> pure False)
-                         if a
-                           then cancelTimeout
-                             >> traverse_ (traceWith tracer . TraceChurnAction) churnActions
-                           else traverse_ (traceWith tracer . TraceChurnTimeout) churnActions
+                         a <- atomically $ do
+                               counters <- readTVar countersVar
+                               runFirstToFinish $
+                                 FirstToFinish (check (checkCounters counters targets) $> Right counters)
+                                 <>
+                                 FirstToFinish (readTimeout >>= \case TimeoutPending -> retry
+                                                                      _              -> pure (Left counters))
+                         case a of
+                           Right counters -> do
+                             cancelTimeout
+                             traceWith countersTracer counters
+                             traverse_ (traceWith tracer . TraceChurnAction) churnActions
+                           Left counters -> do
+                             traceWith countersTracer counters
+                             traverse_ (traceWith tracer . TraceChurnTimeout) churnActions
                      )
 
     --

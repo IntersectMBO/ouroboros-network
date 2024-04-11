@@ -500,6 +500,9 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           => Tracer m (TracePeerSelection peeraddr)
                           -> Tracer m (DebugPeerSelection peeraddr)
                           -> Tracer m PeerSelectionCounters
+                          -- ^ send PeerSelectionCounters to EKG; logging of
+                          -- counters is done using `TracePeerSelection` tracer
+                          -- above.
                           -> StrictTVar m PeerSelectionCounters
                           -> StrictTVar m (PublicPeerSelectionState peeraddr)
                           -> StrictTVar m (PeerSelectionState peeraddr peerconn)

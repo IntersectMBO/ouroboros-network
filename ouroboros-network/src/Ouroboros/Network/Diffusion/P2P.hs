@@ -1012,6 +1012,7 @@ runM Interfaces
       --
       let peerChurnGovernor' = Governor.peerChurnGovernor
                                  dtTracePeerSelectionTracer
+                                 dtTracePeerSelectionCounters
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
                                  (policyPeerShareOverallTimeout peerSelectionPolicy)
