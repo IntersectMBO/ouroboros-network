@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE ViewPatterns        #-}
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
@@ -223,9 +224,12 @@ ledgerPeersThread PeerActionsDNS {
                     paDnsSemaphore }
                   WithLedgerPeersArgs {
                     wlpRng,
-                    wlpConsensusInterface,
+                    wlpConsensusInterface = wlpConsensusInterface@LedgerPeersConsensusInterface {
+                      lpGetLatestSlot,
+                      lpGetLedgerStateJudgement },
                     wlpTracer,
-                    wlpGetUseLedgerPeers }
+                    wlpGetUseLedgerPeers,
+                    wlpGetLedgerPeerSnapshot }
                   getReq
                   putResp = do
     go wlpRng (Time 0) Map.empty Map.empty
@@ -256,20 +260,33 @@ ledgerPeersThread PeerActionsDNS {
                  traceWith wlpTracer DisabledLedgerPeers
                  return (Map.empty, Map.empty, now)
                UseLedgerPeers ula -> do
-                 peers <- (\case
-                            BeforeSlot          -> []
-                            LedgerPeers _ peers -> peers
-                          )
-                      <$> atomically (getLedgerPeers wlpConsensusInterface ula)
-                 let peersStake   = accPoolStake peers
-                     bigPeersStakeMap = accBigPoolStakeMap peers
+                 (consensusSlotNo, consensusPeers, peerSnapshot) <-
+                   atomically ((,,) <$> lpGetLatestSlot
+                                    <*> getLedgerPeers wlpConsensusInterface ula
+                                    <*> wlpGetLedgerPeerSnapshot)
+
+                 -- we have to assess which of, if any, peers we get from consensus vs.
+                 -- peers we may have from the snapshot file is more recent, and use that
+                 (accPoolStake -> peersStake, bigPeersStakeMap) <-
+                       case (consensusSlotNo, consensusPeers, peerSnapshot) of
+                         (At t, LedgerPeers _ lp, Just (LedgerPeerSnapshot (At t', sp {- snapshot peer-})))
+                           | t' > t -> traceWith wlpTracer UsingPeerSnapshotPeers >> return (lp, Map.fromAscList sp)
+                           | otherwise -> return (lp, accBigPoolStakeMap lp)
+
+                         (_, LedgerPeers _ lp, Nothing) -> return (lp, accBigPoolStakeMap lp)
+
+                         (_, _, Just (LedgerPeerSnapshot (At t', sp)))
+                           | After slot <- ula, t' >= slot ->
+                             traceWith wlpTracer UsingPeerSnapshotPeers >> return ([], Map.fromAscList sp)
+                         otherwise -> return ([], Map.empty)
+
                  traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStakeMap)
                  return (peersStake, bigPeersStakeMap, now)
              else do
                traceWith wlpTracer $ ReusingLedgerState (Map.size peerMap) age
                return (peerMap, bigPeerMap, oldTs)
 
-        if Map.null peerMap'
+        if all Map.null [peerMap', bigPeerMap']
            then do
                when (isLedgerPeersEnabled useLedgerPeers) $
                    traceWith wlpTracer FallingBackToPublicRootPeers
@@ -342,13 +359,15 @@ ledgerPeersThread PeerActionsDNS {
 -- | Argument record for withLedgerPeers
 --
 data WithLedgerPeersArgs m = WithLedgerPeersArgs {
-  wlpRng                :: StdGen,
+  wlpRng                   :: StdGen,
   -- ^ Random generator for picking ledger peers
-  wlpConsensusInterface :: LedgerPeersConsensusInterface m,
-  wlpTracer             :: Tracer m TraceLedgerPeers,
+  wlpConsensusInterface    :: LedgerPeersConsensusInterface m,
+  wlpTracer                :: Tracer m TraceLedgerPeers,
   -- ^ Get Ledger Peers comes from here
-  wlpGetUseLedgerPeers  :: STM m UseLedgerPeers
+  wlpGetUseLedgerPeers     :: STM m UseLedgerPeers,
   -- ^ Get Use Ledger After value
+  wlpGetLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
+  -- ^ Get ledger peer snapshot from file read by node
   }
 
 -- | For a LedgerPeers worker thread and submit request and receive responses.
