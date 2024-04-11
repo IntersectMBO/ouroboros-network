@@ -7,7 +7,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
@@ -25,7 +24,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , LedgerPeersKind (..)
     -- * Ledger Peers specific functions
   , accPoolStake
-  , accBigPoolStake
+  , accBigPoolStakeMap
   , bigLedgerPeerQuota
     -- * DNS based provider for ledger root peers
   , WithLedgerPeersArgs (..)
@@ -37,19 +36,16 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , resolveLedgerPeers
   ) where
 
-import Control.Exception (assert)
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
-import Data.Bifunctor (first)
 import Data.IP qualified as IP
-import Data.List (foldl', sortOn)
+import Data.List (foldl')
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Ord (Down (..))
 import Data.Ratio
 import System.Random
 
@@ -63,6 +59,8 @@ import Data.Word (Word16, Word64)
 import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils (accBigPoolStake,
+           bigLedgerPeerQuota, reRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
@@ -125,68 +123,13 @@ accPoolStake =
             !acc = as + accst in
         (acc, (s, rs)) : ps
 
--- | The total accumulated stake of big ledger peers.
+-- | Take the result of 'accBigPoolStake' and turn it into
 --
-bigLedgerPeerQuota :: AccPoolStake
-bigLedgerPeerQuota = 0.9
-
--- | Convert a list of pools with stake to a Map keyed on the accumulated stake
--- which only contains big ledger peers, e.g. largest ledger peers which
--- cumulatively control 90% of stake.
---
-accBigPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
-                -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
-accBigPoolStake =
-      Map.fromAscList -- the input list is ordered by `AccPoolStake`, thus we
-                      -- can use `fromAscList`
-    . takeWhilePrev (\(acc, _) -> acc <= bigLedgerPeerQuota)
-    . go 0
-    . sortOn (Down . fst)
-    . reRelativeStake BigLedgerPeers
-  where
-    takeWhilePrev :: (a -> Bool) -> [a] -> [a]
-    takeWhilePrev f as =
-        fmap snd
-      . takeWhile (\(a, _) -> maybe True f a)
-      $ zip (Nothing : (Just <$> as)) as
-
-    -- natural fold
-    go :: AccPoolStake
-       -> [(PoolStake, NonEmpty RelayAccessPoint)]
-       -> [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
-    go _acc [] = []
-    go !acc (a@(s, _) : as) =
-      let acc' = acc + AccPoolStake (unPoolStake s)
-      in (acc', a) : go acc' as
-
--- | Not all stake pools have valid \/ usable relay information. This means that
--- we need to recalculate the relative stake for each pool.
---
-reRelativeStake :: LedgerPeersKind
-                -> [(PoolStake, NonEmpty RelayAccessPoint)]
-                -> [(PoolStake, NonEmpty RelayAccessPoint)]
-reRelativeStake ledgerPeersKind pl =
-    let pl'   = first adjustment <$> pl
-        total = foldl' (+) 0 (fst <$> pl')
-        pl''  = first (/ total) <$> pl'
-    in
-    assert (let total' = sum $ map fst pl''
-            in total == 0 || (total' > (PoolStake $ 999999 % 1000000) &&
-                  total' < (PoolStake $ 1000001 % 1000000))
-           )
-    pl''
-  where
-    adjustment :: PoolStake -> PoolStake
-    adjustment =
-      case ledgerPeersKind of
-        AllLedgerPeers ->
-          -- We do loose some precision in the conversion. However we care about
-          -- precision in the order of 1 block per year and for that a Double is
-          -- good enough.
-          PoolStake . toRational . sqrt @Double . fromRational . unPoolStake
-        BigLedgerPeers ->
-          id
-
+accBigPoolStakeMap :: [(PoolStake, NonEmpty RelayAccessPoint)]
+                   -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+accBigPoolStakeMap = Map.fromAscList      -- the input list is ordered by `AccPoolStake`, thus we
+                                          -- can use `fromAscList`
+                     . accBigPoolStake
 
 -- | Try to pick n random peers using stake distribution.
 --
@@ -318,9 +261,9 @@ ledgerPeersThread PeerActionsDNS {
                           )
                       <$> atomically (getLedgerPeers wlpConsensusInterface ula)
                  let peersStake   = accPoolStake peers
-                     bigPeersStake = accBigPoolStake peers
-                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStake)
-                 return (peersStake, bigPeersStake, now)
+                     bigPeersStakeMap = accBigPoolStakeMap peers
+                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStakeMap)
+                 return (peersStake, bigPeersStakeMap, now)
              else do
                traceWith wlpTracer $ ReusingLedgerState (Map.size peerMap) age
                return (peerMap, bigPeerMap, oldTs)
