@@ -11,6 +11,9 @@
   The counters cover more groups including: all peers, big ledger peers,
   bootstrap peers, local roots and shared peers.
 * `emptyPeerSelectionState` doesn't take targets of local roots.
+* moved `accBigPoolStake` and `reRelativeStake` to ouroboros-networking-api
+  in order to expose functionality of creating snapshots of big ledger peers,
+  eg. for Genesis consensus mode.
 
 ### Non-Breaking changes
 

@@ -43,6 +43,7 @@ library
 
                        Ouroboros.Network.PeerSelection.Bootstrap
                        Ouroboros.Network.PeerSelection.LedgerPeers.Type
+                       Ouroboros.Network.PeerSelection.LedgerPeers.Utils
                        Ouroboros.Network.PeerSelection.PeerMetric.Type
                        Ouroboros.Network.PeerSelection.PeerAdvertise
                        Ouroboros.Network.PeerSelection.PeerTrustable
