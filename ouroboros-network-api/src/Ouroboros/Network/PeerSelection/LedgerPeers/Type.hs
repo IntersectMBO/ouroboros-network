@@ -15,6 +15,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , UseLedgerPeers (..)
   , AfterSlot (..)
   , LedgerPeersKind (..)
+  , LedgerPeerSnapshot (..)
   , isLedgerPeersEnabled
   ) where
 
@@ -26,6 +27,15 @@ import Data.List.NonEmpty (NonEmpty)
 import GHC.Generics
 import NoThunks.Class
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
+
+-- | Peer snapshot type used to serialize peers from the
+-- current state of a node's ledger:
+-- LocalStateQuery app server running in ouroboros-consensus-diffusion
+-- receives a query (eg. cardano-cli) demanding a dump of this data
+-- from the current ledger. Consensus uses CBOR.
+newtype LedgerPeerSnapshot = LedgerPeerSnapshot
+  { unLedgerPeerSnapshot :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]) }
+  deriving newtype (Show, ToCBOR, FromCBOR)
 
 -- | Which ledger peers to pick.
 --
@@ -52,14 +62,14 @@ isLedgerPeersEnabled UseLedgerPeers {}  = True
 --
 newtype PoolStake = PoolStake { unPoolStake :: Rational }
   deriving (Eq, Ord, Show)
-  deriving newtype (Fractional, Num, NFData, ToCBOR, FromCBOR)
+  deriving newtype (Fractional, Num, NFData, ToCBOR, FromCBOR) -- CBOR to support LedgerPeerSnapshot
 
 -- | The accumulated relative stake of a stake pool, like PoolStake but it also includes the
 -- relative stake of all preceding pools. A value in the range [0, 1].
 --
 newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
     deriving (Eq, Ord, Show)
-    deriving newtype (Fractional, Num)
+    deriving newtype (Fractional, Num, FromCBOR, ToCBOR) -- CBOR to support LedgerPeerSnapshot
 
 -- | A boolean like type.  Big ledger peers are the largest SPOs which control
 -- 90% of staked stake.
