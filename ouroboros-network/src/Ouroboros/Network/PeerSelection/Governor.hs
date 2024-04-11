@@ -37,7 +37,6 @@ module Ouroboros.Network.PeerSelection.Governor
   , ChurnMode (..)
   ) where
 
-import Data.Cache
 import Data.Foldable (traverse_)
 import Data.Hashable
 import Data.Map.Strict (Map)
@@ -558,23 +557,23 @@ peerSelectionGovernorLoop tracer
       now <- getMonotonicTime
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
-          !newCounters = peerSelectionStateToCounters decisionState
 
-      atomically $ do
+      mbCounters <- atomically $ do
         -- Update counters
-        withCacheA (countersCache decisionState)
-                   newCounters
-                   (writeTVar countersVar)
+        counters <- readTVar countersVar
+        let !counters' = peerSelectionStateToCounters decisionState
+        if counters' /= counters
+          then writeTVar countersVar counters'
+            >> return (Just counters')
+          else return Nothing
 
       -- Trace counters
-      traceWithCache countersTracer
-                     (countersCache decisionState)
-                     newCounters
+      traverse_ (traceWith countersTracer) mbCounters
 
       traverse_ (traceWith tracer) decisionTrace
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop (decisionState { countersCache = Cache newCounters }) dbgUpdateAt'
+      loop decisionState dbgUpdateAt'
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
