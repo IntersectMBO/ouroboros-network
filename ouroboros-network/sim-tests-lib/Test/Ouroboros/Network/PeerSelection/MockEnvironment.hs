@@ -218,8 +218,8 @@ governorAction mockEnv = do
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                              (useBootstrapPeers mockEnv)
     let (stdGen', stdGen'') = split (stdGen mockEnv)
-    debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState stdGen' [])
-    countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters [])
+    debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState stdGen')
+    countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
     policy  <- mockPeerSelectionPolicy                mockEnv
     (actions, targetsVar) <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar usbVar) (readTVar lsjVar) policy
     churnModeVar <- StrictTVar.newTVarIO ChurnModeNormal

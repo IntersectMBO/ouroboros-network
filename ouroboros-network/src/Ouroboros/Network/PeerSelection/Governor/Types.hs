@@ -37,7 +37,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , TimedDecision
   , MkGuardedDecision
   , Completion (..)
-  , PeerSelectionCounters (.., PeerSelectionCountersHWC, numberOfColdPeers, numberOfWarmPeers, numberOfHotPeers, numberOfColdBigLedgerPeers, numberOfWarmBigLedgerPeers, numberOfHotBigLedgerPeers, numberOfColdLocalRootPeers, numberOfWarmLocalRootPeers, numberOfHotLocalRootPeers, localRootsHWC)
+  , PeerSelectionCounters (.., PeerSelectionCountersHWC, numberOfColdPeers, numberOfWarmPeers, numberOfHotPeers, numberOfColdBigLedgerPeers, numberOfWarmBigLedgerPeers, numberOfHotBigLedgerPeers, numberOfColdLocalRootPeers, numberOfWarmLocalRootPeers, numberOfHotLocalRootPeers)
   , emptyPeerSelectionCounters
   , peerSelectionStateToCounters
     -- * Peer Sharing Auxiliary data type
@@ -633,11 +633,6 @@ data PeerSelectionCounters = PeerSelectionCounters {
       numberOfActiveLocalRootPeers          :: Int,
       numberOfActiveLocalRootPeersDemotions :: Int,
 
-      -- | Local root peers with one entry per group. First entry is the number
-      -- of warm peers in that group the second is the number of hot peers in
-      -- that group.
-      localRoots                            :: ![(HotValency, WarmValency)],
-
       --
       -- Share Peers
       -- (peers received through peer sharing)
@@ -671,7 +666,6 @@ data PeerSelectionCounters = PeerSelectionCounters {
 pattern PeerSelectionCountersHWC :: Int -> Int -> Int -- peers
                                  -> Int -> Int -> Int -- big ledger peers
                                  -> Int -> Int -> Int -- local roots
-                                 -> [(HotValency, WarmValency)]
                                  -> PeerSelectionCounters
 pattern PeerSelectionCountersHWC { numberOfColdPeers,
                                    numberOfWarmPeers,
@@ -683,8 +677,7 @@ pattern PeerSelectionCountersHWC { numberOfColdPeers,
 
                                    numberOfColdLocalRootPeers,
                                    numberOfWarmLocalRootPeers,
-                                   numberOfHotLocalRootPeers,
-                                   localRootsHWC }
+                                   numberOfHotLocalRootPeers }
 
         <- (peerSelectionCountersHWC ->
              PeerSelectionCounters { numberOfKnownPeers                = numberOfColdPeers,
@@ -697,8 +690,8 @@ pattern PeerSelectionCountersHWC { numberOfColdPeers,
 
                                      numberOfKnownLocalRootPeers       = numberOfColdLocalRootPeers,
                                      numberOfEstablishedLocalRootPeers = numberOfWarmLocalRootPeers,
-                                     numberOfActiveLocalRootPeers      = numberOfHotLocalRootPeers,
-                                     localRoots                        = localRootsHWC })
+                                     numberOfActiveLocalRootPeers      = numberOfHotLocalRootPeers
+                                   })
 
 {-# COMPLETE PeerSelectionCountersHWC #-}
 
@@ -735,8 +728,6 @@ peerSelectionCountersHWC PeerSelectionCounters {..} =
       numberOfWarmLocalRootPeersPromotions,
       numberOfActiveLocalRootPeers,
       numberOfActiveLocalRootPeersDemotions,
-
-      localRoots,
 
       numberOfKnownSharedPeers                   = numberOfKnownSharedPeers
                                                  - numberOfEstablishedSharedPeers,
@@ -809,8 +800,6 @@ peerSelectionStateToCounters
       numberOfActiveLocalRootPeers               = Set.size   activeLocalRootsPeersSet,
       numberOfActiveLocalRootPeersDemotions      = Set.size $ activeLocalRootsPeersSet `Set.intersection` inProgressDemoteHot,
 
-      localRoots,
-
       numberOfKnownSharedPeers                   = Set.size   knownSharedPeersSet,
       numberOfColdSharedPeersPromotions          = Set.size $ knownSharedPeersSet `Set.intersection` inProgressPromoteCold,
       numberOfEstablishedSharedPeers             = Set.size   establishedSharedPeersSet,
@@ -840,10 +829,6 @@ peerSelectionStateToCounters
     activeBigLedgerPeersSet      = activePeers `Set.intersection` bigLedgerSet
 
     -- local roots
-    localRoots =
-      [ (hot, warm)
-      | (hot, warm, _) <- LocalRootPeers.toGroupSets localRootPeers
-      ]
     localRootSet                  = LocalRootPeers.keysSet localRootPeers
     -- local roots and big ledger peers are disjoin, hence we can use
     -- `knownPeersSet`, `establishedPeersSet` and `activePeersSet` below.
@@ -870,9 +855,8 @@ peerSelectionStateToCounters
 
 
 
-emptyPeerSelectionCounters :: [(HotValency, WarmValency)]
-                           -> PeerSelectionCounters
-emptyPeerSelectionCounters localRoots =
+emptyPeerSelectionCounters :: PeerSelectionCounters
+emptyPeerSelectionCounters =
   PeerSelectionCounters {
     numberOfRootPeers                     = 0,
 
@@ -906,8 +890,6 @@ emptyPeerSelectionCounters localRoots =
     numberOfActiveLocalRootPeers          = 0,
     numberOfActiveLocalRootPeersDemotions = 0,
 
-    localRoots,
-
     numberOfKnownSharedPeers              = 0,
     numberOfColdSharedPeersPromotions     = 0,
     numberOfEstablishedSharedPeers        = 0,
@@ -918,9 +900,8 @@ emptyPeerSelectionCounters localRoots =
   }
 
 emptyPeerSelectionState :: StdGen
-                        -> [(HotValency, WarmValency)]
                         -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng localRoots =
+emptyPeerSelectionState rng =
     PeerSelectionState {
       targets                     = nullPeerSelectionTargets,
       localRootPeers              = LocalRootPeers.empty,
@@ -941,7 +922,7 @@ emptyPeerSelectionState rng localRoots =
       inProgressDemoteHot         = Set.empty,
       inProgressDemoteToCold      = Set.empty,
       fuzzRng                     = rng,
-      countersCache               = Cache (emptyPeerSelectionCounters localRoots),
+      countersCache               = Cache emptyPeerSelectionCounters,
       ledgerStateJudgement        = TooOld,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,

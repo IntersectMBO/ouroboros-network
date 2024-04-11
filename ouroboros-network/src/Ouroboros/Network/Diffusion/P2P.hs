@@ -809,7 +809,7 @@ runM Interfaces
             min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
         }
 
-      countersVar <- newTVarIO (emptyPeerSelectionCounters [])
+      countersVar <- newTVarIO emptyPeerSelectionCounters
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -1064,7 +1064,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng []
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -1092,7 +1092,7 @@ runM Interfaces
             inboundInfoChannel
             outboundInfoChannel
             observableStateVar $ \connectionManager-> do
-            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng []
+            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
             diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
             withPeerStateActions' connectionManager $ \peerStateActions ->
               withPeerSelectionActions'
