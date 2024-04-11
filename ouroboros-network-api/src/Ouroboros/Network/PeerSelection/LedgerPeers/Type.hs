@@ -18,6 +18,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , isLedgerPeersEnabled
   ) where
 
+import Cardano.Binary (FromCBOR, ToCBOR)
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin)
 import Control.Concurrent.Class.MonadSTM
 import Control.DeepSeq (NFData (..))
@@ -51,7 +52,7 @@ isLedgerPeersEnabled UseLedgerPeers {}  = True
 --
 newtype PoolStake = PoolStake { unPoolStake :: Rational }
   deriving (Eq, Ord, Show)
-  deriving newtype (Fractional, Num, NFData)
+  deriving newtype (Fractional, Num, NFData, ToCBOR, FromCBOR)
 
 -- | The accumulated relative stake of a stake pool, like PoolStake but it also includes the
 -- relative stake of all preceding pools. A value in the range [0, 1].

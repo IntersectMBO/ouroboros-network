@@ -1,7 +1,10 @@
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE ViewPatterns      #-}
 
 module Ouroboros.Network.PeerSelection.RelayAccessPoint
@@ -21,6 +24,7 @@ import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import Text.Read (readMaybe)
 
+import Cardano.Binary
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
 
@@ -52,6 +56,35 @@ instance ToJSON DomainAccessPoint where
 data RelayAccessPoint = RelayAccessDomain  !DNS.Domain !Socket.PortNumber
                       | RelayAccessAddress !IP.IP      !Socket.PortNumber
   deriving (Eq, Ord)
+
+-- | These instances are used to serialize 'LedgerPeerSnapshot'
+-- consensus LocalStateQuery server which uses these instances
+-- for all its query responses. It appears they provide some improved
+-- debugging diagnostics over Serialize instances.
+instance ToCBOR RelayAccessPoint where
+  toCBOR = mconcat . \case
+    RelayAccessDomain domain port ->
+      [encodeWord8 0, serialize' port, toCBOR domain]
+    RelayAccessAddress (IP.IPv4 ip4) port ->
+      [encodeWord8 1, serialize' port, toCBOR (IP.fromIPv4 ip4)]
+    RelayAccessAddress (IP.IPv6 ip6) port ->
+      [encodeWord8 2, serialize' port, toCBOR (IP.fromIPv6 ip6)]
+    where
+      serialize' = toCBOR . toInteger
+
+instance FromCBOR RelayAccessPoint where
+  fromCBOR = do
+    mode <- decodeWord8
+    port <- fromInteger <$> fromCBOR @Integer
+    if | mode == 0 ->  do
+         domain <- fromCBOR
+         return $ RelayAccessDomain domain port
+       | mode == 1 -> do
+         ip4 <- IP.IPv4 . IP.toIPv4 <$> fromCBOR
+         return $ RelayAccessAddress ip4 port
+       | mode == 2 -> do
+         ip6 <- IP.IPv6 . IP.toIPv6 <$> fromCBOR
+         return $ RelayAccessAddress ip6 port
 
 instance Show RelayAccessPoint where
     show (RelayAccessDomain domain port) =
