@@ -459,9 +459,7 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng countersVar publicStateVar debugStateVar actions policy =
-    JobPool.withJobPool $ \jobPool -> do
-      localPeers <- map (\(w, h, _) -> (w, h))
-                <$> atomically (readLocalRootPeers actions)
+    JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
         debugTracer
@@ -472,7 +470,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng countersVar publ
         actions
         policy
         jobPool
-        (emptyPeerSelectionState fuzzRng localPeers)
+        (emptyPeerSelectionState fuzzRng)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
