@@ -9,6 +9,13 @@
 * Transplanted `accBigPoolStake` and `reRelativeStake` from ouroboros-network
   `LedgerPeers` module to expose functionality that facilitates serializing
   of big ledger peers via LocalStateQuery miniprotocol.
+* Added `ToCBOR` and `FromCBOR` instance definitions for `RelayAccessPoint`,
+  `PoolStake` and `AccPoolStake` in support of upcoming serialization of (big)
+  ledger peers.
+* Introduced `LedgerPeerSnapshot` type for values of big ledger peers obtained
+  from the ledger at a particular volatile tip.
+  * Ledger peer snapshot is versioned in case changes need to be made to the
+    encoding format in the future.
 
 ## 0.7.3.0 -- 2024-06-07
 
