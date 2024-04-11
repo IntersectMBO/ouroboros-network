@@ -50,7 +50,6 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , BootstrapPeersCriticalTimeoutError (..)
   ) where
 
-import Data.Cache (Cache (..))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -440,11 +439,6 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        -- | Rng for fuzzy delay
        fuzzRng                     :: !StdGen,
-
-       -- | 'PeerSelectionCounters' counters cache. Allows to only trace
-       -- values when necessary.
-       --
-       countersCache               :: !(Cache PeerSelectionCounters),
 
        -- | Current ledger state judgement
        --
@@ -914,7 +908,6 @@ emptyPeerSelectionState rng =
       inProgressDemoteHot         = Set.empty,
       inProgressDemoteToCold      = Set.empty,
       fuzzRng                     = rng,
-      countersCache               = Cache emptyPeerSelectionCounters,
       ledgerStateJudgement        = TooOld,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
