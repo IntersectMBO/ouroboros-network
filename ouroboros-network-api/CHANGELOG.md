@@ -17,6 +17,8 @@
 * Renamed:
   * `accBigPoolStake` -> `accumulateBigLedgerStake`
      and `reRelativeStake` -> `recomputeRelativeStake`
+* Added `ConsensusMode` which must be passed to start diffusion in the
+  appropriate mode 
 
 ## 0.7.3.0 -- 2024-06-07
 
