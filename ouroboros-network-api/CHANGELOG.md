@@ -18,6 +18,8 @@
   from the ledger at a particular volatile tip.
   * Ledger peer snapshot is versioned in case changes need to be made to the
     encoding format in the future.
+* Added `ConsensusMode` which must be passed to start diffusion in the
+  appropriate mode 
 
 ## 0.7.3.0 -- 2024-06-07
 

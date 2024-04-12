@@ -19,11 +19,28 @@
 * Added property tests checking if `LedgerPeerSnapshot` CBOR encoding is valid,
   and decode/encode = id, as well as some property tests for calculating big ledger
   peers
+* Diffusion run function in P2P mode has new paramaters:
+    * `daPeerTargets` - replaces daPeerSelectionTargets. `Configuration`
+        module provides an API. Used by peer selection & churn governors. Given
+        required arguments, it returns the correct target basis to use for churn
+        and peer selection governors.
+    * `daConsensusMode` - flag indicating whether diffusion should run in Praos
+      or Genesis mode, which influences what `PeerSelectionTargets` both
+      governors should use. Genesis may use two different sets of targets
+      depending on ledger state, while Praos uses only one set. Either set
+      once active is appropriately churned. 
 
 ### Non-Breaking changes
 
 * Refactored signature of `LedgerPeers.ledgerPeersThread` for concision
   and use of previously created records for shunting related values around.
+* Implemented separate configurable peer selection targets for Praos and
+  Genesis consensus modes. Genesis mode may use more big ledger peers when
+  a node is syncing up.
+* Churn & OG/peer selection governor are synchronized to ensure that while
+  a churn cycle is running, a change in ledger state (in Genesis) will make
+  peer selection governor hold its target basis until churn completes its round,
+  to prevent some non-deterministic interleaving of targets. 
 
 ## 0.16.1.0 -- 2024-06-07
 

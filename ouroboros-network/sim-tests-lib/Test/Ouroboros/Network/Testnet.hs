@@ -27,7 +27,8 @@ import Data.List (find, foldl', intercalate, tails)
 import Data.List.Trace qualified as Trace
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, mapMaybe)
+import Data.Maybe (catMaybes, fromJust, fromMaybe, isJust, listToMaybe,
+           mapMaybe)
 import Data.Monoid (Sum (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -80,6 +81,7 @@ import Ouroboros.Network.ConnectionManager.Test.Utils
            (abstractStateIsFinalTransition, connectionManagerTraceMap,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.InboundGovernor.Test.Utils (inboundGovernorTraceMap,
            remoteStrIsFinalTransition, serverTraceMap, validRemoteTransitionMap,
            verifyRemoteTransition, verifyRemoteTransitionOrder)
@@ -511,27 +513,36 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
              . Trace.take traceNumber
              $ ioSimTrace
 
+      consensusModes =
+        map (  snd
+            . head -- ^ the first trace has the consensus mode as it is a static property
+            . Signal.eventsToList
+            . Signal.selectEvents f) events
+      f = (\case
+            DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+            _                                                            -> Nothing)
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_only_bootstrap_peers_in_fallback_state ev
+          $ verify_only_bootstrap_peers_in_fallback_state ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
 
   where
-    verify_only_bootstrap_peers_in_fallback_state events =
+    verify_only_bootstrap_peers_in_fallback_state events cmode =
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
-            selectDiffusionPeerSelectionState (Governor.bootstrapPeersFlag) events
+            selectDiffusionPeerSelectionState (Governor.bootstrapPeersFlag) cmode events
 
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
-            selectDiffusionPeerSelectionState (Governor.ledgerStateJudgement) events
+            selectDiffusionPeerSelectionState (Governor.ledgerStateJudgement) cmode events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -546,14 +557,14 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
 
           govKnownPeers :: Signal (Set NtNAddr)
           govKnownPeers =
-            selectDiffusionPeerSelectionState (KnownPeers.toSet . Governor.knownPeers) events
+            selectDiffusionPeerSelectionState (KnownPeers.toSet . Governor.knownPeers) cmode events
 
           govTrustedPeers :: Signal (Set NtNAddr)
           govTrustedPeers =
             selectDiffusionPeerSelectionState
               (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
                    <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
-              ) events
+              ) cmode events
 
           -- Signal.keyedUntil receives 2 functions one that sets start of the
           -- set signal, one that ends it and another that stops all.
@@ -613,42 +624,59 @@ prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
              . Trace.take traceNumber
              $ ioSimTrace
 
+      consensusModes =
+        map (  snd
+            . head -- ^ the first trace has the consensus mode as it is a static property
+            . Signal.eventsToList
+            . Signal.selectEvents f) events
+      f = (\case
+            DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+            _                                                            -> Nothing)
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_no_non_trustable_peers_before_caught_up_state ev
+          $ verify_no_non_trustable_peers_before_caught_up_state ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
 
   where
-    verify_no_non_trustable_peers_before_caught_up_state events =
+    verify_no_non_trustable_peers_before_caught_up_state events cmode =
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
-            selectDiffusionPeerSelectionState (Governor.bootstrapPeersFlag) events
+            selectDiffusionPeerSelectionState (Governor.bootstrapPeersFlag)
+                                              cmode
+                                              events
 
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
-            selectDiffusionPeerSelectionState (Governor.ledgerStateJudgement) events
+            selectDiffusionPeerSelectionState (Governor.ledgerStateJudgement)
+                                              cmode
+                                              events
 
           govKnownPeers :: Signal (Set NtNAddr)
           govKnownPeers =
-            selectDiffusionPeerSelectionState (KnownPeers.toSet . Governor.knownPeers) events
+            selectDiffusionPeerSelectionState (KnownPeers.toSet . Governor.knownPeers)
+                                              cmode
+                                              events
 
           govTrustedPeers :: Signal (Set NtNAddr)
           govTrustedPeers =
             selectDiffusionPeerSelectionState
               (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
                    <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
-              ) events
+              )
+              cmode
+              events
 
           govHasOnlyBootstrapPeers :: Signal Bool
           govHasOnlyBootstrapPeers =
-            selectDiffusionPeerSelectionState Governor.hasOnlyBootstrapPeers events
+            selectDiffusionPeerSelectionState Governor.hasOnlyBootstrapPeers cmode events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -713,6 +741,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
         (singletonTimedScript Map.empty)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode (Just 180)
               (Map.fromList [(RelayAccessDomain "test2" 65535, DoAdvertisePeer)])
+              PraosMode
               (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
               (TestAddress (IPAddr (read "0:7:0:7::") 65533))
               PeerSharingDisabled
@@ -720,15 +749,16 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               , (RelayAccessAddress "0:6:0:3:0:6:0:5" 65530,(DoNotAdvertisePeer, IsNotTrustable))])
               ]
               (Script (LedgerPools [] :| []))
-              nullPeerSelectionTargets {
-                targetNumberOfKnownPeers = 2,
-                targetNumberOfEstablishedPeers = 2,
-                targetNumberOfActivePeers = 1,
+              ConsensusModePeerTargets {
+                praosTargets = nullPeerSelectionTargets {
+                    targetNumberOfKnownPeers = 2,
+                    targetNumberOfEstablishedPeers = 2,
+                    targetNumberOfActivePeers = 1,
 
-                targetNumberOfKnownBigLedgerPeers = 0,
-                targetNumberOfEstablishedBigLedgerPeers = 0,
-                targetNumberOfActiveBigLedgerPeers = 0
-              }
+                    targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
+                    targetNumberOfActiveBigLedgerPeers = 0 },
+                genesisSyncTargets = nullPeerSelectionTargets }
               (Script (DNSTimeout {getDNSTimeout = 0.239} :| [DNSTimeout {getDNSTimeout = 0.181},DNSTimeout {getDNSTimeout = 0.185},DNSTimeout {getDNSTimeout = 0.14},DNSTimeout {getDNSTimeout = 0.221}]))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0.067} :| [DNSLookupDelay {getDNSLookupDelay = 0.097},DNSLookupDelay {getDNSLookupDelay = 0.101},DNSLookupDelay {getDNSLookupDelay = 0.096},DNSLookupDelay {getDNSLookupDelay = 0.051}]))
               Nothing
@@ -744,17 +774,19 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
           )
         , ( NodeArgs (1) InitiatorAndResponderDiffusionMode (Just 135)
              (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65533, DoAdvertisePeer)])
+             PraosMode
               (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
              (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65530))
              PeerSharingDisabled
              []
              (Script (LedgerPools [] :| []))
-             nullPeerSelectionTargets {
-               targetNumberOfRootPeers = 2,
-               targetNumberOfKnownPeers = 5,
-               targetNumberOfEstablishedPeers = 1,
-               targetNumberOfActivePeers = 1
-             }
+             ConsensusModePeerTargets {
+               praosTargets = nullPeerSelectionTargets {
+                   targetNumberOfRootPeers = 2,
+                   targetNumberOfKnownPeers = 5,
+                   targetNumberOfEstablishedPeers = 1,
+                   targetNumberOfActivePeers = 1 },
+               genesisSyncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.28}
                   :| [DNSTimeout {getDNSTimeout = 0.204},
                       DNSTimeout {getDNSTimeout = 0.213}
@@ -798,25 +830,37 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
              . Trace.take traceNumber
              $ ioSimTracer
 
+      consensusModes =
+        map (  snd
+            . head -- ^ the first trace has the consensus mode as it is a static property
+            . Signal.eventsToList
+            . Signal.selectEvents f) events
+      f = (\case
+            DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+            _                                                            -> Nothing)
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_coolingToColdDemotions ev
+          $ verify_coolingToColdDemotions ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
 
   where
-    verify_coolingToColdDemotions :: Events DiffusionTestTrace -> Property
-    verify_coolingToColdDemotions events =
+    verify_coolingToColdDemotions :: Events DiffusionTestTrace
+                                  -> ConsensusMode
+                                  -> Property
+    verify_coolingToColdDemotions events cmode =
       let govInProgressDemoteToCold :: Signal (Set NtNAddr)
           govInProgressDemoteToCold =
             selectDiffusionPeerSelectionState
               Governor.inProgressDemoteToCold
+              cmode
               events
 
 
@@ -1301,6 +1345,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
             InitiatorAndResponderDiffusionMode
             (Just 224)
             Map.empty
+            PraosMode
             (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
             (TestAddress (IPAddr (read "0.0.1.236") 65527))
             PeerSharingDisabled
@@ -1308,16 +1353,18 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
                                 , (RelayAccessDomain "test3" 4,(DoAdvertisePeer, IsNotTrustable))])
             ]
             (Script (LedgerPools [] :| []))
-            PeerSelectionTargets
-              { targetNumberOfRootPeers = 6,
-                targetNumberOfKnownPeers = 7,
-                targetNumberOfEstablishedPeers = 7,
-                targetNumberOfActivePeers = 6,
+            ConsensusModePeerTargets {
+              praosTargets = PeerSelectionTargets
+                { targetNumberOfRootPeers = 6,
+                  targetNumberOfKnownPeers = 7,
+                  targetNumberOfEstablishedPeers = 7,
+                  targetNumberOfActivePeers = 6,
 
-                targetNumberOfKnownBigLedgerPeers = 0,
-                targetNumberOfEstablishedBigLedgerPeers = 0,
-                targetNumberOfActiveBigLedgerPeers = 0
-              }
+                  targetNumberOfKnownBigLedgerPeers = 0,
+                  targetNumberOfEstablishedBigLedgerPeers = 0,
+                  targetNumberOfActiveBigLedgerPeers = 0
+                },
+              genesisSyncTargets = nullPeerSelectionTargets }
             (Script (DNSTimeout {getDNSTimeout = 0.406} :| [ DNSTimeout {getDNSTimeout = 0.11}
                                                            , DNSTimeout {getDNSTimeout = 0.333}
                                                            , DNSTimeout {getDNSTimeout = 0.352}
@@ -1384,36 +1431,53 @@ prop_diffusion_target_established_public ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
+        consensusModes =
+            map (
+              maybe PraosMode snd
+              . listToMaybe -- ^ the first trace has the consensus mode as it is a static property
+              . Signal.eventsToList
+              . Signal.selectEvents f) events
+
+        f = (\case
+              DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+              _                                                            -> Nothing)
+
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_established_public ev
+          $ verify_target_established_public ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
   where
-    verify_target_established_public :: Events DiffusionTestTrace -> Property
-    verify_target_established_public events =
+    verify_target_established_public :: Events DiffusionTestTrace
+                                     -> ConsensusMode
+                                     -> Property
+    verify_target_established_public events cmode =
       let govPublicRootPeersSig :: Signal (Set NtNAddr)
           govPublicRootPeersSig =
             selectDiffusionPeerSelectionState
               (PublicRootPeers.toSet . Governor.publicRootPeers)
+              cmode
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
               (EstablishedPeers.toSet . Governor.establishedPeers)
+              cmode
               events
 
           govInProgressPromoteColdSig :: Signal (Set NtNAddr)
           govInProgressPromoteColdSig =
             selectDiffusionPeerSelectionState
               Governor.inProgressPromoteCold
+              cmode
               events
 
           publicInEstablished :: Signal Bool
@@ -1466,29 +1530,44 @@ prop_diffusion_target_active_public ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
+        consensusModes =
+            map (
+              maybe PraosMode snd
+              . listToMaybe -- ^ the first trace has the consensus mode as it is a static property
+              . Signal.eventsToList
+              . Signal.selectEvents f) events
+        f = (\case
+              DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+              _                                                            -> Nothing)
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_active_public ev
+          $ verify_target_active_public ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
   where
-    verify_target_active_public :: Events DiffusionTestTrace -> Property
-    verify_target_active_public events =
+    verify_target_active_public :: Events DiffusionTestTrace
+                                -> ConsensusMode
+                                -> Property
+    verify_target_active_public events cmode =
         let govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
               selectDiffusionPeerSelectionState
                 (PublicRootPeers.toSet . Governor.publicRootPeers)
+                cmode
                 events
 
             govActivePeersSig :: Signal (Set NtNAddr)
             govActivePeersSig =
-              selectDiffusionPeerSelectionState Governor.activePeers events
+              selectDiffusionPeerSelectionState Governor.activePeers
+                                                cmode
+                                                events
 
             publicInActive :: Signal Bool
             publicInActive =
@@ -1536,28 +1615,44 @@ prop_diffusion_target_active_local ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
+        consensusModes =
+            map (
+              maybe PraosMode snd
+              . listToMaybe -- ^ the first trace has the consensus mode as it is a static property
+              . Signal.eventsToList
+              . Signal.selectEvents f) events
+        f = (\case
+              DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+              _                                                            -> Nothing)
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_active_local ev
+          $ verify_target_active_local ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
   where
-    verify_target_active_local :: Events DiffusionTestTrace -> Property
-    verify_target_active_local events =
+    verify_target_active_local :: Events DiffusionTestTrace
+                               -> ConsensusMode
+                               -> Property
+    verify_target_active_local events cmode =
         let govLocalRootPeersSig :: Signal (Set NtNAddr)
             govLocalRootPeersSig =
               selectDiffusionPeerSelectionState
-                (LocalRootPeers.keysSet . Governor.localRootPeers) events
+                (LocalRootPeers.keysSet . Governor.localRootPeers)
+                cmode
+                events
 
             govActivePeersSig :: Signal (Set NtNAddr)
             govActivePeersSig =
-              selectDiffusionPeerSelectionState Governor.activePeers events
+              selectDiffusionPeerSelectionState Governor.activePeers
+              cmode
+              events
 
             localInActive :: Signal Bool
             localInActive =
@@ -1607,29 +1702,41 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
+        consensusModes =
+            map (
+              maybe PraosMode snd
+              . listToMaybe -- ^ the first trace has the consensus mode as it is a static property
+              . Signal.eventsToList
+              . Signal.selectEvents f) events
+        f = (\case
+              DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+              _                                                            -> Nothing)
+
     in  conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_active_root ev
+          $ verify_target_active_root ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
   where
-    verify_target_active_root :: Events DiffusionTestTrace -> Property
-    verify_target_active_root events =
+    verify_target_active_root :: Events DiffusionTestTrace
+                              -> ConsensusMode
+                              -> Property
+    verify_target_active_root events cmode =
         let govLocalRootPeersSig :: Signal (Set NtNAddr)
             govLocalRootPeersSig =
               selectDiffusionPeerSelectionState
-                (LocalRootPeers.keysSet . Governor.localRootPeers) events
+                (LocalRootPeers.keysSet . Governor.localRootPeers) cmode events
 
             govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
               selectDiffusionPeerSelectionState
-                (PublicRootPeers.toSet . Governor.publicRootPeers) events
+                (PublicRootPeers.toSet . Governor.publicRootPeers) cmode events
 
             govRootPeersSig :: Signal (Set NtNAddr)
             govRootPeersSig = Set.union <$> govLocalRootPeersSig
@@ -1637,7 +1744,7 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
 
             govActivePeersSig :: Signal (Set NtNAddr)
             govActivePeersSig =
-              selectDiffusionPeerSelectionState Governor.activePeers events
+              selectDiffusionPeerSelectionState Governor.activePeers cmode events
 
             rootInActive :: Signal Bool
             rootInActive =
@@ -1718,35 +1825,47 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
+        consensusModes =
+          map (  snd
+              . head -- ^ the first trace has the consensus mode as it is a static property
+              . Signal.eventsToList
+              . Signal.selectEvents f) events
+        f = (\case
+              DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+              _                                                            -> Nothing)
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_established_local ev
+          $ verify_target_established_local ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
 
   where
-    verify_target_established_local :: Events DiffusionTestTrace -> Property
-    verify_target_established_local events =
+    verify_target_established_local :: Events DiffusionTestTrace
+                                    -> ConsensusMode
+                                    -> Property
+    verify_target_established_local events cmode =
       let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState Governor.localRootPeers cmode events
 
           govInProgressPromoteColdSig :: Signal (Set NtNAddr)
           govInProgressPromoteColdSig =
             selectDiffusionPeerSelectionState
               Governor.inProgressPromoteCold
+              cmode
               events
 
           govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
           govInProgressDemoteToColdSig =
             selectDiffusionPeerSelectionState
               Governor.inProgressDemoteToCold
+              cmode
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
@@ -1754,6 +1873,7 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
             selectDiffusionPeerSelectionState
               ( EstablishedPeers.toSet
               . Governor.establishedPeers)
+              cmode
               events
 
           govEstablishedFailuresSig :: Signal (Set NtNAddr)
@@ -1883,35 +2003,48 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
+        consensusModes =
+          map (  snd
+              . head -- ^ the first trace has the consensus mode as it is a static property
+              . Signal.eventsToList
+              . Signal.selectEvents f) events
+        f = (\case
+              DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+              _                                                            -> Nothing)
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_active_below ev
+          $ verify_target_active_below ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
 
   where
-    verify_target_active_below :: Events DiffusionTestTrace -> Property
-    verify_target_active_below events =
+    verify_target_active_below :: Events DiffusionTestTrace
+                               -> ConsensusMode
+                               -> Property
+    verify_target_active_below events cmode =
       let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState Governor.localRootPeers cmode events
 
           govActiveTargetsSig :: Signal Int
           govActiveTargetsSig =
             selectDiffusionPeerSelectionState
               (targetNumberOfActivePeers . Governor.targets)
+              cmode
               events
 
           govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
           govInProgressDemoteToColdSig =
             selectDiffusionPeerSelectionState
               Governor.inProgressDemoteToCold
+              cmode
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
@@ -1919,12 +2052,14 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
             selectDiffusionPeerSelectionState
               (dropBigLedgerPeers $
                  EstablishedPeers.toSet . Governor.establishedPeers)
+              cmode
               events
 
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
             selectDiffusionPeerSelectionState
               (dropBigLedgerPeers Governor.activePeers)
+              cmode
               events
 
           govActiveFailuresSig :: Signal (Set NtNAddr)
@@ -1964,7 +2099,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
 
           govInProgressPromoteWarmSig :: Signal (Set NtNAddr)
           govInProgressPromoteWarmSig =
-            selectDiffusionPeerSelectionState Governor.inProgressPromoteWarm events
+            selectDiffusionPeerSelectionState Governor.inProgressPromoteWarm cmode events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -2067,35 +2202,48 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
+        consensusModes =
+          map (  snd
+              . head -- ^ the first trace has the consensus mode as it is a static property
+              . Signal.eventsToList
+              . Signal.selectEvents f) events
+        f = (\case
+              DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+              _                                                            -> Nothing)
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_active_below ev
+          $ verify_target_active_below ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
 
   where
-    verify_target_active_below :: Events DiffusionTestTrace -> Property
-    verify_target_active_below events =
+    verify_target_active_below :: Events DiffusionTestTrace
+                               -> ConsensusMode
+                               -> Property
+    verify_target_active_below events cmode =
       let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState Governor.localRootPeers cmode events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
               (EstablishedPeers.toSet . Governor.establishedPeers)
+              cmode
               events
 
           govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
           govInProgressDemoteToColdSig =
             selectDiffusionPeerSelectionState
               Governor.inProgressDemoteToCold
+              cmode
               events
 
           trJoinKillSig :: Signal JoinedOrKilled
@@ -2127,7 +2275,7 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
 
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
-            selectDiffusionPeerSelectionState Governor.activePeers events
+            selectDiffusionPeerSelectionState Governor.activePeers cmode events
 
           govActiveFailuresSig :: Signal (Set NtNAddr)
           govActiveFailuresSig =
@@ -2214,11 +2362,13 @@ async_demotion_network_script =
       (singletonTimedScript Map.empty)
       [ ( common { naAddr                  = addr1,
                    naLocalRootPeers        = localRoots1,
-                   naLocalSelectionTargets = Governor.nullPeerSelectionTargets {
-                                               targetNumberOfKnownPeers = 2,
-                                               targetNumberOfEstablishedPeers = 2,
-                                               targetNumberOfActivePeers = 2
-                                             }
+                   naPeerTargets = ConsensusModePeerTargets {
+                     praosTargets = Governor.nullPeerSelectionTargets {
+                         targetNumberOfKnownPeers = 2,
+                           targetNumberOfEstablishedPeers = 2,
+                           targetNumberOfActivePeers = 2
+                         },
+                     genesisSyncTargets = peerTargets }
                  }
         , [ JoinNetwork 0
             -- reconfigure the peer to trigger the outbound governor log
@@ -2252,21 +2402,24 @@ async_demotion_network_script =
         saSlot             = secondsToDiffTime 1,
         saQuota            = 5  -- 5% chance of producing a block
       }
+    peerTargets = Governor.nullPeerSelectionTargets {
+      targetNumberOfKnownPeers = 1,
+      targetNumberOfEstablishedPeers = 1,
+      targetNumberOfActivePeers =1 }
+
     common = NodeArgs {
         naSeed             = 10,
         naDiffusionMode    = InitiatorAndResponderDiffusionMode,
         naMbTime           = Just 1,
         naPublicRoots      = Map.empty,
+        naConsensusMode    = PraosMode,
         naBootstrapPeers   = (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| [])),
         naAddr             = undefined,
         naLocalRootPeers   = undefined,
         naLedgerPeers      = Script (LedgerPools [] :| []),
-        naLocalSelectionTargets
-                           = Governor.nullPeerSelectionTargets {
-                               targetNumberOfKnownPeers = 1,
-                               targetNumberOfEstablishedPeers = 1,
-                               targetNumberOfActivePeers = 1
-                             },
+        naPeerTargets      = ConsensusModePeerTargets {
+            praosTargets = peerTargets,
+            genesisSyncTargets = peerTargets },
         naDNSTimeoutScript = singletonScript (DNSTimeout 3),
         naDNSLookupDelayScript
                            = singletonScript (DNSLookupDelay 0.2),
@@ -2442,32 +2595,43 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
                . Trace.take traceNumber
                $ ioSimTrace
 
+        consensusModes =
+          map (  snd
+              . head -- ^ the first trace has the consensus mode as it is a static property
+              . Signal.eventsToList
+              . Signal.selectEvents f) events
+        f = (\case
+              DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (Governor.consensusMode st)
+              _                                                            -> Nothing)
+
      in conjoin
-      $ (\ev ->
+      $ (\(ev, cmode) ->
         let evsList = eventsToList ev
             lastTime = fst
                      . last
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_active_above ev
+          $ verify_target_active_above ev cmode
         )
-      <$> events
+      <$> zip events consensusModes
 
   where
-    verify_target_active_above :: Events DiffusionTestTrace -> Property
-    verify_target_active_above events =
+    verify_target_active_above :: Events DiffusionTestTrace
+                               -> ConsensusMode
+                               -> Property
+    verify_target_active_above events cmode =
       let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState Governor.localRootPeers cmode events
 
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
-            selectDiffusionPeerSelectionState Governor.activePeers events
+            selectDiffusionPeerSelectionState Governor.activePeers cmode events
 
           govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
           govInProgressDemoteToColdSig =
-            selectDiffusionPeerSelectionState Governor.inProgressDemoteToCold events
+            selectDiffusionPeerSelectionState Governor.inProgressDemoteToCold cmode events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -2695,17 +2859,19 @@ prop_unit_4258 =
         (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode (Just 224)
              (Map.fromList [])
+             PraosMode
              (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
              (TestAddress (IPAddr (read "0.0.0.4") 9))
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65531,(DoNotAdvertisePeer, IsNotTrustable))])]
              (Script (LedgerPools [] :| []))
-             nullPeerSelectionTargets {
+             ConsensusModePeerTargets {
+               praosTargets = nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 2,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 4,
-                 targetNumberOfActivePeers = 1
-               }
+                 targetNumberOfActivePeers = 1 },
+               genesisSyncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.397}
                  :| [ DNSTimeout {getDNSTimeout = 0.382},
                       DNSTimeout {getDNSTimeout = 0.321},
@@ -2728,12 +2894,14 @@ prop_unit_4258 =
          ),
          ( NodeArgs (-5) InitiatorAndResponderDiffusionMode (Just 269)
              (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoAdvertisePeer)])
+             PraosMode
              (Script ((UseBootstrapPeers [RelayAccessDomain "bootstrap" 00000]) :| []))
              (TestAddress (IPAddr (read "0.0.0.8") 65531))
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,(DoNotAdvertisePeer, IsNotTrustable))])]
              (Script (LedgerPools [] :| []))
-             nullPeerSelectionTargets {
+             ConsensusModePeerTargets {
+               praosTargets = nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 4,
                  targetNumberOfKnownPeers = 5,
                  targetNumberOfEstablishedPeers = 3,
@@ -2742,7 +2910,8 @@ prop_unit_4258 =
                  targetNumberOfKnownBigLedgerPeers = 0,
                  targetNumberOfEstablishedBigLedgerPeers = 0,
                  targetNumberOfActiveBigLedgerPeers = 0
-               }
+               },
+               genesisSyncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 0.281}
                  :| [ DNSTimeout {getDNSTimeout = 0.177},
                       DNSTimeout {getDNSTimeout = 0.164},
@@ -2798,6 +2967,7 @@ prop_unit_reconnect =
               InitiatorAndResponderDiffusionMode
               (Just 224)
               Map.empty
+              PraosMode
               (Script (DontUseBootstrapPeers :| []))
               (TestAddress (IPAddr (read "0.0.0.0") 0))
               PeerSharingDisabled
@@ -2806,16 +2976,17 @@ prop_unit_reconnect =
                                   ])
               ]
               (Script (LedgerPools [] :| []))
-              PeerSelectionTargets {
-                targetNumberOfRootPeers = 1,
-                targetNumberOfKnownPeers = 1,
-                targetNumberOfEstablishedPeers = 1,
-                targetNumberOfActivePeers = 1,
+              ConsensusModePeerTargets {
+                praosTargets = PeerSelectionTargets {
+                    targetNumberOfRootPeers = 1,
+                    targetNumberOfKnownPeers = 1,
+                    targetNumberOfEstablishedPeers = 1,
+                    targetNumberOfActivePeers = 1,
 
-                targetNumberOfKnownBigLedgerPeers = 0,
-                targetNumberOfEstablishedBigLedgerPeers = 0,
-                targetNumberOfActiveBigLedgerPeers = 0
-              }
+                    targetNumberOfKnownBigLedgerPeers = 0,
+                    targetNumberOfEstablishedBigLedgerPeers = 0,
+                    targetNumberOfActiveBigLedgerPeers = 0 },
+                genesisSyncTargets = nullPeerSelectionTargets }
               (Script (DNSTimeout {getDNSTimeout = 10} :| []))
               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
               Nothing
@@ -2828,21 +2999,23 @@ prop_unit_reconnect =
                InitiatorAndResponderDiffusionMode
                (Just 2)
                Map.empty
+               PraosMode
                (Script (DontUseBootstrapPeers :| []))
                (TestAddress (IPAddr (read "0.0.0.1") 0))
                PeerSharingDisabled
                [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,(DoNotAdvertisePeer, IsNotTrustable))])]
                (Script (LedgerPools [] :| []))
-               PeerSelectionTargets {
-                 targetNumberOfRootPeers = 1,
-                 targetNumberOfKnownPeers = 1,
-                 targetNumberOfEstablishedPeers = 1,
-                 targetNumberOfActivePeers = 1,
+               ConsensusModePeerTargets {
+                 praosTargets = PeerSelectionTargets {
+                     targetNumberOfRootPeers = 1,
+                     targetNumberOfKnownPeers = 1,
+                     targetNumberOfEstablishedPeers = 1,
+                     targetNumberOfActivePeers = 1,
 
-                 targetNumberOfKnownBigLedgerPeers = 0,
-                 targetNumberOfEstablishedBigLedgerPeers = 0,
-                 targetNumberOfActiveBigLedgerPeers = 0
-               }
+                     targetNumberOfKnownBigLedgerPeers = 0,
+                     targetNumberOfEstablishedBigLedgerPeers = 0,
+                     targetNumberOfActiveBigLedgerPeers = 0 },
+                 genesisSyncTargets = nullPeerSelectionTargets }
              (Script (DNSTimeout {getDNSTimeout = 10} :| [ ]))
              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
              Nothing
@@ -3228,17 +3401,18 @@ unit_peer_sharing =
     ip_2 = TestAddress $ IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3002
     -- ra_2 = RelayAccessAddress (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3002
 
-    targets x = PeerSelectionTargets {
-        targetNumberOfRootPeers = x,
-        targetNumberOfKnownPeers = x,
-        targetNumberOfEstablishedPeers = x,
-        targetNumberOfActivePeers = x,
-        targetNumberOfKnownBigLedgerPeers = 0,
-        targetNumberOfEstablishedBigLedgerPeers = 0,
-        targetNumberOfActiveBigLedgerPeers = 0
-      }
+    targets x = let t = PeerSelectionTargets {
+                          targetNumberOfRootPeers = x,
+                          targetNumberOfKnownPeers = x,
+                          targetNumberOfEstablishedPeers = x,
+                          targetNumberOfActivePeers = x,
+                          targetNumberOfKnownBigLedgerPeers = 0,
+                          targetNumberOfEstablishedBigLedgerPeers = 0,
+                          targetNumberOfActiveBigLedgerPeers = 0 }
+                in ConsensusModePeerTargets { praosTargets = t, genesisSyncTargets = t }
 
-    defaultNodeArgs = NodeArgs {
+
+    defaultNodeArgs naConsensusMode = NodeArgs {
         naSeed = 0,
         naDiffusionMode = InitiatorAndResponderDiffusionMode,
         naMbTime = Nothing,
@@ -3248,32 +3422,35 @@ unit_peer_sharing =
         naPeerSharing = PeerSharingEnabled,
         naLocalRootPeers = undefined,
         naLedgerPeers = singletonScript (LedgerPools []),
-        naLocalSelectionTargets = undefined,
+        naPeerTargets = ConsensusModePeerTargets {
+            praosTargets = nullPeerSelectionTargets,
+            genesisSyncTargets = nullPeerSelectionTargets },
         naDNSTimeoutScript = singletonScript (DNSTimeout 300),
         naDNSLookupDelayScript = singletonScript (DNSLookupDelay 0.01),
         naChainSyncEarlyExit = False,
         naChainSyncExitOnBlockNo = Nothing,
-        naFetchModeScript = singletonScript FetchModeDeadline
+        naFetchModeScript = singletonScript FetchModeDeadline,
+        naConsensusMode
       }
 
     script = DiffusionScript
                (mainnetSimArgs 3)
                (singletonScript (mempty, ShortDelay))
-               [ ( defaultNodeArgs { naAddr = ip_0,
+               [ ( (defaultNodeArgs GenesisMode) { naAddr = ip_0,
                                      naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, (DoNotAdvertisePeer, IsNotTrustable))])],
-                                     naLocalSelectionTargets = targets 1
+                                     naPeerTargets = targets 1
                                    }
                  , [JoinNetwork 0]
                  )
-               , ( defaultNodeArgs { naAddr = ip_1,
+               , ( (defaultNodeArgs PraosMode) { naAddr = ip_1,
                                      naLocalRootPeers = [],
-                                     naLocalSelectionTargets = targets 2
+                                     naPeerTargets = targets 2
                                    }
                  , [JoinNetwork 0]
                  )
-               , ( defaultNodeArgs { naAddr = ip_2,
+               , ( (defaultNodeArgs GenesisMode) { naAddr = ip_2,
                                      naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, (DoNotAdvertisePeer, IsNotTrustable))])],
-                                     naLocalSelectionTargets = targets 2
+                                     naPeerTargets = targets 2
                                    }
                  , [JoinNetwork 0]
                  )
@@ -3287,9 +3464,9 @@ prop_churn_notimeouts :: SimTrace Void
                       -> Int
                       -> Property
 prop_churn_notimeouts ioSimTrace traceNumber =
-    let events :: [Events DiffusionTestTrace]
-        events = Trace.toList
-               . fmap ( Signal.eventsFromList
+   let events :: [Events DiffusionTestTrace]
+       events = Trace.toList
+                . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
                . splitWithNameTrace
@@ -3663,12 +3840,15 @@ selectDiffusionSimulationTrace = Signal.selectEvents
 
 selectDiffusionPeerSelectionState :: Eq a
                                   => (forall peerconn. Governor.PeerSelectionState NtNAddr peerconn -> a)
+                                  -> ConsensusMode
                                   -> Events DiffusionTestTrace
                                   -> Signal a
-selectDiffusionPeerSelectionState f =
+selectDiffusionPeerSelectionState f cmode =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42))
+  . Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState
+                                   (mkStdGen 42)
+                                   cmode )
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
@@ -3680,7 +3860,7 @@ selectDiffusionPeerSelectionState' :: Eq a
                                   -> Signal a
 selectDiffusionPeerSelectionState' f =
   -- TODO: #3182 Rng seed should come from quickcheck.
-    Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42))
+    Signal.fromChangeEvents (f $ Governor.emptyPeerSelectionState (mkStdGen 42) PraosMode)
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
@@ -3779,9 +3959,9 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
     . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
               ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) $ nodes))
     . label ("Nº active peers: "
-              ++ show (sum . map (targetNumberOfActivePeers . naLocalSelectionTargets . fst) $ nodes))
+              ++ show (sum . map (targetNumberOfActivePeers . praosTargets . naPeerTargets . fst) $ nodes))
     . label ("Nº active big ledger peers: "
-              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . naLocalSelectionTargets . fst) $ nodes))
+              ++ show (sum . map (targetNumberOfActiveBigLedgerPeers . praosTargets . naPeerTargets . fst) $ nodes))
     . label ("average number of active local roots: "
               ++ show (average . map (sum . map (\(HotValency v,_,_) -> v) . naLocalRootPeers . fst) $ nodes))
   where

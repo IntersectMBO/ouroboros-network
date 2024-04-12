@@ -188,10 +188,10 @@ prop_use_snapshot_bigledger_peers seed (MockRoots _ dnsMapScript _ _)
                                   (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
                                   (ArbitraryLedgerStateJudgement lsj) = property $ do
   -- snapshotSlots has duplicates removed since the test will fail when two consecutive
-  -- snapshot slot numbers are identical but the ledger pools are different (which is likely given random generation).
+  -- snapshot slot numbers are identical but the corresponding ledger pools are distinct (which is likely given random generation).
   -- When using a particular snapshot, the request function provided by withLedgerPeers caches the results for
-  -- the corresponding slot number to avoid recomputating the same things every time we request a new peer when snapshot
-  -- data is used. Furthermore, each test is limited to roughly ~10 slot changes to speed things up.
+  -- the corresponding slot number to avoid recomputing the same things every time we request a new peer when snapshot
+  -- data is used.
   (snapshotSlots, ledgerSlots)    <-     bimap nub sort . unzip
                                      <$> sized (\n -> if n <= 10
                                                       then listOf1 arbitrary

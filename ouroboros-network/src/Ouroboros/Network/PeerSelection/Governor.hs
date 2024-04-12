@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 #if __GLASGOW_HASKELL__ < 904
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -19,6 +20,7 @@ module Ouroboros.Network.PeerSelection.Governor
     -- $peer-selection-governor
     PeerSelectionPolicy (..)
   , PeerSelectionTargets (..)
+  , ConsensusModePeerTargets (..)
   , PeerSelectionActions (..)
   , PeerSelectionInterfaces (..)
   , PeerStateActions (..)
@@ -30,6 +32,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , DebugPeerSelectionState (..)
   , peerSelectionGovernor
     -- * Peer churn governor
+  , PeerChurnArgs (..)
   , peerChurnGovernor
   , ChurnCounters (..)
     -- * Internals exported for testing
@@ -67,8 +70,9 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
+import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..), PeerChurnArgs (..),
            peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
@@ -471,12 +475,12 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> Tracer m (DebugPeerSelection peeraddr)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
+                      -> ConsensusMode
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> PeerSelectionInterfaces peeraddr peerconn m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng
-                      actions policy interfaces =
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng consensusMode actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
@@ -486,7 +490,7 @@ peerSelectionGovernor tracer debugTracer countersTracer fuzzRng
         policy
         interfaces
         jobPool
-        (emptyPeerSelectionState fuzzRng)
+        (emptyPeerSelectionState fuzzRng consensusMode)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -633,14 +637,16 @@ peerSelectionGovernorLoop tracer
     guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
-      -- The Governor needs to react to changes in the bootstrap peer flag,
-      -- since this influences the behavior of the other monitoring actions.
+      -- In Praos consensus mode, The Governor needs to react to changes in the bootstrap
+      -- peer flag, since this influences the behavior of the other monitoring actions.
          Monitor.monitorBootstrapPeersFlag   actions st
       -- The Governor needs to react to ledger state changes as soon as possible.
-      -- Check the definition site for more details, but in short, when the
-      -- node changes to 'TooOld' state it will go through a purging phase which
-      -- the 'waitForTheSystemToQuiesce' monitoring action will wait for.
+      -- in Praos mode:
+      --   Check the definition site for more details, but in short, when the
+      --   node changes to 'TooOld' state it will go through a purging phase which
+      --   the 'waitForTheSystemToQuiesce' monitoring action will wait for.
       <> Monitor.monitorLedgerStateJudgement actions st
+      -- In Praos consensus mode,
       -- When the node transitions to 'TooOld' state the node will wait until
       -- it reaches a clean (quiesced) state free of non-trusted peers, before
       -- resuming making progress again connected to only trusted peers.
@@ -648,6 +654,11 @@ peerSelectionGovernorLoop tracer
 
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
+      -- In Genesis consensus mode, this is responsible for settings targets on the basis
+      -- of the ledger state judgement. It takes into account whether
+      -- the churn governor is running via a tmvar such that targets are set
+      -- in a consistent manner. For non-Genesis, it follows the simpler
+      -- legacy protocol.
       <> Monitor.targetPeers          actions st
       <> Monitor.localRoots           actions st
 

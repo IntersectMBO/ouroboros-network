@@ -38,6 +38,7 @@ import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.Snocket (FileDescriptor)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 
+
 -- | The 'DiffusionTracer' logs
 --
 -- * diffusion initialisation messages

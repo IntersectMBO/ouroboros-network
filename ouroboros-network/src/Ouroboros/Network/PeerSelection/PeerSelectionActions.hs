@@ -5,6 +5,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
@@ -56,6 +57,7 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psLocalRootPeersTracer      :: Tracer m (TraceLocalRootPeers peeraddr exception),
   psPublicRootPeersTracer     :: Tracer m TracePublicRootPeers,
   psReadTargets               :: STM m PeerSelectionTargets,
+  peerTargets                 :: ConsensusModePeerTargets,
   -- ^ peer selection governor know, established and active targets
   psJudgement                 :: STM m LedgerStateJudgement,
   -- ^ Is consensus close to current slot?
@@ -71,8 +73,10 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psUpdateOutboundConnectionsState
                               :: OutboundConnectionsState -> STM m (),
   -- ^ Callback which updates information about outbound connections state.
-  psReadInboundPeers          :: m (Map peeraddr PeerSharing)
+  psReadInboundPeers          :: m (Map peeraddr PeerSharing),
   -- ^ inbound duplex peers
+  psChurnMutex                :: StrictTMVar m ()
+  -- ^ this is used to coordinate the actions of peer selection and churn governor
   }
 
 -- | Record of remaining parameters for withPeerSelectionActions
@@ -108,6 +112,7 @@ withPeerSelectionActions
   PeerSelectionActionsArgs {
     psLocalRootPeersTracer = localTracer,
     psPublicRootPeersTracer = publicTracer,
+    peerTargets,
     psReadTargets = selectionTargets,
     psJudgement = judgement,
     psReadLocalRootPeers = localRootPeers,
@@ -117,7 +122,8 @@ withPeerSelectionActions
     psPeerConnToPeerSharing = peerConnToPeerSharing,
     psReadPeerSharingController = sharingController,
     psReadInboundPeers = readInboundPeers,
-    psUpdateOutboundConnectionsState = updateOutboundConnectionsState }
+    psUpdateOutboundConnectionsState = updateOutboundConnectionsState,
+    psChurnMutex }
   ledgerPeersArgs
   PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
   k = do
@@ -135,10 +141,12 @@ withPeerSelectionActions
                                        requestPublicRootPeers = \lpk n -> requestPublicRootPeers lpk n getLedgerPeers,
                                        requestPeerShare,
                                        peerStateActions,
+                                       peerTargets,
                                        readUseBootstrapPeers = useBootstrapped,
                                        readInboundPeers,
                                        readLedgerStateJudgement = judgement,
-                                       updateOutboundConnectionsState }
+                                       updateOutboundConnectionsState,
+                                       churnMutex = psChurnMutex }
           withAsync
             (localRootPeersProvider
               localTracer

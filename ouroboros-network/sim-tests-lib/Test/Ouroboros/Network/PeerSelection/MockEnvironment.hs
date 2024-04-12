@@ -1,10 +1,10 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
@@ -13,6 +13,7 @@
 module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   ( PeerGraph (..)
   , GovernorMockEnvironment (..)
+  , GovernorPraosMockEnvironment (..)
   , GovernorMockEnvironmentWithoutAsyncDemotion (..)
   , runGovernorInMockEnvironment
   , exploreGovernorInMockEnvironment
@@ -30,8 +31,9 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , config_REPROMOTE_DELAY
   ) where
 
-import Data.Bifunctor (first)
+import Data.Bifunctor (first, bimap)
 import Data.Dynamic (fromDynamic)
+import Data.Functor ((<&>))
 import Data.List (nub)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
@@ -46,7 +48,7 @@ import System.Random (mkStdGen)
 import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictTVar
 import Control.Exception (throw)
-import Control.Monad (when)
+import Control.Monad (when, forM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -66,16 +68,21 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
            ScriptDelay (..), TimedScript, arbitraryPickScript,
            arbitraryScriptOf, initScript, initScript', interpretPickScript,
-           playTimedScript, prop_shrink_Script, singletonScript, stepScript,
-           stepScriptSTM, stepScriptSTM')
-import Ouroboros.Network.Testing.Utils (ShrinkCarefully, arbitrarySubset,
-           prop_shrink_nonequal, prop_shrink_valid)
+           playTimedScript, prop_shrink_Script, singletonScript,
+           singletonTimedScript, stepScript, stepScriptSTM, stepScriptSTM', shrinkScriptWith)
+import Ouroboros.Network.Testing.Utils
+    ( ShrinkCarefully,
+      arbitrarySubset,
+      prop_shrink_nonequal,
+      prop_shrink_valid,
+      nightlyTest )
 
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
            (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers
@@ -87,12 +94,12 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPe
 import Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
-import Ouroboros.Network.Testing.Utils (nightlyTest)
 import Test.Ouroboros.Network.LedgerPeers (ArbitraryLedgerStateJudgement (..))
 import Test.Ouroboros.Network.PeerSelection.PublicRootPeers ()
 import Test.QuickCheck
 import Test.Tasty (TestTree, localOption, testGroup)
 import Test.Tasty.QuickCheck (QuickCheckMaxSize (..), testProperty)
+
 
 tests :: TestTree
 tests =
@@ -130,7 +137,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        peerGraph                  :: !PeerGraph,
        localRootPeers             :: !(LocalRootPeers PeerAddr),
        publicRootPeers            :: !(PublicRootPeers PeerAddr),
-       targets                    :: !(TimedScript PeerSelectionTargets),
+       targets                    :: !(TimedScript ConsensusModePeerTargets),
        pickKnownPeersForPeerShare :: !(PickScript PeerAddr),
        pickColdPeersToPromote     :: !(PickScript PeerAddr),
        pickWarmPeersToPromote     :: !(PickScript PeerAddr),
@@ -140,10 +147,17 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        pickInboundPeers           :: !(PickScript PeerAddr),
        peerSharingFlag            :: !PeerSharing,
        useBootstrapPeers          :: !(TimedScript UseBootstrapPeers),
+       consensusMode              :: !ConsensusMode,
        useLedgerPeers             :: !(TimedScript UseLedgerPeers),
        ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement)
      }
   deriving (Show, Eq)
+
+-- | This instance is used to generate test cases for properties
+-- which rely on peer selection prior to introduction of Genesis
+--
+newtype GovernorPraosMockEnvironment = GovernorPraosMockEnvironment { getMockEnv :: GovernorMockEnvironment }
+  deriving (Eq, Show)
 
 data PeerConn m = PeerConn !PeerAddr !PeerSharing !(TVar m PeerStatus)
 
@@ -185,8 +199,13 @@ validGovernorMockEnvironment GovernorMockEnvironment {
               (validPeerGraph peerGraph)
            , counterexample "local roots not a subset of all peers"
               (LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet)
-           , property (PublicRootPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
-           , property (foldl (\ !p (!a,_) -> p && sanePeerSelectionTargets a) True targets)
+           , counterexample "public root peers not a subset of  all peers" $
+             property (PublicRootPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
+           , counterexample "failed peer selection targets sanity check" $ 
+             property (foldl (\ !p (ConsensusModePeerTargets {..},_) ->
+                                p && all sanePeerSelectionTargets [praosTargets, genesisSyncTargets])
+                        True
+                        targets)
            , counterexample "big ledger peers not a subset of public roots"
                 (PublicRootPeers.invariant publicRootPeers)
            ]
@@ -208,22 +227,57 @@ runGovernorInMockEnvironment mockEnv =
     runSimTrace $ governorAction mockEnv
 
 governorAction :: GovernorMockEnvironment -> IOSim s Void
-governorAction mockEnv = do
+governorAction mockEnv@GovernorMockEnvironment {
+                 consensusMode,
+                 targets = Script targets',
+                 ledgerStateJudgement = Script ledgerStateJudgement'} = do
     publicStateVar <- makePublicPeerSelectionStateVar
-    lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
-                             (ledgerStateJudgement mockEnv)
     lpVar <- playTimedScript (contramap TraceEnvUseLedgerPeers tracerMockEnv)
                              (useLedgerPeers mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
-                             (useBootstrapPeers mockEnv)
-    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42))
+                              (useBootstrapPeers mockEnv)
+    debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) consensusMode)
     countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
-    policy  <- mockPeerSelectionPolicy                mockEnv
-    actions <- mockPeerSelectionActions tracerMockEnv mockEnv
-                                        (readTVar usbVar)
-                                        (readTVar lpVar)
-                                        (readTVar lsjVar)
-                                        policy
+    policy  <- mockPeerSelectionPolicy mockEnv
+    let initialPeerTargets = fst . NonEmpty.head $ targets'
+
+    actions <-
+      case consensusMode of
+        PraosMode -> do
+          lsjVar <- playTimedScript (contramap TraceEnvSetLedgerStateJudgement tracerMockEnv)
+                                    (ledgerStateJudgement mockEnv)
+          targetsVar <- playTimedScript (contramap TraceEnvSetTargets tracerMockEnv)
+                                        (first praosTargets <$> targets mockEnv)
+          mockPeerSelectionActions tracerMockEnv mockEnv
+                                   initialPeerTargets
+                                   (readTVar usbVar)
+                                   (readTVar lpVar)
+                                   (readTVar lsjVar)
+                                   (readTVar targetsVar)
+                                   policy
+        GenesisMode -> do
+          let tandemLsjAndTargets =
+                Script $ NonEmpty.zipWith (\(lsj, delay) (ConsensusModePeerTargets {
+                                                             praosTargets,
+                                                             genesisSyncTargets}, _) ->
+                                             let pickTargets =
+                                                   case lsj of
+                                                     TooOld -> genesisSyncTargets
+                                                     YoungEnough -> praosTargets
+                                             in ((lsj, pickTargets), delay))
+                                          ledgerStateJudgement'
+                                          targets'
+          tandemVar <- playTimedScript (contramap TraceEnvGenesisLsjAndTargets tracerMockEnv)
+                                       tandemLsjAndTargets
+          mockPeerSelectionActions tracerMockEnv mockEnv
+                                   initialPeerTargets
+                                   (readTVar usbVar)
+                                   (readTVar lpVar)
+                                   (fst <$> readTVar tandemVar)
+                                   (snd <$> readTVar tandemVar)
+                                   policy
+
+
     let interfaces = PeerSelectionInterfaces {
             countersVar,
             publicStateVar,
@@ -240,6 +294,7 @@ governorAction mockEnv = do
         (tracerDebugPeerSelection <> traceAssociationMode interfaces actions)
         tracerTracePeerSelectionCounters
         (mkStdGen 42)
+        consensusMode
         actions
         policy
         interfaces
@@ -276,6 +331,7 @@ data TraceMockEnv = TraceEnvAddPeers       !PeerGraph
                   | TraceEnvSetUseBootstrapPeers !UseBootstrapPeers
                   | TraceEnvSetLedgerStateJudgement !LedgerStateJudgement
                   | TraceEnvUseLedgerPeers !UseLedgerPeers
+                  | TraceEnvGenesisLsjAndTargets !(LedgerStateJudgement, PeerSelectionTargets)
   deriving Show
 
 mockPeerSelectionActions :: forall m.
@@ -283,21 +339,24 @@ mockPeerSelectionActions :: forall m.
                              Fail.MonadFail m, MonadThrow (STM m), MonadTraceSTM m)
                          => Tracer m TraceMockEnv
                          -> GovernorMockEnvironment
+                         -> ConsensusModePeerTargets
                          -> STM m UseBootstrapPeers
                          -> STM m UseLedgerPeers
                          -> STM m LedgerStateJudgement
+                         -> STM m PeerSelectionTargets
                          -> PeerSelectionPolicy PeerAddr m
                          -> m (PeerSelectionActions PeerAddr (PeerConn m) m)
 mockPeerSelectionActions tracer
                          env@GovernorMockEnvironment {
                            peerGraph,
                            localRootPeers,
-                           publicRootPeers,
-                           targets
+                           publicRootPeers
                          }
+                         initialPeerTargets
                          readUseBootstrapPeers
                          readUseLedgerPeers
                          getLedgerStateJudgement
+                         readTargets
                          policy = do
     scripts <- Map.fromList <$>
                  sequence
@@ -312,7 +371,7 @@ mockPeerSelectionActions tracer
                                  connectionScript
                                }) <- adjacency
                    ]
-    targetsVar <- playTimedScript (contramap TraceEnvSetTargets tracer) targets
+    churnMutex <- StrictTVar.newEmptyTMVarIO
     peerConns  <- atomically $ do
       v <- newTVar Map.empty
       traceTVar proxy
@@ -325,13 +384,14 @@ mockPeerSelectionActions tracer
     traceWith tracer (TraceEnvSetLocalRoots localRootPeers)   --TODO: make dynamic
     traceWith tracer (TraceEnvSetPublicRoots publicRootPeers) --TODO: make dynamic
     return $ mockPeerSelectionActions'
-               tracer env policy
-               scripts targetsVar
+               tracer env initialPeerTargets policy
+               scripts readTargets
                readUseBootstrapPeers
                readUseLedgerPeers
                getLedgerStateJudgement
                peerConns
                onlyLocalOutboundConnsVar
+               churnMutex
   where
     proxy :: Proxy m
     proxy = Proxy
@@ -350,14 +410,16 @@ mockPeerSelectionActions' :: forall m.
                               MonadThrow (STM m))
                           => Tracer m TraceMockEnv
                           -> GovernorMockEnvironment
+                          -> ConsensusModePeerTargets
                           -> PeerSelectionPolicy PeerAddr m
                           -> Map PeerAddr (TVar m PeerShareScript, TVar m PeerSharingScript, TVar m ConnectionScript)
-                          -> TVar m PeerSelectionTargets
+                          -> STM m PeerSelectionTargets
                           -> STM m UseBootstrapPeers
                           -> STM m UseLedgerPeers
                           -> STM m LedgerStateJudgement
                           -> TVar m (Map PeerAddr (TVar m PeerStatus))
                           -> TVar m OutboundConnectionsState
+                          -> StrictTVar.StrictTMVar m ()
                           -> PeerSelectionActions PeerAddr (PeerConn m) m
 mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
@@ -365,20 +427,22 @@ mockPeerSelectionActions' tracer
                             publicRootPeers,
                             peerSharingFlag
                           }
+                          peerTargets
                           _
                           scripts
-                          targetsVar
+                          readTargets
                           readUseBootstrapPeers
                           readUseLedgerPeers
                           readLedgerStateJudgement
                           connsVar
-                          outboundConnectionsStateVar =
+                          outboundConnectionsStateVar
+                          churnMutex =
     PeerSelectionActions {
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
       peerSharing              = peerSharingFlag,
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
       requestPublicRootPeers,
-      readPeerSelectionTargets = readTVar targetsVar,
+      readPeerSelectionTargets = readTargets,
       requestPeerShare,
       peerStateActions         = PeerStateActions {
           establishPeerConnection,
@@ -393,7 +457,9 @@ mockPeerSelectionActions' tracer
       updateOutboundConnectionsState = \a -> do
         a' <- readTVar outboundConnectionsStateVar
         when (a /= a') $
-          writeTVar outboundConnectionsStateVar a
+          writeTVar outboundConnectionsStateVar a,
+      churnMutex,
+      peerTargets
     }
   where
     -- TODO: make this dynamic
@@ -776,6 +842,16 @@ selectGovernorStateEvents trace = [ (t, e) | (t, GovernorDebug e) <- trace ]
 -- QuickCheck instances
 --
 
+instance Arbitrary GovernorPraosMockEnvironment where
+  arbitrary = do
+    mockEnv <- arbitrary
+    bootstrapScript <- arbitrary
+    return $ GovernorPraosMockEnvironment mockEnv {
+      consensusMode = PraosMode,
+      useBootstrapPeers = bootstrapScript }
+
+  shrink env = GovernorPraosMockEnvironment <$> shrink (getMockEnv env)
+
 instance Arbitrary GovernorMockEnvironment where
   arbitrary = do
       -- Dependency of the root set on the graph
@@ -783,9 +859,6 @@ instance Arbitrary GovernorMockEnvironment where
       let peersSet       = allPeers peerGraph
       (localRootPeers,
        publicRootPeers) <- arbitraryRootPeers peersSet
-
-      -- But the others are independent
-      targets                 <- arbitrary
 
       let arbitrarySubsetOfPeers = arbitrarySubset peersSet
       pickKnownPeersForPeerShare <- arbitraryPickScript arbitrarySubsetOfPeers
@@ -796,14 +869,70 @@ instance Arbitrary GovernorMockEnvironment where
       pickColdPeersToForget   <- arbitraryPickScript arbitrarySubsetOfPeers
       pickInboundPeers        <- arbitraryPickScript arbitrarySubsetOfPeers
       peerSharingFlag         <- arbitrary
-      useBootstrapPeers       <- arbitrary
+      consensusMode           <- arbitrary
+      useBootstrapPeers       <- case consensusMode of
+                                   GenesisMode -> pure $ singletonTimedScript DontUseBootstrapPeers
+                                   PraosMode   -> arbitrary
       useLedgerPeers          <- arbitrary
-      ledgerStateJudgementList <- fmap getArbitraryLedgerStateJudgement <$> arbitrary
-      ledgerStateJudgementDelays <- listOf1 (elements [NoDelay, ShortDelay])
-      let ledgerStateJudgementWithDelay =
-            zip ledgerStateJudgementList ledgerStateJudgementDelays
-            ++ [(YoungEnough, ShortDelay)]
-          ledgerStateJudgement = Script $ NonEmpty.fromList ledgerStateJudgementWithDelay
+      ledgerStateJudgement0   <- listOf arbitrary
+     
+      (ledgerStateJudgement, targets) <-
+        let wrap = Script . NonEmpty.fromList
+            -- we want to generate targets which respect the number of local roots
+            -- and locally configured public roots which we plucked from the peer
+            -- graph
+            (HotValency localHot) = LocalRootPeers.hotTarget localRootPeers
+            (WarmValency localWarm) = LocalRootPeers.warmTarget localRootPeers
+            publicConfiguredRootSize = Set.size . PublicRootPeers.toPublicConfigPeerSet $ publicRootPeers
+            knownOffset = localWarm + publicConfiguredRootSize
+            knownGen = (knownOffset +) <$> resize (1000 - min 1000 knownOffset) arbitrarySizedNatural
+            rootKnownGen knownMax = choose (0, min 100 (knownMax - localWarm))
+            estGen knownMax = choose (localWarm, min 1000 knownMax)
+            actGen estMax = choose (localHot, min 100 estMax)
+            
+        in forM (   ledgerStateJudgement0
+                 ++ [ArbitraryLedgerStateJudgement YoungEnough])
+             (\(ArbitraryLedgerStateJudgement lsj) -> do
+                  (praosKnown, genesisKnown) <- (,) <$> knownGen <*> knownGen
+                  (praosRootKnown, genesisRootKnown) <- (,) <$> rootKnownGen praosKnown <*> rootKnownGen genesisKnown
+                  (praosEst, genesisEst) <- (,) <$> estGen praosKnown <*> estGen genesisKnown
+                  (praosAct, genesisAct) <- (,) <$> actGen praosEst <*> actGen genesisEst
+                  (praosBigKnown, Positive genesisBigKnown)
+                    <- (,) <$> resize 1000 arbitrarySizedNatural
+                           <*> resize 1000 arbitrary `suchThat` ((>= 10) . getPositive)
+                  (praosBigEst, genesisBigEst) <- (,) <$> choose (0, min 1000 praosBigKnown)
+                                                      <*> choose (1, min 1000 genesisBigKnown)
+                  (praosBigAct, genesisBigAct) <- (,) <$> choose (0, min 100 praosBigEst)
+                                                      <*> choose (1, min 100 genesisBigEst)
+
+                  let targets0 =
+                        ConsensusModePeerTargets {
+                          praosTargets = PeerSelectionTargets {
+                              targetNumberOfRootPeers = praosRootKnown,
+                              targetNumberOfKnownPeers = praosKnown,
+                              targetNumberOfEstablishedPeers = praosEst,
+                              targetNumberOfActivePeers = praosAct,
+                              targetNumberOfKnownBigLedgerPeers = praosBigKnown,
+                              targetNumberOfEstablishedBigLedgerPeers = praosBigEst,
+                              targetNumberOfActiveBigLedgerPeers = praosBigAct },
+                          genesisSyncTargets = PeerSelectionTargets {
+                              targetNumberOfRootPeers = genesisRootKnown,
+                              targetNumberOfKnownPeers = genesisKnown,
+                              targetNumberOfEstablishedPeers = genesisEst,
+                              targetNumberOfActivePeers = genesisAct,
+                              targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
+                              targetNumberOfEstablishedBigLedgerPeers = genesisBigKnown,
+                              targetNumberOfActiveBigLedgerPeers = genesisBigAct } }
+                  let lsjWithDelay = (,) lsj <$> elements [ShortDelay, NoDelay]
+                      -- synchronize target basis with ledger state judgement
+                      -- so we can use tests which check if the right targets
+                      -- are selected
+                      targetsWithDelay = (,) targets0 <$> case consensusMode of
+                                                     PraosMode -> elements [ShortDelay, NoDelay]
+                                                     GenesisMode -> snd <$> lsjWithDelay
+                  (,) <$> lsjWithDelay <*> targetsWithDelay)
+           <&> bimap wrap wrap . unzip
+
       return GovernorMockEnvironment{..}
     where
       arbitraryRootPeers :: Set PeerAddr
@@ -880,6 +1009,7 @@ instance Arbitrary GovernorMockEnvironment where
            pickInboundPeers,
            peerSharingFlag,
            useBootstrapPeers,
+           consensusMode,
            useLedgerPeers,
            ledgerStateJudgement
          } =
@@ -900,7 +1030,7 @@ instance Arbitrary GovernorMockEnvironment where
       | publicRootPeers' <- shrinkPublicRootPeers publicRootPeers
       ]
    ++ [ env { targets = targets' }
-      | targets' <- shrink targets
+      | targets' <- shrinkScriptWith shrinkTargets targets
       ]
    ++ [ env { pickKnownPeersForPeerShare = pickKnownPeersForPeerShare' }
       | pickKnownPeersForPeerShare' <- shrink pickKnownPeersForPeerShare
@@ -935,7 +1065,40 @@ instance Arbitrary GovernorMockEnvironment where
    ++ [ env { peerSharingFlag = peerSharingFlag' }
       | peerSharingFlag' <- shrink peerSharingFlag
       ]
+   ++ [ env { consensusMode = consensusMode' }
+      | consensusMode' <- shrink consensusMode
+      ]
     where
+      -- A sensible shrink will not decrease target of known peers below
+      -- the minimum number of local root peers that we need from configuration (hot+warm)
+      -- and the number of publicly configured root peers. A similar treatment with
+      -- appropriate conditions is necessary for established and active peers.
+      shrinkTargets targetsWithDelay =
+        let publicConfiguredRootSize = Set.size . PublicRootPeers.toPublicConfigPeerSet $ publicRootPeers
+            (HotValency hotLocalRootsSize) = LocalRootPeers.hotTarget localRootPeers
+            (WarmValency warmLocalRootsSize) = LocalRootPeers.warmTarget localRootPeers
+            shrunkScript = shrink targetsWithDelay
+            checkTargets t = 
+                 targetNumberOfKnownPeers t >= publicConfiguredRootSize + warmLocalRootsSize
+              && targetNumberOfEstablishedPeers t >= warmLocalRootsSize
+              && targetNumberOfEstablishedPeers t <= targetNumberOfKnownPeers t
+              && targetNumberOfActivePeers t >= hotLocalRootsSize
+              && targetNumberOfActivePeers t <= targetNumberOfEstablishedPeers t
+              && targetNumberOfRootPeers t <=   targetNumberOfKnownPeers t
+                                              - warmLocalRootsSize            
+        in
+          [shrunk
+          | shrunk@(shrunkTarget, _) <- shrunkScript,
+            let ConsensusModePeerTargets {
+                  praosTargets,
+                  genesisSyncTargets = genesisSyncTargets@PeerSelectionTargets {
+                      targetNumberOfKnownBigLedgerPeers = genesisBigKnown,
+                      targetNumberOfEstablishedBigLedgerPeers = genesisBigEst,
+                      targetNumberOfActiveBigLedgerPeers = genesisBigAct } } = shrunkTarget,
+            all checkTargets [praosTargets, genesisSyncTargets],
+            genesisBigKnown >= 10 && genesisBigEst <= genesisBigKnown && genesisBigAct <= genesisBigEst,
+            genesisBigEst * genesisBigAct /= 0]
+        
       shrinkLocalRootPeers a =
         [ LocalRootPeers.fromGroups g
           | g <- shrink (LocalRootPeers.toGroups a)

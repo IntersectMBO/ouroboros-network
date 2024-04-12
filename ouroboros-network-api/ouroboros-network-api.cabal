@@ -29,6 +29,7 @@ library
                        Ouroboros.Network.BlockFetch.ConsensusInterface
 
                        Ouroboros.Network.CodecCBORTerm
+                       Ouroboros.Network.ConsensusMode
                        Ouroboros.Network.ControlMessage
                        Ouroboros.Network.Handshake
                        Ouroboros.Network.Handshake.Acceptable
