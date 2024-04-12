@@ -1257,6 +1257,7 @@ diffusionSimulation
             . tracerWithTime
             $ nodeTracer
         , Diff.P2P.dtTracePeerSelectionCounters        = nullTracer
+        , Diff.P2P.dtTraceChurnCounters                = nullTracer
         , Diff.P2P.dtPeerSelectionActionsTracer        = contramap
                                                           DiffusionPeerSelectionActionsTrace
                                                        . tracerWithName ntnAddr

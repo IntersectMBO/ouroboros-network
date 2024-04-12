@@ -22,6 +22,7 @@ module Ouroboros.Network.PeerSelection.Governor
   , peerSelectionGovernor
     -- * Peer churn governor
   , peerChurnGovernor
+  , ChurnCounters (..)
     -- * Internals exported for testing
   , assertPeerSelectionState
   , sanePeerSelectionTargets
@@ -53,7 +54,8 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
-import Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
+import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
+           peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
 import Ouroboros.Network.PeerSelection.Governor.EstablishedPeers qualified as EstablishedPeers
