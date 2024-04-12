@@ -3471,14 +3471,14 @@ prop_churn_notimeouts diffScript =
      <$> events
   where
     noChurnTimeout :: TracePeerSelection NtNAddr -> Bool
-    noChurnTimeout (TraceChurnTimeout _ DecreasedActivePeers)               = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedActiveBigLedgerPeers)      = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedPeers)          = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedBigLedgerPeers) = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownPeers)                = False
-    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownBigLedgerPeers)       = False
-    noChurnTimeout  TraceChurnTimeout {}                                    = True
-    noChurnTimeout  _                                                       = True
+    noChurnTimeout (TraceChurnTimeout _ DecreasedActivePeers _)               = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedActiveBigLedgerPeers _)      = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedPeers _)          = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedBigLedgerPeers _) = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownPeers _)                = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownBigLedgerPeers _)       = False
+    noChurnTimeout  TraceChurnTimeout {}                                      = True
+    noChurnTimeout  _                                                         = True
 
 
 -- | Verify that churn trace consists of repeated list of actions:
@@ -3526,9 +3526,9 @@ prop_churn_steps bearerInfo diffScript =
            in  counterexample (intercalate "\n" (show <$> evsList))
              . churnTracePredicate
              . mapMaybe (\case
-                          (_, TraceChurnAction _ a)  -> Just a
-                          (_, TraceChurnTimeout _ a) -> Just a
-                          _                          -> Nothing)
+                          (_, TraceChurnAction _ a _)  -> Just a
+                          (_, TraceChurnTimeout _ a _) -> Just a
+                          _                            -> Nothing)
              $ evsList
          )
       <$> events

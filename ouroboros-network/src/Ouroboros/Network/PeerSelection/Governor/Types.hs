@@ -1344,8 +1344,18 @@ data TracePeerSelection peeraddr =
 
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
-     | TraceChurnAction  DiffTime ChurnAction
-     | TraceChurnTimeout DiffTime ChurnAction
+     | TraceChurnAction
+         DiffTime    -- ^ duration of the churn action
+         ChurnAction -- ^ churn action type
+         Int         -- ^ how many peers were removed or added within the
+                     --   duration of the action.
+     | TraceChurnTimeout
+         DiffTime    -- ^ duration of the churn action
+         ChurnAction -- ^ churn action type
+         Int         -- ^ how many peers were removed or added within the
+                     --   duration of the action; note that if the action
+                     --   timeouts the governor will still look to remove or
+                     --   add peers as required.
 
      | TraceLedgerStateJudgementChanged LedgerStateJudgement
      | TraceOnlyBootstrapPeers
