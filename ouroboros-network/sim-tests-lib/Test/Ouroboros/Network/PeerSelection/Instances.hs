@@ -37,6 +37,7 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck
+import Ouroboros.Network.ConsensusMode
 
 
 --
@@ -69,6 +70,11 @@ instance Arbitrary PeerSharing where
   shrink PeerSharingDisabled = []
   shrink PeerSharingEnabled  = [PeerSharingDisabled]
 
+instance Arbitrary ConsensusMode where
+  arbitrary = elements [PraosMode, GenesisMode]
+  shrink GenesisMode = [PraosMode]
+  shrink PraosMode   = []
+  
 instance Arbitrary AfterSlot where
   arbitrary = oneof [ pure Always
                     , After <$> arbitrary
@@ -80,7 +86,9 @@ instance Arbitrary UseBootstrapPeers where
                         ]
 
   shrink DontUseBootstrapPeers = []
-  shrink (UseBootstrapPeers _) = [DontUseBootstrapPeers]
+  shrink (UseBootstrapPeers bp) | [] <- bp = [DontUseBootstrapPeers]
+                                | [_] <- bp = [DontUseBootstrapPeers]
+  shrink (UseBootstrapPeers (hd : _)) = [UseBootstrapPeers [hd]]
 
 instance Arbitrary UseLedgerPeers where
     arbitrary = frequency
@@ -120,6 +128,20 @@ instance Arbitrary PeerSelectionTargets where
     | (r',k',e',a',kb',eb',ab') <- shrink (r,k,e,a,kb,eb,ab)
     , let targets' = PeerSelectionTargets r' k' e' a' kb' eb' ab'
     , sanePeerSelectionTargets targets' ]
+
+-- GovernorMockEnvironment is responsible for generating valid targets
+-- which account for local roots from random peer graph, but a shrink
+-- is useful here for recursively shrinking TimedScript.
+--
+instance Arbitrary ConsensusModePeerTargets where
+  arbitrary = error "not implemented"
+
+  shrink ConsensusModePeerTargets { praosTargets, genesisSyncTargets } =
+    let genesisSyncTargets' = shrink genesisSyncTargets
+        praosTargets'       = shrink praosTargets
+    in [ConsensusModePeerTargets { praosTargets = praos, genesisSyncTargets = genesis }
+       | praos <- praosTargets',
+         genesis <- genesisSyncTargets']
 
 instance Arbitrary DomainAccessPoint where
   arbitrary =
