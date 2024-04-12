@@ -1,22 +1,30 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
+-- | One stop shop for configuring diffusion layer for upstream clients
+-- nb. the module Ouroboros.Network.Diffusion.Governor should be imported qualified as PeerSelection by convention to aid comprehension
+
 module Ouroboros.Network.Diffusion.Configuration
   ( DefaultNumBootstrapPeers (..)
   , defaultNumBootstrapPeers
-  , defaultPeerSelectionTargets
   , defaultAcceptedConnectionsLimit
   , defaultDiffusionMode
   , defaultPeerSharing
   , defaultBlockFetchConfiguration
   , defaultChainSyncTimeout
+  , defaultPraosTargets
+  , defaultGenesisSyncTargets
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , BlockFetchConfiguration (..)
   , ChainSyncTimeout (..)
+  , ConsensusModePeerTargets (..)
+  , DiffusionMode (..)
   , MiniProtocolParameters (..)
   , P2P (..)
   , PeerSelectionTargets (..)
   , PeerSharing (..)
+  , ConsensusMode (..)
+  , defaultConsensusMode
   , defaultMiniProtocolParameters
   , deactivateTimeout
   , closeConnectionTimeout
@@ -34,14 +42,15 @@ import System.Random (randomRIO)
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..))
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion (P2P (..))
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, maxChainSyncTimeout, minChainSyncTimeout,
            peerMetricsConfiguration)
-import Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
-           defaultMiniProtocolParameters)
+import Ouroboros.Network.NodeToNode (DiffusionMode (..),
+           MiniProtocolParameters (..), defaultMiniProtocolParameters)
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionTargets (..))
+           (ConsensusModePeerTargets (..), PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
@@ -50,7 +59,8 @@ import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Protocol.Limits (shortWait)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 
-
+-- | Default number of bootstrap peers
+--
 newtype DefaultNumBootstrapPeers = DefaultNumBootstrapPeers { getDefaultNumBootstrapPeers :: Int }
   deriving (Eq, Show)
 
@@ -58,9 +68,13 @@ defaultNumBootstrapPeers :: DefaultNumBootstrapPeers
 defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 
 -- |Outbound governor targets
+-- Targets may vary depending on whether a node is operating in
+-- Genesis mode.
+
+-- | Default peer targets in Praos mode
 --
-defaultPeerSelectionTargets :: PeerSelectionTargets
-defaultPeerSelectionTargets =
+defaultPraosTargets :: PeerSelectionTargets
+defaultPraosTargets =
   PeerSelectionTargets {
     targetNumberOfRootPeers                 = 60,
     targetNumberOfKnownPeers                = 85,
@@ -70,7 +84,18 @@ defaultPeerSelectionTargets =
     targetNumberOfEstablishedBigLedgerPeers = 10,
     targetNumberOfActiveBigLedgerPeers      = 5 }
 
--- |Inbound governor targets
+-- | These targets are established when Genesis mode is enabled
+-- in node configuration and when the node is syncing up
+--
+defaultGenesisSyncTargets :: PeerSelectionTargets
+defaultGenesisSyncTargets =
+  defaultPraosTargets {
+    targetNumberOfActivePeers               = 0,
+    targetNumberOfKnownBigLedgerPeers       = 100,
+    targetNumberOfEstablishedBigLedgerPeers = 50,
+    targetNumberOfActiveBigLedgerPeers      = 30 }
+
+-- | Inbound governor targets
 --
 defaultAcceptedConnectionsLimit :: AcceptedConnectionsLimit
 defaultAcceptedConnectionsLimit =
@@ -79,15 +104,18 @@ defaultAcceptedConnectionsLimit =
     acceptedConnectionsSoftLimit = 384,
     acceptedConnectionsDelay     = 5 }
 
--- |Principal mode of network operation
+-- | Principal mode of network operation
+--
 defaultDiffusionMode :: P2P
 defaultDiffusionMode = NonP2P
 
--- |Node's peer sharing participation flag
+-- | Node's peer sharing participation flag
+--
 defaultPeerSharing :: PeerSharing
 defaultPeerSharing = PeerSharingDisabled
 
 -- | Configuration for FetchDecisionPolicy.
+--
 defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
 defaultBlockFetchConfiguration bfcSalt =
   BlockFetchConfiguration {

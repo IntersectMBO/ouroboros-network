@@ -5,6 +5,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions
@@ -56,6 +57,7 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psLocalRootPeersTracer      :: Tracer m (TraceLocalRootPeers peeraddr exception),
   psPublicRootPeersTracer     :: Tracer m TracePublicRootPeers,
   psReadTargets               :: STM m PeerSelectionTargets,
+  peerTargets                 :: ConsensusModePeerTargets,
   -- ^ peer selection governor know, established and active targets
   psJudgement                 :: STM m LedgerStateJudgement,
   -- ^ Is consensus close to current slot?
@@ -110,6 +112,7 @@ withPeerSelectionActions
   PeerSelectionActionsArgs {
     psLocalRootPeersTracer = localTracer,
     psPublicRootPeersTracer = publicTracer,
+    peerTargets,
     psReadTargets = selectionTargets,
     psJudgement = judgement,
     psReadLocalRootPeers = localRootPeers,
@@ -135,6 +138,7 @@ withPeerSelectionActions
                                        requestPublicRootPeers = \lpk n -> requestPublicRootPeers lpk n getLedgerPeers,
                                        requestPeerShare,
                                        peerStateActions,
+                                       peerTargets,
                                        readUseBootstrapPeers = useBootstrapped,
                                        readInboundPeers,
                                        readLedgerStateJudgement = judgement,

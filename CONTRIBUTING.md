@@ -213,6 +213,9 @@ will make it easier for others to rebase on top of your committed changes).  If
 you need to rebase your branch we prefer to rebase over merge (since then the
 actually merged changes are more explicit).
 
+We also keep the convention that a source branch's name for a pull request
+includes github user name of the contributor.
+
 Since the code base of `ouroboros-network` is quite large, we don't require
 that every commit is buildable across all included packages.  You can update
 upstream dependencies later in the commit history; although note that if you do
