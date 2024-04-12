@@ -6,7 +6,10 @@
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
-module Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor) where
+module Ouroboros.Network.PeerSelection.Churn
+  ( peerChurnGovernor
+  , ChurnCounters (..)
+  ) where
 
 import Data.Void (Void)
 
@@ -31,6 +34,8 @@ import Ouroboros.Network.PeerSelection.PeerMetric
 type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
 type CheckPeerSelectionCounters = PeerSelectionCounters -> PeerSelectionTargets -> Bool
 
+data ChurnCounters = ChurnCounter ChurnAction Int
+
 -- | Churn governor.
 --
 -- At every churn interval decrease active peers for a short while (1s), so that
@@ -46,6 +51,7 @@ peerChurnGovernor :: forall m peeraddr.
                      , MonadCatch m
                      )
                   => Tracer m (TracePeerSelection peeraddr)
+                  -> Tracer m ChurnCounters
                   -> DiffTime
                   -- ^ the base for churn interval in the deadline mode.
                   -> DiffTime
@@ -63,7 +69,7 @@ peerChurnGovernor :: forall m peeraddr.
                   -> STM m PeerSelectionCounters
                   -> STM m UseBootstrapPeers
                   -> m Void
-peerChurnGovernor tracer
+peerChurnGovernor tracer churnTracer
                   deadlineChurnInterval bulkChurnInterval requestPeersTimeout
                   _metrics churnModeVar inRng getFetchMode base
                   peerSelectionVar readCounters
@@ -100,6 +106,8 @@ peerChurnGovernor tracer
     updateTargets
       :: ChurnAction
       -- ^ churn actions for tracing
+      -> (PeerSelectionCounters -> Int)
+      -- ^ counter getter
       -> DiffTime
       -- ^ timeout
       -> ModifyPeerSelectionTargets
@@ -107,29 +115,37 @@ peerChurnGovernor tracer
       -> CheckPeerSelectionCounters
       -- ^ check counters
       -> m ()
-    updateTargets churnAction timeoutDelay modifyTargets checkCounters = do
+    updateTargets churnAction getCounter timeoutDelay modifyTargets checkCounters = do
       -- update targets, and return the new targets
       startTime <- getMonotonicTime
-      targets <- atomically $ stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets)
+      (c, targets) <- atomically $
+        (,) <$> (getCounter <$> readCounters)
+            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets)
 
       -- create timeout and block on counters
       bracketOnError (registerDelayCancellable timeoutDelay)
                      (\(_readTimeout, cancelTimeout) -> cancelTimeout)
                      (\( readTimeout, cancelTimeout) -> do
                          -- block until counters reached the targets, or the timeout fires
-                         a <- atomically $ runFirstToFinish $
-                                FirstToFinish ((readCounters>>= check . flip checkCounters targets) $> True)
-                                <>
-                                FirstToFinish (readTimeout >>= \case TimeoutPending -> retry
-                                                                     _              -> pure False)
-                         if a
-                           then do
+                         a <- atomically $ do
+                                counters <- readCounters
+                                runFirstToFinish $
+                                  FirstToFinish (check (checkCounters counters targets) $> (Right $ getCounter counters ))
+                                  <>
+                                  FirstToFinish (readTimeout >>= \case TimeoutPending -> retry
+                                                                       _              -> pure (Left $ getCounter counters))
+                         case a of
+                           Right c' -> do
+                             let r = c' - c
+                             endTime <- getMonotonicTime
+                             traceWith tracer (TraceChurnAction (endTime `diffTime` startTime) churnAction r)
+                             traceWith churnTracer (ChurnCounter churnAction r)
+                           Left c' -> do
+                             endTime <- getMonotonicTime
                              cancelTimeout
-                             endTime <- getMonotonicTime
-                             traceWith tracer (TraceChurnAction (endTime `diffTime` startTime) churnAction)
-                           else do
-                             endTime <- getMonotonicTime
-                             traceWith tracer (TraceChurnTimeout (endTime `diffTime` startTime) churnAction)
+                             let r = c' - c
+                             traceWith tracer (TraceChurnTimeout (endTime `diffTime` startTime) churnAction r)
+                             traceWith churnTracer (ChurnCounter churnAction r)
                      )
 
     --
@@ -402,72 +418,84 @@ peerChurnGovernor tracer
 
       -- Purge the worst active peers.
       updateTargets DecreasedActivePeers
+                    numberOfActivePeers
                     deactivateTimeout -- chainsync might timeout after 5mins
                     (decreaseActivePeers churnMode)
                     checkActivePeersDecreased
 
       -- Pick new active peers.
       updateTargets IncreasedActivePeers
+                    numberOfActivePeers
                     shortTimeout
                     (increaseActivePeers churnMode)
                     checkActivePeersIncreased
 
       -- Purge the worst active big ledger peers.
       updateTargets DecreasedActiveBigLedgerPeers
+                    numberOfActiveBigLedgerPeers
                     deactivateTimeout -- chainsync might timeout after 5mins
                     (decreaseActiveBigLedgerPeers churnMode)
                     (checkActiveBigLedgerPeersDecreased)
 
       -- Pick new active big ledger peers.
       updateTargets IncreasedActiveBigLedgerPeers
+                    numberOfActiveBigLedgerPeers
                     shortTimeout
                     (increaseActiveBigLedgerPeers churnMode)
                     checkActiveBigLedgerPeersIncreased
 
       -- Forget the worst performing established peers.
       updateTargets DecreasedEstablishedPeers
+                    numberOfEstablishedPeers
                     (1 + closeConnectionTimeout)
                     (decreaseEstablishedPeers churnMode ubp)
                     (checkEstablishedPeersDecreased)
 
       -- Forget the worst performing established big ledger peers.
       updateTargets DecreasedEstablishedBigLedgerPeers
+                    numberOfEstablishedBigLedgerPeers
                     (1 + closeConnectionTimeout)
                     decreaseEstablishedBigLedgerPeers
                     checkEstablishedBigLedgerPeersDecreased
 
       -- Forget the worst performing known peers (root peers, ledger peers)
       updateTargets DecreasedKnownPeers
+                    numberOfKnownPeers
                     shortTimeout
                     decreaseKnownPeers
                     checkKnownPeersDecreased
 
       -- Pick new known peers
       updateTargets IncreasedKnownPeers
+                    numberOfKnownPeers
                     (2 * requestPeersTimeout + shortTimeout)
                     increaseKnownPeers
                     checkKnownPeersIncreased
 
       -- Forget the worst performing known big ledger peers.
       updateTargets DecreasedKnownBigLedgerPeers
+                    numberOfKnownBigLedgerPeers
                     shortTimeout
                     decreaseKnownBigLedgerPeers
                     checkKnownBigLedgerPeersDecreased
 
       -- Pick new known big ledger peers
       updateTargets IncreasedKnownBigLedgerPeers
+                    numberOfKnownBigLedgerPeers
                     (2 * requestPeersTimeout + shortTimeout)
                     increaseKnownBigLedgerPeers
                     checkKnownBigLedgerPeersIncreased
 
       -- Pick new non-active peers
       updateTargets IncreasedEstablishedPeers
+                    numberOfEstablishedPeers
                     churnEstablishConnectionTimeout
                     (increaseEstablishedPeers churnMode ubp)
                     checkEstablishedPeersIncreased
 
       -- Pick new non-active big ledger peers
       updateTargets IncreasedEstablishedBigLedgerPeers
+                    numberOfEstablishedBigLedgerPeers
                     churnEstablishConnectionTimeout
                     increaseEstablishedBigLedgerPeers
                     checkEstablishedBigLedgerPeersIncreased

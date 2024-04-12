@@ -171,6 +171,9 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
     , dtTracePeerSelectionCounters
         :: Tracer m PeerSelectionCounters
 
+    , dtTraceChurnCounters
+        :: Tracer m Governor.ChurnCounters
+
     , dtPeerSelectionActionsTracer
         :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)
 
@@ -224,6 +227,7 @@ nullTracers =
       , dtTracePublicRootPeersTracer                 = nullTracer
       , dtTraceLedgerPeersTracer                     = nullTracer
       , dtTracePeerSelectionTracer                   = nullTracer
+      , dtTraceChurnCounters                         = nullTracer
       , dtDebugPeerSelectionInitiatorTracer          = nullTracer
       , dtDebugPeerSelectionInitiatorResponderTracer = nullTracer
       , dtTracePeerSelectionCounters                 = nullTracer
@@ -599,6 +603,7 @@ runM Interfaces
        }
      TracersExtra
        { dtTracePeerSelectionTracer
+       , dtTraceChurnCounters
        , dtDebugPeerSelectionInitiatorTracer
        , dtDebugPeerSelectionInitiatorResponderTracer
        , dtTracePeerSelectionCounters
@@ -1012,6 +1017,7 @@ runM Interfaces
       --
       let peerChurnGovernor' = Governor.peerChurnGovernor
                                  dtTracePeerSelectionTracer
+                                 dtTraceChurnCounters
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
                                  (policyPeerShareOverallTimeout peerSelectionPolicy)
