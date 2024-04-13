@@ -24,9 +24,10 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerMetric
 
 
--- | Timeout for 'spsDeactivateTimeout'.
+-- | Timeout for 'spsDeactivateTimeout' and churn hot to warm demotions.
 --
--- The maximal timeout on 'ChainSync' (in 'StMustReply' state) is @269s@.
+-- The maximal timeout on 'ChainSync' (in 'StMustReply' state) is @269s@,
+-- see `maxChainSyncTimeout` below.
 --
 deactivateTimeout :: DiffTime
 deactivateTimeout = 300
@@ -40,6 +41,18 @@ deactivateTimeout = 300
 --
 closeConnectionTimeout :: DiffTime
 closeConnectionTimeout = 120
+
+
+-- | Chain sync `mustReplayTimeout` lower bound.
+--
+minChainSyncTimeout :: DiffTime
+minChainSyncTimeout = 135
+
+
+-- | Chain sync `mustReplayTimeout` upper bound.
+--
+maxChainSyncTimeout :: DiffTime
+maxChainSyncTimeout = 269
 
 
 -- | Number of events tracked by 'PeerMetrics'.  This corresponds to one hour of
