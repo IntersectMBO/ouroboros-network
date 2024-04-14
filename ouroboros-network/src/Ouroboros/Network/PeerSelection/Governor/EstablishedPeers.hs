@@ -533,7 +533,6 @@ aboveTargetOther actions
         localWarmPeers      = LocalRootPeers.keysSet localRootPeers
            `Set.intersection` EstablishedPeers.toSet establishedPeers
                        Set.\\ activePeers
-                       Set.\\ bigLedgerPeersSet
         -- One constraint on how many to demote is the difference in the
         -- number we have now vs the target. The other constraint is that
         -- we pick established peers that are not also active. These
