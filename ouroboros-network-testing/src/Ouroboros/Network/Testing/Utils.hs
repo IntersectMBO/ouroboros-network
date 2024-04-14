@@ -10,6 +10,9 @@ module Ouroboros.Network.Testing.Utils
     Delay (..)
   , genDelayWithPrecision
   , SmallDelay (..)
+  -- * Set properties
+  , isSubsetProperty
+  , disjointSetsProperty
     -- * QuickCheck Utils
   , arbitrarySubset
   , shrinkVector
@@ -138,6 +141,24 @@ renderRanges r n = show lower ++ " -- " ++ show upper
   where
     lower = n - n `mod` r
     upper = lower + (r-1)
+
+-- 
+-- Set properties
+--
+
+isSubsetProperty :: (Ord a, Show a) => String -> Set a -> Set a -> Property
+isSubsetProperty name a b =
+    let d = a Set.\\ b
+    in counterexample
+        (name ++ "violates subset property: " ++ show d)
+        (Set.null d)
+
+disjointSetsProperty :: (Ord a, Show a) => String -> Set a -> Set a -> Property
+disjointSetsProperty name a b =
+    let d = a `Set.intersection` b
+    in counterexample
+        (name ++ "vaiolates disjoint set property: " ++ show d)
+        (Set.null d)
 
 --
 -- Tracing tools
