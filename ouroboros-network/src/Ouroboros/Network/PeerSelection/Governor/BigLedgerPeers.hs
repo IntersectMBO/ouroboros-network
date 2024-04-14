@@ -24,7 +24,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
@@ -183,7 +182,6 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
             st@PeerSelectionState {
                  publicRootPeers,
                  knownPeers,
-                 establishedPeers,
                  inProgressPromoteCold,
                  targets = PeerSelectionTargets {
                              targetNumberOfKnownBigLedgerPeers
@@ -228,18 +226,9 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
 
-    PeerSelectionCounters {
-        numberOfKnownBigLedgerPeers = numKnownBigLedgerPeers
+    PeerSelectionView {
+        viewKnownBigLedgerPeers       = (_, numKnownBigLedgerPeers),
+        viewEstablishedBigLedgerPeers = (establishedBigLedgerPeers, numEstablishedBigLedgerPeers)
       }
       =
-      peerSelectionStateToCounters st
-
-    establishedBigLedgerPeers :: Set peeraddr
-    establishedBigLedgerPeers = EstablishedPeers.toSet establishedPeers
-                                `Set.intersection`
-                                bigLedgerPeersSet
-
-    -- TODO: we should compute this with `PeerSelectionCounters`, but we also
-    -- need to return the `establishedBigLedgerPeers` set.
-    numEstablishedBigLedgerPeers :: Int
-    numEstablishedBigLedgerPeers = Set.size establishedBigLedgerPeers
+      peerSelectionStateToView st

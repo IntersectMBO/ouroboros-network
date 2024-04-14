@@ -245,7 +245,6 @@ belowTargetOther actions
                    policyPickWarmPeersToPromote
                  }
                  st@PeerSelectionState {
-                   publicRootPeers,
                    localRootPeers,
                    establishedPeers,
                    activePeers,
@@ -302,13 +301,13 @@ belowTargetOther actions
   | otherwise
   = GuardedSkip Nothing
   where
-    PeerSelectionCounters {
-        numberOfActivePeers         = numActivePeers,
-        numberOfWarmPeersPromotions = numPromoteInProgress
+    PeerSelectionView {
+        viewActivePeers         = (_, numActivePeers),
+        viewWarmPeersPromotions = (_, numPromoteInProgress),
+        viewKnownBigLedgerPeers = (bigLedgerPeersSet, _)
       }
       =
-      peerSelectionStateToCounters st
-    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+      peerSelectionStateToView st
 
 
 jobPromoteWarmPeer :: forall peeraddr peerconn m.

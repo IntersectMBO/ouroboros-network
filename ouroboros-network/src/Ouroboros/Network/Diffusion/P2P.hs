@@ -102,7 +102,7 @@ import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-           PeerSelectionActions, PeerSelectionCounters (..),
+           PeerSelectionActions, PeerSelectionCounters,
            PeerSelectionPolicy (..), PeerSelectionState,
            TracePeerSelection (..), emptyPeerSelectionCounters,
            emptyPeerSelectionState)

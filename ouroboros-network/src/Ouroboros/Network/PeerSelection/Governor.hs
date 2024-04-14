@@ -30,12 +30,15 @@ module Ouroboros.Network.PeerSelection.Governor
   , PeerSelectionState (..)
   , PublicPeerSelectionState (..)
   , makePublicPeerSelectionStateVar
-  , PeerSelectionCounters (..)
+  , PeerSelectionView (..)
+  , PeerSelectionCounters
+  , PeerSelectionSetsWithSizes
   , peerSelectionStateToCounters
   , emptyPeerSelectionCounters
   , nullPeerSelectionTargets
   , emptyPeerSelectionState
   , ChurnMode (..)
+  , peerSelectionStateToView
   ) where
 
 import Data.Foldable (traverse_)
