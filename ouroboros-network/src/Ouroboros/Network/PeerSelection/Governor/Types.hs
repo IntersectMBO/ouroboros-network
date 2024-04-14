@@ -59,6 +59,7 @@ import Data.OrdPSQ qualified as PSQ
 import Data.Semigroup (Min (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
+import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool (Job)
@@ -1054,7 +1055,7 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 -- | Check pre-conditions and post-conditions on the pick policies,
 -- and supply additional peer attributes from the current state.
 --
-pickPeers' :: (Ord peeraddr, Functor m)
+pickPeers' :: (Ord peeraddr, Functor m, HasCallStack)
            => (Int -> Set peeraddr -> PeerSelectionState peeraddr peerconn -> Bool)
            -- ^ precondition
            -> PeerSelectionState peeraddr peerconn
@@ -1098,7 +1099,7 @@ pickPeers' precondition st@PeerSelectionState{localRootPeers, publicRootPeers, k
 
 -- | Pick some known peers.
 --
-pickPeers :: (Ord peeraddr, Functor m)
+pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
           => PeerSelectionState peeraddr peerconn
           -> PickPolicy peeraddr m
           -> Set peeraddr -> Int -> m (Set peeraddr)

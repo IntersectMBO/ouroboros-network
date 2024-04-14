@@ -10,6 +10,7 @@ module Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool (Job (..))
@@ -172,7 +173,7 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
 
 
 aboveTarget :: forall m peeraddr peerconn.
-               (Alternative (STM m), MonadSTM m, Ord peeraddr)
+               (Alternative (STM m), MonadSTM m, Ord peeraddr, HasCallStack)
             => MkGuardedDecision peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
             st@PeerSelectionState {
