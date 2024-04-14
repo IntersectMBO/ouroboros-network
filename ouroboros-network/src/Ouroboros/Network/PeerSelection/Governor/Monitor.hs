@@ -39,7 +39,7 @@ import Ouroboros.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
 import Ouroboros.Network.PeerSelection.Governor.Types hiding
-           (PeerSelectionCounters (..))
+           (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerStateJudgement (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))

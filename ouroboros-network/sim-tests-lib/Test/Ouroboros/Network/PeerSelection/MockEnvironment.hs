@@ -19,6 +19,7 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , TraceMockEnv (..)
   , TestTraceEvent (..)
   , selectGovernorEvents
+  , selectGovernorStateEvents
   , selectPeerSelectionTraceEvents
   , selectPeerSelectionTraceEventsUntil
   , peerShareReachablePeers
@@ -718,6 +719,11 @@ selectPeerSelectionTraceEventsUntil tmax = go
 selectGovernorEvents :: [(Time, TestTraceEvent)]
                      -> [(Time, TracePeerSelection PeerAddr)]
 selectGovernorEvents trace = [ (t, e) | (t, GovernorEvent e) <- trace ]
+
+selectGovernorStateEvents :: [(Time, TestTraceEvent)]
+                          -> [(Time, DebugPeerSelection PeerAddr)]
+selectGovernorStateEvents trace = [ (t, e) | (t, GovernorDebug e) <- trace ]
+
 
 
 --

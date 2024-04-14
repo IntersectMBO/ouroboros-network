@@ -79,7 +79,6 @@ belowTargetLocal actions
                  }
                  st@PeerSelectionState {
                    localRootPeers,
-                   publicRootPeers,
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
@@ -155,15 +154,13 @@ belowTargetLocal actions
       , Set.size membersEstablished < getWarmValency warmValency
       ]
 
-    localRootPeersSet          = LocalRootPeers.keysSet localRootPeers
-    bigLedgerPeersSet          = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    localEstablishedPeers      = EstablishedPeers.toSet establishedPeers
-                                  `Set.intersection` localRootPeersSet
-    localAvailableToConnect    = KnownPeers.availableToConnect knownPeers
-                                  `Set.intersection` localRootPeersSet
-    localConnectInProgress     = inProgressPromoteCold
-                                  `Set.intersection` localRootPeersSet
-    numLocalConnectInProgress  = Set.size localConnectInProgress
+    PeerSelectionView {
+        viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
+        viewKnownLocalRootPeers              = (localRootPeersSet, _),
+        viewEstablishedLocalRootPeers        = (localEstablishedPeers, _),
+        viewAvailableToConnectLocalRootPeers = (localAvailableToConnect, _),
+        viewColdLocalRootPeersPromotions     = (localConnectInProgress, numLocalConnectInProgress)
+      } = peerSelectionStateToView st
 
 
 belowTargetOther :: forall peeraddr peerconn m.
@@ -176,7 +173,6 @@ belowTargetOther actions
                  }
                  st@PeerSelectionState {
                    knownPeers,
-                   publicRootPeers,
                    establishedPeers,
                    inProgressPromoteCold,
                    targets = PeerSelectionTargets {
@@ -233,17 +229,15 @@ belowTargetOther actions
   | otherwise
   = GuardedSkip Nothing
   where
-    PeerSelectionCounters {
-        numberOfEstablishedPeers    = numEstablishedPeers,
-        numberOfColdPeersPromotions = numConnectInProgress
+    PeerSelectionView {
+        viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
+
+        viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect),
+        viewEstablishedPeers        = (_, numEstablishedPeers),
+        viewColdPeersPromotions     = (_, numConnectInProgress)
       }
       =
-      peerSelectionStateToCounters st
-
-    bigLedgerPeersSet     = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    availableToConnect    = KnownPeers.availableToConnect knownPeers
-                                Set.\\ bigLedgerPeersSet
-    numAvailableToConnect = Set.size availableToConnect
+      peerSelectionStateToView st
 
 
 -- |
@@ -261,7 +255,6 @@ belowTargetBigLedgerPeers actions
                           }
                           st@PeerSelectionState {
                             knownPeers,
-                            publicRootPeers,
                             establishedPeers,
                             inProgressPromoteCold,
                             targets = PeerSelectionTargets {
@@ -325,18 +318,14 @@ belowTargetBigLedgerPeers actions
   | otherwise
   = GuardedSkip Nothing
   where
-    PeerSelectionCounters {
-        numberOfEstablishedBigLedgerPeers    = numEstablishedPeers,
-        numberOfColdBigLedgerPeersPromotions = numConnectInProgress
+    PeerSelectionView {
+        viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
+        viewAvailableToConnectBigLedgerPeers = (availableToConnect, numAvailableToConnect),
+        viewEstablishedBigLedgerPeers        = (_, numEstablishedPeers),
+        viewColdBigLedgerPeersPromotions     = (_, numConnectInProgress)
       }
       =
-      peerSelectionStateToCounters st
-
-    bigLedgerPeersSet    = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    availableToConnect   = KnownPeers.availableToConnect knownPeers
-                           `Set.intersection`
-                           bigLedgerPeersSet
-    numAvailableToConnect= Set.size availableToConnect
+      peerSelectionStateToView st
 
 
 -- | Must be larger than '2' since we add a random value drawn from '(-2, 2)`.
@@ -367,7 +356,6 @@ jobPromoteColdPeer PeerSelectionActions {
     handler e = return $
       Completion $ \st@PeerSelectionState {
                       publicRootPeers,
-                      establishedPeers,
                       stdGen,
                       targets = PeerSelectionTargets {
                                   targetNumberOfEstablishedPeers,
@@ -388,29 +376,31 @@ jobPromoteColdPeer PeerSelectionActions {
                       * 2 ^ (pred failCount `min` maxColdPeerRetryBackoff)
                       )
             bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+
+            st' = st { knownPeers            = KnownPeers.setConnectTimes
+                                                 (Map.singleton
+                                                   peeraddr
+                                                   (delay `addTime` now))
+                                                 knownPeers',
+                       inProgressPromoteCold = Set.delete peeraddr
+                                                 (inProgressPromoteCold st),
+                       stdGen = stdGen'
+                     }
+            cs' = peerSelectionStateToCounters st'
         in
           Decision {
             decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
                             then [TracePromoteColdBigLedgerPeerFailed
                                    targetNumberOfEstablishedBigLedgerPeers
-                                   (Set.size $ EstablishedPeers.toSet establishedPeers
-                                               `Set.intersection`
-                                               bigLedgerPeersSet)
+                                   (case cs' of
+                                     PeerSelectionCounters { numberOfEstablishedBigLedgerPeers = a } -> a)
                                    peeraddr delay e]
                             else [TracePromoteColdFailed
                                    targetNumberOfEstablishedPeers
-                                   (EstablishedPeers.size establishedPeers)
+                                   (case cs' of
+                                     PeerSelectionCounters { numberOfEstablishedPeers = a } -> a)
                                    peeraddr delay e],
-            decisionState = st {
-                              knownPeers            = KnownPeers.setConnectTimes
-                                                        (Map.singleton
-                                                          peeraddr
-                                                          (delay `addTime` now))
-                                                        knownPeers',
-                              inProgressPromoteCold = Set.delete peeraddr
-                                                        (inProgressPromoteCold st),
-                              stdGen = stdGen'
-                            },
+            decisionState = st',
             decisionJobs  = []
           }
 
@@ -458,25 +448,26 @@ jobPromoteColdPeer PeerSelectionActions {
                                         knownPeers
             bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
 
+            st' = st { establishedPeers      = establishedPeers',
+                       inProgressPromoteCold = Set.delete peeraddr
+                                               (inProgressPromoteCold st),
+                       knownPeers            = knownPeers'
+                     }
+            cs' = peerSelectionStateToCounters st'
+
         in Decision {
              decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
                              then [TracePromoteColdBigLedgerPeerDone
                                     targetNumberOfEstablishedBigLedgerPeers
-                                    (Set.size $ EstablishedPeers.toSet establishedPeers'
-                                                `Set.intersection`
-                                                bigLedgerPeersSet)
+                                    (case cs' of
+                                      PeerSelectionCounters { numberOfEstablishedBigLedgerPeers = a } -> a)
                                     peeraddr]
                              else [TracePromoteColdDone
                                     targetNumberOfEstablishedPeers
-                                    (Set.size $ EstablishedPeers.toSet establishedPeers'
-                                         Set.\\ bigLedgerPeersSet)
+                                    (case cs' of
+                                      PeerSelectionCounters { numberOfEstablishedPeers = a } ->  a)
                                     peeraddr],
-             decisionState = st {
-                               establishedPeers      = establishedPeers',
-                               inProgressPromoteCold = Set.delete peeraddr
-                                                         (inProgressPromoteCold st),
-                               knownPeers            = knownPeers'
-                             },
+             decisionState = st',
              decisionJobs  = []
            }
 
@@ -506,7 +497,6 @@ aboveTargetOther actions
                  }
                  st@PeerSelectionState {
                    localRootPeers,
-                   publicRootPeers,
                    establishedPeers,
                    activePeers,
                    inProgressDemoteWarm,
@@ -520,19 +510,20 @@ aboveTargetOther actions
     -- Or more precisely, how many established peers could we demote?
     -- We only want to pick established peers that are not active, since for
     -- active one we need to demote them first.
-  | let bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-        numActivePeers, numPeersToDemote :: Int
-        PeerSelectionCounters {
-            numberOfEstablishedPeers = numEstablishedPeers,
-            numberOfActivePeers      = numActivePeers
+  | let peerSelectionView = peerSelectionStateToView st
+        PeerSelectionView {
+            viewKnownBigLedgerPeers = (bigLedgerPeersSet, _),
+            viewEstablishedPeers    = (_, numEstablishedPeers),
+            viewActivePeers         = (_, numActivePeers)
           }
           =
-          peerSelectionStateToCounters st
+          peerSelectionView
+        PeerSelectionCountersHWC {
+            numberOfWarmLocalRootPeers = numLocalWarmPeers
+          }
+          =
+          snd <$> peerSelectionView
 
-        numLocalWarmPeers   = Set.size localWarmPeers
-        localWarmPeers      = LocalRootPeers.keysSet localRootPeers
-           `Set.intersection` EstablishedPeers.toSet establishedPeers
-                       Set.\\ activePeers
         -- One constraint on how many to demote is the difference in the
         -- number we have now vs the target. The other constraint is that
         -- we pick established peers that are not also active. These
