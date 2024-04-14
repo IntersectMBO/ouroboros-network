@@ -13,6 +13,7 @@ import Data.Hashable
 import Data.List (sortBy)
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
+import GHC.Stack (HasCallStack)
 import System.Random (random)
 
 import Control.Concurrent.JobPool (Job (..))
@@ -44,7 +45,8 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 -- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
 --
-belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
+belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr,
+                HasCallStack)
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
 belowTarget actions
@@ -356,7 +358,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
 -- 'targetNumberOfRootPeers' (from combined sets of /local/ and /public root/
 -- peers). 'policyPickColdPeersToForget' policy is used to pick the peers.
 --
-aboveTarget :: (MonadSTM m, Ord peeraddr)
+aboveTarget :: (MonadSTM m, Ord peeraddr, HasCallStack)
             => MkGuardedDecision peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {
               policyPickColdPeersToForget

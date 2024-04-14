@@ -12,6 +12,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool (Job (..))
@@ -45,6 +46,7 @@ belowTarget :: forall peeraddr peerconn m.
                , MonadDelay m
                , MonadSTM m
                , Ord peeraddr
+               , HasCallStack
                )
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
@@ -137,7 +139,7 @@ belowTargetBigLedgerPeers actions
 
 
 belowTargetLocal :: forall peeraddr peerconn m.
-                    (MonadDelay m, MonadSTM m, Ord peeraddr)
+                    (MonadDelay m, MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetLocal actions
@@ -234,7 +236,8 @@ belowTargetLocal actions
       ]
 
 belowTargetOther :: forall peeraddr peerconn m.
-                    (MonadDelay m, MonadSTM m, Ord peeraddr)
+                    (MonadDelay m, MonadSTM m, Ord peeraddr,
+                     HasCallStack)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetOther actions
@@ -472,6 +475,7 @@ aboveTarget :: forall peeraddr peerconn m.
                ( Alternative (STM m)
                , MonadSTM m
                , Ord peeraddr
+               , HasCallStack
                )
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
@@ -559,7 +563,7 @@ aboveTargetBigLedgerPeers actions
 
 
 aboveTargetLocal :: forall peeraddr peerconn m.
-                    (MonadSTM m, Ord peeraddr)
+                    (MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 aboveTargetLocal actions
@@ -639,7 +643,7 @@ aboveTargetLocal actions
 
 
 aboveTargetOther :: forall peeraddr peerconn m.
-                    (MonadSTM m, Ord peeraddr)
+                    (MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 aboveTargetOther actions
