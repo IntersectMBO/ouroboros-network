@@ -1,8 +1,13 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
+#if __GLASGOW_HASKELL__ < 904
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+#endif
 
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
