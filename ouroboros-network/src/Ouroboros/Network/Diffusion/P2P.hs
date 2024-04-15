@@ -1006,12 +1006,12 @@ runM Interfaces
               peerSelectionTracer
               dtTracePeerSelectionCounters
               fuzzRng
-              countersVar
-              daPublicPeerSelectionVar
-              dbgVar
               peerSelectionActions
               peerSelectionPolicy
               PeerSelectionInterfaces {
+                countersVar,
+                publicStateVar     = daPublicPeerSelectionVar,
+                debugStateVar      = dbgVar,
                 readUseLedgerPeers = daReadUseLedgerPeers
               }
 

@@ -3487,8 +3487,14 @@ _governorFindingPublicRoots :: Int
                             -> StrictTVar IO OutboundConnectionsState
                             -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers readLedgerStateJudgement peerSharing olocVar = do
+    countersVar <- newTVarIO emptyPeerSelectionCounters
+    publicStateVar <- makePublicPeerSelectionStateVar
+    debugStateVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42)
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     let interfaces = PeerSelectionInterfaces {
+            countersVar,
+            publicStateVar,
+            debugStateVar,
             readUseLedgerPeers = return DontUseLedgerPeers
           }
     publicRootPeersProvider
@@ -3498,16 +3504,10 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       DNS.defaultResolvConf
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
-        publicStateVar <- makePublicPeerSelectionStateVar
-        debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42)
-        countersVar <- newTVarIO emptyPeerSelectionCounters
         peerSelectionGovernor
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
-          countersVar
-          publicStateVar
-          debugVar
           actions
             { requestPublicRootPeers = \_ ->
                 transformPeerSelectionAction requestPublicRootPeers }

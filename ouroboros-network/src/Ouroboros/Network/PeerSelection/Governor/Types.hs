@@ -405,10 +405,24 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 -- | Interfaces required by the peer selection governor, which do not need to
 -- be shared with actions and thus are not part of `PeerSelectionActions`.
 --
--- TODO: add other `TVar`s which outbound governor is using.
---
-data PeerSelectionInterfaces m = PeerSelectionInterfaces {
-      readUseLedgerPeers :: STM m UseLedgerPeers
+data PeerSelectionInterfaces peeraddr peerconn m = PeerSelectionInterfaces {
+      -- | PeerSelectionCounters are shared with churn through a `StrictTVar`.
+      --
+      countersVar                   :: StrictTVar m PeerSelectionCounters,
+
+      -- | PublicPeerSelectionState var.
+      --
+      publicStateVar                :: StrictTVar m (PublicPeerSelectionState peeraddr),
+
+      -- | PeerSelectionState shared for debugging purposes (to support SIGUSR1
+      -- debug event tracing)
+      --
+      debugStateVar                 :: StrictTVar m (PeerSelectionState peeraddr peerconn),
+
+      -- | `UseLedgerPeers` used by `peerSelectionGovernor` to support
+      -- `HiddenRelayOrBP`
+      --
+      readUseLedgerPeers            :: STM m UseLedgerPeers
     }
 
 

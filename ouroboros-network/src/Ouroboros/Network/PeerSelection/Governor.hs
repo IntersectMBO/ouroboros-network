@@ -470,24 +470,17 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> Tracer m (DebugPeerSelection peeraddr)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
-                      -> StrictTVar m PeerSelectionCounters
-                      -> StrictTVar m (PublicPeerSelectionState peeraddr)
-                      -> StrictTVar m (PeerSelectionState peeraddr peerconn)
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
-                      -> PeerSelectionInterfaces m
+                      -> PeerSelectionInterfaces peeraddr peerconn m
                       -> m Void
 peerSelectionGovernor tracer debugTracer countersTracer fuzzRng
-                      countersVar publicStateVar debugStateVar
                       actions policy interfaces =
     JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
         debugTracer
         countersTracer
-        countersVar
-        publicStateVar
-        debugStateVar
         actions
         policy
         interfaces
@@ -522,24 +515,22 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           => Tracer m (TracePeerSelection peeraddr)
                           -> Tracer m (DebugPeerSelection peeraddr)
                           -> Tracer m PeerSelectionCounters
-                          -> StrictTVar m PeerSelectionCounters
-                          -> StrictTVar m (PublicPeerSelectionState peeraddr)
-                          -> StrictTVar m (PeerSelectionState peeraddr peerconn)
                           -> PeerSelectionActions peeraddr peerconn m
                           -> PeerSelectionPolicy  peeraddr m
-                          -> PeerSelectionInterfaces m
+                          -> PeerSelectionInterfaces peeraddr peerconn m
                           -> JobPool () m (Completion m peeraddr peerconn)
                           -> PeerSelectionState peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
-                          countersVar
-                          publicStateVar
-                          debugStateVar
                           actions
                           policy
-                          interfaces
+                          interfaces@PeerSelectionInterfaces {
+                            countersVar,
+                            publicStateVar,
+                            debugStateVar
+                          }
                           jobPool
                           pst = do
     loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
