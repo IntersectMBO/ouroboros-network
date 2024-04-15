@@ -165,6 +165,12 @@ tests =
     [ testProperty "share a peer"
                    unit_peer_sharing
     ]
+  , testGroup "Churn"
+    [ testProperty "no timeouts"
+                   prop_churn_notimeouts
+    , testProperty "steps"
+                   prop_churn_steps
+    ]
   , testGroup "coverage"
     [ testProperty "server trace coverage"
                    prop_server_trace_coverage
@@ -1065,10 +1071,10 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceOutboundGovernorCriticalFailure"
       peerSelectionTraceMap TraceDebugState {}                       =
         "TraceDebugState"
-      peerSelectionTraceMap TraceChurnAction {}                      =
-        "TraceChurnTimeout"
-      peerSelectionTraceMap TraceChurnTimeout {}                     =
-        "TraceChurnTimeout"
+      peerSelectionTraceMap a@TraceChurnAction {}                    =
+        show a
+      peerSelectionTraceMap a@TraceChurnTimeout {}                   =
+        show a
 
       eventsSeenNames = map peerSelectionTraceMap events
 
@@ -3431,6 +3437,125 @@ unit_peer_sharing =
                  , [JoinNetwork 0]
                  )
                ]
+
+
+-- | This property verifies that when nodes are running without network
+-- attenuation, decreasing numbers by churn never timeouts.
+--
+prop_churn_notimeouts :: DiffusionScript
+                      -> Property
+prop_churn_notimeouts diffScript =
+    let sim :: forall s. IOSim s Void
+        sim = diffusionSimulation (toBearerInfo absNoAttenuation)
+                                  diffScript
+                                  iosimTracer
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . traceFromList
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 125000
+               . traceEvents
+               $ runSimTrace sim
+    in  conjoin
+      $ (\evs ->
+            let evsList :: [TracePeerSelection NtNAddr]
+                evsList = snd <$> eventsToList (selectDiffusionPeerSelectionEvents evs)
+            in property $ counterexample (intercalate "\n" (show <$> eventsToList evs))
+                        $ all noChurnTimeout evsList
+        )
+     <$> events
+  where
+    noChurnTimeout :: TracePeerSelection NtNAddr -> Bool
+    noChurnTimeout (TraceChurnTimeout _ DecreasedActivePeers)               = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedActiveBigLedgerPeers)      = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedPeers)          = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedEstablishedBigLedgerPeers) = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownPeers)                = False
+    noChurnTimeout (TraceChurnTimeout _ DecreasedKnownBigLedgerPeers)       = False
+    noChurnTimeout  TraceChurnTimeout {}                                    = True
+    noChurnTimeout  _                                                       = True
+
+
+-- | Verify that churn trace consists of repeated list of actions:
+--
+-- * `DecreasedActivePeers`
+-- * `IncreasedActivePeers`
+-- * `DecreasedActiveBigLedgerPeers`
+-- * `IncreasedActiveBigLedgerPeers`
+-- * `DecreasedEstablishedPeers`
+-- * `DecreasedEstablishedBigLedgerPeers`
+-- * `DecreasedKnownPeers`
+-- * `IncreasedKnownPeers`
+-- * `IncreasedEstablishedPeers`
+-- * `IncreasedEstablishedBigLedgerPeers`
+--
+prop_churn_steps :: AbsBearerInfo
+                 -> DiffusionScript
+                 -> Property
+prop_churn_steps bearerInfo diffScript =
+    let sim :: forall s. IOSim s Void
+        sim = diffusionSimulation (toBearerInfo bearerInfo)
+                                  diffScript
+                                  iosimTracer
+
+        events :: [Events DiffusionTestTrace]
+        events = fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . Trace.toList
+               . splitWithNameTrace
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . traceFromList
+               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
+               . take 5000 -- 125000
+               . traceEvents
+               $ runSimTrace sim
+
+    in   conjoin
+       $ (\evs ->
+           let evsList :: [(Time, TracePeerSelection NtNAddr)]
+               evsList = eventsToList (selectDiffusionPeerSelectionEvents evs)
+           in  counterexample (intercalate "\n" (show <$> evsList))
+             . churnTracePredicate
+             . mapMaybe (\case
+                          (_, TraceChurnAction _ a)  -> Just a
+                          (_, TraceChurnTimeout _ a) -> Just a
+                          _                          -> Nothing)
+             $ evsList
+         )
+      <$> events
+  where
+    -- check churn trace
+    churnTracePredicate :: [ChurnAction] -> Bool
+    churnTracePredicate as =
+        all (\(a, b) -> a == b)
+      . zip as
+      . concat
+      . repeat
+      $ [ DecreasedActivePeers
+        , IncreasedActivePeers
+        , DecreasedActiveBigLedgerPeers
+        , IncreasedActiveBigLedgerPeers
+        , DecreasedEstablishedPeers
+        , DecreasedEstablishedBigLedgerPeers
+        , DecreasedKnownPeers
+        , IncreasedKnownPeers
+        , IncreasedEstablishedPeers
+        , IncreasedEstablishedBigLedgerPeers
+        ]
+
 
 
 
