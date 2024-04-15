@@ -39,6 +39,15 @@
 
     # alternative compilers
     otherCompilers  = ["ghc810"];
+
+    # from https://github.com/input-output-hk/haskell.nix/issues/298#issuecomment-767936405
+    forAllProjectPackages = cfg: args@{ lib, ... }: {
+      options.packages = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.submodule ({ config, ... }: {
+          config = lib.mkIf config.package.isProject (cfg args);
+        }));
+      };
+    };
   in
     {inherit (inputs);}
     // inputs.flake-utils.lib.eachSystem supportedSystems (
@@ -132,6 +141,9 @@
           # package customizations as needed. Where cabal.project is not
           # specific enough, or doesn't allow setting these.
           modules = [
+            (forAllProjectPackages ({ ... }: {
+              ghcOptions = [ "-Werror" ];
+            }))
             ({pkgs, ...}: {
               # We impose limit heap size limit when running some of the tests
               # to discover space leaks Once #4698 and #4699 are done we can
