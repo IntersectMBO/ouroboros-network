@@ -37,7 +37,6 @@ belowTarget :: (MonadSTM m, Ord peeraddr)
 belowTarget actions
             blockedAt
             st@PeerSelectionState {
-              publicRootPeers,
               bigLedgerPeerRetryTime,
               inProgressBigLedgerPeersReq,
               targets = PeerSelectionTargets {
@@ -68,7 +67,12 @@ belowTarget actions
     | otherwise
     = GuardedSkip Nothing
   where
-    numBigLedgerPeers      = Set.size (PublicRootPeers.getBigLedgerPeers publicRootPeers)
+    PeerSelectionCounters {
+        numberOfKnownBigLedgerPeers = numBigLedgerPeers
+      }
+      =
+      peerSelectionStateToCounters st
+
     maxExtraBigLedgerPeers = targetNumberOfKnownBigLedgerPeers
                            - numBigLedgerPeers
 
@@ -224,13 +228,18 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
 
-    numKnownBigLedgerPeers :: Int
-    numKnownBigLedgerPeers = Set.size bigLedgerPeersSet
+    PeerSelectionCounters {
+        numberOfKnownBigLedgerPeers = numKnownBigLedgerPeers
+      }
+      =
+      peerSelectionStateToCounters st
 
     establishedBigLedgerPeers :: Set peeraddr
     establishedBigLedgerPeers = EstablishedPeers.toSet establishedPeers
                                 `Set.intersection`
                                 bigLedgerPeersSet
 
+    -- TODO: we should compute this with `PeerSelectionCounters`, but we also
+    -- need to return the `establishedBigLedgerPeers` set.
     numEstablishedBigLedgerPeers :: Int
     numEstablishedBigLedgerPeers = Set.size establishedBigLedgerPeers
