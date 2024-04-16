@@ -102,6 +102,8 @@ haddock \
   --prolog ./scripts/prologue \
   $(interface_options)
 
+cp scripts/packages-network.svg "${OUTPUT_DIR}"
+
 # Assemble a toplevel `doc-index.json` from package level ones.
 #
 echo "[]" > "${OUTPUT_DIR}/doc-index.json"
