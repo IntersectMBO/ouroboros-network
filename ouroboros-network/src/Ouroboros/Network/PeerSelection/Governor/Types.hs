@@ -147,9 +147,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerStateJudgement (..), UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers (EstablishedPeers)
@@ -318,8 +316,6 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
  && targetNumberOfKnownBigLedgerPeers       <= 10000
 
 
--- | Actions performed by the peer selection governor.
---
 -- These being pluggable allows:
 --
 -- * choice of known peer root sets
@@ -339,10 +335,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- It is structured as a collection of (non-overlapping) groups of peers
        -- where we are supposed to select n from each group.
        --
-       readLocalRootPeers       :: STM m [( HotValency
-                                          , WarmValency
-                                          , Map peeraddr ( PeerAdvertise
-                                                         , PeerTrustable))],
+       readLocalRootPeers       :: STM m (LocalRootPeers.Config peeraddr),
 
        readNewInboundConnection :: STM m (peeraddr, PeerSharing),
 

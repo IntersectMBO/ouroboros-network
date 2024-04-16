@@ -38,26 +38,19 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
            newDNSLocalRootSemaphore, withDNSSemaphore)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            WarmValency)
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
 data TraceLocalRootPeers peerAddr exception =
-       TraceLocalRootDomains [( HotValency
-                              , WarmValency
-                              , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
+       TraceLocalRootDomains (LocalRootPeers.Config RelayAccessPoint)
        -- ^ 'Int' is the configured valency for the local producer groups
      | TraceLocalRootWaiting DomainAccessPoint DiffTime
      | TraceLocalRootResult  DomainAccessPoint [(IP, DNS.TTL)]
-     | TraceLocalRootGroups  [( HotValency
-                              , WarmValency
-                              , Map peerAddr (PeerAdvertise, PeerTrustable))]
+     | TraceLocalRootGroups  (LocalRootPeers.Config peerAddr)
        -- ^ This traces the results of the local root peer provider
      | TraceLocalRootDNSMap  (Map DomainAccessPoint [peerAddr])
        -- ^ This traces the results of the domain name resolution
-     | TraceLocalRootReconfigured [( HotValency
-                                   , WarmValency
-                                   , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))] -- ^ Old value
-                                  [( HotValency
-                                   , WarmValency
-                                   , Map RelayAccessPoint (PeerAdvertise, PeerTrustable))] -- ^ New value
+     | TraceLocalRootReconfigured (LocalRootPeers.Config RelayAccessPoint) -- ^ Old value
+                                  (LocalRootPeers.Config RelayAccessPoint) -- ^ New value
      | TraceLocalRootFailure DomainAccessPoint (DNSorIOError exception)
        --TODO: classify DNS errors, config error vs transitory
      | TraceLocalRootError   DomainAccessPoint SomeException

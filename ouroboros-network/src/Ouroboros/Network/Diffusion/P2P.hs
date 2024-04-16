@@ -125,7 +125,6 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle,
            PeerSelectionActionsTrace (..), PeerStateActionsArguments (..),
            pchPeerSharing, withPeerStateActions)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSActions,
@@ -134,8 +133,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
            (TracePublicRootPeers)
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
-           WarmValency)
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server2 (ServerArguments (..), ServerTrace (..))
@@ -246,17 +244,17 @@ nullTracers =
 data ArgumentsExtra m = ArgumentsExtra {
       -- | selection targets for the peer governor
       --
-      daPeerSelectionTargets :: PeerSelectionTargets
+      daPeerSelectionTargets  :: PeerSelectionTargets
 
-    , daReadLocalRootPeers  :: STM m [(HotValency, WarmValency, Map RelayAccessPoint (PeerAdvertise, PeerTrustable))]
-    , daReadPublicRootPeers :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , daReadLocalRootPeers    :: STM m (LocalRootPeers.Config RelayAccessPoint)
+    , daReadPublicRootPeers   :: STM m (Map RelayAccessPoint PeerAdvertise)
     , daReadUseBootstrapPeers :: STM m UseBootstrapPeers
 
     -- | Peer's own PeerSharing value.
     --
     -- This value comes from the node's configuration file and is static.
-    , daOwnPeerSharing      :: PeerSharing
-    , daReadUseLedgerPeers  :: STM m UseLedgerPeers
+    , daOwnPeerSharing        :: PeerSharing
+    , daReadUseLedgerPeers    :: STM m UseLedgerPeers
 
       -- | Timeout which starts once all responder protocols are idle. If the
       -- responders stay idle for duration of the timeout, the connection will
@@ -267,7 +265,7 @@ data ArgumentsExtra m = ArgumentsExtra {
       --
       -- See 'serverProtocolIdleTimeout'.
       --
-    , daProtocolIdleTimeout :: DiffTime
+    , daProtocolIdleTimeout   :: DiffTime
 
       -- | Time for which /node-to-node/ connections are kept in
       -- 'TerminatingState', it should correspond to the OS configured @TCP@
@@ -277,7 +275,7 @@ data ArgumentsExtra m = ArgumentsExtra {
       -- purpose is to be resilient for delayed packets in the same way @TCP@
       -- is using @TIME_WAIT@.
       --
-    , daTimeWaitTimeout :: DiffTime
+    , daTimeWaitTimeout       :: DiffTime
 
       -- | Churn interval between churn events in deadline mode.  A small fuzz
       -- is added (max 10 minutes) so that not all nodes churn at the same time.
@@ -291,7 +289,7 @@ data ArgumentsExtra m = ArgumentsExtra {
       --
       -- By default it is set to 300 seconds.
       --
-    , daBulkChurnInterval :: DiffTime
+    , daBulkChurnInterval     :: DiffTime
     }
 
 --

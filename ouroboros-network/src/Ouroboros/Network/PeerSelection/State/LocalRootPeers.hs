@@ -9,6 +9,7 @@ module Ouroboros.Network.PeerSelection.State.LocalRootPeers
     LocalRootPeers (..)
   , HotValency (..)
   , WarmValency (..)
+  , Config
     -- Export constructors for defining tests.
   , invariant
     -- * Basic operations
@@ -71,6 +72,12 @@ newtype HotValency = HotValency { getHotValency :: Int }
 newtype WarmValency = WarmValency { getWarmValency :: Int }
   deriving (Show, Eq, Ord)
   deriving Num via Int
+
+-- | Data available from topology file.
+--
+type Config peeraddr =
+     [(HotValency, WarmValency, Map peeraddr ( PeerAdvertise, PeerTrustable))]
+
 
 -- It is an abstract type, so the derived Show is unhelpful, e.g. for replaying
 -- test cases.
