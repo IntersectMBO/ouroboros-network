@@ -223,9 +223,7 @@ ledgerPeersThread PeerActionsDNS {
                     paDnsSemaphore }
                   WithLedgerPeersArgs {
                     wlpRng,
-                    wlpConsensusInterface = wlpConsensusInterface@LedgerPeersConsensusInterface {
-                      lpGetLatestSlot,
-                      lpGetLedgerStateJudgement },
+                    wlpConsensusInterface,
                     wlpTracer,
                     wlpGetUseLedgerPeers,
                     wlpGetLedgerPeerSnapshot }
@@ -259,25 +257,25 @@ ledgerPeersThread PeerActionsDNS {
                  traceWith wlpTracer DisabledLedgerPeers
                  return (Map.empty, Map.empty, now)
                UseLedgerPeers ula -> do
-                 (ledgerStateJudgement, consensusSlotNo, consensusPeers, peerSnapshot) <-
-                   atomically ((,,,) <$> lpGetLedgerStateJudgement
-                                     <*> lpGetLatestSlot
-                                     <*> getLedgerPeers wlpConsensusInterface ula
-                                     <*> wlpGetLedgerPeerSnapshot)
+                 (consensusSlotNo, consensusPeers, peerSnapshot) <-
+                   atomically ((,,) <$> lpGetLatestSlot wlpConsensusInterface
+                                    <*> getLedgerPeers wlpConsensusInterface ula
+                                    <*> wlpGetLedgerPeerSnapshot)
 
                  -- we have to assess which of, if any, peers we get from consensus vs.
                  -- peers we may have from the snapshot file is more recent, and use that
-                 let (accPoolStake -> peersStake, bigPeersStakeMap) =
+                 (accPoolStake -> peersStake, bigPeersStakeMap) <-
                        case (consensusSlotNo, consensusPeers, peerSnapshot) of
                          (At t, LedgerPeers _ lp, Just (LedgerPeerSnapshot (At t', sp {- snapshot peer-})))
-                           | t' > t -> (lp, Map.fromAscList sp)
-                           | otherwise -> (lp, accBigPoolStakeMap lp)
+                           | t' > t -> traceWith wlpTracer UsingBigLedgerPeerSnapshot >> return (lp, Map.fromAscList sp)
+                           | otherwise -> return (lp, accBigPoolStakeMap lp)
 
-                         (_, LedgerPeers _ lp, Nothing) -> (lp, accBigPoolStakeMap lp)
+                         (_, LedgerPeers _ lp, Nothing) -> return (lp, accBigPoolStakeMap lp)
 
                          (_, _, Just (LedgerPeerSnapshot (At t', sp)))
-                           | After slot <- ula, t' >= slot -> ([], Map.fromAscList sp)
-                         otherwise -> ([], Map.empty)
+                           | After slot <- ula, t' >= slot ->
+                             traceWith wlpTracer UsingBigLedgerPeerSnapshot >> return ([], Map.fromAscList sp)
+                         otherwise -> return ([], Map.empty)
 
                  traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStakeMap)
                  return (peersStake, bigPeersStakeMap, now)
