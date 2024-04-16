@@ -130,12 +130,12 @@ belowTargetBigLedgerPeers actions
   = GuardedSkip Nothing
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numActiveBigLedgerPeers
-      = Set.size $ activePeers
-                   `Set.intersection` bigLedgerPeersSet
-    numPromoteInProgressBigLedgerPeers
-      = Set.size $ inProgressPromoteWarm
-                   `Set.intersection` bigLedgerPeersSet
+    PeerSelectionCounters {
+        numberOfActiveBigLedgerPeers         = numActiveBigLedgerPeers,
+        numberOfWarmBigLedgerPeersPromotions = numPromoteInProgressBigLedgerPeers
+      }
+      =
+      peerSelectionStateToCounters st
 
 
 belowTargetLocal :: forall peeraddr peerconn m.
@@ -302,11 +302,13 @@ belowTargetOther actions
   | otherwise
   = GuardedSkip Nothing
   where
+    PeerSelectionCounters {
+        numberOfActivePeers         = numActivePeers,
+        numberOfWarmPeersPromotions = numPromoteInProgress
+      }
+      =
+      peerSelectionStateToCounters st
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numActivePeers       = Set.size $ activePeers
-                               Set.\\ bigLedgerPeersSet
-    numPromoteInProgress = Set.size $ inProgressPromoteWarm
-                               Set.\\ bigLedgerPeersSet
 
 
 jobPromoteWarmPeer :: forall peeraddr peerconn m.
@@ -552,14 +554,12 @@ aboveTargetBigLedgerPeers actions
   = GuardedSkip Nothing
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numActiveBigLedgerPeers
-      = Set.size $ activePeers
-                   `Set.intersection`
-                   bigLedgerPeersSet
-    numDemoteInProgressBigLedgerPeers
-      = Set.size $ inProgressDemoteHot
-                   `Set.intersection`
-                   bigLedgerPeersSet
+    PeerSelectionCounters {
+        numberOfActiveBigLedgerPeers          = numActiveBigLedgerPeers,
+        numberOfActiveBigLedgerPeersDemotions = numDemoteInProgressBigLedgerPeers
+      }
+      =
+      peerSelectionStateToCounters st
 
 
 aboveTargetLocal :: forall peeraddr peerconn m.
@@ -708,10 +708,12 @@ aboveTargetOther actions
   = GuardedSkip Nothing
   where
     bigLedgerPeersSet   = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numActivePeers      = Set.size $ activePeers
-                              Set.\\ bigLedgerPeersSet
-    numDemoteInProgress = Set.size $ inProgressDemoteHot
-                              Set.\\ bigLedgerPeersSet
+    PeerSelectionCounters {
+        numberOfActivePeers          = numActivePeers,
+        numberOfActivePeersDemotions = numDemoteInProgress
+      }
+      =
+      peerSelectionStateToCounters st
 
 
 jobDemoteActivePeer :: forall peeraddr peerconn m.

@@ -69,7 +69,6 @@ belowTarget actions@PeerSelectionActions { peerSharing }
                     }
                     st@PeerSelectionState {
                       knownPeers,
-                      publicRootPeers,
                       establishedPeers,
                       inProgressPeerShareReqs,
                       inProgressDemoteToCold,
@@ -201,8 +200,12 @@ belowTarget actions@PeerSelectionActions { peerSharing }
   = GuardedSkip Nothing
   where
     (useInboundPeers, stdGen') = random stdGen
-    numKnownPeers            = Set.size $ KnownPeers.toSet knownPeers
-                                   Set.\\ PublicRootPeers.getBigLedgerPeers publicRootPeers
+    PeerSelectionCounters {
+        numberOfKnownPeers = numKnownPeers
+      }
+      =
+      peerSelectionStateToCounters st
+
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
                              - inProgressPeerShareReqs
     -- Only peer which permit peersharing are available
@@ -510,11 +513,13 @@ aboveTarget PeerSelectionPolicy {
   = GuardedSkip Nothing
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numKnownPeers, numEstablishedPeers :: Int
-    numKnownPeers        = Set.size $ KnownPeers.toSet knownPeers
-                               Set.\\ bigLedgerPeersSet
-    numEstablishedPeers  = Set.size $ EstablishedPeers.toSet establishedPeers
-                               Set.\\ bigLedgerPeersSet
+
+    PeerSelectionCounters {
+        numberOfKnownPeers       = numKnownPeers,
+        numberOfEstablishedPeers = numEstablishedPeers
+      }
+      =
+      peerSelectionStateToCounters st
 
 
 -------------------------------
