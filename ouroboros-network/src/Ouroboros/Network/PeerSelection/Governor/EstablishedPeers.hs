@@ -233,13 +233,14 @@ belowTargetOther actions
   | otherwise
   = GuardedSkip Nothing
   where
-    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+    PeerSelectionCounters {
+        numberOfEstablishedPeers    = numEstablishedPeers,
+        numberOfColdPeersPromotions = numConnectInProgress
+      }
+      =
+      peerSelectionStateToCounters st
 
-    numEstablishedPeers, numConnectInProgress :: Int
-    numEstablishedPeers   = Set.size $ EstablishedPeers.toSet establishedPeers
-                                Set.\\ bigLedgerPeersSet
-    numConnectInProgress  = Set.size $ inProgressPromoteCold
-                                Set.\\ bigLedgerPeersSet
+    bigLedgerPeersSet     = PublicRootPeers.getBigLedgerPeers publicRootPeers
     availableToConnect    = KnownPeers.availableToConnect knownPeers
                                 Set.\\ bigLedgerPeersSet
     numAvailableToConnect = Set.size availableToConnect
@@ -324,16 +325,14 @@ belowTargetBigLedgerPeers actions
   | otherwise
   = GuardedSkip Nothing
   where
-    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numEstablishedPeers, numConnectInProgress :: Int
-    numEstablishedPeers  = Set.size $
-                           EstablishedPeers.toSet establishedPeers
-                           `Set.intersection`
-                           bigLedgerPeersSet
-    numConnectInProgress = Set.size $
-                           inProgressPromoteCold
-                           `Set.intersection`
-                           bigLedgerPeersSet
+    PeerSelectionCounters {
+        numberOfEstablishedBigLedgerPeers    = numEstablishedPeers,
+        numberOfColdBigLedgerPeersPromotions = numConnectInProgress
+      }
+      =
+      peerSelectionStateToCounters st
+
+    bigLedgerPeersSet    = PublicRootPeers.getBigLedgerPeers publicRootPeers
     availableToConnect   = KnownPeers.availableToConnect knownPeers
                            `Set.intersection`
                            bigLedgerPeersSet
@@ -522,11 +521,14 @@ aboveTargetOther actions
     -- We only want to pick established peers that are not active, since for
     -- active one we need to demote them first.
   | let bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-        numEstablishedPeers, numActivePeers, numPeersToDemote :: Int
-        numEstablishedPeers = Set.size $ EstablishedPeers.toSet establishedPeers
-                                  Set.\\ bigLedgerPeersSet
-        numActivePeers      = Set.size $ activePeers
-                                  Set.\\ bigLedgerPeersSet
+        numActivePeers, numPeersToDemote :: Int
+        PeerSelectionCounters {
+            numberOfEstablishedPeers = numEstablishedPeers,
+            numberOfActivePeers      = numActivePeers
+          }
+          =
+          peerSelectionStateToCounters st
+
         numLocalWarmPeers   = Set.size localWarmPeers
         localWarmPeers      = LocalRootPeers.keysSet localRootPeers
            `Set.intersection` EstablishedPeers.toSet establishedPeers
@@ -606,12 +608,12 @@ aboveTargetBigLedgerPeers actions
     -- We only want to pick established peers that are not active, since for
     -- active one we need to demote them first.
   | let bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-        numEstablishedBigLedgerPeers, numBigLedgerPeersToDemote :: Int
-        numEstablishedBigLedgerPeers = Set.size $ EstablishedPeers.toSet establishedPeers
-                               `Set.intersection` bigLedgerPeersSet
-
-        numActiveBigLedgerPeers      = Set.size $ activePeers
-                               `Set.intersection` bigLedgerPeersSet
+        PeerSelectionCounters {
+            numberOfEstablishedBigLedgerPeers = numEstablishedBigLedgerPeers,
+            numberOfActiveBigLedgerPeers      = numActiveBigLedgerPeers
+          }
+          =
+          peerSelectionStateToCounters st
 
         -- We want to demote big ledger peers towards the target but we avoid to
         -- pick active peer.  The `min` is taken so that `pickPeers` is given
