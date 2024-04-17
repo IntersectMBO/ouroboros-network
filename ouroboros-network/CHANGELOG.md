@@ -9,10 +9,13 @@
 * Adapted to changes in `ouroboros-network-framework`, in particular the
   outbound governor is using `PublicInboundGovernorState` to implemented light
   peer sharing.
-* Changed `PeerSelectionCounters` which provides sizes of active / established
-  / known sets, and added `PeerSelectionCountersHWC` which provides sizes of
-  hot / warm / cold sets.  The counters cover more groups including: all peers,
-  big ledger peers, bootstrap peers, local roots and shared peers.
+* Added `dtTraceChurnCounters` to `Ouroboros.Network.Diffusion.P2P.TracersExtra`.
+* Added `PeerSelectionView` and `PeerSelectionCounters` (now a pattern synonym)
+  which provides sets or sizes of active / established / known sets, and added
+  `PeerSelectionCountersHWC` which provides sizes of hot / warm / cold sets.
+  The counters cover more groups including: all peers, big ledger peers,
+  bootstrap peers, local roots and shared peers.
+* `emptyPeerSelectionState` doesn't take targets of local roots.
 
 ### Non-Breaking changes
 
@@ -25,6 +28,8 @@
   as a DNS error. 
 * Improved Churn governor by synchronizing according to the counters instead
   of relying on `threadDelay`.
+* Added `TraceChurnAction` and `TraceChurnTimeout` trace points of `TracePeerSelection`.
+* Added `HasCallStack` to functions which call `pickPeers`.
 
 ## 0.14.0.0 -- 2024-04-04
 
