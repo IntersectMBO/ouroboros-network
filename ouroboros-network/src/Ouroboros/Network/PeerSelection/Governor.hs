@@ -52,6 +52,7 @@ module Ouroboros.Network.PeerSelection.Governor
 
 import Data.Foldable (traverse_)
 import Data.Hashable
+import Data.Map.Strict (Map)
 import Data.Set qualified as Set
 import Data.Void (Void)
 
@@ -604,8 +605,9 @@ peerSelectionGovernorLoop tracer
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
                          -> m (TimedDecision m peeraddr peerconn)
-    evalGuardedDecisions blockedAt st =
-      case guardedDecisions blockedAt st of
+    evalGuardedDecisions blockedAt st = do
+      inboundPeers <- readInboundPeers actions
+      case guardedDecisions blockedAt st inboundPeers of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
@@ -626,8 +628,9 @@ peerSelectionGovernorLoop tracer
 
     guardedDecisions :: Time
                      -> PeerSelectionState peeraddr peerconn
+                     -> Map peeraddr PeerSharing
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions blockedAt st =
+    guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
       -- The Governor needs to react to changes in the bootstrap peer flag,
@@ -653,13 +656,13 @@ peerSelectionGovernorLoop tracer
       <> BigLedgerPeers.aboveTarget                     policy st
 
       -- All the alternative non-blocking internal decisions.
-      <> RootPeers.belowTarget        actions blockedAt         st
-      <> KnownPeers.belowTarget       actions             policy st
-      <> KnownPeers.aboveTarget                           policy st
-      <> EstablishedPeers.belowTarget actions             policy st
-      <> EstablishedPeers.aboveTarget actions             policy st
-      <> ActivePeers.belowTarget      actions             policy st
-      <> ActivePeers.aboveTarget      actions             policy st
+      <> RootPeers.belowTarget        actions blockedAt           st
+      <> KnownPeers.belowTarget       actions inboundPeers policy st
+      <> KnownPeers.aboveTarget                            policy st
+      <> EstablishedPeers.belowTarget actions              policy st
+      <> EstablishedPeers.aboveTarget actions              policy st
+      <> ActivePeers.belowTarget      actions              policy st
+      <> ActivePeers.aboveTarget      actions              policy st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 

@@ -73,6 +73,12 @@ peerMetricsConfiguration = PeerMetricsConfiguration {
   }
 
 
+-- | Maximal number of light peers included at once.
+--
+maxInboundPeers :: Int
+maxInboundPeers = 10
+
+
 -- | Merge two dictionaries where values of the first one are obligatory, while
 -- the second one are optional.
 --
@@ -101,6 +107,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
       policyPickColdPeersToPromote     = simplePromotionPolicy,
       policyPickWarmPeersToPromote     = simplePromotionPolicy,
+      policyPickInboundPeers           = simplePromotionPolicy,
 
       policyPickHotPeersToDemote  = hotDemotionPolicy,
       policyPickWarmPeersToDemote = warmDemotionPolicy,

@@ -441,7 +441,7 @@ jobPromoteColdPeer PeerSelectionActions {
                                         x
                                   )
                                   (Set.singleton peeraddr)
-                              $ KnownPeers.setSuccessfulConnectionFlag peeraddr
+                              $ KnownPeers.setSuccessfulConnectionFlag (Set.singleton peeraddr)
                               $ KnownPeers.clearTepidFlag peeraddr $
                                     KnownPeers.resetFailCount
                                         peeraddr
