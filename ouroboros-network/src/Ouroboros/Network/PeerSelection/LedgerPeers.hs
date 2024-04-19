@@ -423,8 +423,8 @@ withLedgerPeers :: forall peerAddr resolver exception m a.
                      -> Async m Void
                      -> m a )
                 -> m a
-withLedgerPeers paDNS
-                wlpa
+withLedgerPeers peerActionsDNS
+                ledgerPeerArgs
                 k = do
     reqVar  <- newEmptyTMVarIO
     respVar <- newEmptyTMVarIO
@@ -435,5 +435,5 @@ withLedgerPeers paDNS
           atomically $ putTMVar reqVar (numberOfPeers, ledgerPeersKind)
           atomically $ takeTMVar respVar
     withAsync
-      (ledgerPeersThread paDNS wlpa getRequest putResponse)
+      (ledgerPeersThread peerActionsDNS ledgerPeerArgs getRequest putResponse)
       $ \ thread -> k request thread
