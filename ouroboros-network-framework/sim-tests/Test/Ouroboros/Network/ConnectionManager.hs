@@ -47,6 +47,7 @@ import Data.Monoid (All (..))
 import Data.Text.Lazy qualified as Text
 import Data.Void (Void)
 import Quiet
+import System.Random qualified as Random
 import Text.Pretty.Simple (defaultOutputOptionsNoColor, pShowOpt)
 
 import Network.Mux.Bearer
@@ -689,14 +690,15 @@ instance Arbitrary SkewedBool where
 -- exception or being killed by an asynchronous asynchronous exception.
 --
 prop_valid_transitions
-    :: SkewedBool
+    :: Fixed Int
+    -> SkewedBool
     -- ^ bind to local address or not
     -> RefinedScheduleMap Addr
     -- ^ A list of addresses to which we connect or which connect to us.  We use
     -- 'Blind' since we show the arguments using `counterexample` in a nicer
     -- way.
     -> Property
-prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
+prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
     let tr = runSimTrace experiment in
     -- `selectTraceEventsDynamic`, can throw 'Failure', hence we run
     -- `traceResults` first.
@@ -765,6 +767,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
               cmConfigureSocket = \_ _ -> return (),
               connectionDataFlow = \(Version df) _ -> df,
               cmPrunePolicy = simplePrunePolicy,
+              cmStdGen = Random.mkStdGen rnd,
               cmConnectionsLimits = AcceptedConnectionsLimit {
                   acceptedConnectionsHardLimit = maxBound,
                   acceptedConnectionsSoftLimit = maxBound,
@@ -987,6 +990,7 @@ prop_valid_transitions (SkewedBool bindToLocalAddress) scheduleMap =
 unit_overwritten :: Property
 unit_overwritten =
     prop_valid_transitions
+      (Fixed 42)
       (SkewedBool True)
       (ScheduleMap $ Map.fromList
         [ ( TestAddress 1
@@ -1036,6 +1040,7 @@ unit_overwritten =
 unit_timeoutExpired :: Property
 unit_timeoutExpired =
     prop_valid_transitions
+      (Fixed 42)
       (SkewedBool True)
       (ScheduleMap $ Map.fromList
         [ ( TestAddress 1

@@ -15,12 +15,8 @@
 -- | Server implementation based on 'ConnectionManager'
 --
 module Ouroboros.Network.InboundGovernor
-  ( InboundGovernorObservableState (..)
-  , newObservableStateVar
-  , newObservableStateVarIO
-  , newObservableStateVarFromSeed
-    -- * Run Inbound Protocol Governor
-  , inboundGovernor
+  ( -- * Run Inbound Protocol Governor
+    inboundGovernor
     -- * Trace
   , InboundGovernorTrace (..)
   , RemoteSt (..)
@@ -97,11 +93,9 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr vers
                 -> InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
                 -> Maybe DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr) peerAddr versionData versionNumber ByteString m a b
-                -> StrictTVar m InboundGovernorObservableState
                 -> m Void
 inboundGovernor trTracer tracer inboundInfoChannel
-                inboundIdleTimeout connectionManager
-                observableStateVar = do
+                inboundIdleTimeout connectionManager = do
     -- State needs to be a TVar, otherwise, when catching the exception inside
     -- the loop we do not have access to the most recent version of the state
     -- and might be truncating transitions.
@@ -127,7 +121,6 @@ inboundGovernor trTracer tracer inboundInfoChannel
     emptyState :: InboundGovernorState muxMode initiatorCtx peerAddr m a b
     emptyState = InboundGovernorState {
             igsConnections   = Map.empty,
-            igsObservableVar = observableStateVar,
             igsCountersCache = mempty
           }
 

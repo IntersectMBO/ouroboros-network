@@ -139,6 +139,7 @@ library testlib
                    , bytestring
                    , cborg
                    , containers
+                   , random
                    , serialise
 
                    , QuickCheck
@@ -186,6 +187,7 @@ test-suite sim-tests
                      , iproute
                      , network
                      , pretty-simple
+                     , random
                      , serialise
                      , text
                      , time
@@ -251,6 +253,7 @@ test-suite io-tests
                      , dns
                      , iproute
                      , network
+                     , random
                      , time
                      , with-utf8
 

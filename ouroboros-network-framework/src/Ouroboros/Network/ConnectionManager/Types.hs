@@ -171,6 +171,7 @@ import Data.Set qualified as Set
 import Data.Typeable (Typeable, cast)
 import Data.Word (Word32)
 import GHC.Stack (CallStack, prettyCallStack)
+import System.Random (StdGen)
 
 import Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir,
            MuxBearer, MuxMode (..))
@@ -415,18 +416,18 @@ data HandleErrorType =
 -- connection manger once it detects that there are too many inbound
 -- connections.
 --
-type PrunePolicy peerAddr stm =  Map peerAddr ConnectionType
-                              -> Int
-                              -> stm (Set peerAddr)
+type PrunePolicy peerAddr = StdGen
+                         -> Map peerAddr ConnectionType
+                         -> Int
+                         -> Set peerAddr
 
 
 -- | The simplest 'PrunePolicy', it should only be used for tests.
 --
-simplePrunePolicy :: ( Applicative stm, Ord peerAddr )
-                  => PrunePolicy peerAddr stm
-simplePrunePolicy m n =
-    pure
-  . Set.fromList
+simplePrunePolicy :: Ord peerAddr
+                  => PrunePolicy peerAddr
+simplePrunePolicy _ m n =
+    Set.fromList
   . map fst
   . take n
   . sortOn snd
