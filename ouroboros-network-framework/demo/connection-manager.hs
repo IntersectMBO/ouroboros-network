@@ -191,6 +191,7 @@ withBidirectionalConnectionManager
     -> DiffTime -- protocol idle timeout
     -> DiffTime -- wait time timeout
     -> Maybe peerAddr
+    -> Random.StdGen
     -> ClientAndServerData
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
@@ -204,6 +205,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                    protocolIdleTimeout
                                    timeWaitTimeout
                                    localAddress
+                                   stdGen
                                    ClientAndServerData {
                                        hotInitiatorRequests,
                                        warmInitiatorRequests,
@@ -219,8 +221,6 @@ withBidirectionalConnectionManager snocket makeBearer socket
     hotRequestsVar         <- LazySTM.newTVarIO hotInitiatorRequests
     warmRequestsVar        <- LazySTM.newTVarIO warmInitiatorRequests
     establishedRequestsVar <- LazySTM.newTVarIO establishedInitiatorRequests
-    -- we are not using the randomness
-    observableStateVar        <- Server.newObservableStateVarFromSeed 0
     let muxTracer = ("mux",) `contramap` nullTracer -- mux tracer
 
     withConnectionManager
@@ -240,6 +240,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           cmOutboundIdleTimeout = protocolIdleTimeout,
           connectionDataFlow = \_ _ -> Duplex,
           cmPrunePolicy = simplePrunePolicy,
+          cmStdGen      = stdGen,
           cmConnectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
               acceptedConnectionsSoftLimit = maxBound,
@@ -282,8 +283,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                     serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                     serverConnectionManager = connectionManager,
                     serverInboundIdleTimeout = Just protocolIdleTimeout,
-                    serverInboundInfoChannel = inbgovInfoChannel,
-                    serverObservableStateVar = observableStateVar
+                    serverInboundInfoChannel = inbgovInfoChannel
                   }
               )
               (\thread -> link thread
@@ -461,10 +461,11 @@ bidirectionalExperiment
     timeWaitTimeout
     localAddr remoteAddr
     clientAndServerData = do
+      stdGen <- Random.newStdGen
       withBidirectionalConnectionManager
         snocket makeBearer socket0
         protocolIdleTimeout timeWaitTimeout
-        (Just localAddr) clientAndServerData $
+        (Just localAddr) stdGen clientAndServerData $
         \connectionManager _serverAddr -> forever' $ do
           -- runInitiatorProtocols returns a list of results per each protocol
           -- in each bucket (warm \/ hot \/ established); but we run only one

@@ -670,7 +670,8 @@ runM Interfaces
     (policyRng,      rng2) = split rng1
     (churnRng,       rng3) = split rng2
     (fuzzRng,        rng4) = split rng3
-    (ntnInbgovRng, ntcInbgovRng) = split rng4
+    (cmLocalStdGen,  rng5) = split rng4
+    (cmStdGen1, cmStdGen2) = split rng5
 
     -- Only the 'IOManagerError's are fatal, all the other exceptions in the
     -- networking code will only shutdown the bearer (see 'ShutdownPeer' why
@@ -689,7 +690,6 @@ runM Interfaces
       withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
-        localServerStateVar <- Server.newObservableStateVar ntcInbgovRng
 
         let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
 
@@ -725,8 +725,8 @@ runM Interfaces
                   cmTimeWaitTimeout     = local_TIME_WAIT_TIMEOUT,
                   cmOutboundIdleTimeout = local_PROTOCOL_IDLE_TIMEOUT,
                   connectionDataFlow    = localDataFlow,
-                  cmPrunePolicy         = Diffusion.Policies.prunePolicy
-                                            localServerStateVar,
+                  cmPrunePolicy         = Diffusion.Policies.prunePolicy,
+                  cmStdGen              = cmLocalStdGen,
                   cmConnectionsLimits   = localConnectionLimits,
 
                   -- local thread does not start a Outbound Governor
@@ -760,8 +760,7 @@ runM Interfaces
                     serverInboundIdleTimeout    = Nothing,
                     serverConnectionLimits      = localConnectionLimits,
                     serverConnectionManager     = localConnectionManager,
-                    serverInboundInfoChannel    = localInbInfoChannel,
-                    serverObservableStateVar    = localServerStateVar
+                    serverInboundInfoChannel    = localInbInfoChannel
                   }) Async.wait
 
 
@@ -839,11 +838,12 @@ runM Interfaces
 
       let connectionManagerArguments'
             :: forall handle handleError.
-               PrunePolicy ntnAddr (STM m)
+               PrunePolicy ntnAddr
+            -> StdGen
             -> ConnectionManagerArguments
                  (ConnectionHandlerTrace ntnVersion ntnVersionData)
                  ntnFd ntnAddr handle handleError ntnVersion ntnVersionData m
-          connectionManagerArguments' prunePolicy =
+          connectionManagerArguments' prunePolicy cmStdGen =
             ConnectionManagerArguments {
                 cmTracer              = dtConnectionManagerTracer,
                 cmTrTracer            =
@@ -858,6 +858,7 @@ runM Interfaces
                 cmConfigureSocket     = diNtnConfigureSocket,
                 connectionDataFlow    = diNtnDataFlow,
                 cmPrunePolicy         = prunePolicy,
+                cmStdGen,
                 cmConnectionsLimits   = daAcceptedConnectionsLimit,
                 cmTimeWaitTimeout     = daTimeWaitTimeout,
                 cmOutboundIdleTimeout = daProtocolIdleTimeout,
@@ -889,7 +890,7 @@ runM Interfaces
 
           withConnectionManagerInitiatorOnlyMode =
             withConnectionManager
-              (connectionManagerArguments' simplePrunePolicy)
+              (connectionManagerArguments' simplePrunePolicy cmStdGen1)
                  -- Server is not running, it will not be able to
                  -- advise which connections to prune.  It's also not
                  -- expected that the governor targets will be larger
@@ -903,10 +904,9 @@ runM Interfaces
               NotInResponderMode
 
           withConnectionManagerInitiatorAndResponderMode
-            inbndInfoChannel outbndInfoChannel observableStateVar =
+            inbndInfoChannel outbndInfoChannel =
               withConnectionManager
-                (connectionManagerArguments'
-                   $ Diffusion.Policies.prunePolicy observableStateVar)
+                (connectionManagerArguments' Diffusion.Policies.prunePolicy cmStdGen2)
                 (makeConnectionHandler'
                    SingInitiatorResponderMode
                    daApplicationInitiatorResponderMode)
@@ -1049,7 +1049,7 @@ runM Interfaces
               f
 
           -- run server
-          serverRun' sockets connectionManager inboundInfoChannel observableStateVar =
+          serverRun' sockets connectionManager inboundInfoChannel =
             Server.run
               ServerArguments {
                   serverSockets               = sockets,
@@ -1060,8 +1060,7 @@ runM Interfaces
                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                   serverConnectionManager     = connectionManager,
                   serverInboundIdleTimeout    = Just daProtocolIdleTimeout,
-                  serverInboundInfoChannel    = inboundInfoChannel,
-                  serverObservableStateVar    = observableStateVar
+                  serverInboundInfoChannel    = inboundInfoChannel
                 }
 
       --
@@ -1095,11 +1094,9 @@ runM Interfaces
         InitiatorAndResponderDiffusionMode -> do
           inboundInfoChannel  <- newInformationChannel
           outboundInfoChannel <- newInformationChannel
-          observableStateVar  <- Server.newObservableStateVar ntnInbgovRng
           withConnectionManagerInitiatorAndResponderMode
             inboundInfoChannel
-            outboundInfoChannel
-            observableStateVar $ \connectionManager-> do
+            outboundInfoChannel $ \connectionManager -> do
             debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
             diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
             withPeerStateActions' connectionManager $ \peerStateActions ->
@@ -1114,7 +1111,7 @@ runM Interfaces
                      withSockets' $ \sockets addresses -> do
                      traceWith tracer (RunServer addresses)
                      Async.withAsync
-                       (serverRun' sockets connectionManager inboundInfoChannel observableStateVar) $ \serverThread ->
+                       (serverRun' sockets connectionManager inboundInfoChannel) $ \serverThread ->
                        -- end, unique to ...
                        Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
                        -- wait for any thread to fail:

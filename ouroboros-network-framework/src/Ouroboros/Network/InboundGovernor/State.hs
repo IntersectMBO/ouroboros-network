@@ -8,12 +8,8 @@
 -- Inbound protocol governor state.
 --
 module Ouroboros.Network.InboundGovernor.State
-  ( InboundGovernorObservableState (..)
-  , newObservableStateVar
-  , newObservableStateVarIO
-  , newObservableStateVarFromSeed
-    -- * Internals
-  , InboundGovernorState (..)
+  ( -- * Internals
+    InboundGovernorState (..)
   , ConnectionState (..)
   , InboundGovernorCounters (..)
   , inboundGovernorCounters
@@ -33,54 +29,12 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Cache (Cache)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import System.Random (StdGen)
-import System.Random qualified as Rnd
 
 import Network.Mux qualified as Mux
 
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.Mux
-
-
--- | Currently only 'StdGen', but in the future this will be extended to
--- a record which contains some useful statistics about peers to support more
--- advanced prune strategies (see. 'PruneStrategy').
---
-newtype InboundGovernorObservableState = InboundGovernorObservableState {
-      igosPrng :: StdGen
-    }
-
--- | Create new observable state 'StrictTVar'.
---
-newObservableStateVar
-    :: MonadLabelledSTM m
-    => StdGen
-    -> m (StrictTVar m InboundGovernorObservableState)
-newObservableStateVar prng = do
-    v <- newTVarIO (InboundGovernorObservableState prng)
-    labelTVarIO v "observable-state-var"
-    return v
-
-
--- | Using the global 'StdGen'.
---
-newObservableStateVarIO
-    :: IO (StrictTVar IO InboundGovernorObservableState)
-newObservableStateVarIO = do
-    g <- Rnd.getStdGen
-    let (g', igsPrng) = Rnd.split g
-    Rnd.setStdGen g'
-    newObservableStateVar igsPrng
-
-
--- | Useful for testing, it is using 'Rnd.mkStdGen'.
---
-newObservableStateVarFromSeed
-    :: MonadLabelledSTM m
-    => Int
-    -> m (StrictTVar m InboundGovernorObservableState)
-newObservableStateVarFromSeed = newObservableStateVar . Rnd.mkStdGen
 
 
 -- | 'InboundGovernorState', which consist of pure part, and a mutable part.
@@ -94,10 +48,6 @@ data InboundGovernorState muxMode initiatorCtx peerAddr m a b =
         --
         igsConnections   :: !(Map (ConnectionId peerAddr)
                                   (ConnectionState muxMode initiatorCtx peerAddr m a b)),
-
-        -- | PRNG available to 'PrunePolicy'.
-        --
-        igsObservableVar :: !(StrictTVar m InboundGovernorObservableState),
 
         -- | 'InboundGovernorCounters' counters cache. Allows to only trace
         -- values when necessary.
