@@ -1098,25 +1098,25 @@ runM Interfaces
           outboundInfoChannel <- newInformationChannel
           withConnectionManagerInitiatorAndResponderMode
             inboundInfoChannel
-            outboundInfoChannel $ \connectionManager -> do
-            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
-            diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
-            withPeerStateActions' connectionManager $ \peerStateActions ->
-              withPeerSelectionActions'
-                PeerSelectionActionsDiffusionMode {
-                  psNewInboundConnections = readMessage outboundInfoChannel,
-                  psPeerStateActions = peerStateActions } $
-                \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
-                  Async.withAsync
-                    (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread ->
-                      -- begin, unique to InitiatorAndResponder mode:
-                      withSockets' $ \sockets addresses -> do
-                      traceWith tracer (RunServer addresses)
-                      withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread _ ->
-                        -- end, unique to ...
-                        Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
-                        -- wait for any thread to fail:
-                        snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
+            outboundInfoChannel $ \connectionManager ->
+              withSockets' $ \sockets addresses -> do
+                withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread _readInboundState -> do
+                  debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
+                  diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
+                  withPeerStateActions' connectionManager $ \peerStateActions ->
+                    withPeerSelectionActions'
+                      PeerSelectionActionsDiffusionMode {
+                        psNewInboundConnections = readMessage outboundInfoChannel,
+                        psPeerStateActions = peerStateActions } $
+                        \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
+                          Async.withAsync
+                            (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread -> do
+                              -- begin, unique to InitiatorAndResponder mode:
+                              traceWith tracer (RunServer addresses)
+                              -- end, unique to ...
+                              Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+                                -- wait for any thread to fail:
+                                snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
