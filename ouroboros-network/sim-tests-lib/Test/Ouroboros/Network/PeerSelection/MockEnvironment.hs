@@ -347,7 +347,6 @@ mockPeerSelectionActions' tracer
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
       requestPublicRootPeers,
       readPeerSelectionTargets = readTVar targetsVar,
-      readNewInboundConnection = retry,
       requestPeerShare,
       peerStateActions         = PeerStateActions {
           establishPeerConnection,
@@ -357,7 +356,8 @@ mockPeerSelectionActions' tracer
           closePeerConnection
         },
       readUseBootstrapPeers,
-      readLedgerStateJudgement
+      readLedgerStateJudgement,
+      readInboundPeers = pure Map.empty
     }
   where
     -- TODO: make this dynamic
