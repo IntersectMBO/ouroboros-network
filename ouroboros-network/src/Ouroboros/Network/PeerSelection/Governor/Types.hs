@@ -17,6 +17,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , sanePeerSelectionTargets
   , PickPolicy
   , pickPeers
+  , pickUnknownPeers
     -- * P2P governor low level API
     -- These records are needed to run the peer selection.
   , PeerStateActions (..)
@@ -120,6 +121,7 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyPickHotPeersToDemote       :: PickPolicy peeraddr (STM m),
        policyPickWarmPeersToDemote      :: PickPolicy peeraddr (STM m),
        policyPickColdPeersToForget      :: PickPolicy peeraddr (STM m),
+       policyPickInboundPeers           :: PickPolicy peeraddr (STM m),
 
        policyFindPublicRootTimeout      :: !DiffTime,
        policyMaxInProgressPeerShareReqs :: !Int,
@@ -463,6 +465,7 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        --
        bootstrapPeersTimeout       :: !(Maybe Time)
 
+
 --     TODO: need something like this to distinguish between lots of bad peers
 --     and us getting disconnected from the network locally. We don't want a
 --     network disconnect to cause us to flush our full known peer set by
@@ -772,19 +775,19 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 -- | Check pre-conditions and post-conditions on the pick policies,
 -- and supply additional peer attributes from the current state.
 --
-pickPeers :: (Ord peeraddr, Functor m)
-          => PeerSelectionState peeraddr peerconn
-          -> PickPolicy peeraddr m
-          -> Set peeraddr -> Int -> m (Set peeraddr)
-pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
+pickPeers' :: (Ord peeraddr, Functor m)
+           => (Int -> Set peeraddr -> PeerSelectionState peeraddr peerconn -> Bool)
+           -- ^ precondition
+           -> PeerSelectionState peeraddr peerconn
+           -> PickPolicy peeraddr m
+           -> Set peeraddr -> Int -> m (Set peeraddr)
+pickPeers' precondition st@PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
           pick available num =
-    assert precondition $
+    assert (precondition num available st) $
     fmap (\picked -> assert (postcondition picked) picked)
          (pick peerSource peerConnectFailCount peerTepidFlag
                available numClamped)
   where
-    precondition         = not (Set.null available) && num > 0
-                        && available `Set.isSubsetOf` KnownPeers.toSet knownPeers
     postcondition picked = not (Set.null picked)
                         && Set.size picked <= numClamped
                         && picked `Set.isSubsetOf` available
@@ -813,6 +816,30 @@ pickPeers PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
         error $ "A pick policy requested an attribute for peer address "
              ++ " which is outside of the set given to pick from"
 
+
+-- | Pick some known peers.
+--
+pickPeers :: (Ord peeraddr, Functor m)
+          => PeerSelectionState peeraddr peerconn
+          -> PickPolicy peeraddr m
+          -> Set peeraddr -> Int -> m (Set peeraddr)
+{-# INLINE pickPeers #-}
+pickPeers = pickPeers' (\num available PeerSelectionState { knownPeers } ->
+                            not (Set.null available) && num > 0
+                         && available `Set.isSubsetOf` KnownPeers.toSet knownPeers
+                       )
+
+-- | Pick some unknown peers.
+--
+pickUnknownPeers :: (Ord peeraddr, Functor m)
+                 => PeerSelectionState peeraddr peerconn
+                 -> PickPolicy peeraddr m
+                 -> Set peeraddr -> Int -> m (Set peeraddr)
+{-# INLINE pickUnknownPeers #-}
+pickUnknownPeers = pickPeers' (\num available PeerSelectionState { knownPeers } ->
+                                   not (Set.null available) && num > 0
+                                && not (available `Set.isSubsetOf` KnownPeers.toSet knownPeers)
+                              )
 
 ---------------------------
 -- Peer Selection Decisions
@@ -952,7 +979,8 @@ data TracePeerSelection peeraddr =
      | TracePeerShareRequests     Int Int PeerSharingAmount (Set peeraddr) (Set peeraddr)
      | TracePeerShareResults         [(peeraddr, Either SomeException (PeerSharingResult peeraddr))] --TODO: classify failures
      | TracePeerShareResultsFiltered [peeraddr]
-     | TraceKnownInboundConnection peeraddr PeerSharing
+     -- | target known peers, actual known peers, selected inbound peers, available peers
+     | TracePickInboundPeers Int Int (Map peeraddr PeerSharing) (Set peeraddr)
 
      --
      -- Promote Cold Peers
