@@ -21,6 +21,7 @@
 module Test.Ouroboros.Network.Server2.IO (tests) where
 
 import Control.Monad.Class.MonadThrow
+import System.Random (mkStdGen)
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -52,9 +53,10 @@ tests =
 --
 
 prop_unidirectional_IO
-  :: ClientAndServerData Int
+  :: Fixed Int
+  -> ClientAndServerData Int
   -> Property
-prop_unidirectional_IO clientAndServerData =
+prop_unidirectional_IO (Fixed rnd) clientAndServerData =
     ioProperty $ do
       withIOManager $ \iomgr ->
         bracket
@@ -66,6 +68,7 @@ prop_unidirectional_IO clientAndServerData =
               Socket.bind socket (Socket.addrAddress addr)
               Socket.listen socket maxBound
               unidirectionalExperiment
+                (mkStdGen rnd)
                 ioTimeouts
                 (socketSnocket iomgr)
                 Mux.makeSocketBearer
@@ -76,10 +79,11 @@ prop_unidirectional_IO clientAndServerData =
 
 
 prop_bidirectional_IO
-    :: ClientAndServerData Int
+    :: Fixed Int
+    -> ClientAndServerData Int
     -> ClientAndServerData Int
     -> Property
-prop_bidirectional_IO data0 data1 =
+prop_bidirectional_IO (Fixed rnd) data0 data1 =
     ioProperty $ do
       withIOManager $ \iomgr ->
         bracket
@@ -108,6 +112,7 @@ prop_bidirectional_IO data0 data1 =
 
             bidirectionalExperiment
               True
+              (mkStdGen rnd)
               ioTimeouts
               (socketSnocket iomgr)
               Mux.makeSocketBearer

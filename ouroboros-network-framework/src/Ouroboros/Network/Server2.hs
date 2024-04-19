@@ -15,10 +15,6 @@
 --
 module Ouroboros.Network.Server2
   ( ServerArguments (..)
-  , InboundGovernorObservableState (..)
-  , newObservableStateVar
-  , newObservableStateVarIO
-  , newObservableStateVarFromSeed
     -- * Run server
   , run
     -- * Trace
@@ -87,11 +83,7 @@ data ServerArguments (muxMode  :: MuxMode) socket initiatorCtx peerAddr versionD
       -- inbound connections.
       --
       serverInboundInfoChannel    :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData
-                                                                bytes m a b,
-
-      -- | Observable mutable state.
-      --
-      serverObservableStateVar    :: StrictTVar m InboundGovernorObservableState
+                                                                bytes m a b
     }
 
 -- | Server pauses accepting connections after an 'CONNABORTED' error.
@@ -141,15 +133,10 @@ run ServerArguments {
         serverLimits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       serverInboundIdleTimeout,
       serverConnectionManager,
-      serverInboundInfoChannel,
-      serverObservableStateVar
+      serverInboundInfoChannel
     } = do
       let sockets = NonEmpty.toList serverSockets
       localAddresses <- traverse (getLocalAddr serverSnocket) sockets
-      labelTVarIO serverObservableStateVar
-                  (  "server-observable-state-"
-                  ++ intercalate "-" (show <$> localAddresses)
-                  )
       traceWith tracer (TrServerStarted localAddresses)
       let threads = (do labelThisThread (  "inbound-governor-"
                                         ++ intercalate "-" (show <$> localAddresses)
@@ -158,8 +145,7 @@ run ServerArguments {
                                         inboundGovernorTracer
                                         serverInboundInfoChannel
                                         serverInboundIdleTimeout
-                                        serverConnectionManager
-                                        serverObservableStateVar)
+                                        serverConnectionManager)
                     : [ (accept serverSnocket socket >>= acceptLoop localAddress)
                         `finally` close serverSnocket socket
                       | (localAddress, socket) <- localAddresses `zip` sockets

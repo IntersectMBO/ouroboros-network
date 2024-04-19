@@ -43,6 +43,7 @@ import Data.Maybe (maybeToList)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.Stack (CallStack, HasCallStack, callStack)
+import System.Random (StdGen, split)
 
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -136,7 +137,12 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
 
         -- | Prune policy
         --
-        cmPrunePolicy         :: PrunePolicy peerAddr (STM m),
+        cmPrunePolicy         :: PrunePolicy peerAddr,
+
+        -- | StdGen used by the `PrunePolicy`
+        --
+        cmStdGen              :: StdGen,
+
         cmConnectionsLimits   :: AcceptedConnectionsLimit,
 
         -- | How to extract remote side's PeerSharing information from
@@ -569,7 +575,7 @@ withConnectionManager
     -- outside of scope of this callback.  Once it returns all resources
     -- will be closed.
     -> m a
-withConnectionManager ConnectionManagerArguments {
+withConnectionManager args@ConnectionManagerArguments {
                           cmTracer    = tracer,
                           cmTrTracer  = trTracer,
                           cmMuxTracer = muxTracer,
@@ -594,10 +600,11 @@ withConnectionManager ConnectionManagerArguments {
                       inboundGovernorInfoChannel
                       outboundGovernorInfoChannel
                       k = do
-    ((freshIdSupply, stateVar)
+    ((freshIdSupply, stateVar, stdGenVar)
        ::  ( FreshIdSupply m
            , StrictTMVar m (ConnectionManagerState peerAddr handle handleError
                                                    version m)
+           , StrictTVar m StdGen
            ))
       <- atomically $  do
           v  <- newTMVar Map.empty
@@ -613,7 +620,8 @@ withConnectionManager ConnectionManagerArguments {
                        (_, _)                   -> pure DontTrace
 
           freshIdSupply <- newFreshIdSupply (Proxy :: Proxy m)
-          return (freshIdSupply, v)
+          stdGenVar <- newTVar (cmStdGen args)
+          return (freshIdSupply, v, stdGenVar)
 
     let readState
           :: STM m (Map peerAddr AbstractState)
@@ -659,7 +667,7 @@ withConnectionManager ConnectionManagerArguments {
                           requestOutboundConnectionImpl freshIdSupply stateVar
                                                         outboundHandler,
                         ocmUnregisterConnection =
-                          unregisterOutboundConnectionImpl stateVar
+                          unregisterOutboundConnectionImpl stateVar stdGenVar
                       },
                 readState,
                 waitForOutboundDemotion
@@ -676,7 +684,7 @@ withConnectionManager ConnectionManagerArguments {
                         icmUnregisterConnection =
                           unregisterInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
-                          promotedToWarmRemoteImpl stateVar,
+                          promotedToWarmRemoteImpl stateVar stdGenVar,
                         icmDemotedToColdRemote =
                           demotedToColdRemoteImpl stateVar,
                         icmNumberOfConnections =
@@ -695,7 +703,7 @@ withConnectionManager ConnectionManagerArguments {
                           requestOutboundConnectionImpl freshIdSupply stateVar
                                                         outboundHandler,
                         ocmUnregisterConnection =
-                          unregisterOutboundConnectionImpl stateVar
+                          unregisterOutboundConnectionImpl stateVar stdGenVar
                       }
                     InboundConnectionManager {
                         icmIncludeConnection =
@@ -704,7 +712,7 @@ withConnectionManager ConnectionManagerArguments {
                         icmUnregisterConnection =
                           unregisterInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
-                          promotedToWarmRemoteImpl stateVar,
+                          promotedToWarmRemoteImpl stateVar stdGenVar,
                         icmDemotedToColdRemote =
                           demotedToColdRemoteImpl stateVar,
                         icmNumberOfConnections =
@@ -988,11 +996,12 @@ withConnectionManager ConnectionManagerArguments {
                   -> ConnectionState peerAddr handle handleError version  m
                   -- ^ next connection state, if it will not be pruned.
                   -> StrictTVar m (ConnectionState peerAddr handle handleError version m)
+                  -> StrictTVar m StdGen
                   -> Async m ()
                   -> STM m (Bool, PruneAction m)
                   -- ^ return if the connection was choose to be pruned and the
                   -- 'PruneAction'
-    mkPruneAction peerAddr numberToPrune state connState' connVar connThread = do
+    mkPruneAction peerAddr numberToPrune state connState' connVar stdGenVar connThread = do
       (choiceMap' :: Map peerAddr ( ConnectionType
                                   , Async m ()
                                   , StrictTVar m
@@ -1015,10 +1024,11 @@ withConnectionManager ConnectionManagerArguments {
               Just a  -> Map.insert peerAddr (a, connThread, connVar)
                                     choiceMap'
 
-      pruneSet <-
-        cmPrunePolicy
-          ((\(a,_,_) -> a) <$> choiceMap)
-          numberToPrune
+      stdGen <- stateTVar stdGenVar split
+      let pruneSet = cmPrunePolicy
+                       stdGen
+                       ((\(a,_,_) -> a) <$> choiceMap)
+                       numberToPrune
 
       let pruneMap = choiceMap `Map.restrictKeys` pruneSet
       forM_ pruneMap $ \(_, _, connVar') ->
@@ -2104,9 +2114,10 @@ withConnectionManager ConnectionManagerArguments {
     unregisterOutboundConnectionImpl
         :: StrictTMVar m
             (ConnectionManagerState peerAddr handle handleError version m)
+        -> StrictTVar m StdGen
         -> peerAddr
         -> m (OperationResult AbstractState)
-    unregisterOutboundConnectionImpl stateVar peerAddr = do
+    unregisterOutboundConnectionImpl stateVar stdGenVar peerAddr = do
       traceWith tracer (TrUnregisterConnection Outbound peerAddr)
       (transition, mbAssertion)
         <- atomically $ do
@@ -2187,7 +2198,7 @@ withConnectionManager ConnectionManagerArguments {
                 if numberToPrune > 0
                 then do
                   (_, prune)
-                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar stdGenVar connThread
                   return
                     ( PruneConnections prune (Left connState)
                     , Nothing
@@ -2328,9 +2339,10 @@ withConnectionManager ConnectionManagerArguments {
     -- guarantees that the same order of transitions and its trace.
     promotedToWarmRemoteImpl
         :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        -> StrictTVar m StdGen
         -> peerAddr
         -> m (OperationResult AbstractState)
-    promotedToWarmRemoteImpl stateVar peerAddr = mask_ $ do
+    promotedToWarmRemoteImpl stateVar stdGenVar peerAddr = mask_ $ do
       (result, pruneTr, mbAssertion) <- atomically $ do
         state <- readTMVar stateVar
         let mbConnVar = Map.lookup peerAddr state
@@ -2400,7 +2412,7 @@ withConnectionManager ConnectionManagerArguments {
                 if numberToPrune > 0
                 then do
                   (pruneSelf, prune)
-                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar stdGenVar connThread
 
                   when (not pruneSelf)
                     $ writeTVar connVar connState'
@@ -2439,7 +2451,7 @@ withConnectionManager ConnectionManagerArguments {
                 if numberToPrune > 0
                 then do
                   (pruneSelf, prune)
-                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar stdGenVar connThread
                   when (not pruneSelf)
                      $ writeTVar connVar connState'
 

@@ -19,7 +19,6 @@ import System.Random qualified as Rnd
 import Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
            Provenance (..), PrunePolicy)
 import Ouroboros.Network.ExitPolicy as ExitPolicy
-import Ouroboros.Network.InboundGovernor (InboundGovernorObservableState (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerMetric
 
@@ -206,24 +205,16 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
 --
 -- TODO: complexity could be improved.
 --
-prunePolicy :: ( MonadSTM m
-               , Ord peerAddr
-               )
-            => StrictTVar m InboundGovernorObservableState
-            -> PrunePolicy peerAddr (STM m)
-prunePolicy stateVar mp n = do
-    state <- readTVar stateVar
-    let (prng', prng'') = Rnd.split (igosPrng state)
-    writeTVar stateVar (state { igosPrng = prng'' })
-
-    return
-      $ Set.fromList
+prunePolicy :: Ord peerAddr
+            => PrunePolicy peerAddr
+prunePolicy prng mp n =
+        Set.fromList
       . take n
       . map (fst . fst)
       -- 'True' values (upstream / outbound connections) will sort last.
       . sortOn (\((_, connType), score) -> (isUpstream connType, score, connType))
       . zip (Map.assocs mp)
-      $ (Rnd.randoms prng' :: [Int])
+      $ (Rnd.randoms prng :: [Int])
   where
     isUpstream :: ConnectionType -> Bool
     isUpstream = \connType ->
