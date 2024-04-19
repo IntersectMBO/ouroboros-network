@@ -22,7 +22,8 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MVar, MonadMVar (putMVar),
            newEmptyMVar, takeMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad.Class.MonadThrow (MonadThrow, bracket)
+import Control.Monad (when)
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Data.Hashable (Hashable (..))
 import Data.List (sortBy)
@@ -35,7 +36,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types (PublicPeerSelectionState,
            availableToShare)
 import Ouroboros.Network.Protocol.PeerSharing.Client (PeerSharingClient (..))
 import Ouroboros.Network.Protocol.PeerSharing.Server (PeerSharingServer (..))
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
+import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..),
            PeerSharingResult (..))
 import System.Random
 
@@ -91,9 +92,19 @@ bracketPeerSharingClient (PeerSharingRegistry registry) peer k = do
           (\_ -> atomically (modifyTVar registry (Map.delete peer)))
           (\_ -> k newPSController)
 
+
+data PeerSharingError =
+    -- | Received more peers than requested.
+    PeerSharingProtocolViolation PeerSharingAmount Int
+
+  deriving Show
+
+instance Exception PeerSharingError
+
 peerSharingClient :: ( Alternative (STM m)
                      , MonadMVar m
                      , MonadSTM m
+                     , MonadThrow m
                      )
                   => ControlMessageSTM m
                   -> PeerSharingController peer m
@@ -114,6 +125,10 @@ peerSharingClient controlMessageSTM
                    $ SendMsgDone (return ())
     Just (amount, resultQueue) -> return $
       SendMsgShareRequest amount $ \result -> do
+        let numOfReceived = length result
+        when (numOfReceived > fromIntegral amount) $
+          throwIO (PeerSharingProtocolViolation amount numOfReceived)
+
         putMVar resultQueue result
         peerSharingClient controlMessageSTM psc
 
