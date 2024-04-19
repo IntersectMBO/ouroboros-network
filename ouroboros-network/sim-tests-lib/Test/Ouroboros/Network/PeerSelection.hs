@@ -701,7 +701,7 @@ traceNum TraceDemoteWarmBigLedgerPeerDone{}                   = 43
 traceNum TraceDemoteHotBigLedgerPeers{}                       = 44
 traceNum TraceDemoteHotBigLedgerPeerFailed{}                  = 45
 traceNum TraceDemoteHotBigLedgerPeerDone{}                    = 46
-traceNum TraceKnownInboundConnection{}                        = 47
+traceNum TracePickInboundPeers{}                              = 47
 traceNum TraceDemoteBigLedgerPeersAsynchronous{}              = 48
 traceNum TraceLedgerStateJudgementChanged{}                   = 49
 traceNum TraceOnlyBootstrapPeers{}                            = 50
@@ -760,7 +760,7 @@ allTraceNames =
    , (44, "TraceDemoteHotBigLedgerPeers")
    , (45, "TraceDemoteHotBigLedgerPeerFailed")
    , (46, "TraceDemoteHotBigLedgerPeerDone")
-   , (47, "TraceKnownInboundConnection")
+   , (47, "TracePickInboundPeers")
    , (48, "TraceDemoteBigLedgerPeersAsynchronous")
    , (49, "TraceLedgerStateJudgementChanged")
    , (50, "TraceOnlyBootstrapPeers")
@@ -768,6 +768,7 @@ allTraceNames =
    , (52, "TraceUseBootstrapPeersChanged")
    , (53, "TraceOutboundGovernorCriticalFailure")
    , (54, "TraceDebugState")
+   , (55, "TracePickInboundPeers")
    ]
 
 
@@ -3381,6 +3382,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 policyPickWarmPeersToPromote  = \_ _ _ -> pickTrivially,
                 policyPickHotPeersToDemote    = \_ _ _ -> pickTrivially,
                 policyPickWarmPeersToDemote   = \_ _ _ -> pickTrivially,
+                policyPickInboundPeers        = \_ _ _ -> pickTrivially,
                 policyFindPublicRootTimeout   = 5,
                 policyMaxInProgressPeerShareReqs = 0,
                 policyPeerShareRetryTime         = 0, -- seconds
@@ -3425,6 +3427,7 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       pickHotPeersToDemote = Script (PickSome (Set.fromList [PeerAddr 29]) :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
+      pickInboundPeers      = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
@@ -3461,6 +3464,7 @@ prop_issue_3515 = prop_governor_nolivelock $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
+      pickInboundPeers = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
@@ -3497,6 +3501,7 @@ prop_issue_3494 = prop_governor_nofail $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
+      pickInboundPeers = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
@@ -3549,6 +3554,7 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
+      pickInboundPeers = Script (PickFirst :| []),
       peerSharing = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])

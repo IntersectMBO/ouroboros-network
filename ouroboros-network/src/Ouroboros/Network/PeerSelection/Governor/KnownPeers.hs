@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -11,6 +12,8 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
 
 import Data.Hashable
 import Data.List (sortBy)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import System.Random (random)
@@ -22,6 +25,7 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
+import Ouroboros.Network.Diffusion.Policies qualified as Policies
 import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
@@ -37,37 +41,91 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 -- Known peers below target
 --
 
-
--- | If we are below the target of /known peers/ we peer share (if we are above
--- the peer share request threshold).
+-- | If we are below the target of /known peers/ we flip a coin to either get
+-- new peers from:
+--
+-- * inbound connections; or
+-- * peer share (if we are above the peer share request threshold).
 --
 -- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
 -- state) then this monitoring action will be disabled.
 --
-belowTarget :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
-            -> MkGuardedDecision peeraddr peerconn m
-belowTarget actions
-            policy@PeerSelectionPolicy {
-              policyMaxInProgressPeerShareReqs,
-              policyPickKnownPeersForPeerShare,
-              policyPeerShareRetryTime
-            }
-            st@PeerSelectionState {
-              knownPeers,
-              publicRootPeers,
-              establishedPeers,
-              inProgressPeerShareReqs,
-              inProgressDemoteToCold,
-              targets = PeerSelectionTargets {
-                          targetNumberOfKnownPeers
-                        },
-              ledgerStateJudgement,
-              bootstrapPeersFlag,
-              stdGen
-            }
-    -- Only start Peer Sharing request if PeerSharing was enabled
-  | PeerSharingEnabled <- peerSharing actions
+belowTarget
+    :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
+    => PeerSelectionActions peeraddr peerconn m
+    -> Map peeraddr PeerSharing
+    -> MkGuardedDecision peeraddr peerconn m
+belowTarget actions@PeerSelectionActions { peerSharing }
+                    inboundPeers
+                    policy@PeerSelectionPolicy {
+                      policyMaxInProgressPeerShareReqs,
+                      policyPickKnownPeersForPeerShare,
+                      policyPickInboundPeers,
+                      policyPeerShareRetryTime
+                    }
+                    st@PeerSelectionState {
+                      knownPeers,
+                      publicRootPeers,
+                      establishedPeers,
+                      inProgressPeerShareReqs,
+                      inProgressDemoteToCold,
+                      targets = PeerSelectionTargets {
+                                  targetNumberOfKnownPeers
+                                },
+                      ledgerStateJudgement,
+                      bootstrapPeersFlag,
+                      stdGen
+                    }
+    --
+    -- Light peer sharing
+    --
+
+  | PeerSharingEnabled <- peerSharing
+    -- Are we under target for number of known peers?
+  , numKnownPeers < targetNumberOfKnownPeers
+
+    -- There are no peer share requests in-flight.
+  , inProgressPeerShareReqs <= 0
+
+    -- No inbound peers should be used when the node is using bootstrap peers.
+  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+
+    -- Use inbound peers either if it won the coin flip or if there are no
+    -- available peers to do peer sharing.
+  , useInboundPeers || Set.null availableForPeerShare
+
+  , let availablePeers = Map.keysSet inboundPeers
+                  Set.\\ KnownPeers.toSet knownPeers
+  , not (Set.null availablePeers)
+
+  = Guarded Nothing $ do
+      selected <- pickUnknownPeers
+                  st
+                  policyPickInboundPeers
+                  availablePeers
+                  (Policies.maxInboundPeers `min` (targetNumberOfKnownPeers - numKnownPeers))
+      let selectedMap = inboundPeers `Map.restrictKeys` selected
+      return $ \_now -> Decision {
+          decisionTrace = [TracePickInboundPeers
+                            targetNumberOfKnownPeers
+                            numKnownPeers
+                            selectedMap
+                            availablePeers
+                          ],
+          decisionState = st { knownPeers = KnownPeers.setSuccessfulConnectionFlag selected
+                                          $ KnownPeers.insert
+                                              (Map.map (\ps -> (Just ps, Just DoAdvertisePeer)) selectedMap)
+                                              knownPeers,
+                               stdGen = stdGen'
+                             },
+          decisionJobs = []
+        }
+
+    --
+    -- Peer sharing
+    --
+
+  | PeerSharingEnabled <- peerSharing
     -- Are we under target for number of known peers?
   , numKnownPeers < targetNumberOfKnownPeers
 
@@ -78,9 +136,10 @@ belowTarget actions
     -- We can only ask ones where we have not asked them within a certain time.
   , not (Set.null availableForPeerShare)
 
-    -- No peer share requests should be issued when the node is in a sensitive
-    -- state
+    -- No peer share requests should be issued when the node is using bootstrap
+    -- peers.
   , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
+
   = Guarded Nothing $ do
       -- Max selected should be <= numPeerShareReqsPossible
       selectedForPeerShare <- pickPeers st
@@ -99,7 +158,7 @@ belowTarget actions
           numPeersToReq :: PeerSharingAmount
           !numPeersToReq = fromIntegral
                          $ min 255 (max 8 (objective `div` numPeerShareReqs))
-          (salt, stdGen') = random stdGen
+          (salt, stdGen'') = random stdGen'
 
       return $ \now -> Decision {
         decisionTrace = [TracePeerShareRequests
@@ -115,7 +174,7 @@ belowTarget actions
                                               selectedForPeerShare
                                               (addTime policyPeerShareRetryTime now)
                                               establishedPeers,
-                          stdGen = stdGen'
+                          stdGen = stdGen''
                         },
         decisionJobs  =
           [jobPeerShare actions policy objective salt numPeersToReq
@@ -132,6 +191,7 @@ belowTarget actions
   | otherwise
   = GuardedSkip Nothing
   where
+    (useInboundPeers, stdGen') = random stdGen
     numKnownPeers            = Set.size $ KnownPeers.toSet knownPeers
                                    Set.\\ PublicRootPeers.getBigLedgerPeers publicRootPeers
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
