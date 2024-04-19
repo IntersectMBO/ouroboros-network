@@ -16,6 +16,7 @@ module Ouroboros.Network.PeerSelection.RelayAccessPoint
   ) where
 
 import Control.DeepSeq (NFData (..))
+import Control.Monad (when)
 
 import Data.Aeson
 import Data.IP qualified as IP
@@ -62,7 +63,7 @@ data RelayAccessPoint = RelayAccessDomain  !DNS.Domain !Socket.PortNumber
 -- for all its query responses. It appears they provide some improved
 -- debugging diagnostics over Serialize instances.
 instance ToCBOR RelayAccessPoint where
-  toCBOR = mconcat . \case
+  toCBOR = mconcat . (encodeListLen 3 :) . \case
     RelayAccessDomain domain port ->
       [encodeWord8 0, serialize' port, toCBOR domain]
     RelayAccessAddress (IP.IPv4 ip4) port ->
@@ -74,17 +75,22 @@ instance ToCBOR RelayAccessPoint where
 
 instance FromCBOR RelayAccessPoint where
   fromCBOR = do
-    mode <- decodeWord8
+    codeTag <- decodeListLen
+    when (codeTag /= 3) . fail $    "Unrecognized RelayAccessPoint encoding tag "
+                                 <> show codeTag
+    constructorTag <- decodeWord8
     port <- fromInteger <$> fromCBOR @Integer
-    if | mode == 0 ->  do
-         domain <- fromCBOR
-         return $ RelayAccessDomain domain port
-       | mode == 1 -> do
-         ip4 <- IP.IPv4 . IP.toIPv4 <$> fromCBOR
-         return $ RelayAccessAddress ip4 port
-       | mode == 2 -> do
-         ip6 <- IP.IPv6 . IP.toIPv6 <$> fromCBOR
-         return $ RelayAccessAddress ip6 port
+    case constructorTag of
+      0 -> do
+        domain <- fromCBOR
+        return $ RelayAccessDomain domain port
+      1 -> do
+        ip4 <- IP.IPv4 . IP.toIPv4 <$> fromCBOR
+        return $ RelayAccessAddress ip4 port
+      2 -> do
+        ip6 <- IP.IPv6 . IP.toIPv6 <$> fromCBOR
+        return $ RelayAccessAddress ip6 port
+      _ -> fail $ "Unrecognized RelayAccessPoint tag: " <> show constructorTag
 
 instance Show RelayAccessPoint where
     show (RelayAccessDomain domain port) =
