@@ -3627,7 +3627,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
                 peerConnToPeerSharing    = \ps -> ps,
                 requestPublicRootPeers   = \_ _ -> return (PublicRootPeers.empty, 0),
-                readNewInboundConnection = retry,
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
                   monitorPeerConnection    = error "monitorPeerConnection",
@@ -3637,11 +3636,12 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 },
                 readUseBootstrapPeers,
                 readLedgerStateJudgement,
+                readInboundPeers = pure Map.empty,
                 updateOutboundConnectionsState = \a -> do
                   a' <- readTVar olocVar
                   when (a /= a') $
                     writeTVar olocVar a
-                              }
+              }
 
     targets :: PeerSelectionTargets
     targets = nullPeerSelectionTargets {

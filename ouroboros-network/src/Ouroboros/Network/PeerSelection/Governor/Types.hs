@@ -337,7 +337,9 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        --
        readLocalRootPeers       :: STM m (LocalRootPeers.Config peeraddr),
 
-       readNewInboundConnection :: STM m (peeraddr, PeerSharing),
+       -- | Read inbound peers which negotiated duplex connection.
+       --
+       readInboundPeers       :: m (Map peeraddr PeerSharing),
 
        -- | Read the current Peer Sharing willingness value
        --

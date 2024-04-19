@@ -378,7 +378,6 @@ mockPeerSelectionActions' tracer
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
       requestPublicRootPeers,
       readPeerSelectionTargets = readTVar targetsVar,
-      readNewInboundConnection = retry,
       requestPeerShare,
       peerStateActions         = PeerStateActions {
           establishPeerConnection,
@@ -389,6 +388,7 @@ mockPeerSelectionActions' tracer
         },
       readUseBootstrapPeers,
       readLedgerStateJudgement,
+      readInboundPeers = pure Map.empty,
       updateOutboundConnectionsState = \a -> do
         a' <- readTVar outboundConnectionsStateVar
         when (a /= a') $

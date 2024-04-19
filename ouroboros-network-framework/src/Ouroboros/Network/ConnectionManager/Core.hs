@@ -64,7 +64,6 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConnectionManager.Types qualified as CM
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
 
@@ -143,11 +142,7 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
         --
         cmStdGen              :: StdGen,
 
-        cmConnectionsLimits   :: AcceptedConnectionsLimit,
-
-        -- | How to extract remote side's PeerSharing information from
-        -- versionData
-        cmGetPeerSharing      :: versionData -> PeerSharing
+        cmConnectionsLimits   :: AcceptedConnectionsLimit
       }
 
 
@@ -560,15 +555,10 @@ withConnectionManager
     => ConnectionManagerArguments handlerTrace socket peerAddr handle handleError version versionData m
     -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError (version, versionData) m
     -- ^ Callback which runs in a thread dedicated for a given connection.
-    -> PeerSharing
-    -- ^ Configuration PeerSharing value.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
     -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
     -- ^ On outbound duplex connections we need to notify the server about
-    -- a new connection.
-    -> InResponderMode muxMode (Maybe (InformationChannel (peerAddr, PeerSharing) m))
-    -- ^ On inbound duplex connections we need to notify the outbound governor about
     -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
@@ -589,16 +579,13 @@ withConnectionManager args@ConnectionManagerArguments {
                           cmOutboundIdleTimeout,
                           connectionDataFlow,
                           cmPrunePolicy,
-                          cmConnectionsLimits,
-                          cmGetPeerSharing
+                          cmConnectionsLimits
                         }
                       ConnectionHandler {
                           connectionHandler
                         }
-                      peerSharing
                       classifyHandleError
                       inboundGovernorInfoChannel
-                      outboundGovernorInfoChannel
                       k = do
     ((freshIdSupply, stateVar, stdGenVar)
        ::  ( FreshIdSupply m
@@ -1262,27 +1249,6 @@ withConnectionManager args@ConnectionManagerArguments {
                                        infoChannel
                                        (NewConnectionInfo provenance connId dataFlow handle)
                       _ -> return ()
-
-                    let -- True iff the connection can be used by the outbound
-                        -- governor.
-                        notifyOutboundGov =
-                          case (provenance, peerSharing) of
-                            (Inbound, PeerSharingEnabled) -> Duplex == dataFlow
-                            _                             -> False
-                            -- The connection started as inbound but its
-                            -- provenance was changed to outbound; this is only
-                            -- possible if we are connecting to ourselves.  In
-                            -- this case we don't need to notify the outbound
-                            -- governor.
-                    case outboundGovernorInfoChannel of
-                      InResponderMode (Just infoChannel) | notifyOutboundGov
-                                                         ->
-                        atomically $ InfoChannel.writeMessage
-                                       infoChannel
-                                       (peerAddr, cmGetPeerSharing versionData)
-
-                      _ -> return ()
-
                     return $ Connected connId dataFlow handle
 
                   -- the connection is in `TerminatingState` or

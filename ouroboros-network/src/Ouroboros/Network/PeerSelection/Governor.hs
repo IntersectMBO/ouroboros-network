@@ -661,16 +661,6 @@ peerSelectionGovernorLoop tracer
       <> ActivePeers.belowTarget      actions             policy st
       <> ActivePeers.aboveTarget      actions             policy st
 
-      -- Note that this job is potentially blocking but is non-prioritary.
-      --
-      -- The node could be bombarded with incoming connections and we don't want
-      -- to hinder it making progress towards the targets.
-      --
-      -- Although we do have rate-limiting of inbound connections it is better
-      -- to safeguard it by giving it less priority at the governor level.
-      --
-      <> Monitor.inboundPeers         actions st
-
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 
       -- The changedTargets needs to come before the changedLocalRootPeers in

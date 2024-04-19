@@ -105,7 +105,6 @@ import Ouroboros.Network.Test.Orphans ()
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.Test.Timeouts
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 --
@@ -298,8 +297,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer cmStdGen snoc
           cmStdGen,
           cmConnectionsLimits = acceptedConnLimit,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
-          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          cmGetPeerSharing = \(DataFlowProtocolData _ ps) -> ps
+          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts
         }
       (makeConnectionHandler
         muxTracer
@@ -318,9 +316,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer cmStdGen snoc
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
                     <> assertRethrowPolicy))
-      PeerSharingEnabled
       (\_ -> HandshakeFailure)
-      NotInResponderMode
       NotInResponderMode
       (\cm ->
         k cm `catch` \(e :: SomeException) -> throwIO e)
@@ -466,7 +462,6 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    outgovInfoChannel <- newInformationChannel
     let muxTracer = WithName name `contramap` nullTracer -- mux tracer
 
     withConnectionManager
@@ -489,8 +484,7 @@ withBidirectionalConnectionManager name timeouts
           connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
           cmStdGen,
-          cmConnectionsLimits = acceptedConnLimit,
-          cmGetPeerSharing = \(DataFlowProtocolData _ ps) -> ps
+          cmConnectionsLimits = acceptedConnLimit
         }
         (makeConnectionHandler
           muxTracer
@@ -509,10 +503,8 @@ withBidirectionalConnectionManager name timeouts
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
                         <> assertRethrowPolicy))
-        PeerSharingEnabled
         (\_ -> HandshakeFailure)
         (InResponderMode inbgovInfoChannel)
-        (InResponderMode $ Just outgovInfoChannel)
       $ \connectionManager ->
           do
             serverAddr <- Snocket.getLocalAddr snocket socket

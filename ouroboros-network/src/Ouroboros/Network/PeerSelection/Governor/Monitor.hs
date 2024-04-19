@@ -14,7 +14,6 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , jobs
   , connections
   , localRoots
-  , inboundPeers
   , monitorLedgerStateJudgement
   , monitorBootstrapPeersFlag
   , waitForSystemToQuiesce
@@ -43,8 +42,6 @@ import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerStateJudgement (..))
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
@@ -138,55 +135,6 @@ jobs jobPool st =
       Completion completion <- JobPool.waitForJob jobPool
       return (completion st)
 
--- | Monitor new inbound connections
---
--- This is only enabled if peer sharing is enabled.
---
--- It should be noted if the node is in bootstrap mode (i.e. in a sensitive
--- state) then this monitoring action will be disabled.
---
-inboundPeers :: forall m peeraddr peerconn.
-                 (MonadSTM m, Ord peeraddr)
-             => PeerSelectionActions peeraddr peerconn m
-             -> PeerSelectionState peeraddr peerconn
-             -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-inboundPeers PeerSelectionActions{
-               readNewInboundConnection
-             , peerSharing
-             }
-             st@PeerSelectionState {
-               knownPeers
-             , ledgerStateJudgement
-             , bootstrapPeersFlag
-             }
-  -- If we are in a sensitive state we can't let any non-trustable peer into our
-  -- knownPeers set
-  | PeerSharingEnabled <- peerSharing
-  , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement) =
-    Guarded Nothing $ do
-      (addr, ps) <- readNewInboundConnection
-      return $ \_ ->
-        let knownPeers' =
-              KnownPeers.setSuccessfulConnectionFlag addr $
-              KnownPeers.alter
-                (\x -> case x of
-                  Nothing ->
-                    KnownPeers.alterKnownPeerInfo
-                      (Just ps, Just DoAdvertisePeer)
-                      x
-                  Just _ ->
-                    KnownPeers.alterKnownPeerInfo
-                      (Just ps, Nothing)
-                      x
-                )
-                (Set.singleton addr)
-                knownPeers
-         in Decision {
-              decisionTrace = [TraceKnownInboundConnection addr ps],
-              decisionJobs = [],
-              decisionState = st { knownPeers = knownPeers' }
-            }
-  | otherwise = GuardedSkip Nothing
 
 -- | Monitor connections.
 --

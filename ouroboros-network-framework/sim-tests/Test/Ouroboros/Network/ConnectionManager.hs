@@ -69,7 +69,6 @@ import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.InformationChannel qualified as InfoChannel
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 
@@ -752,7 +751,6 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                   --}
 
         inbgovInfoChannel <- newInformationChannel
-        outgovInfoChannel <- newInformationChannel
         let connectionHandler = mkConnectionHandler snocket
         result <- withConnectionManager
           ConnectionManagerArguments {
@@ -774,14 +772,11 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                   acceptedConnectionsDelay     = 0
                 },
               cmTimeWaitTimeout = testTimeWaitTimeout,
-              cmOutboundIdleTimeout = testOutboundIdleTimeout,
-              cmGetPeerSharing = \_ -> PeerSharingDisabled
+              cmOutboundIdleTimeout = testOutboundIdleTimeout
             }
             connectionHandler
-            PeerSharingEnabled
             (\_ -> HandshakeFailure)
             (InResponderMode inbgovInfoChannel)
-            (InResponderMode $ Just outgovInfoChannel)
           $ \(connectionManager
                 :: ConnectionManager InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do

@@ -65,7 +65,6 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -214,7 +213,6 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                    k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    outgovInfoChannel <- newInformationChannel
     -- as in the 'withInitiatorOnlyConnectionManager' we use a `StrictTVar` to
     -- pass list of requests, but since we are also interested in the results we
     -- need to have multable cells to pass the accumulators around.
@@ -245,8 +243,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
               acceptedConnectionsHardLimit = maxBound,
               acceptedConnectionsSoftLimit = maxBound,
               acceptedConnectionsDelay     = 0
-            },
-          cmGetPeerSharing = \_ -> PeerSharingDisabled
+            }
         }
         (makeConnectionHandler
           muxTracer
@@ -266,10 +263,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                 establishedRequestsVar))
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy))
-          PeerSharingEnabled
           (\_ -> HandshakeFailure)
           (InResponderMode inbgovInfoChannel)
-          (InResponderMode $ Just outgovInfoChannel)
       $ \connectionManager -> do
             serverAddr <- Snocket.getLocalAddr snocket socket
             Server.with

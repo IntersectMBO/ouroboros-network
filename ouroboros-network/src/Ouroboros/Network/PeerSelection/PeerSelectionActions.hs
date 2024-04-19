@@ -69,17 +69,17 @@ data PeerSelectionActionsArgs peeraddr peerconn exception m = PeerSelectionActio
   psReadPeerSharingController :: STM m (Map peeraddr (PeerSharingController peeraddr m)),
   -- ^ peer sharing registry
   psUpdateOutboundConnectionsState
-                              :: OutboundConnectionsState -> STM m ()
+                              :: OutboundConnectionsState -> STM m (),
   -- ^ Callback which updates information about outbound connections state.
+  psReadInboundPeers          :: m (Map peeraddr PeerSharing)
+  -- ^ inbound duplex peers
   }
 
 -- | Record of remaining parameters for withPeerSelectionActions
 -- that were extracted out since the following vary based on the diffusion mode
 --
-data PeerSelectionActionsDiffusionMode peeraddr peerhandle m = PeerSelectionActionsDiffusionMode {
-  psNewInboundConnections :: STM m (peeraddr, PeerSharing),
-  -- ^ Read New Inbound Connections
-  psPeerStateActions      :: PeerStateActions peeraddr peerhandle m
+newtype PeerSelectionActionsDiffusionMode peeraddr peerhandle m = PeerSelectionActionsDiffusionMode {
+  psPeerStateActions :: PeerStateActions peeraddr peerhandle m
   -- ^ callbacks for peer state changes
   }
 
@@ -116,9 +116,10 @@ withPeerSelectionActions
     psPeerSharing = sharing,
     psPeerConnToPeerSharing = peerConnToPeerSharing,
     psReadPeerSharingController = sharingController,
+    psReadInboundPeers = readInboundPeers,
     psUpdateOutboundConnectionsState = updateOutboundConnectionsState }
   ledgerPeersArgs
-  PeerSelectionActionsDiffusionMode { psNewInboundConnections = readNewInboundConnections, psPeerStateActions = peerStateActions }
+  PeerSelectionActionsDiffusionMode { psPeerStateActions = peerStateActions }
   k = do
     localRootsVar <- newTVarIO mempty
 
@@ -129,13 +130,13 @@ withPeerSelectionActions
           let peerSelectionActions = PeerSelectionActions {
                                        readPeerSelectionTargets = selectionTargets,
                                        readLocalRootPeers = readTVar localRootsVar,
-                                       readNewInboundConnection = readNewInboundConnections,
                                        peerSharing = sharing,
                                        peerConnToPeerSharing = peerConnToPeerSharing,
                                        requestPublicRootPeers = \lpk n -> requestPublicRootPeers lpk n getLedgerPeers,
                                        requestPeerShare,
                                        peerStateActions,
                                        readUseBootstrapPeers = useBootstrapped,
+                                       readInboundPeers,
                                        readLedgerStateJudgement = judgement,
                                        updateOutboundConnectionsState }
           withAsync
