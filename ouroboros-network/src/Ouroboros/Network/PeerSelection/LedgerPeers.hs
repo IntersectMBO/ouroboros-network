@@ -59,7 +59,7 @@ import Data.Word (Word16, Word64)
 import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.LedgerPeers.Util (accBigPoolStake,
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils (accBigPoolStake,
            bigLedgerPeerQuota, reRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RelayAccessPoint qualified as Socket

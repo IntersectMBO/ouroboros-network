@@ -1,10 +1,13 @@
 {-# LANGUAGE BangPatterns     #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Ouroboros.Network.PeerSelection.LedgerPeers.Util
+module Ouroboros.Network.PeerSelection.LedgerPeers.Utils
   ( bigLedgerPeerQuota
   , accBigPoolStake
   , reRelativeStake
+  , AccPoolStake (..)
+  , PoolStake (..)
+  , RelayAccessPoint (..)
   ) where
 
 import Control.Exception (assert)
