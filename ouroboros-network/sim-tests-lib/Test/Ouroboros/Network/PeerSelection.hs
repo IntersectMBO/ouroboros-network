@@ -47,7 +47,7 @@ import Data.OrdPSQ qualified as PSQ
 import System.Random (mkStdGen)
 
 import Control.Exception (AssertionFailed (..), catch, evaluate)
-import Control.Monad.Class.MonadSTM (STM, retry)
+import Control.Monad.Class.MonadSTM (STM)
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..))
 
@@ -3355,7 +3355,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
                 peerConnToPeerSharing    = \ps -> ps,
                 requestPublicRootPeers   = \_ _ -> return (PublicRootPeers.empty, 0),
-                readNewInboundConnection = retry,
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
                   monitorPeerConnection    = error "monitorPeerConnection",
@@ -3364,7 +3363,8 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   closePeerConnection      = error "closePeerConnection"
                 },
                 readUseBootstrapPeers,
-                readLedgerStateJudgement
+                readLedgerStateJudgement,
+                readInboundPeers = pure Map.empty
               }
 
     targets :: PeerSelectionTargets

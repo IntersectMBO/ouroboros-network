@@ -269,7 +269,9 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
                                           , Map peeraddr ( PeerAdvertise
                                                          , PeerTrustable))],
 
-       readNewInboundConnection :: STM m (peeraddr, PeerSharing),
+       -- | Read inbound peers which negotiated duplex connection.
+       --
+       readInboundPeers       :: m (Map peeraddr PeerSharing),
 
        -- | Read the current Peer Sharing willingness value
        --

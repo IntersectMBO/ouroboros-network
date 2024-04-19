@@ -51,6 +51,7 @@ peerMetricsConfiguration = PeerMetricsConfiguration {
     maxEntriesToTrack = 180
   }
 
+
 -- | Merge two dictionaries where values of the first one are obligatory, while
 -- the second one are optional.
 --
