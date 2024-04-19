@@ -295,8 +295,8 @@ ledgerPeersThread PeerActionsDNS {
     go rng oldTs peerMap bigPeerMap = do
         traceWith wlpTracer WaitingOnRequest
         -- wait until next request of ledger peers
-        (numRequested, ledgerPeersKind) <- atomically getReq
-        useLedgerPeers <- atomically wlpGetUseLedgerPeers
+        ((numRequested, ledgerPeersKind), useLedgerPeers) <- atomically $
+          (,) <$> getReq <*> wlpGetUseLedgerPeers
         traceWith wlpTracer (TraceUseLedgerPeers useLedgerPeers)
 
         let peerListLifeTime = if Map.null peerMap && isLedgerPeersEnabled useLedgerPeers
