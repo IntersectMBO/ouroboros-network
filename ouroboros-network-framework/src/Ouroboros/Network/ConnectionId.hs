@@ -31,6 +31,10 @@ data ConnectionId addr = ConnectionId {
 
 -- | Order first by `remoteAddress` then by `localAddress`.
 --
+-- /Note:/ we relay on the fact that `remoteAddress` is an order
+-- preserving map (which allows us to use `Map.mapKeysMonotonic` in some
+-- cases).
+--
 instance Ord addr => Ord (ConnectionId addr) where
     conn `compare` conn' =
          remoteAddress conn `compare` remoteAddress conn'

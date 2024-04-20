@@ -272,22 +272,19 @@ withBidirectionalConnectionManager snocket makeBearer socket
           (InResponderMode $ Just outgovInfoChannel)
       $ \connectionManager -> do
             serverAddr <- Snocket.getLocalAddr snocket socket
-            withAsync
-              (Server.run
-                ServerArguments {
-                    serverSockets = socket :| [],
-                    serverSnocket = snocket,
-                    serverTracer = ("server",) `contramap` debugTracer, -- ServerTrace
-                    serverTrTracer = nullTracer,
-                    serverInboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
-                    serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
-                    serverConnectionManager = connectionManager,
-                    serverInboundIdleTimeout = Just protocolIdleTimeout,
-                    serverInboundInfoChannel = inbgovInfoChannel
-                  }
-              )
-              (\thread -> link thread
-                       >> k connectionManager serverAddr)
+            Server.with
+              ServerArguments {
+                  serverSockets = socket :| [],
+                  serverSnocket = snocket,
+                  serverTracer = ("server",) `contramap` debugTracer, -- ServerTrace
+                  serverTrTracer = nullTracer,
+                  serverInboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
+                  serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+                  serverConnectionManager = connectionManager,
+                  serverInboundIdleTimeout = Just protocolIdleTimeout,
+                  serverInboundInfoChannel = inbgovInfoChannel
+                }
+              (\_ _ -> k connectionManager serverAddr)
   where
     serverApplication :: LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
