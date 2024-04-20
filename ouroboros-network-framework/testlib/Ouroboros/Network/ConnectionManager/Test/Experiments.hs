@@ -514,24 +514,22 @@ withBidirectionalConnectionManager name timeouts
       $ \connectionManager ->
           do
             serverAddr <- Snocket.getLocalAddr snocket socket
-            withAsync
-              (Server.run
-                ServerArguments {
-                    serverSockets = socket :| [],
-                    serverSnocket = snocket,
-                    serverTrTracer =
-                      WithName name `contramap` inboundTrTracer,
-                    serverTracer =
-                      WithName name `contramap` nullTracer, -- ServerTrace
-                    serverInboundGovernorTracer =
-                      WithName name `contramap` inboundTracer, -- InboundGovernorTrace
-                    serverConnectionLimits = acceptedConnLimit,
-                    serverConnectionManager = connectionManager,
-                    serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
-                    serverInboundInfoChannel = inbgovInfoChannel
-                  }
-              )
-              (\serverAsync -> k connectionManager serverAddr serverAsync)
+            Server.with
+              ServerArguments {
+                  serverSockets = socket :| [],
+                  serverSnocket = snocket,
+                  serverTrTracer =
+                    WithName name `contramap` inboundTrTracer,
+                  serverTracer =
+                    WithName name `contramap` nullTracer, -- ServerTrace
+                  serverInboundGovernorTracer =
+                    WithName name `contramap` inboundTracer, -- InboundGovernorTrace
+                  serverConnectionLimits = acceptedConnLimit,
+                  serverConnectionManager = connectionManager,
+                  serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
+                  serverInboundInfoChannel = inbgovInfoChannel
+                }
+              (\inboundGovernorAsync _ -> k connectionManager serverAddr inboundGovernorAsync)
           `catch` \(e :: SomeException) -> do
             throwIO e
   where

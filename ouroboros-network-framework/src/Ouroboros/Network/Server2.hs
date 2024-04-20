@@ -15,8 +15,9 @@
 --
 module Ouroboros.Network.Server2
   ( ServerArguments (..)
+  , PublicInboundGovernorState (..)
     -- * Run server
-  , run
+  , with
     -- * Trace
   , ServerTrace (..)
   , AcceptConnectionsPolicyTrace (..)
@@ -35,10 +36,10 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, contramap, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
-import Data.List (foldl1', intercalate)
+import Data.List (foldl')
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Void (Void)
+import Data.Void (Void, absurd)
 import GHC.IO.Exception
 #if !defined(mingw32_HOST_OS)
 import Foreign.C.Error
@@ -106,7 +107,7 @@ server_CONNABORTED_DELAY = 0.5
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-run :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m a b.
+with :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m a b x.
        ( Alternative (STM m)
        , MonadAsync    m
        , MonadDelay    m
@@ -122,8 +123,15 @@ run :: forall muxMode socket initiatorCtx peerAddr versionData versionNumber m a
        , Show     peerAddr
        )
     => ServerArguments muxMode socket initiatorCtx peerAddr versionData versionNumber ByteString m a b
-    -> m Void
-run ServerArguments {
+    -- ^ record which holds all server arguments
+    -> (Async m Void -> m (PublicInboundGovernorState peerAddr versionData) -> m x)
+    -- ^ a callback which receives a handle to inbound governor thread and can
+    -- read `PublicInboundGovernorState`.
+    --
+    -- Note that as soon as the callback returns, all threads run by the server
+    -- will be stopped.
+    -> m x
+with ServerArguments {
       serverSockets,
       serverSnocket,
       serverTrTracer,
@@ -134,34 +142,42 @@ run ServerArguments {
       serverInboundIdleTimeout,
       serverConnectionManager,
       serverInboundInfoChannel
-    } = do
+    }
+    k = do
       let sockets = NonEmpty.toList serverSockets
       localAddresses <- traverse (getLocalAddr serverSnocket) sockets
       traceWith tracer (TrServerStarted localAddresses)
-      let threads = (do labelThisThread (  "inbound-governor-"
-                                        ++ intercalate "-" (show <$> localAddresses)
-                                        )
-                        inboundGovernor serverTrTracer
-                                        inboundGovernorTracer
-                                        serverInboundInfoChannel
-                                        serverInboundIdleTimeout
-                                        serverConnectionManager)
-                    : [ (accept serverSnocket socket >>= acceptLoop localAddress)
-                        `finally` close serverSnocket socket
-                      | (localAddress, socket) <- localAddresses `zip` sockets
-                      ]
-
-      -- race all the threads
-      foldl1' (\as io -> either id id <$> as `race` io) threads
-        `finally`
-          traceWith tracer TrServerStopped
-        `catch`
-          \(e :: SomeException) -> do
-            case fromException e of
-              Just (_ :: AsyncCancelled) -> pure ()
-              Nothing                    -> traceWith tracer (TrServerError e)
-            throwIO e
+      withInboundGovernor serverTrTracer
+                          inboundGovernorTracer
+                          serverInboundInfoChannel
+                          serverInboundIdleTimeout
+                          serverConnectionManager
+                        $ \inboundGovernorThread
+                           readPublicInboundState ->
+        withAsync (k inboundGovernorThread readPublicInboundState) $ \actionThread -> do
+          let acceptLoops :: [m Void]
+              acceptLoops =
+                          [ (accept serverSnocket socket >>= acceptLoop localAddress)
+                              `finally` close serverSnocket socket
+                          | (localAddress, socket) <- localAddresses `zip` sockets
+                          ]
+          -- race all `acceptLoops` with `actionThread` and
+          -- `inboundGovernorThread`
+          foldl' (\as io -> fn <$> as `race` io)
+                 (fn <$> actionThread `waitEither` inboundGovernorThread)
+                 acceptLoops
+            `finally`
+              traceWith tracer TrServerStopped
+            `catch`
+              \(e :: SomeException) -> do
+                case fromException e of
+                  Just (_ :: AsyncCancelled) -> pure ()
+                  Nothing                    -> traceWith tracer (TrServerError e)
+                throwIO e
   where
+    fn :: Either x Void -> x
+    fn (Left x)  = x
+    fn (Right v) = absurd v
 
     iseCONNABORTED :: IOError -> Bool
 #if defined(mingw32_HOST_OS)
@@ -203,7 +219,7 @@ run ServerArguments {
         -- NOTE: when we will make 'includeInboundConnection' a non blocking
         -- (issue #3478) we still need to guarantee the above property.
         --
-        go :: (forall x. m x -> m x)
+        go :: (forall y. m y -> m y)
            -> Accept m socket peerAddr
            -> m Void
         go unmask acceptOne = do

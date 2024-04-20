@@ -26,6 +26,7 @@ module Ouroboros.Network.InboundGovernor.Event
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadThrow hiding (handle)
 
 import Data.ByteString.Lazy (ByteString)
@@ -34,6 +35,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
 import Data.Set qualified as Set
+import Data.OrdPSQ (OrdPSQ)
 
 import Network.Mux qualified as Mux
 import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolStatus (..))
@@ -109,6 +111,11 @@ data Event (muxMode :: MuxMode) initiatorCtx peerAddr versionData m a b
     --
     | AwakeRemote            !(ConnectionId peerAddr)
 
+    -- | Update `igsMatureDuplexPeers` and `igsFreshDuplexPeers`.
+    --
+    | MaturedDuplexPeers   !(Map peerAddr versionData)         -- ^ newly matured duplex peers
+                           !(OrdPSQ peerAddr Time versionData) -- ^ queue of fresh duplex peers
+
 
 --
 -- STM transactions which detect 'Event's (signals)
@@ -120,7 +127,7 @@ data Event (muxMode :: MuxMode) initiatorCtx peerAddr versionData m a b
 --
 type EventSignal (muxMode :: MuxMode) initiatorCtx peerAddr versionData m a b =
         ConnectionId peerAddr
-     -> ConnectionState muxMode initiatorCtx peerAddr m a b
+     -> ConnectionState muxMode initiatorCtx peerAddr versionData m a b
      -> FirstToFinish (STM m) (Event muxMode initiatorCtx peerAddr versionData m a b)
 
 -- | A mux stopped.  If mux exited cleanly no error is attached.
@@ -255,7 +262,7 @@ firstPeerPromotedToHot
        RemoteIdle {} -> mempty
   where
     -- only hot mini-protocols;
-    hotMiniProtocolStateMap :: ConnectionState muxMode pinitiatorCtx peerAddr m a b
+    hotMiniProtocolStateMap :: ConnectionState muxMode initiatorCtx peerAddr versionData m a b
                             -> Map (MiniProtocolNum, MiniProtocolDir)
                                    (STM m MiniProtocolStatus)
     hotMiniProtocolStateMap ConnectionState { csMux, csMiniProtocolMap } =
@@ -300,7 +307,7 @@ firstPeerDemotedToWarm
         _  -> mempty
   where
     -- only hot mini-protocols;
-    hotMiniProtocolStateMap :: ConnectionState muxMode initiatorCtx peerAddr m a b
+    hotMiniProtocolStateMap :: ConnectionState muxMode initiatorCtx peerAddr versionData m a b
                             -> Map (MiniProtocolNum, MiniProtocolDir)
                                    (STM m MiniProtocolStatus)
     hotMiniProtocolStateMap ConnectionState { csMux, csMiniProtocolMap } =
