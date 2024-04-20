@@ -749,19 +749,19 @@ runM Interfaces
             traceWith tracer . RunLocalServer
               =<< Snocket.getLocalAddr diNtcSnocket localSocket
 
-            Async.withAsync
-              (Server.run
-                ServerArguments {
-                    serverSockets               = localSocket :| [],
-                    serverSnocket               = diNtcSnocket,
-                    serverTracer                = dtLocalServerTracer,
-                    serverTrTracer              = nullTracer, -- TODO: issue #3320
-                    serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
-                    serverInboundIdleTimeout    = Nothing,
-                    serverConnectionLimits      = localConnectionLimits,
-                    serverConnectionManager     = localConnectionManager,
-                    serverInboundInfoChannel    = localInbInfoChannel
-                  }) Async.wait
+            (Server.with
+              ServerArguments {
+                  serverSockets               = localSocket :| [],
+                  serverSnocket               = diNtcSnocket,
+                  serverTracer                = dtLocalServerTracer,
+                  serverTrTracer              = nullTracer, -- TODO: issue #3320
+                  serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
+                  serverInboundIdleTimeout    = Nothing,
+                  serverConnectionLimits      = localConnectionLimits,
+                  serverConnectionManager     = localConnectionManager,
+                  serverInboundInfoChannel    = localInbInfoChannel
+                })
+              (\inboundGovernorThread _ -> Async.wait inboundGovernorThread)
 
 
     -- | mkRemoteThread - create remote connection manager
@@ -1049,8 +1049,8 @@ runM Interfaces
               f
 
           -- run server
-          serverRun' sockets connectionManager inboundInfoChannel =
-            Server.run
+          withServer sockets connectionManager inboundInfoChannel =
+            Server.with
               ServerArguments {
                   serverSockets               = sockets,
                   serverSnocket               = diNtnSnocket,
@@ -1107,15 +1107,14 @@ runM Interfaces
                 \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
                   Async.withAsync
                     (peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $ \governorThread ->
-                     -- begin, unique to InitiatorAndResponder mode:
-                     withSockets' $ \sockets addresses -> do
-                     traceWith tracer (RunServer addresses)
-                     Async.withAsync
-                       (serverRun' sockets connectionManager inboundInfoChannel) $ \serverThread ->
-                       -- end, unique to ...
-                       Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
-                       -- wait for any thread to fail:
-                       snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, serverThread]
+                      -- begin, unique to InitiatorAndResponder mode:
+                      withSockets' $ \sockets addresses -> do
+                      traceWith tracer (RunServer addresses)
+                      withServer sockets connectionManager inboundInfoChannel $ \inboundGovernorThread _ ->
+                        -- end, unique to ...
+                        Async.withAsync peerChurnGovernor' $ \churnGovernorThread ->
+                        -- wait for any thread to fail:
+                        snd <$> Async.waitAny [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread, inboundGovernorThread]
 
 -- | Main entry point for data diffusion service.  It allows to:
 --
