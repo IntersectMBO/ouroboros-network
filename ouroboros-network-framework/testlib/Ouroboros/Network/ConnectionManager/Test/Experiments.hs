@@ -730,8 +730,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                                            noNextRequests
                                            timeLimitsHandshake
                                            maxAcceptedConnectionsLimit
-          $ \_ serverAddr serverAsync -> do
-            link serverAsync
+          $ \_ serverAddr _serverAsync -> do
             -- client → server: connect
             (rs :: [Either SomeException (TemperatureBundle [resp])]) <-
                 replicateM
@@ -810,8 +809,7 @@ bidirectionalExperiment
                                          nextRequests0
                                          noTimeLimitsHandshake
                                          maxAcceptedConnectionsLimit
-        (\connectionManager0 _serverAddr0 serverAsync0 -> do
-          link serverAsync0
+        (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
                                              nullTracer nullTracer nullTracer
                                              nullTracer stdGen'' snocket makeBearer confSock
