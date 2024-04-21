@@ -2078,12 +2078,9 @@ unit_server_accept_error (Fixed rnd) ioErrType =
       noAttenuation { biAcceptFailures = Just (0, ioErrType) }
 
     sim :: IOSim s Property
-    sim = handle (\e -> return $ case fromException e of
-                          Just (ExceptionInLinkedThread _ err) ->
-                            case fromException err of
-                              Just (_ :: IOError) -> property True
-                              Nothing             -> property False
-                          Nothing                 -> property False
+    sim = handle (\e -> return $ case fromException e :: Maybe IOError of
+                          Just _  -> property True
+                          Nothing -> property $ counterexample ("not an IOError: " ++ show e) False
                  )
         $ withSnocket nullTracer
                       bearerAttenuation
