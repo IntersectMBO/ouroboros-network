@@ -8,6 +8,8 @@
 
 module Test.Ouroboros.Network.LedgerPeers where
 
+import Codec.CBOR.FlatTerm
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException (..))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -32,8 +34,8 @@ import System.Random
 
 import Network.DNS (Domain)
 
+import Cardano.Binary
 import Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
-import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -44,12 +46,14 @@ import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf
 
+
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"
   [ testProperty "Pick 100%" prop_pick100
   , testProperty "Pick" prop_pick
   , testProperty "accBigPoolStake" prop_accBigPoolStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
+  , testProperty "LedgerPeerSnapshot encode/decode" prop_ledgerPeerSnapshot
   ]
 
 newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
@@ -366,6 +370,24 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
                   (pure $ curSlotWO)
                   (pure lsj)
                   (pure (Map.elems (accPoolStake lps)))
+
+-- | Tests if the CBOR encoding is valid, and whether a round
+-- trip results in the original peer snapshot value.
+--
+prop_ledgerPeerSnapshot :: ArbitrarySlotNo
+                        -> LedgerPools
+                        -> Property
+prop_ledgerPeerSnapshot (ArbitrarySlotNo slot)
+                        (LedgerPools pools) =
+  validFlatTerm encoded .&&. either (const False) (snapshot ==) decoded
+  where
+    poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
+    originOrSlot = case slot of
+      0 -> Origin
+      n -> At n
+    snapshot = LedgerPeerSnapshot (originOrSlot, poolStakeWithAccumulation)
+    encoded = toFlatTerm . toCBOR $ snapshot
+    decoded = fromFlatTerm fromCBOR encoded
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]

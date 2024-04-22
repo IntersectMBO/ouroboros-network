@@ -166,6 +166,7 @@ library sim-tests-lib
                        QuickCheck,
                        aeson,
                        array,
+                       cardano-binary,
                        cborg,
                        containers,
                        deepseq,
