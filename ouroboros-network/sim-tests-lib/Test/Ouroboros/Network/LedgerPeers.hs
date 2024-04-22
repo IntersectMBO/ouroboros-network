@@ -35,7 +35,7 @@ import System.Random
 import Network.DNS (Domain)
 
 import Cardano.Binary
-import Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
+import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -45,7 +45,6 @@ import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf
-
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"
@@ -99,7 +98,7 @@ newtype ArbitrarySlotNo =
 -- of the tests we run.
 instance Arbitrary ArbitrarySlotNo where
     arbitrary =
-      ArbitrarySlotNo . fromInteger <$> arbitrary
+      ArbitrarySlotNo . SlotNo <$> arbitrarySizedBoundedIntegral
 
 data StakePool = StakePool {
       spStake :: !Word64
