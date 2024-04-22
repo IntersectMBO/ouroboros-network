@@ -12,6 +12,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool (Job (..))
@@ -45,6 +46,7 @@ belowTarget :: forall peeraddr peerconn m.
                , MonadDelay m
                , MonadSTM m
                , Ord peeraddr
+               , HasCallStack
                )
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
@@ -128,16 +130,16 @@ belowTargetBigLedgerPeers actions
   = GuardedSkip Nothing
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numActiveBigLedgerPeers
-      = Set.size $ activePeers
-                   `Set.intersection` bigLedgerPeersSet
-    numPromoteInProgressBigLedgerPeers
-      = Set.size $ inProgressPromoteWarm
-                   `Set.intersection` bigLedgerPeersSet
+    PeerSelectionCounters {
+        numberOfActiveBigLedgerPeers         = numActiveBigLedgerPeers,
+        numberOfWarmBigLedgerPeersPromotions = numPromoteInProgressBigLedgerPeers
+      }
+      =
+      peerSelectionStateToCounters st
 
 
 belowTargetLocal :: forall peeraddr peerconn m.
-                    (MonadDelay m, MonadSTM m, Ord peeraddr)
+                    (MonadDelay m, MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetLocal actions
@@ -234,7 +236,8 @@ belowTargetLocal actions
       ]
 
 belowTargetOther :: forall peeraddr peerconn m.
-                    (MonadDelay m, MonadSTM m, Ord peeraddr)
+                    (MonadDelay m, MonadSTM m, Ord peeraddr,
+                     HasCallStack)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 belowTargetOther actions
@@ -242,7 +245,6 @@ belowTargetOther actions
                    policyPickWarmPeersToPromote
                  }
                  st@PeerSelectionState {
-                   publicRootPeers,
                    localRootPeers,
                    establishedPeers,
                    activePeers,
@@ -299,11 +301,13 @@ belowTargetOther actions
   | otherwise
   = GuardedSkip Nothing
   where
-    bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numActivePeers       = Set.size $ activePeers
-                               Set.\\ bigLedgerPeersSet
-    numPromoteInProgress = Set.size $ inProgressPromoteWarm
-                               Set.\\ bigLedgerPeersSet
+    PeerSelectionView {
+        viewActivePeers         = (_, numActivePeers),
+        viewWarmPeersPromotions = (_, numPromoteInProgress),
+        viewKnownBigLedgerPeers = (bigLedgerPeersSet, _)
+      }
+      =
+      peerSelectionStateToView st
 
 
 jobPromoteWarmPeer :: forall peeraddr peerconn m.
@@ -472,6 +476,7 @@ aboveTarget :: forall peeraddr peerconn m.
                ( Alternative (STM m)
                , MonadSTM m
                , Ord peeraddr
+               , HasCallStack
                )
             => PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
@@ -548,18 +553,16 @@ aboveTargetBigLedgerPeers actions
   = GuardedSkip Nothing
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numActiveBigLedgerPeers
-      = Set.size $ activePeers
-                   `Set.intersection`
-                   bigLedgerPeersSet
-    numDemoteInProgressBigLedgerPeers
-      = Set.size $ inProgressDemoteHot
-                   `Set.intersection`
-                   bigLedgerPeersSet
+    PeerSelectionCounters {
+        numberOfActiveBigLedgerPeers          = numActiveBigLedgerPeers,
+        numberOfActiveBigLedgerPeersDemotions = numDemoteInProgressBigLedgerPeers
+      }
+      =
+      peerSelectionStateToCounters st
 
 
 aboveTargetLocal :: forall peeraddr peerconn m.
-                    (MonadSTM m, Ord peeraddr)
+                    (MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 aboveTargetLocal actions
@@ -639,7 +642,7 @@ aboveTargetLocal actions
 
 
 aboveTargetOther :: forall peeraddr peerconn m.
-                    (MonadSTM m, Ord peeraddr)
+                    (MonadSTM m, Ord peeraddr, HasCallStack)
                  => PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
 aboveTargetOther actions
@@ -704,10 +707,12 @@ aboveTargetOther actions
   = GuardedSkip Nothing
   where
     bigLedgerPeersSet   = PublicRootPeers.getBigLedgerPeers publicRootPeers
-    numActivePeers      = Set.size $ activePeers
-                              Set.\\ bigLedgerPeersSet
-    numDemoteInProgress = Set.size $ inProgressDemoteHot
-                              Set.\\ bigLedgerPeersSet
+    PeerSelectionCounters {
+        numberOfActivePeers          = numActivePeers,
+        numberOfActivePeersDemotions = numDemoteInProgress
+      }
+      =
+      peerSelectionStateToCounters st
 
 
 jobDemoteActivePeer :: forall peeraddr peerconn m.

@@ -29,55 +29,38 @@ module Test.Ouroboros.Network.PeerSelection
   , dropBigLedgerPeers
   ) where
 
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (AssertionFailed (..), catch, evaluate)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..))
+
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Char8 qualified as BS
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IP qualified as IP
 import Data.List (foldl', groupBy, intercalate)
+import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isNothing, listToMaybe)
+import Data.OrdPSQ qualified as PSQ
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Void (Void)
-
-import Data.List.Trace qualified as Trace
-import Data.OrdPSQ qualified as PSQ
 import System.Random (mkStdGen)
-
-import Control.Exception (AssertionFailed (..), catch, evaluate)
-import Control.Monad.Class.MonadSTM (STM, retry)
-import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..))
 
 import Network.DNS qualified as DNS (defaultResolvConf)
 import Network.Socket (SockAddr)
 
-import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
-           peerSharing)
-import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
-import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-
 import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..))
-import Ouroboros.Network.Testing.Data.Script
-import Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal, TS (TS),
-           signalProperty)
-import Ouroboros.Network.Testing.Data.Signal qualified as Signal
-import Ouroboros.Network.Testing.Utils (nightlyTest)
-
-import Test.Ouroboros.Network.PeerSelection.Instances
-import Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
-import Test.Ouroboros.Network.PeerSelection.PeerGraph
-
-import Control.Concurrent.Class.MonadSTM.Strict (newTVarIO)
-import Control.Monad.Class.MonadTime.SI
-import Control.Monad.IOSim
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
+import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
+           peerSharing)
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -87,12 +70,30 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPe
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
+           LocalRootPeers (..), WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingResult (..))
+
+import Ouroboros.Network.Testing.Data.Script
+import Ouroboros.Network.Testing.Data.Signal (E (E), Events, Signal, TS (TS),
+           signalProperty)
+import Ouroboros.Network.Testing.Data.Signal qualified as Signal
+import Ouroboros.Network.Testing.Utils (disjointSetsProperty, isSubsetProperty,
+           nightlyTest)
+import Test.Ouroboros.Network.PeerSelection.Instances
+import Test.Ouroboros.Network.PeerSelection.MockEnvironment hiding (tests)
+import Test.Ouroboros.Network.PeerSelection.PeerGraph
+
+import Control.Monad.IOSim
+
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
+
 
 -- Exactly as named.
 unfHydra :: Int
@@ -101,7 +102,10 @@ unfHydra = 1
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.PeerSelection"
-  [ testGroup "basic"
+  [ testGroup "PeerSelectionView"
+    [ testProperty "sizes" prop_peerSelectionView_sizes
+    ]
+  , testGroup "basic"
     [ testProperty "has output"         prop_governor_hasoutput
     , testProperty "no failure"         prop_governor_nofail
     , testProperty "no livelock"        prop_governor_nolivelock
@@ -210,6 +214,158 @@ tests =
 --
 -- QuickCheck properties
 --
+
+prop_peerSelectionView_sizes :: GovernorMockEnvironment -> Property
+prop_peerSelectionView_sizes env =
+    let trace = runGovernorInMockEnvironment env
+        evs   = selectGovernorStateEvents
+              $ selectPeerSelectionTraceEventsUntil (Time (10 * 3600)) trace
+    in getAllProperty $
+       foldMap (\(_, TraceGovernorState _ _ st) ->
+                     AllProperty $
+                     let view = peerSelectionStateToView st in
+                          viewInvariant (fst <$> view)
+                     .&&. viewSizeInvariant view)
+               evs
+  where
+    viewInvariant :: PeerSelectionView (Set PeerAddr)
+                  -> Property
+    viewInvariant PeerSelectionView {..} =
+           isSubsetProperty "viewActivePeersDemotions" viewActivePeersDemotions viewActivePeers
+      .&&. isSubsetProperty "viewActivePeers" viewActivePeers viewEstablishedPeers
+      .&&. isSubsetProperty "viewEstablishedPeers" viewEstablishedPeers viewKnownPeers
+      .&&. isSubsetProperty "viewColdPeersPromotions" viewColdPeersPromotions viewKnownPeers
+      .&&. isSubsetProperty "viewAvailableToConnectPeers" viewAvailableToConnectPeers viewKnownPeers
+      .&&. isSubsetProperty "viewWarmPeersDemotions" viewWarmPeersDemotions (viewEstablishedPeers Set.\\ viewActivePeers)
+      .&&. isSubsetProperty "viewWarmPeersPromotions" viewWarmPeersPromotions (viewEstablishedPeers Set.\\ viewActivePeers)
+
+      .&&. isSubsetProperty "viewActiveBigLedgerPeersDemotions" viewActiveBigLedgerPeersDemotions viewActiveBigLedgerPeers
+      .&&. isSubsetProperty "viewActiveBigLedgerPeers" viewActiveBigLedgerPeers viewEstablishedBigLedgerPeers
+      .&&. isSubsetProperty "viewEstablishedBigLedgerPeers" viewEstablishedBigLedgerPeers viewKnownBigLedgerPeers
+      .&&. isSubsetProperty "viewColdBigLedgerPeersPromotions" viewColdBigLedgerPeersPromotions viewKnownBigLedgerPeers
+      .&&. isSubsetProperty "viewAvailableToConnectBigLedgerPeers" viewAvailableToConnectBigLedgerPeers viewKnownBigLedgerPeers
+      .&&. isSubsetProperty "viewWarmBigLedgerPeersDemotions" viewWarmBigLedgerPeersDemotions (viewEstablishedBigLedgerPeers Set.\\ viewActiveBigLedgerPeers)
+      .&&. isSubsetProperty "viewWarmBigLedgerPeersPromotions" viewWarmBigLedgerPeersPromotions (viewEstablishedBigLedgerPeers Set.\\ viewActiveBigLedgerPeers)
+
+      .&&. isSubsetProperty "viewActiveLocalRootPeersDemotions" viewActiveLocalRootPeersDemotions viewActiveLocalRootPeers
+      .&&. isSubsetProperty "viewActiveLocalRootPeers" viewActiveLocalRootPeers viewEstablishedLocalRootPeers
+      .&&. isSubsetProperty "viewEstablishedLocalRootPeers" viewEstablishedLocalRootPeers viewKnownLocalRootPeers
+      .&&. isSubsetProperty "viewColdLocalRootPeersPromotions" viewColdLocalRootPeersPromotions viewKnownLocalRootPeers
+      .&&. isSubsetProperty "viewAvailableToConnectLocalRootPeers" viewAvailableToConnectLocalRootPeers viewKnownLocalRootPeers
+      .&&. isSubsetProperty "viewWarmLocalRootPeersPromotions" viewWarmLocalRootPeersPromotions (viewEstablishedLocalRootPeers Set.\\ viewActiveLocalRootPeers)
+
+      .&&. isSubsetProperty "viewActiveSharedPeersDemotions" viewActiveSharedPeersDemotions viewActiveSharedPeers
+      .&&. isSubsetProperty "viewActiveSharedPeers" viewActiveSharedPeers viewEstablishedSharedPeers
+      .&&. isSubsetProperty "viewEstablishedSharedPeers" viewEstablishedSharedPeers viewKnownSharedPeers
+      .&&. isSubsetProperty "viewColdSharedPeersPromotions" viewColdSharedPeersPromotions viewKnownSharedPeers
+      .&&. isSubsetProperty "viewWarmSharedPeersPromotions" viewWarmSharedPeersPromotions (viewEstablishedSharedPeers Set.\\ viewActiveSharedPeers)
+      .&&. isSubsetProperty "viewWarmSharedPeersDemotions" viewWarmSharedPeersDemotions (viewEstablishedSharedPeers Set.\\ viewActiveSharedPeers)
+
+      .&&. isSubsetProperty "viewActiveBootstrapPeersDemotions" viewActiveBootstrapPeersDemotions viewActiveBootstrapPeers
+      .&&. isSubsetProperty "viewActiveBootstrapPeers" viewActiveBootstrapPeers viewEstablishedBootstrapPeers
+      .&&. isSubsetProperty "viewEstablishedBootstrapPeers" viewEstablishedBootstrapPeers viewKnownBootstrapPeers
+      .&&. isSubsetProperty "viewColdBootstrapPeersPromotions" viewColdBootstrapPeersPromotions viewKnownBootstrapPeers
+      .&&. isSubsetProperty "viewWarmBootstrapPeersPromotions" viewWarmBootstrapPeersPromotions (viewEstablishedBootstrapPeers Set.\\ viewActiveBootstrapPeers)
+      .&&. isSubsetProperty "viewWarmBootstrapPeersDemotions" viewWarmBootstrapPeersDemotions (viewEstablishedBootstrapPeers Set.\\ viewActiveBootstrapPeers)
+
+      .&&. disjointSetsProperty "viewKnownPeers viewKnownBigLedgerPeers" viewKnownPeers viewKnownBigLedgerPeers
+      .&&. isSubsetProperty "viewKnownLocalRootPeers" viewKnownLocalRootPeers viewKnownPeers
+      .&&. isSubsetProperty "viewKnownSharedPeers" viewKnownSharedPeers viewKnownPeers
+      .&&. isSubsetProperty "viewKnownBootstrapPeers" viewKnownBootstrapPeers viewKnownPeers
+
+      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownBigLedgerPeers" viewKnownLocalRootPeers viewKnownBigLedgerPeers
+      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownSharedPeers" viewKnownLocalRootPeers viewKnownSharedPeers
+      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownBootstrapPeers" viewKnownLocalRootPeers viewKnownBootstrapPeers
+
+      .&&. disjointSetsProperty "viewKnownSharedPeers-viewKnownBigLedgerPeers" viewKnownSharedPeers viewKnownBigLedgerPeers
+      .&&. disjointSetsProperty "viewKnownBootstrapPeers-viewKnownBigLedgerPeers" viewKnownBootstrapPeers viewKnownBigLedgerPeers
+
+    viewSizeInvariant :: PeerSelectionSetsWithSizes PeerAddr
+                      -> Property
+    viewSizeInvariant PeerSelectionView {..} =
+            counterexample "viewRootPeers"
+            (Set.size (fst viewRootPeers) === snd viewRootPeers)
+
+      .&&.  counterexample "viewKnownPeers"
+            (Set.size (fst viewKnownPeers) === snd viewKnownPeers)
+
+      .&&. counterexample "viewAvailableToConnectPeers"
+           (Set.size (fst viewAvailableToConnectPeers) === snd viewAvailableToConnectPeers)
+      .&&. counterexample "viewColdPeersPromotions"
+           (Set.size (fst viewColdPeersPromotions) === snd viewColdPeersPromotions)
+      .&&. counterexample "viewEstablishedPeers"
+           (Set.size (fst viewEstablishedPeers) === snd viewEstablishedPeers)
+      .&&. counterexample "viewWarmPeersDemotions"
+           (Set.size (fst viewWarmPeersDemotions) === snd viewWarmPeersDemotions)
+      .&&. counterexample "viewWarmPeersPromotions"
+           (Set.size (fst viewWarmPeersPromotions) === snd viewWarmPeersPromotions)
+      .&&. counterexample "viewActivePeers"
+           (Set.size (fst viewActivePeers) === snd viewActivePeers)
+      .&&. counterexample "viewActivePeersDemotions"
+           (Set.size (fst viewActivePeersDemotions) === snd viewActivePeersDemotions)
+
+      .&&. counterexample "viewKnownBigLedgerPeers"
+           (Set.size (fst viewKnownBigLedgerPeers) === snd viewKnownBigLedgerPeers)
+      .&&. counterexample "viewAvailableToConnectBigLedgerPeers"
+           (Set.size (fst viewAvailableToConnectBigLedgerPeers) === snd viewAvailableToConnectBigLedgerPeers)
+      .&&. counterexample "viewColdBigLedgerPeersPromotions"
+           (Set.size (fst viewColdBigLedgerPeersPromotions) === snd viewColdBigLedgerPeersPromotions)
+      .&&. counterexample "viewEstablishedBigLedgerPeers"
+           (Set.size (fst viewEstablishedBigLedgerPeers) === snd viewEstablishedBigLedgerPeers)
+      .&&. counterexample "viewWarmBigLedgerPeersDemotions"
+           (Set.size (fst viewWarmBigLedgerPeersDemotions) === snd viewWarmBigLedgerPeersDemotions)
+      .&&. counterexample "viewWarmBigLedgerPeersPromotions"
+           (Set.size (fst viewWarmBigLedgerPeersPromotions) === snd viewWarmBigLedgerPeersPromotions)
+      .&&. counterexample "viewActiveBigLedgerPeers"
+           (Set.size (fst viewActiveBigLedgerPeers) === snd viewActiveBigLedgerPeers)
+      .&&. counterexample "viewActiveBigLedgerPeersDemotions"
+           (Set.size (fst viewActiveBigLedgerPeersDemotions) === snd viewActiveBigLedgerPeersDemotions)
+
+      .&&. counterexample "viewKnownLocalRootPeers"
+           (Set.size (fst viewKnownLocalRootPeers) === snd viewKnownLocalRootPeers)
+      .&&. counterexample "viewAvailableToConnectLocalRootPeers"
+           (Set.size (fst viewAvailableToConnectLocalRootPeers) === snd viewAvailableToConnectLocalRootPeers)
+      .&&. counterexample "viewColdLocalRootPeersPromotions"
+           (Set.size (fst viewColdLocalRootPeersPromotions) === snd viewColdLocalRootPeersPromotions)
+      .&&. counterexample "viewEstablishedLocalRootPeers"
+           (Set.size (fst viewEstablishedLocalRootPeers) === snd viewEstablishedLocalRootPeers)
+      .&&. counterexample "viewWarmLocalRootPeersPromotions"
+           (Set.size (fst viewWarmLocalRootPeersPromotions) === snd viewWarmLocalRootPeersPromotions)
+      .&&. counterexample "viewActiveLocalRootPeers"
+           (Set.size (fst viewActiveLocalRootPeers) === snd viewActiveLocalRootPeers)
+      .&&. counterexample "viewActiveLocalRootPeersDemotions"
+           (Set.size (fst viewActiveLocalRootPeersDemotions) === snd viewActiveLocalRootPeersDemotions)
+
+      .&&. counterexample "viewKnownSharedPeers"
+           (Set.size (fst viewKnownSharedPeers) === snd viewKnownSharedPeers)
+      .&&. counterexample "viewColdSharedPeersPromotions"
+           (Set.size (fst viewColdSharedPeersPromotions) === snd viewColdSharedPeersPromotions)
+      .&&. counterexample "viewEstablishedSharedPeers"
+           (Set.size (fst viewEstablishedSharedPeers) === snd viewEstablishedSharedPeers)
+      .&&. counterexample "viewWarmSharedPeersDemotions"
+           (Set.size (fst viewWarmSharedPeersDemotions) === snd viewWarmSharedPeersDemotions)
+      .&&. counterexample "viewWarmSharedPeersPromotions"
+           (Set.size (fst viewWarmSharedPeersPromotions) === snd viewWarmSharedPeersPromotions)
+      .&&. counterexample "viewActiveSharedPeers"
+           (Set.size (fst viewActiveSharedPeers) === snd viewActiveSharedPeers)
+      .&&. counterexample "viewActiveSharedPeersDemotions"
+           (Set.size (fst viewActiveSharedPeersDemotions) === snd viewActiveSharedPeersDemotions)
+
+      .&&. counterexample "viewKnownBootstrapPeers"
+           (Set.size (fst viewKnownBootstrapPeers) === snd viewKnownBootstrapPeers)
+      .&&. counterexample "viewColdBootstrapPeersPromotions"
+           (Set.size (fst viewColdBootstrapPeersPromotions) === snd viewColdBootstrapPeersPromotions)
+      .&&. counterexample "viewEstablishedBootstrapPeers"
+           (Set.size (fst viewEstablishedBootstrapPeers) === snd viewEstablishedBootstrapPeers)
+      .&&. counterexample "viewWarmBootstrapPeersDemotions"
+           (Set.size (fst viewWarmBootstrapPeersDemotions) === snd viewWarmBootstrapPeersDemotions)
+      .&&. counterexample "viewWarmBootstrapPeersPromotions"
+           (Set.size (fst viewWarmBootstrapPeersPromotions) === snd viewWarmBootstrapPeersPromotions)
+      .&&. counterexample "viewActiveBootstrapPeers"
+           (Set.size (fst viewActiveBootstrapPeers) === snd viewActiveBootstrapPeers)
+      .&&. counterexample "viewActiveBootstrapPeersDemotions"
+           (Set.size (fst viewActiveBootstrapPeersDemotions) === snd viewActiveBootstrapPeersDemotions)
+
 
 -- We start with basic properties in the style of "never does bad things"
 -- and progress to properties that check that it "eventually does good things".
@@ -709,6 +865,8 @@ traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 51
 traceNum TraceUseBootstrapPeersChanged {}                     = 52
 traceNum TraceOutboundGovernorCriticalFailure {}              = 53
 traceNum TraceDebugState {}                                   = 54
+traceNum TraceChurnAction {}                                  = 55
+traceNum TraceChurnTimeout {}                                 = 56
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -768,6 +926,8 @@ allTraceNames =
    , (52, "TraceUseBootstrapPeersChanged")
    , (53, "TraceOutboundGovernorCriticalFailure")
    , (54, "TraceDebugState")
+   , (55, "TraceChurnAction")
+   , (56, "TraceChurnTimeout")
    ]
 
 
@@ -3288,7 +3448,7 @@ selectGovState :: Eq a
 selectGovState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) [])
+  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42))
   . Signal.selectEvents
       (\case GovernorDebug (TraceGovernorState _ _ st) -> Just $! f st
              _                                         -> Nothing)
@@ -3332,11 +3492,13 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
       readDomains
       (ioDNSActions LookupReqAAndAAAA) $ \requestPublicRootPeers -> do
         publicStateVar <- makePublicPeerSelectionStateVar
-        debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42) []
+        debugVar <- newTVarIO $ emptyPeerSelectionState (mkStdGen 42)
+        countersVar <- newTVarIO emptyPeerSelectionCounters
         peerSelectionGovernor
           tracer tracer tracer
           -- TODO: #3182 Rng seed should come from quickcheck.
           (mkStdGen 42)
+          countersVar
           publicStateVar
           debugVar
           actions

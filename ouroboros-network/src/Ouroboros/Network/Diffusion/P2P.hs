@@ -102,9 +102,10 @@ import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-           PeerSelectionActions, PeerSelectionCounters (..),
+           PeerSelectionActions, PeerSelectionCounters,
            PeerSelectionPolicy (..), PeerSelectionState,
-           TracePeerSelection (..), emptyPeerSelectionState)
+           TracePeerSelection (..), emptyPeerSelectionCounters,
+           emptyPeerSelectionState)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makeDebugPeerSelectionState)
@@ -169,6 +170,9 @@ data TracersExtra ntnAddr ntnVersion ntnVersionData
     , dtTracePeerSelectionCounters
         :: Tracer m PeerSelectionCounters
 
+    , dtTraceChurnCounters
+        :: Tracer m Governor.ChurnCounters
+
     , dtPeerSelectionActionsTracer
         :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)
 
@@ -222,6 +226,7 @@ nullTracers =
       , dtTracePublicRootPeersTracer                 = nullTracer
       , dtTraceLedgerPeersTracer                     = nullTracer
       , dtTracePeerSelectionTracer                   = nullTracer
+      , dtTraceChurnCounters                         = nullTracer
       , dtDebugPeerSelectionInitiatorTracer          = nullTracer
       , dtDebugPeerSelectionInitiatorResponderTracer = nullTracer
       , dtTracePeerSelectionCounters                 = nullTracer
@@ -597,6 +602,7 @@ runM Interfaces
        }
      TracersExtra
        { dtTracePeerSelectionTracer
+       , dtTraceChurnCounters
        , dtDebugPeerSelectionInitiatorTracer
        , dtDebugPeerSelectionInitiatorResponderTracer
        , dtTracePeerSelectionCounters
@@ -807,6 +813,8 @@ runM Interfaces
             min 2 (targetNumberOfActivePeers daPeerSelectionTargets)
         }
 
+      countersVar <- newTVarIO emptyPeerSelectionCounters
+
       -- Design notes:
       --  - We split the following code into two parts:
       --    - Part (a): plumb data flow (in particular arguments and tracersr)
@@ -996,6 +1004,7 @@ runM Interfaces
               peerSelectionTracer
               dtTracePeerSelectionCounters
               fuzzRng
+              countersVar
               daPublicPeerSelectionVar
               dbgVar
               peerSelectionActions
@@ -1006,6 +1015,7 @@ runM Interfaces
       --
       let peerChurnGovernor' = Governor.peerChurnGovernor
                                  dtTracePeerSelectionTracer
+                                 dtTraceChurnCounters
                                  daDeadlineChurnInterval
                                  daBulkChurnInterval
                                  (policyPeerShareOverallTimeout peerSelectionPolicy)
@@ -1015,6 +1025,7 @@ runM Interfaces
                                  daBlockFetchMode
                                  daPeerSelectionTargets
                                  peerSelectionTargetsVar
+                                 (readTVar countersVar)
                                  daReadUseBootstrapPeers
 
       --
@@ -1057,7 +1068,7 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager-> do
-          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng []
+          debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
           diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
@@ -1085,7 +1096,7 @@ runM Interfaces
             inboundInfoChannel
             outboundInfoChannel
             observableStateVar $ \connectionManager-> do
-            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng []
+            debugStateVar <- newTVarIO $ emptyPeerSelectionState fuzzRng
             diInstallSigUSR1Handler connectionManager debugStateVar daPeerMetrics
             withPeerStateActions' connectionManager $ \peerStateActions ->
               withPeerSelectionActions'

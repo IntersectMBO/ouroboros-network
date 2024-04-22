@@ -31,8 +31,6 @@ belowTarget :: (MonadSTM m, Ord peeraddr)
 belowTarget actions
             blockedAt
             st@PeerSelectionState {
-              localRootPeers,
-              publicRootPeers,
               publicRootRetryTime,
               inProgressPublicRootsReq,
               targets = PeerSelectionTargets {
@@ -65,8 +63,12 @@ belowTarget actions
   | otherwise
   = GuardedSkip Nothing
   where
-    numRootPeers      = LocalRootPeers.size localRootPeers
-                      + PublicRootPeers.size publicRootPeers
+    PeerSelectionCounters {
+        numberOfRootPeers = numRootPeers
+      }
+      =
+      peerSelectionStateToCounters st
+
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 

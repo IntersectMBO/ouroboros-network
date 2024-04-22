@@ -36,7 +36,8 @@ import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion (P2P (..))
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
-           deactivateTimeout, peerMetricsConfiguration)
+           deactivateTimeout, maxChainSyncTimeout, minChainSyncTimeout,
+           peerMetricsConfiguration)
 import Ouroboros.Network.NodeToNode (MiniProtocolParameters (..),
            defaultMiniProtocolParameters)
 import Ouroboros.Network.PeerSelection.Governor.Types
@@ -61,7 +62,7 @@ defaultNumBootstrapPeers = DefaultNumBootstrapPeers 30
 defaultPeerSelectionTargets :: PeerSelectionTargets
 defaultPeerSelectionTargets =
   PeerSelectionTargets {
-    targetNumberOfRootPeers                 = 85,
+    targetNumberOfRootPeers                 = 60,
     targetNumberOfKnownPeers                = 85,
     targetNumberOfEstablishedPeers          = 40,
     targetNumberOfActivePeers               = 15,
@@ -115,7 +116,9 @@ defaultChainSyncTimeout = do
     --       enters the must reply state. A static per connection timeout
     --       leads to selection preassure for connections with a large
     --       timeout, see #4244.
-    mustReplyTimeout <- Just . realToFrac <$> randomRIO (135,269 :: Double)
+    mustReplyTimeout <- Just . realToFrac <$> randomRIO ( realToFrac minChainSyncTimeout :: Double
+                                                        , realToFrac maxChainSyncTimeout :: Double
+                                                        )
     return ChainSyncTimeout { canAwaitTimeout  = shortWait,
                               intersectTimeout = shortWait,
                               mustReplyTimeout,

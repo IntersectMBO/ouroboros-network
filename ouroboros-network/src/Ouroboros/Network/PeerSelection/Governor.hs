@@ -16,11 +16,13 @@ module Ouroboros.Network.PeerSelection.Governor
   , PeerSelectionActions (..)
   , PeerStateActions (..)
   , TracePeerSelection (..)
+  , ChurnAction (..)
   , DebugPeerSelection (..)
   , DebugPeerSelectionState (..)
   , peerSelectionGovernor
     -- * Peer churn governor
   , peerChurnGovernor
+  , ChurnCounters (..)
     -- * Internals exported for testing
   , assertPeerSelectionState
   , sanePeerSelectionTargets
@@ -28,13 +30,17 @@ module Ouroboros.Network.PeerSelection.Governor
   , PeerSelectionState (..)
   , PublicPeerSelectionState (..)
   , makePublicPeerSelectionStateVar
-  , PeerSelectionCounters (..)
+  , PeerSelectionView (..)
+  , PeerSelectionCounters
+  , PeerSelectionSetsWithSizes
+  , peerSelectionStateToCounters
+  , emptyPeerSelectionCounters
   , nullPeerSelectionTargets
   , emptyPeerSelectionState
   , ChurnMode (..)
+  , peerSelectionStateToView
   ) where
 
-import Data.Cache
 import Data.Foldable (traverse_)
 import Data.Hashable
 import Data.Void (Void)
@@ -50,7 +56,8 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
-import Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
+import Ouroboros.Network.PeerSelection.Churn (ChurnCounters (..),
+           peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
 import Ouroboros.Network.PeerSelection.Governor.EstablishedPeers qualified as EstablishedPeers
@@ -447,25 +454,25 @@ peerSelectionGovernor :: ( Alternative (STM m)
                       -> Tracer m (DebugPeerSelection peeraddr)
                       -> Tracer m PeerSelectionCounters
                       -> StdGen
+                      -> StrictTVar m PeerSelectionCounters
                       -> StrictTVar m (PublicPeerSelectionState peeraddr)
                       -> StrictTVar m (PeerSelectionState peeraddr peerconn)
                       -> PeerSelectionActions peeraddr peerconn m
                       -> PeerSelectionPolicy  peeraddr m
                       -> m Void
-peerSelectionGovernor tracer debugTracer countersTracer fuzzRng publicStateVar debugStateVar actions policy =
-    JobPool.withJobPool $ \jobPool -> do
-      localPeers <- map (\(w, h, _) -> (w, h))
-                <$> atomically (readLocalRootPeers actions)
+peerSelectionGovernor tracer debugTracer countersTracer fuzzRng countersVar publicStateVar debugStateVar actions policy =
+    JobPool.withJobPool $ \jobPool ->
       peerSelectionGovernorLoop
         tracer
         debugTracer
         countersTracer
+        countersVar
         publicStateVar
         debugStateVar
         actions
         policy
         jobPool
-        (emptyPeerSelectionState fuzzRng localPeers)
+        (emptyPeerSelectionState fuzzRng)
 
 -- | Our pattern here is a loop with two sets of guarded actions:
 --
@@ -495,6 +502,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
                           => Tracer m (TracePeerSelection peeraddr)
                           -> Tracer m (DebugPeerSelection peeraddr)
                           -> Tracer m PeerSelectionCounters
+                          -> StrictTVar m PeerSelectionCounters
                           -> StrictTVar m (PublicPeerSelectionState peeraddr)
                           -> StrictTVar m (PeerSelectionState peeraddr peerconn)
                           -> PeerSelectionActions peeraddr peerconn m
@@ -505,6 +513,7 @@ peerSelectionGovernorLoop :: forall m peeraddr peerconn.
 peerSelectionGovernorLoop tracer
                           debugTracer
                           countersTracer
+                          countersVar
                           publicStateVar
                           debugStateVar
                           actions
@@ -551,14 +560,23 @@ peerSelectionGovernorLoop tracer
       now <- getMonotonicTime
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
-          !newCounters = peerStateToCounters decisionState
+
+      mbCounters <- atomically $ do
+        -- Update counters
+        counters <- readTVar countersVar
+        let !counters' = peerSelectionStateToCounters decisionState
+        if counters' /= counters
+          then writeTVar countersVar counters'
+            >> return (Just counters')
+          else return Nothing
+
+      -- Trace counters
+      traverse_ (traceWith countersTracer) mbCounters
+
       traverse_ (traceWith tracer) decisionTrace
-      traceWithCache countersTracer
-                     (countersCache decisionState)
-                     newCounters
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop (decisionState { countersCache = Cache newCounters }) dbgUpdateAt'
+      loop decisionState dbgUpdateAt'
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn

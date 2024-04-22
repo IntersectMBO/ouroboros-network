@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE CPP                       #-}
+{-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
@@ -8,6 +10,12 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE ViewPatterns              #-}
+
+#if __GLASGOW_HASKELL__ < 904
+-- Pattern synonym record fields with GHC-8.10 is issuing the `-Wname-shadowing`
+-- warning.
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+#endif
 
 module Ouroboros.Network.PeerSelection.Governor.Types
   ( -- * P2P governor policies
@@ -37,18 +45,81 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , TimedDecision
   , MkGuardedDecision
   , Completion (..)
-  , PeerSelectionCounters (..)
-  , peerStateToCounters
+  , PeerSelectionView
+      ( ..,
+        PeerSelectionCounters,
+        numberOfRootPeers,
+
+        numberOfKnownPeers,
+        numberOfAvailableToConnectPeers,
+        numberOfColdPeersPromotions,
+        numberOfEstablishedPeers,
+        numberOfWarmPeersDemotions,
+        numberOfWarmPeersPromotions,
+        numberOfActivePeers,
+        numberOfActivePeersDemotions,
+
+        numberOfKnownBigLedgerPeers,
+        numberOfAvailableToConnectBigLedgerPeers,
+        numberOfColdBigLedgerPeersPromotions,
+        numberOfEstablishedBigLedgerPeers,
+        numberOfWarmBigLedgerPeersDemotions,
+        numberOfWarmBigLedgerPeersPromotions,
+        numberOfActiveBigLedgerPeers,
+        numberOfActiveBigLedgerPeersDemotions,
+
+        numberOfKnownLocalRootPeers,
+        numberOfAvailableToConnectLocalRootPeers,
+        numberOfColdLocalRootPeersPromotions,
+        numberOfEstablishedLocalRootPeers,
+        numberOfWarmLocalRootPeersPromotions,
+        numberOfActiveLocalRootPeers,
+        numberOfActiveLocalRootPeersDemotions,
+
+        numberOfKnownSharedPeers,
+        numberOfColdSharedPeersPromotions,
+        numberOfEstablishedSharedPeers,
+        numberOfWarmSharedPeersDemotions,
+        numberOfWarmSharedPeersPromotions,
+        numberOfActiveSharedPeers,
+        numberOfActiveSharedPeersDemotions,
+
+        numberOfKnownBootstrapPeers,
+        numberOfColdBootstrapPeersPromotions,
+        numberOfEstablishedBootstrapPeers,
+        numberOfWarmBootstrapPeersDemotions,
+        numberOfWarmBootstrapPeersPromotions,
+        numberOfActiveBootstrapPeers,
+        numberOfActiveBootstrapPeersDemotions,
+
+        PeerSelectionCountersHWC,
+        numberOfColdPeers,
+        numberOfWarmPeers,
+        numberOfHotPeers,
+
+        numberOfColdBigLedgerPeers,
+        numberOfWarmBigLedgerPeers,
+        numberOfHotBigLedgerPeers,
+
+        numberOfColdLocalRootPeers,
+        numberOfWarmLocalRootPeers,
+        numberOfHotLocalRootPeers
+      )
+  , PeerSelectionCounters
+  , PeerSelectionSetsWithSizes
+  , emptyPeerSelectionCounters
+  , peerSelectionStateToCounters
+  , peerSelectionStateToView
     -- * Peer Sharing Auxiliary data type
   , PeerSharingResult (..)
     -- * Traces
   , TracePeerSelection (..)
+  , ChurnAction (..)
   , DebugPeerSelection (..)
     -- * Error types
   , BootstrapPeersCriticalTimeoutError (..)
   ) where
 
-import Data.Cache (Cache (..))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -57,6 +128,7 @@ import Data.OrdPSQ qualified as PSQ
 import Data.Semigroup (Min (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
+import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool (Job)
@@ -439,11 +511,6 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- | Rng for fuzzy delay
        fuzzRng                     :: !StdGen,
 
-       -- | 'PeerSelectionCounters' counters cache. Allows to only trace
-       -- values when necessary.
-       --
-       countersCache               :: !(Cache PeerSelectionCounters),
-
        -- | Current ledger state judgement
        --
        ledgerStateJudgement        :: !LedgerStateJudgement,
@@ -562,57 +629,500 @@ toPublicState PeerSelectionState { knownPeers
        KnownPeers.getPeerSharingResponsePeers knownPeers
    }
 
--- Peer selection counters.
+-- | Peer selection view.
 --
-data PeerSelectionCounters = PeerSelectionCounters {
-      -- | All cold peers including ledger peers, root peers, big ledger peers
-      -- and peers discovered through peer sharing.
-      coldPeers          :: !Int,
-      -- | All warm peers including ledger peers, root peers, big ledger peers,
-      -- local root peers and peers discovered through peer sharing.
-      warmPeers          :: !Int,
-      -- | All hot peers including ledger peers, root peers, big ledger peers,
-      -- local root peers and peers discovered through peer sharing.
-      hotPeers           :: !Int,
-      -- | Cold big ledger peers.
-      coldBigLedgerPeers :: !Int,
-      -- | Warm big ledger peers.
-      warmBigLedgerPeers :: !Int,
-      -- | Hot big ledger peers.
-      hotBigLedgerPeers  :: !Int,
-      -- | Local root peers with one entry per group. First entry is the number
-      -- of warm peers in that group the second is the number of hot peers in
-      -- that group.
-      localRoots         :: ![(HotValency, WarmValency)]
-    } deriving (Eq, Show)
+-- This is a functor which is used to hold computation of various peer sets and
+-- their sizes.  See `peerSelectionStateToView`, `peerSelectionStateToCounters`.
+--
+data PeerSelectionView a = PeerSelectionView {
+      viewRootPeers                        :: a,
 
-peerStateToCounters :: Ord peeraddr => PeerSelectionState peeraddr peerconn -> PeerSelectionCounters
-peerStateToCounters st@PeerSelectionState { activePeers, publicRootPeers, localRootPeers } =
+      --
+      -- Non Big Ledger Peers
+      --
+
+      viewKnownPeers                       :: a,
+      -- ^ number of known peers excluding big ledger peers
+      viewAvailableToConnectPeers          :: a,
+      -- ^ number of known peers available to connect
+      viewColdPeersPromotions              :: a,
+      -- ^ number of known peers (excluding big ledger peers) being promoted to
+      -- warm
+      viewEstablishedPeers                 :: a,
+      -- ^ number of established peers excluding big ledger peers
+      viewWarmPeersDemotions               :: a,
+      -- ^ number of warm peers (excluding big ledger peers) being demoted to
+      -- cold
+      viewWarmPeersPromotions              :: a,
+      -- ^ number of warm peers (excluding big ledger peers) being promote to
+      -- hot
+      viewActivePeers                      :: a,
+      -- ^ number of active peers excluding big ledger peers
+      viewActivePeersDemotions             :: a,
+      -- ^ number of active peers (excluding big ledger peers) being demoted to
+      -- warm
+
+      --
+      -- Big Ledger Peers
+      --
+
+      viewKnownBigLedgerPeers              :: a,
+      -- ^ number of known big ledger peers
+      viewAvailableToConnectBigLedgerPeers :: a,
+      -- ^ number of known big ledger peers available to connect
+      viewColdBigLedgerPeersPromotions     :: a,
+      -- ^ number of cold big ledger peers being promoted to warm
+      viewEstablishedBigLedgerPeers        :: a,
+      -- ^ number of established big ledger peers
+      viewWarmBigLedgerPeersDemotions      :: a,
+      -- ^ number of warm big ledger peers being demoted to cold
+      viewWarmBigLedgerPeersPromotions     :: a,
+      -- ^ number of warm big ledger peers being promote to hot
+      viewActiveBigLedgerPeers             :: a,
+      -- ^ number of active big ledger peers
+      viewActiveBigLedgerPeersDemotions    :: a,
+      -- ^ number of active big ledger peers being demoted to warm
+
+      --
+      -- Local Roots
+      --
+
+      viewKnownLocalRootPeers              :: a,
+      -- ^ number of known local root peers should always be equal to the sum
+      -- of established & active local roots.
+      viewAvailableToConnectLocalRootPeers :: a,
+      viewColdLocalRootPeersPromotions     :: a,
+      viewEstablishedLocalRootPeers        :: a,
+      viewWarmLocalRootPeersPromotions     :: a,
+      viewActiveLocalRootPeers             :: a,
+      viewActiveLocalRootPeersDemotions    :: a,
+
+      --
+      -- Share Peers
+      -- (peers received through peer sharing)
+      --
+
+      viewKnownSharedPeers                 :: a,
+      viewColdSharedPeersPromotions        :: a,
+      viewEstablishedSharedPeers           :: a,
+      viewWarmSharedPeersDemotions         :: a,
+      viewWarmSharedPeersPromotions        :: a,
+      viewActiveSharedPeers                :: a,
+      viewActiveSharedPeersDemotions       :: a,
+
+      --
+      -- Bootstrap Peers
+      --
+
+      viewKnownBootstrapPeers              :: a,
+      viewColdBootstrapPeersPromotions     :: a,
+      viewEstablishedBootstrapPeers        :: a,
+      viewWarmBootstrapPeersDemotions      :: a,
+      viewWarmBootstrapPeersPromotions     :: a,
+      viewActiveBootstrapPeers             :: a,
+      viewActiveBootstrapPeersDemotions    :: a
+    } deriving (Eq, Functor, Show)
+
+
+type PeerSelectionCounters = PeerSelectionView Int
+pattern PeerSelectionCounters
+          :: Int
+          -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int
+          -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int
+          -> Int -> Int -> Int -> Int -> Int -> Int -> Int
+          -> Int -> Int -> Int -> Int -> Int -> Int -> Int
+          -> Int -> Int -> Int -> Int -> Int -> Int -> Int
+          -> PeerSelectionCounters
+pattern PeerSelectionCounters {
+      numberOfRootPeers,
+
+      numberOfKnownPeers,
+      numberOfAvailableToConnectPeers,
+      numberOfColdPeersPromotions,
+      numberOfEstablishedPeers,
+      numberOfWarmPeersDemotions,
+      numberOfWarmPeersPromotions,
+      numberOfActivePeers,
+      numberOfActivePeersDemotions,
+
+      numberOfKnownBigLedgerPeers,
+      numberOfAvailableToConnectBigLedgerPeers,
+      numberOfColdBigLedgerPeersPromotions,
+      numberOfEstablishedBigLedgerPeers,
+      numberOfWarmBigLedgerPeersDemotions,
+      numberOfWarmBigLedgerPeersPromotions,
+      numberOfActiveBigLedgerPeers,
+      numberOfActiveBigLedgerPeersDemotions,
+
+      numberOfKnownLocalRootPeers,
+      numberOfAvailableToConnectLocalRootPeers,
+      numberOfColdLocalRootPeersPromotions,
+      numberOfEstablishedLocalRootPeers,
+      numberOfWarmLocalRootPeersPromotions,
+      numberOfActiveLocalRootPeers,
+      numberOfActiveLocalRootPeersDemotions,
+
+      numberOfKnownSharedPeers,
+      numberOfColdSharedPeersPromotions,
+      numberOfEstablishedSharedPeers,
+      numberOfWarmSharedPeersDemotions,
+      numberOfWarmSharedPeersPromotions,
+      numberOfActiveSharedPeers,
+      numberOfActiveSharedPeersDemotions,
+
+      numberOfKnownBootstrapPeers,
+      numberOfColdBootstrapPeersPromotions,
+      numberOfEstablishedBootstrapPeers,
+      numberOfWarmBootstrapPeersDemotions,
+      numberOfWarmBootstrapPeersPromotions,
+      numberOfActiveBootstrapPeers,
+      numberOfActiveBootstrapPeersDemotions
+    }
+  =
+  PeerSelectionView {
+      viewRootPeers                        = numberOfRootPeers,
+
+      viewKnownPeers                       = numberOfKnownPeers,
+      viewAvailableToConnectPeers          = numberOfAvailableToConnectPeers,
+      viewColdPeersPromotions              = numberOfColdPeersPromotions,
+      viewEstablishedPeers                 = numberOfEstablishedPeers,
+      viewWarmPeersDemotions               = numberOfWarmPeersDemotions,
+      viewWarmPeersPromotions              = numberOfWarmPeersPromotions,
+      viewActivePeers                      = numberOfActivePeers,
+      viewActivePeersDemotions             = numberOfActivePeersDemotions,
+
+      viewKnownBigLedgerPeers              = numberOfKnownBigLedgerPeers,
+      viewAvailableToConnectBigLedgerPeers = numberOfAvailableToConnectBigLedgerPeers,
+      viewColdBigLedgerPeersPromotions     = numberOfColdBigLedgerPeersPromotions,
+      viewEstablishedBigLedgerPeers        = numberOfEstablishedBigLedgerPeers,
+      viewWarmBigLedgerPeersDemotions      = numberOfWarmBigLedgerPeersDemotions,
+      viewWarmBigLedgerPeersPromotions     = numberOfWarmBigLedgerPeersPromotions,
+      viewActiveBigLedgerPeers             = numberOfActiveBigLedgerPeers,
+      viewActiveBigLedgerPeersDemotions    = numberOfActiveBigLedgerPeersDemotions,
+
+      viewKnownLocalRootPeers              = numberOfKnownLocalRootPeers,
+      viewAvailableToConnectLocalRootPeers = numberOfAvailableToConnectLocalRootPeers,
+      viewColdLocalRootPeersPromotions     = numberOfColdLocalRootPeersPromotions,
+      viewEstablishedLocalRootPeers        = numberOfEstablishedLocalRootPeers,
+      viewWarmLocalRootPeersPromotions     = numberOfWarmLocalRootPeersPromotions,
+      viewActiveLocalRootPeers             = numberOfActiveLocalRootPeers,
+      viewActiveLocalRootPeersDemotions    = numberOfActiveLocalRootPeersDemotions,
+
+      viewKnownSharedPeers                 = numberOfKnownSharedPeers,
+      viewColdSharedPeersPromotions        = numberOfColdSharedPeersPromotions,
+      viewEstablishedSharedPeers           = numberOfEstablishedSharedPeers,
+      viewWarmSharedPeersDemotions         = numberOfWarmSharedPeersDemotions,
+      viewWarmSharedPeersPromotions        = numberOfWarmSharedPeersPromotions,
+      viewActiveSharedPeers                = numberOfActiveSharedPeers,
+      viewActiveSharedPeersDemotions       = numberOfActiveSharedPeersDemotions,
+
+      viewKnownBootstrapPeers              = numberOfKnownBootstrapPeers,
+      viewColdBootstrapPeersPromotions     = numberOfColdBootstrapPeersPromotions,
+      viewEstablishedBootstrapPeers        = numberOfEstablishedBootstrapPeers,
+      viewWarmBootstrapPeersDemotions      = numberOfWarmBootstrapPeersDemotions,
+      viewWarmBootstrapPeersPromotions     = numberOfWarmBootstrapPeersPromotions,
+      viewActiveBootstrapPeers             = numberOfActiveBootstrapPeers,
+      viewActiveBootstrapPeersDemotions    = numberOfActiveBootstrapPeersDemotions
+    }
+
+{-# COMPLETE PeerSelectionCounters #-}
+
+type PeerSelectionSetsWithSizes peeraddr = PeerSelectionView (Set peeraddr, Int)
+
+-- | A Pattern synonym which computes `hot`, `warm`, `cold` counters from
+-- `PeerSelectionCounters`.
+--
+pattern PeerSelectionCountersHWC :: Int -> Int -> Int -- peers
+                                 -> Int -> Int -> Int -- big ledger peers
+                                 -> Int -> Int -> Int -- local roots
+                                 -> PeerSelectionCounters
+pattern PeerSelectionCountersHWC { numberOfColdPeers,
+                                   numberOfWarmPeers,
+                                   numberOfHotPeers,
+
+                                   numberOfColdBigLedgerPeers,
+                                   numberOfWarmBigLedgerPeers,
+                                   numberOfHotBigLedgerPeers,
+
+                                   numberOfColdLocalRootPeers,
+                                   numberOfWarmLocalRootPeers,
+                                   numberOfHotLocalRootPeers }
+
+        <- (peerSelectionCountersHWC ->
+             PeerSelectionView { viewKnownPeers                = numberOfColdPeers,
+                                 viewEstablishedPeers          = numberOfWarmPeers,
+                                 viewActivePeers               = numberOfHotPeers,
+
+                                 viewKnownBigLedgerPeers       = numberOfColdBigLedgerPeers,
+                                 viewEstablishedBigLedgerPeers = numberOfWarmBigLedgerPeers,
+                                 viewActiveBigLedgerPeers      = numberOfHotBigLedgerPeers,
+
+                                 viewKnownLocalRootPeers       = numberOfColdLocalRootPeers,
+                                 viewEstablishedLocalRootPeers = numberOfWarmLocalRootPeers,
+                                 viewActiveLocalRootPeers      = numberOfHotLocalRootPeers
+                               })
+
+{-# COMPLETE PeerSelectionCountersHWC #-}
+
+
+-- | Internal function; used to implement `PeerSelectionCountersHWC` pattern synonym.
+--
+peerSelectionCountersHWC :: PeerSelectionCounters -> PeerSelectionCounters
+peerSelectionCountersHWC PeerSelectionCounters {..} =
     PeerSelectionCounters {
-      coldPeers          = Set.size $ coldPeersSet Set.\\ bigLedgerPeers,
-      warmPeers          = Set.size $ warmPeersSet Set.\\ bigLedgerPeers,
-      hotPeers           = Set.size $ hotPeersSet  Set.\\ bigLedgerPeers,
-      coldBigLedgerPeers = Set.size $ coldPeersSet `Set.intersection` bigLedgerPeers,
-      warmBigLedgerPeers = Set.size $ warmPeersSet `Set.intersection` bigLedgerPeers,
-      hotBigLedgerPeers  = Set.size $ hotPeersSet  `Set.intersection` bigLedgerPeers,
-      localRoots
+      numberOfRootPeers,
+
+      numberOfKnownPeers                         = numberOfKnownPeers
+                                                 - numberOfEstablishedPeers,
+      numberOfAvailableToConnectPeers,
+      numberOfColdPeersPromotions,
+      numberOfEstablishedPeers                   = numberOfEstablishedPeers
+                                                 - numberOfActivePeers,
+      numberOfWarmPeersDemotions,
+      numberOfWarmPeersPromotions,
+      numberOfActivePeers,
+      numberOfActivePeersDemotions,
+
+      numberOfKnownBigLedgerPeers                = numberOfKnownBigLedgerPeers
+                                                 - numberOfEstablishedBigLedgerPeers,
+      numberOfAvailableToConnectBigLedgerPeers,
+      numberOfColdBigLedgerPeersPromotions,
+      numberOfEstablishedBigLedgerPeers          = numberOfEstablishedBigLedgerPeers
+                                                 - numberOfActiveBigLedgerPeers,
+      numberOfWarmBigLedgerPeersDemotions,
+      numberOfWarmBigLedgerPeersPromotions,
+      numberOfActiveBigLedgerPeers,
+      numberOfActiveBigLedgerPeersDemotions,
+
+      numberOfKnownLocalRootPeers                = numberOfKnownLocalRootPeers
+                                                 - numberOfEstablishedLocalRootPeers,
+      numberOfAvailableToConnectLocalRootPeers,
+      numberOfColdLocalRootPeersPromotions,
+      numberOfEstablishedLocalRootPeers          = numberOfEstablishedLocalRootPeers
+                                                 - numberOfActiveLocalRootPeers,
+      numberOfWarmLocalRootPeersPromotions,
+      numberOfActiveLocalRootPeers,
+      numberOfActiveLocalRootPeersDemotions,
+
+      numberOfKnownSharedPeers                   = numberOfKnownSharedPeers
+                                                 - numberOfEstablishedSharedPeers,
+      numberOfColdSharedPeersPromotions,
+      numberOfEstablishedSharedPeers             = numberOfEstablishedSharedPeers
+                                                 - numberOfActiveSharedPeers,
+      numberOfWarmSharedPeersDemotions,
+      numberOfWarmSharedPeersPromotions,
+      numberOfActiveSharedPeers,
+      numberOfActiveSharedPeersDemotions,
+
+      numberOfKnownBootstrapPeers                = numberOfKnownBootstrapPeers
+                                                 - numberOfEstablishedBootstrapPeers,
+      numberOfColdBootstrapPeersPromotions,
+      numberOfEstablishedBootstrapPeers          = numberOfEstablishedBootstrapPeers
+                                                 - numberOfActiveBootstrapPeers,
+      numberOfWarmBootstrapPeersDemotions,
+      numberOfWarmBootstrapPeersPromotions,
+      numberOfActiveBootstrapPeers,
+      numberOfActiveBootstrapPeersDemotions
+    }
+
+
+-- | Compute peer selection sets & their sizes.
+--
+-- This function is used internally by the outbound-governor and to compute
+-- `PeerSelectionCounters` which are used by churn or are traced (e.g. as EKG
+-- metrics).  For this reason one has to be very careful when changing the
+-- function, as it will affect the outbound governor behaviour.
+--
+peerSelectionStateToView
+  :: Ord peeraddr
+  => PeerSelectionState peeraddr peerconn
+  -> PeerSelectionSetsWithSizes peeraddr
+peerSelectionStateToView
+    PeerSelectionState {
+        knownPeers,
+        establishedPeers,
+        activePeers,
+        publicRootPeers,
+        localRootPeers,
+        inProgressPromoteCold,
+        inProgressPromoteWarm,
+        inProgressDemoteWarm,
+        inProgressDemoteHot
+      }
+    =
+    PeerSelectionView {
+      viewRootPeers                          = size rootPeersSet,
+
+      viewKnownPeers                         = size   knownPeersSet,
+      viewAvailableToConnectPeers            = size $ availableToConnectSet
+                                                      Set.\\ bigLedgerSet,
+      viewColdPeersPromotions                = size $ inProgressPromoteCold
+                                                      Set.\\ bigLedgerSet,
+      viewEstablishedPeers                   = size   establishedPeersSet,
+      viewWarmPeersDemotions                 = size $ inProgressDemoteWarm
+                                                      Set.\\ bigLedgerSet,
+      viewWarmPeersPromotions                = size $ inProgressPromoteWarm
+                                                      Set.\\ bigLedgerSet,
+      viewActivePeers                        = size $ activePeersSet,
+      viewActivePeersDemotions               = size $ activePeersSet
+                                                      `Set.intersection` inProgressDemoteHot,
+
+      viewKnownBigLedgerPeers                = size   bigLedgerSet,
+      viewAvailableToConnectBigLedgerPeers   = size $ availableToConnectSet
+                                                      `Set.intersection` bigLedgerSet,
+      viewColdBigLedgerPeersPromotions       = size $ bigLedgerSet
+                                                      `Set.intersection` inProgressPromoteCold,
+      viewEstablishedBigLedgerPeers          = size   establishedBigLedgerPeersSet,
+      viewWarmBigLedgerPeersDemotions        = size $ inProgressDemoteWarm
+                                                      `Set.intersection` establishedBigLedgerPeersSet,
+      viewWarmBigLedgerPeersPromotions       = size $ inProgressPromoteWarm
+                                                      `Set.intersection` establishedBigLedgerPeersSet,
+      viewActiveBigLedgerPeers               = size   activeBigLedgerPeersSet,
+      viewActiveBigLedgerPeersDemotions      = size $ activeBigLedgerPeersSet
+                                                      `Set.intersection` inProgressDemoteHot,
+
+
+      viewKnownBootstrapPeers                = size   knownBootstrapPeersSet,
+      viewColdBootstrapPeersPromotions       = size $ knownBootstrapPeersSet
+                                                      `Set.intersection` inProgressPromoteCold,
+      viewEstablishedBootstrapPeers          = size   establishedBootstrapPeersSet,
+      viewWarmBootstrapPeersDemotions        = size $ establishedBootstrapPeersSet
+                                                      `Set.intersection` inProgressDemoteWarm,
+      viewWarmBootstrapPeersPromotions       = size $ establishedBootstrapPeersSet
+                                                      `Set.intersection` inProgressPromoteWarm,
+      viewActiveBootstrapPeers               = size   activeBootstrapPeersSet,
+      viewActiveBootstrapPeersDemotions      = size $ activeBootstrapPeersSet
+                                                      `Set.intersection` inProgressDemoteHot,
+
+      viewKnownLocalRootPeers                = size   knownLocalRootPeersSet,
+      viewAvailableToConnectLocalRootPeers   = size $ availableToConnectSet
+                                                      `Set.intersection` knownLocalRootPeersSet,
+      viewColdLocalRootPeersPromotions       = size $ inProgressPromoteCold
+                                                      `Set.intersection` knownLocalRootPeersSet,
+
+      viewEstablishedLocalRootPeers          = size $ establishedLocalRootsPeersSet,
+      viewWarmLocalRootPeersPromotions       = size $ establishedLocalRootsPeersSet
+                                                      `Set.intersection` inProgressPromoteWarm,
+      viewActiveLocalRootPeers               = size   activeLocalRootsPeersSet,
+      viewActiveLocalRootPeersDemotions      = size $ activeLocalRootsPeersSet
+                                                      `Set.intersection` inProgressDemoteHot,
+
+      viewKnownSharedPeers                   = size   knownSharedPeersSet,
+      viewColdSharedPeersPromotions          = size $ knownSharedPeersSet
+                                                      `Set.intersection` inProgressPromoteCold,
+      viewEstablishedSharedPeers             = size   establishedSharedPeersSet,
+      viewWarmSharedPeersDemotions           = size $ establishedSharedPeersSet
+                                                      `Set.intersection` inProgressDemoteWarm,
+      viewWarmSharedPeersPromotions          = size $ establishedSharedPeersSet
+                                                      `Set.intersection` inProgressPromoteWarm,
+      viewActiveSharedPeers                  = size   activeSharedPeersSet,
+      viewActiveSharedPeersDemotions         = size $ activeSharedPeersSet
+                                                      `Set.intersection` inProgressDemoteHot
     }
   where
-    knownPeersSet = KnownPeers.toSet (knownPeers st)
-    establishedPeersSet = EstablishedPeers.toSet (establishedPeers st)
-    coldPeersSet  = knownPeersSet Set.\\ establishedPeersSet
-    warmPeersSet  = establishedPeersSet Set.\\ activePeers
-    hotPeersSet   = activePeers
-    localRoots =
-      [ (hot, warm)
-      | (hot, warm, _) <- LocalRootPeers.toGroupSets localRootPeers
-      ]
-    bigLedgerPeers = PublicRootPeers.getBigLedgerPeers publicRootPeers
+    size s = (s, Set.size s)
+
+    -- common sets
+    knownSet       = KnownPeers.toSet knownPeers
+    establishedSet = EstablishedPeers.toSet establishedPeers
+    bigLedgerSet   = PublicRootPeers.getBigLedgerPeers publicRootPeers
+    availableToConnectSet = KnownPeers.availableToConnect knownPeers
+
+    -- root peers
+    rootPeersSet   = PublicRootPeers.toSet publicRootPeers
+                  <> localRootSet
+
+    -- non big ledger peers
+    knownPeersSet       = knownSet Set.\\ bigLedgerSet
+    establishedPeersSet = establishedSet Set.\\ establishedBigLedgerPeersSet
+    activePeersSet      = activePeers Set.\\ activeBigLedgerPeersSet
+
+    -- big ledger peers
+    establishedBigLedgerPeersSet = establishedSet `Set.intersection` bigLedgerSet
+    activeBigLedgerPeersSet      = establishedBigLedgerPeersSet `Set.intersection` activePeers
+
+    -- local roots
+    localRootSet                  = LocalRootPeers.keysSet localRootPeers
+    -- local roots and big ledger peers are disjoint, hence we can use
+    -- `knownPeersSet`, `establishedPeersSet` and `activePeersSet` below.
+    knownLocalRootPeersSet        = localRootSet
+    establishedLocalRootsPeersSet = establishedPeersSet `Set.intersection` localRootSet
+    activeLocalRootsPeersSet      = activePeersSet `Set.intersection` localRootSet
+
+    -- bootstrap peers
+    bootstrapSet                 = PublicRootPeers.getBootstrapPeers publicRootPeers
+    -- bootstrap peers and big ledger peers are disjoint, hence we can use
+    -- `knownPeersSet`, `establishedPeersSet` and `activePeersSet` below.
+    knownBootstrapPeersSet       = bootstrapSet
+    establishedBootstrapPeersSet = establishedPeersSet `Set.intersection` bootstrapSet
+    activeBootstrapPeersSet      = activePeersSet `Set.intersection` bootstrapSet
+
+    -- shared peers
+    -- shared peers are not big ledger peers, hence we can use `knownPeersSet`,
+    -- `establishedPeersSet` and `activePeersSet` below.
+    knownSharedPeersSet        = knownPeersSet Set.\\ rootPeersSet
+    establishedSharedPeersSet  = establishedPeersSet Set.\\ rootPeersSet
+    activeSharedPeersSet       = activePeersSet Set.\\ rootPeersSet
+
+
+peerSelectionStateToCounters
+  :: Ord peeraddr
+  => PeerSelectionState peeraddr peerconn
+  -> PeerSelectionCounters
+peerSelectionStateToCounters = fmap snd . peerSelectionStateToView
+
+
+emptyPeerSelectionCounters :: PeerSelectionCounters
+emptyPeerSelectionCounters =
+  PeerSelectionCounters {
+    numberOfRootPeers                        = 0,
+
+    numberOfKnownPeers                       = 0,
+    numberOfAvailableToConnectPeers          = 0,
+    numberOfColdPeersPromotions              = 0,
+    numberOfEstablishedPeers                 = 0,
+    numberOfWarmPeersDemotions               = 0,
+    numberOfWarmPeersPromotions              = 0,
+    numberOfActivePeers                      = 0,
+    numberOfActivePeersDemotions             = 0,
+
+    numberOfKnownBigLedgerPeers              = 0,
+    numberOfAvailableToConnectBigLedgerPeers = 0,
+    numberOfColdBigLedgerPeersPromotions     = 0,
+    numberOfEstablishedBigLedgerPeers        = 0,
+    numberOfWarmBigLedgerPeersDemotions      = 0,
+    numberOfWarmBigLedgerPeersPromotions     = 0,
+    numberOfActiveBigLedgerPeers             = 0,
+    numberOfActiveBigLedgerPeersDemotions    = 0,
+
+    numberOfKnownBootstrapPeers              = 0,
+    numberOfColdBootstrapPeersPromotions     = 0,
+    numberOfEstablishedBootstrapPeers        = 0,
+    numberOfWarmBootstrapPeersDemotions      = 0,
+    numberOfWarmBootstrapPeersPromotions     = 0,
+    numberOfActiveBootstrapPeers             = 0,
+    numberOfActiveBootstrapPeersDemotions    = 0,
+
+    numberOfKnownLocalRootPeers              = 0,
+    numberOfAvailableToConnectLocalRootPeers = 0,
+    numberOfColdLocalRootPeersPromotions     = 0,
+    numberOfEstablishedLocalRootPeers        = 0,
+    numberOfWarmLocalRootPeersPromotions     = 0,
+    numberOfActiveLocalRootPeers             = 0,
+    numberOfActiveLocalRootPeersDemotions    = 0,
+
+    numberOfKnownSharedPeers                 = 0,
+    numberOfColdSharedPeersPromotions        = 0,
+    numberOfEstablishedSharedPeers           = 0,
+    numberOfWarmSharedPeersDemotions         = 0,
+    numberOfWarmSharedPeersPromotions        = 0,
+    numberOfActiveSharedPeers                = 0,
+    numberOfActiveSharedPeersDemotions       = 0
+  }
 
 emptyPeerSelectionState :: StdGen
-                        -> [(HotValency, WarmValency)]
                         -> PeerSelectionState peeraddr peerconn
-emptyPeerSelectionState rng localRoots =
+emptyPeerSelectionState rng =
     PeerSelectionState {
       targets                     = nullPeerSelectionTargets,
       localRootPeers              = LocalRootPeers.empty,
@@ -633,7 +1143,6 @@ emptyPeerSelectionState rng localRoots =
       inProgressDemoteHot         = Set.empty,
       inProgressDemoteToCold      = Set.empty,
       fuzzRng                     = rng,
-      countersCache               = Cache (PeerSelectionCounters 0 0 0 0 0 0 localRoots),
       ledgerStateJudgement        = TooOld,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
@@ -769,7 +1278,7 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 -- | Check pre-conditions and post-conditions on the pick policies,
 -- and supply additional peer attributes from the current state.
 --
-pickPeers :: (Ord peeraddr, Functor m)
+pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
           => PeerSelectionState peeraddr peerconn
           -> PickPolicy peeraddr m
           -> Set peeraddr -> Int -> m (Set peeraddr)
@@ -1070,6 +1579,19 @@ data TracePeerSelection peeraddr =
 
      | TraceChurnWait          DiffTime
      | TraceChurnMode          ChurnMode
+     | TraceChurnAction
+         DiffTime    -- ^ duration of the churn action
+         ChurnAction -- ^ churn action type
+         Int         -- ^ how many peers were removed or added within the
+                     --   duration of the action.
+     | TraceChurnTimeout
+         DiffTime    -- ^ duration of the churn action
+         ChurnAction -- ^ churn action type
+         Int         -- ^ how many peers were removed or added within the
+                     --   duration of the action; note that if the action
+                     --   timeouts the governor will still look to remove or
+                     --   add peers as required.
+
      | TraceLedgerStateJudgementChanged LedgerStateJudgement
      | TraceOnlyBootstrapPeers
      | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
@@ -1086,6 +1608,22 @@ data TracePeerSelection peeraddr =
 
      | TraceDebugState Time (DebugPeerSelectionState peeraddr)
   deriving Show
+
+
+data ChurnAction = DecreasedActivePeers
+                 | IncreasedActivePeers
+                 | DecreasedActiveBigLedgerPeers
+                 | IncreasedActiveBigLedgerPeers
+                 | DecreasedEstablishedPeers
+                 | IncreasedEstablishedPeers
+                 | IncreasedEstablishedBigLedgerPeers
+                 | DecreasedEstablishedBigLedgerPeers
+                 | DecreasedKnownPeers
+                 | IncreasedKnownPeers
+                 | DecreasedKnownBigLedgerPeers
+                 | IncreasedKnownBigLedgerPeers
+  deriving (Eq, Show)
+
 
 data BootstrapPeersCriticalTimeoutError =
   BootstrapPeersCriticalTimeoutError

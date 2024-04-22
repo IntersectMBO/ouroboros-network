@@ -10,6 +10,7 @@ module Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
+import GHC.Stack (HasCallStack)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool (Job (..))
@@ -23,7 +24,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 
@@ -36,7 +36,6 @@ belowTarget :: (MonadSTM m, Ord peeraddr)
 belowTarget actions
             blockedAt
             st@PeerSelectionState {
-              publicRootPeers,
               bigLedgerPeerRetryTime,
               inProgressBigLedgerPeersReq,
               targets = PeerSelectionTargets {
@@ -67,7 +66,12 @@ belowTarget actions
     | otherwise
     = GuardedSkip Nothing
   where
-    numBigLedgerPeers      = Set.size (PublicRootPeers.getBigLedgerPeers publicRootPeers)
+    PeerSelectionCounters {
+        numberOfKnownBigLedgerPeers = numBigLedgerPeers
+      }
+      =
+      peerSelectionStateToCounters st
+
     maxExtraBigLedgerPeers = targetNumberOfKnownBigLedgerPeers
                            - numBigLedgerPeers
 
@@ -172,13 +176,12 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
 
 
 aboveTarget :: forall m peeraddr peerconn.
-               (Alternative (STM m), MonadSTM m, Ord peeraddr)
+               (Alternative (STM m), MonadSTM m, Ord peeraddr, HasCallStack)
             => MkGuardedDecision peeraddr peerconn m
 aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
             st@PeerSelectionState {
                  publicRootPeers,
                  knownPeers,
-                 establishedPeers,
                  inProgressPromoteCold,
                  targets = PeerSelectionTargets {
                              targetNumberOfKnownBigLedgerPeers
@@ -223,13 +226,9 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
 
-    numKnownBigLedgerPeers :: Int
-    numKnownBigLedgerPeers = Set.size bigLedgerPeersSet
-
-    establishedBigLedgerPeers :: Set peeraddr
-    establishedBigLedgerPeers = EstablishedPeers.toSet establishedPeers
-                                `Set.intersection`
-                                bigLedgerPeersSet
-
-    numEstablishedBigLedgerPeers :: Int
-    numEstablishedBigLedgerPeers = Set.size establishedBigLedgerPeers
+    PeerSelectionView {
+        viewKnownBigLedgerPeers       = (_, numKnownBigLedgerPeers),
+        viewEstablishedBigLedgerPeers = (establishedBigLedgerPeers, numEstablishedBigLedgerPeers)
+      }
+      =
+      peerSelectionStateToView st

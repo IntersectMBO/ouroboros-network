@@ -19,6 +19,7 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , TraceMockEnv (..)
   , TestTraceEvent (..)
   , selectGovernorEvents
+  , selectGovernorStateEvents
   , selectPeerSelectionTraceEvents
   , selectPeerSelectionTraceEventsUntil
   , peerShareReachablePeers
@@ -210,7 +211,8 @@ governorAction mockEnv = do
                              (ledgerStateJudgement mockEnv)
     usbVar <- playTimedScript (contramap TraceEnvSetUseBootstrapPeers tracerMockEnv)
                              (useBootstrapPeers mockEnv)
-    debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42) [])
+    debugVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen 42))
+    countersVar <- StrictTVar.newTVarIO emptyPeerSelectionCounters
     policy  <- mockPeerSelectionPolicy                mockEnv
     actions <- mockPeerSelectionActions tracerMockEnv mockEnv (readTVar usbVar) (readTVar lsjVar) policy
     exploreRaces      -- explore races within the governor
@@ -221,6 +223,7 @@ governorAction mockEnv = do
         tracerDebugPeerSelection
         tracerTracePeerSelectionCounters
         (mkStdGen 42)
+        countersVar
         publicStateVar
         debugVar
         actions
@@ -655,6 +658,8 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceUseBootstrapPeersChanged !_)                   = GovernorEvent a
     f a@(TraceOutboundGovernorCriticalFailure !_)            = GovernorEvent a
     f a@(TraceDebugState !_ !_)                              = GovernorEvent a
+    f a@(TraceChurnAction !_ !_ !_)                          = GovernorEvent a
+    f a@(TraceChurnTimeout !_ !_ !_)                         = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent
@@ -710,6 +715,11 @@ selectPeerSelectionTraceEventsUntil tmax = go
 selectGovernorEvents :: [(Time, TestTraceEvent)]
                      -> [(Time, TracePeerSelection PeerAddr)]
 selectGovernorEvents trace = [ (t, e) | (t, GovernorEvent e) <- trace ]
+
+selectGovernorStateEvents :: [(Time, TestTraceEvent)]
+                          -> [(Time, DebugPeerSelection PeerAddr)]
+selectGovernorStateEvents trace = [ (t, e) | (t, GovernorDebug e) <- trace ]
+
 
 
 --
