@@ -35,7 +35,8 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 -- from the current ledger. Consensus uses CBOR.
 newtype LedgerPeerSnapshot = LedgerPeerSnapshot
   { unLedgerPeerSnapshot :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]) }
-  deriving newtype (Show, ToCBOR, FromCBOR)
+  deriving (Eq)
+  deriving newtype (Show, NFData, ToCBOR, FromCBOR)
 
 -- | Which ledger peers to pick.
 --
@@ -69,7 +70,7 @@ newtype PoolStake = PoolStake { unPoolStake :: Rational }
 --
 newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
     deriving (Eq, Ord, Show)
-    deriving newtype (Fractional, Num, FromCBOR, ToCBOR) -- CBOR to support LedgerPeerSnapshot
+    deriving newtype (Fractional, Num, NFData, FromCBOR, ToCBOR) -- CBOR to support LedgerPeerSnapshot
 
 -- | A boolean like type.  Big ledger peers are the largest SPOs which control
 -- 90% of staked stake.

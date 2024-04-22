@@ -8,6 +8,8 @@
 
 module Test.Ouroboros.Network.LedgerPeers where
 
+import Codec.CBOR.FlatTerm
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException (..))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -32,8 +34,8 @@ import System.Random
 
 import Network.DNS (Domain)
 
-import Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
-import Control.Concurrent.Class.MonadSTM.Strict
+import Cardano.Binary
+import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -50,6 +52,7 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
   , testProperty "Pick" prop_pick
   , testProperty "accBigPoolStake" prop_accBigPoolStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
+  , testProperty "LedgerPeerSnapshot encode/decode" prop_ledgerPeerSnapshot
   ]
 
 newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
@@ -95,7 +98,7 @@ newtype ArbitrarySlotNo =
 -- of the tests we run.
 instance Arbitrary ArbitrarySlotNo where
     arbitrary =
-      ArbitrarySlotNo . fromInteger <$> arbitrary
+      ArbitrarySlotNo . SlotNo <$> arbitrarySizedBoundedIntegral
 
 data StakePool = StakePool {
       spStake :: !Word64
@@ -366,6 +369,24 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
                   (pure $ curSlotWO)
                   (pure lsj)
                   (pure (Map.elems (accPoolStake lps)))
+
+-- | Tests if the CBOR encoding is valid, and whether a round
+-- trip results in the original peer snapshot value.
+--
+prop_ledgerPeerSnapshot :: ArbitrarySlotNo
+                        -> LedgerPools
+                        -> Property
+prop_ledgerPeerSnapshot (ArbitrarySlotNo slot)
+                        (LedgerPools pools) =
+  validFlatTerm encoded .&&. either (const False) (snapshot ==) decoded
+  where
+    poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
+    originOrSlot = if slot == 0
+                   then Origin
+                   else At slot
+    snapshot = LedgerPeerSnapshot (originOrSlot, poolStakeWithAccumulation)
+    encoded = toFlatTerm . toCBOR $ snapshot
+    decoded = fromFlatTerm fromCBOR encoded
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]
