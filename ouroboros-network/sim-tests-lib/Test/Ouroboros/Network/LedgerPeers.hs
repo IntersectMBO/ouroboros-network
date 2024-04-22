@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -8,6 +9,8 @@
 
 module Test.Ouroboros.Network.LedgerPeers where
 
+import Codec.CBOR.FlatTerm
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException (..))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -17,6 +20,8 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Data.Aeson
+import Data.Aeson.Types as Aeson
 import Data.IP qualified as IP
 import Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -32,8 +37,8 @@ import System.Random
 
 import Network.DNS (Domain)
 
-import Cardano.Slotting.Slot (SlotNo, WithOrigin (..))
-import Control.Concurrent.Class.MonadSTM.Strict
+import Cardano.Binary
+import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -50,6 +55,7 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
   , testProperty "Pick" prop_pick
   , testProperty "accBigPoolStake" prop_accBigPoolStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
+  , testProperty "LedgerPeerSnapshot encode/decode version 1" prop_ledgerPeerSnapshotV1
   ]
 
 newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
@@ -97,7 +103,7 @@ newtype ArbitrarySlotNo =
 -- of the tests we run.
 instance Arbitrary ArbitrarySlotNo where
     arbitrary =
-      ArbitrarySlotNo . fromInteger <$> arbitrary
+      ArbitrarySlotNo . SlotNo <$> arbitrarySizedBoundedIntegral
 
 data StakePool = StakePool {
       spStake :: !Word64
@@ -368,6 +374,35 @@ prop_getLedgerPeers (ArbitrarySlotNo curSlot)
                   (pure $ curSlotWO)
                   (pure lsj)
                   (pure (Map.elems (accPoolStake lps)))
+
+-- | Tests if the CBOR encoding is valid, and whether a round
+-- trip results in the original peer snapshot value.
+--
+prop_ledgerPeerSnapshotV1 :: ArbitrarySlotNo
+                          -> LedgerPools
+                          -> Property
+prop_ledgerPeerSnapshotV1 (ArbitrarySlotNo slot)
+                          (LedgerPools pools) =
+  counterexample (show snapshot) $
+    conjoin [counterexample "Invalid CBOR encoding" $ validFlatTerm encoded,
+             either ((`counterexample` False) . ("JSON decode failed: " <>))
+                    (("CBOR round trip failed" `counterexample`) . (snapshot ==))
+                    decoded,
+             either ((`counterexample` False) . ("JSON decode failed: " <>))
+                    (("JSON round trip failed" `counterexample`) . (snapshot ==))
+                    decodedJSON]
+  where
+    poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
+    originOrSlot = if slot == 0
+                   then Origin
+                   else At slot
+    snapshot = LedgerPeerSnapshotV1 (originOrSlot, poolStakeWithAccumulation)
+    encoded = toFlatTerm . toCBOR $ snapshot
+    decoded = fromFlatTerm fromCBOR encoded
+    encodedJSON = toJSON snapshot
+    decodedJSON = case fromJSON encodedJSON of
+                    Aeson.Success s -> Right s
+                    Error str       -> Left str
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]
