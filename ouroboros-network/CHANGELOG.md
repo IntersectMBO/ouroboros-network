@@ -4,7 +4,16 @@
 
 ### Breaking changes
 
+* Removed `TraceKnownInboundConnection` and replaced it with
+  `TracePickInboundPeers` message in the peer selection tracer.
+* Adapted to changes in `ouroboros-network-framework`, in particular the
+  outbound governor is using `PublicInboundGovernorState` to implemented light
+  peer sharing.
+
 ### Non-Breaking changes
+
+* Renamed `fuzzRnd` to `stdGen` in `PeerSelectionState`
+* split `stdGen` in `PeerSelection.Governor.wakeupAction`
 
 ## 0.14.0.0 -- 2024-04-04
 
