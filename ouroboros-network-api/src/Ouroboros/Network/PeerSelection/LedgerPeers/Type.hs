@@ -35,8 +35,8 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 -- from the current ledger. Consensus uses CBOR.
 newtype LedgerPeerSnapshot = LedgerPeerSnapshot
   { unLedgerPeerSnapshot :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]) }
-  deriving (Generic, NFData)
-  deriving newtype (Show, ToCBOR, FromCBOR)
+  deriving (Generic)
+  deriving newtype (Show, NFData, ToCBOR, FromCBOR)
 
 -- | Which ledger peers to pick.
 --
