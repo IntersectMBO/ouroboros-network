@@ -224,9 +224,7 @@ ledgerPeersThread PeerActionsDNS {
                     paDnsSemaphore }
                   WithLedgerPeersArgs {
                     wlpRng,
-                    wlpConsensusInterface = wlpConsensusInterface@LedgerPeersConsensusInterface {
-                      lpGetLatestSlot,
-                      lpGetLedgerStateJudgement },
+                    wlpConsensusInterface,
                     wlpTracer,
                     wlpGetUseLedgerPeers,
                     wlpGetLedgerPeerSnapshot }
@@ -261,7 +259,7 @@ ledgerPeersThread PeerActionsDNS {
                  return (Map.empty, Map.empty, now)
                UseLedgerPeers ula -> do
                  (consensusSlotNo, consensusPeers, peerSnapshot) <-
-                   atomically ((,,) <$> lpGetLatestSlot
+                   atomically ((,,) <$> lpGetLatestSlot wlpConsensusInterface
                                     <*> getLedgerPeers wlpConsensusInterface ula
                                     <*> wlpGetLedgerPeerSnapshot)
 
