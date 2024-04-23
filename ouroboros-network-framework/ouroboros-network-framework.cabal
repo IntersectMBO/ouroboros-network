@@ -188,6 +188,7 @@ test-suite sim-tests
                      , iproute
                      , network
                      , pretty-simple
+                     , psqueues
                      , random
                      , serialise
                      , text

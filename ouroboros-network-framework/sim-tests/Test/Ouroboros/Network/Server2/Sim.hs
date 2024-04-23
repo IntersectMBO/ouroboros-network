@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -52,6 +53,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid (Sum (..))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.OrdPSQ qualified as OrdPSQ
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import System.Random (StdGen, mkStdGen, split)
@@ -71,9 +73,11 @@ import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConnectionManager.Types qualified as CM
-import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import Ouroboros.Network.InboundGovernor (DebugInboundGovernor (..),
+           InboundGovernorTrace (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.InboundGovernor.State (InboundGovernorCounters (..))
+import Ouroboros.Network.InboundGovernor.State (ConnectionState (..),
+           InboundGovernorCounters (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
@@ -99,6 +103,7 @@ import Ouroboros.Network.ConnectionManager.Test.Utils
            (abstractStateIsFinalTransition, allValidTransitionsNames,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
+import Ouroboros.Network.InboundGovernor.State (InboundGovernorState (..))
 import Ouroboros.Network.InboundGovernor.Test.Utils
            (allValidRemoteTransitionsNames, remoteStrIsFinalTransition,
            validRemoteTransitionMap, verifyRemoteTransition,
@@ -127,6 +132,7 @@ tests =
     , testProperty "no unsupported state"   prop_inbound_governor_no_unsupported_state
     , testProperty "pruning"                prop_inbound_governor_pruning
     , testProperty "counters"               prop_inbound_governor_counters
+    , testProperty "InboundGovernorState"   prop_inbound_governor_state
     , testProperty "timeouts enforced"      prop_timeouts_enforced
     ]
   , testGroup "Server2"
@@ -628,6 +634,8 @@ multinodeExperiment
     -> Tracer m (WithName (Name peerAddr)
                           (InboundGovernorTrace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
+                          (DebugInboundGovernor peerAddr))
+    -> Tracer m (WithName (Name peerAddr)
                           (ConnectionManagerTrace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
@@ -642,7 +650,7 @@ multinodeExperiment
     -> AcceptedConnectionsLimit
     -> MultiNodeScript req peerAddr
     -> m ()
-multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
+multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                     stdGen0 snocket makeBearer addrFamily serverAddr accInit
                     dataFlow0 acceptedConnLimit
                     (MultiNodeScript script _) =
@@ -774,7 +782,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                   Job ( withBidirectionalConnectionManager
                           name simTimeouts
                           inboundTrTracer trTracer cmTracer
-                          inboundTracer
+                          inboundTracer debugTracer
                           stdGen
                           snocket makeBearer (\_ -> pure ()) fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
@@ -1407,6 +1415,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                 multinodeExperiment (sayTracer <> Tracer traceM)
                                     (sayTracer <> Tracer traceM)
                                     (sayTracer <> Tracer traceM)
+                                    nullTracer
                                     (   sayTracer
                                      <> Tracer traceM
                                      <> networkStateTracer getState)
@@ -1464,6 +1473,7 @@ prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                              dynamicTracer
                              (tracerWithTime (Tracer traceM) <> dynamicTracer)
                              dynamicTracer
+                             nullTracer
                              dynamicTracer
 
 -- | Property wrapping `multinodeExperiment`.
@@ -1797,6 +1807,59 @@ prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                        events
                        (toNonFailing <$> attenuationMap)
 
+
+prop_inbound_governor_state :: Fixed Int
+                            -> Int
+                            -> ArbDataFlow
+                            -> AbsBearerInfo
+                            -> MultiNodeScript Int TestAddr
+                            -> Property
+prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
+                            defaultBearerInfo
+                            mns@(MultiNodeScript events attenuationMap) =
+  let trace = runSimTrace sim
+
+      evs :: Trace (SimResult ()) (DebugInboundGovernor SimAddr)
+      evs = traceWithNameTraceEvents trace
+
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents = traceWithNameTraceEvents trace
+
+  in  counterexample (ppScript mns)
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           _             -> All False
+       )
+       (All . inboundGovernorStateInvariant)
+    $ evs
+  where
+    sim :: IOSim s ()
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
+                       defaultBearerInfo
+                       maxAcceptedConnectionsLimit
+                       events
+                       attenuationMap
+
+    inboundGovernorStateInvariant :: DebugInboundGovernor SimAddr
+                                  -> Property
+    inboundGovernorStateInvariant
+        (DebugInboundGovernor InboundGovernorState { igsConnections,
+                                                     igsMatureDuplexPeers,
+                                                     igsFreshDuplexPeers })
+        =
+        keys === keys'
+      where
+        keys  = Set.map remoteAddress
+              . Map.keysSet
+              . Map.filter (\ConnectionState { csDataFlow } -> csDataFlow == Duplex)
+              $ igsConnections
+
+        keys' = Set.fromList (OrdPSQ.keys igsFreshDuplexPeers)
+             <> Map.keysSet igsMatureDuplexPeers
+
+
+
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
 --
@@ -2086,6 +2149,7 @@ unit_server_accept_error (Fixed rnd) ioErrType =
                withBidirectionalConnectionManager "node-0" simTimeouts
                                                   nullTracer nullTracer
                                                   nullTracer nullTracer
+                                                  nullTracer
                                                   (mkStdGen rnd)
                                                   snock
                                                   makeFDBearer
@@ -2147,6 +2211,8 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> Tracer m
                       (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
                    -> Tracer m
+                      (WithName (Name SimAddr) (DebugInboundGovernor SimAddr))
+                   -> Tracer m
                       (WithName
                        (Name SimAddr)
                         (ConnectionManagerTrace
@@ -2157,7 +2223,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
 multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap
                    remoteTrTracer abstractTrTracer
-                   inboundGovTracer connMgrTracer = do
+                   inboundGovTracer debugTracer connMgrTracer = do
 
       let attenuationMap' = (fmap toBearerInfo <$>)
                           . Map.mapKeys ( normaliseId
@@ -2173,6 +2239,7 @@ multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                  multinodeExperiment remoteTrTracer
                                      abstractTrTracer
                                      inboundGovTracer
+                                     debugTracer
                                      connMgrTracer
                                      stdGen
                                      snocket
@@ -2207,8 +2274,8 @@ multiNodeSim :: (Serialise req, Show req, Eq req, Typeable req)
 multiNodeSim stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
   multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
-                     events attenuationMap dynamicTracer dynamicTracer
-                     dynamicTracer dynamicTracer
+                     events attenuationMap dynamicTracer dynamicTracer dynamicTracer
+                     (Tracer traceM) dynamicTracer
 
 
 -- | Connection terminated while negotiating it.
