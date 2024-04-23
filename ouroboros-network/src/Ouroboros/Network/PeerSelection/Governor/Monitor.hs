@@ -207,7 +207,7 @@ connections PeerSelectionActions{
               inProgressDemoteWarm,
               inProgressPromoteWarm,
               inProgressDemoteToCold,
-              fuzzRng
+              stdGen
             } =
     Guarded Nothing $ do
       -- Get previously cooling peers
@@ -218,8 +218,8 @@ connections PeerSelectionActions{
       let (demotedToWarm, demotedToCoolingOrCold) = Map.partition ((==PeerWarm) . fst) demotions
           (demotedToCold, demotedToCooling) = Map.partition ((==PeerCold) . fst) demotedToCoolingOrCold
           -- fuzz reconnect delays
-          (aFuzz, fuzzRng')  = randomR (0.1, 10 :: Double) fuzzRng
-          (rFuzz, fuzzRng'') = randomR (0.1, 4  :: Double) fuzzRng'
+          (aFuzz, stdGen')  = randomR (0.1, 10 :: Double) stdGen
+          (rFuzz, stdGen'') = randomR (0.1, 4  :: Double) stdGen'
           demotions' = (\a@(peerState, repromoteDelay) -> case peerState of
                          PeerHot  -> a
                          PeerWarm ->
@@ -310,7 +310,7 @@ connections PeerSelectionActions{
                                 -- to not include peers in those sets. Instead,
                                 -- those ones will complete synchronously.
 
-                                fuzzRng = fuzzRng''
+                                stdGen = stdGen''
                               }
           }
   where

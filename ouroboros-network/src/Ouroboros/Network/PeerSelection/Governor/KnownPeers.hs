@@ -64,7 +64,7 @@ belowTarget actions
                         },
               ledgerStateJudgement,
               bootstrapPeersFlag,
-              fuzzRng
+              stdGen
             }
     -- Only start Peer Sharing request if PeerSharing was enabled
   | PeerSharingEnabled <- peerSharing actions
@@ -99,7 +99,7 @@ belowTarget actions
           numPeersToReq :: PeerSharingAmount
           !numPeersToReq = fromIntegral
                          $ min 255 (max 8 (objective `div` numPeerShareReqs))
-          (salt, fuzzRng') = random fuzzRng
+          (salt, stdGen') = random stdGen
 
       return $ \now -> Decision {
         decisionTrace = [TracePeerShareRequests
@@ -115,7 +115,7 @@ belowTarget actions
                                               selectedForPeerShare
                                               (addTime policyPeerShareRetryTime now)
                                               establishedPeers,
-                          fuzzRng = fuzzRng'
+                          stdGen = stdGen'
                         },
         decisionJobs  =
           [jobPeerShare actions policy objective salt numPeersToReq

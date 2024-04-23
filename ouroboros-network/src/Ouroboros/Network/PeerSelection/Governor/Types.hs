@@ -538,8 +538,9 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
        -- being closed
        inProgressDemoteToCold      :: !(Set peeraddr),
 
-       -- | Rng for fuzzy delay
-       fuzzRng                     :: !StdGen,
+       -- | Rng for fuzzy delays and random choices.
+       --
+       stdGen                      :: !StdGen,
 
        -- | Current ledger state judgement
        --
@@ -1200,7 +1201,7 @@ emptyPeerSelectionState rng =
       inProgressDemoteWarm        = Set.empty,
       inProgressDemoteHot         = Set.empty,
       inProgressDemoteToCold      = Set.empty,
-      fuzzRng                     = rng,
+      stdGen                      = rng,
       ledgerStateJudgement        = TooOld,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
