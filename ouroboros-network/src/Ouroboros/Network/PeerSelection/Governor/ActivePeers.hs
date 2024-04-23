@@ -339,7 +339,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                                  activePeers,
                                  establishedPeers,
                                  knownPeers,
-                                 fuzzRng,
+                                 stdGen,
                                  targets = PeerSelectionTargets {
                                              targetNumberOfActivePeers,
                                              targetNumberOfActiveBigLedgerPeers
@@ -352,7 +352,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
            in if peeraddr `Set.member` inProgressPromoteWarm st
                  then let establishedPeers' = EstablishedPeers.delete peeraddr
                                                 establishedPeers
-                          (fuzz, fuzzRng')  = randomR (-2, 2 :: Double) fuzzRng
+                          (fuzz, stdGen')  = randomR (-2, 2 :: Double) stdGen
                           delay             = realToFrac fuzz + policyErrorDelay
                           knownPeers'       = if peeraddr `KnownPeers.member` knownPeers
                                                  then KnownPeers.setConnectTimes
@@ -387,7 +387,7 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                                                                     (inProgressPromoteWarm st),
                                           knownPeers            = knownPeers',
                                           establishedPeers      = establishedPeers',
-                                          fuzzRng               = fuzzRng'
+                                          stdGen                = stdGen'
                                         },
                         decisionJobs  = []
                       }
