@@ -26,16 +26,16 @@ module Ouroboros.Network.InboundGovernor.Event
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadThrow hiding (handle)
+import Control.Monad.Class.MonadTime.SI
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor (($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
-import Data.Set qualified as Set
 import Data.OrdPSQ (OrdPSQ)
+import Data.Set qualified as Set
 
 import Network.Mux qualified as Mux
 import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolStatus (..))

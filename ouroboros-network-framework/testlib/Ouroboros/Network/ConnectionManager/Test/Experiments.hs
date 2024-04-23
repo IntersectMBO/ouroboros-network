@@ -80,7 +80,8 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.Driver.Limits
-import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import Ouroboros.Network.InboundGovernor (DebugInboundGovernor (..),
+           InboundGovernorTrace (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
@@ -429,6 +430,7 @@ withBidirectionalConnectionManager
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> Tracer m (WithName name (InboundGovernorTrace peerAddr))
+    -> Tracer m (WithName name (DebugInboundGovernor peerAddr))
     -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
@@ -454,7 +456,7 @@ withBidirectionalConnectionManager
     -> m a
 withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
-                                   cmTracer inboundTracer
+                                   cmTracer inboundTracer debugTracer
                                    cmStdGen
                                    snocket makeBearer
                                    confSock socket
@@ -522,6 +524,8 @@ withBidirectionalConnectionManager name timeouts
                     WithName name `contramap` inboundTrTracer,
                   serverTracer =
                     WithName name `contramap` nullTracer, -- ServerTrace
+                  serverDebugInboundGovernor =
+                    WithName name `contramap` debugTracer,
                   serverInboundGovernorTracer =
                     WithName name `contramap` inboundTracer, -- InboundGovernorTrace
                   serverConnectionLimits = acceptedConnLimit,
@@ -722,7 +726,8 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
       timeLimitsHandshake maxAcceptedConnectionsLimit
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts
-                                           nullTracer nullTracer nullTracer nullTracer
+                                           nullTracer nullTracer nullTracer
+                                           nullTracer nullTracer
                                            stdGen''
                                            snocket makeBearer
                                            confSock socket Nothing
@@ -802,7 +807,7 @@ bidirectionalExperiment
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
-                                         nullTracer nullTracer nullTracer
+                                         nullTracer nullTracer nullTracer nullTracer
                                          nullTracer stdGen' snocket makeBearer confSock
                                          socket0 (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
@@ -811,7 +816,7 @@ bidirectionalExperiment
                                          maxAcceptedConnectionsLimit
         (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
-                                             nullTracer nullTracer nullTracer
+                                             nullTracer nullTracer nullTracer nullTracer
                                              nullTracer stdGen'' snocket makeBearer confSock
                                              socket1 (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]
