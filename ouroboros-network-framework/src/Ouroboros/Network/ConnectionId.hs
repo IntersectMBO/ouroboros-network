@@ -25,9 +25,16 @@ data ConnectionId addr = ConnectionId {
     localAddress  :: !addr,
     remoteAddress :: !addr
   }
-  deriving (Eq, Ord, Show, Generic)
+  deriving (Eq, Show, Generic)
   deriving NoThunks via InspectHeap (ConnectionId addr)
   deriving Functor
+
+-- | Order first by `remoteAddress` then by `localAddress`.
+--
+instance Ord addr => Ord (ConnectionId addr) where
+    conn `compare` conn' =
+         remoteAddress conn `compare` remoteAddress conn'
+      <> localAddress conn `compare` localAddress conn'
 
 instance Hashable a => Hashable (ConnectionId a)
 
