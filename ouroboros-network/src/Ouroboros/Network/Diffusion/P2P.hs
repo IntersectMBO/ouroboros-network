@@ -750,6 +750,7 @@ runM Interfaces
                   serverSnocket               = diNtcSnocket,
                   serverTracer                = dtLocalServerTracer,
                   serverTrTracer              = nullTracer, -- TODO: issue #3320
+                  serverDebugInboundGovernor  = nullTracer,
                   serverInboundGovernorTracer = dtLocalInboundGovernorTracer,
                   serverInboundIdleTimeout    = Nothing,
                   serverConnectionLimits      = localConnectionLimits,
@@ -1041,6 +1042,7 @@ runM Interfaces
                   serverSnocket               = diNtnSnocket,
                   serverTracer                = dtServerTracer,
                   serverTrTracer              = dtInboundGovernorTransitionTracer,
+                  serverDebugInboundGovernor  = nullTracer,
                   serverInboundGovernorTracer = dtInboundGovernorTracer,
                   serverConnectionLimits      = daAcceptedConnectionsLimit,
                   serverConnectionManager     = connectionManager,

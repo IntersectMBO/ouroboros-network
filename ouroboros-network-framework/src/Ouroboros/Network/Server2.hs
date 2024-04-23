@@ -70,6 +70,7 @@ data ServerArguments (muxMode  :: MuxMode) socket initiatorCtx peerAddr versionD
       serverTracer                :: Tracer m (ServerTrace peerAddr),
       serverTrTracer              :: Tracer m (RemoteTransitionTrace peerAddr),
       serverInboundGovernorTracer :: Tracer m (InboundGovernorTrace peerAddr),
+      serverDebugInboundGovernor  :: Tracer m (DebugInboundGovernor peerAddr),
       serverConnectionLimits      :: AcceptedConnectionsLimit,
       serverConnectionManager     :: MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr)
                                                           peerAddr versionData versionNumber bytes m a b,
@@ -137,6 +138,7 @@ with ServerArguments {
       serverTrTracer,
       serverTracer = tracer,
       serverInboundGovernorTracer = inboundGovernorTracer,
+      serverDebugInboundGovernor,
       serverConnectionLimits =
         serverLimits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
       serverInboundIdleTimeout,
@@ -149,6 +151,7 @@ with ServerArguments {
       traceWith tracer (TrServerStarted localAddresses)
       withInboundGovernor serverTrTracer
                           inboundGovernorTracer
+                          serverDebugInboundGovernor
                           serverInboundInfoChannel
                           serverInboundIdleTimeout
                           serverConnectionManager

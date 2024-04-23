@@ -20,6 +20,7 @@ module Ouroboros.Network.InboundGovernor
   , withInboundGovernor
     -- * Trace
   , InboundGovernorTrace (..)
+  , DebugInboundGovernor (..)
   , RemoteSt (..)
   , RemoteTransition
   , RemoteTransitionTrace
@@ -100,12 +101,13 @@ withInboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr 
                    )
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)
+                -> Tracer m (DebugInboundGovernor peerAddr)
                 -> InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
                 -> Maybe DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr) peerAddr versionData versionNumber ByteString m a b
                 -> (Async m Void -> m (PublicInboundGovernorState peerAddr versionData) -> m x)
                 -> m x
-withInboundGovernor trTracer tracer inboundInfoChannel
+withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
                     inboundIdleTimeout connectionManager k = do
     -- State needs to be a TVar, otherwise, when catching the exception inside
     -- the loop we do not have access to the most recent version of the state
@@ -497,6 +499,7 @@ withInboundGovernor trTracer tracer inboundInfoChannel
 
       mask_ $ do
         atomically $ writeTVar st state'
+        traceWith debugTracer (DebugInboundGovernor state')
         case mbConnId of
           Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
           Nothing  -> pure ()
@@ -614,3 +617,7 @@ data InboundGovernorTrace peerAddr
     -- ^ This case is unexpected at call site.
     | TrInboundGovernorError         !SomeException
   deriving Show
+
+
+data DebugInboundGovernor peerAddr = forall muxMode initiatorCtx versionData m a b.
+    DebugInboundGovernor (InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b)

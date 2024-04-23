@@ -279,6 +279,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   serverTracer = ("server",) `contramap` debugTracer, -- ServerTrace
                   serverTrTracer = nullTracer,
                   serverInboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
+                  serverDebugInboundGovernor = nullTracer,
                   serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
                   serverConnectionManager = connectionManager,
                   serverInboundIdleTimeout = Just protocolIdleTimeout,
