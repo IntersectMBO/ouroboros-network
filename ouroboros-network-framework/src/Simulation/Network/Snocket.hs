@@ -1146,7 +1146,8 @@ mkSnocket state tr = Snocket { getLocalAddr
                     -- state. So we take from the StrictTBQueue until we have found
                     -- one that is SYN_SENT state.
                     cwi <- readTBQueueUntil (synSent localAddress) queue
-                    let connId = ConnectionId localAddress (cwiAddress cwi)
+                    let connId = ConnectionId { localAddress,
+                                                remoteAddress = cwiAddress cwi }
 
                     case deltaAndIOErrType of
                       -- the `ctime` is the time when we issued 'accept' not

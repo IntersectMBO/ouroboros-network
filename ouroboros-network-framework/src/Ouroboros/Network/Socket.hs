@@ -318,7 +318,8 @@ connectToNode'
   -- ^ a configured socket to use to connect to a remote service provider
   -> IO ()
 connectToNode' sn makeBearer handshakeCodec handshakeTimeLimits versionDataCodec NetworkConnectTracers {nctMuxTracer, nctHandshakeTracer } handshakeCallbacks versions sd = do
-    connectionId <- ConnectionId <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
+    connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
+                <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracer <- initDeltaQTracer' $ Mx.WithMuxBearer connectionId `contramap` nctMuxTracer
     ts_start <- getMonotonicTime
 
