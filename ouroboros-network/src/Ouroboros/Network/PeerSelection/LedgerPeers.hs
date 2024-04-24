@@ -268,14 +268,14 @@ ledgerPeersThread PeerActionsDNS {
                  (accPoolStake -> peersStake, bigPeersStakeMap) <-
                        case (consensusSlotNo, consensusPeers, peerSnapshot) of
                          (At t, LedgerPeers _ lp, Just (LedgerPeerSnapshot (At t', sp {- snapshot peer-})))
-                           | t' > t -> traceWith wlpTracer UsingPeerSnapshotPeers >> return (lp, Map.fromAscList sp)
+                           | t' > t -> traceWith wlpTracer UsingBigLedgerPeerSnapshot >> return (lp, Map.fromAscList sp)
                            | otherwise -> return (lp, accBigPoolStakeMap lp)
 
                          (_, LedgerPeers _ lp, Nothing) -> return (lp, accBigPoolStakeMap lp)
 
                          (_, _, Just (LedgerPeerSnapshot (At t', sp)))
                            | After slot <- ula, t' >= slot ->
-                             traceWith wlpTracer UsingPeerSnapshotPeers >> return ([], Map.fromAscList sp)
+                             traceWith wlpTracer UsingBigLedgerPeerSnapshot >> return ([], Map.fromAscList sp)
                          otherwise -> return ([], Map.empty)
 
                  traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStakeMap)
