@@ -97,6 +97,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 
+import Control.Monad.Class.MonadTest (exploreRaces)
 import Ouroboros.Network.PeerSelection.Bootstrap (requiresBootstrapPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers
 
@@ -109,8 +110,12 @@ tests =
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
     ]
+  , testGroup "IOSimPOR"
+    [ nightlyTest $ testProperty "no failure"
+                      (testWithIOSimPOR prop_diffusion_nofail 1000)
+    ]
   , testProperty "no failure"
-                 prop_diffusion_nofail
+                 (testWithIOSim prop_diffusion_nofail 125000)
   , testProperty "no livelock"
                  prop_diffusion_nolivelock
   , testProperty "dns can recover from fails"
@@ -203,6 +208,35 @@ tests =
 traceFromList :: [a] -> Trace (SimResult ()) a
 traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Just "main")) () [])
 
+testWithIOSim :: (SimTrace Void -> Int -> Property)
+              -> Int
+              -> AbsBearerInfo
+              -> DiffusionScript
+              -> Property
+testWithIOSim f traceNumber bi ds =
+  let sim :: forall s . IOSim s Void
+      sim = diffusionSimulation (toBearerInfo bi)
+                                ds
+                                iosimTracer
+   in labelDiffusionScript ds
+    $ f (runSimTrace sim) traceNumber
+
+testWithIOSimPOR :: (SimTrace Void -> Int -> Property)
+                 -> Int
+                 -> AbsBearerInfo
+                 -> DiffusionScript
+                 -> Property
+testWithIOSimPOR f traceNumber bi ds =
+  let sim :: forall s . IOSim s Void
+      sim = do
+        exploreRaces
+        diffusionSimulation (toBearerInfo bi)
+                            ds
+                            iosimTracer
+   in labelDiffusionScript ds
+    $ exploreSimTrace id sim $ \_ ioSimTrace ->
+        f ioSimTrace  traceNumber
+
 -- | As a basic property we run the governor to explore its state space a bit
 -- and check it does not throw any exceptions (assertions such as invariant
 -- violations).
@@ -211,25 +245,18 @@ traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Ju
 -- governor for a maximum number of trace events rather than for a fixed
 -- simulated time.
 --
-prop_diffusion_nofail :: AbsBearerInfo
-                      -> DiffusionScript
+prop_diffusion_nofail :: SimTrace Void
+                      -> Int
                       -> Property
-prop_diffusion_nofail defaultBearerInfo diffScript =
-  let sim :: forall s . IOSim s Void
-      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                diffScript
-                                iosimTracer
-
-      ioSimTrace = runSimTrace sim
-
-      trace = Trace.toList
+prop_diffusion_nofail ioSimTrace traceNumber =
+  let trace = Trace.toList
             . fmap (\(WithTime t (WithName _ b)) -> (t, b))
             . withTimeNameTraceEvents
                @DiffusionTestTrace
                @NtNAddr
             . traceFromList
             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-            . take 125000
+            . take traceNumber
             . traceEvents
             $ ioSimTrace
 
