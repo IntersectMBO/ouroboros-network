@@ -381,9 +381,9 @@ prop_ledgerPeerSnapshot (ArbitrarySlotNo slot)
   validFlatTerm encoded .&&. either (const False) (snapshot ==) decoded
   where
     poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
-    originOrSlot = case slot of
-      0 -> Origin
-      n -> At n
+    originOrSlot = if slot == 0
+                   then Origin
+                   else At slot
     snapshot = LedgerPeerSnapshot (originOrSlot, poolStakeWithAccumulation)
     encoded = toFlatTerm . toCBOR $ snapshot
     decoded = fromFlatTerm fromCBOR encoded
