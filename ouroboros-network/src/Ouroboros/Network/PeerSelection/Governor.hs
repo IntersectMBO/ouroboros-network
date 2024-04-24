@@ -680,7 +680,7 @@ wakeupDecision :: PeerSelectionState peeraddr peerconn
 wakeupDecision st _now =
   Decision {
     decisionTrace = [TraceGovernorWakeup],
-    decisionState = st,
+    decisionState = st { stdGen = fst (split (stdGen st)) } ,
     decisionJobs  = []
   }
 
