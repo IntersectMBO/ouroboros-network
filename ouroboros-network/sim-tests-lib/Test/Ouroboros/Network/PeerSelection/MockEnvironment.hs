@@ -879,15 +879,14 @@ instance Arbitrary GovernorMockEnvironment where
          publicRootPeers' <- shrinkPublicRootPeers publicRootPeers
       ]
     where
-      shrinkLocalRootPeers (LocalRootPeers m g) =
-        [ LocalRootPeers m' g'
-          | (m', g') <- shrink (m, g)
+      shrinkLocalRootPeers a =
+        [ LocalRootPeers.fromGroups g
+          | g <- shrink (LocalRootPeers.toGroups a)
         ]
       shrinkPublicRootPeers (PublicRootPeers pp bsp lp blp) =
         [ PublicRootPeers pp' bsp' lp' blp'
           | (pp', bsp', lp', blp') <- shrink (pp, bsp, lp, blp)
         ]
-
 
 --
 -- Tests for the QC Arbitrary instances
