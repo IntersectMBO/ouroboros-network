@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -8,7 +9,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
-{-# LANGUAGE LambdaCase          #-}
 
 module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   ( PeerGraph (..)
@@ -136,7 +136,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        pickHotPeersToDemote       :: !(PickScript PeerAddr),
        pickWarmPeersToDemote      :: !(PickScript PeerAddr),
        pickColdPeersToForget      :: !(PickScript PeerAddr),
-       peerSharing                :: !PeerSharing,
+       peerSharingFlag            :: !PeerSharing,
        useBootstrapPeers          :: !(TimedScript UseBootstrapPeers),
        ledgerStateJudgement       :: !(TimedScript LedgerStateJudgement)
      }
@@ -336,7 +336,7 @@ mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
                             localRootPeers,
                             publicRootPeers,
-                            peerSharing
+                            peerSharingFlag
                           }
                           _
                           scripts
@@ -346,7 +346,7 @@ mockPeerSelectionActions' tracer
                           connsVar =
     PeerSelectionActions {
       readLocalRootPeers       = return (LocalRootPeers.toGroups localRootPeers),
-      peerSharing              = peerSharing,
+      peerSharing              = peerSharingFlag,
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
       requestPublicRootPeers,
       readPeerSelectionTargets = readTVar targetsVar,
@@ -427,7 +427,7 @@ mockPeerSelectionActions' tracer
         let !conns' = Map.insert peeraddr conn conns
         writeTVar connsVar conns'
         remotePeerSharing <- stepScriptSTM peerSharingScript
-        return (PeerConn peeraddr (peerSharing <> remotePeerSharing) conn)
+        return (PeerConn peeraddr (peerSharingFlag <> remotePeerSharing) conn)
       _ <- async $
         -- monitoring loop which does asynchronous demotions. It will terminate
         -- as soon as either of the events:
@@ -744,7 +744,7 @@ instance Arbitrary GovernorMockEnvironment where
       pickHotPeersToDemote    <- arbitraryPickScript arbitrarySubsetOfPeers
       pickWarmPeersToDemote   <- arbitraryPickScript arbitrarySubsetOfPeers
       pickColdPeersToForget   <- arbitraryPickScript arbitrarySubsetOfPeers
-      peerSharing             <- arbitrary
+      peerSharingFlag         <- arbitrary
       useBootstrapPeers       <- arbitrary
       ledgerStateJudgementList <- fmap getArbitraryLedgerStateJudgement <$> arbitrary
       ledgerStateJudgementDelays <- listOf1 (elements [NoDelay, ShortDelay])
@@ -825,7 +825,7 @@ instance Arbitrary GovernorMockEnvironment where
            pickHotPeersToDemote,
            pickWarmPeersToDemote,
            pickColdPeersToForget,
-           peerSharing,
+           peerSharingFlag,
            useBootstrapPeers,
            ledgerStateJudgement
          } =
@@ -839,44 +839,41 @@ instance Arbitrary GovernorMockEnvironment where
       | peerGraph' <- shrink peerGraph
       , let nodes' = allPeers peerGraph' ]
       -- All the others are generic.
-   ++ [ GovernorMockEnvironment {
-          peerGraph,
-          localRootPeers          = localRootPeers',
-          publicRootPeers         = publicRootPeers',
-          targets                 = targets',
-          pickKnownPeersForPeerShare = pickKnownPeersForPeerShare',
-          pickColdPeersToPromote  = pickColdPeersToPromote',
-          pickWarmPeersToPromote  = pickWarmPeersToPromote',
-          pickHotPeersToDemote    = pickHotPeersToDemote',
-          pickWarmPeersToDemote   = pickWarmPeersToDemote',
-          pickColdPeersToForget   = pickColdPeersToForget',
-          peerSharing,
-          useBootstrapPeers       = useBootstrapPeers',
-          ledgerStateJudgement    = fmap (first getArbitraryLedgerStateJudgement)
-                                         ledgerStateJudgement'
-        }
-      | (targets',
-         pickKnownPeersForPeerShare',
-         pickColdPeersToPromote',
-         pickWarmPeersToPromote',
-         pickHotPeersToDemote',
-         pickWarmPeersToDemote',
-         pickColdPeersToForget',
-         ledgerStateJudgement',
-         useBootstrapPeers'
-        )
-          <- shrink (targets,
-                     pickKnownPeersForPeerShare,
-                     pickColdPeersToPromote,
-                     pickWarmPeersToPromote,
-                     pickHotPeersToDemote,
-                     pickWarmPeersToDemote,
-                     pickColdPeersToForget,
-                     fmap (first ArbitraryLedgerStateJudgement) ledgerStateJudgement,
-                     useBootstrapPeers
-                    ),
-         localRootPeers' <- shrinkLocalRootPeers localRootPeers,
-         publicRootPeers' <- shrinkPublicRootPeers publicRootPeers
+   ++ [ env { localRootPeers = localRootPeers' }
+      | localRootPeers' <- shrinkLocalRootPeers localRootPeers
+      ]
+   ++ [ env { publicRootPeers = publicRootPeers' }
+      | publicRootPeers' <- shrinkPublicRootPeers publicRootPeers
+      ]
+   ++ [ env { targets = targets' }
+      | targets' <- shrink targets
+      ]
+   ++ [ env { pickKnownPeersForPeerShare = pickKnownPeersForPeerShare' }
+      | pickKnownPeersForPeerShare' <- shrink pickKnownPeersForPeerShare
+      ]
+   ++ [ env { pickColdPeersToPromote = pickColdPeersToPromote' }
+      | pickColdPeersToPromote' <- shrink pickColdPeersToPromote
+      ]
+   ++ [ env { pickWarmPeersToPromote = pickWarmPeersToPromote' }
+      | pickWarmPeersToPromote' <- shrink pickWarmPeersToPromote
+      ]
+   ++ [ env { pickWarmPeersToDemote = pickWarmPeersToDemote' }
+      | pickWarmPeersToDemote' <- shrink pickWarmPeersToDemote
+      ]
+   ++ [ env { pickHotPeersToDemote = pickHotPeersToDemote' }
+      | pickHotPeersToDemote' <- shrink pickHotPeersToDemote
+      ]
+   ++ [ env { pickColdPeersToForget = pickColdPeersToForget' }
+      | pickColdPeersToForget' <- shrink pickColdPeersToForget
+      ]
+   ++ [ env { useBootstrapPeers = useBootstrapPeers' }
+      | useBootstrapPeers' <- shrink useBootstrapPeers
+      ]
+   ++ [ env { ledgerStateJudgement = fmap (first getArbitraryLedgerStateJudgement) ledgerStateJudgement' }
+      | ledgerStateJudgement' <- shrink (fmap (first ArbitraryLedgerStateJudgement) ledgerStateJudgement)
+      ]
+   ++ [ env { peerSharingFlag = peerSharingFlag' }
+      | peerSharingFlag' <- shrink peerSharingFlag
       ]
     where
       shrinkLocalRootPeers a =

@@ -1590,7 +1590,7 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
         peerShareOpportunitiesOkSig :: Signal Bool
         peerShareOpportunitiesOkSig =
           Signal.truncateAt (Time (60 * 60 * 10)) $
-          governorEventuallyTakesPeerShareOpportunities (peerSharing env) combinedSig
+          governorEventuallyTakesPeerShareOpportunities (peerSharingFlag env) combinedSig
 
      in counterexample
           "Signal key: (target, known peers, opportunities, peer share event)" $
@@ -3588,7 +3588,7 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       pickHotPeersToDemote = Script (PickSome (Set.fromList [PeerAddr 29]) :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingEnabled,
+      peerSharingFlag = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3624,7 +3624,7 @@ prop_issue_3515 = prop_governor_nolivelock $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingEnabled,
+      peerSharingFlag = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3660,7 +3660,7 @@ prop_issue_3494 = prop_governor_nofail $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingEnabled,
+      peerSharingFlag = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3712,7 +3712,7 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingEnabled,
+      peerSharingFlag = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
