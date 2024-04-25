@@ -28,7 +28,7 @@
     ];
 
     # default compiler used on all systems, also provided within the shell
-    defaultCompiler = "ghc963";
+    defaultCompiler = "ghc982";
 
     # the compiler used for cross compilation
     # alternative compilers only used on Linux
@@ -119,13 +119,13 @@
           # tools we want in our shell, from hackage
           shell.tools =
             {
-              cabal = "3.10.1.0";
-              ghcid = "0.8.8";
+              cabal = "3.10.3.0";
+              ghcid = "0.8.9";
             }
             // lib.optionalAttrs (config.compiler-nix-name == defaultCompiler) {
               # tools that work only with default compiler
               stylish-haskell = "0.14.6.0";
-              haskell-language-server = "2.0.0.1";
+              haskell-language-server = "2.7.0.0";
             };
           # and from nixpkgs or other inputs
           shell.nativeBuildInputs = with nixpkgs; [ gh jq ];

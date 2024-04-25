@@ -183,8 +183,8 @@ tests =
                      prop_governor_no_non_trustable_peers_before_caught_up_state
       , testProperty "node only use bootstrap peers if in sensitive state"
                      prop_governor_stops_using_bootstrap_peers
-      , testProperty "node never uses non-trustable peers after clean state"
-                     prop_governor_only_bootstrap_peers_after_clean_state
+      , testProperty "node never uses non-trustable peers in clean state"
+                     prop_governor_only_bootstrap_peers_in_clean_state
       , testProperty "node uses ledger peers in non-sensitive mode"
                      prop_governor_uses_ledger_peers
       ]
@@ -1590,7 +1590,7 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
         peerShareOpportunitiesOkSig :: Signal Bool
         peerShareOpportunitiesOkSig =
           Signal.truncateAt (Time (60 * 60 * 10)) $
-          governorEventuallyTakesPeerShareOpportunities (peerSharing env) combinedSig
+          governorEventuallyTakesPeerShareOpportunities (peerSharingFlag env) combinedSig
 
      in counterexample
           "Signal key: (target, known peers, opportunities, peer share event)" $
@@ -3265,8 +3265,11 @@ prop_governor_no_non_trustable_peers_before_caught_up_state env =
           Set.null
           keepNonTrustablePeersTooLong
 
-prop_governor_only_bootstrap_peers_after_clean_state :: GovernorMockEnvironment -> Property
-prop_governor_only_bootstrap_peers_after_clean_state env =
+-- NOTE: the clean state is defined as a state in which we require bootstrap
+-- peers and the governor set the `hasOnlyBootstrapPeers` flag.
+--
+prop_governor_only_bootstrap_peers_in_clean_state :: GovernorMockEnvironment -> Property
+prop_governor_only_bootstrap_peers_in_clean_state env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . selectPeerSelectionTraceEvents
                . runGovernorInMockEnvironment
@@ -3280,15 +3283,15 @@ prop_governor_only_bootstrap_peers_after_clean_state env =
         govLedgerStateJudgement =
           selectGovState (Governor.ledgerStateJudgement) events
 
-        govKnownPeers :: Signal (Set PeerAddr)
-        govKnownPeers =
-          selectGovState (KnownPeers.toSet . Governor.knownPeers) events
-
-        govTrustedPeers :: Signal (Set PeerAddr)
-        govTrustedPeers =
+        govKnownAndTrustedPeers :: Signal (Set PeerAddr, Set PeerAddr)
+        govKnownAndTrustedPeers =
           selectGovState
-            (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
-                 <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
+            (\st ->
+                ( KnownPeers.toSet (Governor.knownPeers st)
+                ,
+                      LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
+                   <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
+                )
             ) events
 
         govHasOnlyBootstrapPeers :: Signal Bool
@@ -3299,29 +3302,27 @@ prop_governor_only_bootstrap_peers_after_clean_state env =
         isInCleanState =
           fmap (not . Set.null)
           $ Signal.keyedUntil
-             (\(_, _, ubp, lsj, hp) ->
+             (\(_, ubp, lsj, hp) ->
                if hp && requiresBootstrapPeers ubp lsj
                   then Set.singleton ()
                   else Set.empty
              )
-             (\(_, _, ubp, lsj, hp) ->
-               if not hp || not (requiresBootstrapPeers ubp lsj)
+             (\(_, ubp, lsj, _hp) ->
+               if not (requiresBootstrapPeers ubp lsj)
                   then Set.singleton ()
                   else Set.empty
              )
              (const False)
-             ((,,,,) <$> govKnownPeers
-                     <*> govTrustedPeers
-                     <*> govUseBootstrapPeers
-                     <*> govLedgerStateJudgement
-                     <*> govHasOnlyBootstrapPeers
+             ((,,,) <$> govKnownAndTrustedPeers
+                    <*> govUseBootstrapPeers
+                    <*> govLedgerStateJudgement
+                    <*> govHasOnlyBootstrapPeers
              )
 
      in signalProperty 20 show
-          (\(b, kp, tp) -> (b && Set.null (Set.difference kp tp)) || not b)
-          ((,,) <$> isInCleanState
-                <*> govKnownPeers
-                <*> govTrustedPeers
+          (\(b, (kp, tp)) -> (b && Set.null (Set.difference kp tp)) || not b)
+          ((,) <$> isInCleanState
+               <*> govKnownAndTrustedPeers
           )
 
 -- | This test checks that if the node is not in a sensitive state it will not
@@ -3587,7 +3588,7 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
       pickHotPeersToDemote = Script (PickSome (Set.fromList [PeerAddr 29]) :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingEnabled,
+      peerSharingFlag = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3623,7 +3624,7 @@ prop_issue_3515 = prop_governor_nolivelock $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingEnabled,
+      peerSharingFlag = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3659,7 +3660,7 @@ prop_issue_3494 = prop_governor_nofail $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingEnabled,
+      peerSharingFlag = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
@@ -3711,7 +3712,7 @@ prop_issue_3233 = prop_governor_nolivelock $
       pickHotPeersToDemote = Script (PickFirst :| []),
       pickWarmPeersToDemote = Script (PickFirst :| []),
       pickColdPeersToForget = Script (PickFirst :| []),
-      peerSharing = PeerSharingEnabled,
+      peerSharingFlag = PeerSharingEnabled,
       useBootstrapPeers = Script ((DontUseBootstrapPeers, NoDelay) :| []),
       ledgerStateJudgement = Script ((YoungEnough, NoDelay) :| [])
     }
