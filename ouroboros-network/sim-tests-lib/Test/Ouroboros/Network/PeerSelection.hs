@@ -254,12 +254,12 @@ prop_peerSelectionView_sizes env =
       .&&. isSubsetProperty "viewAvailableToConnectLocalRootPeers" viewAvailableToConnectLocalRootPeers viewKnownLocalRootPeers
       .&&. isSubsetProperty "viewWarmLocalRootPeersPromotions" viewWarmLocalRootPeersPromotions (viewEstablishedLocalRootPeers Set.\\ viewActiveLocalRootPeers)
 
-      .&&. isSubsetProperty "viewActiveSharedPeersDemotions" viewActiveSharedPeersDemotions viewActiveSharedPeers
-      .&&. isSubsetProperty "viewActiveSharedPeers" viewActiveSharedPeers viewEstablishedSharedPeers
-      .&&. isSubsetProperty "viewEstablishedSharedPeers" viewEstablishedSharedPeers viewKnownSharedPeers
-      .&&. isSubsetProperty "viewColdSharedPeersPromotions" viewColdSharedPeersPromotions viewKnownSharedPeers
-      .&&. isSubsetProperty "viewWarmSharedPeersPromotions" viewWarmSharedPeersPromotions (viewEstablishedSharedPeers Set.\\ viewActiveSharedPeers)
-      .&&. isSubsetProperty "viewWarmSharedPeersDemotions" viewWarmSharedPeersDemotions (viewEstablishedSharedPeers Set.\\ viewActiveSharedPeers)
+      .&&. isSubsetProperty "viewActiveNonRootPeersDemotions" viewActiveNonRootPeersDemotions viewActiveNonRootPeers
+      .&&. isSubsetProperty "viewActiveNonRootPeers" viewActiveNonRootPeers viewEstablishedNonRootPeers
+      .&&. isSubsetProperty "viewEstablishedNonRootPeers" viewEstablishedNonRootPeers viewKnownNonRootPeers
+      .&&. isSubsetProperty "viewColdNonRootPeersPromotions" viewColdNonRootPeersPromotions viewKnownNonRootPeers
+      .&&. isSubsetProperty "viewWarmNonRootPeersPromotions" viewWarmNonRootPeersPromotions (viewEstablishedNonRootPeers Set.\\ viewActiveNonRootPeers)
+      .&&. isSubsetProperty "viewWarmNonRootPeersDemotions" viewWarmNonRootPeersDemotions (viewEstablishedNonRootPeers Set.\\ viewActiveNonRootPeers)
 
       .&&. isSubsetProperty "viewActiveBootstrapPeersDemotions" viewActiveBootstrapPeersDemotions viewActiveBootstrapPeers
       .&&. isSubsetProperty "viewActiveBootstrapPeers" viewActiveBootstrapPeers viewEstablishedBootstrapPeers
@@ -270,14 +270,14 @@ prop_peerSelectionView_sizes env =
 
       .&&. disjointSetsProperty "viewKnownPeers viewKnownBigLedgerPeers" viewKnownPeers viewKnownBigLedgerPeers
       .&&. isSubsetProperty "viewKnownLocalRootPeers" viewKnownLocalRootPeers viewKnownPeers
-      .&&. isSubsetProperty "viewKnownSharedPeers" viewKnownSharedPeers viewKnownPeers
+      .&&. isSubsetProperty "viewKnownNonRootPeers" viewKnownNonRootPeers viewKnownPeers
       .&&. isSubsetProperty "viewKnownBootstrapPeers" viewKnownBootstrapPeers viewKnownPeers
 
       .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownBigLedgerPeers" viewKnownLocalRootPeers viewKnownBigLedgerPeers
-      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownSharedPeers" viewKnownLocalRootPeers viewKnownSharedPeers
+      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownNonRootPeers" viewKnownLocalRootPeers viewKnownNonRootPeers
       .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownBootstrapPeers" viewKnownLocalRootPeers viewKnownBootstrapPeers
 
-      .&&. disjointSetsProperty "viewKnownSharedPeers-viewKnownBigLedgerPeers" viewKnownSharedPeers viewKnownBigLedgerPeers
+      .&&. disjointSetsProperty "viewKnownNonRootPeers-viewKnownBigLedgerPeers" viewKnownNonRootPeers viewKnownBigLedgerPeers
       .&&. disjointSetsProperty "viewKnownBootstrapPeers-viewKnownBigLedgerPeers" viewKnownBootstrapPeers viewKnownBigLedgerPeers
 
     viewSizeInvariant :: PeerSelectionSetsWithSizes PeerAddr
@@ -336,20 +336,20 @@ prop_peerSelectionView_sizes env =
       .&&. counterexample "viewActiveLocalRootPeersDemotions"
            (Set.size (fst viewActiveLocalRootPeersDemotions) === snd viewActiveLocalRootPeersDemotions)
 
-      .&&. counterexample "viewKnownSharedPeers"
-           (Set.size (fst viewKnownSharedPeers) === snd viewKnownSharedPeers)
-      .&&. counterexample "viewColdSharedPeersPromotions"
-           (Set.size (fst viewColdSharedPeersPromotions) === snd viewColdSharedPeersPromotions)
-      .&&. counterexample "viewEstablishedSharedPeers"
-           (Set.size (fst viewEstablishedSharedPeers) === snd viewEstablishedSharedPeers)
-      .&&. counterexample "viewWarmSharedPeersDemotions"
-           (Set.size (fst viewWarmSharedPeersDemotions) === snd viewWarmSharedPeersDemotions)
-      .&&. counterexample "viewWarmSharedPeersPromotions"
-           (Set.size (fst viewWarmSharedPeersPromotions) === snd viewWarmSharedPeersPromotions)
-      .&&. counterexample "viewActiveSharedPeers"
-           (Set.size (fst viewActiveSharedPeers) === snd viewActiveSharedPeers)
-      .&&. counterexample "viewActiveSharedPeersDemotions"
-           (Set.size (fst viewActiveSharedPeersDemotions) === snd viewActiveSharedPeersDemotions)
+      .&&. counterexample "viewKnownNonRootPeers"
+           (Set.size (fst viewKnownNonRootPeers) === snd viewKnownNonRootPeers)
+      .&&. counterexample "viewColdNonRootPeersPromotions"
+           (Set.size (fst viewColdNonRootPeersPromotions) === snd viewColdNonRootPeersPromotions)
+      .&&. counterexample "viewEstablishedNonRootPeers"
+           (Set.size (fst viewEstablishedNonRootPeers) === snd viewEstablishedNonRootPeers)
+      .&&. counterexample "viewWarmNonRootPeersDemotions"
+           (Set.size (fst viewWarmNonRootPeersDemotions) === snd viewWarmNonRootPeersDemotions)
+      .&&. counterexample "viewWarmNonRootPeersPromotions"
+           (Set.size (fst viewWarmNonRootPeersPromotions) === snd viewWarmNonRootPeersPromotions)
+      .&&. counterexample "viewActiveNonRootPeers"
+           (Set.size (fst viewActiveNonRootPeers) === snd viewActiveNonRootPeers)
+      .&&. counterexample "viewActiveNonRootPeersDemotions"
+           (Set.size (fst viewActiveNonRootPeersDemotions) === snd viewActiveNonRootPeersDemotions)
 
       .&&. counterexample "viewKnownBootstrapPeers"
            (Set.size (fst viewKnownBootstrapPeers) === snd viewKnownBootstrapPeers)
