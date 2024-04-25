@@ -1,6 +1,8 @@
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE StandaloneDeriving         #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -16,19 +18,22 @@ module Test.Ouroboros.Network.PeerSelection.Instances
   ) where
 
 import Data.Text.Encoding (encodeUtf8)
-import Data.Word (Word32)
+import Data.Word (Word32, Word64)
+
+import Cardano.Slotting.Slot (SlotNo (..))
 
 import Ouroboros.Network.PeerSelection.Governor
 
 import Data.Hashable
 import Data.IP qualified as IP
+import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
+           UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
            RelayAccessPoint (..))
-
-import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck
@@ -51,7 +56,7 @@ instance Arbitrary PeerAddr where
   arbitrary = PeerAddr <$> arbitrarySizedNatural
   shrink _  = []
 
-
+deriving via Word64 instance Arbitrary SlotNo
 
 instance Arbitrary PeerAdvertise where
   arbitrary = elements [ DoAdvertisePeer, DoNotAdvertisePeer ]
@@ -64,6 +69,11 @@ instance Arbitrary PeerSharing where
   shrink PeerSharingDisabled = []
   shrink PeerSharingEnabled  = [PeerSharingDisabled]
 
+instance Arbitrary AfterSlot where
+  arbitrary = oneof [ pure Always
+                    , After <$> arbitrary
+                    ]
+
 instance Arbitrary UseBootstrapPeers where
   arbitrary = frequency [ (1, pure DontUseBootstrapPeers)
                         , (1, UseBootstrapPeers <$> arbitrary)
@@ -71,6 +81,12 @@ instance Arbitrary UseBootstrapPeers where
 
   shrink DontUseBootstrapPeers = []
   shrink (UseBootstrapPeers _) = [DontUseBootstrapPeers]
+
+instance Arbitrary UseLedgerPeers where
+    arbitrary = frequency
+      [ (2, pure DontUseLedgerPeers)
+      , (8, UseLedgerPeers <$> arbitrary)
+      ]
 
 instance Arbitrary PeerTrustable where
   arbitrary = elements [ IsNotTrustable, IsTrustable ]
