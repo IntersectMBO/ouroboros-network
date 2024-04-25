@@ -54,7 +54,6 @@ import System.Random (mkStdGen)
 import Network.DNS qualified as DNS (defaultResolvConf)
 import Network.Socket (SockAddr)
 
-import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..))
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
@@ -90,6 +89,7 @@ import Test.Ouroboros.Network.PeerSelection.PeerGraph
 import Control.Monad.IOSim
 
 import Test.QuickCheck
+import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
@@ -220,12 +220,11 @@ prop_peerSelectionView_sizes env =
     let trace = runGovernorInMockEnvironment env
         evs   = selectGovernorStateEvents
               $ selectPeerSelectionTraceEventsUntil (Time (10 * 3600)) trace
-    in getAllProperty $
+    in property $
        foldMap (\(_, TraceGovernorState _ _ st) ->
-                     AllProperty $
                      let view = peerSelectionStateToView st in
-                          viewInvariant (fst <$> view)
-                     .&&. viewSizeInvariant view)
+                        All (viewInvariant (fst <$> view))
+                     <> All (viewSizeInvariant view))
                evs
   where
     viewInvariant :: PeerSelectionView (Set PeerAddr)
@@ -3726,33 +3725,30 @@ prop_governor_repromote_delay (MaxTime maxTime) env =
             . selectPeerSelectionTraceEvents
             . runGovernorInMockEnvironment
             $ env
-    in  getAllProperty
+    in  property
       . foldMap (\case
                    TraceDemoteAsynchronous m ->
                      foldMap
-                       (\(st, mx) -> maybe ok (\x -> AllProperty
+                       (\(st, mx) -> maybe mempty (\x -> All
                                                    $ counterexample (show st)
                                                    $ x =/= config_REPROMOTE_DELAY) mx)
                        m
                    TraceDemoteLocalAsynchronous m ->
                      foldMap
-                       (\(st, mx) -> maybe ok (\x -> AllProperty
+                       (\(st, mx) -> maybe mempty (\x -> All
                                                    $ counterexample (show st)
                                                    $ x =/= config_REPROMOTE_DELAY) mx)
                        m
                    TraceDemoteBigLedgerPeersAsynchronous m ->
                      foldMap
-                       (\(st, mx) -> maybe ok (\x -> AllProperty
+                       (\(st, mx) -> maybe mempty (\x -> All
                                                    $ counterexample (show st)
                                                    $ x =/= config_REPROMOTE_DELAY) mx)
                        m
-                   _ -> ok
+                   _ -> mempty
                 )
       . selectGovEvents
       $ evs
-  where
-    ok = AllProperty (property True)
-
 
 --
 -- Utils

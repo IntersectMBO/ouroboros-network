@@ -22,6 +22,7 @@ index-state:
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
+          ./quickcheck-monoids
           ./network-mux
           ./ouroboros-network
           ./ouroboros-network-api
