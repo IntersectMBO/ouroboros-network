@@ -76,13 +76,13 @@ module Ouroboros.Network.PeerSelection.Governor.Types
         numberOfActiveLocalRootPeers,
         numberOfActiveLocalRootPeersDemotions,
 
-        numberOfKnownSharedPeers,
-        numberOfColdSharedPeersPromotions,
-        numberOfEstablishedSharedPeers,
-        numberOfWarmSharedPeersDemotions,
-        numberOfWarmSharedPeersPromotions,
-        numberOfActiveSharedPeers,
-        numberOfActiveSharedPeersDemotions,
+        numberOfKnownNonRootPeers,
+        numberOfColdNonRootPeersPromotions,
+        numberOfEstablishedNonRootPeers,
+        numberOfWarmNonRootPeersDemotions,
+        numberOfWarmNonRootPeersPromotions,
+        numberOfActiveNonRootPeers,
+        numberOfActiveNonRootPeersDemotions,
 
         numberOfKnownBootstrapPeers,
         numberOfColdBootstrapPeersPromotions,
@@ -698,17 +698,19 @@ data PeerSelectionView a = PeerSelectionView {
       viewActiveLocalRootPeersDemotions    :: a,
 
       --
-      -- Share Peers
-      -- (peers received through peer sharing)
-      --
+      -- Non-Root Peers
+      -- 
 
-      viewKnownSharedPeers                 :: a,
-      viewColdSharedPeersPromotions        :: a,
-      viewEstablishedSharedPeers           :: a,
-      viewWarmSharedPeersDemotions         :: a,
-      viewWarmSharedPeersPromotions        :: a,
-      viewActiveSharedPeers                :: a,
-      viewActiveSharedPeersDemotions       :: a,
+      viewKnownNonRootPeers                 :: a,
+      -- ^ number of known non root peers.  These are mostly peers received
+      -- through peer sharing (or light peer sharing); but also will contains
+      -- peers which used to be local roots after a reconfiguration.
+      viewColdNonRootPeersPromotions        :: a,
+      viewEstablishedNonRootPeers           :: a,
+      viewWarmNonRootPeersDemotions         :: a,
+      viewWarmNonRootPeersPromotions        :: a,
+      viewActiveNonRootPeers                :: a,
+      viewActiveNonRootPeersDemotions       :: a,
 
       --
       -- Bootstrap Peers
@@ -762,13 +764,13 @@ pattern PeerSelectionCounters {
       numberOfActiveLocalRootPeers,
       numberOfActiveLocalRootPeersDemotions,
 
-      numberOfKnownSharedPeers,
-      numberOfColdSharedPeersPromotions,
-      numberOfEstablishedSharedPeers,
-      numberOfWarmSharedPeersDemotions,
-      numberOfWarmSharedPeersPromotions,
-      numberOfActiveSharedPeers,
-      numberOfActiveSharedPeersDemotions,
+      numberOfKnownNonRootPeers,
+      numberOfColdNonRootPeersPromotions,
+      numberOfEstablishedNonRootPeers,
+      numberOfWarmNonRootPeersDemotions,
+      numberOfWarmNonRootPeersPromotions,
+      numberOfActiveNonRootPeers,
+      numberOfActiveNonRootPeersDemotions,
 
       numberOfKnownBootstrapPeers,
       numberOfColdBootstrapPeersPromotions,
@@ -808,13 +810,13 @@ pattern PeerSelectionCounters {
       viewActiveLocalRootPeers             = numberOfActiveLocalRootPeers,
       viewActiveLocalRootPeersDemotions    = numberOfActiveLocalRootPeersDemotions,
 
-      viewKnownSharedPeers                 = numberOfKnownSharedPeers,
-      viewColdSharedPeersPromotions        = numberOfColdSharedPeersPromotions,
-      viewEstablishedSharedPeers           = numberOfEstablishedSharedPeers,
-      viewWarmSharedPeersDemotions         = numberOfWarmSharedPeersDemotions,
-      viewWarmSharedPeersPromotions        = numberOfWarmSharedPeersPromotions,
-      viewActiveSharedPeers                = numberOfActiveSharedPeers,
-      viewActiveSharedPeersDemotions       = numberOfActiveSharedPeersDemotions,
+      viewKnownNonRootPeers                 = numberOfKnownNonRootPeers,
+      viewColdNonRootPeersPromotions        = numberOfColdNonRootPeersPromotions,
+      viewEstablishedNonRootPeers           = numberOfEstablishedNonRootPeers,
+      viewWarmNonRootPeersDemotions         = numberOfWarmNonRootPeersDemotions,
+      viewWarmNonRootPeersPromotions        = numberOfWarmNonRootPeersPromotions,
+      viewActiveNonRootPeers                = numberOfActiveNonRootPeers,
+      viewActiveNonRootPeersDemotions       = numberOfActiveNonRootPeersDemotions,
 
       viewKnownBootstrapPeers              = numberOfKnownBootstrapPeers,
       viewColdBootstrapPeersPromotions     = numberOfColdBootstrapPeersPromotions,
@@ -904,15 +906,15 @@ peerSelectionCountersHWC PeerSelectionCounters {..} =
       numberOfActiveLocalRootPeers,
       numberOfActiveLocalRootPeersDemotions,
 
-      numberOfKnownSharedPeers                   = numberOfKnownSharedPeers
-                                                 - numberOfEstablishedSharedPeers,
-      numberOfColdSharedPeersPromotions,
-      numberOfEstablishedSharedPeers             = numberOfEstablishedSharedPeers
-                                                 - numberOfActiveSharedPeers,
-      numberOfWarmSharedPeersDemotions,
-      numberOfWarmSharedPeersPromotions,
-      numberOfActiveSharedPeers,
-      numberOfActiveSharedPeersDemotions,
+      numberOfKnownNonRootPeers                   = numberOfKnownNonRootPeers
+                                                 - numberOfEstablishedNonRootPeers,
+      numberOfColdNonRootPeersPromotions,
+      numberOfEstablishedNonRootPeers             = numberOfEstablishedNonRootPeers
+                                                 - numberOfActiveNonRootPeers,
+      numberOfWarmNonRootPeersDemotions,
+      numberOfWarmNonRootPeersPromotions,
+      numberOfActiveNonRootPeers,
+      numberOfActiveNonRootPeersDemotions,
 
       numberOfKnownBootstrapPeers                = numberOfKnownBootstrapPeers
                                                  - numberOfEstablishedBootstrapPeers,
@@ -1007,16 +1009,16 @@ peerSelectionStateToView
       viewActiveLocalRootPeersDemotions      = size $ activeLocalRootsPeersSet
                                                       `Set.intersection` inProgressDemoteHot,
 
-      viewKnownSharedPeers                   = size   knownSharedPeersSet,
-      viewColdSharedPeersPromotions          = size $ knownSharedPeersSet
+      viewKnownNonRootPeers                   = size   knownNonRootPeersSet,
+      viewColdNonRootPeersPromotions          = size $ knownNonRootPeersSet
                                                       `Set.intersection` inProgressPromoteCold,
-      viewEstablishedSharedPeers             = size   establishedSharedPeersSet,
-      viewWarmSharedPeersDemotions           = size $ establishedSharedPeersSet
+      viewEstablishedNonRootPeers             = size   establishedNonRootPeersSet,
+      viewWarmNonRootPeersDemotions           = size $ establishedNonRootPeersSet
                                                       `Set.intersection` inProgressDemoteWarm,
-      viewWarmSharedPeersPromotions          = size $ establishedSharedPeersSet
+      viewWarmNonRootPeersPromotions          = size $ establishedNonRootPeersSet
                                                       `Set.intersection` inProgressPromoteWarm,
-      viewActiveSharedPeers                  = size   activeSharedPeersSet,
-      viewActiveSharedPeersDemotions         = size $ activeSharedPeersSet
+      viewActiveNonRootPeers                  = size   activeNonRootPeersSet,
+      viewActiveNonRootPeersDemotions         = size $ activeNonRootPeersSet
                                                       `Set.intersection` inProgressDemoteHot
     }
   where
@@ -1060,9 +1062,9 @@ peerSelectionStateToView
     -- shared peers
     -- shared peers are not big ledger peers, hence we can use `knownPeersSet`,
     -- `establishedPeersSet` and `activePeersSet` below.
-    knownSharedPeersSet        = knownPeersSet Set.\\ rootPeersSet
-    establishedSharedPeersSet  = establishedPeersSet Set.\\ rootPeersSet
-    activeSharedPeersSet       = activePeersSet Set.\\ rootPeersSet
+    knownNonRootPeersSet        = knownPeersSet Set.\\ rootPeersSet
+    establishedNonRootPeersSet  = establishedPeersSet Set.\\ rootPeersSet
+    activeNonRootPeersSet       = activePeersSet Set.\\ rootPeersSet
 
 
 peerSelectionStateToCounters
@@ -1111,13 +1113,13 @@ emptyPeerSelectionCounters =
     numberOfActiveLocalRootPeers             = 0,
     numberOfActiveLocalRootPeersDemotions    = 0,
 
-    numberOfKnownSharedPeers                 = 0,
-    numberOfColdSharedPeersPromotions        = 0,
-    numberOfEstablishedSharedPeers           = 0,
-    numberOfWarmSharedPeersDemotions         = 0,
-    numberOfWarmSharedPeersPromotions        = 0,
-    numberOfActiveSharedPeers                = 0,
-    numberOfActiveSharedPeersDemotions       = 0
+    numberOfKnownNonRootPeers                 = 0,
+    numberOfColdNonRootPeersPromotions        = 0,
+    numberOfEstablishedNonRootPeers           = 0,
+    numberOfWarmNonRootPeersDemotions         = 0,
+    numberOfWarmNonRootPeersPromotions        = 0,
+    numberOfActiveNonRootPeers                = 0,
+    numberOfActiveNonRootPeersDemotions       = 0
   }
 
 emptyPeerSelectionState :: StdGen
