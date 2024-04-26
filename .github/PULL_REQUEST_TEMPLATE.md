@@ -1,32 +1,21 @@
 # Description
 
-<!-- CI flakiness -- delete this before opening a PR
-
-Sadly, some CI checks are currently flaky. Right now, this includes:
-
- - GH Actions Windows job sometimes run out of memory
-
- - The "Subscription.Resolve Subscribe (IO)" test sometimes fails
-
-If you encounter one of these, try restarting the job to see if the failure vanishes. If it does not or when in doubt, consider posting in the #network or #consensus channels on Slack.
--->
-
-_description of the pull request, if it fixes a particular issue it should link the PR to a particular issue, see [ref](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword=)_
+_reasonably detailed description of the pull request_
 
 # Checklist
 
-- Branch
-    - [ ] Updated changelog files.
-    - [ ] Commit sequence broadly makes sense
-    - [ ] Commits have useful messages
-    - [ ] The documentation has been properly updated
-    - [ ] New tests are added if needed and existing tests are updated
-    - [ ] If serialization changes, user-facing consequences (e.g. replay from genesis) are confirmed to be intentional.
-- Pull Request
-    - [ ] Self-reviewed the diff
-    - [ ] Useful pull request description at least containing the following information:
-      - What does this PR change?
-      - Why these changes were needed?
-      - How does this affect downstream repositories and/or end-users?
-      - Which ticket does this PR close (if any)? If it does, is it [linked](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue)?
-    - [ ] Reviewer requested
+### Quality
+* [ ] Commit sequence makes sense and have useful messages, see [ref][contrib#git-history].
+* [ ] New tests are added and existing tests are updated.
+* [ ] Self-reviewed the PR.
+
+### Maintenance
+* [ ] Linked an [issue][link-issue] or added the PR to the current sprint of [`ouroboros-network`][project] project.
+* [ ] Added labels.
+* [ ] Updated changelog files.
+* [ ] The documentation has been properly updated, see [ref][contrib#documentation].
+
+[project]: https://github.com/orgs/IntersectMBO/projects/5/views/1
+[link-issue]: https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword=
+[contrib#git-history]: https://github.com/IntersectMBO/ouroboros-network/blob/master/CONTRIBUTING.md#git-history
+[contrib#documentation]: https://github.com/IntersectMBO/ouroboros-network/blob/master/CONTRIBUTING.md#documentation
