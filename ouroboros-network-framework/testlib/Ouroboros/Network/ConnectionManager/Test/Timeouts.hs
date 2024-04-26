@@ -18,6 +18,7 @@ import Text.Printf (printf)
 
 import Test.QuickCheck (Arbitrary (..), Property, choose, counterexample, cover,
            frequency, label, property, shrink, tabulate, (.&&.))
+import Test.QuickCheck.Monoids (All (..))
 
 import Network.TypedProtocol.Core (PeerHasAgency (..))
 
@@ -32,16 +33,16 @@ import Ouroboros.Network.Snocket qualified as Snocket
 verifyAllTimeouts :: Show addr
                   => Bool
                   -> Trace (SimResult ()) [(Time, AbstractTransitionTrace addr)]
-                  -> AllProperty
+                  -> All
 verifyAllTimeouts inDiffusion =
   bifoldMap
    ( \ case
        MainReturn {} -> mempty
-       v             -> AllProperty
-                     $ counterexample (show v) (property False)
+       v             -> All
+                     $ counterexample (show v) False
    )
    (\ tr ->
-     AllProperty
+     All
      $ counterexample ("\nConnection transition trace:\n"
                      ++ intercalate "\n" (map show tr)
                      )
@@ -525,14 +526,6 @@ classifyPruning
   -> Sum Int
 classifyPruning TrPruneConnections {} = Sum 1
 classifyPruning _                     = Sum 0
-
-newtype AllProperty = AllProperty { getAllProperty :: Property }
-
-instance Semigroup AllProperty where
-    AllProperty a <> AllProperty b = AllProperty (a .&&. b)
-
-instance Monoid AllProperty where
-    mempty = AllProperty (property True)
 
 newtype ArbDataFlow = ArbDataFlow DataFlow
   deriving Show

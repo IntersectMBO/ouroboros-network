@@ -157,6 +157,7 @@
               packages.ouroboros-network-protocols.components.tests.cddl.preCheck    = "export HOME=`pwd`";
 
               # don't run checks using Wine when cross compiling
+              packages.quickcheck-monoids.components.tests.test.doCheck               = !pkgs.stdenv.hostPlatform.isWindows;
               packages.ntp-client.components.tests.test.doCheck                       = !pkgs.stdenv.hostPlatform.isWindows;
               packages.network-mux.components.tests.test.doCheck                      = !pkgs.stdenv.hostPlatform.isWindows;
               packages.network-mux.components.tests.test.preCheck                     = "export GHCRTS=-M500M";

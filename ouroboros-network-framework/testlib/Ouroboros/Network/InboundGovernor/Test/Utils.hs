@@ -5,8 +5,8 @@
 module Ouroboros.Network.InboundGovernor.Test.Utils where
 
 import Test.QuickCheck
+import Test.QuickCheck.Monoids
 
-import Ouroboros.Network.ConnectionManager.Test.Timeouts
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..),
            RemoteSt (..))
@@ -139,17 +139,17 @@ verifyRemoteTransitionOrder :: Bool -- ^ Check last transition: useful for
                                     --    distinguish Diffusion layer tests
                                     --    vs non-Diffusion ones.
                             -> [RemoteTransition]
-                            -> AllProperty
+                            -> All
 verifyRemoteTransitionOrder _ [] = mempty
 verifyRemoteTransitionOrder checkLast (h:t) = go t h
   where
-    go :: [RemoteTransition] -> RemoteTransition -> AllProperty
+    go :: [RemoteTransition] -> RemoteTransition -> All
     -- All transitions must end in the 'Nothing' (final) state, and since
     -- we assume all transitions are valid we do not have to check the
     -- 'fromState' .
     go [] (Transition _ Nothing) = mempty
     go [] tr@(Transition _ _)          =
-      AllProperty
+      All
         $ counterexample
             ("\nUnexpected last transition: " ++ show tr)
             (property (not checkLast))
@@ -158,7 +158,7 @@ verifyRemoteTransitionOrder checkLast (h:t) = go t h
     -- the next 'fromState', in order for the transition chain to be correct.
     go (next@(Transition nextFromState _) : ts)
         curr@(Transition _ currToState) =
-         AllProperty
+         All
            (counterexample
               ("\nUnexpected transition order!\nWent from: "
               ++ show curr ++ "\nto: " ++ show next)

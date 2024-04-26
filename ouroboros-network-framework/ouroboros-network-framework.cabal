@@ -142,6 +142,7 @@ library testlib
                    , serialise
 
                    , QuickCheck
+                   , quickcheck-monoids
 
                    , contra-tracer
                    , io-sim
@@ -194,6 +195,7 @@ test-suite sim-tests
 
                      , QuickCheck
                      , quickcheck-instances
+                     , quickcheck-monoids
                      , tasty
                      , tasty-quickcheck
 

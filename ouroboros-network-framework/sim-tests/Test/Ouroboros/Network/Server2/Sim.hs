@@ -58,6 +58,7 @@ import Data.Typeable (Typeable)
 import Text.Printf
 
 import Test.QuickCheck
+import Test.QuickCheck.Monoids (All (..))
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck
 
@@ -939,9 +940,8 @@ validate_transitions mns@(MultiNodeScript events _) trace =
                      (  "\nconnection:\n"
                      ++ intercalate "\n" (map ppTransition trs))
                      )
-                 . getAllProperty
                  . foldMap ( \ tr
-                            -> AllProperty
+                            -> All
                              . (counterexample $!
                                  (  "\nUnexpected transition: "
                                  ++ show tr)
@@ -1094,18 +1094,16 @@ prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
                      , "========== ConnectionManager Events =========="
                      , Trace.ppTrace show show connectionManagerEvents
                      ])
-    . getAllProperty
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           v             -> AllProperty (counterexample (show v) False)
+           v             -> All (counterexample (show v) False)
        )
        ( \ tr
         -> case tr of
-          CM.TrUnexpectedlyFalseAssertion _ ->
-            AllProperty (counterexample (show tr) False)
-          _                                       ->
-            mempty
+          CM.TrUnexpectedlyFalseAssertion _
+            -> All (counterexample (show tr) False)
+          _ -> mempty
        )
     $ connectionManagerEvents
   where
@@ -1139,11 +1137,10 @@ prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show abstractTransitionEvents)
-    . getAllProperty
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           _             -> AllProperty (property False)
+           _             -> All False
        )
        (verifyAbstractTransitionOrder True)
     . fmap (map ttTransition)
@@ -1179,11 +1176,10 @@ prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataF
           tabulate "ConnectionEvents" (map showConnectionEvents events)
         . counterexample (ppScript mns)
         . counterexample (Trace.ppTrace show show abstractTransitionEvents)
-        . getAllProperty
         . bifoldMap
            ( \ case
                MainReturn {} -> mempty
-               _             -> AllProperty (property False)
+               _             -> All False
            )
            (verifyAbstractTransitionOrder True)
         . fmap (map ttTransition)
@@ -1243,16 +1239,15 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
         , intercalate "\n" $ selectTraceEventsSay' trace
         , "\n"
         ])
-    . getAllProperty
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           v             -> AllProperty
-                            $ counterexample (show v) (property False)
+           v             -> All
+                            $ counterexample (show v) False
        )
        ( \ case
           TrConnectionManagerCounters cmc ->
-            AllProperty
+            All
               $ counterexample
                   ("Upper bound is: " ++ show upperBound
                   ++ "\n But got: " ++ show cmc)
@@ -1436,7 +1431,6 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
                        $ trace
 
   in counterexample (ppTrace trace)
-   $ getAllProperty
    $ verifyAllTimeouts False transitionSignal
   where
     sim :: IOSim s ()
@@ -1474,11 +1468,10 @@ prop_inbound_governor_valid_transitions serverAcc (ArbDataFlow dataFlow)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
     -- Verify that all Inbound Governor remote transitions are valid
-    . getAllProperty
     . bifoldMap
-       ( \ _ -> AllProperty (property True) )
+       ( \ _ -> All True )
        ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
-             AllProperty
+             All
            . counterexample (concat [ "Unexpected transition: "
                                     , show peerAddr
                                     , " "
@@ -1521,27 +1514,26 @@ prop_inbound_governor_no_unsupported_state serverAcc (ArbDataFlow dataFlow)
     . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     -- Verify we do not return unsupported states in any of the
     -- RemoteTransitionTrace
-    . getAllProperty
     . bifoldMap
-        ( \ _ -> AllProperty (property True))
+        ( \ _ -> All True)
         ( \ tr -> case tr of
             -- verify that 'unregisterInboundConnection' does not return
             -- 'UnsupportedState'.
             TrDemotedToColdRemote _ res ->
               case res of
                 UnsupportedState {}
-                  -> AllProperty (counterexample (show tr) False)
-                _ -> AllProperty (property True)
+                  -> All (counterexample (show tr) False)
+                _ -> All True
 
             -- verify that 'demotedToColdRemote' does not return
             -- 'UnsupportedState'
             TrWaitIdleRemote _ res ->
               case res of
                 UnsupportedState {}
-                  -> AllProperty (counterexample (show tr) False)
-                _ -> AllProperty (property True)
+                  -> All (counterexample (show tr) False)
+                _ -> All True
 
-            _     -> AllProperty (property True)
+            _     -> All True
         )
     $ inboundGovernorEvents
   where
@@ -1580,18 +1572,16 @@ prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
                      -- , "========== Simulation Trace =========="
                      -- , ppTrace trace
                      ])
-    . getAllProperty
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           v             -> AllProperty (counterexample (show v) False)
+           v             -> All (counterexample (show v) False)
        )
        ( \ tr
         -> case tr of
-          IG.TrUnexpectedlyFalseAssertion _ ->
-            AllProperty (counterexample (show tr) False)
-          _                                       ->
-            mempty
+          IG.TrUnexpectedlyFalseAssertion _
+            -> All (counterexample (show tr) False)
+          _ -> mempty
        )
     $ inboundGovernorEvents
   where
@@ -1664,11 +1654,10 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
     -- . counterexample (Trace.ppTrace show show inboundGovernorEvents)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show remoteTransitionTraceEvents)
-    . getAllProperty
     . bifoldMap
        ( \ case
            MainReturn {} -> mempty
-           _             -> AllProperty (property False)
+           _             -> All False
        )
        (verifyRemoteTransitionOrder True)
     . fmap (map ttTransition)
@@ -1706,16 +1695,15 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
     . counterexample (ppScript mns)
     . counterexample (Trace.ppTrace show show inboundGovernorEvents)
-    . getAllProperty
     . bifoldMap
        (\ case
           MainReturn {} -> mempty
-          v             -> AllProperty
-                        $ counterexample (show v) (property False)
+          v             -> All
+                         $ counterexample (show v) (property False)
        )
        (\ case
           TrInboundGovernorCounters igc ->
-            AllProperty
+            All
               $ counterexample
                   ("Upper bound is: " ++ show upperBound
                   ++ "\n But got: " ++ show igc)
@@ -1829,9 +1817,8 @@ prop_connection_manager_pruning serverAcc
                      (  "\nconnection:\n"
                      ++ intercalate "\n" (map ppTransition trs))
                      )
-                 . getAllProperty
                  . foldMap ( \ tr
-                            -> AllProperty
+                            -> All
                              . (counterexample $!
                                  (  "\nUnexpected transition: "
                                  ++ show tr)
@@ -1896,9 +1883,8 @@ prop_inbound_governor_pruning serverAcc
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
     -- . counterexample (ppTrace trace)
-    . getAllProperty
     . bifoldMap
-        (\ _ -> AllProperty (property True) )
+        (\ _ -> All True)
         (\ case
            Left tr ->
              case tr of
@@ -1907,30 +1893,30 @@ prop_inbound_governor_pruning serverAcc
                TrDemotedToColdRemote _ res ->
                  case res of
                    UnsupportedState {} ->
-                     AllProperty
+                     All
                        $ counterexample
                            ("Unexpected UnsupportedState "
                            ++ "in unregisterInboundConnection "
                            ++ show tr)
                            False
-                   _ -> AllProperty (property True)
+                   _ -> All True
 
                -- verify that 'demotedToColdRemote' does not return
                -- 'UnsupportedState'
                TrWaitIdleRemote _ UnsupportedState {} ->
-                 AllProperty
+                 All
                    $ counterexample
                        ("Unexpected UnsupportedState "
                        ++ "in demotedToColdRemote "
                        ++ show tr)
                        False
 
-               _ -> AllProperty (property True)
+               _ -> All True
 
            -- Verify we do not return unsupported states in any of the
            -- RemoteTransitionTrace
            Right TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr } ->
-                   AllProperty
+                   All
                  . counterexample (concat [ "Unexpected transition: "
                                           , show peerAddr
                                           , " "
@@ -1987,26 +1973,24 @@ prop_never_above_hardlimit serverAcc
     . counterexample (Trace.ppTrace show show connectionManagerEvents)
     -- . counterexample (Trace.ppTrace show show abstractTransitionEvents)
     -- . counterexample (Trace.ppTrace show show inboundGovernorEvents)
-    . getAllProperty
     . bifoldMap
         ( \ case
             MainReturn {} -> mempty
             MainException _ _ e _
-                          -> AllProperty (counterexample (show e) False)
-            _             -> AllProperty (property False)
+                          -> All (counterexample (show e) False)
+            _             -> All False
         )
         ( \ case
             (TrConnectionManagerCounters cmc) ->
-                AllProperty
+                  All
                 . counterexample ("HardLimit: " ++ show hardlimit ++
                                   ", but got: " ++ show (inboundConns cmc) ++
                                   " inbound connections!\n" ++
                                   show cmc
                                  )
-                . property
                 $! inboundConns cmc <= fromIntegral hardlimit
             (TrPruneConnections prunnedSet numberToPrune choiceSet) ->
-              ( AllProperty
+              ( All
               . counterexample (concat
                                [ "prunned set too small: "
                                , show numberToPrune
@@ -2015,7 +1999,7 @@ prop_never_above_hardlimit serverAcc
                                ])
               $ numberToPrune <= length prunnedSet )
               <>
-              ( AllProperty
+              ( All
               . counterexample (concat [ "prunnedSet not a subset of choice set: "
                                        , show prunnedSet
                                        , " ⊈ "

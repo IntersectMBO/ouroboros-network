@@ -5,10 +5,10 @@ module Ouroboros.Network.ConnectionManager.Test.Utils where
 import Prelude hiding (read)
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
-import Ouroboros.Network.ConnectionManager.Test.Timeouts
 import Ouroboros.Network.ConnectionManager.Types
 
 import Test.QuickCheck (counterexample, property)
+import Test.QuickCheck.Monoids (All (..))
 
 
 verifyAbstractTransition :: AbstractTransition
@@ -189,17 +189,17 @@ verifyAbstractTransitionOrder :: Bool -- ^ Check last transition: useful for
                                       --    distinguish Diffusion layer tests
                                       --    vs non-Diffusion ones.
                               -> [AbstractTransition]
-                              -> AllProperty
+                              -> All
 verifyAbstractTransitionOrder _ [] = mempty
 verifyAbstractTransitionOrder checkLast (h:t) = go t h
   where
-    go :: [AbstractTransition] -> AbstractTransition -> AllProperty
+    go :: [AbstractTransition] -> AbstractTransition -> All
     -- All transitions must end in the 'UnknownConnectionSt', and since we
     -- assume that all transitions are valid we do not have to check the
     -- 'fromState'.
     go [] (Transition _ UnknownConnectionSt) = mempty
     go [] tr@(Transition _ _)          =
-      AllProperty
+      All
         $ counterexample
             ("\nUnexpected last transition: " ++ show tr)
             (property (not checkLast))
@@ -208,7 +208,7 @@ verifyAbstractTransitionOrder checkLast (h:t) = go t h
     -- the next 'fromState', in order for the transition chain to be correct.
     go (next@(Transition nextFromState _) : ts)
         curr@(Transition _ currToState) =
-         AllProperty
+         All
            (counterexample
               ("\nUnexpected transition order!\nWent from: "
               ++ show curr ++ "\nto: " ++ show next)

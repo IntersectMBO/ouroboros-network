@@ -43,10 +43,10 @@ import Control.Monad.IOSim
 
 import NoThunks.Class
 
-import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..))
 import Ouroboros.Network.Testing.Data.Script
 
 import Test.QuickCheck
+import Test.QuickCheck.Monoids
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
@@ -240,8 +240,8 @@ prop_insert_peer script =
     label (case trace of
             [] -> "empty"
             _  -> "non-empty") $
-    getAllProperty $ foldMap go
-                   $ zip (Nothing : Just `map` trace) trace
+               foldMap go
+             $ zip (Nothing : Just `map` trace) trace
   where
     band = 50
     len = case getFixedScript script of Script as -> NonEmpty.length as
@@ -261,8 +261,8 @@ prop_insert_peer script =
             FixedScript (Script (a :| _)) -> eventSlot a
 
     go :: (Maybe PeerMetricsTrace, PeerMetricsTrace)
-       -> AllProperty
-    go (Nothing, _) = AllProperty (property True)
+       -> All
+    go (Nothing, _) = All True
     go (Just prev, res@PeerMetricsTrace { pmtPeer             = peer,
                                           pmtUpstreamyness    = upstreamynessResults,
                                           pmtFetchynessBytes  = fetchynessBytesResults,
@@ -272,13 +272,13 @@ prop_insert_peer script =
       if peer `Map.member` pmtUpstreamyness prev
       || peer `Map.member` pmtFetchynessBytes prev
       || peer `Map.member` pmtFetchynessBlocks prev
-      then AllProperty $ property True
-      else AllProperty ( counterexample (show (res, prev))
-                       $ checkResult "upstreamyness"    peer joinedAtResults upstreamynessResults)
-        <> AllProperty ( counterexample (show (res ,prev))
-                       $ checkResult "fetchynessBytes"  peer joinedAtResults fetchynessBytesResults)
-        <> AllProperty ( counterexample (show (res, prev))
-                       $ checkResult "fetchynessBlocks" peer joinedAtResults fetchynessBlocksResults)
+      then All True
+      else All ( counterexample (show (res, prev))
+               $ checkResult "upstreamyness"    peer joinedAtResults upstreamynessResults)
+        <> All ( counterexample (show (res ,prev))
+               $ checkResult "fetchynessBytes"  peer joinedAtResults fetchynessBytesResults)
+        <> All ( counterexample (show (res, prev))
+               $ checkResult "fetchynessBlocks" peer joinedAtResults fetchynessBlocksResults)
 
     -- check that the peer is not in 20% worst peers, but only if there are more
     -- than 5 results.
@@ -309,7 +309,7 @@ prop_insert_peer script =
 --
 prop_metrics_are_bounded :: FixedScript -> Property
 prop_metrics_are_bounded script =
-    getAllProperty $ foldMap go trace
+    property $ foldMap go trace
   where
     config :: PeerMetricsConfiguration
     config = PeerMetricsConfiguration { maxEntriesToTrack = 180 }
@@ -353,23 +353,22 @@ prop_metrics_are_bounded script =
           Script as -> as
 
 
-    go :: PeerMetricsTrace
-       -> AllProperty
+    go :: PeerMetricsTrace -> All
     go PeerMetricsTrace { pmtUpstreamyness,
                           pmtFetchynessBytes,
                           pmtFetchynessBlocks
                         } =
-         foldMap (\a -> AllProperty
+         foldMap (\a -> All
                       $ counterexample
                           (show ("upstreameness", a, bound, pmtUpstreamyness))
                           (a >= 0))
                  pmtUpstreamyness
-      <> foldMap (\a -> AllProperty
+      <> foldMap (\a -> All
                       $ counterexample
                           (show ("fetchynessBytes", a, fetchyness_bytes_bound, pmtFetchynessBytes))
                           (a >= 0 && a <= fetchyness_bytes_bound))
                  pmtFetchynessBytes
-      <> foldMap (\a -> AllProperty
+      <> foldMap (\a -> All
                       $ counterexample
                           (show ("fetchynessBlocks", a, bound))
                           (a >= 0))
@@ -384,7 +383,7 @@ prop_metrics_are_bounded script =
 --
 prop_bounded_size :: Positive Int -> FixedScript -> Property
 prop_bounded_size (Positive maxEntriesToTrack) script =
-    getAllProperty $ foldMap go trace
+    property $ foldMap go trace
   where
     config :: PeerMetricsConfiguration
     config = PeerMetricsConfiguration { maxEntriesToTrack }
@@ -405,32 +404,32 @@ prop_bounded_size (Positive maxEntriesToTrack) script =
     bound :: Int
     bound = maxEntriesToTrack * number_of_peers
 
-    go :: PeerMetricsTrace -> AllProperty
+    go :: PeerMetricsTrace -> All
     go PeerMetricsTrace {
            pmtUpstreamyness,
            pmtFetchynessBytes,
            pmtFetchynessBlocks
-         } = AllProperty ( counterexample
-                             (    "upstreamyness: "
-                               ++ show (Map.size pmtUpstreamyness)
-                               ++ " ≰ "
-                               ++ show maxEntriesToTrack )
-                             ( Map.size pmtUpstreamyness <= bound )
-                         )
-          <> AllProperty ( counterexample
-                             (    "fetchynessBytes: "
-                               ++ show (Map.size pmtFetchynessBytes)
-                               ++ " ≰ "
-                               ++ show maxEntriesToTrack)
-                             ( Map.size pmtFetchynessBytes <= bound )
-                         )
-          <> AllProperty ( counterexample
-                             (    "fetchynessBlocks: "
-                               ++ show (Map.size pmtFetchynessBlocks)
-                               ++ " ≰ "
-                               ++ show maxEntriesToTrack)
-                             ( Map.size pmtFetchynessBlocks <= bound )
-                         )
+         } = All ( counterexample
+                     (    "upstreamyness: "
+                       ++ show (Map.size pmtUpstreamyness)
+                       ++ " ≰ "
+                       ++ show maxEntriesToTrack )
+                     ( Map.size pmtUpstreamyness <= bound )
+                 )
+          <> All ( counterexample
+                     (    "fetchynessBytes: "
+                       ++ show (Map.size pmtFetchynessBytes)
+                       ++ " ≰ "
+                       ++ show maxEntriesToTrack)
+                     ( Map.size pmtFetchynessBytes <= bound )
+                 )
+          <> All ( counterexample
+                     (    "fetchynessBlocks: "
+                       ++ show (Map.size pmtFetchynessBlocks)
+                       ++ " ≰ "
+                       ++ show maxEntriesToTrack)
+                     ( Map.size pmtFetchynessBlocks <= bound )
+                 )
 
 --
 -- The following are focused on creating micro-benchmarks
@@ -463,7 +462,7 @@ microbenchmark1 verbose' n =
 -- | one simple property (pmtUpstreamyness >= 0) checked on the trace of a script:
 prop_simScript :: FixedScript -> Property
 prop_simScript script =
-    getAllProperty $ go $ last trace
+    property $ go $ last trace
   where
     config :: PeerMetricsConfiguration
     config = PeerMetricsConfiguration { maxEntriesToTrack = 500 }
@@ -474,12 +473,12 @@ prop_simScript script =
     trace :: [PeerMetricsTrace]
     trace = selectTraceEventsDynamic (runSimTrace sim)
 
-    go :: PeerMetricsTrace -> AllProperty
+    go :: PeerMetricsTrace -> All
     go PeerMetricsTrace { pmtUpstreamyness,
                           pmtFetchynessBytes=_,
                           pmtFetchynessBlocks=_
                         } =
-         foldMap (\a -> AllProperty
+         foldMap (\a -> All
                       $ counterexample
                           (show ("upstreamyness", a, pmtUpstreamyness))
                           (a >= 0))

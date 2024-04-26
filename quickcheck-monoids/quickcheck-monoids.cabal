@@ -1,0 +1,50 @@
+cabal-version:      3.0
+name:               quickcheck-monoids
+version:            0.1.0.0
+synopsis:           QuickCheck monoids
+description:        All and Any monoids for `Testable` instances based on `.&&.` and `.||.`.
+license:            Apache-2.0
+license-files:      LICENSE
+                    NOTICE
+author:             Marcin Szamotulski
+maintainer:         coot@coot.me
+category:           Testing
+copyright:          2024 Input Output Global Inc (IOG)
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+extra-source-files: README.md
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules:  Test.QuickCheck.Monoids
+    build-depends:    base < 4.20,
+                      QuickCheck
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    ghc-options:      -Wall
+                      -Wno-unticked-promoted-constructors
+                      -Wcompat
+                      -Wincomplete-uni-patterns
+                      -Wincomplete-record-updates
+                      -Wpartial-fields
+                      -Widentities
+                      -Wredundant-constraints
+                      -Wunused-packages
+
+test-suite quickcheck-monoids-test
+    import:           warnings
+    default-language: Haskell2010
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base,
+        QuickCheck,
+        quickcheck-monoids,
+        tasty,
+        tasty-quickcheck,
+  ghc-options:        -Wall
+                      -rtsopts

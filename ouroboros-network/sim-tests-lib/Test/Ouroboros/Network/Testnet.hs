@@ -66,13 +66,14 @@ import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Node.NodeKernel
 import Test.Ouroboros.Network.Testnet.Simulation.Node
 import Test.QuickCheck
+import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
 import Control.Exception (AssertionFailed (..), catch, evaluate)
 import Ouroboros.Network.BlockFetch (FetchMode (..), TraceFetchClientState (..))
-import Ouroboros.Network.ConnectionManager.Test.Timeouts (AllProperty (..),
-           TestProperty (..), classifyActivityType, classifyEffectiveDataFlow,
+import Ouroboros.Network.ConnectionManager.Test.Timeouts (TestProperty (..),
+           classifyActivityType, classifyEffectiveDataFlow,
            classifyNegotiatedDataFlow, classifyPrunings, classifyTermination,
            groupConns, mkProperty, ppTransition, verifyAllTimeouts)
 import Ouroboros.Network.ConnectionManager.Test.Utils
@@ -2717,9 +2718,8 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
                        (  "\nconnection:\n"
                        ++ intercalate "\n" (map ppTransition trs))
                        )
-                   . getAllProperty
                    . foldMap ( \ tr
-                              -> AllProperty
+                              -> All
                                . (counterexample $!
                                    (  "\nUnexpected transition: "
                                    ++ show tr)
@@ -2796,7 +2796,7 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
           abstractTransitionEvents =
             selectDiffusionConnectionManagerTransitionEvents events
 
-       in getAllProperty
+       in  property
          . bifoldMap
             (const mempty)
             (verifyAbstractTransitionOrder False)
@@ -3336,7 +3336,7 @@ unit_peer_sharing =
 
         verify :: NtNAddr
                -> [TracePeerSelection NtNAddr]
-               -> AllProperty
+               -> All
         verify addr as | addr == ip_2 =
           let receivedPeers :: Set NtNAddr
               receivedPeers =
@@ -3347,13 +3347,13 @@ unit_peer_sharing =
                                                                        ]
                               _ -> Nothing)
                 $          as
-          in AllProperty $
+          in All $
              counterexample (concat [ show ip_0
                                     , " is not a member of received peers "
                                     , show receivedPeers
                                     ]) $
              ip_0 `Set.member` receivedPeers
-        verify _ _ = AllProperty (property True)
+        verify _ _ = All True
 
     in
       -- counterexample (ppEvents trace) $
@@ -3363,7 +3363,7 @@ unit_peer_sharing =
                                                               ]
                                                           ++ intercalate "\n" (map show evs)
                                                           ++ s) "" events) $
-      getAllProperty $ Map.foldMapWithKey verify events
+      Map.foldMapWithKey verify events
   where
     -- initial topology
     -- ip_0  -> ip_1 <- ip_2
@@ -3670,11 +3670,11 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
           remoteTransitionTraceEvents =
             selectDiffusionInboundGovernorTransitionEvents events
 
-       in getAllProperty
+       in  property
          . bifoldMap
-            ( \ _ -> AllProperty (property True) )
+            ( \ _ -> All True )
             ( \ TransitionTrace {ttPeerAddr = peerAddr, ttTransition = tr} ->
-                  AllProperty
+                  All
                 . counterexample (concat [ "Unexpected transition: "
                                          , show peerAddr
                                          , " "
@@ -3741,7 +3741,7 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
           remoteTransitionTraceEvents =
             selectDiffusionInboundGovernorTransitionEvents events
 
-       in getAllProperty
+       in property
         . bifoldMap
            (const mempty)
            (verifyRemoteTransitionOrder False)
@@ -3809,7 +3809,7 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
                            . selectDiffusionConnectionManagerTransitionEventsTime
                            $ events
 
-       in getAllProperty
+       in property
         $ verifyAllTimeouts True transitionSignal
 
 
