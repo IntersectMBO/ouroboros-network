@@ -20,7 +20,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.IP qualified as IP
-import Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
+import Data.List (foldl', intercalate, isInfixOf, isPrefixOf, nub, sortOn)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
