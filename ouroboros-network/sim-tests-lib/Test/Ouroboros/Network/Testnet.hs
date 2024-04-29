@@ -2099,7 +2099,7 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
 
        in counterexample
             ("\nSignal key: (local, established peers, active peers, " ++
-             "recent failures, opportunities, ignored too long)") $
+             "recent failures, opportunities, is node running, ignored too long)") $
           counterexample
             (intercalate "\n" $ map show $ Signal.eventsToList events) $
 
