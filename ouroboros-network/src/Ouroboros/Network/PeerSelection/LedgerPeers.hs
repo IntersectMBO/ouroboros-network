@@ -64,7 +64,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils (accumulateBigLedgerStake,
            bigLedgerPeerQuota, recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
-import Ouroboros.Network.PeerSelection.RelayAccessPoint qualified as Socket
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
            (resolveLedgerPeers)
