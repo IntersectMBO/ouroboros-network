@@ -63,21 +63,30 @@ data RelayAccessPoint = RelayAccessDomain  !DNS.Domain !Socket.PortNumber
 -- for all its query responses. It appears they provide some improved
 -- debugging diagnostics over Serialize instances.
 instance ToCBOR RelayAccessPoint where
-  toCBOR = mconcat . (encodeListLen 3 :) . \case
+  toCBOR = \case
     RelayAccessDomain domain port ->
-      [encodeWord8 0, serialize' port, toCBOR domain]
-    RelayAccessAddress (IP.IPv4 ip4) port ->
-      [encodeWord8 1, serialize' port, toCBOR (IP.fromIPv4 ip4)]
+         encodeListLen 3
+      <> encodeWord8 0
+      <> serialize' port
+      <> toCBOR domain
+    RelayAccessAddress (IP.IPv4 ipv4) port ->
+         encodeListLen 3
+      <> encodeWord8 1
+      <> serialize' port
+      <> toCBOR (IP.fromIPv4 ipv4)
     RelayAccessAddress (IP.IPv6 ip6) port ->
-      [encodeWord8 2, serialize' port, toCBOR (IP.fromIPv6 ip6)]
+         encodeListLen 3
+      <> encodeWord8 2
+      <> serialize' port
+      <> toCBOR (IP.fromIPv6 ip6)
     where
       serialize' = toCBOR . toInteger
 
 instance FromCBOR RelayAccessPoint where
   fromCBOR = do
-    codeTag <- decodeListLen
-    when (codeTag /= 3) . fail $    "Unrecognized RelayAccessPoint encoding tag "
-                                 <> show codeTag
+    listLen <- decodeListLen
+    when (listLen /= 3) . fail $    "Unrecognized RelayAccessPoint list length "
+                                 <> show listLen
     constructorTag <- decodeWord8
     port <- fromInteger <$> fromCBOR @Integer
     case constructorTag of
