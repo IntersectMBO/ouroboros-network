@@ -14,6 +14,11 @@
   LedgerStateJudgement = TooOld, subject to conditions in
   `LedgerPeers.ledgerPeersThread`.
 * Implemented provision of big ledger peers from the snapshot by `ledgerPeersThread`
+* Added property test checking if `ledgerPeersThread` is providing big ledger peers
+  from the snapshot when appropriate conditions are met
+* Added property tests checking if `LedgerPeerSnapshot` CBOR encoding is valid,
+  and decode/encode = id, as well as some property tests for calculating big ledger
+  peers
 
 ### Non-Breaking changes
 
