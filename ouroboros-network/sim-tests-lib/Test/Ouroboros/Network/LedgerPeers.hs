@@ -20,7 +20,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.IP qualified as IP
-import Data.List (foldl', intercalate, isPrefixOf, nub, sortOn)
+import Data.List (foldl', intercalate, isInfixOf, isPrefixOf, nub, sortOn)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -37,6 +37,8 @@ import Network.DNS (Domain)
 import Cardano.Binary
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+           (recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.Testing.Data.Script
@@ -50,9 +52,11 @@ tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"
   [ testProperty "Pick 100%" prop_pick100
   , testProperty "Pick" prop_pick
-  , testProperty "accBigPoolStake" prop_accBigPoolStake
+  , testProperty "accumulateBigLedgerStake" prop_accumulateBigLedgerStake
+  , testProperty "recomputeRelativeStake" prop_recomputeRelativeStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
   , testProperty "LedgerPeerSnapshot encode/decode" prop_ledgerPeerSnapshot
+  , testProperty "Choose big pool peers from ledger or snapshot" prop_use_snapshot_bigledger_peers
   ]
 
 newtype ArbitraryPortNumber = ArbitraryPortNumber { getArbitraryPortNumber :: PortNumber }
@@ -98,7 +102,7 @@ newtype ArbitrarySlotNo =
 -- of the tests we run.
 instance Arbitrary ArbitrarySlotNo where
     arbitrary =
-      ArbitrarySlotNo . SlotNo <$> arbitrarySizedBoundedIntegral
+      ArbitrarySlotNo . SlotNo <$> arbitrary
 
 data StakePool = StakePool {
       spStake :: !Word64
@@ -156,6 +160,83 @@ instance Arbitrary ArbLedgerPeersKind where
     shrink (ArbLedgerPeersKind AllLedgerPeers) = [ArbLedgerPeersKind BigLedgerPeers]
     shrink (ArbLedgerPeersKind BigLedgerPeers) = []
 
+prop_use_snapshot_bigledger_peers :: Word16
+                                  -> ArbLedgerPeersKind
+                                  -> MockRoots
+                                  -> DelayAndTimeoutScripts
+                                  -> (ArbitrarySlotNo, ArbitrarySlotNo)
+                                  -> ArbitraryLedgerStateJudgement
+                                  -> Property
+prop_use_snapshot_bigledger_peers seed (ArbLedgerPeersKind ledgerPeersKind) (MockRoots _ dnsMapScript _ _)
+                                  (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
+                                  (ArbitrarySlotNo snapshotSlot, ArbitrarySlotNo slot) (ArbitraryLedgerStateJudgement lsj) = property $ do
+  snapshot <- genSnapshot
+  let rng = mkStdGen $ fromIntegral seed
+      sim :: IOSim s [RelayAccessPoint]
+      sim = do
+        let dnsMap = scriptHead dnsMapScript
+        dnsMapVar <- newTVarIO dnsMap
+
+        dnsTimeoutScriptVar <- initScript' dnsTimeoutScript
+        dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
+
+        dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
+
+        withLedgerPeers
+                PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
+                                 paDnsActions = mockDNSActions @SomeException dnsMapVar dnsTimeoutScriptVar dnsLookupDelayScriptVar,
+                                 paDnsSemaphore = dnsSemaphore }
+                WithLedgerPeersArgs { wlpRng = rng,
+                                      wlpConsensusInterface = interface,
+                                      wlpTracer = verboseTracer,
+                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always,
+                                      wlpGetLedgerPeerSnapshot = pure snapshot }
+                (\request _ -> do
+                  threadDelay 1900 -- we need to invalidate ledger peer's cache
+                  resp <- request (NumberOfPeers 1) ledgerPeersKind
+                  pure $ case resp of
+                    Nothing          -> []
+                    Just (peers, _)  -> [ RelayAccessAddress ip port
+                                        | Just (ip, port) <- IP.fromSockAddr
+                                                         <$> Set.toList peers
+                                        ]
+                )
+        where
+          interface =
+            LedgerPeersConsensusInterface
+              (pure $ At slot)
+              (pure lsj)
+              (pure ledgerPeers)
+
+  return . counterexample (show snapshot) $ ioProperty $ do
+    tr' <- evaluateTrace (runSimTrace sim)
+    case tr' of
+      SimException e trace -> do
+        return $ counterexample (intercalate "\n" $ show e : trace) False
+      SimDeadLock trace -> do
+        return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
+      SimReturn peers _trace -> do
+        case (snapshot, ledgerPeersKind) of
+          (Just _snapshotBigLedgerPeer, BigLedgerPeers) | snapshotSlot > slot ->
+            return $ peers === [getRelayAccessPoint bigLedgerPeer']
+          (_, BigLedgerPeers) ->
+            return $ peers === [getRelayAccessPoint bigLedgerPeer]
+          _otherwise -> return $ counterexample (   "Prefix violation: "
+                                                 ++ show (peers, map getRelayAccessPoint ledgerPeers))
+                                                (peers `isInfixOf` map getRelayAccessPoint ledgerPeers)
+
+  where
+    getRelayAccessPoint = NonEmpty.head . snd
+    ledgerPeer = (PoolStake . unAccPoolStake $ 1 - bigLedgerPeerQuota, NonEmpty.singleton $ RelayAccessAddress (IPv4 "0.0.0.0") 1000)
+    bigLedgerPeer = (PoolStake . unAccPoolStake $ bigLedgerPeerQuota, NonEmpty.singleton $ RelayAccessAddress (IPv4 "1.1.1.1") 1001)
+    ledgerPeers = [ledgerPeer, bigLedgerPeer]
+    bigLedgerPeer' = (PoolStake 1, NonEmpty.singleton $
+                                              RelayAccessAddress (IPv4 "2.2.2.2")
+                                                                 1234)
+    snapshotBigLedgerPeer = LedgerPeerSnapshot $
+      (At snapshotSlot, [(AccPoolStake 1, bigLedgerPeer')])
+    genSnapshot = elements [Nothing, Just snapshotBigLedgerPeer]
+
 -- | A pool with 100% stake should always be picked.
 prop_pick100 :: Word16
              -> NonNegative Int -- ^ number of pools with 0 stake
@@ -195,7 +276,8 @@ prop_pick100 seed (NonNegative n) (ArbLedgerPeersKind ledgerPeersKind) (MockRoot
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
-                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always }
+                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers Always,
+                                      wlpGetLedgerPeerSnapshot = pure Nothing }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers 1) ledgerPeersKind
@@ -255,7 +337,8 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                 WithLedgerPeersArgs { wlpRng = rng,
                                       wlpConsensusInterface = interface,
                                       wlpTracer = verboseTracer,
-                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers (After 0) }
+                                      wlpGetUseLedgerPeers = pure $ UseLedgerPeers (After 0),
+                                      wlpGetLedgerPeerSnapshot = pure $ Nothing }
                 (\request _ -> do
                   threadDelay 1900 -- we need to invalidate ledger peer's cache
                   resp <- request (NumberOfPeers count) ledgerPeersKind
@@ -308,10 +391,9 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                                         === fromIntegral count `min` numOfPeers)
 
 
-prop_accBigPoolStake :: LedgerPools -> Property
-prop_accBigPoolStake  (LedgerPools [])        = property True
-prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
-
+prop_accumulateBigLedgerStake :: LedgerPools -> Property
+prop_accumulateBigLedgerStake  (LedgerPools [])        = property True
+prop_accumulateBigLedgerStake  (LedgerPools lps@(_:_)) =
          -- the accumulated map is non empty, whenever ledger peers set is non
          -- empty
          not (Map.null accumulatedStakeMap)
@@ -325,7 +407,7 @@ prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
              >= unAccPoolStake bigLedgerPeerQuota)
 
          -- This property checks that elements of
-         -- `accBigPoolStake` form an initial sub-list of the ordered ledger
+         -- `accBigPoolStakeMap` form an initial sub-list of the ordered ledger
          -- peers by stake (from large to small).
          --
          -- We relay on the fact that `Map.elems` returns a list of elements
@@ -336,6 +418,29 @@ prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
           $ elems `isPrefixOf` lps'
   where
     accumulatedStakeMap = accBigPoolStakeMap lps
+
+prop_recomputeRelativeStake :: LedgerPools -> Property
+prop_recomputeRelativeStake (LedgerPools []) = property True
+prop_recomputeRelativeStake (LedgerPools lps) = property $ do
+  lpk <- genLedgerPeersKind
+  let (accStake, relayAccessPointsUnchangedNonNegativeStake) = go (reStake lpk) lps (0, True)
+  return $     counterexample "recomputeRelativeStake: relays modified or negative pool stake calculated"
+                             relayAccessPointsUnchangedNonNegativeStake
+          .&&. accStake === 1
+  where
+    genLedgerPeersKind = elements [AllLedgerPeers, BigLedgerPeers]
+    reStake lpk = recomputeRelativeStake lpk lps
+    -- compare relay access points in both lists for equality
+    -- where we assume that recomputerelativestake doesn't change
+    -- the order, and sum up relative stake to make sure it adds up to 1
+    go ((!normPoolStake, raps):rest) ((_, raps'):rest') (!accStake, _) =
+      if raps == raps' && normPoolStake >= 0
+      then go rest rest' (accStake + normPoolStake, True)
+      else (accStake + normPoolStake, False)
+    go [] (_:_) (!accStake, _) = (accStake, False)
+    go (_:_) [] (!accStake, _) = (accStake, False)
+    go _ _ (!accStake, !relayAccessPointsUnchangedNonNegativeStake) = (accStake, relayAccessPointsUnchangedNonNegativeStake)
+
 
 prop_getLedgerPeers :: ArbitrarySlotNo
                     -> ArbitraryLedgerStateJudgement

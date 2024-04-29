@@ -25,6 +25,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , LedgerPeersKind (..)
     -- * Ledger Peers specific functions
   , accPoolStake
+  , accumulateBigLedgerStake
   , accBigPoolStakeMap
   , bigLedgerPeerQuota
     -- * DNS based provider for ledger root peers
@@ -60,8 +61,9 @@ import Data.Word (Word16, Word64)
 import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.LedgerPeers.Utils (accBigPoolStake,
-           bigLedgerPeerQuota, reRelativeStake)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+           (accumulateBigLedgerStake, bigLedgerPeerQuota,
+           recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
@@ -111,7 +113,7 @@ accPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
 accPoolStake =
       Map.fromList
     . foldl' fn []
-    . reRelativeStake AllLedgerPeers
+    . recomputeRelativeStake AllLedgerPeers
   where
     fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
        -> (PoolStake, NonEmpty RelayAccessPoint)
@@ -130,7 +132,7 @@ accBigPoolStakeMap :: [(PoolStake, NonEmpty RelayAccessPoint)]
                    -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
 accBigPoolStakeMap = Map.fromAscList      -- the input list is ordered by `AccPoolStake`, thus we
                                           -- can use `fromAscList`
-                     . accBigPoolStake
+                     . accumulateBigLedgerStake
 
 -- | Try to pick n random peers using stake distribution.
 --
@@ -275,7 +277,7 @@ ledgerPeersThread PeerActionsDNS {
                          (_, _, Just (LedgerPeerSnapshot (At t', sp)))
                            | After slot <- ula, t' >= slot ->
                              traceWith wlpTracer UsingBigLedgerPeerSnapshot >> return ([], Map.fromAscList sp)
-                         otherwise -> return ([], Map.empty)
+                         _otherwise -> return ([], Map.empty)
 
                  traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStakeMap)
                  return (peersStake, bigPeersStakeMap, now)
