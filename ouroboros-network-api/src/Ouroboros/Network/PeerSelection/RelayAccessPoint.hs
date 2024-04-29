@@ -67,20 +67,20 @@ instance ToCBOR RelayAccessPoint where
     RelayAccessDomain domain port ->
          encodeListLen 3
       <> encodeWord8 0
-      <> serialize' port
+      <> serialise' port
       <> toCBOR domain
     RelayAccessAddress (IP.IPv4 ipv4) port ->
          encodeListLen 3
       <> encodeWord8 1
-      <> serialize' port
+      <> serialise' port
       <> toCBOR (IP.fromIPv4 ipv4)
     RelayAccessAddress (IP.IPv6 ip6) port ->
          encodeListLen 3
       <> encodeWord8 2
-      <> serialize' port
+      <> serialise' port
       <> toCBOR (IP.fromIPv6 ip6)
     where
-      serialize' = toCBOR . toInteger
+      serialise' = toCBOR . toInteger
 
 instance FromCBOR RelayAccessPoint where
   fromCBOR = do
