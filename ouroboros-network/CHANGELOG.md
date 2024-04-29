@@ -22,6 +22,11 @@
 - Fixed block fetch client assertion failure
 * Make it build with ghc-9.10
 * Implemented provision of big ledger peers from the snapshot by `ledgerPeersThread`
+* Added property test checking if `ledgerPeersThread` is providing big ledger peers
+  from the snapshot when appropriate conditions are met
+* Added property tests checking if `LedgerPeerSnapshot` CBOR encoding is valid,
+  and decode/encode = id, as well as some property tests for calculating big ledger
+  peers
 
 ## 0.16.1.1 -- 2024-06-28
 

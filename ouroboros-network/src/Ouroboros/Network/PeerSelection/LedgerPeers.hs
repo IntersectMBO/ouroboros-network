@@ -26,6 +26,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , StakeMapOverSource (..)
     -- * Ledger Peers specific functions
   , accPoolStake
+  , accumulateBigLedgerStake
   , accBigPoolStakeMap
   , bigLedgerPeerQuota
   , stakeMapWithSlotOverSource
@@ -63,8 +64,9 @@ import Data.Word (Word16, Word64)
 import Network.DNS qualified as DNS
 import Ouroboros.Network.PeerSelection.LedgerPeers.Common
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.LedgerPeers.Utils (accBigPoolStake,
-           bigLedgerPeerQuota, reRelativeStake)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+           (accumulateBigLedgerStake, bigLedgerPeerQuota,
+           recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
@@ -114,7 +116,7 @@ accPoolStake :: [(PoolStake, NonEmpty RelayAccessPoint)]
 accPoolStake =
       Map.fromList
     . List.foldl' fn []
-    . reRelativeStake AllLedgerPeers
+    . recomputeRelativeStake AllLedgerPeers
   where
     fn :: [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))]
        -> (PoolStake, NonEmpty RelayAccessPoint)
@@ -133,7 +135,7 @@ accBigPoolStakeMap :: [(PoolStake, NonEmpty RelayAccessPoint)]
                    -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
 accBigPoolStakeMap = Map.fromAscList      -- the input list is ordered by `AccPoolStake`, thus we
                                           -- can use `fromAscList`
-                     . accBigPoolStake
+                     . accumulateBigLedgerStake
 
 -- | Try to pick n random peers using stake distribution.
 --

@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -41,6 +40,8 @@ import Network.DNS (Domain)
 import Cardano.Binary
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+           (recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.Testing.Data.Script
@@ -50,11 +51,13 @@ import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf
 
+
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"
   [ testProperty "Pick 100%" prop_pick100
   , testProperty "Pick" prop_pick
-  , testProperty "accBigPoolStake" prop_accBigPoolStake
+  , testProperty "accumulateBigLedgerStake" prop_accumulateBigLedgerStake
+  , testProperty "recomputeRelativeStake" prop_recomputeRelativeStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
   , testProperty "LedgerPeerSnapshot CBOR version 1" prop_ledgerPeerSnapshotCBORV1
   , testProperty "LedgerPeerSnapshot JSON version 1" prop_ledgerPeerSnapshotJSONV1
@@ -105,7 +108,7 @@ newtype ArbitrarySlotNo =
 -- of the tests we run.
 instance Arbitrary ArbitrarySlotNo where
     arbitrary =
-      ArbitrarySlotNo . SlotNo <$> arbitrarySizedBoundedIntegral
+      ArbitrarySlotNo . SlotNo <$> arbitrary
 
 data StakePool = StakePool {
       spStake :: !Word64
@@ -162,6 +165,93 @@ instance Arbitrary ArbLedgerPeersKind where
     arbitrary = ArbLedgerPeersKind <$> elements [AllLedgerPeers, BigLedgerPeers]
     shrink (ArbLedgerPeersKind AllLedgerPeers) = [ArbLedgerPeersKind BigLedgerPeers]
     shrink (ArbLedgerPeersKind BigLedgerPeers) = []
+
+newtype ArbStakeMapOverSource = ArbStakeMapOverSource { getArbStakeMapOverSource :: StakeMapOverSource }
+  deriving Show
+
+instance Arbitrary ArbStakeMapOverSource where
+  arbitrary = do
+    peerSnapshot <-
+      oneof [ pure Nothing, Just <$> genPeerSnapshot ]
+    ledgerWithOrigin <- genWithOrigin
+    ula <- arbitrary
+    ledgerPeers <-
+      case (ula, ledgerWithOrigin) of
+        (Always, _) -> LedgerPeers TooOld . getLedgerPools <$> arbitrary
+        (After slotNo, Origin) | slotNo > 0 -> return BeforeSlot
+        (After afterSlotNo, At atSlotNo)
+          | afterSlotNo <= atSlotNo -> LedgerPeers TooOld . getLedgerPools <$> arbitrary
+        _otherwise -> return BeforeSlot
+    (peerMap, bigPeerMap, cachedSlot) <-
+      return $ case peerSnapshot of
+                 Nothing -> (Map.empty, Map.empty, Nothing)
+                 Just (LedgerPeerSnapshotV1 (At slot, accPools))
+                   -> (Map.fromList accPools, Map.fromList accPools, Just slot)
+                 _otherwise -> error "impossible!"
+    return $ ArbStakeMapOverSource StakeMapOverSource {
+      ledgerWithOrigin,
+      ledgerPeers,
+      peerSnapshot,
+      peerMap,
+      bigPeerMap,
+      ula,
+      cachedSlot }
+    where
+      genWithOrigin = do
+        ArbitrarySlotNo slotNo <- arbitrary
+        return $ if slotNo == 0 then Origin else At slotNo
+      genPeerSnapshot = do
+        slotNo <- At . getPositive <$> arbitrary
+        pools <- accumulateBigLedgerStake . getLedgerPools <$> arbitrary
+        return $ LedgerPeerSnapshotV1 (slotNo, pools)
+
+-- | This test checks whether requesting ledger peers works as intended
+-- when snapshot data is available. For each request, peers must be returned from the right
+-- source - either the ledger or snapshot, depending on whether which source is fresher.
+--
+prop_ledgerPeerSnapshot_requests :: ArbStakeMapOverSource
+                                 -> Property
+prop_ledgerPeerSnapshot_requests ArbStakeMapOverSource {
+      getArbStakeMapOverSource = params@StakeMapOverSource {
+          ledgerWithOrigin,
+          ledgerPeers,
+          peerSnapshot,
+          ula } } =
+  counterexample (unlines
+                   ["Counterexample:", "Ledger slot " ++ show ledgerWithOrigin,
+                    "Ledger pools: " ++ show ledgerPeers,
+                    "Snapshot? :" ++ show peerSnapshot,
+                    "UseLedgerAfter: " ++ show ula]) $
+    let (poolMap, bigPoolMap, _slot) = stakeMapWithSlotOverSource params
+        bigPoolRelays = fmap (snd . snd) . Map.toList $ bigPoolMap
+        poolRelays    = fmap (snd . snd) . Map.toList $ poolMap
+    in case (ledgerWithOrigin, ledgerPeers, peerSnapshot) of
+        (At t, LedgerPeers _ ledgerPools, Just (LedgerPeerSnapshot (At t', snapshotAccStake)))
+          | t' >= t ->
+            snapshotRelays === bigPoolRelays .&&. bigPoolRelays === poolRelays
+          | otherwise ->
+                 bigPoolRelays === ledgerBigPoolRelays
+            .&&.    poolRelays === ledgerRelays
+          where
+            snapshotRelays = fmap (snd . snd) snapshotAccStake
+            ledgerBigPoolRelays   = fmap (snd . snd) (accumulateBigLedgerStake ledgerPools)
+            ledgerRelays = fmap (snd . snd) . Map.toList $ accPoolStake ledgerPools
+
+        (_, LedgerPeers _ ledgerPools, Nothing) ->
+               bigPoolRelays === ledgerBigPoolRelays
+          .&&.    poolRelays === ledgerRelays
+          where
+            ledgerBigPoolRelays = fmap (snd . snd) (accumulateBigLedgerStake ledgerPools)
+            ledgerRelays = fmap (snd . snd) . Map.toList $ accPoolStake ledgerPools
+
+        (_, _, Just (LedgerPeerSnapshot (At t', snapshotAccStake)))
+          | After slot <- ula, t' >= slot ->
+            snapshotRelays === bigPoolRelays .&&. bigPoolRelays === poolRelays
+          where
+            snapshotRelays = fmap (snd . snd) snapshotAccStake
+
+        _otherwise -> bigPoolRelays === [] .&&. poolRelays === []
+
 
 -- | A pool with 100% stake should always be picked.
 prop_pick100 :: Word16
@@ -317,10 +407,9 @@ prop_pick (LedgerPools lps) (ArbLedgerPeersKind ledgerPeersKind) count seed (Moc
                                         === fromIntegral count `min` numOfPeers)
 
 
-prop_accBigPoolStake :: LedgerPools -> Property
-prop_accBigPoolStake  (LedgerPools [])        = property True
-prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
-
+prop_accumulateBigLedgerStake :: LedgerPools -> Property
+prop_accumulateBigLedgerStake  (LedgerPools [])        = property True
+prop_accumulateBigLedgerStake  (LedgerPools lps@(_:_)) =
          -- the accumulated map is non empty, whenever ledger peers set is non
          -- empty
          not (Map.null accumulatedStakeMap)
@@ -334,7 +423,7 @@ prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
              >= unAccPoolStake bigLedgerPeerQuota)
 
          -- This property checks that elements of
-         -- `accBigPoolStake` form an initial sub-list of the ordered ledger
+         -- `accBigPoolStakeMap` form an initial sub-list of the ordered ledger
          -- peers by stake (from large to small).
          --
          -- We relay on the fact that `Map.elems` returns a list of elements
@@ -345,6 +434,37 @@ prop_accBigPoolStake  (LedgerPools lps@(_:_)) =
           $ elems `isPrefixOf` lps'
   where
     accumulatedStakeMap = accBigPoolStakeMap lps
+
+-- |This functions checks the following properties:
+-- 1. The accumulated relative stake adds up to unity
+-- 2. No pool relative stake can be less than 0
+-- 3. The relays aren't mangled
+-- 4. Running this function multiple times always produces the same result
+--
+prop_recomputeRelativeStake :: LedgerPools -> Property
+prop_recomputeRelativeStake (LedgerPools []) = property True
+prop_recomputeRelativeStake (LedgerPools lps) = property $ do
+  lpk <- genLedgerPeersKind
+  let (accStake, relayAccessPointsUnchangedNonNegativeStake) = go (reStake lpk) lps (0, True)
+  return $     counterexample "recomputeRelativeStake: relays modified or negative pool stake calculated"
+                             relayAccessPointsUnchangedNonNegativeStake
+          .&&. accStake === 1
+          .&&. counterexample "violates idempotency"
+                              ((recomputeRelativeStake BigLedgerPeers . recomputeRelativeStake BigLedgerPeers $ lps) == recomputeRelativeStake BigLedgerPeers lps)
+  where
+    genLedgerPeersKind = elements [AllLedgerPeers, BigLedgerPeers]
+    reStake lpk = recomputeRelativeStake lpk lps
+    -- compare relay access points in both lists for equality
+    -- where we assume that recomputerelativestake doesn't change
+    -- the order, and sum up relative stake to make sure it adds up to 1
+    go ((normPoolStake, raps):rest) ((_, raps'):rest') (accStake, _) =
+      if raps == raps' && normPoolStake >= 0
+      then go rest rest' (accStake + normPoolStake, True)
+      else (accStake + normPoolStake, False)
+    go [] (_:_) (accStake, _) = (accStake, False)
+    go (_:_) [] (accStake, _) = (accStake, False)
+    go _ _ (accStake, relayAccessPointsUnchangedNonNegativeStake) = (accStake, relayAccessPointsUnchangedNonNegativeStake)
+
 
 prop_getLedgerPeers :: ArbitrarySlotNo
                     -> ArbitraryLedgerStateJudgement
