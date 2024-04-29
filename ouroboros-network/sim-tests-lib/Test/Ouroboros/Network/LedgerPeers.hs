@@ -21,7 +21,6 @@ import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.IP qualified as IP
 import Data.List (foldl', intercalate, isInfixOf, isPrefixOf, nub, sortOn)
-import Data.List.NonEmpty (NonEmpty(..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -217,8 +216,9 @@ prop_use_snapshot_bigledger_peers seed (ArbLedgerPeersKind ledgerPeersKind) (Moc
         return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
       SimReturn peers _trace -> do
         case (snapshot, ledgerPeersKind) of
-          (Just _snapshotBigLedgerPeer, BigLedgerPeers) | snapshotSlot > slot ->
-            return $ peers === [getRelayAccessPoint bigLedgerPeer']
+          (Just _snapshotBigLedgerPeer, _)
+            | snapshotSlot > slot ->
+              return $ peers === [getRelayAccessPoint bigLedgerPeer']
           (_, BigLedgerPeers) ->
             return $ peers === [getRelayAccessPoint bigLedgerPeer]
           _otherwise -> return $ counterexample (   "Prefix violation: "

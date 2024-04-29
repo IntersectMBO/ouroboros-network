@@ -51,7 +51,7 @@ import Data.Map.Strict qualified as Map
 import Data.Ratio
 import System.Random
 
-import Cardano.Slotting.Slot (WithOrigin (..))
+import Cardano.Slotting.Slot (WithOrigin (..), SlotNo(..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Data.Set (Set)
@@ -230,14 +230,15 @@ ledgerPeersThread PeerActionsDNS {
                     wlpGetLedgerPeerSnapshot }
                   getReq
                   putResp = do
-    go wlpRng (Time 0) Map.empty Map.empty
+    go wlpRng (Time 0) Map.empty Map.empty 0
   where
     go :: StdGen
        -> Time
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
        -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
+       -> SlotNo
        -> m Void
-    go rng oldTs peerMap bigPeerMap = do
+    go rng oldTs peerMap bigPeerMap lastSnapshotSlot = do
         traceWith wlpTracer WaitingOnRequest
         -- wait until next request of ledger peers
         ((numRequested, ledgerPeersKind), useLedgerPeers) <- atomically $
@@ -251,12 +252,12 @@ ledgerPeersThread PeerActionsDNS {
         traceWith wlpTracer $ RequestForPeers numRequested
         !now <- getMonotonicTime
         let age = diffTime now oldTs
-        (peerMap', bigPeerMap', ts) <-
+        (peerMap', bigPeerMap', lastSnapshotSlot', ts) <-
           if age > peerListLifeTime
              then case useLedgerPeers of
                DontUseLedgerPeers -> do
                  traceWith wlpTracer DisabledLedgerPeers
-                 return (Map.empty, Map.empty, now)
+                 return (Map.empty, Map.empty, 0, now)
                UseLedgerPeers ula -> do
                  (consensusSlotNo, consensusPeers, peerSnapshot) <-
                    atomically ((,,) <$> lpGetLatestSlot wlpConsensusInterface
@@ -265,31 +266,39 @@ ledgerPeersThread PeerActionsDNS {
 
                  -- we have to assess which of, if any, peers we get from consensus vs.
                  -- peers we may have from the snapshot file is more recent, and use that
-                 (accPoolStake -> peersStake, bigPeersStakeMap) <-
-                       case (consensusSlotNo, consensusPeers, peerSnapshot) of
-                         (At t, LedgerPeers _ lp, Just (LedgerPeerSnapshot (At t', sp {- snapshot peer-})))
-                           | t' > t -> traceWith wlpTracer UsingBigLedgerPeerSnapshot >> return (lp, Map.fromAscList sp)
-                           | otherwise -> return (lp, accBigPoolStakeMap lp)
+                 (peersStakeMap, bigPeersStakeMap, lastSnapshotSlot'') <-
+                   case (consensusSlotNo, consensusPeers, peerSnapshot) of
+                     (At t, LedgerPeers _ lp, Just (LedgerPeerSnapshot (At t', sp {- snapshot peers -})))
+                       | t' > t -> do traceWith wlpTracer UsingBigLedgerPeerSnapshot
+                                      -- we cache the peers from the snapshot to avoid any recomputation
+                                      if t' == lastSnapshotSlot
+                                      then return (peerMap, bigPeerMap, t')
+                                      else return (accPoolStake (map snd sp), Map.fromAscList sp, t')
+                       | otherwise -> return (accPoolStake lp, accBigPoolStakeMap lp, lastSnapshotSlot)
 
-                         (_, LedgerPeers _ lp, Nothing) -> return (lp, accBigPoolStakeMap lp)
+                     (_, LedgerPeers _ lp, Nothing) -> return (accPoolStake lp, accBigPoolStakeMap lp, lastSnapshotSlot)
 
-                         (_, _, Just (LedgerPeerSnapshot (At t', sp)))
-                           | After slot <- ula, t' >= slot ->
-                             traceWith wlpTracer UsingBigLedgerPeerSnapshot >> return ([], Map.fromAscList sp)
-                         _otherwise -> return ([], Map.empty)
+                     (_, _, Just (LedgerPeerSnapshot (At t', sp)))
+                       | After slot <- ula, t' >= slot -> do
+                         traceWith wlpTracer UsingBigLedgerPeerSnapshot
+                         if t' == lastSnapshotSlot
+                         then return (peerMap, bigPeerMap, t')
+                         else return (accPoolStake (map snd sp), Map.fromAscList sp, t')
 
-                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStake) (Map.size bigPeersStakeMap)
-                 return (peersStake, bigPeersStakeMap, now)
+                     _otherwise -> return (Map.empty, Map.empty, lastSnapshotSlot)
+
+                 traceWith wlpTracer $ FetchingNewLedgerState (Map.size peersStakeMap) (Map.size bigPeersStakeMap)
+                 return (peersStakeMap, bigPeersStakeMap, lastSnapshotSlot'', now)
              else do
                traceWith wlpTracer $ ReusingLedgerState (Map.size peerMap) age
-               return (peerMap, bigPeerMap, oldTs)
+               return (peerMap, bigPeerMap, lastSnapshotSlot, oldTs)
 
         if all Map.null [peerMap', bigPeerMap']
            then do
                when (isLedgerPeersEnabled useLedgerPeers) $
                    traceWith wlpTracer FallingBackToPublicRootPeers
                atomically $ putResp Nothing
-               go rng ts peerMap' bigPeerMap'
+               go rng ts peerMap' bigPeerMap' lastSnapshotSlot'
            else do
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
@@ -328,7 +337,7 @@ ledgerPeersThread PeerActionsDNS {
                                   domainAddrs
 
                atomically $ putResp $ Just (pickedAddrs, ttl)
-               go rng'' ts peerMap' bigPeerMap'
+               go rng'' ts peerMap' bigPeerMap' lastSnapshotSlot'
 
     -- Randomly pick one of the addresses returned in the DNS result.
     pickDomainAddrs :: (StdGen, Set peerAddr)
