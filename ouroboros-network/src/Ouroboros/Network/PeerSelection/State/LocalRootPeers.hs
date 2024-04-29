@@ -9,6 +9,7 @@ module Ouroboros.Network.PeerSelection.State.LocalRootPeers
     LocalRootPeers (..)
   , HotValency (..)
   , WarmValency (..)
+  , Config
     -- Export constructors for defining tests.
   , invariant
     -- * Basic operations
@@ -23,6 +24,7 @@ module Ouroboros.Network.PeerSelection.State.LocalRootPeers
   , toGroupSets
   , toMap
   , keysSet
+  , trustableKeysSet
     -- * Special operations
   , clampToLimit
   , clampToTrustable
@@ -70,6 +72,12 @@ newtype HotValency = HotValency { getHotValency :: Int }
 newtype WarmValency = WarmValency { getWarmValency :: Int }
   deriving (Show, Eq, Ord)
   deriving Num via Int
+
+-- | Data available from topology file.
+--
+type Config peeraddr =
+     [(HotValency, WarmValency, Map peeraddr ( PeerAdvertise, PeerTrustable))]
+
 
 -- It is an abstract type, so the derived Show is unhelpful, e.g. for replaying
 -- test cases.
@@ -251,3 +259,12 @@ isPeerTrustable peeraddr lrp =
   case Map.lookup peeraddr (toMap lrp) of
     Just (_, IsTrustable) -> True
     _                     -> False
+
+trustableKeysSet :: LocalRootPeers peeraddr
+                 -> Set peeraddr
+trustableKeysSet (LocalRootPeers m _) =
+    Map.keysSet
+  . Map.filter (\(_, trustable) -> case trustable of
+                    IsTrustable    -> True
+                    IsNotTrustable -> False)
+  $ m

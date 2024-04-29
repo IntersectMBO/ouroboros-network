@@ -11,6 +11,11 @@
   The counters cover more groups including: all peers, big ledger peers,
   bootstrap peers, local roots and shared peers.
 * `emptyPeerSelectionState` doesn't take targets of local roots.
+* Added `daUpdateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()`
+  to `Diffusion.Common.Applications`. This callback is to be provided by
+  consensus and is propagated all the way to the peer selection governor.
+* Added `AssociationMode` and `LedgerStateJudgement` to `DebugPeerSelectionState`.
+  Both should be exposed through `EKG` counters by the node.
 
 ### Non-Breaking changes
 

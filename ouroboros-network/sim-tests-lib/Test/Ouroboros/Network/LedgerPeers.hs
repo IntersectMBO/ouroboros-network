@@ -86,6 +86,8 @@ instance Arbitrary ArbitraryLedgerStateJudgement where
     shrink (ArbitraryLedgerStateJudgement TooOld)      =
       []
 
+-- TODO: import the `SlotNo` instance from
+-- `Test.Ouroboros.Network.PeerSelection.Instances`
 newtype ArbitrarySlotNo =
   ArbitrarySlotNo {
     getArbitrarySlotNo :: SlotNo

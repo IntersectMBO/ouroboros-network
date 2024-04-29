@@ -88,6 +88,7 @@ import Ouroboros.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum)
 import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
@@ -205,6 +206,8 @@ data AppArgs header block m = AppArgs
   , aaChainSyncEarlyExit  :: Bool
   , aaOwnPeerSharing
      :: PSTypes.PeerSharing
+  , aaUpdateOutboundConnectionsState
+     :: OutboundConnectionsState -> STM m ()
   }
 
 
@@ -253,6 +256,7 @@ applications debugTracer nodeKernel
                , aaShouldChainSyncExit
                , aaChainSyncEarlyExit
                , aaOwnPeerSharing
+               , aaUpdateOutboundConnectionsState
                }
              toHeader =
     Diff.Applications
@@ -270,6 +274,8 @@ applications debugTracer nodeKernel
                                   localResponderApp
       , Diff.daLedgerPeersCtx =
           aaLedgerPeersConsensusInterface
+      , Diff.daUpdateOutboundConnectionsState =
+          aaUpdateOutboundConnectionsState
       }
   where
     initiatorApp

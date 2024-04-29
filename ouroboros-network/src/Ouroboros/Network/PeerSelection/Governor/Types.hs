@@ -29,10 +29,12 @@ module Ouroboros.Network.PeerSelection.Governor.Types
     -- These records are needed to run the peer selection.
   , PeerStateActions (..)
   , PeerSelectionActions (..)
+  , PeerSelectionInterfaces (..)
   , ChurnMode (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
+  , AssociationMode (..)
   , DebugPeerSelectionState (..)
   , makeDebugPeerSelectionState
   , assertPeerSelectionState
@@ -143,10 +145,9 @@ import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers (IsBigLedgerPeer,
            LedgerPeersKind)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerStateJudgement (..))
-import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
+           (LedgerStateJudgement (..), UseLedgerPeers (..))
+import Ouroboros.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
-import Ouroboros.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers (EstablishedPeers)
@@ -315,8 +316,6 @@ sanePeerSelectionTargets PeerSelectionTargets{..} =
  && targetNumberOfKnownBigLedgerPeers       <= 10000
 
 
--- | Actions performed by the peer selection governor.
---
 -- These being pluggable allows:
 --
 -- * choice of known peer root sets
@@ -336,10 +335,7 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
        -- It is structured as a collection of (non-overlapping) groups of peers
        -- where we are supposed to select n from each group.
        --
-       readLocalRootPeers       :: STM m [( HotValency
-                                          , WarmValency
-                                          , Map peeraddr ( PeerAdvertise
-                                                         , PeerTrustable))],
+       readLocalRootPeers       :: STM m (LocalRootPeers.Config peeraddr),
 
        readNewInboundConnection :: STM m (peeraddr, PeerSharing),
 
@@ -386,8 +382,42 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 
        -- | Read the current ledger state judgement
        --
-       readLedgerStateJudgement :: STM m LedgerStateJudgement
+       readLedgerStateJudgement :: STM m LedgerStateJudgement,
+
+       -- | Callback provided by consensus to inform it if the node is
+       -- connected to only local roots or also some external peers.
+       --
+       -- This is useful in order for the Bootstrap State Machine to
+       -- simply refuse to transition from TooOld to YoungEnough while
+       -- it only has local peers.
+       --
+       updateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
+
      }
+
+-- | Interfaces required by the peer selection governor, which do not need to
+-- be shared with actions and thus are not part of `PeerSelectionActions`.
+--
+data PeerSelectionInterfaces peeraddr peerconn m = PeerSelectionInterfaces {
+      -- | PeerSelectionCounters are shared with churn through a `StrictTVar`.
+      --
+      countersVar                   :: StrictTVar m PeerSelectionCounters,
+
+      -- | PublicPeerSelectionState var.
+      --
+      publicStateVar                :: StrictTVar m (PublicPeerSelectionState peeraddr),
+
+      -- | PeerSelectionState shared for debugging purposes (to support SIGUSR1
+      -- debug event tracing)
+      --
+      debugStateVar                 :: StrictTVar m (PeerSelectionState peeraddr peerconn),
+
+      -- | `UseLedgerPeers` used by `peerSelectionGovernor` to support
+      -- `HiddenRelayOrBP`
+      --
+      readUseLedgerPeers            :: STM m UseLedgerPeers
+    }
+
 
 -- | Callbacks which are performed to change peer state.
 --
@@ -536,6 +566,27 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
      }
   deriving Show
 
+-- | A node is classified as `LocalRootsOnly` if it is a hidden relay or
+-- a BP, e.g. if it is configured such that it can only have a chance to be
+-- connected to local roots. This is true if the node is configured in one of
+-- two ways:
+--
+-- * `DontUseBootstrapPeers`, `DontUseLedgerPeers` and
+--   `PeerSharingDisabled`; or
+-- * `UseBootstrapPeers`, `DontUseLedgerPeers` and
+--   `PeerSharingDisabled`, but it's not using any bootstrap peers (i.e. it is
+--   synced).
+--
+-- Note that in the second case a node might transition between `LocalRootsOnly`
+-- and `Unrestricted` modes, depending on `LedgerStateJudgement`.
+--
+-- See `Ouroboros.Network.PeerSelection.Governor.readAssociationMode`.
+--
+data AssociationMode =
+     LocalRootsOnly
+   | Unrestricted
+  deriving Show
+
 -----------------------
 -- Debug copy of Peer Selection State
 --
@@ -561,14 +612,18 @@ data DebugPeerSelectionState peeraddr = DebugPeerSelectionState {
        dpssInProgressDemoteHot         :: !(Set peeraddr),
        dpssInProgressDemoteToCold      :: !(Set peeraddr),
        dpssUpstreamyness               :: !(Map peeraddr Int),
-       dpssFetchynessBlocks            :: !(Map peeraddr Int)
+       dpssFetchynessBlocks            :: !(Map peeraddr Int),
+       dpssLedgerStateJudgement        :: !LedgerStateJudgement,
+       dpssAssociationMode             :: !AssociationMode
 } deriving Show
 
 makeDebugPeerSelectionState :: PeerSelectionState peeraddr peerconn
                             -> Map peeraddr Int
                             -> Map peeraddr Int
+                            -> LedgerStateJudgement
+                            -> AssociationMode
                             -> DebugPeerSelectionState peeraddr
-makeDebugPeerSelectionState PeerSelectionState {..} up bp =
+makeDebugPeerSelectionState PeerSelectionState {..} up bp lsj am =
   DebugPeerSelectionState {
       dpssTargets                     = targets
     , dpssLocalRootPeers              = localRootPeers
@@ -590,6 +645,8 @@ makeDebugPeerSelectionState PeerSelectionState {..} up bp =
     , dpssInProgressDemoteToCold      = inProgressDemoteToCold
     , dpssUpstreamyness               = up
     , dpssFetchynessBlocks            = bp
+    , dpssLedgerStateJudgement        = lsj
+    , dpssAssociationMode             = am
     }
 
 -- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
@@ -622,8 +679,7 @@ makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
 --
 toPublicState :: PeerSelectionState peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
-toPublicState PeerSelectionState { knownPeers
-                                 } =
+toPublicState PeerSelectionState { knownPeers } =
    PublicPeerSelectionState {
      availableToShare =
        KnownPeers.getPeerSharingResponsePeers knownPeers
