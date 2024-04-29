@@ -14,6 +14,9 @@
   * New type supports CBOR & JSON for serialisation purposes.
   * Ledger peer snapshot is versioned in case changes need to be made to the
     encoding format in the future.
+* Renamed:
+  * `accBigPoolStake` -> `accumulateBigLedgerStake`
+     and `reRelativeStake` -> `recomputeRelativeStake`
 
 ## 0.7.3.0 -- 2024-06-07
 
