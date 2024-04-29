@@ -21,6 +21,7 @@ import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.IP qualified as IP
 import Data.List (foldl', intercalate, isInfixOf, isPrefixOf, nub, sortOn)
+import Data.List.NonEmpty (NonEmpty(..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -226,12 +227,10 @@ prop_use_snapshot_bigledger_peers seed (ArbLedgerPeersKind ledgerPeersKind) (Moc
 
   where
     getRelayAccessPoint = NonEmpty.head . snd
-    ledgerPeer = (PoolStake . unAccPoolStake $ 1 - bigLedgerPeerQuota, NonEmpty.singleton $ RelayAccessAddress (IPv4 "0.0.0.0") 1000)
-    bigLedgerPeer = (PoolStake . unAccPoolStake $ bigLedgerPeerQuota, NonEmpty.singleton $ RelayAccessAddress (IPv4 "1.1.1.1") 1001) 
+    ledgerPeer = (PoolStake . unAccPoolStake $ 1 - bigLedgerPeerQuota, RelayAccessAddress (IPv4 "0.0.0.0") 1000 :| [])
+    bigLedgerPeer = (PoolStake . unAccPoolStake $ bigLedgerPeerQuota, RelayAccessAddress (IPv4 "1.1.1.1") 1001 :| []) 
     ledgerPeers = [ledgerPeer, bigLedgerPeer]
-    bigLedgerPeer' = (PoolStake 1, NonEmpty.singleton $
-                                              RelayAccessAddress (IPv4 "2.2.2.2")
-                                                                 1234)
+    bigLedgerPeer' = (PoolStake 1, RelayAccessAddress (IPv4 "2.2.2.2") 1234 :| [])
     snapshotBigLedgerPeer = LedgerPeerSnapshot $
       (At snapshotSlot, [(AccPoolStake 1, bigLedgerPeer')])
     genSnapshot = elements [Nothing, Just snapshotBigLedgerPeer]
