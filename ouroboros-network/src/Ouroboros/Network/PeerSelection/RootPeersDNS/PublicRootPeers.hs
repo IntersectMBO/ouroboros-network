@@ -120,7 +120,11 @@ publicRootPeersProvider tracer
                 !domainsIps = [(toPeerAddr ip port, pa)
                               | (RelayAccessAddress ip port, pa) <- Map.assocs domains ]
                 !ips      = Map.fromList (map fst successes) `Map.union` Map.fromList domainsIps
-                !ttl      = ttlForResults (map snd successes)
+                !ttl      = if null lookups
+                               then -- Not having any peers with domains configured is not
+                                    -- a DNS error.
+                                    ttlForResults [60]
+                               else ttlForResults (map snd successes)
             -- If all the lookups failed we'll return an empty set with a minimum
             -- TTL, and the governor will invoke its exponential backoff.
             return (ips, ttl)
