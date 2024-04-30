@@ -14,6 +14,11 @@
 
 * Renamed `fuzzRnd` to `stdGen` in `PeerSelectionState`
 * split `stdGen` in `PeerSelection.Governor.wakeupAction`
+* Update the bigledger retry state in case of an exception
+* Reset public root retry state when transition between `LedgerStateJudgements`.
+* Reduce public root retry timer.
+* Don't classify a config file with publicRoot/bootstrapPeers IP addresss only
+  as a DNS error. 
 
 ## 0.14.0.0 -- 2024-04-04
 
