@@ -23,6 +23,11 @@
   of relying on `threadDelay`.
 * Added `TraceChurnAction` and `TraceChurnTimeout` trace points of `TracePeerSelection`.
 * Added `HasCallStack` to functions which call `pickPeers`.
+* Update the bigledger retry state in case of an exception
+* Reset public root retry state when transition between `LedgerStateJudgements`.
+* Reduce public root retry timer.
+* Don't classify a config file with publicRoot/bootstrapPeers IP addresss only
+  as a DNS error. 
 
 ## 0.14.0.0 -- 2024-04-04
 
