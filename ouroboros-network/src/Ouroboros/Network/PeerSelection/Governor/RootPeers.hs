@@ -87,13 +87,13 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
       -- direction (negative) and schedule the next retry time accordingly.
-      -- We use an exponential backoff strategy. The max retry time of 2^12
-      -- seconds is just over an hour.
+      -- We use an exponential backoff strategy. The max retry time of 2^8
+      -- seconds is about 4 minutes.
       let publicRootBackoffs'      :: Int
           publicRootBackoffs'      = (publicRootBackoffs st `min` 0) - 1
 
           publicRootRetryDiffTime' :: DiffTime
-          publicRootRetryDiffTime' = 2 ^ (abs publicRootBackoffs' `min` 12)
+          publicRootRetryDiffTime' = 2 ^ (abs publicRootBackoffs' `min` 8)
 
           publicRootRetryTime'     :: Time
           publicRootRetryTime'     = addTime publicRootRetryDiffTime' now
@@ -148,8 +148,8 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             -- below target we're going to want to try again at some point.
             -- If we made progress towards our target then we will retry at the
             -- suggested ttl. But if we did not make progress then we want to
-            -- follow an exponential backoff strategy. The max retry time of 2^12
-            -- seconds is just over an hour.
+            -- follow an exponential backoff strategy. The max retry time of 2^8
+            -- seconds is about 4 minutes.
             publicRootBackoffs' :: Int
             publicRootBackoffs'
               | PublicRootPeers.null newPeers = (publicRootBackoffs st `max` 0) + 1
@@ -158,8 +158,8 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers
             publicRootRetryDiffTime :: DiffTime
             publicRootRetryDiffTime
               | publicRootBackoffs' == 0
-                          = ttl
-              | otherwise = 2^(publicRootBackoffs' `min` 12)
+                          = min 60 ttl -- don't let days long dns timeout kreep in here.
+              | otherwise = 2^(publicRootBackoffs' `min` 8)
 
             publicRootRetryTime :: Time
             publicRootRetryTime = addTime publicRootRetryDiffTime now
