@@ -102,9 +102,9 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
                                bigLedgerPeerBackoffs'
                                bigLedgerPeerRetryDiffTime'],
             decisionState = st {
-                              inProgressPublicRootsReq = False,
-                              publicRootBackoffs  = bigLedgerPeerBackoffs',
-                              publicRootRetryTime = bigLedgerPeerRetryTime'
+                              inProgressBigLedgerPeersReq = False,
+                              bigLedgerPeerBackoffs       = bigLedgerPeerBackoffs',
+                              bigLedgerPeerRetryTime      = bigLedgerPeerRetryTime'
                             },
             decisionJobs  = []
           }
