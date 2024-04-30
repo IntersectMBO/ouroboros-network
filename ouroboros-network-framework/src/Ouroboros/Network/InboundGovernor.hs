@@ -123,47 +123,46 @@ withInboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr 
                 -> m x
 withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
                     inboundIdleTimeout connectionManager k = do
-    -- State needs to be a TVar, otherwise, when catching the exception inside
-    -- the loop we do not have access to the most recent version of the state
-    -- and might be truncating transitions.
-    st <- newTVarIO emptyState
-    withAsync
-      (inboundGovernorLoop st
-       `catch`
-         (\(e :: SomeException) -> do
-           state <- readTVarIO st
-           _ <- Map.traverseWithKey
-                 (\connId _ -> do
-                   -- Remove the connection from the state so
-                   -- mkRemoteTransitionTrace can create the correct state
-                   -- transition to Nothing value.
-                   let state' = unregisterConnection connId state
-                   traceWith trTracer
-                             (mkRemoteTransitionTrace connId state state')
-                 )
-                 (igsConnections state)
-           traceWith tracer (TrInboundGovernorError e)
-           throwIO e
-         )
-      )
-      $ \thread -> k thread (mkPublicInboundGovernorState <$> readTVarIO st)
+    var <- newTVarIO (mkPublicInboundGovernorState emptyState)
+    withAsync (inboundGovernorLoop var emptyState
+                `catch`
+               handleError var) $
+      \thread ->
+        k thread (readTVarIO var)
   where
     emptyState :: InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
     emptyState = InboundGovernorState {
-            igsConnections       = Map.empty,
-            igsMatureDuplexPeers = Map.empty,
-            igsFreshDuplexPeers  = OrdPSQ.empty,
-            igsCountersCache     = mempty
-          }
+        igsConnections       = Map.empty,
+        igsMatureDuplexPeers = Map.empty,
+        igsFreshDuplexPeers  = OrdPSQ.empty,
+        igsCountersCache     = mempty
+      }
+
+    -- trace final transition, mostly for testing purposes
+    handleError
+      :: StrictTVar m (PublicInboundGovernorState peerAddr versionData)
+      -> SomeException
+      -> m Void
+    handleError var e = do
+      PublicInboundGovernorState { remoteStateMap } <- readTVarIO var
+      _ <- Map.traverseWithKey
+             (\connId remoteSt ->
+               traceWith trTracer $
+                 TransitionTrace (remoteAddress connId)
+                 Transition { fromState = Just remoteSt,
+                              toState   = Nothing }
+             )
+             remoteStateMap
+      throwIO e
 
     -- The inbound protocol governor recursive loop.  The 'igsConnections' is
     -- updated as we recurse.
     --
     inboundGovernorLoop
-      :: StrictTVar m (InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b)
+      :: StrictTVar m (PublicInboundGovernorState peerAddr versionData)
+      -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
       -> m Void
-    inboundGovernorLoop !st = do
-      state <- readTVarIO st
+    inboundGovernorLoop var !state = do
       mapTraceWithCache TrInboundGovernorCounters
                         tracer
                         (igsCountersCache state)
@@ -522,13 +521,13 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
 
 
       mask_ $ do
-        atomically $ writeTVar st state'
+        atomically $ writeTVar var (mkPublicInboundGovernorState state')
         traceWith debugTracer (DebugInboundGovernor state')
         case mbConnId of
           Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
           Nothing  -> pure ()
 
-      inboundGovernorLoop st
+      inboundGovernorLoop var state'
 
 
 -- | Run a responder mini-protocol.
@@ -585,21 +584,6 @@ maturedPeers time freshPeers =
 --
 -- Trace
 --
-
--- | Remote connection state tracked by inbound protocol governor.
---
-data RemoteSt = RemoteWarmSt
-              | RemoteHotSt
-              | RemoteIdleSt
-              | RemoteColdSt
-  deriving (Eq, Show)
-
-
-mkRemoteSt :: RemoteState m -> RemoteSt
-mkRemoteSt  RemoteWarm    = RemoteWarmSt
-mkRemoteSt  RemoteHot     = RemoteHotSt
-mkRemoteSt (RemoteIdle _) = RemoteIdleSt
-mkRemoteSt  RemoteCold    = RemoteColdSt
 
 
 -- | 'Nothing' represents uninitialised state.

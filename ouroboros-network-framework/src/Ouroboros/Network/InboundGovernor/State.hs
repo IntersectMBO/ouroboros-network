@@ -18,6 +18,8 @@ module Ouroboros.Network.InboundGovernor.State
   , unregisterConnection
   , updateMiniProtocol
   , RemoteState (.., RemoteEstablished)
+  , RemoteSt (..)
+  , mkRemoteSt
   , updateRemoteState
   , mapRemoteState
   , MiniProtocolData (..)
@@ -43,11 +45,20 @@ import Ouroboros.Network.Mux
 
 -- | Public inbound governor state.
 --
-newtype PublicInboundGovernorState peerAddr versionData = PublicInboundGovernorState {
+data PublicInboundGovernorState peerAddr versionData = PublicInboundGovernorState {
       -- | A map of mature inbound duplex connections. These peers are used for
       -- light peer sharing (e.g. bootstrapping peer sharing).
       --
-      inboundDuplexPeers :: Map peerAddr versionData
+      inboundDuplexPeers :: !(Map peerAddr versionData),
+
+      -- | Map of `RemoteSt`.
+      --
+      -- It is lazy on purpose.  It is created from `igsConnections`, so it
+      -- should not point to any thunks that should be GC-ed leading to a memory
+      -- leak.
+      --
+      remoteStateMap     :: Map (ConnectionId peerAddr) RemoteSt
+
     }
 
 
@@ -63,10 +74,11 @@ mkPublicInboundGovernorState
      InboundGovernorState muxMode initatorCtx peerAddr versionData m a b
   -> PublicInboundGovernorState peerAddr versionData
 mkPublicInboundGovernorState
-    InboundGovernorState { igsMatureDuplexPeers }
+    InboundGovernorState { igsConnections, igsMatureDuplexPeers }
     =
     PublicInboundGovernorState {
-      inboundDuplexPeers = igsMatureDuplexPeers
+      inboundDuplexPeers = igsMatureDuplexPeers,
+      remoteStateMap     = Map.map (mkRemoteSt . csRemoteState) igsConnections
     }
 
 -- | 'InboundGovernorState', which consist of pure part, and a mutable part.
@@ -315,3 +327,21 @@ mapRemoteState connId fn state =
           connId
           (igsConnections state)
     }
+
+
+-- | Remote connection state tracked by inbound protocol governor.
+--
+-- This type is used for tracing.
+--
+data RemoteSt = RemoteWarmSt
+              | RemoteHotSt
+              | RemoteIdleSt
+              | RemoteColdSt
+  deriving (Eq, Show)
+
+
+mkRemoteSt :: RemoteState m -> RemoteSt
+mkRemoteSt  RemoteWarm    = RemoteWarmSt
+mkRemoteSt  RemoteHot     = RemoteHotSt
+mkRemoteSt (RemoteIdle _) = RemoteIdleSt
+mkRemoteSt  RemoteCold    = RemoteColdSt
