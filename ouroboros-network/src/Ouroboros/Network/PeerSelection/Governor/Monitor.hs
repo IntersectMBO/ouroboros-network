@@ -604,6 +604,8 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
             , localRootPeers = LocalRootPeers.empty
             , hasOnlyBootstrapPeers = False
             , bootstrapPeersTimeout = Just (addTime governor_BOOTSTRAP_PEERS_TIMEOUT now)
+            , publicRootBackoffs = 0
+            , publicRootRetryTime = now
             })
         YoungEnough -> do
           let nonEstablishedBootstrapPeers =
@@ -612,7 +614,7 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                 EstablishedPeers.toSet establishedPeers
                 Set.\\
                 (inProgressPromoteCold <> inProgressPromoteWarm)
-          return (\_ -> st
+          return (\now -> st
             { ledgerStateJudgement  = lsj
             , hasOnlyBootstrapPeers = False
             , bootstrapPeersTimeout = Nothing
@@ -624,6 +626,8 @@ monitorLedgerStateJudgement PeerSelectionActions{ readLedgerStateJudgement }
                 PublicRootPeers.difference
                   publicRootPeers
                   nonEstablishedBootstrapPeers
+            , publicRootBackoffs = 0
+            , publicRootRetryTime = now
             })
       return $ \now ->
         Decision {
