@@ -2,16 +2,17 @@
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE ParallelListComp    #-}
 
 module Test.Ouroboros.Network.LedgerPeers where
 
 import Codec.CBOR.FlatTerm
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException (..))
+import Control.Monad (forM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -20,8 +21,12 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Data.Bifunctor (Bifunctor (bimap))
+import Data.Foldable (foldrM)
+import Data.Functor ((<&>))
 import Data.IP qualified as IP
-import Data.List (foldl', intercalate, isPrefixOf, nub, sortOn, sort, zip4, zip6)
+import Data.List (foldl', intercalate, isPrefixOf, nub, sort, sortOn, zip4,
+           zip6)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -38,6 +43,7 @@ import Network.DNS (Domain)
 import Cardano.Binary
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.Testing.Data.Script
@@ -46,12 +52,6 @@ import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Printf
-import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
-
-import Data.Functor ( (<&>) )
-import Control.Monad ( forM )
-import Data.Bifunctor ( Bifunctor(bimap) )
-import Data.Foldable ( foldrM )
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"
@@ -190,13 +190,13 @@ prop_use_snapshot_bigledger_peers seed (MockRoots _ dnsMapScript _ _)
                                                       then listOf1 arbitrary
                                                       else resize 10 (listOf1 (resize n arbitrary)))
   let snapshotSlots' = snapshotSlots ++ repeat (last snapshotSlots) -- ^ fill in missing slots removed by nub
-  
+
   (ledgerPeersKinds, ledgerPools) <- unzip <$> forM ledgerSlots
                                                     (\(Positive relativeToSlot) ->
                                                        (,) <$> arbitrary <*>   resize relativeToSlot arbitrary
                                                                              `suchThat`
                                                                                (not . null . getLedgerPools))
-                                                     
+
   snapshotPools :: [Maybe LedgerPools] <-
     forM snapshotSlots (\(Positive relativeToSlot) ->            resize relativeToSlot arbitrary
                                                       `suchThat` maybe True (not . null . getLedgerPools))
@@ -206,7 +206,7 @@ prop_use_snapshot_bigledger_peers seed (MockRoots _ dnsMapScript _ _)
                                         LedgerPeerSnapshot (At (fromIntegral slot), Map.toList $ accPoolStake pools)
                             | snap <- snapshotPools
                             | (Positive slot) <- snapshotSlots]
-                            
+
       (rng1, rng2) = split . mkStdGen . fromIntegral $ seed
       sim :: IOSim s [(NumberOfPeers, Set RelayAccessPoint)]
       sim = do
@@ -246,7 +246,7 @@ prop_use_snapshot_bigledger_peers seed (MockRoots _ dnsMapScript _ _)
                       Just (peers, _)  -> (numRequested, Set.fromList [ RelayAccessAddress ip port
                                                                       | Just (ip, port) <-     IP.fromSockAddr
                                                                                            <$> Set.toList peers]))
-              
+
   return . ioProperty $ do
     tr' <- evaluateTrace (runSimTrace sim)
     case tr' of
@@ -258,7 +258,7 @@ prop_use_snapshot_bigledger_peers seed (MockRoots _ dnsMapScript _ _)
         return $ either (`counterexample` False) id evalChecks
         where
           evalChecks = foldrM step (property True) (zip6 results snapshotSlots' ledgerSlots ledgerPeersKinds ledgerPools snapshotPools')
-          
+
           step ((numRequested, peers), ss, ls, ArbLedgerPeersKind lpk, lpool, spool) pass =
             let recoverSnapshotSlotFromMaybe = maybe (-1) getPositive (ss <$ spool)
                 snapshotSet spools = Set.fromList (concatMap (NonEmpty.toList . snd) $ getLedgerPools spools)
@@ -473,7 +473,7 @@ prop_recomputeRelativeStake (LedgerPools lps) = property $ do
                              relayAccessPointsUnchangedNonNegativeStake
           .&&. accStake === 1
   where
-    genLedgerPeersKind = elements [AllLedgerPeers, BigLedgerPeers]      
+    genLedgerPeersKind = elements [AllLedgerPeers, BigLedgerPeers]
     reStake lpk = recomputeRelativeStake lpk lps
     -- compare relay access points in both lists for equality
     -- where we assume that recomputerelativestake doesn't change
