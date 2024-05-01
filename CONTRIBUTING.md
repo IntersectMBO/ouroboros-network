@@ -374,7 +374,7 @@ package, we should release it to CHaP instead (see the
 for more).
 
 If you do add a temporary `source-repository-package` stanza, you need to
-provide a `--sha256` comment in `cabal.project` so that Nix knows the hash
+provide a `--sha256: <HASH>` comment in `cabal.project` so that Nix knows the hash
 of the content. There are two relatively straightforward ways to do this:
 
 1. The TOFU approach: put in the wrong hash and then Nix will tell you the correct one, which you can copy in.
