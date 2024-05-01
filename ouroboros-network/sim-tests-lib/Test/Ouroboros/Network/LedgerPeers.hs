@@ -472,6 +472,8 @@ prop_recomputeRelativeStake (LedgerPools lps) = property $ do
   return $     counterexample "recomputeRelativeStake: relays modified or negative pool stake calculated"
                              relayAccessPointsUnchangedNonNegativeStake
           .&&. accStake === 1
+          .&&. counterexample "violates idempotency"
+                              ((recomputeRelativeStake BigLedgerPeers . recomputeRelativeStake BigLedgerPeers $ lps) == recomputeRelativeStake BigLedgerPeers lps)
   where
     genLedgerPeersKind = elements [AllLedgerPeers, BigLedgerPeers]
     reStake lpk = recomputeRelativeStake lpk lps
