@@ -270,20 +270,20 @@ ledgerPeersThread PeerActionsDNS {
                    case (consensusSlotNo, consensusPeers, peerSnapshot) of
                      (At t, LedgerPeers _ lp, Just (LedgerPeerSnapshot (At t', sp {- snapshot peers -})))
                        | t' > t -> do traceWith wlpTracer UsingBigLedgerPeerSnapshot
-                                      -- we cache the peers from the snapshot to avoid any recomputation
+                                      -- we cache the peers from the snapshot to avoid unnecessary work
                                       if t' == lastSnapshotSlot
-                                      then return (peerMap, bigPeerMap, t')
-                                      else return (accPoolStake (map snd sp), Map.fromAscList sp, t')
+                                        then return (peerMap, bigPeerMap, t')
+                                        else return (accPoolStake (map snd sp), Map.fromAscList sp, t')
                        | otherwise -> return (accPoolStake lp, accBigPoolStakeMap lp, lastSnapshotSlot)
 
-                     (_, LedgerPeers _ lp, Nothing) -> return (accPoolStake lp, accBigPoolStakeMap lp, lastSnapshotSlot)
+                     (_, LedgerPeers _ lp, Nothing) -> return (accPoolStake lp, accBigPoolStakeMap lp, 0)
 
                      (_, _, Just (LedgerPeerSnapshot (At t', sp)))
                        | After slot <- ula, t' >= slot -> do
                          traceWith wlpTracer UsingBigLedgerPeerSnapshot
                          if t' == lastSnapshotSlot
-                         then return (peerMap, bigPeerMap, t')
-                         else return (accPoolStake (map snd sp), Map.fromAscList sp, t')
+                           then return (peerMap, bigPeerMap, t')
+                           else return (accPoolStake (map snd sp), Map.fromAscList sp, t')
 
                      _otherwise -> return (Map.empty, Map.empty, lastSnapshotSlot)
 
