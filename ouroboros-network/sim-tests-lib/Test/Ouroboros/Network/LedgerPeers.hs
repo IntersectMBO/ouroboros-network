@@ -278,8 +278,7 @@ prop_use_snapshot_bigledger_peers seed (MockRoots _ dnsMapScript _ _)
                               "Type requested: " ++ show lpk,
                               "Ledger slot: " ++ show ls, "Snapshot slot? " ++ show (ss <$ spool),
                               show peers, "========================", "violates Set.isSubsetOf:",
-                              "========================", show source,
-                              show $ Set.fromList (concatMap (NonEmpty.toList . snd) $ getLedgerPools lpool)]
+                              "========================", show source]
 
 
 -- | A pool with 100% stake should always be picked.
