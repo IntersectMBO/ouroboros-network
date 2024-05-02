@@ -686,10 +686,20 @@ tooBusyForTooLong trace0 =
     -- For normal governor events we check if the length of the busy time span
     -- is now too big (adjusted for any perturbation credits). If so we've
     -- found a violation.
-    busy !busyStartTime !credits ((busyEndTime, _dt, GovernorEvent{}) : _trace')
-      | busySpanLength > credits = Left (busyEndTime, credits)
+    busy !busyStartTime !credits ((busyEndTime, _dt, GovernorEvent{}) : trace')
+      | busySpanLength > endCredits credits trace'=
+        Left (busyEndTime, endCredits credits trace')
       where
         busySpanLength = diffTime busyEndTime busyStartTime
+
+        -- If the governor wakes up due to an action that gives us new credits
+        -- we take those credits into account before failing.
+        endCredits !c [] = c
+        endCredits !c ((t, _, MockEnvEvent e) : tr) | t == busyEndTime =
+          endCredits (c + fromIntegral (envEventCredits e)) tr
+        endCredits !c ((t, _, _) : tr) | t == busyEndTime =
+          endCredits c tr
+        endCredits !c _ = c
 
     -- We also look at how long it is to the next event to see if this is the
     -- last event in the busy span, and if so we return to idle.
