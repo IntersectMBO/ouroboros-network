@@ -116,6 +116,8 @@ data Event (muxMode :: MuxMode) initiatorCtx peerAddr versionData m a b
     | MaturedDuplexPeers   !(Map peerAddr versionData)         -- ^ newly matured duplex peers
                            !(OrdPSQ peerAddr Time versionData) -- ^ queue of fresh duplex peers
 
+    | InactivityTimeout
+
 
 --
 -- STM transactions which detect 'Event's (signals)
