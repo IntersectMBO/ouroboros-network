@@ -53,9 +53,11 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 belowTarget
     :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
     => PeerSelectionActions peeraddr peerconn m
+    -> Time -- ^ blocked at
     -> Map peeraddr PeerSharing
     -> MkGuardedDecision peeraddr peerconn m
 belowTarget actions@PeerSelectionActions { peerSharing }
+                    blockedAt
                     inboundPeers
                     policy@PeerSelectionPolicy {
                       policyMaxInProgressPeerShareReqs,
@@ -69,6 +71,7 @@ belowTarget actions@PeerSelectionActions { peerSharing }
                       establishedPeers,
                       inProgressPeerShareReqs,
                       inProgressDemoteToCold,
+                      inboundPeersRetryTime,
                       targets = PeerSelectionTargets {
                                   targetNumberOfKnownPeers
                                 },
@@ -90,6 +93,8 @@ belowTarget actions@PeerSelectionActions { peerSharing }
     -- No inbound peers should be used when the node is using bootstrap peers.
   , not (requiresBootstrapPeers bootstrapPeersFlag ledgerStateJudgement)
 
+  , blockedAt >= inboundPeersRetryTime
+
     -- Use inbound peers either if it won the coin flip or if there are no
     -- available peers to do peer sharing.
   , useInboundPeers || Set.null availableForPeerShare
@@ -105,7 +110,7 @@ belowTarget actions@PeerSelectionActions { peerSharing }
                   availablePeers
                   (Policies.maxInboundPeers `min` (targetNumberOfKnownPeers - numKnownPeers))
       let selectedMap = inboundPeers `Map.restrictKeys` selected
-      return $ \_now -> Decision {
+      return $ \now -> Decision {
           decisionTrace = [TracePickInboundPeers
                             targetNumberOfKnownPeers
                             numKnownPeers
@@ -116,7 +121,9 @@ belowTarget actions@PeerSelectionActions { peerSharing }
                                           $ KnownPeers.insert
                                               (Map.map (\ps -> (Just ps, Just DoAdvertisePeer)) selectedMap)
                                               knownPeers,
+                               inboundPeersRetryTime = Policies.inboundPeersRetryDelay `addTime` now,
                                stdGen = stdGen'
+
                              },
           decisionJobs = []
         }
