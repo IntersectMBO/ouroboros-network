@@ -73,6 +73,15 @@ peerMetricsConfiguration = PeerMetricsConfiguration {
   }
 
 
+-- | Minimal delay between adding inbound peers to known set of outbound
+-- governor.
+--
+-- It is set to 60s, the same as the peer sharing request timeout.
+--
+inboundPeersRetryDelay :: DiffTime
+inboundPeersRetryDelay = 60
+
+
 -- | Maximal number of light peers included at once.
 --
 maxInboundPeers :: Int
