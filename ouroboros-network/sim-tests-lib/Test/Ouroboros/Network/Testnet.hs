@@ -3293,7 +3293,14 @@ unit_peer_sharing =
         sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                   script
                                   iosimTracer
-        trace = take 125000
+        -- We need roughly 1200 because:
+        -- * first peer sharing request will be issued after
+        --   `policyPeerSharAcitvationDelay = 300`
+        -- * this request will not bring any new peers, because non of the peers
+        --    are yet mature
+        -- * inbound connections become mature at 900s (15 mins)
+        -- * next peer share request happens after 900s, e.g. around 1200s.
+        trace = takeWhile (\(t,_,_,_) -> t < Time 1250)
               . traceEvents
               $ runSimTrace sim
 
@@ -3312,11 +3319,8 @@ unit_peer_sharing =
         events' =
                  Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
                . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
+                       -> (WithName name (WithTime t b)))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
