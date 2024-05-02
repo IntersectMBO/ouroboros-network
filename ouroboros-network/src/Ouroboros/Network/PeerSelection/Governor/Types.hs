@@ -463,7 +463,11 @@ data PeerSelectionState peeraddr peerconn = PeerSelectionState {
 
        -- | Has the governor fully reset its state
        --
-       bootstrapPeersTimeout       :: !(Maybe Time)
+       bootstrapPeersTimeout       :: !(Maybe Time),
+
+       -- | Time to query of inbound peers time.
+       --
+       inboundPeersRetryTime       :: !Time
 
 
 --     TODO: need something like this to distinguish between lots of bad peers
@@ -643,7 +647,8 @@ emptyPeerSelectionState rng localRoots =
       ledgerStateJudgement        = TooOld,
       bootstrapPeersFlag          = DontUseBootstrapPeers,
       hasOnlyBootstrapPeers       = False,
-      bootstrapPeersTimeout       = Nothing
+      bootstrapPeersTimeout       = Nothing,
+      inboundPeersRetryTime       = Time 0
     }
 
 

@@ -617,7 +617,8 @@ peerSelectionGovernorLoop tracer
 
       -- All the alternative non-blocking internal decisions.
       <> RootPeers.belowTarget        actions blockedAt           st
-      <> KnownPeers.belowTarget       actions inboundPeers policy st
+      <> KnownPeers.belowTarget       actions blockedAt
+                                              inboundPeers policy st
       <> KnownPeers.aboveTarget                            policy st
       <> EstablishedPeers.belowTarget actions              policy st
       <> EstablishedPeers.aboveTarget actions              policy st
