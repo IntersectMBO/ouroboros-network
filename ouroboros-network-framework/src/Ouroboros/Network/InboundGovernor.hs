@@ -47,6 +47,8 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
 import Data.OrdPSQ qualified as OrdPSQ
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Void (Void)
 
 import Network.Mux qualified as Mux
@@ -69,6 +71,13 @@ import Ouroboros.Network.Server.RateLimiting
 --
 inboundMaturePeerDelay :: DiffTime
 inboundMaturePeerDelay = 15 * 60
+
+
+-- | Every ~30s we wake up the inbound governor.  This is to give a chance to
+-- mark some of the inbound connections as mature.
+--
+inactionTimeout :: DiffTime
+inactionTimeout = 31.415927
 
 
 -- | Run the server, which consists of the following components:
@@ -159,10 +168,20 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
         <$> igsConnections state
 
       time <- getMonotonicTime
+      inactivityVar <- registerDelay inactionTimeout
 
       event
         <- atomically $ runFirstToFinish $
-               Map.foldMapWithKey
+               FirstToFinish  (
+                 -- mark connections as mature
+                 case OrdPSQ.atMostView
+                       ((-inboundMaturePeerDelay) `addTime` time)
+                       (igsFreshDuplexPeers state) of
+                   ([], _)   -> retry
+                   (as, pq') -> let m = Map.fromList ((\(addr, _p, v) -> (addr, v)) <$> as)
+                                in pure $ MaturedDuplexPeers m pq'
+               )
+            <> Map.foldMapWithKey
                  (    firstMuxToFinish
                    <> firstMiniProtocolToFinish
                    <> firstPeerPromotedToWarm
@@ -177,14 +196,10 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
             <> FirstToFinish (
                  NewConnection <$> InfoChannel.readMessage inboundInfoChannel
                )
-            <> FirstToFinish  (
-                 -- move connections from
-                 case OrdPSQ.atMostView
-                       ((-inboundMaturePeerDelay) `addTime` time)
-                       (igsFreshDuplexPeers state) of
-                   ([], _)   -> retry
-                   (as, pq') -> let m = Map.fromList ((\(addr, _p, v) -> (addr, v)) <$> as)
-                                in pure $ MaturedDuplexPeers m pq'
+            <> FirstToFinish (
+                  -- spin the inbound governor loop; it will re-run with new
+                  -- time, which allows to make some peers mature.
+                  LazySTM.readTVar inactivityVar >>= check >> pure InactivityTimeout
                )
       (mbConnId, state') <- case event of
         NewConnection
@@ -491,10 +506,16 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
 
                   return (Just connId, state')
 
-        MaturedDuplexPeers newMatureDuplexPeers igsFreshDuplexPeers ->
+        MaturedDuplexPeers newMatureDuplexPeers igsFreshDuplexPeers -> do
+          traceWith tracer $ TrMaturedConnections (Map.keysSet newMatureDuplexPeers)
+                                                  (Set.fromList $ OrdPSQ.keys  igsFreshDuplexPeers)
           pure (Nothing, state { igsMatureDuplexPeers = newMatureDuplexPeers
                                                      <> igsMatureDuplexPeers state,
                                  igsFreshDuplexPeers })
+
+        InactivityTimeout -> do
+          traceWith tracer $ TrInactive ((\(a,b,_) -> (a,b)) <$> OrdPSQ.toList (igsFreshDuplexPeers state))
+          pure (Nothing, state)
 
 
       mask_ $ do
@@ -616,6 +637,8 @@ data InboundGovernorTrace peerAddr
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.
     | TrInboundGovernorError         !SomeException
+    | TrMaturedConnections           !(Set peerAddr) !(Set peerAddr)
+    | TrInactive                     ![(peerAddr, Time)]
   deriving Show
 
 
