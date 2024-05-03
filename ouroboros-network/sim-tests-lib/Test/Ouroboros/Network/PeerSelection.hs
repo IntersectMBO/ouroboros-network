@@ -3311,6 +3311,10 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
         govHasOnlyBootstrapPeers =
           selectGovState Governor.hasOnlyBootstrapPeers events
 
+        govTargets :: Signal PeerSelectionTargets
+        govTargets =
+          selectGovState Governor.targets events
+
         isInCleanState :: Signal Bool
         isInCleanState =
           fmap (not . Set.null)
@@ -3333,9 +3337,11 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
              )
 
      in signalProperty 20 show
-          (\(b, (kp, tp)) -> (b && Set.null (Set.difference kp tp)) || not b)
-          ((,) <$> isInCleanState
-               <*> govKnownAndTrustedPeers
+          (\(b, (kp, tp), t) -> (b && (Set.null (Set.difference kp tp) || targetNumberOfKnownPeers t <= 0))
+                             || not b)
+          ((,,) <$> isInCleanState
+                <*> govKnownAndTrustedPeers
+                <*> govTargets
           )
 
 -- | This test checks that if the node is not in a sensitive state it will not
