@@ -686,10 +686,20 @@ tooBusyForTooLong trace0 =
     -- For normal governor events we check if the length of the busy time span
     -- is now too big (adjusted for any perturbation credits). If so we've
     -- found a violation.
-    busy !busyStartTime !credits ((busyEndTime, _dt, GovernorEvent{}) : _trace')
-      | busySpanLength > credits = Left (busyEndTime, credits)
+    busy !busyStartTime !credits ((busyEndTime, _dt, GovernorEvent{}) : trace')
+      | busySpanLength > endCredits credits trace'=
+        Left (busyEndTime, endCredits credits trace')
       where
         busySpanLength = diffTime busyEndTime busyStartTime
+
+        -- If the governor wakes up due to an action that gives us new credits
+        -- we take those credits into account before failing.
+        endCredits !c [] = c
+        endCredits !c ((t, _, MockEnvEvent e) : tr) | t == busyEndTime =
+          endCredits (c + fromIntegral (envEventCredits e)) tr
+        endCredits !c ((t, _, _) : tr) | t == busyEndTime =
+          endCredits c tr
+        endCredits !c _ = c
 
     -- We also look at how long it is to the next event to see if this is the
     -- last event in the busy span, and if so we return to idle.
@@ -3301,6 +3311,10 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
         govHasOnlyBootstrapPeers =
           selectGovState Governor.hasOnlyBootstrapPeers events
 
+        govTargets :: Signal PeerSelectionTargets
+        govTargets =
+          selectGovState Governor.targets events
+
         isInCleanState :: Signal Bool
         isInCleanState =
           fmap (not . Set.null)
@@ -3323,9 +3337,11 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
              )
 
      in signalProperty 20 show
-          (\(b, (kp, tp)) -> (b && Set.null (Set.difference kp tp)) || not b)
-          ((,) <$> isInCleanState
-               <*> govKnownAndTrustedPeers
+          (\(b, (kp, tp), t) -> (b && (Set.null (Set.difference kp tp) || targetNumberOfKnownPeers t <= 0))
+                             || not b)
+          ((,,) <$> isInCleanState
+                <*> govKnownAndTrustedPeers
+                <*> govTargets
           )
 
 -- | This test checks that if the node is not in a sensitive state it will not
