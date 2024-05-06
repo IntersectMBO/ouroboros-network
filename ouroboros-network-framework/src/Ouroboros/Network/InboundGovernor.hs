@@ -11,6 +11,7 @@
 
 -- 'runResponder' is using a redundant constraint.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 
 -- | Server implementation based on 'ConnectionManager'
 --
@@ -28,6 +29,8 @@ module Ouroboros.Network.InboundGovernor
     -- * Re-exports
   , Transition' (..)
   , TransitionTrace' (..)
+    -- * API's exported for testing purposes
+  , maturedPeers
   ) where
 
 import Control.Applicative (Alternative)
@@ -41,11 +44,13 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
+import Data.Bifunctor (first)
 import Data.ByteString.Lazy (ByteString)
 import Data.Cache
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
+import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as OrdPSQ
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -174,12 +179,10 @@ withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
         <- atomically $ runFirstToFinish $
                FirstToFinish  (
                  -- mark connections as mature
-                 case OrdPSQ.atMostView
-                       ((-inboundMaturePeerDelay) `addTime` time)
-                       (igsFreshDuplexPeers state) of
-                   ([], _)   -> retry
-                   (as, pq') -> let m = Map.fromList ((\(addr, _p, v) -> (addr, v)) <$> as)
-                                in pure $ MaturedDuplexPeers m pq'
+                 case maturedPeers time (igsFreshDuplexPeers state) of
+                   (as, _)     | Map.null as
+                               -> retry
+                   (as, fresh) -> pure $ MaturedDuplexPeers as fresh
                )
             <> Map.foldMapWithKey
                  (    firstMuxToFinish
@@ -568,6 +571,16 @@ runResponder mux
             Mux.ResponderDirection
             startStrategy
             (runMiniProtocolCb responder responderContext)
+
+
+maturedPeers :: Ord peerAddr
+             => Time
+             -> OrdPSQ peerAddr Time versionData
+             -> (Map peerAddr versionData, OrdPSQ peerAddr Time versionData)
+maturedPeers time freshPeers =
+      first (Map.fromList . map (\(addr, _p, v) -> (addr, v)))
+    $ OrdPSQ.atMostView ((-inboundMaturePeerDelay) `addTime` time)
+                           freshPeers
 
 --
 -- Trace
