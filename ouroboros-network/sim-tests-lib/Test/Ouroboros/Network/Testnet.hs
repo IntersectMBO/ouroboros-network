@@ -112,96 +112,146 @@ tests =
     ]
   , testGroup "IOSimPOR"
     [ nightlyTest $ testProperty "no failure"
-                      (testWithIOSimPOR prop_diffusion_nofail 1000)
+                      (testWithIOSimPOR prop_diffusion_nofail 10000)
+    , nightlyTest $ testProperty "no livelock"
+                      (testWithIOSimPOR prop_diffusion_nolivelock 10000)
+    , nightlyTest $ testProperty "dns can recover from fails"
+                      (testWithIOSimPOR prop_diffusion_dns_can_recover 10000)
+    , nightlyTest $ testProperty "target established public"
+                      (testWithIOSimPOR prop_diffusion_target_established_public 10000)
+    , nightlyTest $ testProperty "target active public"
+                      (testWithIOSimPOR prop_diffusion_target_active_public 10000)
+    , nightlyTest $ testProperty "target established local"
+                      (testWithIOSimPOR prop_diffusion_target_established_local 10000)
+    , nightlyTest $ testProperty "target active local"
+                      (testWithIOSimPOR prop_diffusion_target_active_local 10000)
+    , nightlyTest $ testProperty "target active root"
+                      (testWithIOSimPOR prop_diffusion_target_active_root 10000)
+    , nightlyTest $ testProperty "target active below"
+                      (testWithIOSimPOR prop_diffusion_target_active_below 10000)
+    , nightlyTest $ testProperty "target active local below"
+                      (testWithIOSimPOR prop_diffusion_target_active_local_below 10000)
+    , nightlyTest $ testProperty "async demotion"
+                      (testWithIOSimPOR prop_diffusion_async_demotions 10000)
+    , nightlyTest $ testProperty "target active local above"
+                      (testWithIOSimPOR prop_diffusion_target_active_local_above 10000)
+    , nightlyTest $ testProperty "connection manager valid transitions"
+                      (testWithIOSimPOR prop_diffusion_cm_valid_transitions 10000)
+    , nightlyTest $ testProperty "connection manager valid transition order"
+                      (testWithIOSimPOR prop_diffusion_cm_valid_transition_order 10000)
+    , nightlyTest $ testProperty "connection manager no dodgy traces"
+                      (testWithIOSimPOR prop_diffusion_cm_no_dodgy_traces 10000)
+    , nightlyTest $ testProperty "peer selection actions no dodgy traces"
+                      (testWithIOSimPOR prop_diffusion_peer_selection_actions_no_dodgy_traces 10000)
+    , nightlyTest $ testProperty "inbound governor valid transitions"
+                      (testWithIOSimPOR prop_diffusion_ig_valid_transitions 10000)
+    , nightlyTest $ testProperty "inbound governor valid transition order"
+                      (testWithIOSimPOR prop_diffusion_ig_valid_transition_order 10000)
+    , nightlyTest $ testProperty "cm & ig timeouts enforced"
+                      (testWithIOSimPOR prop_diffusion_timeouts_enforced 10000)
+    , nightlyTest $ testProperty "any Cold async demotion"
+                      (testWithIOSimPOR prop_track_coolingToCold_demotions 10000)
+    , nightlyTest $ testProperty "only bootstrap peers in fallback state"
+                      (testWithIOSimPOR prop_only_bootstrap_peers_in_fallback_state 10000)
+    , nightlyTest $ testProperty "no non trustable peers before caught up state"
+                      (testWithIOSimPOR prop_no_non_trustable_peers_before_caught_up_state 10000)
+    , testGroup "Churn"
+      [ nightlyTest $ testProperty "no timeouts"
+                        (testWithIOSimPOR prop_churn_notimeouts 10000)
+      , nightlyTest $ testProperty "steps"
+                        (testWithIOSimPOR prop_churn_steps 10000)
+      ]
     ]
-  , testProperty "no failure"
-                 (testWithIOSim prop_diffusion_nofail 125000)
-  , testProperty "no livelock"
-                 prop_diffusion_nolivelock
-  , testProperty "dns can recover from fails"
-                 prop_diffusion_dns_can_recover
-  , testProperty "unit #4191"
-                 unit_4191
-  , testProperty "target established public"
-                 prop_diffusion_target_established_public
-  , testProperty "target active public"
-                 prop_diffusion_target_active_public
-  , testProperty "target established local"
-                 prop_diffusion_target_established_local
-  , testProperty "unit reconnect"
-                 prop_unit_reconnect
-  , testProperty "target active local"
-                 prop_diffusion_target_active_local
-  , testProperty "target active root"
-                 prop_diffusion_target_active_root
-  , testProperty "target active below"
-                 prop_diffusion_target_active_below
-  , testProperty "target active local below"
-                 prop_diffusion_target_active_local_below
-  , testProperty "async demotion"
-                 prop_diffusion_async_demotions
-  , testProperty "async demotion (unit)"
-                 unit_diffusion_async_demotions
-  , testProperty "target active local above"
-                 prop_diffusion_target_active_local_above
-  , testProperty "connection manager valid transitions"
-                 prop_diffusion_cm_valid_transitions
-  , testProperty "connection manager valid transition order"
-                 prop_diffusion_cm_valid_transition_order
-  , testProperty "unit 4258"
-                 prop_unit_4258
-  , testProperty "connection manager no dodgy traces"
-                 prop_diffusion_cm_no_dodgy_traces
-  , testProperty "peer selection actions no dodgy traces"
-                 prop_diffusion_peer_selection_actions_no_dodgy_traces
-  , testProperty "inbound governor valid transitions"
-                 prop_diffusion_ig_valid_transitions
-  , testProperty "inbound governor valid transition order"
-                 prop_diffusion_ig_valid_transition_order
-  , testProperty "cm & ig timeouts enforced"
-                 prop_diffusion_timeouts_enforced
-  , testProperty "any Cold async demotion"
-                 prop_track_coolingToCold_demotions
-  , testProperty "unit #4177" unit_4177
-  , testProperty "only bootstrap peers in fallback state"
-                 prop_only_bootstrap_peers_in_fallback_state
-  , testProperty "no non trustable peers before caught up state"
-                 prop_no_non_trustable_peers_before_caught_up_state
-  , testGroup "Peer Sharing"
-    [ testProperty "share a peer"
-                   unit_peer_sharing
-    ]
-  , testGroup "Churn"
-    [ testProperty "no timeouts"
-                   prop_churn_notimeouts
-    , testProperty "steps"
-                   prop_churn_steps
-    ]
-  , testGroup "coverage"
-    [ testProperty "server trace coverage"
-                   prop_server_trace_coverage
-    , testProperty "peer selection actions trace coverage"
-                   prop_peer_selection_action_trace_coverage
-    , testProperty "peer selection trace coverage"
-                   prop_peer_selection_trace_coverage
-    , testProperty "connection manager trace coverage"
-                   prop_connection_manager_trace_coverage
-    , testProperty "connection manager transitions coverage"
-                   prop_connection_manager_transitions_coverage
-    , testProperty "inbound governor trace coverage"
-                   prop_inbound_governor_trace_coverage
-    , testProperty "inbound governor transitions coverage"
-                   prop_inbound_governor_transitions_coverage
-    , testProperty "fetch client state trace coverage"
-                   prop_fetch_client_state_trace_coverage
-    ]
-  , testGroup "hot diffusion script"
-    [ testProperty "target active public"
-                   prop_hot_diffusion_target_active_public
+  , testGroup "IOSim"
+    [ testProperty "no failure"
+                   (testWithIOSim prop_diffusion_nofail 125000)
+    , testProperty "no livelock"
+                   (testWithIOSim prop_diffusion_nolivelock 125000)
+    , testProperty "dns can recover from fails"
+                   (testWithIOSim prop_diffusion_dns_can_recover 125000)
+    , testProperty "unit #4191"
+                   unit_4191
+    , testProperty "target established public"
+                   (testWithIOSim prop_diffusion_target_established_public 125000)
+    , testProperty "target active public"
+                   (testWithIOSim prop_diffusion_target_active_public 125000)
+    , testProperty "target established local"
+                   (testWithIOSim prop_diffusion_target_established_local 125000)
+    , testProperty "unit reconnect"
+                   prop_unit_reconnect
     , testProperty "target active local"
-                   prop_hot_diffusion_target_active_local
+                   (testWithIOSim prop_diffusion_target_active_local 125000)
     , testProperty "target active root"
-                   prop_hot_diffusion_target_active_root
+                   (testWithIOSim prop_diffusion_target_active_root 125000)
+    , testProperty "target active below"
+                   (testWithIOSim prop_diffusion_target_active_below 125000)
+    , testProperty "target active local below"
+                   (testWithIOSim prop_diffusion_target_active_local_below 250000)
+    , testProperty "async demotion"
+                   (testWithIOSim prop_diffusion_async_demotions 125000)
+    , testProperty "async demotion (unit)"
+                   unit_diffusion_async_demotions
+    , testProperty "target active local above"
+                   (testWithIOSim prop_diffusion_target_active_local_above 125000)
+    , testProperty "connection manager valid transitions"
+                   (testWithIOSim prop_diffusion_cm_valid_transitions 125000)
+    , testProperty "connection manager valid transition order"
+                   (testWithIOSim prop_diffusion_cm_valid_transition_order 125000)
+    , testProperty "unit 4258"
+                   prop_unit_4258
+    , testProperty "connection manager no dodgy traces"
+                   (testWithIOSim prop_diffusion_cm_no_dodgy_traces 125000)
+    , testProperty "peer selection actions no dodgy traces"
+                   (testWithIOSim prop_diffusion_peer_selection_actions_no_dodgy_traces 125000)
+    , testProperty "inbound governor valid transitions"
+                   (testWithIOSim prop_diffusion_ig_valid_transitions 125000)
+    , testProperty "inbound governor valid transition order"
+                   (testWithIOSim prop_diffusion_ig_valid_transition_order 125000)
+    , testProperty "cm & ig timeouts enforced"
+                   (testWithIOSim prop_diffusion_timeouts_enforced 125000)
+    , testProperty "any Cold async demotion"
+                   (testWithIOSim prop_track_coolingToCold_demotions 125000)
+    , testProperty "unit #4177" unit_4177
+    , testProperty "only bootstrap peers in fallback state"
+                   (testWithIOSim prop_only_bootstrap_peers_in_fallback_state 125000)
+    , testProperty "no non trustable peers before caught up state"
+                   (testWithIOSim prop_no_non_trustable_peers_before_caught_up_state 125000)
+    , testGroup "Peer Sharing"
+      [ testProperty "share a peer"
+                     unit_peer_sharing
+      ]
+    , testGroup "Churn"
+      [ testProperty "no timeouts"
+                     (testWithIOSim prop_churn_notimeouts 125000)
+      , testProperty "steps"
+                     (testWithIOSim prop_churn_steps 5000)
+      ]
+    , testGroup "coverage"
+      [ testProperty "server trace coverage"
+                     prop_server_trace_coverage
+      , testProperty "peer selection actions trace coverage"
+                     prop_peer_selection_action_trace_coverage
+      , testProperty "peer selection trace coverage"
+                     prop_peer_selection_trace_coverage
+      , testProperty "connection manager trace coverage"
+                     prop_connection_manager_trace_coverage
+      , testProperty "connection manager transitions coverage"
+                     prop_connection_manager_transitions_coverage
+      , testProperty "inbound governor trace coverage"
+                     prop_inbound_governor_trace_coverage
+      , testProperty "inbound governor transitions coverage"
+                     prop_inbound_governor_transitions_coverage
+      , testProperty "fetch client state trace coverage"
+                     prop_fetch_client_state_trace_coverage
+      ]
+    , testGroup "hot diffusion script"
+      [ testProperty "target active public"
+                     prop_hot_diffusion_target_active_public
+      , testProperty "target active local"
+                     prop_hot_diffusion_target_active_local
+      , testProperty "target active root"
+                     prop_hot_diffusion_target_active_root
+      ]
     ]
   ]
 
@@ -462,16 +512,11 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
 
 -- | Same as PeerSelection test 'prop_governor_only_bootstrap_peers_in_fallback_state'
 --
-prop_only_bootstrap_peers_in_fallback_state :: AbsBearerInfo
-                                            -> DiffusionScript
+prop_only_bootstrap_peers_in_fallback_state :: SimTrace Void
+                                            -> Int
                                             -> Property
-prop_only_bootstrap_peers_in_fallback_state defaultBearerInfo diffScript =
-  let sim :: forall s . IOSim s Void
-      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                diffScript
-                                iosimTracer
-
-      events :: [Events DiffusionTestTrace]
+prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
+  let events :: [Events DiffusionTestTrace]
       events = fmap ( Signal.eventsFromList
                     . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                     )
@@ -488,9 +533,9 @@ prop_only_bootstrap_peers_in_fallback_state defaultBearerInfo diffScript =
                 @NtNAddr
              . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
+             . take traceNumber
              . traceEvents
-             $ runSimTrace sim
+             $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -577,16 +622,11 @@ prop_only_bootstrap_peers_in_fallback_state defaultBearerInfo diffScript =
 
 -- | Same as PeerSelection test 'prop_governor_no_non_trustable_peers_before_caught_up_state'
 --
-prop_no_non_trustable_peers_before_caught_up_state :: AbsBearerInfo
-                                                   -> DiffusionScript
+prop_no_non_trustable_peers_before_caught_up_state :: SimTrace Void
+                                                   -> Int
                                                    -> Property
-prop_no_non_trustable_peers_before_caught_up_state defaultBearerInfo diffScript =
-  let sim :: forall s . IOSim s Void
-      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                diffScript
-                                iosimTracer
-
-      events :: [Events DiffusionTestTrace]
+prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
+  let events :: [Events DiffusionTestTrace]
       events = fmap ( Signal.eventsFromList
                     . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                     )
@@ -603,9 +643,9 @@ prop_no_non_trustable_peers_before_caught_up_state defaultBearerInfo diffScript 
                 @NtNAddr
              . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
+             . take traceNumber
              . traceEvents
-             $ runSimTrace sim
+             $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -775,17 +815,11 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
 -- Then just restart relay B.
 -- The connection will never be re-established again.
 --
-prop_track_coolingToCold_demotions :: AbsBearerInfo
-                                   -> DiffusionScript
+prop_track_coolingToCold_demotions :: SimTrace Void
+                                   -> Int
                                    -> Property
-prop_track_coolingToCold_demotions defaultBearerInfo diffScript =
-
-  let sim :: forall s . IOSim s Void
-      sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                diffScript
-                                iosimTracer
-
-      events :: [Events DiffusionTestTrace]
+prop_track_coolingToCold_demotions ioSimTracer traceNumber =
+  let events :: [Events DiffusionTestTrace]
       events = fmap ( Signal.eventsFromList
                     . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                     )
@@ -802,9 +836,9 @@ prop_track_coolingToCold_demotions defaultBearerInfo diffScript =
                 @NtNAddr
              . traceFromList
              . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
+             . take traceNumber
              . traceEvents
-             $ runSimTrace sim
+             $ ioSimTracer
 
      in conjoin
       $ (\ev ->
@@ -1118,19 +1152,14 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 -- might progress but very slowly almost like a livelock. We want to safeguard from such
 -- cases.
 --
-prop_diffusion_nolivelock :: AbsBearerInfo
-                          -> DiffusionScript
+prop_diffusion_nolivelock :: SimTrace Void
+                          -> Int
                           -> Property
-prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ _ l) =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        trace :: [(Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType)]
-        trace = take 125000
+prop_diffusion_nolivelock ioSimTrace traceNumber =
+    let trace :: [(Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType)]
+        trace = take traceNumber
               . traceEvents
-              $ runSimTrace sim
+              $ ioSimTrace
 
         lastTime :: Time
         lastTime = getTime (last trace)
@@ -1146,7 +1175,7 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ _ l) =
       let trace' = (\(t, tid, tl, e) -> (t, (tid, tl, e)))
                  <$> trace
 
-          numberOfEvents = 10000 * max (length l) 1
+          numberOfEvents = 10000 * 5 -- 5 is the maximum number of nodes in a simulation
 
        in case tooManyEventsBeforeTimeAdvances numberOfEvents dt trace' of
             Nothing -> property True
@@ -1187,16 +1216,11 @@ prop_diffusion_nolivelock defaultBearerInfo diffScript@(DiffusionScript _ _ l) =
 -- and then the peer gets disconnected, the DNS lookup fails (so you can’t
 -- reconnect). After a bit DNS lookup succeeds and you manage to connect again.
 --
-prop_diffusion_dns_can_recover :: AbsBearerInfo
-                               -> DiffusionScript
+prop_diffusion_dns_can_recover :: SimTrace Void
+                               -> Int
                                -> Property
-prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_dns_can_recover ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -1211,9 +1235,9 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -1303,7 +1327,7 @@ prop_diffusion_dns_can_recover defaultBearerInfo diffScript =
 -- | Unit test which covers issue #4191
 --
 unit_4191 :: Property
-unit_4191 = prop_diffusion_dns_can_recover absInfo script
+unit_4191 = testWithIOSim prop_diffusion_dns_can_recover 125000 absInfo script
   where
     absInfo =
       AbsBearerInfo
@@ -1400,16 +1424,11 @@ unit_4191 = prop_diffusion_dns_can_recover absInfo script
 -- We do not need separate above and below variants of this property since it
 -- is not possible to exceed the target.
 --
-prop_diffusion_target_established_public :: AbsBearerInfo
-                                         -> DiffusionScript
+prop_diffusion_target_established_public :: SimTrace Void
+                                         -> Int
                                          -> Property
-prop_diffusion_target_established_public defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_target_established_public ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -1424,9 +1443,9 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -1493,16 +1512,11 @@ prop_diffusion_target_established_public defaultBearerInfo diffScript =
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_public :: AbsBearerInfo
-                                    -> DiffusionScript
+prop_diffusion_target_active_public :: SimTrace Void
+                                    -> Int
                                     -> Property
-prop_diffusion_target_active_public defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_target_active_public ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -1517,13 +1531,11 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
-     in
-        labelDiffusionScript diffScript
-      $ conjoin
+     in conjoin
       $ (\ev ->
         let evsList = eventsToList ev
             lastTime = fst
@@ -1576,16 +1588,11 @@ prop_diffusion_target_active_public defaultBearerInfo diffScript =
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active.
 --
-prop_diffusion_target_active_local :: AbsBearerInfo
-                                   -> DiffusionScript
+prop_diffusion_target_active_local :: SimTrace Void
+                                   -> Int
                                    -> Property
-prop_diffusion_target_active_local defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_target_active_local ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -1600,9 +1607,9 @@ prop_diffusion_target_active_local defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -1658,16 +1665,11 @@ prop_diffusion_target_active_local defaultBearerInfo diffScript =
 -- This test is somewhat similar to `prop_governor_target_active_public`,
 -- however that test enforces network level timeouts.
 --
-prop_diffusion_target_active_root :: AbsBearerInfo
-                                  -> DiffusionScript
+prop_diffusion_target_active_root :: SimTrace Void
+                                  -> Int
                                   -> Property
-prop_diffusion_target_active_root defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_target_active_root ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -1682,9 +1684,9 @@ prop_diffusion_target_active_root defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
     in  conjoin
       $ (\ev ->
@@ -1751,7 +1753,7 @@ prop_hot_diffusion_target_active_public :: NonFailingAbsBearerInfo
                                         -> HotDiffusionScript
                                         -> Property
 prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  prop_diffusion_target_active_public (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+  testWithIOSim prop_diffusion_target_active_public 125000 (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -1760,7 +1762,7 @@ prop_hot_diffusion_target_active_local :: NonFailingAbsBearerInfo
                                        -> HotDiffusionScript
                                        -> Property
 prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  prop_diffusion_target_active_local (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+  testWithIOSim prop_diffusion_target_active_local 125000 (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
@@ -1769,7 +1771,7 @@ prop_hot_diffusion_target_active_root :: NonFailingAbsBearerInfo
                                       -> HotDiffusionScript
                                       -> Property
 prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  prop_diffusion_target_active_root (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+  testWithIOSim prop_diffusion_target_active_root 125000 (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
@@ -1780,16 +1782,11 @@ prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa d
 -- We do not need separate above and below variants of this property since it
 -- is not possible to exceed the target.
 --
-prop_diffusion_target_established_local :: AbsBearerInfo
-                                        -> DiffusionScript
+prop_diffusion_target_established_local :: SimTrace Void
+                                        -> Int
                                         -> Property
-prop_diffusion_target_established_local defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_target_established_local ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -1804,9 +1801,9 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -1956,16 +1953,11 @@ prop_diffusion_target_established_local defaultBearerInfo diffScript =
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_below :: AbsBearerInfo
-                                   -> DiffusionScript
+prop_diffusion_target_active_below :: SimTrace Void
+                                   -> Int
                                    -> Property
-prop_diffusion_target_active_below defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_target_active_below ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -1982,9 +1974,9 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -2153,16 +2145,11 @@ prop_diffusion_target_active_below defaultBearerInfo diffScript =
             )
 
 
-prop_diffusion_target_active_local_below :: AbsBearerInfo
-                                         -> DiffusionScript
+prop_diffusion_target_active_local_below :: SimTrace Void
+                                         -> Int
                                          -> Property
-prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_target_active_local_below ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -2179,9 +2166,9 @@ prop_diffusion_target_active_local_below defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 250000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -2397,16 +2384,11 @@ async_demotion_network_script =
 
 -- | Show that outbound governor reacts to asynchronous demotions
 --
-prop_diffusion_async_demotions :: AbsBearerInfo
-                               -> DiffusionScript
+prop_diffusion_async_demotions :: SimTrace Void
+                               -> Int
                                -> Property
-prop_diffusion_async_demotions defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_async_demotions ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -2423,9 +2405,9 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . takeUntilEndofTurn 125000
+               . takeUntilEndofTurn traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
     in conjoin
       $ (\ev ->
@@ -2537,7 +2519,9 @@ prop_diffusion_async_demotions defaultBearerInfo diffScript =
 
 unit_diffusion_async_demotions :: Property
 unit_diffusion_async_demotions =
-    prop_diffusion_async_demotions
+    testWithIOSim
+      prop_diffusion_async_demotions
+      125000
       absNoAttenuation
       async_demotion_network_script
 
@@ -2549,16 +2533,11 @@ unit_diffusion_async_demotions =
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_local_above :: AbsBearerInfo
-                                         -> DiffusionScript
+prop_diffusion_target_active_local_above :: SimTrace Void
+                                         -> Int
                                          -> Property
-prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_diffusion_target_active_local_above ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -2573,9 +2552,9 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -2677,16 +2656,11 @@ prop_diffusion_target_active_local_above defaultBearerInfo diffScript =
 -- that the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_cm_valid_transitions :: AbsBearerInfo
-                                    -> DiffusionScript
+prop_diffusion_cm_valid_transitions :: SimTrace Void
+                                    -> Int
                                     -> Property
-prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
+    let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
                . Trace.toList
                . splitWithNameTrace
@@ -2700,9 +2674,9 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -2776,16 +2750,11 @@ prop_diffusion_cm_valid_transitions defaultBearerInfo diffScript =
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_cm_valid_transition_order :: AbsBearerInfo
-                                         -> DiffusionScript
+prop_diffusion_cm_valid_transition_order :: SimTrace Void
+                                         -> Int
                                          -> Property
-prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
+    let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
                . Trace.toList
                . splitWithNameTrace
@@ -2799,9 +2768,9 @@ prop_diffusion_cm_valid_transition_order defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -2923,7 +2892,7 @@ prop_unit_4258 =
              Kill 71.11111111111
             ]
          )]
-   in prop_diffusion_cm_valid_transition_order bearerInfo diffScript
+   in testWithIOSim prop_diffusion_cm_valid_transition_order 125000 bearerInfo diffScript
 
 -- | This unit tests checks that for every * -> TerminatedSt Connection
 -- Manager transition, there's a corresponding peer selection state update
@@ -3066,16 +3035,11 @@ prop_unit_reconnect =
 
 -- | Verify that certain traces are never emitted by the simulation.
 --
-prop_diffusion_cm_no_dodgy_traces :: AbsBearerInfo
-                                  -> DiffusionScript
+prop_diffusion_cm_no_dodgy_traces :: SimTrace Void
+                                  -> Int
                                   -> Property
-prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+prop_diffusion_cm_no_dodgy_traces ioSimTrace traceNumber =
+    let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
                . Trace.toList
                . splitWithNameTrace
@@ -3089,9 +3053,9 @@ prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -3128,16 +3092,11 @@ prop_diffusion_cm_no_dodgy_traces defaultBearerInfo diffScript =
              ) connectionManagerEvents
 
 
-prop_diffusion_peer_selection_actions_no_dodgy_traces :: AbsBearerInfo
-                                                      -> HotDiffusionScript
+prop_diffusion_peer_selection_actions_no_dodgy_traces :: SimTrace Void
+                                                      -> Int
                                                       -> Property
-prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiffusionScript sa dns hds) =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  (DiffusionScript sa dns hds)
-                                  iosimTracer
-
-        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
+    let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
                . Trace.toList
                . splitWithNameTrace
@@ -3151,9 +3110,9 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces defaultBearerInfo (HotDiff
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in
         classifyNumberOfPeerStateActionEvents events
@@ -3469,15 +3428,11 @@ unit_peer_sharing =
 -- | This property verifies that when nodes are running without network
 -- attenuation, decreasing numbers by churn never timeouts.
 --
-prop_churn_notimeouts :: DiffusionScript
+prop_churn_notimeouts :: SimTrace Void
+                      -> Int
                       -> Property
-prop_churn_notimeouts diffScript =
-    let sim :: forall s. IOSim s Void
-        sim = diffusionSimulation (toBearerInfo absNoAttenuation)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_churn_notimeouts ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -3489,9 +3444,9 @@ prop_churn_notimeouts diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
     in  conjoin
       $ (\evs ->
             let evsList :: [TracePeerSelection NtNAddr]
@@ -3525,16 +3480,11 @@ prop_churn_notimeouts diffScript =
 -- * `IncreasedEstablishedPeers`
 -- * `IncreasedEstablishedBigLedgerPeers`
 --
-prop_churn_steps :: AbsBearerInfo
-                 -> DiffusionScript
+prop_churn_steps :: SimTrace Void
+                 -> Int
                  -> Property
-prop_churn_steps bearerInfo diffScript =
-    let sim :: forall s. IOSim s Void
-        sim = diffusionSimulation (toBearerInfo bearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Events DiffusionTestTrace]
+prop_churn_steps ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
         events = fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
@@ -3546,9 +3496,9 @@ prop_churn_steps bearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 5000 -- 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
     in   conjoin
        $ (\evs ->
@@ -3653,16 +3603,11 @@ prop_splitWith f as = foldr (++) [] (splitWith f as) === as
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_ig_valid_transitions :: AbsBearerInfo
-                                    -> DiffusionScript
+prop_diffusion_ig_valid_transitions :: SimTrace Void
+                                    -> Int
                                     -> Property
-prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+prop_diffusion_ig_valid_transitions ioSimTrace traceNumber =
+    let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
                . Trace.toList
                . splitWithNameTrace
@@ -3676,9 +3621,9 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -3722,16 +3667,11 @@ prop_diffusion_ig_valid_transitions defaultBearerInfo diffScript =
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_ig_valid_transition_order :: AbsBearerInfo
-                                         -> DiffusionScript
+prop_diffusion_ig_valid_transition_order :: SimTrace Void
+                                         -> Int
                                          -> Property
-prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
+prop_diffusion_ig_valid_transition_order ioSimTrace traceNumber =
+    let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
         events = fmap (Trace.fromList ())
                . Trace.toList
                . splitWithNameTrace
@@ -3745,9 +3685,9 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
@@ -3789,16 +3729,11 @@ prop_diffusion_ig_valid_transition_order defaultBearerInfo diffScript =
 -- This test tests simultaneously the ConnectionManager and InboundGovernor's
 -- timeouts.
 --
-prop_diffusion_timeouts_enforced :: AbsBearerInfo
-                                 -> DiffusionScript
+prop_diffusion_timeouts_enforced :: SimTrace Void
+                                 -> Int
                                  -> Property
-prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
-    let sim :: forall s . IOSim s Void
-        sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
-                                  diffScript
-                                  iosimTracer
-
-        events :: [Trace () (Time, DiffusionTestTrace)]
+prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
+    let events :: [Trace () (Time, DiffusionTestTrace)]
         events = fmap ( Trace.fromList ()
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b)))
                . Trace.toList
@@ -3813,9 +3748,9 @@ prop_diffusion_timeouts_enforced defaultBearerInfo diffScript =
                   @NtNAddr
                . traceFromList
                . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take 125000
+               . take traceNumber
                . traceEvents
-               $ runSimTrace sim
+               $ ioSimTrace
 
      in conjoin
       $ (\ev ->
