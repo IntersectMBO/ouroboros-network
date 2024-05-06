@@ -53,7 +53,9 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid (Sum (..))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as OrdPSQ
+import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import System.Random (StdGen, mkStdGen, split)
@@ -132,6 +134,7 @@ tests =
     , testProperty "pruning"                prop_inbound_governor_pruning
     , testProperty "counters"               prop_inbound_governor_counters
     , testProperty "InboundGovernorState"   prop_inbound_governor_state
+    , testProperty "matured peers"          prop_inbound_governor_maturedPeers
     , testProperty "timeouts enforced"      prop_timeouts_enforced
     ]
   , testGroup "Server2"
@@ -2041,6 +2044,43 @@ prop_inbound_governor_pruning (Fixed rnd) serverAcc
                        acceptedConnLimit
                        events
                        (toNonFailing <$> attenuationMap)
+
+
+data FreshPeers peerAddr versionData =
+    FreshPeers Time
+               (OrdPSQ peerAddr Time versionData)
+
+    deriving Show
+
+
+instance (Arbitrary peerAddr, Arbitrary versionData, Ord peerAddr)
+    => Arbitrary (FreshPeers peerAddr versionData) where
+    arbitrary = FreshPeers <$> (mkTime <$> (arbitrary :: Gen Rational))
+                           <*> ( OrdPSQ.fromList . map (\(a, b, c) -> (a, mkTime b, c))
+                               <$> arbitrary)
+      where
+        mkTime :: Rational -> Time
+        mkTime = Time . realToFrac
+
+
+prop_inbound_governor_maturedPeers :: FreshPeers Int Int -> Property
+prop_inbound_governor_maturedPeers (FreshPeers now fresh) = getAllProperty $
+         -- all peers which are kept as fresh are younger than `15min`
+         foldMap (\(addr, t, _) -> AllProperty $ counterexample (show (addr, t, now))
+                                               $ t >= (-delay) `addTime` now)
+                 (OrdPSQ.toList fresh')
+         -- peers are preserved
+      <> (AllProperty $ Map.keysSet matured <> keysSet fresh' === keysSet fresh)
+    where
+      (matured, fresh') = IG.maturedPeers now fresh
+
+      -- matured delay
+      delay :: DiffTime
+      delay = 15 * 60
+
+      keysSet :: Ord k => OrdPSQ k p v -> Set k
+      keysSet = Set.fromList . OrdPSQ.keys
+
 
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
