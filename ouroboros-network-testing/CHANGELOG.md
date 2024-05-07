@@ -1,12 +1,12 @@
 # Revision history for ouroboros-network-testing
 
-## next version
+## 0.6.0.1
 
 ### Breaking changes
 
 ### Non-Breaking changes
 
-* Added `isSubsetProperty` and `disjoinSetsProperty` to `Ouroboros.Network.Testing.Utils`.
+* Added set properties
 
 ## 0.6.0.0 -- 2024-02-21
 
