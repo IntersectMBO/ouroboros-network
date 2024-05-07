@@ -4,6 +4,19 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.13.1.0 -- 2024-05-08
+
+### Non-breaking changes
+
+* New tests
+* Using `quickcheck-monoids`
+
+## 0.13.0.0 -- 2024-05-08
+
+### Breaking changes
+
 * connection-manager: maintain it's own source of randomness for `PrunePolicy`.
   The types `PrunPolicy`, `ConnectionManagerArguments` changed.
 * server accepts a callback which receives an `STM` action allowing to observe

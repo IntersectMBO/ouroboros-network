@@ -6,6 +6,12 @@
 
 ### Non-Breaking changes
 
+## 0.7.2.0 -- 2024-05-07
+
+### Breaking changes
+
+### Non-Breaking changes
+
 * Added `OutboundConnectionsState` data type
 
 ## 0.7.1.0 -- 2024-03-14
