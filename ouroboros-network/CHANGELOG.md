@@ -4,6 +4,20 @@
 
 ### Breaking changes
 
+### Non-Breaking changes
+
+## 0.16.0.0 -- 2024-05-07
+
+### Breaking changes
+
+* Added `daUpdateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()`
+  to `Diffusion.Common.Applications`. This callback is to be provided by
+  consensus and is propagated all the way to the peer selection governor.
+
+## 0.15.0.0 -- 2024-05-07
+
+### Breaking changes
+
 * Added `dtTraceChurnCounters` to `Ouroboros.Network.Diffusion.P2P.TracersExtra`.
 * Added `PeerSelectionView` and `PeerSelectionCounters` (now a pattern synonym)
   which provides sets or sizes of active / established / known sets, and added
@@ -11,9 +25,6 @@
   The counters cover more groups including: all peers, big ledger peers,
   bootstrap peers, local roots and shared peers.
 * `emptyPeerSelectionState` doesn't take targets of local roots.
-* Added `daUpdateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()`
-  to `Diffusion.Common.Applications`. This callback is to be provided by
-  consensus and is propagated all the way to the peer selection governor.
 * Added `AssociationMode` and `LedgerStateJudgement` to `DebugPeerSelectionState`.
   Both should be exposed through `EKG` counters by the node.
 * Removed `TraceKnownInboundConnection` and replaced it with
