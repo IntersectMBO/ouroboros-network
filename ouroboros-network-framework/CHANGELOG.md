@@ -4,6 +4,18 @@
 
 ### Breaking changes
 
+* connection-manager: maintain it's own source of randomness for `PrunePolicy`.
+  The types `PrunPolicy`, `ConnectionManagerArguments` changed.
+* server accepts a callback which receives an `STM` action allowing to observe
+  public part of `InboundGovernorState`.  The refactorisation changed how
+  exceptions are propagated through from the threads run by the server to the
+  main thread.  `InboundGovernorObservableState` was replaced with
+  `PublicInboundGovernorState`.
+* removed the outbound information channel between the connection manager
+  & outbound governor; the outbound governor now can use the
+  `PublichInboundGovernorState`.
+* Added `serverDebugInboundGovernor` tracer was added to `ServerArguments`.
+
 ### Non-breaking changes
 
 ## 0.12.0.0 -- 2024-03-15

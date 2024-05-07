@@ -139,6 +139,7 @@ library testlib
                    , bytestring
                    , cborg
                    , containers
+                   , random
                    , serialise
 
                    , QuickCheck
@@ -187,6 +188,8 @@ test-suite sim-tests
                      , iproute
                      , network
                      , pretty-simple
+                     , psqueues
+                     , random
                      , serialise
                      , text
                      , time
@@ -207,7 +210,6 @@ test-suite sim-tests
                      , strict-stm
                      , network-mux
                      , monoidal-synchronisation
-                     , ouroboros-network-api
                      , ouroboros-network-framework
                      , ouroboros-network-framework:testlib
                      , ouroboros-network-testing
@@ -253,6 +255,7 @@ test-suite io-tests
                      , dns
                      , iproute
                      , network
+                     , random
                      , time
                      , with-utf8
 

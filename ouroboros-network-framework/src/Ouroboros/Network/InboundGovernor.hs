@@ -11,18 +11,17 @@
 
 -- 'runResponder' is using a redundant constraint.
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 
 -- | Server implementation based on 'ConnectionManager'
 --
 module Ouroboros.Network.InboundGovernor
-  ( InboundGovernorObservableState (..)
-  , newObservableStateVar
-  , newObservableStateVarIO
-  , newObservableStateVarFromSeed
-    -- * Run Inbound Protocol Governor
-  , inboundGovernor
+  ( -- * Run Inbound Protocol Governor
+    PublicInboundGovernorState (..)
+  , withInboundGovernor
     -- * Trace
   , InboundGovernorTrace (..)
+  , DebugInboundGovernor (..)
   , RemoteSt (..)
   , RemoteTransition
   , RemoteTransitionTrace
@@ -30,6 +29,8 @@ module Ouroboros.Network.InboundGovernor
     -- * Re-exports
   , Transition' (..)
   , TransitionTrace' (..)
+    -- * API's exported for testing purposes
+  , maturedPeers
   ) where
 
 import Control.Applicative (Alternative)
@@ -43,11 +44,16 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
+import Data.Bifunctor (first)
 import Data.ByteString.Lazy (ByteString)
 import Data.Cache
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
+import Data.OrdPSQ (OrdPSQ)
+import Data.OrdPSQ qualified as OrdPSQ
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Void (Void)
 
 import Network.Mux qualified as Mux
@@ -64,6 +70,21 @@ import Ouroboros.Network.InboundGovernor.State
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Server.RateLimiting
 
+
+-- | Period of time after which a peer transitions from a fresh to a mature one,
+-- see `igsMatureDuplexPeers` and `igsFreshDuplexPeers`.
+--
+inboundMaturePeerDelay :: DiffTime
+inboundMaturePeerDelay = 15 * 60
+
+
+-- | Every ~30s we wake up the inbound governor.  This is to give a chance to
+-- mark some of the inbound connections as mature.
+--
+inactionTimeout :: DiffTime
+inactionTimeout = 31.415927
+
+
 -- | Run the server, which consists of the following components:
 --
 -- * /inbound governor/, it corresponds to p2p-governor on outbound side
@@ -79,7 +100,7 @@ import Ouroboros.Network.Server.RateLimiting
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-inboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber m a b.
+withInboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr versionData versionNumber m a b x.
                    ( Alternative (STM m)
                    , MonadAsync    m
                    , MonadCatch    m
@@ -94,48 +115,52 @@ inboundGovernor :: forall (muxMode :: MuxMode) socket initiatorCtx peerAddr vers
                    )
                 => Tracer m (RemoteTransitionTrace peerAddr)
                 -> Tracer m (InboundGovernorTrace peerAddr)
+                -> Tracer m (DebugInboundGovernor peerAddr)
                 -> InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
                 -> Maybe DiffTime -- protocol idle timeout
                 -> MuxConnectionManager muxMode socket initiatorCtx (ResponderContext peerAddr) peerAddr versionData versionNumber ByteString m a b
-                -> StrictTVar m InboundGovernorObservableState
-                -> m Void
-inboundGovernor trTracer tracer inboundInfoChannel
-                inboundIdleTimeout connectionManager
-                observableStateVar = do
+                -> (Async m Void -> m (PublicInboundGovernorState peerAddr versionData) -> m x)
+                -> m x
+withInboundGovernor trTracer tracer debugTracer inboundInfoChannel
+                    inboundIdleTimeout connectionManager k = do
     -- State needs to be a TVar, otherwise, when catching the exception inside
     -- the loop we do not have access to the most recent version of the state
     -- and might be truncating transitions.
     st <- newTVarIO emptyState
-    inboundGovernorLoop st
-     `catch`
-       (\(e :: SomeException) -> do
-         state <- readTVarIO st
-         _ <- Map.traverseWithKey
-               (\connId _ -> do
-                 -- Remove the connection from the state so
-                 -- mkRemoteTransitionTrace can create the correct state
-                 -- transition to Nothing value.
-                 let state' = unregisterConnection connId state
-                 traceWith trTracer
-                           (mkRemoteTransitionTrace connId state state')
-               )
-               (igsConnections state)
-         traceWith tracer (TrInboundGovernorError e)
-         throwIO e
-       )
+    withAsync
+      (inboundGovernorLoop st
+       `catch`
+         (\(e :: SomeException) -> do
+           state <- readTVarIO st
+           _ <- Map.traverseWithKey
+                 (\connId _ -> do
+                   -- Remove the connection from the state so
+                   -- mkRemoteTransitionTrace can create the correct state
+                   -- transition to Nothing value.
+                   let state' = unregisterConnection connId state
+                   traceWith trTracer
+                             (mkRemoteTransitionTrace connId state state')
+                 )
+                 (igsConnections state)
+           traceWith tracer (TrInboundGovernorError e)
+           throwIO e
+         )
+      )
+      $ \thread -> k thread (mkPublicInboundGovernorState <$> readTVarIO st)
   where
-    emptyState :: InboundGovernorState muxMode initiatorCtx peerAddr m a b
+    emptyState :: InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
     emptyState = InboundGovernorState {
-            igsConnections   = Map.empty,
-            igsObservableVar = observableStateVar,
-            igsCountersCache = mempty
+            igsConnections       = Map.empty,
+            igsMatureDuplexPeers = Map.empty,
+            igsFreshDuplexPeers  = OrdPSQ.empty,
+            igsCountersCache     = mempty
           }
 
     -- The inbound protocol governor recursive loop.  The 'igsConnections' is
     -- updated as we recurse.
     --
     inboundGovernorLoop
-      :: StrictTVar m (InboundGovernorState muxMode initiatorCtx peerAddr m a b)
+      :: StrictTVar m (InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b)
       -> m Void
     inboundGovernorLoop !st = do
       state <- readTVarIO st
@@ -147,9 +172,19 @@ inboundGovernor trTracer tracer inboundInfoChannel
             mkRemoteSt . csRemoteState
         <$> igsConnections state
 
+      time <- getMonotonicTime
+      inactivityVar <- registerDelay inactionTimeout
+
       event
         <- atomically $ runFirstToFinish $
-               Map.foldMapWithKey
+               FirstToFinish  (
+                 -- mark connections as mature
+                 case maturedPeers time (igsFreshDuplexPeers state) of
+                   (as, _)     | Map.null as
+                               -> retry
+                   (as, fresh) -> pure $ MaturedDuplexPeers as fresh
+               )
+            <> Map.foldMapWithKey
                  (    firstMuxToFinish
                    <> firstMiniProtocolToFinish
                    <> firstPeerPromotedToWarm
@@ -162,7 +197,13 @@ inboundGovernor trTracer tracer inboundInfoChannel
                  )
                  (igsConnections state)
             <> FirstToFinish (
-                 NewConnection <$> InfoChannel.readMessage inboundInfoChannel)
+                 NewConnection <$> InfoChannel.readMessage inboundInfoChannel
+               )
+            <> FirstToFinish (
+                  -- spin the inbound governor loop; it will re-run with new
+                  -- time, which allows to make some peers mature.
+                  LazySTM.readTVar inactivityVar >>= check >> pure InactivityTimeout
+               )
       (mbConnId, state') <- case event of
         NewConnection
           -- new connection has been announced by either accept loop or
@@ -172,7 +213,11 @@ inboundGovernor trTracer tracer inboundInfoChannel
             provenance
             connId
             csDataFlow
-            (Handle csMux muxBundle _ _)) -> do
+            Handle {
+              hMux         = csMux,
+              hMuxBundle   = muxBundle,
+              hVersionData = csVersionData
+            }) -> do
 
               traceWith tracer (TrNewConnection provenance connId)
               let responderContext = ResponderContext { rcConnectionId = connId }
@@ -250,6 +295,7 @@ inboundGovernor trTracer tracer inboundInfoChannel
                                   connState = ConnectionState {
                                       csMux,
                                       csDataFlow,
+                                      csVersionData,
                                       csMiniProtocolMap,
                                       csCompletionMap,
                                       csRemoteState
@@ -269,9 +315,16 @@ inboundGovernor trTracer tracer inboundInfoChannel
                       connId
                       (igsConnections state)
 
-
+              time' <- getMonotonicTime
               -- update state and continue the recursive loop
-              let state' = state { igsConnections }
+              let state' = state {
+                      igsConnections,
+                      igsFreshDuplexPeers =
+                        case csDataFlow of
+                          Unidirectional -> igsFreshDuplexPeers state
+                          Duplex         -> OrdPSQ.insert (remoteAddress connId) time' csVersionData
+                                                          (igsFreshDuplexPeers state)
+                    }
               return (Just connId, state')
 
         MuxFinished connId merr -> do
@@ -456,8 +509,21 @@ inboundGovernor trTracer tracer inboundInfoChannel
 
                   return (Just connId, state')
 
+        MaturedDuplexPeers newMatureDuplexPeers igsFreshDuplexPeers -> do
+          traceWith tracer $ TrMaturedConnections (Map.keysSet newMatureDuplexPeers)
+                                                  (Set.fromList $ OrdPSQ.keys  igsFreshDuplexPeers)
+          pure (Nothing, state { igsMatureDuplexPeers = newMatureDuplexPeers
+                                                     <> igsMatureDuplexPeers state,
+                                 igsFreshDuplexPeers })
+
+        InactivityTimeout -> do
+          traceWith tracer $ TrInactive ((\(a,b,_) -> (a,b)) <$> OrdPSQ.toList (igsFreshDuplexPeers state))
+          pure (Nothing, state)
+
+
       mask_ $ do
         atomically $ writeTVar st state'
+        traceWith debugTracer (DebugInboundGovernor state')
         case mbConnId of
           Just cid -> traceWith trTracer (mkRemoteTransitionTrace cid state state')
           Nothing  -> pure ()
@@ -506,6 +572,16 @@ runResponder mux
             startStrategy
             (runMiniProtocolCb responder responderContext)
 
+
+maturedPeers :: Ord peerAddr
+             => Time
+             -> OrdPSQ peerAddr Time versionData
+             -> (Map peerAddr versionData, OrdPSQ peerAddr Time versionData)
+maturedPeers time freshPeers =
+      first (Map.fromList . map (\(addr, _p, v) -> (addr, v)))
+    $ OrdPSQ.atMostView ((-inboundMaturePeerDelay) `addTime` time)
+                           freshPeers
+
 --
 -- Trace
 --
@@ -534,8 +610,8 @@ type RemoteTransitionTrace peerAddr = TransitionTrace' peerAddr (Maybe RemoteSt)
 
 mkRemoteTransitionTrace :: Ord peerAddr
                         => ConnectionId peerAddr
-                        -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
-                        -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
+                        -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
+                        -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
                         -> RemoteTransitionTrace peerAddr
 mkRemoteTransitionTrace connId fromState toState =
     TransitionTrace
@@ -574,4 +650,10 @@ data InboundGovernorTrace peerAddr
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.
     | TrInboundGovernorError         !SomeException
+    | TrMaturedConnections           !(Set peerAddr) !(Set peerAddr)
+    | TrInactive                     ![(peerAddr, Time)]
   deriving Show
+
+
+data DebugInboundGovernor peerAddr = forall muxMode initiatorCtx versionData m a b.
+    DebugInboundGovernor (InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b)

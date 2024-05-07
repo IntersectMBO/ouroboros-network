@@ -65,7 +65,6 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -191,6 +190,7 @@ withBidirectionalConnectionManager
     -> DiffTime -- protocol idle timeout
     -> DiffTime -- wait time timeout
     -> Maybe peerAddr
+    -> Random.StdGen
     -> ClientAndServerData
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
@@ -204,6 +204,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                    protocolIdleTimeout
                                    timeWaitTimeout
                                    localAddress
+                                   stdGen
                                    ClientAndServerData {
                                        hotInitiatorRequests,
                                        warmInitiatorRequests,
@@ -212,15 +213,12 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                    k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    outgovInfoChannel <- newInformationChannel
     -- as in the 'withInitiatorOnlyConnectionManager' we use a `StrictTVar` to
     -- pass list of requests, but since we are also interested in the results we
     -- need to have multable cells to pass the accumulators around.
     hotRequestsVar         <- LazySTM.newTVarIO hotInitiatorRequests
     warmRequestsVar        <- LazySTM.newTVarIO warmInitiatorRequests
     establishedRequestsVar <- LazySTM.newTVarIO establishedInitiatorRequests
-    -- we are not using the randomness
-    observableStateVar        <- Server.newObservableStateVarFromSeed 0
     let muxTracer = ("mux",) `contramap` nullTracer -- mux tracer
 
     withConnectionManager
@@ -240,12 +238,12 @@ withBidirectionalConnectionManager snocket makeBearer socket
           cmOutboundIdleTimeout = protocolIdleTimeout,
           connectionDataFlow = \_ _ -> Duplex,
           cmPrunePolicy = simplePrunePolicy,
+          cmStdGen      = stdGen,
           cmConnectionsLimits = AcceptedConnectionsLimit {
               acceptedConnectionsHardLimit = maxBound,
               acceptedConnectionsSoftLimit = maxBound,
               acceptedConnectionsDelay     = 0
-            },
-          cmGetPeerSharing = \_ -> PeerSharingDisabled
+            }
         }
         (makeConnectionHandler
           muxTracer
@@ -265,29 +263,24 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                 establishedRequestsVar))
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy))
-          PeerSharingEnabled
           (\_ -> HandshakeFailure)
           (InResponderMode inbgovInfoChannel)
-          (InResponderMode $ Just outgovInfoChannel)
       $ \connectionManager -> do
             serverAddr <- Snocket.getLocalAddr snocket socket
-            withAsync
-              (Server.run
-                ServerArguments {
-                    serverSockets = socket :| [],
-                    serverSnocket = snocket,
-                    serverTracer = ("server",) `contramap` debugTracer, -- ServerTrace
-                    serverTrTracer = nullTracer,
-                    serverInboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
-                    serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
-                    serverConnectionManager = connectionManager,
-                    serverInboundIdleTimeout = Just protocolIdleTimeout,
-                    serverInboundInfoChannel = inbgovInfoChannel,
-                    serverObservableStateVar = observableStateVar
-                  }
-              )
-              (\thread -> link thread
-                       >> k connectionManager serverAddr)
+            Server.with
+              ServerArguments {
+                  serverSockets = socket :| [],
+                  serverSnocket = snocket,
+                  serverTracer = ("server",) `contramap` debugTracer, -- ServerTrace
+                  serverTrTracer = nullTracer,
+                  serverInboundGovernorTracer = ("inbound-governor",) `contramap` debugTracer,
+                  serverDebugInboundGovernor = nullTracer,
+                  serverConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+                  serverConnectionManager = connectionManager,
+                  serverInboundIdleTimeout = Just protocolIdleTimeout,
+                  serverInboundInfoChannel = inbgovInfoChannel
+                }
+              (\_ _ -> k connectionManager serverAddr)
   where
     serverApplication :: LazySTM.TVar m [[Int]]
                       -> LazySTM.TVar m [[Int]]
@@ -461,10 +454,11 @@ bidirectionalExperiment
     timeWaitTimeout
     localAddr remoteAddr
     clientAndServerData = do
+      stdGen <- Random.newStdGen
       withBidirectionalConnectionManager
         snocket makeBearer socket0
         protocolIdleTimeout timeWaitTimeout
-        (Just localAddr) clientAndServerData $
+        (Just localAddr) stdGen clientAndServerData $
         \connectionManager _serverAddr -> forever' $ do
           -- runInitiatorProtocols returns a list of results per each protocol
           -- in each bucket (warm \/ hot \/ established); but we run only one

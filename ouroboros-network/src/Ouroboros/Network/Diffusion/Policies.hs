@@ -19,7 +19,6 @@ import System.Random qualified as Rnd
 import Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
            Provenance (..), PrunePolicy)
 import Ouroboros.Network.ExitPolicy as ExitPolicy
-import Ouroboros.Network.InboundGovernor (InboundGovernorObservableState (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerMetric
 
@@ -73,6 +72,22 @@ peerMetricsConfiguration = PeerMetricsConfiguration {
     maxEntriesToTrack = 180
   }
 
+
+-- | Minimal delay between adding inbound peers to known set of outbound
+-- governor.
+--
+-- It is set to 60s, the same as the peer sharing request timeout.
+--
+inboundPeersRetryDelay :: DiffTime
+inboundPeersRetryDelay = 60
+
+
+-- | Maximal number of light peers included at once.
+--
+maxInboundPeers :: Int
+maxInboundPeers = 10
+
+
 -- | Merge two dictionaries where values of the first one are obligatory, while
 -- the second one are optional.
 --
@@ -101,6 +116,7 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
       policyPickColdPeersToPromote     = simplePromotionPolicy,
       policyPickWarmPeersToPromote     = simplePromotionPolicy,
+      policyPickInboundPeers           = simplePromotionPolicy,
 
       policyPickHotPeersToDemote  = hotDemotionPolicy,
       policyPickWarmPeersToDemote = warmDemotionPolicy,
@@ -227,24 +243,16 @@ simplePeerSelectionPolicy rngVar getChurnMode metrics errorDelay = PeerSelection
 --
 -- TODO: complexity could be improved.
 --
-prunePolicy :: ( MonadSTM m
-               , Ord peerAddr
-               )
-            => StrictTVar m InboundGovernorObservableState
-            -> PrunePolicy peerAddr (STM m)
-prunePolicy stateVar mp n = do
-    state <- readTVar stateVar
-    let (prng', prng'') = Rnd.split (igosPrng state)
-    writeTVar stateVar (state { igosPrng = prng'' })
-
-    return
-      $ Set.fromList
+prunePolicy :: Ord peerAddr
+            => PrunePolicy peerAddr
+prunePolicy prng mp n =
+        Set.fromList
       . take n
       . map (fst . fst)
       -- 'True' values (upstream / outbound connections) will sort last.
       . sortOn (\((_, connType), score) -> (isUpstream connType, score, connType))
       . zip (Map.assocs mp)
-      $ (Rnd.randoms prng' :: [Int])
+      $ (Rnd.randoms prng :: [Int])
   where
     isUpstream :: ConnectionType -> Bool
     isUpstream = \connType ->

@@ -137,6 +137,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        pickHotPeersToDemote       :: !(PickScript PeerAddr),
        pickWarmPeersToDemote      :: !(PickScript PeerAddr),
        pickColdPeersToForget      :: !(PickScript PeerAddr),
+       pickInboundPeers           :: !(PickScript PeerAddr),
        peerSharingFlag            :: !PeerSharing,
        useBootstrapPeers          :: !(TimedScript UseBootstrapPeers),
        useLedgerPeers             :: !(TimedScript UseLedgerPeers),
@@ -378,7 +379,6 @@ mockPeerSelectionActions' tracer
       peerConnToPeerSharing    = \(PeerConn _ ps _) -> ps,
       requestPublicRootPeers,
       readPeerSelectionTargets = readTVar targetsVar,
-      readNewInboundConnection = retry,
       requestPeerShare,
       peerStateActions         = PeerStateActions {
           establishPeerConnection,
@@ -389,6 +389,7 @@ mockPeerSelectionActions' tracer
         },
       readUseBootstrapPeers,
       readLedgerStateJudgement,
+      readInboundPeers = pure Map.empty,
       updateOutboundConnectionsState = \a -> do
         a' <- readTVar outboundConnectionsStateVar
         when (a /= a') $
@@ -592,7 +593,8 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
                           pickWarmPeersToPromote,
                           pickHotPeersToDemote,
                           pickWarmPeersToDemote,
-                          pickColdPeersToForget
+                          pickColdPeersToForget,
+                          pickInboundPeers
                         } = do
     pickKnownPeersForPeerShareVar <- initScript' pickKnownPeersForPeerShare
     pickColdPeersToPromoteVar  <- initScript' pickColdPeersToPromote
@@ -600,6 +602,7 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
     pickHotPeersToDemoteVar    <- initScript' pickHotPeersToDemote
     pickWarmPeersToDemoteVar   <- initScript' pickWarmPeersToDemote
     pickColdPeersToForgetVar   <- initScript' pickColdPeersToForget
+    pickInboundPeersVar        <- initScript' pickInboundPeers
     return PeerSelectionPolicy {
       policyPickKnownPeersForPeerShare = \_ _ _ -> interpretPickScript pickKnownPeersForPeerShareVar,
       policyPickColdPeersToPromote  = \_ _ _ -> interpretPickScript pickColdPeersToPromoteVar,
@@ -607,6 +610,7 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyPickHotPeersToDemote    = \_ _ _ -> interpretPickScript pickHotPeersToDemoteVar,
       policyPickWarmPeersToDemote   = \_ _ _ -> interpretPickScript pickWarmPeersToDemoteVar,
       policyPickColdPeersToForget   = \_ _ _ -> interpretPickScript pickColdPeersToForgetVar,
+      policyPickInboundPeers        = \_ _ _ -> interpretPickScript pickInboundPeersVar,
       policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressPeerShareReqs = 2,
       policyPeerShareRetryTime         = 3600, -- seconds
@@ -649,10 +653,10 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceBigLedgerPeersResults !_ !_ !_)                = GovernorEvent a
     f a@(TraceBigLedgerPeersFailure !_ !_ !_)                = GovernorEvent a
     f a@(TraceForgetBigLedgerPeers !_ !_ !_)                 = GovernorEvent a
+    f a@(TracePickInboundPeers !_ !_ !_ !_)                  = GovernorEvent a
     f a@(TracePeerShareRequests !_ !_ !_ !_ !_)              = GovernorEvent a
     f a@(TracePeerShareResults !_)                           = GovernorEvent a
     f a@(TracePeerShareResultsFiltered !_)                   = GovernorEvent a
-    f a@(TraceKnownInboundConnection !_ !_)                  = GovernorEvent a
     f a@(TracePromoteColdPeers !_ !_ !_)                     = GovernorEvent a
     f a@(TracePromoteColdLocalPeers !_ !_)                   = GovernorEvent a
     f a@(TracePromoteColdFailed !_ !_ !_ !_ !_)              = GovernorEvent a
@@ -790,6 +794,7 @@ instance Arbitrary GovernorMockEnvironment where
       pickHotPeersToDemote    <- arbitraryPickScript arbitrarySubsetOfPeers
       pickWarmPeersToDemote   <- arbitraryPickScript arbitrarySubsetOfPeers
       pickColdPeersToForget   <- arbitraryPickScript arbitrarySubsetOfPeers
+      pickInboundPeers        <- arbitraryPickScript arbitrarySubsetOfPeers
       peerSharingFlag         <- arbitrary
       useBootstrapPeers       <- arbitrary
       useLedgerPeers          <- arbitrary
@@ -872,6 +877,7 @@ instance Arbitrary GovernorMockEnvironment where
            pickHotPeersToDemote,
            pickWarmPeersToDemote,
            pickColdPeersToForget,
+           pickInboundPeers,
            peerSharingFlag,
            useBootstrapPeers,
            useLedgerPeers,
@@ -913,6 +919,9 @@ instance Arbitrary GovernorMockEnvironment where
       ]
    ++ [ env { pickColdPeersToForget = pickColdPeersToForget' }
       | pickColdPeersToForget' <- shrink pickColdPeersToForget
+      ]
+   ++ [ env { pickInboundPeers = pickInboundPeers' }
+      | pickInboundPeers' <- shrink pickInboundPeers
       ]
    ++ [ env { useBootstrapPeers = useBootstrapPeers' }
       | useBootstrapPeers' <- shrink useBootstrapPeers

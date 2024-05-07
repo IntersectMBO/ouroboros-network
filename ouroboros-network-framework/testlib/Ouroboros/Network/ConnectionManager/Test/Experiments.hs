@@ -57,6 +57,8 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 
+import System.Random (StdGen, split)
+
 import Test.QuickCheck
 
 import Codec.CBOR.Term (Term)
@@ -78,7 +80,8 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.Driver.Limits
-import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import Ouroboros.Network.InboundGovernor (DebugInboundGovernor (..),
+           InboundGovernorTrace (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
@@ -102,7 +105,6 @@ import Ouroboros.Network.Test.Orphans ()
 import Ouroboros.Network.ConnectionManager.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.ConnectionManager.Test.Timeouts
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 
 --
@@ -255,6 +257,7 @@ withInitiatorOnlyConnectionManager
                           (ConnectionManagerTrace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+    -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
     -- ^ series of request possible to do with the bidirectional connection
@@ -270,7 +273,7 @@ withInitiatorOnlyConnectionManager
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
-withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeBearer localAddr
+withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer cmStdGen snocket makeBearer localAddr
                                    nextRequests handshakeTimeLimits acceptedConnLimit k = do
     mainThreadId <- myThreadId
     let muxTracer = (name,) `contramap` nullTracer -- mux tracer
@@ -291,10 +294,10 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
           cmConfigureSocket = \_ _ -> return (),
           connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
+          cmStdGen,
           cmConnectionsLimits = acceptedConnLimit,
           cmTimeWaitTimeout = tTimeWaitTimeout timeouts,
-          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
-          cmGetPeerSharing = \(DataFlowProtocolData _ ps) -> ps
+          cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts
         }
       (makeConnectionHandler
         muxTracer
@@ -313,9 +316,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer cmTracer snocket makeB
                     <> debugMuxRuntimeErrorRethrowPolicy
                     <> debugIOErrorRethrowPolicy
                     <> assertRethrowPolicy))
-      PeerSharingEnabled
       (\_ -> HandshakeFailure)
-      NotInResponderMode
       NotInResponderMode
       (\cm ->
         k cm `catch` \(e :: SomeException) -> throwIO e)
@@ -425,6 +426,8 @@ withBidirectionalConnectionManager
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     -> Tracer m (WithName name (InboundGovernorTrace peerAddr))
+    -> Tracer m (WithName name (DebugInboundGovernor peerAddr))
+    -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
     -> (socket -> m ()) -- ^ configure socket
@@ -449,7 +452,8 @@ withBidirectionalConnectionManager
     -> m a
 withBidirectionalConnectionManager name timeouts
                                    inboundTrTracer trTracer
-                                   cmTracer inboundTracer
+                                   cmTracer inboundTracer debugTracer
+                                   cmStdGen
                                    snocket makeBearer
                                    confSock socket
                                    localAddress
@@ -458,9 +462,6 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    outgovInfoChannel <- newInformationChannel
-    -- we are not using the randomness
-    observableStateVar        <- Server.newObservableStateVarFromSeed 0
     let muxTracer = WithName name `contramap` nullTracer -- mux tracer
 
     withConnectionManager
@@ -482,8 +483,8 @@ withBidirectionalConnectionManager name timeouts
           cmOutboundIdleTimeout = tOutboundIdleTimeout timeouts,
           connectionDataFlow = \_ (DataFlowProtocolData df _) -> df,
           cmPrunePolicy = simplePrunePolicy,
-          cmConnectionsLimits = acceptedConnLimit,
-          cmGetPeerSharing = \(DataFlowProtocolData _ ps) -> ps
+          cmStdGen,
+          cmConnectionsLimits = acceptedConnLimit
         }
         (makeConnectionHandler
           muxTracer
@@ -502,32 +503,29 @@ withBidirectionalConnectionManager name timeouts
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
                         <> assertRethrowPolicy))
-        PeerSharingEnabled
         (\_ -> HandshakeFailure)
         (InResponderMode inbgovInfoChannel)
-        (InResponderMode $ Just outgovInfoChannel)
       $ \connectionManager ->
           do
             serverAddr <- Snocket.getLocalAddr snocket socket
-            withAsync
-              (Server.run
-                ServerArguments {
-                    serverSockets = socket :| [],
-                    serverSnocket = snocket,
-                    serverTrTracer =
-                      WithName name `contramap` inboundTrTracer,
-                    serverTracer =
-                      WithName name `contramap` nullTracer, -- ServerTrace
-                    serverInboundGovernorTracer =
-                      WithName name `contramap` inboundTracer, -- InboundGovernorTrace
-                    serverConnectionLimits = acceptedConnLimit,
-                    serverConnectionManager = connectionManager,
-                    serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
-                    serverInboundInfoChannel = inbgovInfoChannel,
-                    serverObservableStateVar = observableStateVar
-                  }
-              )
-              (\serverAsync -> k connectionManager serverAddr serverAsync)
+            Server.with
+              ServerArguments {
+                  serverSockets = socket :| [],
+                  serverSnocket = snocket,
+                  serverTrTracer =
+                    WithName name `contramap` inboundTrTracer,
+                  serverTracer =
+                    WithName name `contramap` nullTracer, -- ServerTrace
+                  serverDebugInboundGovernor =
+                    WithName name `contramap` debugTracer,
+                  serverInboundGovernorTracer =
+                    WithName name `contramap` inboundTracer, -- InboundGovernorTrace
+                  serverConnectionLimits = acceptedConnLimit,
+                  serverConnectionManager = connectionManager,
+                  serverInboundIdleTimeout = Just (tProtocolIdleTimeout timeouts),
+                  serverInboundInfoChannel = inbgovInfoChannel
+                }
+              (\inboundGovernorAsync _ -> k connectionManager serverAddr inboundGovernorAsync)
           `catch` \(e :: SomeException) -> do
             throwIO e
   where
@@ -704,29 +702,32 @@ unidirectionalExperiment
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
        )
-    => Timeouts
+    => StdGen
+    -> Timeouts
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
     -> (socket -> m ())
     -> socket
     -> ClientAndServerData req
     -> m Property
-unidirectionalExperiment timeouts snocket makeBearer confSock socket clientAndServerData = do
+unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clientAndServerData = do
+    let (stdGen', stdGen'') = split stdGen
     nextReqs <- oneshotNextRequests clientAndServerData
     withInitiatorOnlyConnectionManager
-      "client" timeouts nullTracer nullTracer snocket makeBearer Nothing nextReqs
+      "client" timeouts nullTracer nullTracer stdGen' snocket makeBearer Nothing nextReqs
       timeLimitsHandshake maxAcceptedConnectionsLimit
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts
-                                           nullTracer nullTracer nullTracer nullTracer
+                                           nullTracer nullTracer nullTracer
+                                           nullTracer nullTracer
+                                           stdGen''
                                            snocket makeBearer
                                            confSock socket Nothing
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
                                            timeLimitsHandshake
                                            maxAcceptedConnectionsLimit
-          $ \_ serverAddr serverAsync -> do
-            link serverAsync
+          $ \_ serverAddr _serverAsync -> do
             -- client → server: connect
             (rs :: [Either SomeException (TemperatureBundle [resp])]) <-
                 replicateM
@@ -778,6 +779,7 @@ bidirectionalExperiment
        , Show acc
        )
     => Bool
+    -> StdGen
     -> Timeouts
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
@@ -790,24 +792,24 @@ bidirectionalExperiment
     -> ClientAndServerData req
     -> m Property
 bidirectionalExperiment
-    useLock timeouts snocket makeBearer confSock socket0 socket1 localAddr0 localAddr1
+    useLock stdGen timeouts snocket makeBearer confSock socket0 socket1 localAddr0 localAddr1
     clientAndServerData0 clientAndServerData1 = do
+      let (stdGen', stdGen'') = split stdGen
       lock <- newTMVarIO ()
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
-                                         nullTracer nullTracer nullTracer
-                                         nullTracer snocket makeBearer confSock
+                                         nullTracer nullTracer nullTracer nullTracer
+                                         nullTracer stdGen' snocket makeBearer confSock
                                          socket0 (Just localAddr0)
                                          [accumulatorInit clientAndServerData0]
                                          nextRequests0
                                          noTimeLimitsHandshake
                                          maxAcceptedConnectionsLimit
-        (\connectionManager0 _serverAddr0 serverAsync0 -> do
-          link serverAsync0
+        (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
-                                             nullTracer nullTracer nullTracer
-                                             nullTracer snocket makeBearer confSock
+                                             nullTracer nullTracer nullTracer nullTracer
+                                             nullTracer stdGen'' snocket makeBearer confSock
                                              socket1 (Just localAddr1)
                                              [accumulatorInit clientAndServerData1]
                                              nextRequests1

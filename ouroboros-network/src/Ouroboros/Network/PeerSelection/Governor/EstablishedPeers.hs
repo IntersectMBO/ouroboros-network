@@ -356,7 +356,7 @@ jobPromoteColdPeer PeerSelectionActions {
     handler e = return $
       Completion $ \st@PeerSelectionState {
                       publicRootPeers,
-                      fuzzRng,
+                      stdGen,
                       targets = PeerSelectionTargets {
                                   targetNumberOfEstablishedPeers,
                                   targetNumberOfEstablishedBigLedgerPeers
@@ -366,7 +366,7 @@ jobPromoteColdPeer PeerSelectionActions {
         let (failCount, knownPeers') = KnownPeers.incrementFailCount
                                          peeraddr
                                          (knownPeers st)
-            (fuzz, fuzzRng') = randomR (-2, 2 :: Double) fuzzRng
+            (fuzz, stdGen') = randomR (-2, 2 :: Double) stdGen
 
             -- exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s.
             delay :: DiffTime
@@ -384,7 +384,7 @@ jobPromoteColdPeer PeerSelectionActions {
                                                  knownPeers',
                        inProgressPromoteCold = Set.delete peeraddr
                                                  (inProgressPromoteCold st),
-                       fuzzRng = fuzzRng'
+                       stdGen = stdGen'
                      }
             cs' = peerSelectionStateToCounters st'
         in
@@ -441,7 +441,7 @@ jobPromoteColdPeer PeerSelectionActions {
                                         x
                                   )
                                   (Set.singleton peeraddr)
-                              $ KnownPeers.setSuccessfulConnectionFlag peeraddr
+                              $ KnownPeers.setSuccessfulConnectionFlag (Set.singleton peeraddr)
                               $ KnownPeers.clearTepidFlag peeraddr $
                                     KnownPeers.resetFailCount
                                         peeraddr

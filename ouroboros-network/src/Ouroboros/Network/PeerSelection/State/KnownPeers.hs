@@ -361,16 +361,6 @@ setTepidFlag' val peeraddr knownPeers@KnownPeers{allPeers} =
                               peeraddr allPeers
                }
 
-setSuccessfulConnectionFlag :: Ord peeraddr
-                             => peeraddr
-                             -> KnownPeers peeraddr
-                             -> KnownPeers peeraddr
-setSuccessfulConnectionFlag peeraddr knownPeers@KnownPeers{allPeers} =
-    assert (peeraddr `Map.member` allPeers) $
-    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownSuccessfulConnection = True })
-                              peeraddr allPeers
-               }
-
 clearTepidFlag :: Ord peeraddr
              => peeraddr
              -> KnownPeers peeraddr
@@ -382,6 +372,17 @@ setTepidFlag :: Ord peeraddr
              -> KnownPeers peeraddr
              -> KnownPeers peeraddr
 setTepidFlag = setTepidFlag' True
+
+
+setSuccessfulConnectionFlag :: Ord peeraddr
+                            => Set peeraddr
+                            -> KnownPeers peeraddr
+                            -> KnownPeers peeraddr
+setSuccessfulConnectionFlag peers knownPeers@KnownPeers{allPeers} =
+    assert (peers `Set.isSubsetOf` Map.keysSet allPeers) $
+    knownPeers { allPeers = foldr (Map.update (\kpi  -> Just kpi { knownSuccessfulConnection = True }))
+                                  allPeers peers
+               }
 
 -----------------------------------
 -- Tracking when we can (re)connect

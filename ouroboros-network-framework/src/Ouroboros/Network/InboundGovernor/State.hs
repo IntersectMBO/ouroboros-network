@@ -8,11 +8,9 @@
 -- Inbound protocol governor state.
 --
 module Ouroboros.Network.InboundGovernor.State
-  ( InboundGovernorObservableState (..)
-  , newObservableStateVar
-  , newObservableStateVarIO
-  , newObservableStateVarFromSeed
+  ( PublicInboundGovernorState (..)
     -- * Internals
+  , mkPublicInboundGovernorState
   , InboundGovernorState (..)
   , ConnectionState (..)
   , InboundGovernorCounters (..)
@@ -28,13 +26,13 @@ module Ouroboros.Network.InboundGovernor.State
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
 import Control.Monad.Class.MonadThrow hiding (handle)
+import Control.Monad.Class.MonadTime.SI
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Cache (Cache)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import System.Random (StdGen)
-import System.Random qualified as Rnd
+import Data.OrdPSQ as OrdPSQ
 
 import Network.Mux qualified as Mux
 
@@ -43,61 +41,57 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.Mux
 
 
--- | Currently only 'StdGen', but in the future this will be extended to
--- a record which contains some useful statistics about peers to support more
--- advanced prune strategies (see. 'PruneStrategy').
+-- | Public inbound governor state.
 --
-newtype InboundGovernorObservableState = InboundGovernorObservableState {
-      igosPrng :: StdGen
+newtype PublicInboundGovernorState peerAddr versionData = PublicInboundGovernorState {
+      -- | A map of mature inbound duplex connections. These peers are used for
+      -- light peer sharing (e.g. bootstrapping peer sharing).
+      --
+      inboundDuplexPeers :: Map peerAddr versionData
     }
 
--- | Create new observable state 'StrictTVar'.
+
+-- | Smart constructor for `PublicInboundGovernorState`.
 --
-newObservableStateVar
-    :: MonadLabelledSTM m
-    => StdGen
-    -> m (StrictTVar m InboundGovernorObservableState)
-newObservableStateVar prng = do
-    v <- newTVarIO (InboundGovernorObservableState prng)
-    labelTVarIO v "observable-state-var"
-    return v
-
-
--- | Using the global 'StdGen'.
+-- NOTE: we assume that all inbound connections share the same address.  This
+-- is true in P2P mode since all outbound connections (which also can end up in
+-- the `InboundGovernorState`) bind the server address.  This allows us to use
+-- `Map.mapKeysMonotonic`.
 --
-newObservableStateVarIO
-    :: IO (StrictTVar IO InboundGovernorObservableState)
-newObservableStateVarIO = do
-    g <- Rnd.getStdGen
-    let (g', igsPrng) = Rnd.split g
-    Rnd.setStdGen g'
-    newObservableStateVar igsPrng
-
-
--- | Useful for testing, it is using 'Rnd.mkStdGen'.
---
-newObservableStateVarFromSeed
-    :: MonadLabelledSTM m
-    => Int
-    -> m (StrictTVar m InboundGovernorObservableState)
-newObservableStateVarFromSeed = newObservableStateVar . Rnd.mkStdGen
-
+mkPublicInboundGovernorState
+  :: forall muxMode initatorCtx versionData peerAddr m a b.
+     InboundGovernorState muxMode initatorCtx peerAddr versionData m a b
+  -> PublicInboundGovernorState peerAddr versionData
+mkPublicInboundGovernorState
+    InboundGovernorState { igsMatureDuplexPeers }
+    =
+    PublicInboundGovernorState {
+      inboundDuplexPeers = igsMatureDuplexPeers
+    }
 
 -- | 'InboundGovernorState', which consist of pure part, and a mutable part.
 -- The mutable part can be observable from outside.  Future version could
 -- contain additional statistics on the peers.
 --
-data InboundGovernorState muxMode initiatorCtx peerAddr m a b =
+data InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b =
     InboundGovernorState {
         -- | Map of connections state.  Modifying 'igsConnections' outside of
         -- 'inboundGovernorLoop' is not safe.
         --
         igsConnections   :: !(Map (ConnectionId peerAddr)
-                                  (ConnectionState muxMode initiatorCtx peerAddr m a b)),
+                                  (ConnectionState muxMode initiatorCtx peerAddr versionData m a b)),
 
-        -- | PRNG available to 'PrunePolicy'.
+        -- | Map of mature duplex peers.
         --
-        igsObservableVar :: !(StrictTVar m InboundGovernorObservableState),
+        -- We don't add new duplex connections immediately, but only after
+        -- a 15mins delay (defined in `inboundMaturePeerDelay`.
+        --
+        igsMatureDuplexPeers :: !(Map peerAddr versionData),
+
+        -- | Queue of fresh duplex connections ordered by time of arrival.  Only
+        -- connections younger than than 15mins are kept in this data structure.
+        --
+        igsFreshDuplexPeers :: !(OrdPSQ peerAddr Time versionData),
 
         -- | 'InboundGovernorCounters' counters cache. Allows to only trace
         -- values when necessary.
@@ -128,7 +122,7 @@ instance Monoid InboundGovernorCounters where
     mempty = InboundGovernorCounters 0 0 0 0
 
 
-inboundGovernorCounters :: InboundGovernorState muxMode initiatorCtx peerAddr m a b
+inboundGovernorCounters :: InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
                         -> InboundGovernorCounters
 inboundGovernorCounters InboundGovernorState { igsConnections } =
     foldMap (\ConnectionState { csRemoteState } ->
@@ -156,14 +150,22 @@ data MiniProtocolData muxMode initiatorCtx peerAddr m a b = MiniProtocolData {
 
 -- | Per connection state tracked by /inbound protocol governor/.
 --
-data ConnectionState muxMode initiatorCtx peerAddr m a b = ConnectionState {
+data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = ConnectionState {
       -- | Mux interface.
       --
       csMux             :: !(Mux.Mux muxMode m),
 
       -- | Connection data flow.
       --
+      -- TODO: once we will be able able to compute `DataFlow` from
+      -- `versionData`, e.g. the oldest supported version is greater than
+      -- `NodeToNodeV_10`,  we will no longer need this field.
+      --
       csDataFlow        :: !DataFlow,
+
+      -- | version data negotiated on the connection.
+      --
+      csVersionData     :: !versionData,
 
       -- | All supported mini-protocols and respective
       -- 'ProtocolTemperature'
@@ -192,12 +194,18 @@ data ConnectionState muxMode initiatorCtx peerAddr m a b = ConnectionState {
 --
 unregisterConnection :: Ord peerAddr
                      => ConnectionId peerAddr
-                     -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
-                     -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
+                     -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
+                     -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
 unregisterConnection connId state =
     state { igsConnections =
               assert (connId `Map.member` igsConnections state) $
-              Map.delete connId (igsConnections state)
+              Map.delete connId (igsConnections state),
+
+            igsMatureDuplexPeers =
+              Map.delete (remoteAddress connId) (igsMatureDuplexPeers state),
+
+            igsFreshDuplexPeers =
+              OrdPSQ.delete (remoteAddress connId) (igsFreshDuplexPeers state)
           }
 
 
@@ -208,8 +216,8 @@ updateMiniProtocol :: Ord peerAddr
                    => ConnectionId peerAddr
                    -> MiniProtocolNum
                    -> STM m (Either SomeException b)
-                   -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
-                   -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
+                   -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
+                   -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
 updateMiniProtocol connId miniProtocolNum completionAction state =
     state { igsConnections =
               Map.adjust (\connState@ConnectionState { csCompletionMap } ->
@@ -282,8 +290,8 @@ pattern RemoteEstablished <- (remoteEstablished -> Just _)
 updateRemoteState :: Ord peerAddr
                   => ConnectionId peerAddr
                   -> RemoteState m
-                  -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
-                  -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
+                  -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
+                  -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
 updateRemoteState connId csRemoteState state =
     state {
       igsConnections =
@@ -296,8 +304,8 @@ updateRemoteState connId csRemoteState state =
 mapRemoteState :: Ord peerAddr
                => ConnectionId peerAddr
                -> (RemoteState m -> RemoteState m)
-               -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
-               -> InboundGovernorState muxMode initiatorCtx peerAddr m a b
+               -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
+               -> InboundGovernorState muxMode initiatorCtx peerAddr versionData m a b
 mapRemoteState connId fn state =
     state {
       igsConnections =

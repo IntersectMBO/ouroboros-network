@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -52,8 +53,12 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Monoid (Sum (..))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.OrdPSQ (OrdPSQ)
+import Data.OrdPSQ qualified as OrdPSQ
+import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
+import System.Random (StdGen, mkStdGen, split)
 
 import Text.Printf
 
@@ -70,9 +75,11 @@ import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConnectionManager.Types qualified as CM
-import Ouroboros.Network.InboundGovernor (InboundGovernorTrace (..))
+import Ouroboros.Network.InboundGovernor (DebugInboundGovernor (..),
+           InboundGovernorTrace (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
-import Ouroboros.Network.InboundGovernor.State (InboundGovernorCounters (..))
+import Ouroboros.Network.InboundGovernor.State (ConnectionState (..),
+           InboundGovernorCounters (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
@@ -98,6 +105,7 @@ import Ouroboros.Network.ConnectionManager.Test.Utils
            (abstractStateIsFinalTransition, allValidTransitionsNames,
            validTransitionMap, verifyAbstractTransition,
            verifyAbstractTransitionOrder)
+import Ouroboros.Network.InboundGovernor.State (InboundGovernorState (..))
 import Ouroboros.Network.InboundGovernor.Test.Utils
            (allValidRemoteTransitionsNames, remoteStrIsFinalTransition,
            validRemoteTransitionMap, verifyRemoteTransition,
@@ -126,6 +134,8 @@ tests =
     , testProperty "no unsupported state"   prop_inbound_governor_no_unsupported_state
     , testProperty "pruning"                prop_inbound_governor_pruning
     , testProperty "counters"               prop_inbound_governor_counters
+    , testProperty "InboundGovernorState"   prop_inbound_governor_state
+    , testProperty "matured peers"          prop_inbound_governor_maturedPeers
     , testProperty "timeouts enforced"      prop_timeouts_enforced
     ]
   , testGroup "Server2"
@@ -134,9 +144,9 @@ tests =
     , testProperty "never above hardlimit"  prop_never_above_hardlimit
     , testGroup      "accept errors"
       [ testProperty "ConnectionAborted"
-                    (unit_server_accept_error IOErrConnectionAborted)
+                    (flip unit_server_accept_error IOErrConnectionAborted)
       , testProperty "ResourceExhausted"
-                    (unit_server_accept_error IOErrResourceExhausted)
+                    (flip unit_server_accept_error IOErrResourceExhausted)
       ]
     ]
   , testProperty "connection terminated when negotiating"
@@ -151,9 +161,10 @@ tests =
 -- Server tests
 --
 
-prop_unidirectional_Sim :: ClientAndServerData Int
+prop_unidirectional_Sim :: Fixed Int
+                        -> ClientAndServerData Int
                         -> Property
-prop_unidirectional_Sim clientAndServerData =
+prop_unidirectional_Sim (Fixed rnd) clientAndServerData =
   simulatedPropertyWithTimeout 7200 $
     withSnocket nullTracer
                 noAttenuation
@@ -163,14 +174,15 @@ prop_unidirectional_Sim clientAndServerData =
                 (Snocket.close snock) $ \fd -> do
           Snocket.bind   snock fd serverAddr
           Snocket.listen snock fd
-          unidirectionalExperiment simTimeouts snock makeFDBearer mempty fd clientAndServerData
+          unidirectionalExperiment (mkStdGen rnd) simTimeouts snock makeFDBearer mempty fd clientAndServerData
   where
     serverAddr = Snocket.TestAddress (0 :: Int)
 
-prop_bidirectional_Sim :: ClientAndServerData Int
+prop_bidirectional_Sim :: Fixed Int
+                       -> ClientAndServerData Int
                        -> ClientAndServerData Int
                        -> Property
-prop_bidirectional_Sim data0 data1 =
+prop_bidirectional_Sim (Fixed rnd) data0 data1 =
   simulatedPropertyWithTimeout 7200 $
     withSnocket sayTracer
                 noAttenuation
@@ -187,7 +199,7 @@ prop_bidirectional_Sim data0 data1 =
           Snocket.bind   snock socket1 addr1
           Snocket.listen snock socket0
           Snocket.listen snock socket1
-          bidirectionalExperiment False simTimeouts snock
+          bidirectionalExperiment False  (mkStdGen rnd)simTimeouts snock
                                         makeFDBearer
                                         (\_ -> pure ())
                                         socket0 socket1
@@ -625,9 +637,12 @@ multinodeExperiment
     -> Tracer m (WithName (Name peerAddr)
                           (InboundGovernorTrace peerAddr))
     -> Tracer m (WithName (Name peerAddr)
+                          (DebugInboundGovernor peerAddr))
+    -> Tracer m (WithName (Name peerAddr)
                           (ConnectionManagerTrace
                             peerAddr
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+    -> StdGen
     -> Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
     -> Snocket.AddressFamily peerAddr
@@ -638,68 +653,70 @@ multinodeExperiment
     -> AcceptedConnectionsLimit
     -> MultiNodeScript req peerAddr
     -> m ()
-multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
-                    snocket makeBearer addrFamily serverAddr accInit
+multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
+                    stdGen0 snocket makeBearer addrFamily serverAddr accInit
                     dataFlow0 acceptedConnLimit
                     (MultiNodeScript script _) =
   withJobPool $ \jobpool -> do
-  cc <- startServerConnectionHandler MainServer dataFlow0 [accInit] serverAddr jobpool
-  loop (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) script jobpool
+  stdGenVar <- newTVarIO stdGen0
+  cc <- startServerConnectionHandler stdGenVar MainServer dataFlow0 [accInit] serverAddr jobpool
+  loop stdGenVar (Map.singleton serverAddr [accInit]) (Map.singleton serverAddr cc) script jobpool
   where
 
-    loop :: Map.Map peerAddr acc
+    loop :: StrictTVar m StdGen
+         -> Map.Map peerAddr acc
          -> Map.Map peerAddr (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
          -> [ConnectionEvent req peerAddr]
          -> JobPool () m ()
          -> m ()
-    loop _ _ [] _ = threadDelay 3600
-    loop nodeAccs servers (event : events) jobpool =
+    loop _ _ _ [] _ = threadDelay 3600
+    loop stdGenVar nodeAccs servers (event : events) jobpool =
       case event of
 
         StartClient delay localAddr -> do
           threadDelay delay
-          cc <- startClientConnectionHandler (Client localAddr) localAddr jobpool
-          loop nodeAccs (Map.insert localAddr cc servers) events jobpool
+          cc <- startClientConnectionHandler stdGenVar (Client localAddr) localAddr jobpool
+          loop stdGenVar nodeAccs (Map.insert localAddr cc servers) events jobpool
 
         StartServer delay localAddr nodeAcc -> do
           threadDelay delay
-          cc <- startServerConnectionHandler (Node localAddr) Duplex [nodeAcc] localAddr jobpool
-          loop (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) events jobpool
+          cc <- startServerConnectionHandler stdGenVar (Node localAddr) Duplex [nodeAcc] localAddr jobpool
+          loop stdGenVar (Map.insert localAddr [nodeAcc] nodeAccs) (Map.insert localAddr cc servers) events jobpool
 
         InboundConnection delay nodeAddr -> do
           threadDelay delay
           sendMsg nodeAddr $ NewConnection serverAddr
-          loop nodeAccs servers events jobpool
+          loop stdGenVar nodeAccs servers events jobpool
 
         OutboundConnection delay nodeAddr -> do
           threadDelay delay
           sendMsg serverAddr $ NewConnection nodeAddr
-          loop nodeAccs servers events jobpool
+          loop stdGenVar nodeAccs servers events jobpool
 
         CloseInboundConnection delay remoteAddr -> do
           threadDelay delay
           sendMsg remoteAddr $ Disconnect serverAddr
-          loop nodeAccs servers events jobpool
+          loop stdGenVar nodeAccs servers events jobpool
 
         CloseOutboundConnection delay remoteAddr -> do
           threadDelay delay
           sendMsg serverAddr $ Disconnect remoteAddr
-          loop nodeAccs servers events jobpool
+          loop stdGenVar nodeAccs servers events jobpool
 
         InboundMiniprotocols delay nodeAddr reqs -> do
           threadDelay delay
           sendMsg nodeAddr $ RunMiniProtocols serverAddr reqs
-          loop nodeAccs servers events jobpool
+          loop stdGenVar nodeAccs servers events jobpool
 
         OutboundMiniprotocols delay nodeAddr reqs -> do
           threadDelay delay
           sendMsg serverAddr $ RunMiniProtocols nodeAddr reqs
-          loop nodeAccs servers events jobpool
+          loop stdGenVar nodeAccs servers events jobpool
 
         ShutdownClientServer delay nodeAddr -> do
           threadDelay delay
           sendMsg nodeAddr Shutdown
-          loop nodeAccs servers events jobpool
+          loop stdGenVar nodeAccs servers events jobpool
       where
         sendMsg :: peerAddr -> ConnectionHandlerMessage peerAddr req -> m ()
         sendMsg addr msg = atomically $
@@ -718,20 +735,23 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
             Nothing -> retry
             Just qs -> readTQueue (projectBundle tok qs)
 
-    startClientConnectionHandler :: Name peerAddr
+    startClientConnectionHandler :: StrictTVar m StdGen
+                                 -> Name peerAddr
                                  -> peerAddr
                                  -> JobPool () m ()
                                  -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
-    startClientConnectionHandler name localAddr jobpool  = do
+    startClientConnectionHandler stdGenVar name localAddr jobpool  = do
         cc <- atomically newTQueue
         labelTQueueIO cc $ "cc/" ++ show name
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
+        stdGen <- atomically (stateTVar stdGenVar split)
         forkJob jobpool
           $ Job
               ( withInitiatorOnlyConnectionManager
-                    name simTimeouts nullTracer nullTracer snocket makeBearer (Just localAddr) (mkNextRequests connVar)
+                    name simTimeouts nullTracer nullTracer stdGen
+                    snocket makeBearer (Just localAddr) (mkNextRequests connVar)
                     timeLimitsHandshake acceptedConnLimit
                   ( \ connectionManager ->
                       connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
@@ -742,13 +762,14 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
               (show name)
         return cc
 
-    startServerConnectionHandler :: Name peerAddr
+    startServerConnectionHandler :: StrictTVar m StdGen
+                                 -> Name peerAddr
                                  -> DataFlow
                                  -> acc
                                  -> peerAddr
                                  -> JobPool () m ()
                                  -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
-    startServerConnectionHandler name dataFlow serverAcc localAddr jobpool = do
+    startServerConnectionHandler stdGenVar name dataFlow serverAcc localAddr jobpool = do
         fd <- Snocket.open snocket addrFamily
         Snocket.bind   snocket fd localAddr
         Snocket.listen snocket fd
@@ -757,12 +778,15 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
         connVar <- newTVarIO Map.empty
         labelTVarIO connVar $ "connVar/" ++ show name
         threadId <- myThreadId
+        stdGen <- atomically (stateTVar stdGenVar split)
         let job =
               case dataFlow of
                 Duplex ->
                   Job ( withBidirectionalConnectionManager
                           name simTimeouts
-                          inboundTrTracer trTracer cmTracer inboundTracer
+                          inboundTrTracer trTracer cmTracer
+                          inboundTracer debugTracer
+                          stdGen
                           snocket makeBearer (\_ -> pure ()) fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           timeLimitsHandshake
@@ -780,7 +804,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer cmTracer
                       (show name)
                 Unidirectional ->
                   Job ( withInitiatorOnlyConnectionManager
-                          name simTimeouts trTracer cmTracer snocket makeBearer (Just localAddr)
+                          name simTimeouts trTracer cmTracer stdGen snocket makeBearer (Just localAddr)
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
@@ -991,19 +1015,20 @@ validate_transitions mns@(MultiNodeScript events _) trace =
 -- Note: this test validates connection manager state changes.
 --
 prop_connection_manager_valid_transitions
-  :: Int
+  :: Fixed Int
+  -> Int
   -> ArbDataFlow
   -> AbsBearerInfo
   -> MultiNodeScript Int TestAddr
   -> Property
 prop_connection_manager_valid_transitions
-  serverAcc (ArbDataFlow dataFlow) defaultBearerInfo
+  (Fixed rnd) serverAcc (ArbDataFlow dataFlow) defaultBearerInfo
   mns@(MultiNodeScript events attenuationMap) =
     validate_transitions mns trace
   where
     trace = runSimTrace sim
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1011,20 +1036,21 @@ prop_connection_manager_valid_transitions
 
 
 prop_connection_manager_valid_transitions_racy
-  :: Int
+  :: Fixed Int
+  -> Int
   -> ArbDataFlow
   -> AbsBearerInfo
   -> MultiNodeScript Int TestAddr
   -> Property
 prop_connection_manager_valid_transitions_racy
-  serverAcc (ArbDataFlow dataFlow)
+   (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
   defaultBearerInfo mns@(MultiNodeScript events attenuationMap) =
     exploreSimTrace id sim $ \_ trace ->
                              validate_transitions mns trace
   where
     sim :: IOSim s ()
     sim = exploreRaces
-       >> multiNodeSim serverAcc dataFlow
+       >> multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1035,12 +1061,13 @@ prop_connection_manager_valid_transitions_racy
 --
 -- Note: this test coverage of connection manager state transitions.
 -- TODO: Fix transitions that are not covered. #3516
-prop_connection_manager_transitions_coverage :: Int
+prop_connection_manager_transitions_coverage :: Fixed Int
+                                             -> Int
                                              -> ArbDataFlow
                                              -> AbsBearerInfo
                                              -> MultiNodeScript Int TestAddr
                                              -> Property
-prop_connection_manager_transitions_coverage serverAcc
+prop_connection_manager_transitions_coverage (Fixed rnd) serverAcc
     (ArbDataFlow dataFlow)
     defaultBearerInfo
     (MultiNodeScript events attenuationMap) =
@@ -1057,7 +1084,7 @@ prop_connection_manager_transitions_coverage serverAcc
       True
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1068,12 +1095,13 @@ prop_connection_manager_transitions_coverage serverAcc
 -- Note: this test validates that we do not get undesired traces, such as
 -- TrUnexpectedlyMissingConnectionState in connection manager.
 --
-prop_connection_manager_no_invalid_traces :: Int
+prop_connection_manager_no_invalid_traces :: Fixed Int
+                                          -> Int
                                           -> ArbDataFlow
                                           -> AbsBearerInfo
                                           -> MultiNodeScript Int TestAddr
                                           -> Property
-prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
+prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                           defaultBearerInfo
                                           (MultiNodeScript events
                                                            attenuationMap) =
@@ -1108,7 +1136,7 @@ prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
     $ connectionManagerEvents
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1118,12 +1146,13 @@ prop_connection_manager_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
 --
 -- Note: this test validates the order of connection manager state changes.
 --
-prop_connection_manager_valid_transition_order :: Int
+prop_connection_manager_valid_transition_order :: Fixed Int
+                                               -> Int
                                                -> ArbDataFlow
                                                -> AbsBearerInfo
                                                -> MultiNodeScript Int TestAddr
                                                -> Property
-prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
+prop_connection_manager_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                                defaultBearerInfo
                                                mns@(MultiNodeScript
                                                         events
@@ -1148,19 +1177,20 @@ prop_connection_manager_valid_transition_order serverAcc (ArbDataFlow dataFlow)
     $ abstractTransitionEvents
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
                        attenuationMap
 
 
-prop_connection_manager_valid_transition_order_racy :: Int
+prop_connection_manager_valid_transition_order_racy :: Fixed Int
+                                                    -> Int
                                                     -> ArbDataFlow
                                                     -> AbsBearerInfo
                                                     -> MultiNodeScript Int TestAddr
                                                     -> Property
-prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataFlow)
+prop_connection_manager_valid_transition_order_racy (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                                     defaultBearerInfo
                                                     mns@(MultiNodeScript
                                                              events
@@ -1188,7 +1218,7 @@ prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataF
   where
     sim :: IOSim s ()
     sim = exploreRaces
-       >> multiNodeSim serverAcc dataFlow
+       >> multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1209,11 +1239,12 @@ prop_connection_manager_valid_transition_order_racy serverAcc (ArbDataFlow dataF
 --
 -- TODO #4698: this function should be rewritten to analyse the trace as
 -- a stream, to reduce its memory footprint.
-prop_connection_manager_counters :: Int
+prop_connection_manager_counters :: Fixed Int
+                                 -> Int
                                  -> ArbDataFlow
                                  -> MultiNodeScript Int TestAddr
                                  -> Property
-prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
+prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                  (MultiNodeScript events
                                                   attenuationMap) =
   let trace = runSimTrace sim
@@ -1387,9 +1418,11 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
                 multinodeExperiment (sayTracer <> Tracer traceM)
                                     (sayTracer <> Tracer traceM)
                                     (sayTracer <> Tracer traceM)
+                                    nullTracer
                                     (   sayTracer
                                      <> Tracer traceM
                                      <> networkStateTracer getState)
+                                    (mkStdGen rnd)
                                     snocket
                                     makeFDBearer
                                     Snocket.TestFamily
@@ -1416,11 +1449,12 @@ prop_connection_manager_counters serverAcc (ArbDataFlow dataFlow)
 -- timeouts.
 --
 -- TODO #4698: reduce memory footprint.
-prop_timeouts_enforced :: Int
+prop_timeouts_enforced :: Fixed Int
+                       -> Int
                        -> ArbDataFlow
                        -> MultiNodeScript Int TestAddr
                        -> Property
-prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
+prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                        (MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
@@ -1434,7 +1468,7 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
    $ verifyAllTimeouts False transitionSignal
   where
     sim :: IOSim s ()
-    sim = multiNodeSimTracer serverAcc dataFlow
+    sim = multiNodeSimTracer (mkStdGen rnd) serverAcc dataFlow
                              absNoAttenuation
                              maxAcceptedConnectionsLimit
                              events
@@ -1442,18 +1476,20 @@ prop_timeouts_enforced serverAcc (ArbDataFlow dataFlow)
                              dynamicTracer
                              (tracerWithTime (Tracer traceM) <> dynamicTracer)
                              dynamicTracer
+                             nullTracer
                              dynamicTracer
 
 -- | Property wrapping `multinodeExperiment`.
 --
 -- Note: this test validates inbound governor state changes.
 --
-prop_inbound_governor_valid_transitions :: Int
+prop_inbound_governor_valid_transitions :: Fixed Int
+                                        -> Int
                                         -> ArbDataFlow
                                         -> AbsBearerInfo
                                         -> MultiNodeScript Int TestAddr
                                         -> Property
-prop_inbound_governor_valid_transitions serverAcc (ArbDataFlow dataFlow)
+prop_inbound_governor_valid_transitions (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                         defaultBearerInfo
                                         mns@(MultiNodeScript
                                                   events
@@ -1483,7 +1519,7 @@ prop_inbound_governor_valid_transitions serverAcc (ArbDataFlow dataFlow)
     $ remoteTransitionTraceEvents
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1493,12 +1529,13 @@ prop_inbound_governor_valid_transitions serverAcc (ArbDataFlow dataFlow)
 --
 -- Note: this test validates inbound governor state changes.
 --
-prop_inbound_governor_no_unsupported_state :: Int
+prop_inbound_governor_no_unsupported_state :: Fixed Int
+                                           -> Int
                                            -> ArbDataFlow
                                            -> AbsBearerInfo
                                            -> MultiNodeScript Int TestAddr
                                            -> Property
-prop_inbound_governor_no_unsupported_state serverAcc (ArbDataFlow dataFlow)
+prop_inbound_governor_no_unsupported_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                            defaultBearerInfo
                                            mns@(MultiNodeScript
                                                     events
@@ -1538,7 +1575,7 @@ prop_inbound_governor_no_unsupported_state serverAcc (ArbDataFlow dataFlow)
     $ inboundGovernorEvents
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1549,12 +1586,13 @@ prop_inbound_governor_no_unsupported_state serverAcc (ArbDataFlow dataFlow)
 -- Note: this test validates that we do not get undesired traces, such as
 -- TrUnexpectedlyMissingConnectionState in inbound governor.
 --
-prop_inbound_governor_no_invalid_traces :: Int
+prop_inbound_governor_no_invalid_traces :: Fixed Int
+                                        -> Int
                                         -> ArbDataFlow
                                         -> AbsBearerInfo
                                         -> MultiNodeScript Int TestAddr
                                         -> Property
-prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
+prop_inbound_governor_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                         defaultBearerInfo
                                         mns@(MultiNodeScript events
                                                              attenuationMap) =
@@ -1586,7 +1624,7 @@ prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
     $ inboundGovernorEvents
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1596,12 +1634,13 @@ prop_inbound_governor_no_invalid_traces serverAcc (ArbDataFlow dataFlow)
 --
 -- Note: this test coverage of inbound governor state transitions.
 -- TODO: Fix transitions that are not covered. #3516
-prop_inbound_governor_transitions_coverage :: Int
+prop_inbound_governor_transitions_coverage :: Fixed Int
+                                           -> Int
                                            -> ArbDataFlow
                                            -> AbsBearerInfo
                                            -> MultiNodeScript Int TestAddr
                                            -> Property
-prop_inbound_governor_transitions_coverage serverAcc
+prop_inbound_governor_transitions_coverage (Fixed rnd) serverAcc
   (ArbDataFlow dataFlow)
   defaultBearerInfo
   (MultiNodeScript events attenuationMap) =
@@ -1622,7 +1661,7 @@ prop_inbound_governor_transitions_coverage serverAcc
       True
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1632,12 +1671,13 @@ prop_inbound_governor_transitions_coverage serverAcc
 --
 -- Note: this test validates the order of inbound governor state changes.
 --
-prop_inbound_governor_valid_transition_order :: Int
+prop_inbound_governor_valid_transition_order :: Fixed Int
+                                             -> Int
                                              -> ArbDataFlow
                                              -> AbsBearerInfo
                                              -> MultiNodeScript Int TestAddr
                                              -> Property
-prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
+prop_inbound_governor_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                              defaultBearerInfo
                                              mns@(MultiNodeScript
                                                       events
@@ -1665,7 +1705,7 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
     $ remoteTransitionTraceEvents
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        defaultBearerInfo
                        maxAcceptedConnectionsLimit
                        events
@@ -1675,11 +1715,12 @@ prop_inbound_governor_valid_transition_order serverAcc (ArbDataFlow dataFlow)
 --
 -- Note: this test validates warm and hot inbound governor counters only.
 --
-prop_inbound_governor_counters :: Int
+prop_inbound_governor_counters :: Fixed Int
+                               -> Int
                                -> ArbDataFlow
                                -> MultiNodeScript Int TestAddr
                                -> Property
-prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
+prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                mns@(MultiNodeScript
                                         events
                                         attenuationMap) =
@@ -1763,11 +1804,64 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
           (Map.singleton taServerAcc Map.empty)
 
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc dataFlow
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
                        absNoAttenuation
                        maxAcceptedConnectionsLimit
                        events
                        (toNonFailing <$> attenuationMap)
+
+
+prop_inbound_governor_state :: Fixed Int
+                            -> Int
+                            -> ArbDataFlow
+                            -> AbsBearerInfo
+                            -> MultiNodeScript Int TestAddr
+                            -> Property
+prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
+                            defaultBearerInfo
+                            mns@(MultiNodeScript events attenuationMap) =
+  let trace = runSimTrace sim
+
+      evs :: Trace (SimResult ()) (DebugInboundGovernor SimAddr)
+      evs = traceWithNameTraceEvents trace
+
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents = traceWithNameTraceEvents trace
+
+  in  counterexample (ppScript mns)
+    . bifoldMap
+       ( \ case
+           MainReturn {} -> mempty
+           _             -> All False
+       )
+       (All . inboundGovernorStateInvariant)
+    $ evs
+  where
+    sim :: IOSim s ()
+    sim = multiNodeSim (mkStdGen rnd) serverAcc dataFlow
+                       defaultBearerInfo
+                       maxAcceptedConnectionsLimit
+                       events
+                       attenuationMap
+
+    inboundGovernorStateInvariant :: DebugInboundGovernor SimAddr
+                                  -> Property
+    inboundGovernorStateInvariant
+        (DebugInboundGovernor InboundGovernorState { igsConnections,
+                                                     igsMatureDuplexPeers,
+                                                     igsFreshDuplexPeers })
+        =
+        keys === keys'
+      where
+        keys  = Set.map remoteAddress
+              . Map.keysSet
+              . Map.filter (\ConnectionState { csDataFlow } -> csDataFlow == Duplex)
+              $ igsConnections
+
+        keys' = Set.fromList (OrdPSQ.keys igsFreshDuplexPeers)
+             <> Map.keysSet igsMatureDuplexPeers
+
+
 
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
@@ -1776,10 +1870,11 @@ prop_inbound_governor_counters serverAcc (ArbDataFlow dataFlow)
 -- connections hard limit we do not end up triggering any illegal transition in Connection
 -- Manager.
 --
-prop_connection_manager_pruning :: Int
+prop_connection_manager_pruning :: Fixed Int
+                                -> Int
                                 -> MultiNodePruningScript Int
                                 -> Property
-prop_connection_manager_pruning serverAcc
+prop_connection_manager_pruning (Fixed rnd) serverAcc
                                 (MultiNodePruningScript
                                   acceptedConnLimit
                                   events
@@ -1844,7 +1939,7 @@ prop_connection_manager_pruning serverAcc
     $ evs
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc Duplex
+    sim = multiNodeSim (mkStdGen rnd) serverAcc Duplex
                        absNoAttenuation
                        acceptedConnLimit
                        events
@@ -1857,10 +1952,11 @@ prop_connection_manager_pruning serverAcc
 -- connections hard limit we do not end up triggering any illegal transition in the
 -- Inbound Governor.
 --
-prop_inbound_governor_pruning :: Int
+prop_inbound_governor_pruning :: Fixed Int
+                              -> Int
                               -> MultiNodePruningScript Int
                               -> Property
-prop_inbound_governor_pruning serverAcc
+prop_inbound_governor_pruning (Fixed rnd) serverAcc
                               (MultiNodePruningScript
                                 acceptedConnLimit
                                 events
@@ -1928,11 +2024,48 @@ prop_inbound_governor_pruning serverAcc
     $ evs
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc Duplex
+    sim = multiNodeSim (mkStdGen rnd) serverAcc Duplex
                        absNoAttenuation
                        acceptedConnLimit
                        events
                        (toNonFailing <$> attenuationMap)
+
+
+data FreshPeers peerAddr versionData =
+    FreshPeers Time
+               (OrdPSQ peerAddr Time versionData)
+
+    deriving Show
+
+
+instance (Arbitrary peerAddr, Arbitrary versionData, Ord peerAddr)
+    => Arbitrary (FreshPeers peerAddr versionData) where
+    arbitrary = FreshPeers <$> (mkTime <$> (arbitrary :: Gen Rational))
+                           <*> ( OrdPSQ.fromList . map (\(a, b, c) -> (a, mkTime b, c))
+                               <$> arbitrary)
+      where
+        mkTime :: Rational -> Time
+        mkTime = Time . realToFrac
+
+
+prop_inbound_governor_maturedPeers :: FreshPeers Int Int -> Property
+prop_inbound_governor_maturedPeers (FreshPeers now fresh) = property $
+         -- all peers which are kept as fresh are younger than `15min`
+         foldMap (\(addr, t, _) -> All $ counterexample (show (addr, t, now))
+                                       $ t >= (-delay) `addTime` now)
+                 (OrdPSQ.toList fresh')
+         -- peers are preserved
+      <> (All $ Map.keysSet matured <> keysSet fresh' === keysSet fresh)
+    where
+      (matured, fresh') = IG.maturedPeers now fresh
+
+      -- matured delay
+      delay :: DiffTime
+      delay = 15 * 60
+
+      keysSet :: Ord k => OrdPSQ k p v -> Set k
+      keysSet = Set.fromList . OrdPSQ.keys
+
 
 -- | Property wrapping `multinodeExperiment` that has a generator optimized for triggering
 -- pruning, and random generated number of connections hard limit.
@@ -1943,10 +2076,11 @@ prop_inbound_governor_pruning serverAcc
 -- * the pruning set is at least as big as expected, and that
 --   the picked peers belong to the choice set.
 --
-prop_never_above_hardlimit :: Int
+prop_never_above_hardlimit :: Fixed Int
+                           -> Int
                            -> MultiNodePruningScript Int
                            -> Property
-prop_never_above_hardlimit serverAcc
+prop_never_above_hardlimit (Fixed rnd) serverAcc
                            (MultiNodePruningScript
                              acceptedConnLimit@AcceptedConnectionsLimit
                                { acceptedConnectionsHardLimit = hardlimit }
@@ -2011,7 +2145,7 @@ prop_never_above_hardlimit serverAcc
    $ connectionManagerEvents
   where
     sim :: IOSim s ()
-    sim = multiNodeSim serverAcc Duplex
+    sim = multiNodeSim (mkStdGen rnd) serverAcc Duplex
                        absNoAttenuation
                        acceptedConnLimit
                        events
@@ -2020,8 +2154,8 @@ prop_never_above_hardlimit serverAcc
 
 -- | Checks that the server re-throws exceptions returned by an 'accept' call.
 --
-unit_server_accept_error :: IOErrType -> Property
-unit_server_accept_error ioErrType =
+unit_server_accept_error :: Fixed Int -> IOErrType -> Property
+unit_server_accept_error (Fixed rnd) ioErrType =
     runSimOrThrow sim
   where
     -- The following attenuation make sure that the `accept` call will throw.
@@ -2031,12 +2165,9 @@ unit_server_accept_error ioErrType =
       noAttenuation { biAcceptFailures = Just (0, ioErrType) }
 
     sim :: IOSim s Property
-    sim = handle (\e -> return $ case fromException e of
-                          Just (ExceptionInLinkedThread _ err) ->
-                            case fromException err of
-                              Just (_ :: IOError) -> property True
-                              Nothing             -> property False
-                          Nothing                 -> property False
+    sim = handle (\e -> return $ case fromException e :: Maybe IOError of
+                          Just _  -> property True
+                          Nothing -> property $ counterexample ("not an IOError: " ++ show e) False
                  )
         $ withSnocket nullTracer
                       bearerAttenuation
@@ -2058,6 +2189,8 @@ unit_server_accept_error ioErrType =
                withBidirectionalConnectionManager "node-0" simTimeouts
                                                   nullTracer nullTracer
                                                   nullTracer nullTracer
+                                                  nullTracer
+                                                  (mkStdGen rnd)
                                                   snock
                                                   makeFDBearer
                                                   (\_ -> pure ())
@@ -2104,7 +2237,8 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                       , MonadEvaluate m, MonadFork m, MonadST m
                       , Serialise req, Show req, Eq req, Typeable req
                       )
-                   => req
+                   => StdGen
+                   -> req
                    -> DataFlow
                    -> AbsBearerInfo
                    -> AcceptedConnectionsLimit
@@ -2117,6 +2251,8 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> Tracer m
                       (WithName (Name SimAddr) (InboundGovernorTrace SimAddr))
                    -> Tracer m
+                      (WithName (Name SimAddr) (DebugInboundGovernor SimAddr))
+                   -> Tracer m
                       (WithName
                        (Name SimAddr)
                         (ConnectionManagerTrace
@@ -2124,10 +2260,10 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                           (ConnectionHandlerTrace
                             UnversionedProtocol DataFlowProtocolData)))
                    -> m ()
-multiNodeSimTracer serverAcc dataFlow defaultBearerInfo
+multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap
                    remoteTrTracer abstractTrTracer
-                   inboundGovTracer connMgrTracer = do
+                   inboundGovTracer debugTracer connMgrTracer = do
 
       let attenuationMap' = (fmap toBearerInfo <$>)
                           . Map.mapKeys ( normaliseId
@@ -2143,7 +2279,9 @@ multiNodeSimTracer serverAcc dataFlow defaultBearerInfo
                  multinodeExperiment remoteTrTracer
                                      abstractTrTracer
                                      inboundGovTracer
+                                     debugTracer
                                      connMgrTracer
+                                     stdGen
                                      snocket
                                      makeFDBearer
                                      Snocket.TestFamily
@@ -2165,18 +2303,19 @@ multiNodeSimTracer serverAcc dataFlow defaultBearerInfo
 
 
 multiNodeSim :: (Serialise req, Show req, Eq req, Typeable req)
-             => req
+             => StdGen
+             -> req
              -> DataFlow
              -> AbsBearerInfo
              -> AcceptedConnectionsLimit
              -> [ConnectionEvent req TestAddr]
              -> Map TestAddr (Script AbsBearerInfo)
              -> IOSim s ()
-multiNodeSim serverAcc dataFlow defaultBearerInfo
+multiNodeSim stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
-  multiNodeSimTracer serverAcc dataFlow defaultBearerInfo acceptedConnLimit
-                     events attenuationMap dynamicTracer dynamicTracer
-                     dynamicTracer dynamicTracer
+  multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
+                     events attenuationMap dynamicTracer dynamicTracer dynamicTracer
+                     (Tracer traceM) dynamicTracer
 
 
 -- | Connection terminated while negotiating it.
@@ -2210,15 +2349,15 @@ unit_connection_terminated_when_negotiating =
          Map.empty
    in
     prop_connection_manager_valid_transitions
-        0 arbDataFlow absBearerInfo
+         (Fixed 0) 0 arbDataFlow absBearerInfo
         multiNodeScript
     .&&.
     prop_inbound_governor_valid_transitions
-        0 arbDataFlow absBearerInfo
+        (Fixed 0) 0 arbDataFlow absBearerInfo
         multiNodeScript
     .&&.
     prop_inbound_governor_no_unsupported_state
-        0 arbDataFlow absBearerInfo
+        (Fixed 0) 0 arbDataFlow absBearerInfo
         multiNodeScript
 
 ppScript :: (Show peerAddr, Show req) => MultiNodeScript peerAddr req -> String

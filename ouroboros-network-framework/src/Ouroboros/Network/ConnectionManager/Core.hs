@@ -43,6 +43,7 @@ import Data.Maybe (maybeToList)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.Stack (CallStack, HasCallStack, callStack)
+import System.Random (StdGen, split)
 
 import Data.Map (Map)
 import Data.Map qualified as Map
@@ -63,7 +64,6 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.ConnectionManager.Types qualified as CM
 import Ouroboros.Network.InboundGovernor.Event (NewConnectionInfo (..))
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
 
@@ -136,12 +136,13 @@ data ConnectionManagerArguments handlerTrace socket peerAddr handle handleError 
 
         -- | Prune policy
         --
-        cmPrunePolicy         :: PrunePolicy peerAddr (STM m),
-        cmConnectionsLimits   :: AcceptedConnectionsLimit,
+        cmPrunePolicy         :: PrunePolicy peerAddr,
 
-        -- | How to extract remote side's PeerSharing information from
-        -- versionData
-        cmGetPeerSharing      :: versionData -> PeerSharing
+        -- | StdGen used by the `PrunePolicy`
+        --
+        cmStdGen              :: StdGen,
+
+        cmConnectionsLimits   :: AcceptedConnectionsLimit
       }
 
 
@@ -554,22 +555,17 @@ withConnectionManager
     => ConnectionManagerArguments handlerTrace socket peerAddr handle handleError version versionData m
     -> ConnectionHandler  muxMode handlerTrace socket peerAddr handle handleError (version, versionData) m
     -- ^ Callback which runs in a thread dedicated for a given connection.
-    -> PeerSharing
-    -- ^ Configuration PeerSharing value.
     -> (handleError -> HandleErrorType)
     -- ^ classify 'handleError's
     -> InResponderMode muxMode (InformationChannel (NewConnectionInfo peerAddr handle) m)
     -- ^ On outbound duplex connections we need to notify the server about
-    -- a new connection.
-    -> InResponderMode muxMode (Maybe (InformationChannel (peerAddr, PeerSharing) m))
-    -- ^ On inbound duplex connections we need to notify the outbound governor about
     -- a new connection.
     -> (ConnectionManager muxMode socket peerAddr handle handleError m -> m a)
     -- ^ Continuation which receives the 'ConnectionManager'.  It must not leak
     -- outside of scope of this callback.  Once it returns all resources
     -- will be closed.
     -> m a
-withConnectionManager ConnectionManagerArguments {
+withConnectionManager args@ConnectionManagerArguments {
                           cmTracer    = tracer,
                           cmTrTracer  = trTracer,
                           cmMuxTracer = muxTracer,
@@ -583,21 +579,19 @@ withConnectionManager ConnectionManagerArguments {
                           cmOutboundIdleTimeout,
                           connectionDataFlow,
                           cmPrunePolicy,
-                          cmConnectionsLimits,
-                          cmGetPeerSharing
+                          cmConnectionsLimits
                         }
                       ConnectionHandler {
                           connectionHandler
                         }
-                      peerSharing
                       classifyHandleError
                       inboundGovernorInfoChannel
-                      outboundGovernorInfoChannel
                       k = do
-    ((freshIdSupply, stateVar)
+    ((freshIdSupply, stateVar, stdGenVar)
        ::  ( FreshIdSupply m
            , StrictTMVar m (ConnectionManagerState peerAddr handle handleError
                                                    version m)
+           , StrictTVar m StdGen
            ))
       <- atomically $  do
           v  <- newTMVar Map.empty
@@ -613,7 +607,8 @@ withConnectionManager ConnectionManagerArguments {
                        (_, _)                   -> pure DontTrace
 
           freshIdSupply <- newFreshIdSupply (Proxy :: Proxy m)
-          return (freshIdSupply, v)
+          stdGenVar <- newTVar (cmStdGen args)
+          return (freshIdSupply, v, stdGenVar)
 
     let readState
           :: STM m (Map peerAddr AbstractState)
@@ -659,7 +654,7 @@ withConnectionManager ConnectionManagerArguments {
                           requestOutboundConnectionImpl freshIdSupply stateVar
                                                         outboundHandler,
                         ocmUnregisterConnection =
-                          unregisterOutboundConnectionImpl stateVar
+                          unregisterOutboundConnectionImpl stateVar stdGenVar
                       },
                 readState,
                 waitForOutboundDemotion
@@ -676,7 +671,7 @@ withConnectionManager ConnectionManagerArguments {
                         icmUnregisterConnection =
                           unregisterInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
-                          promotedToWarmRemoteImpl stateVar,
+                          promotedToWarmRemoteImpl stateVar stdGenVar,
                         icmDemotedToColdRemote =
                           demotedToColdRemoteImpl stateVar,
                         icmNumberOfConnections =
@@ -695,7 +690,7 @@ withConnectionManager ConnectionManagerArguments {
                           requestOutboundConnectionImpl freshIdSupply stateVar
                                                         outboundHandler,
                         ocmUnregisterConnection =
-                          unregisterOutboundConnectionImpl stateVar
+                          unregisterOutboundConnectionImpl stateVar stdGenVar
                       }
                     InboundConnectionManager {
                         icmIncludeConnection =
@@ -704,7 +699,7 @@ withConnectionManager ConnectionManagerArguments {
                         icmUnregisterConnection =
                           unregisterInboundConnectionImpl stateVar,
                         icmPromotedToWarmRemote =
-                          promotedToWarmRemoteImpl stateVar,
+                          promotedToWarmRemoteImpl stateVar stdGenVar,
                         icmDemotedToColdRemote =
                           demotedToColdRemoteImpl stateVar,
                         icmNumberOfConnections =
@@ -988,11 +983,12 @@ withConnectionManager ConnectionManagerArguments {
                   -> ConnectionState peerAddr handle handleError version  m
                   -- ^ next connection state, if it will not be pruned.
                   -> StrictTVar m (ConnectionState peerAddr handle handleError version m)
+                  -> StrictTVar m StdGen
                   -> Async m ()
                   -> STM m (Bool, PruneAction m)
                   -- ^ return if the connection was choose to be pruned and the
                   -- 'PruneAction'
-    mkPruneAction peerAddr numberToPrune state connState' connVar connThread = do
+    mkPruneAction peerAddr numberToPrune state connState' connVar stdGenVar connThread = do
       (choiceMap' :: Map peerAddr ( ConnectionType
                                   , Async m ()
                                   , StrictTVar m
@@ -1015,10 +1011,11 @@ withConnectionManager ConnectionManagerArguments {
               Just a  -> Map.insert peerAddr (a, connThread, connVar)
                                     choiceMap'
 
-      pruneSet <-
-        cmPrunePolicy
-          ((\(a,_,_) -> a) <$> choiceMap)
-          numberToPrune
+      stdGen <- stateTVar stdGenVar split
+      let pruneSet = cmPrunePolicy
+                       stdGen
+                       ((\(a,_,_) -> a) <$> choiceMap)
+                       numberToPrune
 
       let pruneMap = choiceMap `Map.restrictKeys` pruneSet
       forM_ pruneMap $ \(_, _, connVar') ->
@@ -1252,27 +1249,6 @@ withConnectionManager ConnectionManagerArguments {
                                        infoChannel
                                        (NewConnectionInfo provenance connId dataFlow handle)
                       _ -> return ()
-
-                    let -- True iff the connection can be used by the outbound
-                        -- governor.
-                        notifyOutboundGov =
-                          case (provenance, peerSharing) of
-                            (Inbound, PeerSharingEnabled) -> Duplex == dataFlow
-                            _                             -> False
-                            -- The connection started as inbound but its
-                            -- provenance was changed to outbound; this is only
-                            -- possible if we are connecting to ourselves.  In
-                            -- this case we don't need to notify the outbound
-                            -- governor.
-                    case outboundGovernorInfoChannel of
-                      InResponderMode (Just infoChannel) | notifyOutboundGov
-                                                         ->
-                        atomically $ InfoChannel.writeMessage
-                                       infoChannel
-                                       (peerAddr, cmGetPeerSharing versionData)
-
-                      _ -> return ()
-
                     return $ Connected connId dataFlow handle
 
                   -- the connection is in `TerminatingState` or
@@ -2104,9 +2080,10 @@ withConnectionManager ConnectionManagerArguments {
     unregisterOutboundConnectionImpl
         :: StrictTMVar m
             (ConnectionManagerState peerAddr handle handleError version m)
+        -> StrictTVar m StdGen
         -> peerAddr
         -> m (OperationResult AbstractState)
-    unregisterOutboundConnectionImpl stateVar peerAddr = do
+    unregisterOutboundConnectionImpl stateVar stdGenVar peerAddr = do
       traceWith tracer (TrUnregisterConnection Outbound peerAddr)
       (transition, mbAssertion)
         <- atomically $ do
@@ -2187,7 +2164,7 @@ withConnectionManager ConnectionManagerArguments {
                 if numberToPrune > 0
                 then do
                   (_, prune)
-                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar stdGenVar connThread
                   return
                     ( PruneConnections prune (Left connState)
                     , Nothing
@@ -2328,9 +2305,10 @@ withConnectionManager ConnectionManagerArguments {
     -- guarantees that the same order of transitions and its trace.
     promotedToWarmRemoteImpl
         :: StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
+        -> StrictTVar m StdGen
         -> peerAddr
         -> m (OperationResult AbstractState)
-    promotedToWarmRemoteImpl stateVar peerAddr = mask_ $ do
+    promotedToWarmRemoteImpl stateVar stdGenVar peerAddr = mask_ $ do
       (result, pruneTr, mbAssertion) <- atomically $ do
         state <- readTMVar stateVar
         let mbConnVar = Map.lookup peerAddr state
@@ -2400,7 +2378,7 @@ withConnectionManager ConnectionManagerArguments {
                 if numberToPrune > 0
                 then do
                   (pruneSelf, prune)
-                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar stdGenVar connThread
 
                   when (not pruneSelf)
                     $ writeTVar connVar connState'
@@ -2439,7 +2417,7 @@ withConnectionManager ConnectionManagerArguments {
                 if numberToPrune > 0
                 then do
                   (pruneSelf, prune)
-                    <- mkPruneAction peerAddr numberToPrune state connState' connVar connThread
+                    <- mkPruneAction peerAddr numberToPrune state connState' connVar stdGenVar connThread
                   when (not pruneSelf)
                      $ writeTVar connVar connState'
 

@@ -204,6 +204,10 @@ inboundGovernorTraceMap (IG.TrUnexpectedlyFalseAssertion _) =
   "TrUnexpectedlyFalseAssertion"
 inboundGovernorTraceMap (TrInboundGovernorError se)           =
   "TrInboundGovernorError " ++ show se
+inboundGovernorTraceMap TrMaturedConnections {}            =
+  "TrMaturedConnections"
+inboundGovernorTraceMap TrInactive {}                      =
+  "TrMaturedConnections"
 
 
 serverTraceMap :: Show ntnAddr => ServerTrace ntnAddr -> String

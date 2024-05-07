@@ -52,6 +52,7 @@ module Ouroboros.Network.PeerSelection.Governor
 
 import Data.Foldable (traverse_)
 import Data.Hashable
+import Data.Map.Strict (Map)
 import Data.Set qualified as Set
 import Data.Void (Void)
 
@@ -604,8 +605,9 @@ peerSelectionGovernorLoop tracer
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
                          -> m (TimedDecision m peeraddr peerconn)
-    evalGuardedDecisions blockedAt st =
-      case guardedDecisions blockedAt st of
+    evalGuardedDecisions blockedAt st = do
+      inboundPeers <- readInboundPeers actions
+      case guardedDecisions blockedAt st inboundPeers of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
@@ -626,8 +628,9 @@ peerSelectionGovernorLoop tracer
 
     guardedDecisions :: Time
                      -> PeerSelectionState peeraddr peerconn
+                     -> Map peeraddr PeerSharing
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions blockedAt st =
+    guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
       -- The Governor needs to react to changes in the bootstrap peer flag,
@@ -653,23 +656,14 @@ peerSelectionGovernorLoop tracer
       <> BigLedgerPeers.aboveTarget                     policy st
 
       -- All the alternative non-blocking internal decisions.
-      <> RootPeers.belowTarget        actions blockedAt         st
-      <> KnownPeers.belowTarget       actions             policy st
-      <> KnownPeers.aboveTarget                           policy st
-      <> EstablishedPeers.belowTarget actions             policy st
-      <> EstablishedPeers.aboveTarget actions             policy st
-      <> ActivePeers.belowTarget      actions             policy st
-      <> ActivePeers.aboveTarget      actions             policy st
-
-      -- Note that this job is potentially blocking but is non-prioritary.
-      --
-      -- The node could be bombarded with incoming connections and we don't want
-      -- to hinder it making progress towards the targets.
-      --
-      -- Although we do have rate-limiting of inbound connections it is better
-      -- to safeguard it by giving it less priority at the governor level.
-      --
-      <> Monitor.inboundPeers         actions st
+      <> RootPeers.belowTarget        actions blockedAt           st
+      <> KnownPeers.belowTarget       actions blockedAt
+                                              inboundPeers policy st
+      <> KnownPeers.aboveTarget                            policy st
+      <> EstablishedPeers.belowTarget actions              policy st
+      <> EstablishedPeers.aboveTarget actions              policy st
+      <> ActivePeers.belowTarget      actions              policy st
+      <> ActivePeers.aboveTarget      actions              policy st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 
@@ -687,7 +681,7 @@ wakeupDecision :: PeerSelectionState peeraddr peerconn
 wakeupDecision st _now =
   Decision {
     decisionTrace = [TraceGovernorWakeup],
-    decisionState = st,
+    decisionState = st { stdGen = fst (split (stdGen st)) } ,
     decisionJobs  = []
   }
 
