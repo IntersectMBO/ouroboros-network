@@ -197,8 +197,6 @@ instance ShowProxy TxId where
 -- Orphans Plumbing
 --
 
-instance ShowProxy SlotNo where
-
 instance (Arbitrary txid, Arbitrary tx, Arbitrary slot)
     => Arbitrary (AnyMessageAndAgency (LocalTxMonitor txid tx slot))
   where

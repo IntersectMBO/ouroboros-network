@@ -6,6 +6,8 @@
 
 ### Non-Breaking changes
 
+* Added `ShowProxy SlotNo` instance
+
 ## 0.7.2.0 -- 2024-05-07
 
 ### Breaking changes

@@ -6,6 +6,7 @@ module Ouroboros.Network.Util.ShowProxy
   , Proxy (..)
   ) where
 
+import Cardano.Slotting.Slot (SlotNo)
 import Data.Typeable
 
 class ShowProxy p where
@@ -15,3 +16,4 @@ class ShowProxy p where
     showProxy p = showsTypeRep (typeRep p) ""
 
 instance ShowProxy Int where
+instance ShowProxy SlotNo where
