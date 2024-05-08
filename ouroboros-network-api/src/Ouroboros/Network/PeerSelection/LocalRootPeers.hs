@@ -11,8 +11,9 @@ data OutboundConnectionsState =
     -- * /in the Praos mode/: connected only to trusted local
     --   peers and at least one bootstrap peer or public root;
     -- * /in the Genesis mode/: meeting target of active big ledger peers;
-    -- * or it is in `Unrestricted` mode
-    --   (see `Ouroboros.Network.PeerSelection.Governor.AssociationMode`).
+    -- * or it is in `LocalRootsOnly` mode and indeed only connected to
+    --   trusted local root peers (see
+    --   `Ouroboros.Network.PeerSelection.Governor.AssociationMode`).
 
   | UntrustedState
     -- ^ catch all other cases
