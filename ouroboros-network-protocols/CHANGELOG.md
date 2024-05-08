@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* Un-orphan `ShowProxy SlotNo` instance.
+
 ### Non-Breaking changes
 
 ## 0.8.1.0 -- 2024-03-14
