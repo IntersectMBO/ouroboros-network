@@ -302,12 +302,9 @@ prop_diffusion_nofail ioSimTrace traceNumber =
   let trace = Trace.toList
             . fmap (\(WithTime t (WithName _ b)) -> (t, b))
             . withTimeNameTraceEvents
-               @DiffusionTestTrace
-               @NtNAddr
-            . traceFromList
-            . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-            . take traceNumber
-            . traceEvents
+                   @DiffusionTestTrace
+                   @NtNAddr
+            . Trace.take traceNumber
             $ ioSimTrace
 
    -- run in `IO` so we can catch the pure 'AssertionFailed' exception
@@ -348,10 +345,7 @@ prop_connection_manager_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
       eventsSeenNames = map connectionManagerTraceMap events
@@ -382,10 +376,7 @@ prop_connection_manager_transitions_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
 
@@ -417,10 +408,7 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
       eventsSeenNames = map inboundGovernorTraceMap events
@@ -450,10 +438,7 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
       transitionsSeenNames = map (snd . validRemoteTransitionMap . ttTransition)
@@ -485,10 +470,7 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
       transitionsSeenNames = map traceFetchClientStateMap events
@@ -517,24 +499,16 @@ prop_only_bootstrap_peers_in_fallback_state :: SimTrace Void
                                             -> Property
 prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
   let events :: [Events DiffusionTestTrace]
-      events = fmap ( Signal.eventsFromList
+      events = Trace.toList
+             . fmap ( Signal.eventsFromList
                     . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                     )
-             . Trace.toList
              . splitWithNameTrace
-             . Trace.fromList ()
-             . fmap snd
-             . Signal.eventsToList
-             . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
-             . Trace.toList
-             . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+             . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take traceNumber
-             . traceEvents
+             . Trace.take traceNumber
              $ ioSimTrace
 
      in conjoin
@@ -627,24 +601,16 @@ prop_no_non_trustable_peers_before_caught_up_state :: SimTrace Void
                                                    -> Property
 prop_no_non_trustable_peers_before_caught_up_state ioSimTrace traceNumber =
   let events :: [Events DiffusionTestTrace]
-      events = fmap ( Signal.eventsFromList
+      events = Trace.toList
+             . fmap ( Signal.eventsFromList
                     . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                     )
-             . Trace.toList
              . splitWithNameTrace
-             . Trace.fromList ()
-             . fmap snd
-             . Signal.eventsToList
-             . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
-             . Trace.toList
-             . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+             . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take traceNumber
-             . traceEvents
+             . Trace.take traceNumber
              $ ioSimTrace
 
      in conjoin
@@ -820,24 +786,16 @@ prop_track_coolingToCold_demotions :: SimTrace Void
                                    -> Property
 prop_track_coolingToCold_demotions ioSimTracer traceNumber =
   let events :: [Events DiffusionTestTrace]
-      events = fmap ( Signal.eventsFromList
+      events = Trace.toList
+             . fmap ( Signal.eventsFromList
                     . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                     )
-             . Trace.toList
              . splitWithNameTrace
-             . Trace.fromList ()
-             . fmap snd
-             . Signal.eventsToList
-             . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
-             . Trace.toList
-             . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+             . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take traceNumber
-             . traceEvents
+             . Trace.take traceNumber
              $ ioSimTracer
 
      in conjoin
@@ -941,10 +899,7 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
       eventsSeenNames = map serverTraceMap events
@@ -973,10 +928,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
       peerSelectionActionsTraceMap :: PeerSelectionActionsTrace NtNAddr NtNVersion
@@ -1016,10 +968,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
       peerSelectionTraceMap :: TracePeerSelection NtNAddr -> String
@@ -1221,22 +1170,16 @@ prop_diffusion_dns_can_recover :: SimTrace Void
                                -> Property
 prop_diffusion_dns_can_recover ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> (WithName name (WithTime t b)))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -1429,22 +1372,16 @@ prop_diffusion_target_established_public :: SimTrace Void
                                          -> Property
 prop_diffusion_target_established_public ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -1517,22 +1454,16 @@ prop_diffusion_target_active_public :: SimTrace Void
                                     -> Property
 prop_diffusion_target_active_public ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -1593,22 +1524,16 @@ prop_diffusion_target_active_local :: SimTrace Void
                                    -> Property
 prop_diffusion_target_active_local ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -1670,22 +1595,16 @@ prop_diffusion_target_active_root :: SimTrace Void
                                   -> Property
 prop_diffusion_target_active_root ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
     in  conjoin
@@ -1787,22 +1706,16 @@ prop_diffusion_target_established_local :: SimTrace Void
                                         -> Property
 prop_diffusion_target_established_local ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -1958,24 +1871,16 @@ prop_diffusion_target_active_below :: SimTrace Void
                                    -> Property
 prop_diffusion_target_active_below ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -2150,24 +2055,16 @@ prop_diffusion_target_active_local_below :: SimTrace Void
                                          -> Property
 prop_diffusion_target_active_local_below ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -2389,17 +2286,12 @@ prop_diffusion_async_demotions :: SimTrace Void
                                -> Property
 prop_diffusion_async_demotions ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Signal.eventsToList
-               . Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
@@ -2538,22 +2430,16 @@ prop_diffusion_target_active_local_above :: SimTrace Void
                                          -> Property
 prop_diffusion_target_active_local_above ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               .fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
-               . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -2661,21 +2547,15 @@ prop_diffusion_cm_valid_transitions :: SimTrace Void
                                     -> Property
 prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
-        events = fmap (Trace.fromList ())
-               . Trace.toList
+        events = Trace.toList
+               . fmap (Trace.fromList ())
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
                . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
+                       -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -2755,21 +2635,15 @@ prop_diffusion_cm_valid_transition_order :: SimTrace Void
                                          -> Property
 prop_diffusion_cm_valid_transition_order ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
-        events = fmap (Trace.fromList ())
-               . Trace.toList
+        events = Trace.toList
+               . fmap (Trace.fromList ())
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
                . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
+                       -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -2985,22 +2859,16 @@ prop_unit_reconnect =
                                 iosimTracer
 
       events :: [Events DiffusionTestTrace]
-      events = fmap ( Signal.eventsFromList
+      events = Trace.toList
+             . fmap ( Signal.eventsFromList
                     . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                     )
-             . Trace.toList
              . splitWithNameTrace
-             . Trace.fromList ()
-             . fmap snd
-             . Trace.toList
-             . fmap (\(WithTime t (WithName name b)) -> (t, WithName name (WithTime t b)))
+             . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . traceFromList
-             . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-             . take 125000
-             . traceEvents
+             . Trace.take 125000
              $ runSimTrace sim
 
    in conjoin
@@ -3040,21 +2908,15 @@ prop_diffusion_cm_no_dodgy_traces :: SimTrace Void
                                   -> Property
 prop_diffusion_cm_no_dodgy_traces ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
-        events = fmap (Trace.fromList ())
-               . Trace.toList
+        events = Trace.toList
+               . fmap (Trace.fromList ())
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
                . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
+                       -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -3097,21 +2959,15 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces :: SimTrace Void
                                                       -> Property
 prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
-        events = fmap (Trace.fromList ())
-               . Trace.toList
+        events = Trace.toList
+               . fmap (Trace.fromList ())
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
                . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
+                       -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in
@@ -3289,16 +3145,6 @@ unit_peer_sharing =
         sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                   script
                                   iosimTracer
-        -- We need roughly 1200 because:
-        -- * first peer sharing request will be issued after
-        --   `policyPeerSharAcitvationDelay = 300`
-        -- * this request will not bring any new peers, because non of the peers
-        --    are yet mature
-        -- * inbound connections become mature at 900s (15 mins)
-        -- * next peer share request happens after 900s, e.g. around 1200s.
-        trace = takeWhile (\(t,_,_,_) -> t < Time 1250)
-              . traceEvents
-              $ runSimTrace sim
 
         events :: Map NtNAddr [TracePeerSelection NtNAddr]
         events = Map.fromList
@@ -3312,17 +3158,26 @@ unit_peer_sharing =
                                                           $ as))
                $ events'
 
-        events' =
-                 Trace.toList
+        events' = Trace.toList
                . splitWithNameTrace
                . fmap (\(WithTime t (WithName name b))
-                       -> (WithName name (WithTime t b)))
+                       -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               $ trace
+               -- We need roughly 1200 because:
+               -- * first peer sharing request will be issued after
+               --   `policyPeerSharAcitvationDelay = 300`
+               -- * this request will not bring any new peers, because non of the peers
+               --    are yet mature
+               -- * inbound connections become mature at 900s (15 mins)
+               -- * next peer share request happens after 900s, e.g. around 1200s.
+               . Trace.takeWhile (\se -> case se of
+                                          SimEvent    {seTime} -> seTime < Time 1250
+                                          SimPOREvent {seTime} -> seTime < Time 1250
+                                          _                    -> False
+                                 )
+               $ runSimTrace sim
 
         verify :: NtNAddr
                -> [TracePeerSelection NtNAddr]
@@ -3433,19 +3288,16 @@ prop_churn_notimeouts :: SimTrace Void
                       -> Property
 prop_churn_notimeouts ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
                . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
     in  conjoin
       $ (\evs ->
@@ -3485,19 +3337,16 @@ prop_churn_steps :: SimTrace Void
                  -> Property
 prop_churn_steps ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
-        events = fmap ( Signal.eventsFromList
+        events =  Trace.toList
+               . fmap ( Signal.eventsFromList
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b))
                       )
-               . Trace.toList
                . splitWithNameTrace
                . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
     in   conjoin
@@ -3608,21 +3457,15 @@ prop_diffusion_ig_valid_transitions :: SimTrace Void
                                     -> Property
 prop_diffusion_ig_valid_transitions ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
-        events = fmap (Trace.fromList ())
-               . Trace.toList
+        events = Trace.toList
+               . fmap (Trace.fromList ())
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
                . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
+                       -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -3672,21 +3515,15 @@ prop_diffusion_ig_valid_transition_order :: SimTrace Void
                                          -> Property
 prop_diffusion_ig_valid_transition_order ioSimTrace traceNumber =
     let events :: [Trace () (WithName NtNAddr (WithTime DiffusionTestTrace))]
-        events = fmap (Trace.fromList ())
-               . Trace.toList
+        events = Trace.toList
+               . fmap (Trace.fromList ())
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
                . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
+                       -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
@@ -3734,22 +3571,16 @@ prop_diffusion_timeouts_enforced :: SimTrace Void
                                  -> Property
 prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
     let events :: [Trace () (Time, DiffusionTestTrace)]
-        events = fmap ( Trace.fromList ()
+        events = Trace.toList
+               . fmap ( Trace.fromList ()
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b)))
-               . Trace.toList
                . splitWithNameTrace
-               . Trace.fromList ()
-               . fmap snd
-               . Trace.toList
                . fmap (\(WithTime t (WithName name b))
-                       -> (t, WithName name (WithTime t b)))
+                       -> WithName name (WithTime t b))
                . withTimeNameTraceEvents
                   @DiffusionTestTrace
                   @NtNAddr
-               . traceFromList
-               . fmap (\(t, tid, tl, te) -> SimEvent t tid tl te)
-               . take traceNumber
-               . traceEvents
+               . Trace.take traceNumber
                $ ioSimTrace
 
      in conjoin
