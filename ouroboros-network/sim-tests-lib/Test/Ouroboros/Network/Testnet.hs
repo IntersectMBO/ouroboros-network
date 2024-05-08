@@ -3850,8 +3850,8 @@ classifyNumberOfEvents nEvents =
       . classify (nEvents >= 50000) "Nº Events >= 50000"
 
 withTimeNameTraceEvents :: forall b name r. (Typeable b, Typeable name)
-                        => SimTrace r
-                        -> Trace (SimResult r) (WithTime (WithName name b))
+                        => Trace r SimEvent
+                        -> Trace r (WithTime (WithName name b))
 withTimeNameTraceEvents = traceSelectTraceEventsDynamic
                             @r
                             @(WithTime (WithName name b))

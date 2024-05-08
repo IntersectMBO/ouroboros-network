@@ -2406,11 +2406,11 @@ toNonFailing = unNFBIScript
              . AbsBearerInfoScript
 
 traceWithNameTraceEvents :: forall b. Typeable b
-                    => SimTrace () -> Trace (SimResult ()) b
+                         => SimTrace () -> Trace (SimResult ()) b
 traceWithNameTraceEvents = fmap wnEvent
           . Trace.filter ((MainServer ==) . wnName)
           . traceSelectTraceEventsDynamic
-              @()
+              @(SimResult ())
               @(WithName (Name SimAddr) b)
 
 withNameTraceEvents :: forall b. Typeable b => SimTrace () -> [b]
@@ -2426,7 +2426,7 @@ withTimeNameTraceEvents :: forall b. Typeable b
 withTimeNameTraceEvents = fmap (\(WithTime t (WithName _ e)) -> WithTime t e)
           . Trace.filter ((MainServer ==) . wnName . wtEvent)
           . traceSelectTraceEventsDynamic
-              @()
+              @(SimResult ())
               @(WithTime (WithName (Name SimAddr) b))
 
 showConnectionEvents :: ConnectionEvent req peerAddr -> String
