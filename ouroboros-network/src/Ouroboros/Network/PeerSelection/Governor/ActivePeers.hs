@@ -48,11 +48,12 @@ belowTarget :: forall peeraddr peerconn m.
                , Ord peeraddr
                , HasCallStack
                )
-            => PeerSelectionActions peeraddr peerconn m
+            => PeerSelectionSetsWithSizes peeraddr
+            -> PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
-belowTarget = belowTargetBigLedgerPeers
-           <> belowTargetLocal
-           <> belowTargetOther
+belowTarget cs = belowTargetBigLedgerPeers
+              <> belowTargetLocal
+              <> belowTargetOther cs
 
 -- | If we are below the target of /hot big ledger peers peers/ we promote some
 -- of the /warm peers/ according to 'policyPickWarmPeersToPromote' policy.
@@ -238,9 +239,15 @@ belowTargetLocal actions
 belowTargetOther :: forall peeraddr peerconn m.
                     (MonadDelay m, MonadSTM m, Ord peeraddr,
                      HasCallStack)
-                 => PeerSelectionActions peeraddr peerconn m
+                 => PeerSelectionSetsWithSizes peeraddr
+                 -> PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
-belowTargetOther actions
+belowTargetOther PeerSelectionView {
+                   viewActivePeers         = (_, numActivePeers),
+                   viewWarmPeersPromotions = (_, numPromoteInProgress),
+                   viewKnownBigLedgerPeers = (bigLedgerPeersSet, _)
+                 }
+                 actions
                  policy@PeerSelectionPolicy {
                    policyPickWarmPeersToPromote
                  }
@@ -300,14 +307,6 @@ belowTargetOther actions
 
   | otherwise
   = GuardedSkip Nothing
-  where
-    PeerSelectionView {
-        viewActivePeers         = (_, numActivePeers),
-        viewWarmPeersPromotions = (_, numPromoteInProgress),
-        viewKnownBigLedgerPeers = (bigLedgerPeersSet, _)
-      }
-      =
-      peerSelectionStateToView st
 
 
 jobPromoteWarmPeer :: forall peeraddr peerconn m.

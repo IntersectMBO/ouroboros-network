@@ -177,8 +177,13 @@ jobReqBigLedgerPeers PeerSelectionActions{ requestPublicRootPeers }
 
 aboveTarget :: forall m peeraddr peerconn.
                (Alternative (STM m), MonadSTM m, Ord peeraddr, HasCallStack)
-            => MkGuardedDecision peeraddr peerconn m
-aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
+            => PeerSelectionSetsWithSizes peeraddr
+            -> MkGuardedDecision peeraddr peerconn m
+aboveTarget PeerSelectionView {
+              viewKnownBigLedgerPeers       = (_, numKnownBigLedgerPeers),
+              viewEstablishedBigLedgerPeers = (establishedBigLedgerPeers, numEstablishedBigLedgerPeers)
+            }
+            PeerSelectionPolicy {policyPickColdPeersToForget}
             st@PeerSelectionState {
                  publicRootPeers,
                  knownPeers,
@@ -225,10 +230,3 @@ aboveTarget PeerSelectionPolicy {policyPickColdPeersToForget}
     = GuardedSkip Nothing
   where
     bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-
-    PeerSelectionView {
-        viewKnownBigLedgerPeers       = (_, numKnownBigLedgerPeers),
-        viewEstablishedBigLedgerPeers = (establishedBigLedgerPeers, numEstablishedBigLedgerPeers)
-      }
-      =
-      peerSelectionStateToView st

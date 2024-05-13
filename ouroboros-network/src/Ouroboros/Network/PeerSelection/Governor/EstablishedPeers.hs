@@ -61,9 +61,12 @@ belowTarget :: forall peeraddr peerconn m.
                , MonadSTM m
                , Ord peeraddr
                )
-            => PeerSelectionActions peeraddr peerconn m
+            => PeerSelectionSetsWithSizes peeraddr
+            -> PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
-belowTarget =  belowTargetBigLedgerPeers <> belowTargetLocal <> belowTargetOther
+belowTarget cs = belowTargetBigLedgerPeers cs
+              <> belowTargetLocal cs
+              <> belowTargetOther cs
 
 
 -- | For locally configured root peers we have the explicit target that comes from local
@@ -71,9 +74,17 @@ belowTarget =  belowTargetBigLedgerPeers <> belowTargetLocal <> belowTargetOther
 --
 belowTargetLocal :: forall peeraddr peerconn m.
                     (MonadSTM m, Ord peeraddr, HasCallStack)
-                 => PeerSelectionActions peeraddr peerconn m
+                 => PeerSelectionSetsWithSizes peeraddr
+                 -> PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
-belowTargetLocal actions
+belowTargetLocal PeerSelectionView {
+                   viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
+                   viewKnownLocalRootPeers              = (localRootPeersSet, _),
+                   viewEstablishedLocalRootPeers        = (localEstablishedPeers, _),
+                   viewAvailableToConnectLocalRootPeers = (localAvailableToConnect, _),
+                   viewColdLocalRootPeersPromotions     = (localConnectInProgress, numLocalConnectInProgress)
+                 }
+                 actions
                  policy@PeerSelectionPolicy {
                    policyPickColdPeersToPromote
                  }
@@ -154,20 +165,19 @@ belowTargetLocal actions
       , Set.size membersEstablished < getWarmValency warmValency
       ]
 
-    PeerSelectionView {
-        viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
-        viewKnownLocalRootPeers              = (localRootPeersSet, _),
-        viewEstablishedLocalRootPeers        = (localEstablishedPeers, _),
-        viewAvailableToConnectLocalRootPeers = (localAvailableToConnect, _),
-        viewColdLocalRootPeersPromotions     = (localConnectInProgress, numLocalConnectInProgress)
-      } = peerSelectionStateToView st
-
-
 belowTargetOther :: forall peeraddr peerconn m.
                     (MonadSTM m, Ord peeraddr, HasCallStack)
-                 => PeerSelectionActions peeraddr peerconn m
+                 => PeerSelectionSetsWithSizes peeraddr
+                 -> PeerSelectionActions peeraddr peerconn m
                  -> MkGuardedDecision peeraddr peerconn m
-belowTargetOther actions
+belowTargetOther PeerSelectionView {
+                   viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
+
+                   viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect),
+                   viewEstablishedPeers        = (_, numEstablishedPeers),
+                   viewColdPeersPromotions     = (_, numConnectInProgress)
+                 }
+                 actions
                  policy@PeerSelectionPolicy {
                    policyPickColdPeersToPromote
                  }
@@ -228,16 +238,6 @@ belowTargetOther actions
 
   | otherwise
   = GuardedSkip Nothing
-  where
-    PeerSelectionView {
-        viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
-
-        viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect),
-        viewEstablishedPeers        = (_, numEstablishedPeers),
-        viewColdPeersPromotions     = (_, numConnectInProgress)
-      }
-      =
-      peerSelectionStateToView st
 
 
 -- |
@@ -247,9 +247,16 @@ belowTargetOther actions
 --
 belowTargetBigLedgerPeers :: forall peeraddr peerconn m.
                              (MonadSTM m, Ord peeraddr, HasCallStack)
-                          => PeerSelectionActions peeraddr peerconn m
+                          => PeerSelectionSetsWithSizes peeraddr
+                          -> PeerSelectionActions peeraddr peerconn m
                           -> MkGuardedDecision peeraddr peerconn m
-belowTargetBigLedgerPeers actions
+belowTargetBigLedgerPeers PeerSelectionView {
+                            viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
+                            viewAvailableToConnectBigLedgerPeers = (availableToConnect, numAvailableToConnect),
+                            viewEstablishedBigLedgerPeers        = (_, numEstablishedPeers),
+                            viewColdBigLedgerPeersPromotions     = (_, numConnectInProgress)
+                          }
+                          actions
                           policy@PeerSelectionPolicy {
                             policyPickColdPeersToPromote
                           }
@@ -317,15 +324,6 @@ belowTargetBigLedgerPeers actions
 
   | otherwise
   = GuardedSkip Nothing
-  where
-    PeerSelectionView {
-        viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
-        viewAvailableToConnectBigLedgerPeers = (availableToConnect, numAvailableToConnect),
-        viewEstablishedBigLedgerPeers        = (_, numEstablishedPeers),
-        viewColdBigLedgerPeersPromotions     = (_, numConnectInProgress)
-      }
-      =
-      peerSelectionStateToView st
 
 
 -- | Must be larger than '2' since we add a random value drawn from '(-2, 2)`.
@@ -483,15 +481,18 @@ jobPromoteColdPeer PeerSelectionActions {
 --
 aboveTarget :: forall peeraddr peerconn m.
                (Alternative (STM m), MonadSTM m, Ord peeraddr)
-            => PeerSelectionActions peeraddr peerconn m
+            => PeerSelectionSetsWithSizes peeraddr
+            -> PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
-aboveTarget =  aboveTargetBigLedgerPeers <> aboveTargetOther
+aboveTarget cs = aboveTargetBigLedgerPeers <> aboveTargetOther cs
 
 aboveTargetOther :: forall peeraddr peerconn m.
                (MonadSTM m, Ord peeraddr, HasCallStack)
-            => PeerSelectionActions peeraddr peerconn m
+            => PeerSelectionSetsWithSizes peeraddr
+            -> PeerSelectionActions peeraddr peerconn m
             -> MkGuardedDecision peeraddr peerconn m
-aboveTargetOther actions
+aboveTargetOther peerSelectionView
+                 actions
                  PeerSelectionPolicy {
                    policyPickWarmPeersToDemote
                  }
@@ -510,8 +511,7 @@ aboveTargetOther actions
     -- Or more precisely, how many established peers could we demote?
     -- We only want to pick established peers that are not active, since for
     -- active one we need to demote them first.
-  | let peerSelectionView = peerSelectionStateToView st
-        PeerSelectionView {
+  | let PeerSelectionView {
             viewKnownBigLedgerPeers = (bigLedgerPeersSet, _),
             viewEstablishedPeers    = (_, numEstablishedPeers),
             viewActivePeers         = (_, numActivePeers)

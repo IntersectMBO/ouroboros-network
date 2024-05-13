@@ -522,12 +522,13 @@ peerSelectionGovernorLoop tracer
                           policy
                           jobPool
                           pst = do
-    loop pst (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
+    loop pst (peerSelectionStateToView pst) (Time 0) `catch` (\e -> traceWith tracer (TraceOutboundGovernorCriticalFailure e) >> throwIO e)
   where
     loop :: PeerSelectionState peeraddr peerconn
+         -> PeerSelectionSetsWithSizes peeraddr
          -> Time
          -> m Void
-    loop !st !dbgUpdateAt = assertPeerSelectionState st $ do
+    loop !st !cs !dbgUpdateAt = assertPeerSelectionState st $ do
       -- Update public state using 'toPublicState' to compute available peers
       -- to share for peer sharing
       atomically $ writeTVar publicStateVar (toPublicState st)
@@ -555,7 +556,7 @@ peerSelectionGovernorLoop tracer
           st'               = st { knownPeers       = knownPeers',
                                    establishedPeers = establishedPeers' }
 
-      timedDecision <- evalGuardedDecisions blockedAt st'
+      timedDecision <- evalGuardedDecisions blockedAt st' cs
 
       -- get the current time after the governor returned from the blocking
       -- 'evalGuardedDecisions' call.
@@ -563,10 +564,11 @@ peerSelectionGovernorLoop tracer
       let Decision { decisionTrace, decisionJobs, decisionState } =
             timedDecision now
 
+      let cs' = peerSelectionStateToView decisionState
       mbCounters <- atomically $ do
         -- Update counters
         counters <- readTVar countersVar
-        let !counters' = peerSelectionStateToCounters decisionState
+        let !counters' = snd <$> cs'
         if counters' /= counters
           then writeTVar countersVar counters'
             >> return (Just counters')
@@ -578,14 +580,15 @@ peerSelectionGovernorLoop tracer
       traverse_ (traceWith tracer) decisionTrace
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
-      loop decisionState dbgUpdateAt'
+      loop decisionState cs' dbgUpdateAt'
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
+                         -> PeerSelectionSetsWithSizes peeraddr
                          -> m (TimedDecision m peeraddr peerconn)
-    evalGuardedDecisions blockedAt st = do
+    evalGuardedDecisions blockedAt st cs = do
       inboundPeers <- readInboundPeers actions
-      case guardedDecisions blockedAt st inboundPeers of
+      case guardedDecisions blockedAt st cs inboundPeers of
         GuardedSkip _ ->
           -- impossible since guardedDecisions always has something to wait for
           error "peerSelectionGovernorLoop: impossible: nothing to do"
@@ -606,9 +609,10 @@ peerSelectionGovernorLoop tracer
 
     guardedDecisions :: Time
                      -> PeerSelectionState peeraddr peerconn
+                     -> PeerSelectionSetsWithSizes peeraddr
                      -> Map peeraddr PeerSharing
                      -> Guarded (STM m) (TimedDecision m peeraddr peerconn)
-    guardedDecisions blockedAt st inboundPeers =
+    guardedDecisions blockedAt st cs inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
       -- The Governor needs to react to changes in the bootstrap peer flag,
@@ -630,18 +634,18 @@ peerSelectionGovernorLoop tracer
       <> Monitor.localRoots           actions st
 
       -- The non-blocking decisions regarding (known) big ledger peers
-      <> BigLedgerPeers.belowTarget   actions blockedAt        st
-      <> BigLedgerPeers.aboveTarget                     policy st
+      <> BigLedgerPeers.belowTarget      actions blockedAt        st
+      <> BigLedgerPeers.aboveTarget   cs                   policy st
 
       -- All the alternative non-blocking internal decisions.
-      <> RootPeers.belowTarget        actions blockedAt           st
-      <> KnownPeers.belowTarget       actions blockedAt
-                                              inboundPeers policy st
-      <> KnownPeers.aboveTarget                            policy st
-      <> EstablishedPeers.belowTarget actions              policy st
-      <> EstablishedPeers.aboveTarget actions              policy st
-      <> ActivePeers.belowTarget      actions              policy st
-      <> ActivePeers.aboveTarget      actions              policy st
+      <> RootPeers.belowTarget           actions blockedAt           st
+      <> KnownPeers.belowTarget          actions blockedAt
+                                                 inboundPeers policy st
+      <> KnownPeers.aboveTarget                               policy st
+      <> EstablishedPeers.belowTarget cs actions              policy st
+      <> EstablishedPeers.aboveTarget cs actions              policy st
+      <> ActivePeers.belowTarget      cs actions              policy st
+      <> ActivePeers.aboveTarget         actions              policy st
 
       -- There is no rootPeersAboveTarget since the roots target is one sided.
 
