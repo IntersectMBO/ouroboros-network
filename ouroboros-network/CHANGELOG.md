@@ -6,6 +6,11 @@
 
 ### Non-Breaking changes
 
+* Changed tracing sequence in the outbound governor loop to output
+  decision and peer selection state immediately from the monitoring
+  action which completed first. Previously, these traces were delivered
+  with a lag of one iteration.
+
 ## 0.16.0.0 -- 2024-05-07
 
 ### Breaking changes

@@ -567,14 +567,7 @@ peerSelectionGovernorLoop tracer
           st'               = st { knownPeers       = knownPeers',
                                    establishedPeers = establishedPeers' }
 
-      timedDecision <- evalGuardedDecisions blockedAt st'
-
-      -- get the current time after the governor returned from the blocking
-      -- 'evalGuardedDecisions' call.
-      now <- getMonotonicTime
-
-      let Decision { decisionTrace, decisionJobs, decisionState = st'' } =
-            timedDecision now
+      Decision { decisionJobs, decisionState = st''} <- evalGuardedDecisions blockedAt st'
 
       mbCounters <- atomically $ do
         -- Update outbound connections state
@@ -596,15 +589,13 @@ peerSelectionGovernorLoop tracer
 
       -- Trace counters
       traverse_ (traceWith countersTracer) mbCounters
-      -- Trace peer selection
-      traverse_ (traceWith tracer) decisionTrace
 
       mapM_ (JobPool.forkJob jobPool) decisionJobs
       loop st'' dbgUpdateAt'
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState peeraddr peerconn
-                         -> m (TimedDecision m peeraddr peerconn)
+                         -> m (Decision m peeraddr peerconn)
     evalGuardedDecisions blockedAt st = do
       inboundPeers <- readInboundPeers actions
       case guardedDecisions blockedAt st inboundPeers of
@@ -613,18 +604,29 @@ peerSelectionGovernorLoop tracer
           error "peerSelectionGovernorLoop: impossible: nothing to do"
 
         Guarded Nothing decisionAction -> do
-          traceWith debugTracer (TraceGovernorState blockedAt Nothing st)
-          atomically decisionAction
+          timedDecision <- atomically decisionAction
+
+          -- get the current time after the governor returned from the blocking
+          -- 'evalGuardedDecisions' call.
+          now <- getMonotonicTime
+          let decision@Decision { decisionState, decisionTrace  } = timedDecision now
+          traverse_ (traceWith tracer) decisionTrace
+          traceWith debugTracer (TraceGovernorState blockedAt Nothing decisionState)
+          return decision
 
         Guarded (Just wakeupAt) decisionAction -> do
           let wakeupIn = diffTime wakeupAt blockedAt
-          traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) st)
           (readTimeout, cancelTimeout) <- registerDelayCancellable wakeupIn
           let wakeup = readTimeout >>= (\case TimeoutPending -> retry
                                               _              -> pure (wakeupDecision st))
           timedDecision <- atomically (decisionAction <|> wakeup)
+          now <- getMonotonicTime
           cancelTimeout
-          return timedDecision
+          -- Trace peer selection
+          let decision@Decision { decisionState, decisionTrace } = timedDecision now
+          traverse_ (traceWith tracer) decisionTrace
+          traceWith debugTracer (TraceGovernorState blockedAt (Just wakeupIn) decisionState)
+          return decision
 
     guardedDecisions :: Time
                      -> PeerSelectionState peeraddr peerconn
