@@ -1,13 +1,16 @@
-# [Ouroboros-Network][ouroboros-network]
+# Ouroboros Network
 
-[![Haskell CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?branch=master&label=Build&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
+[![x86\_64-linux](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-linux.required/shield&style=for-the-badge&label=x86_64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-linux.required)
+[![x86\_64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-darwin.required/shield&style=for-the-badge&label=x86_64-darwin)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-darwin.required)
+[![aarch64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/aarch64-darwin.required/shield&style=for-the-badge&label=aarch64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/aarch64-darwin.required)
+[![mingw64](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?event=merge_group&label=mingw64&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
 [![Nightly CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/nightly.yml?branch=master&label=Nightly&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/nightly.yml)
-[![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/github-page.yml)
-[![Matrix](https://img.shields.io/matrix/ouroboros-network%3Amatrix.org?style=for-the-badge)](https://matrix.to/#/#ouroboros-network:matrix.org)
+[![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://ouroboros-network.cardano.intersectmbo.org/)
+[![Discord](https://img.shields.io/discord/1136727663583698984?style=for-the-badge&color=blue)](https://discord.gg/8ncb7fgG)
 
-This repository contains the core components of the network code for the Cardano
-node. It is a dependency when building the node from the cardano-node
-repository.
+This repository contains specification and implementation of the network
+protocols and applications for Ouroboros family of protocols, primiarly used by
+[cardano-node], [cardano-cli], [cardano-db-sync] or [cardano-wallet].
 
 The following graph shows the dependency tree.  The top-level package is
 `ouroboros-consensus-diffusion` which is part of [ouroboros-consensus]
@@ -63,7 +66,7 @@ Libraries:
   synchronisation primitives.
 
 
-## Ouroboros-Network Documentation
+## Documentation
 
 We have two documents which describe various levels of the networking layer of
 the Cardano Shelley implementation:
@@ -92,15 +95,14 @@ the Cardano Shelley implementation:
 
 On a biweekly basis, we publish updates on [cardano-updates].
 We are also tracking our current work in the [Ouroboros Network Project][ouroboros-network-project].
-Our quarterly goals are published in the [Cardano Node Product Backlog][cardano-node-backlog].
 
-### For Contributors
+### Contributing
 
 The contributing guide is available [here][contributing-guide].
 The style guide is available [here][style-guide].
 The code of conduct is available [here][code-of-conduct].
 
-## Ouroboros-Network API
+## Ouroboros Network API
 
 The API consists of three layers:
 
@@ -131,12 +133,14 @@ After `--` you will need to pass arguments, when a demo is run without
 arguments it will specify what arguments it needs.
 </details>
 
+[cardano-cli]:  https://github.com/intersectmbo/cardano-cli
+[cardano-db-sync]:  https://github.com/intersectmbo/cardano-db-sync
+[cardano-node]:  https://github.com/intersectmbo/cardano-node
+[cardano-wallet]:  https://github.com/cardano-foundation/cardano-wallet
 [ouroboros-consensus]: https://github.com/intersectmbo/ouroboros-consensus
 [ouroboros-network]: https://ouroboros-network.cardano.intersectmbo.org
-<!-- TODO: https://updates.cardano.intersectmbo.org -->
-[cardano-updates]: https://intersectmbo.github.io/cardano-updates
-[ouroboros-network-project]: https://github.com/orgs/input-output-hk/projects/19/views/23
-[cardno-node-backlog]: https://github.com/orgs/input-output-hk/projects/39/views/30
+[cardano-updates]: https://updates.cardano.intersectmbo.org/tags/network
+[ouroboros-network-project]: https://github.com/orgs/IntersectMBO/projects/5/views/1
 [contributing-guide]: ./CONTRIBUTING.md
 [code-of-conduct]: ./CODE_OF_CONDUCT.md
 [style-guide]: ./docs/StyleGuide.md
