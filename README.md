@@ -1,9 +1,12 @@
-# [Ouroboros-Network][ouroboros-network]
+# Ouroboros Network
 
-[![Haskell CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?branch=master&label=Build&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
+[![x86\_64-linux](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-linux.required/shield&style=for-the-badge&label=x86_64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-linux.required)
+[![x86\_64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-darwin.required/shield&style=for-the-badge&label=x86_64-darwin)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-darwin.required)
+[![aarch64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/aarch64-darwin.required/shield&style=for-the-badge&label=aarch64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/aarch64-darwin.required)
+[![mingw64](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?event=merge_group&label=mingw64&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
 [![Nightly CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/nightly.yml?branch=master&label=Nightly&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/nightly.yml)
-[![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/github-page.yml)
-[![Matrix](https://img.shields.io/matrix/ouroboros-network%3Amatrix.org?style=for-the-badge)](https://matrix.to/#/#ouroboros-network:matrix.org)
+[![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/github-page.yml?branch=master&label=Haddocks&style=for-the-badge)](https://ouroboros-network.cardano.intersectmbo.org/)
+[![Discord](https://img.shields.io/discord/1136727663583698984?style=for-the-badge&color=blue)](https://discord.gg/8ncb7fgG)
 
 This repository contains the core components of the network code for the Cardano
 node. It is a dependency when building the node from the cardano-node
