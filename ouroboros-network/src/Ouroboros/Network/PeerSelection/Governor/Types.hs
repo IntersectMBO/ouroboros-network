@@ -420,21 +420,21 @@ data PeerSelectionActions peeraddr peerconn m = PeerSelectionActions {
 data PeerSelectionInterfaces peeraddr peerconn m = PeerSelectionInterfaces {
       -- | PeerSelectionCounters are shared with churn through a `StrictTVar`.
       --
-      countersVar                   :: StrictTVar m PeerSelectionCounters,
+      countersVar        :: StrictTVar m PeerSelectionCounters,
 
       -- | PublicPeerSelectionState var.
       --
-      publicStateVar                :: StrictTVar m (PublicPeerSelectionState peeraddr),
+      publicStateVar     :: StrictTVar m (PublicPeerSelectionState peeraddr),
 
       -- | PeerSelectionState shared for debugging purposes (to support SIGUSR1
       -- debug event tracing)
       --
-      debugStateVar                 :: StrictTVar m (PeerSelectionState peeraddr peerconn),
+      debugStateVar      :: StrictTVar m (PeerSelectionState peeraddr peerconn),
 
       -- | `UseLedgerPeers` used by `peerSelectionGovernor` to support
       -- `HiddenRelayOrBP`
       --
-      readUseLedgerPeers            :: STM m UseLedgerPeers
+      readUseLedgerPeers :: STM m UseLedgerPeers
     }
 
 

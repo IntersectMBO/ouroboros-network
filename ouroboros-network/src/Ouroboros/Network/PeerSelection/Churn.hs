@@ -1,10 +1,10 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 
 #if __GLASGOW_HASKELL__ < 904
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -52,14 +52,14 @@ data ChurnRegime = ChurnDefault
                  | ChurnBootstrapPraosSync
                  -- ^ Praos targets further reduced to conserve resources
                  -- when syncing
-                 
+
 pickChurnRegime :: ConsensusMode -> ChurnMode -> UseBootstrapPeers -> ChurnRegime
 pickChurnRegime consensus churn ubp =
   case (churn, ubp, consensus) of
-    (ChurnModeNormal, _, _) -> ChurnDefault
-    (_, _, GenesisMode) -> ChurnDefault
+    (ChurnModeNormal, _, _)                     -> ChurnDefault
+    (_, _, GenesisMode)                         -> ChurnDefault
     (ChurnModeBulkSync, UseBootstrapPeers _, _) -> ChurnBootstrapPraosSync
-    (ChurnModeBulkSync, _, _) -> ChurnPraosSync
+    (ChurnModeBulkSync, _, _)                   -> ChurnPraosSync
 
 -- | Facilitates composing updates to various targets via back-to-back pipeline
 type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
@@ -70,23 +70,23 @@ data ChurnCounters = ChurnCounter ChurnAction Int
 -- | Record of arguments for peer churn governor
 --
 data PeerChurnArgs m peeraddr = PeerChurnArgs {
-  pcaPeerSelectionTracer   :: Tracer m (TracePeerSelection peeraddr),
-  pcaChurnTracer           :: Tracer m ChurnCounters,
-  pcaDeadlineInterval      :: DiffTime,
-  pcaBulkInterval          :: DiffTime,
-  pcaPeerRequestTimeout    :: DiffTime,
+  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection peeraddr),
+  pcaChurnTracer         :: Tracer m ChurnCounters,
+  pcaDeadlineInterval    :: DiffTime,
+  pcaBulkInterval        :: DiffTime,
+  pcaPeerRequestTimeout  :: DiffTime,
   -- ^ the timeout for outbound governor to find new (thus
   -- cold) peers through peer sharing mechanism.
-  pcaMetrics               :: PeerMetrics m peeraddr,
-  pcaModeVar               :: StrictTVar m ChurnMode,
-  pcaRng                   :: StdGen,
-  pcaReadFetchMode         :: STM m FetchMode,
-  peerTargets              :: ConsensusModePeerTargets,
-  pcaPeerSelectionVar      :: StrictTVar m PeerSelectionTargets,
-  pcaReadCounters          :: STM m PeerSelectionCounters,
-  pcaReadUseBootstrap      :: STM m UseBootstrapPeers,
-  pcaChurnMutex            :: StrictTMVar m (),
-  pcaConsensusMode         :: ConsensusMode }
+  pcaMetrics             :: PeerMetrics m peeraddr,
+  pcaModeVar             :: StrictTVar m ChurnMode,
+  pcaRng                 :: StdGen,
+  pcaReadFetchMode       :: STM m FetchMode,
+  peerTargets            :: ConsensusModePeerTargets,
+  pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
+  pcaReadCounters        :: STM m PeerSelectionCounters,
+  pcaReadUseBootstrap    :: STM m UseBootstrapPeers,
+  pcaChurnMutex          :: StrictTMVar m (),
+  pcaConsensusMode       :: ConsensusMode }
 
 -- | Churn governor.
 --
@@ -134,8 +134,8 @@ peerChurnGovernor PeerChurnArgs {
   let base =
         case (consensusMode, churnMode) of
           (GenesisMode, ChurnModeBulkSync) -> genesisSyncTargets
-          (GenesisMode, ChurnModeNormal) -> praosTargets
-          (PraosMode, _) -> praosTargets
+          (GenesisMode, ChurnModeNormal)   -> praosTargets
+          (PraosMode, _)                   -> praosTargets
 
   atomically $ do
     modifyTVar peerSelectionVar ( increaseActivePeers regime base
@@ -462,8 +462,8 @@ peerChurnGovernor PeerChurnArgs {
             base =
               case (consensusMode, churnMode) of
                 (GenesisMode, ChurnModeBulkSync) -> genesisSyncTargets
-                (GenesisMode, ChurnModeNormal) -> praosTargets
-                (PraosMode, _) -> praosTargets
+                (GenesisMode, ChurnModeNormal)   -> praosTargets
+                (PraosMode, _)                   -> praosTargets
 
         return (base, churnMode, regime)
 
@@ -551,7 +551,7 @@ peerChurnGovernor PeerChurnArgs {
                     numberOfEstablishedBigLedgerPeers
                     churnEstablishConnectionTimeout
                     (increaseEstablishedBigLedgerPeers base)
-                    checkEstablishedBigLedgerPeersIncreased                    
+                    checkEstablishedBigLedgerPeersIncreased
 
       endTs <- getMonotonicTime
 
@@ -571,7 +571,7 @@ peerChurnGovernor PeerChurnArgs {
       case (mode, consensusMode) of
         (FetchModeDeadline, _) -> longDelay rng execTime
         (_, GenesisMode)       -> longDelay rng execTime
-        _otherwise              -> shortDelay rng execTime
+        _otherwise             -> shortDelay rng execTime
 
 
     fuzzyDelay' :: DiffTime -> Double -> StdGen -> DiffTime -> m StdGen

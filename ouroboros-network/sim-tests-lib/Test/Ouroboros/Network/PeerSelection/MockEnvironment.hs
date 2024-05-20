@@ -31,7 +31,7 @@ module Test.Ouroboros.Network.PeerSelection.MockEnvironment
   , config_REPROMOTE_DELAY
   ) where
 
-import Data.Bifunctor (first, bimap)
+import Data.Bifunctor (bimap, first)
 import Data.Dynamic (fromDynamic)
 import Data.Functor ((<&>))
 import Data.List (nub)
@@ -48,7 +48,7 @@ import System.Random (mkStdGen)
 import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictTVar
 import Control.Exception (throw)
-import Control.Monad (when, forM)
+import Control.Monad (forM, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -68,14 +68,11 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
            ScriptDelay (..), TimedScript, arbitraryPickScript,
            arbitraryScriptOf, initScript, initScript', interpretPickScript,
-           playTimedScript, prop_shrink_Script, singletonScript,
-           singletonTimedScript, stepScript, stepScriptSTM, stepScriptSTM', shrinkScriptWith)
-import Ouroboros.Network.Testing.Utils
-    ( ShrinkCarefully,
-      arbitrarySubset,
-      prop_shrink_nonequal,
-      prop_shrink_valid,
-      nightlyTest )
+           playTimedScript, prop_shrink_Script, shrinkScriptWith,
+           singletonScript, singletonTimedScript, stepScript, stepScriptSTM,
+           stepScriptSTM')
+import Ouroboros.Network.Testing.Utils (ShrinkCarefully, arbitrarySubset,
+           nightlyTest, prop_shrink_nonequal, prop_shrink_valid)
 
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
@@ -201,7 +198,7 @@ validGovernorMockEnvironment GovernorMockEnvironment {
               (LocalRootPeers.keysSet localRootPeers `Set.isSubsetOf` allPeersSet)
            , counterexample "public root peers not a subset of  all peers" $
              property (PublicRootPeers.toSet publicRootPeers `Set.isSubsetOf` allPeersSet)
-           , counterexample "failed peer selection targets sanity check" $ 
+           , counterexample "failed peer selection targets sanity check" $
              property (foldl (\ !p (ConsensusModePeerTargets {..},_) ->
                                 p && all sanePeerSelectionTargets [praosTargets, genesisSyncTargets])
                         True
@@ -875,7 +872,7 @@ instance Arbitrary GovernorMockEnvironment where
                                    PraosMode   -> arbitrary
       useLedgerPeers          <- arbitrary
       ledgerStateJudgement0   <- listOf arbitrary
-     
+
       (ledgerStateJudgement, targets) <-
         let wrap = Script . NonEmpty.fromList
             -- we want to generate targets which respect the number of local roots
@@ -889,7 +886,7 @@ instance Arbitrary GovernorMockEnvironment where
             rootKnownGen knownMax = choose (0, min 100 (knownMax - localWarm))
             estGen knownMax = choose (localWarm, min 1000 knownMax)
             actGen estMax = choose (localHot, min 100 estMax)
-            
+
         in forM (   ledgerStateJudgement0
                  ++ [ArbitraryLedgerStateJudgement YoungEnough])
              (\(ArbitraryLedgerStateJudgement lsj) -> do
@@ -1078,14 +1075,14 @@ instance Arbitrary GovernorMockEnvironment where
             (HotValency hotLocalRootsSize) = LocalRootPeers.hotTarget localRootPeers
             (WarmValency warmLocalRootsSize) = LocalRootPeers.warmTarget localRootPeers
             shrunkScript = shrink targetsWithDelay
-            checkTargets t = 
+            checkTargets t =
                  targetNumberOfKnownPeers t >= publicConfiguredRootSize + warmLocalRootsSize
               && targetNumberOfEstablishedPeers t >= warmLocalRootsSize
               && targetNumberOfEstablishedPeers t <= targetNumberOfKnownPeers t
               && targetNumberOfActivePeers t >= hotLocalRootsSize
               && targetNumberOfActivePeers t <= targetNumberOfEstablishedPeers t
               && targetNumberOfRootPeers t <=   targetNumberOfKnownPeers t
-                                              - warmLocalRootsSize            
+                                              - warmLocalRootsSize
         in
           [shrunk
           | shrunk@(shrunkTarget, _) <- shrunkScript,
@@ -1098,7 +1095,7 @@ instance Arbitrary GovernorMockEnvironment where
             all checkTargets [praosTargets, genesisSyncTargets],
             genesisBigKnown >= 10 && genesisBigEst <= genesisBigKnown && genesisBigAct <= genesisBigEst,
             genesisBigEst * genesisBigAct /= 0]
-        
+
       shrinkLocalRootPeers a =
         [ LocalRootPeers.fromGroups g
           | g <- shrink (LocalRootPeers.toGroups a)

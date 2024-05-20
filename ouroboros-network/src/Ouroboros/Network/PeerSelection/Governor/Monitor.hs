@@ -19,7 +19,7 @@ module Ouroboros.Network.PeerSelection.Governor.Monitor
   , waitForSystemToQuiesce
   ) where
 
-import Data.Functor ( (<&>) )
+import Data.Functor ((<&>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)

@@ -51,7 +51,8 @@ import Control.Monad.IOSim (IOSim, traceM)
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
 import Data.IP (IP (..))
-import Data.List (delete, nubBy, intercalate)
+import Data.List (delete, intercalate, nubBy)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes, fromMaybe, maybeToList)
@@ -70,6 +71,7 @@ import Network.TypedProtocol.PingPong.Type qualified as PingPong
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace,
            ConnectionManagerTrace)
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
@@ -77,8 +79,9 @@ import Ouroboros.Network.InboundGovernor (InboundGovernorTrace,
            RemoteTransitionTrace)
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
-           PeerSelectionTargets (..), TracePeerSelection, ConsensusModePeerTargets (..))
+import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets (..),
+           DebugPeerSelection (..), PeerSelectionTargets (..),
+           TracePeerSelection)
 import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
 import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
            LedgerPeersConsensusInterface (..), LedgerStateJudgement (..),
@@ -141,8 +144,6 @@ import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), genLedgerPoolsFrom)
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
 import Test.QuickCheck
 
-import Ouroboros.Network.ConsensusMode
-import Data.List.NonEmpty qualified as NonEmpty
 
 -- | Diffusion Simulator Arguments
 --
@@ -398,7 +399,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
                                        `suchThat` hasActive
   SmallTargets genesisSyncTargets <- resize (length relays * 2) arbitrary
                                        `suchThat` hasActive
-  let peerTargets = ConsensusModePeerTargets { praosTargets, genesisSyncTargets }                                       
+  let peerTargets = ConsensusModePeerTargets { praosTargets, genesisSyncTargets }
   dnsTimeout <- arbitrary
   dnsLookupDelay <- arbitrary
   chainSyncExitOnBlockNo
@@ -432,7 +433,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
   fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
 
   naConsensusMode <- arbitrary
-  bootstrapPeersDomain <- 
+  bootstrapPeersDomain <-
     case naConsensusMode of
       GenesisMode -> pure . singletonScript $ DontUseBootstrapPeers
       PraosMode   -> Script . NonEmpty.fromList <$> listOf1 arbitrary
