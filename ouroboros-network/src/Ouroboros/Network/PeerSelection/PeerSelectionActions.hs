@@ -1,11 +1,11 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TupleSections            #-}
 
 module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( withPeerSelectionActions

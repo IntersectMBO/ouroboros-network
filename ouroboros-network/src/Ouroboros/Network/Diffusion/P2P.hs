@@ -1,13 +1,13 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE KindSignatures           #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TypeOperators            #-}
 
 #if !defined(mingw32_HOST_OS)
 #define POSIX
@@ -101,14 +101,14 @@ import Ouroboros.Network.NodeToNode (AcceptedConnectionsLimit (..),
            NodeToNodeVersionData (..), RemoteAddress)
 import Ouroboros.Network.NodeToNode qualified as NodeToNode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
-import Ouroboros.Network.PeerSelection.Churn ( PeerChurnArgs(..) )
+import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (ChurnMode (ChurnModeNormal), DebugPeerSelection (..),
-           PeerSelectionActions, PeerSelectionCounters,
+           (ChurnMode (ChurnModeNormal), ConsensusModePeerTargets (..),
+           DebugPeerSelection (..), PeerSelectionActions, PeerSelectionCounters,
            PeerSelectionInterfaces (..), PeerSelectionPolicy (..),
            PeerSelectionState, TracePeerSelection (..),
-           emptyPeerSelectionCounters, emptyPeerSelectionState, ConsensusModePeerTargets (..))
+           emptyPeerSelectionCounters, emptyPeerSelectionState)
 #ifdef POSIX
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makeDebugPeerSelectionState)
@@ -248,17 +248,17 @@ nullTracers =
 data ArgumentsExtra m = ArgumentsExtra {
       -- | selection targets for the peer governor
       --
-      daPeerTargets :: ConsensusModePeerTargets
+      daPeerTargets            :: ConsensusModePeerTargets
 
-    , daReadLocalRootPeers    :: STM m (LocalRootPeers.Config RelayAccessPoint)
-    , daReadPublicRootPeers   :: STM m (Map RelayAccessPoint PeerAdvertise)
+    , daReadLocalRootPeers     :: STM m (LocalRootPeers.Config RelayAccessPoint)
+    , daReadPublicRootPeers    :: STM m (Map RelayAccessPoint PeerAdvertise)
     -- | When syncing up, ie. ledgerStateJudgement == TooOld,
     -- when this is True we will maintain connection with many big ledger peers
     -- to get a strong guarantee that when syncing up we will finish with a true
     -- ledger state. When false, we will fall back on the previous algorithms
     -- that leverage UseBootstrapPeers flag
-    , daConsensusMode :: ConsensusMode
-    , daReadUseBootstrapPeers :: STM m UseBootstrapPeers
+    , daConsensusMode          :: ConsensusMode
+    , daReadUseBootstrapPeers  :: STM m UseBootstrapPeers
     -- | Depending on configuration, node may provide us with
     -- a snapshot of big ledger peers taken at some slot on the chain.
     -- These peers may be selected by ledgerPeersThread when requested

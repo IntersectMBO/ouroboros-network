@@ -36,8 +36,8 @@ import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
-import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 
 -- | Tag indicating churning approach

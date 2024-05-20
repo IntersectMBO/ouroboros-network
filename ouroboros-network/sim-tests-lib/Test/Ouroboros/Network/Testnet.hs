@@ -2487,7 +2487,7 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
                      $ evsList
          in classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
-          $ verify_target_active_above ev 
+          $ verify_target_active_above ev
         )
       <$> events
 

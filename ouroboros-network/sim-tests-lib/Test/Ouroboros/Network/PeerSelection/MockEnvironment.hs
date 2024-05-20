@@ -67,14 +67,11 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRo
 import Ouroboros.Network.Testing.Data.Script (PickScript, Script (..),
            ScriptDelay (..), TimedScript, arbitraryPickScript,
            arbitraryScriptOf, initScript, initScript', interpretPickScript,
-           playTimedScript, prop_shrink_Script, singletonScript,
-           singletonTimedScript, stepScript, stepScriptSTM, stepScriptSTM', shrinkScriptWith)
-import Ouroboros.Network.Testing.Utils
-    ( ShrinkCarefully,
-      arbitrarySubset,
-      prop_shrink_nonequal,
-      prop_shrink_valid,
-      nightlyTest )
+           playTimedScript, prop_shrink_Script, shrinkScriptWith,
+           singletonScript, singletonTimedScript, stepScript, stepScriptSTM,
+           stepScriptSTM')
+import Ouroboros.Network.Testing.Utils (ShrinkCarefully, arbitrarySubset,
+           nightlyTest, prop_shrink_nonequal, prop_shrink_valid)
 
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hiding
@@ -1076,14 +1073,14 @@ instance Arbitrary GovernorMockEnvironment where
             (HotValency hotLocalRootsSize) = LocalRootPeers.hotTarget localRootPeers
             (WarmValency warmLocalRootsSize) = LocalRootPeers.warmTarget localRootPeers
             shrunkScript = shrink targetsWithDelay
-            checkTargets t = 
+            checkTargets t =
                  targetNumberOfKnownPeers t >= publicConfiguredRootSize + warmLocalRootsSize
               && targetNumberOfEstablishedPeers t >= warmLocalRootsSize
               && targetNumberOfEstablishedPeers t <= targetNumberOfKnownPeers t
               && targetNumberOfActivePeers t >= hotLocalRootsSize
               && targetNumberOfActivePeers t <= targetNumberOfEstablishedPeers t
               && targetNumberOfRootPeers t <=   targetNumberOfKnownPeers t
-                                              - warmLocalRootsSize            
+                                              - warmLocalRootsSize
         in
           [shrunk
           | shrunk@(shrunkTarget, _) <- shrunkScript,
@@ -1096,7 +1093,7 @@ instance Arbitrary GovernorMockEnvironment where
             all checkTargets [deadlineTargets, syncTargets],
             genesisBigKnown >= 10 && genesisBigEst <= genesisBigKnown && genesisBigAct <= genesisBigEst,
             genesisBigEst * genesisBigAct /= 0]
-        
+
       shrinkLocalRootPeers a =
         [ LocalRootPeers.fromGroups g
           | g <- shrink (LocalRootPeers.toGroups a)

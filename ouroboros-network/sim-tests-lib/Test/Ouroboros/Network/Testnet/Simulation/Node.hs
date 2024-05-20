@@ -71,6 +71,7 @@ import Network.TypedProtocol.PingPong.Type qualified as PingPong
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace,
            ConnectionManagerTrace)
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
@@ -78,8 +79,9 @@ import Ouroboros.Network.InboundGovernor (InboundGovernorTrace,
            RemoteTransitionTrace)
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (DebugPeerSelection (..),
-           PeerSelectionTargets (..), TracePeerSelection, ConsensusModePeerTargets (..))
+import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets (..),
+           DebugPeerSelection (..), PeerSelectionTargets (..),
+           TracePeerSelection)
 import Ouroboros.Network.PeerSelection.Governor qualified as PeerSelection
 import Ouroboros.Network.PeerSelection.LedgerPeers (AfterSlot (..),
            LedgerPeersConsensusInterface (..), LedgerStateJudgement (..),
@@ -430,7 +432,7 @@ genNodeArgs relays minConnected localRootPeers relay = flip suchThat hasUpstream
   fetchModeScript <- fmap (bool FetchModeBulkSync FetchModeDeadline) <$> arbitrary
 
   naConsensusMode <- arbitrary
-  bootstrapPeersDomain <- 
+  bootstrapPeersDomain <-
     case naConsensusMode of
       GenesisMode -> pure . singletonScript $ DontUseBootstrapPeers
       PraosMode   -> Script . NonEmpty.fromList <$> listOf1 arbitrary

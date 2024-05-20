@@ -43,6 +43,7 @@ import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IP qualified as IP
 import Data.List as List (foldl', groupBy, intercalate)
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -56,6 +57,7 @@ import System.Random (mkStdGen)
 import Network.DNS qualified as DNS (defaultResolvConf)
 import Network.Socket (SockAddr)
 
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
@@ -96,8 +98,6 @@ import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
-import Ouroboros.Network.ConsensusMode
-import Data.List.NonEmpty qualified as NonEmpty
 
 -- Exactly as named.
 unfHydra :: Int
@@ -765,8 +765,8 @@ envEventCredits (TraceEnvSetTargets PeerSelectionTargets {
                     + 10 * (targetNumberOfKnownPeers
                           + targetNumberOfEstablishedPeers
                           + targetNumberOfActivePeers)
-                    
--- todo: add big ledger peer terms?                    
+
+-- todo: add big ledger peer terms?
 envEventCredits (TraceEnvGenesisLsjAndTargets (_, targets))
   =   80
     + 10 * (targetNumberOfKnownPeers
@@ -3749,7 +3749,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
             debugStateVar,
             readUseLedgerPeers = return DontUseLedgerPeers
           }
-          
+
     publicRootPeersProvider
       tracer
       (curry IP.toSockAddr)

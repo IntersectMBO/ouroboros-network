@@ -26,6 +26,7 @@ import Ouroboros.Network.PeerSelection.Governor
 
 import Data.Hashable
 import Data.IP qualified as IP
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
            UseLedgerPeers (..))
@@ -37,7 +38,6 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (DomainAccessPoint (..),
 import Ouroboros.Network.Testing.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck
-import Ouroboros.Network.ConsensusMode
 
 
 --
@@ -74,7 +74,7 @@ instance Arbitrary ConsensusMode where
   arbitrary = elements [PraosMode, GenesisMode]
   shrink GenesisMode = [PraosMode]
   shrink PraosMode   = []
-  
+
 instance Arbitrary AfterSlot where
   arbitrary = oneof [ pure Always
                     , After <$> arbitrary
