@@ -67,12 +67,13 @@ import Ouroboros.Network.Block (MaxSlotNo (..), maxSlotNoFromWithOrigin,
            pointSlot)
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
+import Ouroboros.Network.ConsensusMode
 import Ouroboros.Network.Diffusion qualified as Diff
 import Ouroboros.Network.Diffusion.P2P qualified as Diff.P2P
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..),
-           PublicPeerSelectionState (..), ConsensusModePeerTargets)
+import Ouroboros.Network.PeerSelection.Governor (ConsensusModePeerTargets,
+           PeerSelectionTargets (..), PublicPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.PeerMetric
            (PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -112,7 +113,6 @@ import Test.Ouroboros.Network.Diffusion.Node.NodeKernel (NodeKernel (..),
 import Test.Ouroboros.Network.Diffusion.Node.NodeKernel qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, mockDNSActions)
-import Ouroboros.Network.ConsensusMode (ConsensusMode)
 
 
 data Interfaces m = Interfaces
