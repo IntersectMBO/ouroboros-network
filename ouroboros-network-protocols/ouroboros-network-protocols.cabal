@@ -99,7 +99,7 @@ library
                        cborg             >=0.2.1 && <0.3,
                        deepseq,
 
-                       io-classes       ^>=1.4.1,
+                       io-classes       ^>=1.5.0,
                        si-timers,
 
                        ouroboros-network-api
